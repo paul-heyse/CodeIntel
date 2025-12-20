@@ -17,6 +17,7 @@ from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.http.errors import (
     CodeIntelDomainError,
     ProblemDetail,
+    ProblemDetailSchema,
     problem_from_domain_error,
     problem_from_exception,
     problem_response,
@@ -45,7 +46,7 @@ if TYPE_CHECKING:
 
 
 def create_serving_app(
-    settings: ServingSettings | None = None,
+    settings: ServingSettings,
     *,
     mount_mcp: bool = True,
 ) -> FastAPI:
@@ -54,7 +55,7 @@ def create_serving_app(
     Parameters
     ----------
     settings
-        Serving settings (defaults to environment).
+        Serving settings for runtime configuration.
     mount_mcp
         Whether to mount an MCP server under `/mcp`.
 
@@ -68,7 +69,7 @@ def create_serving_app(
     Calls ``cfg.validate_auth_for_host()`` which raises ``ValueError`` if
     binding to a public interface (0.0.0.0, ::) without authentication.
     """
-    cfg = settings or ServingSettings.from_env()
+    cfg = settings
     features = ServingFeatureSet.from_settings(cfg)
 
     # Fail-fast: require auth for public interfaces
@@ -134,8 +135,10 @@ def _handle_request_validation(request: Request, exc: Exception) -> JSONResponse
         status=422,
         detail="Request validation failed.",
         instance=str(request.url.path),
-        correlation_id=get_correlation_id(request),
-        errors=[_normalize_validation_error(err) for err in exc.errors()],
+        extensions={
+            "correlation_id": get_correlation_id(request),
+            "errors": [_normalize_validation_error(err) for err in exc.errors()],
+        },
     )
     return problem_response(problem)
 
@@ -259,7 +262,7 @@ def _custom_openapi(app: FastAPI) -> dict[str, object]:
 
     schemas = _ensure_dict(components.get("schemas"), ctx="openapi.components.schemas")
     components["schemas"] = schemas
-    schemas["ProblemDetail"] = ProblemDetail.model_json_schema()
+    schemas["ProblemDetail"] = ProblemDetailSchema.model_json_schema()
 
     app.openapi_schema = openapi_schema
     return openapi_schema

@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
 from codeintel.build.engine_version import get_build_engine_version
@@ -28,6 +29,7 @@ from codeintel.build.hamilton.contracts.schemas.constraints import (
     ConstraintSet,
 )
 from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from codeintel.core.plugins.types.metadata import CorePluginMetadata, PluginDomain
 
 if TYPE_CHECKING:
@@ -52,6 +54,17 @@ _DOMAIN_BY_MODULE: dict[str, PluginDomain] = {
 }
 
 
+def _default_build_settings() -> BuildSettings:
+    try:
+        engine_version = version("codeintel")
+    except PackageNotFoundError:
+        engine_version = "unknown"
+    return BuildSettings(
+        engine_version=engine_version,
+        export_audit=ExportAuditSettings(),
+    )
+
+
 @lru_cache(maxsize=1)
 def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
     """Build target-derived "plugin metadata" for dataset relationships.
@@ -63,7 +76,7 @@ def _get_all_plugins_metadata() -> dict[str, CorePluginMetadata]:
     """
     result: dict[str, CorePluginMetadata] = {}
     graph = get_target_metadata_service().system.graph
-    build_version = get_build_engine_version()
+    build_version = get_build_engine_version(_default_build_settings())
 
     for target in graph.all_targets:
         consumed: set[str] = set()

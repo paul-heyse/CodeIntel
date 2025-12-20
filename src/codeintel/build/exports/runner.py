@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.build.exports.common import ExportCallOptions
 from codeintel.build.exports.jsonl import export_all_jsonl
 from codeintel.build.exports.parquet import export_all_parquet
+from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ class Exporter(Protocol):
         gateway: StorageGateway,
         document_output_dir: Path,
         *,
+        settings: ExportAuditSettings,
         options: ExportCallOptions | None = None,
     ) -> None:
         """Execute an export call.
@@ -46,6 +48,8 @@ class Exporter(Protocol):
             StorageGateway for data access.
         document_output_dir
             Target directory for exports.
+        settings
+            Export audit settings.
         options
             Export options.
         """
@@ -60,6 +64,7 @@ class JsonlExporter(Protocol):
         gateway: StorageGateway,
         document_output_dir: Path,
         *,
+        settings: ExportAuditSettings,
         options: ExportCallOptions | None = None,
     ) -> list[Path]:
         """Execute an export call and return emitted file paths.
@@ -70,6 +75,8 @@ class JsonlExporter(Protocol):
             StorageGateway for data access.
         document_output_dir
             Target directory for exports.
+        settings
+            Export audit settings.
         options
             Export options.
 
@@ -115,6 +122,7 @@ class ExportOptions:
     """Options controlling export validation and dataset selection."""
 
     export: ExportCallOptions = field(default_factory=ExportCallOptions)
+    settings: ExportAuditSettings = field(default_factory=ExportAuditSettings)
     validator: Callable[[StorageGateway], None] = _validate_dataset_contract
     export_parquet_fn: Exporter = field(default=export_all_parquet)
     export_jsonl_fn: JsonlExporter = field(default=export_all_jsonl)
@@ -148,11 +156,13 @@ def run_validated_exports(
     opts.export_parquet_fn(
         gateway,
         output_dir,
+        settings=opts.settings,
         options=opts.export,
     )
     return opts.export_jsonl_fn(
         gateway,
         output_dir,
+        settings=opts.settings,
         options=opts.export,
     )
 

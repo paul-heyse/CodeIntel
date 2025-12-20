@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         StorageError,
         StorageQueryError,
     )
+    from codeintel.storage.exports import ExportService
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,
         BaseTableAccessor,
@@ -95,6 +96,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     ),
     "DuckDBProgrammingError": ("codeintel.storage.gateway.protocol", "DuckDBProgrammingError"),
     "DuckDBRelation": ("codeintel.storage.gateway.protocol", "DuckDBRelation"),
+    "ExportService": ("codeintel.storage.exports", "ExportService"),
     "GraphTables": ("codeintel.storage.gateway.accessors", "GraphTables"),
     "IbisGateway": ("codeintel.storage.ibis_adapter", "IbisGateway"),
     "MinimalStorageGateway": ("codeintel.storage.gateway.minimal", "MinimalStorageGateway"),
@@ -149,6 +151,7 @@ __all__ = [
     "DuckDBInvalidInputException",
     "DuckDBProgrammingError",
     "DuckDBRelation",
+    "ExportService",
     "GraphTables",
     "IbisGateway",
     "MinimalStorageGateway",

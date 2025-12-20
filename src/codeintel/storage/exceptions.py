@@ -8,9 +8,8 @@ imports while core owns the canonical error surface.
 
 from __future__ import annotations
 
-from duckdb import Error as DuckDBError
-
 from codeintel.core.errors.storage import StorageConnectionError, StorageError
+from codeintel.storage.duckdb_types import DuckDBError
 
 # Re-export DuckDB errors for catch blocks
 DUCKDB_ERRORS: tuple[type[Exception], ...] = (DuckDBError,)

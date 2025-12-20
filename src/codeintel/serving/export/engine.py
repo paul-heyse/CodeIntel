@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from codeintel.serving.export.formats import (
     ExportFormat,
     mime_type_for_export_format,
+    normalize_export_format,
     suffix_for_export_format,
 )
 
@@ -69,18 +70,19 @@ def build_export_plan(request: SemanticExportRequest) -> ExportPlan:
     ValueError
         If the export format is unsupported.
     """
-    if request.format == "ndjson":
+    normalized = normalize_export_format(request.format)
+    if normalized == "jsonl":
         delivery = ExportDelivery.ndjson_stream
-    elif request.format == "json":
+    elif normalized == "json":
         delivery = ExportDelivery.json_rows
-    elif request.format in _BINARY_EXPORT_FORMATS:
+    elif normalized in _BINARY_EXPORT_FORMATS:
         delivery = ExportDelivery.binary_file
     else:
         msg = f"Unsupported export format: {request.format}"
         raise ValueError(msg)
 
     return ExportPlan(
-        format=request.format,
+        format=normalized,
         delivery=delivery,
         mime_type=mime_type_for_export_format(request.format),
         suffix=suffix_for_export_format(request.format),
@@ -114,9 +116,10 @@ def write_export_file(
     ValueError
         If the export format is unsupported for file export.
     """
-    if request.format == "parquet":
+    normalized = normalize_export_format(request.format)
+    if normalized == "parquet":
         return ops.export_to_parquet(request, output_path=output_path)
-    if request.format == "arrow":
+    if normalized == "arrow":
         return ops.export_to_arrow_ipc(request, output_path=output_path)
     msg = f"Unsupported file export format: {request.format}"
     raise ValueError(msg)

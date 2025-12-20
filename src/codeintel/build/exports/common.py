@@ -16,19 +16,19 @@ from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
 from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
-from codeintel.build.settings import BuildSettings, get_build_settings
 from codeintel.build.table_keys import split_table_key
+from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.errors.problem_details import ProblemDetailBuilder
 from codeintel.core.errors.schema import SchemaError
+from codeintel.storage.exports import ExportAuditRecord as AuditRecord
 from codeintel.storage.protocols import ExportRelation
-from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -104,17 +104,6 @@ def log_export_error(
 # ---------------------------------------------------------------------------
 # Dataclasses
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class AuditRecord:
-    """Metadata about a completed export for optional audit logging."""
-
-    table_name: str
-    macro: str
-    rows: int | None
-    duration_s: float
-    output_path: Path
 
 
 @dataclass(frozen=True)
@@ -322,7 +311,7 @@ def build_export_relation(
     row_limit: int,
     row_offset: int,
 ) -> ExportRelation:
-    """Build a DuckDB relation for export.
+    """Build an export relation for a dataset table.
 
     Parameters
     ----------
@@ -338,12 +327,11 @@ def build_export_relation(
     Returns
     -------
     ExportRelation
-        Relation ready for export.
+        Export relation adapter.
     """
     expr = build_export_expr(gateway, table_key, limit=row_limit, offset=row_offset)
     sql = compile_export_sql(expr)
-    relation = gateway.con.sql(sql)
-    return adapt_duckdb_relation(relation)
+    return gateway.exports.build_export_relation(sql=sql)
 
 
 # ---------------------------------------------------------------------------
@@ -354,8 +342,8 @@ def build_export_relation(
 def write_audit_entry(
     record: AuditRecord,
     *,
-    con: DuckDBConnection,
-    settings: BuildSettings | None = None,
+    gateway: StorageGateway,
+    settings: ExportAuditSettings,
 ) -> None:
     """Write an audit entry for an export operation.
 
@@ -363,57 +351,14 @@ def write_audit_entry(
     ----------
     record
         Audit record to write.
-    con
-        DuckDB connection for table logging.
+    gateway
+        Storage gateway providing audit logging access.
     settings
-        Optional BuildSettings override for audit configuration.
+        Export audit settings for the write.
     """
-    resolved = get_build_settings() if settings is None else settings
-    if resolved.export_audit_log_path is None and not resolved.export_audit_table_enabled:
+    if not gateway.exports.audit_enabled(settings):
         return
-    json_record = {
-        "table": record.table_name,
-        "macro": record.macro,
-        "rows": record.rows,
-        "duration_s": record.duration_s,
-        "output": str(record.output_path),
-    }
-    if resolved.export_audit_log_path is not None:
-        with Path(resolved.export_audit_log_path).open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(json_record))
-            handle.write("\n")
-
-    if resolved.export_audit_table_enabled:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS metadata.export_audit (
-                dataset TEXT,
-                macro TEXT,
-                rows BIGINT,
-                duration_s DOUBLE,
-                output_path TEXT,
-                sql TEXT,
-                plan TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """,
-        )
-        con.execute(
-            """
-            INSERT INTO metadata.export_audit
-                (dataset, macro, rows, duration_s, output_path, sql, plan)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
-                record.table_name,
-                record.macro,
-                record.rows,
-                record.duration_s,
-                str(record.output_path),
-                None,
-                None,
-            ],
-        )
+    gateway.exports.write_export_audit(record, settings=settings)
 
 
 # ---------------------------------------------------------------------------

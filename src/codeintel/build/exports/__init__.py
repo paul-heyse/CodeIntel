@@ -7,7 +7,7 @@ Usage
 -----
 >>> from codeintel.build.exports import ExportCallOptions, export_all_jsonl
 >>> options = ExportCallOptions(validate_exports=True, datasets=["function_metrics"])
->>> export_all_jsonl(gateway, output_dir, options=options)
+>>> export_all_jsonl(gateway, output_dir, settings=export_settings, options=options)
 """
 
 from __future__ import annotations

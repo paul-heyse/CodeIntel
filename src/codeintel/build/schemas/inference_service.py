@@ -7,6 +7,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,11 @@ from codeintel.build.schemas.seed_harness import MiniSeedHarness
 from codeintel.build.target_metadata import OutputInventory
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.core.config.settings import (
+    BuildSettings,
+    ExportAuditSettings,
+    HamiltonExecutionSettings,
+)
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.singleton import SingletonHolder
@@ -198,18 +204,32 @@ def _inference_requirements(
     return qparams, requires_env, requires_graph
 
 
+def _default_build_settings() -> BuildSettings:
+    try:
+        engine_version = version("codeintel")
+    except PackageNotFoundError:
+        engine_version = "unknown"
+    return BuildSettings(
+        engine_version=engine_version,
+        export_audit=ExportAuditSettings(),
+    )
+
+
 def _inference_env(*, gateway: StorageGateway, force_targets: frozenset[str]) -> BuildEnv:
     snapshot = SnapshotRef.from_args(
         repo="demo/repo",
         commit="deadbeef",
         repo_root=Path.cwd(),
     )
+    settings = _default_build_settings()
     context = BuildRunContext(
         snapshot=snapshot,
         gateway=gateway,
         paths=BuildPaths.from_repo_root(snapshot.repo_root),
         providers=_schema_inference_providers(),
         config=BuildConfig.empty(),
+        settings=settings,
+        execution_settings=HamiltonExecutionSettings(),
         execution_options=BuildExecutionOptions(profile="schema_inference"),
         force_targets=force_targets,
         output_inventory=OutputInventory(datasets_by_target={}, artifacts_by_target={}),

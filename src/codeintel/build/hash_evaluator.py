@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hashing import InputHashOptions, compute_input_hash_with_deps
+from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -111,6 +112,7 @@ def compute_hash_evaluation(
     target: OutputTarget,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
+    settings: BuildSettings,
     options_hash: str | None = None,
     manifests: Mapping[str, OutputManifest] | None = None,
 ) -> HashEvaluation:
@@ -124,6 +126,8 @@ def compute_hash_evaluation(
         Repository snapshot reference.
     gateway
         Storage gateway for manifest lookup.
+    settings
+        Build settings for engine version hashing.
     options_hash
         Optional options hash for configuration.
     manifests
@@ -149,6 +153,7 @@ def compute_hash_evaluation(
         target,
         snapshot,
         gateway,
+        settings=settings,
         options=options,
     )
 

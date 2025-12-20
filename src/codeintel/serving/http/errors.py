@@ -11,21 +11,22 @@ from typing import TYPE_CHECKING, Any
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
+from codeintel.core.errors.problem_details import ProblemDetail
 from codeintel.serving.errors import (
-    ERROR_CODE_CATALOG,
     CodeIntelDomainError,
     ErrorResponse,
     build_error_context_from_http_request,
     exception_to_error_response,
 )
+from codeintel.serving.errors.problem_adapter import problem_detail_from_error_response
 from codeintel.serving.http.middleware import get_correlation_id
 
 if TYPE_CHECKING:
     from fastapi import Request
 
 
-class ProblemDetail(BaseModel):
-    """RFC 9457 Problem Details response model with CodeIntel extensions."""
+class ProblemDetailSchema(BaseModel):
+    """RFC 9457 Problem Details schema for OpenAPI generation."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -43,6 +44,17 @@ class ProblemDetail(BaseModel):
     hint: str | None = None
     details: dict[str, Any] | None = None
     errors: list[dict[str, Any]] | None = None
+
+    @classmethod
+    def from_problem_detail(cls, problem: ProblemDetail) -> ProblemDetailSchema:
+        """Create the schema model from a core ProblemDetail payload.
+
+        Returns
+        -------
+        ProblemDetailSchema
+            Schema model populated from the problem detail.
+        """
+        return cls.model_validate(problem.to_dict())
 
 
 def problem_response(
@@ -65,20 +77,9 @@ def problem_response(
     return JSONResponse(
         status_code=problem.status,
         media_type="application/problem+json",
-        content=problem.model_dump(mode="json", exclude_none=True),
+        content=problem.to_dict(),
         headers=headers,
     )
-
-
-def _problem_type_for_code(code: str) -> str:
-    return "/problems/" + code.lower().replace("_", "-")
-
-
-def _status_for_code(code: str) -> int:
-    tmpl = ERROR_CODE_CATALOG.get(code)
-    if tmpl is None or tmpl.http_status is None:
-        return 500
-    return tmpl.http_status
 
 
 def problem_from_error_response(request: Request, error: ErrorResponse) -> ProblemDetail:
@@ -96,18 +97,10 @@ def problem_from_error_response(request: Request, error: ErrorResponse) -> Probl
     ProblemDetail
         Problem detail payload.
     """
-    return ProblemDetail(
-        type=_problem_type_for_code(error.error.code),
-        title=error.error.message,
-        status=_status_for_code(error.error.code),
-        detail=error.error.hint or error.error.message,
+    return problem_detail_from_error_response(
+        error,
         instance=str(request.url.path),
         correlation_id=get_correlation_id(request),
-        code=error.error.code,
-        kind=str(error.error.kind),
-        retryable=error.error.retryable,
-        hint=error.error.hint,
-        details=error.error.details,
     )
 
 
@@ -172,6 +165,7 @@ def internal_error_problem(request: Request) -> ProblemDetail:
 __all__ = [
     "CodeIntelDomainError",
     "ProblemDetail",
+    "ProblemDetailSchema",
     "internal_error_problem",
     "problem_from_domain_error",
     "problem_from_error_response",

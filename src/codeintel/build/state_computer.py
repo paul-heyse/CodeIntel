@@ -14,7 +14,7 @@ rather than implementing their own state computation.
 
 Example
 -------
->>> session = BuildSession(snapshot, gateway)
+>>> session = BuildSession(snapshot, gateway, settings)
 >>> computer = StateComputer(graph, session)
 >>> build_state = computer.compute_all()
 >>> build_state.runnable_targets()
@@ -34,6 +34,7 @@ from codeintel.build.state_types import (
     BuildState,
     TargetState,
 )
+from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from codeintel.build.state_types import (
@@ -72,7 +73,7 @@ class StateComputer:
 
     Examples
     --------
-    >>> session = BuildSession(snapshot, gateway)
+    >>> session = BuildSession(snapshot, gateway, settings)
     >>> computer = StateComputer(graph, session)
     >>> state = computer.compute_all()
     >>> state.by_status("current")
@@ -107,6 +108,7 @@ class StateComputer:
         graph: TargetGraph,
         gateway: StorageGateway,
         snapshot: SnapshotRef,
+        settings: BuildSettings,
     ) -> StateComputer:
         """Create a StateComputer with a new session.
 
@@ -120,13 +122,15 @@ class StateComputer:
             Storage gateway for database access.
         snapshot
             Repository snapshot reference.
+        settings
+            Build settings for input hash computation.
 
         Returns
         -------
         StateComputer
             New state computer instance.
         """
-        session = BuildSession(snapshot=snapshot, gateway=gateway)
+        session = BuildSession(snapshot=snapshot, gateway=gateway, settings=settings)
         return cls(graph=graph, session=session)
 
     def _options_hash_for_target(self, target: OutputTarget) -> str | None:

@@ -12,7 +12,7 @@ lookups.
 
 Example
 -------
->>> session = BuildSession(snapshot, gateway)
+>>> session = BuildSession(snapshot, gateway, settings)
 >>> session.preload_manifests()  # Single bulk load
 >>> for target in targets:
 ...     hash_val = session.get_input_hash(target)  # Uses cached manifests
@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
+from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -55,10 +56,12 @@ class BuildSession:
         The repository snapshot for this build session.
     gateway
         Storage gateway for database access.
+    settings
+        Build settings for input hash computation.
 
     Examples
     --------
-    >>> session = BuildSession(snapshot, gateway)
+    >>> session = BuildSession(snapshot, gateway, settings)
     >>> hash1 = session.get_input_hash(target)
     >>> hash2 = session.get_input_hash(target)  # Returns cached value
     >>> hash1 == hash2
@@ -67,6 +70,7 @@ class BuildSession:
 
     snapshot: SnapshotRef
     gateway: StorageGateway
+    settings: BuildSettings
     _hash_cache: dict[str, str] = field(default_factory=dict, repr=False)
     _manifest_cache: dict[str, OutputManifest] = field(default_factory=dict, repr=False)
     _manifests_preloaded: bool = field(default=False, repr=False)
@@ -101,6 +105,7 @@ class BuildSession:
             target,
             self.snapshot,
             self.gateway,
+            settings=self.settings,
             options=options,
         )
         self._hash_cache[cache_key] = hash_value

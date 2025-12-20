@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.engine_version import get_build_engine_version
 from codeintel.build.parameters import TargetParameters
-from codeintel.build.settings import BuildSettings
+from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -32,7 +32,6 @@ class InputHashOptions:
 
     options_hash: str | None = None
     manifests: Mapping[str, OutputManifest] | None = None
-    settings: BuildSettings | None = None
 
 
 def compute_input_hash(
@@ -40,6 +39,7 @@ def compute_input_hash(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     *,
+    settings: BuildSettings,
     options: InputHashOptions | None = None,
 ) -> str:
     """Compute content-addressable hash of a target's inputs.
@@ -60,8 +60,10 @@ def compute_input_hash(
         Repository snapshot reference (provides repo/commit).
     gateway
         Storage gateway for loading dependency manifests.
+    settings
+        Build settings for engine version hashing.
     options
-        Optional InputHashOptions for options hash, manifest cache, and settings.
+        Optional InputHashOptions for options hash and manifest cache.
 
     Returns
     -------
@@ -78,6 +80,7 @@ def compute_input_hash(
         target=target,
         snapshot=snapshot,
         gateway=gateway,
+        settings=settings,
         options=options,
     )
     return input_hash
@@ -88,6 +91,7 @@ def compute_input_hash_with_deps(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     *,
+    settings: BuildSettings,
     options: InputHashOptions | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Compute input hash and return dependency hash mapping.
@@ -104,8 +108,10 @@ def compute_input_hash_with_deps(
         Repository snapshot reference (provides repo/commit).
     gateway
         Storage gateway for loading dependency manifests.
+    settings
+        Build settings for engine version hashing.
     options
-        Optional InputHashOptions for options hash, manifest cache, and settings.
+        Optional InputHashOptions for options hash and manifest cache.
 
     Returns
     -------
@@ -126,7 +132,6 @@ def compute_input_hash_with_deps(
     resolved_options = options or InputHashOptions()
     options_hash = resolved_options.options_hash
     manifests = resolved_options.manifests
-    settings = resolved_options.settings
 
     hasher.update(get_build_engine_version(settings).encode("utf-8"))
     hasher.update(b"|")

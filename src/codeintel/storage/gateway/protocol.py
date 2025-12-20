@@ -5,14 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
-import duckdb
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+    from codeintel.storage.exports import ExportService
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,
         CoreTables,
@@ -35,21 +34,35 @@ __all__ = [
     "DuckDBInvalidInputException",
     "DuckDBProgrammingError",
     "DuckDBRelation",
+    "ExportService",
     "MinimalGateway",
     "SnapshotGatewayResolver",
     "StorageGateway",
 ]
 
 
-DuckDBConnection = duckdb.DuckDBPyConnection
-DuckDBRelation = duckdb.DuckDBPyRelation
-DuckDBError = duckdb.Error
-DuckDBCatalogException = duckdb.CatalogException
-DuckDBConnectionException = duckdb.ConnectionException
-DuckDBDatabaseError = duckdb.DatabaseError
-DuckDBInvalidInputException = duckdb.InvalidInputException
-DuckDBProgrammingError = duckdb.ProgrammingError
-DuckDBBinderException = duckdb.BinderException
+if TYPE_CHECKING:
+    import duckdb
+
+    type DuckDBConnection = duckdb.DuckDBPyConnection
+    type DuckDBRelation = duckdb.DuckDBPyRelation
+    type DuckDBError = duckdb.Error
+    type DuckDBCatalogException = duckdb.CatalogException
+    type DuckDBConnectionException = duckdb.ConnectionException
+    type DuckDBDatabaseError = duckdb.DatabaseError
+    type DuckDBInvalidInputException = duckdb.InvalidInputException
+    type DuckDBProgrammingError = duckdb.ProgrammingError
+    type DuckDBBinderException = duckdb.BinderException
+else:
+    type DuckDBConnection = object
+    type DuckDBRelation = object
+    type DuckDBError = Exception
+    type DuckDBCatalogException = Exception
+    type DuckDBConnectionException = Exception
+    type DuckDBDatabaseError = Exception
+    type DuckDBInvalidInputException = Exception
+    type DuckDBProgrammingError = Exception
+    type DuckDBBinderException = Exception
 
 
 class MinimalGateway(Protocol):
@@ -90,6 +103,7 @@ class StorageGateway(MinimalGateway, Protocol):
     core: CoreTables
     datasets: DatasetRegistry
     docs: DocsViews
+    exports: ExportService
     graph: GraphTables
     ibis: IbisGateway
     policy: DuckDBPolicyBackend

@@ -8,6 +8,7 @@ from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import (
     export_parquet_for_table as _engine_export_parquet_for_table,
 )
+from codeintel.core.config.settings import ExportAuditSettings
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,6 +21,7 @@ def export_parquet_for_table(
     gateway: StorageGateway,
     table_name: str,
     output_path: Path,
+    settings: ExportAuditSettings,
 ) -> None:
     """Export a single DuckDB table to Parquet.
 
@@ -31,6 +33,8 @@ def export_parquet_for_table(
         Fully qualified table name (schema.table) to export.
     output_path
         Destination path for the Parquet file.
+    settings
+        Export audit settings.
 
     Raises
     ------
@@ -41,13 +45,15 @@ def export_parquet_for_table(
     if table_name not in registry.by_table_key:
         message = f"Refusing to export unknown dataset table: {table_name}"
         raise ValueError(message)
-    _engine_export_parquet_for_table(gateway, table_name, output_path)
+    _engine_export_parquet_for_table(gateway, table_name, output_path, settings)
 
 
 def export_dataset_to_parquet(
     gateway: StorageGateway,
     dataset_name: str,
     output_dir: Path,
+    *,
+    settings: ExportAuditSettings,
 ) -> Path:
     """Export a dataset resolved through the dataset registry to Parquet.
 
@@ -59,6 +65,8 @@ def export_dataset_to_parquet(
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir
         Destination directory for the Parquet file.
+    settings
+        Export audit settings.
 
     Returns
     -------
@@ -79,7 +87,7 @@ def export_dataset_to_parquet(
         raise ValueError(message) from exc
     filename = parquet_mapping.get(table_name, f"{dataset_name}.parquet")
     output_path = output_dir / filename
-    export_parquet_for_table(gateway, table_name, output_path)
+    export_parquet_for_table(gateway, table_name, output_path, settings)
     return output_path
 
 
@@ -87,6 +95,7 @@ def export_all_parquet(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
+    settings: ExportAuditSettings,
     options: ExportCallOptions | None = None,
 ) -> None:
     """Export configured datasets to Parquet files under `Document Output/`.
@@ -97,6 +106,8 @@ def export_all_parquet(
         StorageGateway providing the DuckDB connection.
     document_output_dir
         Target directory where Parquet artifacts are written.
+    settings
+        Export audit settings.
     options
         Export options controlling dataset selection and validation.
     """
@@ -104,6 +115,7 @@ def export_all_parquet(
         gateway,
         document_output_dir,
         fmt="parquet",
+        settings=settings,
         options=options,
     )
 

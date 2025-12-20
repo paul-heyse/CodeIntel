@@ -23,7 +23,6 @@ from codeintel.serving.export.formats import (
     EXPORT_FORMATS,
     ExportFormat,
     is_binary_export_format,
-    is_text_export_format,
     mime_type_for_export_format,
     normalize_export_format,
     suffix_for_export_format,
@@ -296,8 +295,9 @@ class ResourceStore:
         ValueError
             If ``spec.format`` is unsupported.
         """
-        if not is_text_export_format(spec.format):
-            msg = "put_with_metadata only supports format='ndjson' or format='json'"
+        normalized = normalize_export_format(spec.format)
+        if normalized not in {"jsonl", "json"}:
+            msg = "put_with_metadata only supports format='ndjson', 'jsonl', or 'json'"
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
@@ -309,7 +309,7 @@ class ResourceStore:
 
         path, mime_type = self._artifact_path_for_format(token, spec.format)
         try:
-            if spec.format == "ndjson":
+            if normalized == "jsonl":
                 with path.open("w", encoding="utf-8") as f:
                     for row in rows:
                         f.write(json.dumps(row, default=str) + "\n")
@@ -366,7 +366,7 @@ class ResourceStore:
         rows
             Iterable of row dictionaries.
         spec
-            Artifact metadata specification. Must use ``format="ndjson"``.
+            Artifact metadata specification. Must use ``format="ndjson"`` or ``format="jsonl"``.
         export_id
             Optional caller-supplied export identifier. When provided, enables best-effort cleanup
             on task cancellation.
@@ -381,17 +381,18 @@ class ResourceStore:
         TypeError
             If ``rows`` yields non-dictionary values.
         ValueError
-            If ``spec.format`` is not ``"ndjson"``.
+            If ``spec.format`` is not ``"ndjson"`` or ``"jsonl"``.
         """
-        if spec.format != "ndjson":
-            msg = "Streaming export only supports format='ndjson'"
+        normalized = normalize_export_format(spec.format)
+        if normalized != "jsonl":
+            msg = "Streaming export only supports format='ndjson' or 'jsonl'"
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
         self._raise_if_cancelled(token)
-        suffix = suffix_for_export_format("ndjson")
+        suffix = suffix_for_export_format(spec.format)
         path = self._root / f"{token}{suffix}"
-        mime_type = mime_type_for_export_format("ndjson")
+        mime_type = mime_type_for_export_format(spec.format)
 
         rows_iter = iter(rows)
         first_row = next(rows_iter, None)
@@ -691,9 +692,9 @@ class ResourceStore:
         raise ExportExpiredError(meta.export_id, expires_at=meta.expires_at.isoformat())
 
     def _artifact_path_for_format(self, token: str, fmt: str) -> tuple[Path, str]:
-        normalized = normalize_export_format(fmt)
-        suffix = suffix_for_export_format(normalized)
-        mime_type = mime_type_for_export_format(normalized)
+        _ = normalize_export_format(fmt)
+        suffix = suffix_for_export_format(fmt)
+        mime_type = mime_type_for_export_format(fmt)
         return self._root / f"{token}{suffix}", mime_type
 
 

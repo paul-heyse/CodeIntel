@@ -1,192 +1,55 @@
-"""Canonical export format registry for CodeIntel serving.
-
-This module is the single source of truth for:
-- Supported export formats
-- MIME types per format
-- File suffixes per format
-
-It is safe to import from both HTTP and FastMCP surfaces.
-"""
+"""Canonical export format registry for CodeIntel serving."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Final, Literal, cast
+from codeintel.core.exports import formats as core_formats
 
-ExportFormat = Literal["json", "ndjson", "parquet", "arrow"]
+ExportFormat = core_formats.ExportFormat
+ExportFormatSpec = core_formats.ExportFormatSpec
+normalize_export_format = core_formats.normalize_export_format
+resolve_export_format_spec = core_formats.resolve_export_format_spec
+mime_type_for_export_format = core_formats.mime_type_for_export_format
+suffix_for_export_format = core_formats.suffix_for_export_format
+is_text_export_format = core_formats.is_text_export_format
+is_binary_export_format = core_formats.is_binary_export_format
+supports_preview = core_formats.supports_preview
+supports_line_chunks = core_formats.supports_line_chunks
+supports_byte_chunks = core_formats.supports_byte_chunks
 
+_CORE_EXPORT_FORMATS = core_formats.EXPORT_FORMATS
+_NDJSON_SPEC = ExportFormatSpec(
+    format=_CORE_EXPORT_FORMATS["jsonl"].format,
+    mime_type=_CORE_EXPORT_FORMATS["jsonl"].mime_type,
+    suffix=".ndjson",
+    aliases=_CORE_EXPORT_FORMATS["jsonl"].aliases,
+)
 
-@dataclass(frozen=True, slots=True)
-class ExportFormatSpec:
-    """Specification for a supported export format.
-
-    Parameters
-    ----------
-    format
-        Export format identifier.
-    mime_type
-        MIME type for the serialized payload.
-    suffix
-        File suffix (including leading dot).
-    """
-
-    format: ExportFormat
-    mime_type: str
-    suffix: str
-
-
-EXPORT_FORMATS: Final[dict[ExportFormat, ExportFormatSpec]] = {
-    "json": ExportFormatSpec(format="json", mime_type="application/json", suffix=".json"),
-    "ndjson": ExportFormatSpec(format="ndjson", mime_type="application/x-ndjson", suffix=".ndjson"),
-    "parquet": ExportFormatSpec(
-        format="parquet", mime_type="application/vnd.apache.parquet", suffix=".parquet"
-    ),
-    "arrow": ExportFormatSpec(
-        format="arrow", mime_type="application/vnd.apache.arrow.file", suffix=".arrow"
-    ),
+EXPORT_FORMATS: dict[ExportFormat, ExportFormatSpec] = {
+    **_CORE_EXPORT_FORMATS,
+    "ndjson": _NDJSON_SPEC,
 }
-
-_EXPORT_FORMAT_ORDER: Final[tuple[ExportFormat, ...]] = ("ndjson", "json", "parquet", "arrow")
-_TEXT_EXPORT_FORMATS: Final[frozenset[ExportFormat]] = frozenset({"json", "ndjson"})
-_BINARY_EXPORT_FORMATS: Final[frozenset[ExportFormat]] = frozenset({"parquet", "arrow"})
-
-
-def mime_type_for_export_format(fmt: ExportFormat) -> str:
-    """Return the MIME type for an export format.
-
-    Parameters
-    ----------
-    fmt
-        Export format.
-
-    Returns
-    -------
-    str
-        MIME type for the format.
-    """
-    return EXPORT_FORMATS[fmt].mime_type
-
-
-def suffix_for_export_format(fmt: ExportFormat) -> str:
-    """Return the file suffix for an export format.
-
-    Parameters
-    ----------
-    fmt
-        Export format.
-
-    Returns
-    -------
-    str
-        File suffix for the format.
-    """
-    return EXPORT_FORMATS[fmt].suffix
-
-
-def normalize_export_format(fmt: str) -> ExportFormat:
-    """Validate and normalize an export format string.
-
-    Parameters
-    ----------
-    fmt
-        Raw export format string.
-
-    Returns
-    -------
-    ExportFormat
-        Normalized format value.
-
-    Raises
-    ------
-    ValueError
-        If the format is unsupported.
-    """
-    normalized = fmt.strip().lower()
-    if normalized in EXPORT_FORMATS:
-        return cast("ExportFormat", normalized)
-    msg = f"Unsupported export format: {fmt}"
-    raise ValueError(msg)
-
-
-def export_format_choices() -> tuple[ExportFormat, ...]:
-    """Return supported export formats in a stable, UX-friendly order.
-
-    Returns
-    -------
-    tuple[ExportFormat, ...]
-        Ordered tuple of supported formats for UI prompts.
-    """
-    return _EXPORT_FORMAT_ORDER
 
 
 def default_export_format() -> ExportFormat:
-    """Return the default export format for interactive clients.
+    """Return the serving-default export format.
 
     Returns
     -------
     ExportFormat
-        Preferred default format.
+        Default export format identifier.
     """
     return "ndjson"
 
 
-def is_text_export_format(fmt: ExportFormat) -> bool:
-    """Return True when the export format is a text payload (JSON/NDJSON).
+def export_format_choices() -> tuple[ExportFormat, ...]:
+    """Return supported export formats in a serving-friendly order.
 
     Returns
     -------
-    bool
-        ``True`` when the payload is text-based.
+    tuple[ExportFormat, ...]
+        Ordered export format identifiers.
     """
-    return fmt in _TEXT_EXPORT_FORMATS
-
-
-def supports_preview(fmt: ExportFormat) -> bool:
-    """Return True when `codeintel://exports/{id}/preview` is supported for the format.
-
-    Returns
-    -------
-    bool
-        ``True`` when preview endpoints are available.
-    """
-    return is_text_export_format(fmt)
-
-
-def supports_line_chunks(fmt: ExportFormat) -> bool:
-    """Return True when line-chunk resources are supported for the format.
-
-    Notes
-    -----
-    Line chunking is row-based and therefore only supported for NDJSON.
-
-    Returns
-    -------
-    bool
-        ``True`` when NDJSON line chunking is supported.
-    """
-    return fmt == "ndjson"
-
-
-def supports_byte_chunks(fmt: ExportFormat) -> bool:
-    """Return True when byte-range chunk resources are supported for the format.
-
-    Returns
-    -------
-    bool
-        ``True`` when binary byte-range chunking is supported.
-    """
-    return fmt in _BINARY_EXPORT_FORMATS
-
-
-def is_binary_export_format(fmt: ExportFormat) -> bool:
-    """Return True when the export format is binary (Parquet/Arrow).
-
-    Returns
-    -------
-    bool
-        ``True`` for binary export formats.
-    """
-    return fmt in _BINARY_EXPORT_FORMATS
+    return ("ndjson", "json", "parquet", "arrow")
 
 
 __all__ = [
@@ -199,6 +62,7 @@ __all__ = [
     "is_text_export_format",
     "mime_type_for_export_format",
     "normalize_export_format",
+    "resolve_export_format_spec",
     "suffix_for_export_format",
     "supports_byte_chunks",
     "supports_line_chunks",

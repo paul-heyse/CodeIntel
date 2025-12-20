@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import platform
 import sys
 from datetime import UTC, datetime
@@ -168,7 +167,10 @@ def _environment_json(env: BuildEnv) -> str:
     duckdb_version = _package_version("duckdb")
     gateway_cfg = getattr(env.gateway, "config", None)
     read_only = bool(getattr(gateway_cfg, "read_only", False))
-    extensions = os.environ.get("CODEINTEL_DUCKDB_EXTENSIONS", "").strip()
+    execution_settings = env.execution_settings
+    extensions = ""
+    if execution_settings.duckdb_extensions:
+        extensions = ", ".join(execution_settings.duckdb_extensions)
     payload = {
         "generated_at": datetime.now(tz=UTC).isoformat(),
         "repo": env.repo,
@@ -193,14 +195,19 @@ def _environment_json(env: BuildEnv) -> str:
             "read_only": read_only,
             "extensions_env": extensions,
             "connect_env": {
-                "threads": os.environ.get("CODEINTEL_DUCKDB_THREADS", "").strip() or None,
-                "memory_limit": os.environ.get("CODEINTEL_DUCKDB_MEMORY_LIMIT", "").strip() or None,
-                "temp_directory": os.environ.get("CODEINTEL_DUCKDB_TEMP_DIRECTORY", "").strip()
-                or None,
-                "enable_profiling": os.environ.get("CODEINTEL_DUCKDB_ENABLE_PROFILING", "").strip()
-                or None,
-                "profiling_output": os.environ.get("CODEINTEL_DUCKDB_PROFILING_OUTPUT", "").strip()
-                or None,
+                "threads": execution_settings.duckdb_threads,
+                "memory_limit": execution_settings.duckdb_memory_limit,
+                "temp_directory": (
+                    str(execution_settings.duckdb_temp_directory)
+                    if execution_settings.duckdb_temp_directory is not None
+                    else None
+                ),
+                "enable_profiling": execution_settings.duckdb_enable_profiling,
+                "profiling_output": (
+                    str(execution_settings.duckdb_profiling_output)
+                    if execution_settings.duckdb_profiling_output is not None
+                    else None
+                ),
             },
         },
         "argv0": sys.argv[0] if sys.argv else None,

@@ -7,110 +7,43 @@ storage layer. It is intentionally independent of `codeintel.build.*`.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.composites import get_composite_schemas
-from codeintel.config.datasets.contracts import get_row_bindings
-from codeintel.core.schemas.contract_policy import (
-    default_json_schema_id,
-    default_jsonl_filename,
-    default_parquet_filename,
+from codeintel.core.schemas.contract_factory import (
+    build_dataset_contract,
+    is_docs_view,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.service import SchemaService
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.schema_provider import get_schema_provider
-from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.config.datasets.primitives import CompositeSchema
-    from codeintel.core.schemas.contract_primitives import RowBinding
-    from codeintel.core.schemas.primitives import TableSchema
 
 
 def is_view(table_key: str) -> bool:
     """Return True when the table key represents a docs view.
 
-    Parameters
-    ----------
-    table_key
-        Fully qualified table or view key.
-
     Returns
     -------
     bool
-        True when the key is treated as a view.
+        True when the table key maps to a docs view.
     """
-    return table_key.startswith("docs.v_")
-
-
-def _owner_package_from_prefix(
-    schema_prefix: str,
-) -> Literal["core", "analytics", "graphs", "qa", "docs"] | None:
-    mapping: dict[str, Literal["core", "analytics", "graphs", "qa", "docs"]] = {
-        "core": "core",
-        "analytics": "analytics",
-        "graph": "graphs",
-        "docs": "docs",
-        "qa": "qa",
-    }
-    return mapping.get(schema_prefix)
-
-
-def _get_row_binding_safe(table_key: str) -> RowBinding | None:
-    return get_row_bindings().get(table_key)
+    return is_docs_view(table_key)
 
 
 def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
     return get_composite_schemas().get(table_key)
 
 
-def _derive_contract_from_schema(table_key: str, schema: TableSchema | None) -> DatasetContract:
-    schema_prefix, table_name = split_table_key(table_key)
-    row_binding = _get_row_binding_safe(table_key)
-    composition = _get_composition_for_table_key(table_key)
-    return DatasetContract(
-        table_key=table_key,
-        name=table_name,
-        schema=schema,
-        row_binding=row_binding,
-        json_schema_id=default_json_schema_id(table_key=table_key, schema=schema),
-        jsonl_filename=default_jsonl_filename(table_key=table_key, schema=schema),
-        parquet_filename=default_parquet_filename(table_key=table_key, schema=schema),
-        is_view=False,
-        owner_package=_owner_package_from_prefix(schema_prefix),
-        tags=frozenset({"base_table"}),
-        description=schema.description if schema is not None else None,
-        family=schema_prefix,
-        validation_profile="strict",
-        composition=composition,
-    )
-
-
-def _derive_view_contract(view_key: str) -> DatasetContract:
-    schema_prefix, view_name = split_table_key(view_key)
-    provider = get_schema_provider()
-    schema = provider.get_table_schema(view_key)
-    row_binding = _get_row_binding_safe(view_key)
-    composition = _get_composition_for_table_key(view_key)
-    return DatasetContract(
-        table_key=view_key,
-        name=view_name,
-        schema=schema,
-        row_binding=row_binding,
-        json_schema_id=default_json_schema_id(table_key=view_key, schema=schema),
-        jsonl_filename=default_jsonl_filename(table_key=view_key, schema=schema),
-        parquet_filename=default_parquet_filename(table_key=view_key, schema=schema),
-        is_view=True,
-        owner_package=_owner_package_from_prefix(schema_prefix),
-        tags=frozenset({"docs_view", "read_only"}),
-        description=schema.description if schema is not None else None,
-        family=schema_prefix,
-        validation_profile="strict",
-        composition=composition,
-    )
+@lru_cache(maxsize=1)
+def _schema_service() -> SchemaService:
+    return SchemaService(table_provider=get_schema_provider())
 
 
 @lru_cache(maxsize=256)
@@ -132,15 +65,19 @@ def get_contract_for_table_key(table_key: str) -> DatasetContract:
     KeyError
         Raised when the key is unknown to the schema provider and is not treated as a view.
     """
-    if is_view(table_key):
-        return _derive_view_contract(table_key)
-
+    is_view = is_docs_view(table_key)
     schema = get_schema_provider().get_table_schema(table_key)
-    if schema is not None:
-        return _derive_contract_from_schema(table_key, schema)
-
-    msg = f"Unknown table key: {table_key}"
-    raise KeyError(msg)
+    if schema is None and not is_view:
+        msg = f"Unknown table key: {table_key}"
+        raise KeyError(msg)
+    composition = _get_composition_for_table_key(table_key)
+    return build_dataset_contract(
+        table_key=table_key,
+        schema_service=_schema_service(),
+        overrides=None,
+        composition=composition,
+        is_view_override=is_view,
+    )
 
 
 def iter_contracts() -> Iterable[DatasetContract]:

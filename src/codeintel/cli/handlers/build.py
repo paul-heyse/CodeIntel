@@ -9,7 +9,7 @@ import json as _json
 import logging
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -38,6 +38,7 @@ from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
+from codeintel.build.settings import get_build_settings, get_hamilton_execution_settings
 from codeintel.build.state import BuildState, StateValidator
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.cli.core import CliResult
@@ -354,6 +355,12 @@ def _execute_build_hamilton(
         override = Path(execution.cache_dir).expanduser()
         cache_dir = override if override.is_absolute() else (runtime.root / override)
 
+    build_settings = get_build_settings()
+    execution_settings = replace(
+        get_hamilton_execution_settings(),
+        parallel_backend=execution.parallel_backend,
+        max_workers=execution.max_workers,
+    )
     execution_options = BuildExecutionOptions(
         profile=runtime.project.default_profile,
         parallel_backend=execution.parallel_backend,
@@ -367,6 +374,8 @@ def _execute_build_hamilton(
         paths=runtime.paths,
         providers=providers,
         config=config,
+        settings=build_settings,
+        execution_settings=execution_settings,
         run_config=None,
         execution_options=execution_options,
         force_targets=frozenset(execution.force or ()),
@@ -706,7 +715,8 @@ def build_status_handler(
     )
 
     gateway = ctx.gateway
-    validator = StateValidator(graph, gateway, runtime.snapshot)
+    build_settings = get_build_settings()
+    validator = StateValidator(graph, gateway, runtime.snapshot, settings=build_settings)
     state = validator.validate()
 
     if module:
@@ -1239,6 +1249,8 @@ def build_plan_handler(
     with runtime_gateway(runtime, read_only=True) as gateway:
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
+        build_settings = get_build_settings()
+        execution_settings = get_hamilton_execution_settings()
         manifest_index = {
             m.target: m
             for m in gateway.build.list_manifests(
@@ -1253,6 +1265,8 @@ def build_plan_handler(
             paths=runtime.paths,
             providers=providers,
             config=config,
+            settings=build_settings,
+            execution_settings=execution_settings,
             run_config=None,
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=frozenset(plan_args.force or ()),
@@ -1325,6 +1339,8 @@ def _compute_plan_for_explain(
     with runtime_gateway(runtime, read_only=True) as gateway:
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
+        build_settings = get_build_settings()
+        execution_settings = get_hamilton_execution_settings()
 
         manifests_list = gateway.build.list_manifests(
             repo=runtime.snapshot.repo,
@@ -1338,6 +1354,8 @@ def _compute_plan_for_explain(
             paths=runtime.paths,
             providers=providers,
             config=config,
+            settings=build_settings,
+            execution_settings=execution_settings,
             run_config=None,
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=force_targets,

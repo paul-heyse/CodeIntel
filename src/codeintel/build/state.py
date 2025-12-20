@@ -25,6 +25,7 @@ from codeintel.build.run_context import BuildRunContext
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
+from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from codeintel.build.targets import TargetGraph
@@ -60,7 +61,7 @@ class StateValidator:
 
     Examples
     --------
-    >>> validator = StateValidator(graph, gateway, snapshot)
+    >>> validator = StateValidator(graph, gateway, snapshot, settings=build_settings)
     >>> state = validator.validate()
     >>> state.by_status("missing")
     ('ast', 'modules', ...)
@@ -72,6 +73,7 @@ class StateValidator:
         gateway: StorageGateway,
         snapshot: SnapshotRef,
         *,
+        settings: BuildSettings,
         config: BuildConfig | None = None,
         run_config: BuildRunConfig | None = None,
     ) -> None:
@@ -85,6 +87,8 @@ class StateValidator:
             Storage gateway for manifest access.
         snapshot
             Repository snapshot reference.
+        settings
+            Build settings for input hash computation.
         config
             Optional build config override. When omitted, loads from repo root.
         run_config
@@ -107,7 +111,7 @@ class StateValidator:
             raise ValueError(msg)
 
         # Create session and computer for delegation
-        self._session = BuildSession(snapshot=snapshot, gateway=gateway)
+        self._session = BuildSession(snapshot=snapshot, gateway=gateway, settings=settings)
         base_config = config or load_build_config(snapshot.repo_root)
         effective_config = BuildRunContext.build_config_stack(base_config, run_config)
         self._computer = StateComputer(

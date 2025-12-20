@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import (
@@ -51,8 +51,9 @@ from codeintel.build.exports.writers import (
     write_jsonl_records,
     write_parquet_relation,
 )
-from codeintel.build.settings import get_build_settings
-from codeintel.storage.gateway import DuckDBError
+from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.exports.formats import normalize_export_format, suffix_for_export_format
+from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.queries.safe import safe_count
 
 if TYPE_CHECKING:
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 ExportFormat = Literal["jsonl", "parquet"]
+_BUILD_EXPORT_FORMATS = {"jsonl", "parquet"}
 
 _EXPORT_RECORD_BATCH_SIZE = 10_000
 
@@ -75,13 +77,14 @@ class _ExportFormatSpec:
     mapping: Mapping[str, str]
     can_export_capability_key: str
     extension: str
-    write_table: Callable[[StorageGateway, str, Path], int]
+    write_table: Callable[[StorageGateway, str, Path, ExportAuditSettings], int]
 
 
 def export_jsonl_for_table(
     gateway: StorageGateway,
     table_key: str,
     output_path: Path,
+    settings: ExportAuditSettings,
 ) -> int:
     """Export a DuckDB table to JSONL.
 
@@ -93,6 +96,8 @@ def export_jsonl_for_table(
         Fully qualified table key to export (schema.table).
     output_path
         Output JSONL path.
+    settings
+        Export audit settings.
 
     Returns
     -------
@@ -119,7 +124,8 @@ def export_jsonl_for_table(
             duration_s=duration,
             output_path=output_path,
         ),
-        con=gateway.con,
+        gateway=gateway,
+        settings=settings,
     )
     return rows_written
 
@@ -128,6 +134,7 @@ def export_parquet_for_table(
     gateway: StorageGateway,
     table_key: str,
     output_path: Path,
+    settings: ExportAuditSettings,
 ) -> int:
     """Export a DuckDB table to Parquet.
 
@@ -139,6 +146,8 @@ def export_parquet_for_table(
         Fully qualified table key to export (schema.table).
     output_path
         Output Parquet path.
+    settings
+        Export audit settings.
 
     Returns
     -------
@@ -162,7 +171,8 @@ def export_parquet_for_table(
             duration_s=duration,
             output_path=output_path,
         ),
-        con=gateway.con,
+        gateway=gateway,
+        settings=settings,
     )
     return rows_written
 
@@ -173,16 +183,24 @@ def _format_spec(gateway: StorageGateway, fmt: ExportFormat) -> _ExportFormatSpe
             format="jsonl",
             mapping=gateway.datasets.jsonl_datasets,
             can_export_capability_key="can_export_jsonl",
-            extension=".jsonl",
+            extension=suffix_for_export_format(fmt),
             write_table=export_jsonl_for_table,
         )
     return _ExportFormatSpec(
         format="parquet",
         mapping=gateway.datasets.parquet_datasets,
         can_export_capability_key="can_export_parquet",
-        extension=".parquet",
+        extension=suffix_for_export_format(fmt),
         write_table=export_parquet_for_table,
     )
+
+
+def _normalize_build_format(fmt: str) -> ExportFormat:
+    normalized = normalize_export_format(fmt)
+    if normalized not in _BUILD_EXPORT_FORMATS:
+        msg = f"Unsupported export format for build: {fmt}"
+        raise ValueError(msg)
+    return cast("ExportFormat", normalized)
 
 
 def _validate_written_exports(
@@ -240,6 +258,7 @@ def _export_dataset(
     *,
     spec: _ExportFormatSpec,
     opts: ExportCallOptions,
+    settings: ExportAuditSettings,
 ) -> Path | None:
     if target.dataset is not None:
         caps = target.dataset.capabilities()
@@ -273,7 +292,12 @@ def _export_dataset(
 
     try:
         started_at = datetime.now(UTC)
-        rows_written = spec.write_table(gateway, target.table_name, target.output_path)
+        rows_written = spec.write_table(
+            gateway,
+            target.table_name,
+            target.output_path,
+            settings,
+        )
         data_hash = compute_file_hash(target.output_path)
         completed_at = datetime.now(UTC)
         final_row_count = (
@@ -322,6 +346,7 @@ def export_all_datasets(
     document_output_dir: Path,
     *,
     fmt: ExportFormat,
+    settings: ExportAuditSettings,
     options: ExportCallOptions | None = None,
 ) -> list[Path]:
     """Export configured datasets to a given format under `Document Output/`.
@@ -336,6 +361,10 @@ def export_all_datasets(
         Export format ("jsonl" or "parquet").
     options
         Export selection and validation options.
+    settings
+        Export audit settings for logging.
+    settings
+        Export audit settings for logging.
 
     Returns
     -------
@@ -346,10 +375,11 @@ def export_all_datasets(
     document_output_dir = document_output_dir.resolve()
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
+    normalized_format = _normalize_build_format(fmt)
     validate_registry_or_raise(gateway)
     registry = gateway.datasets
     dataset_mapping = {name: contract.table_key for name, contract in registry.by_name.items()}
-    spec = _format_spec(gateway, fmt)
+    spec = _format_spec(gateway, normalized_format)
     registry_meta = registry.by_name
 
     selected = select_dataset_tables(dataset_mapping, spec.mapping, opts.datasets)
@@ -366,7 +396,7 @@ def export_all_datasets(
             output_path=document_output_dir / filename,
             dataset=registry_meta.get(dataset_name),
         )
-        exported = _export_dataset(gateway, target, spec=spec, opts=opts)
+        exported = _export_dataset(gateway, target, spec=spec, opts=opts, settings=settings)
         if exported is not None:
             written.append(exported)
 
@@ -379,15 +409,11 @@ def export_all_datasets(
     )
     written.append(manifest_path)
 
-    audit_settings = get_build_settings()
-    if (
-        audit_settings.export_audit_log_path is not None
-        or audit_settings.export_audit_table_enabled
-    ):
+    if gateway.exports.audit_enabled(settings):
         log.debug(
             "Export audit enabled: log_path=%s table_enabled=%s",
-            audit_settings.export_audit_log_path,
-            audit_settings.export_audit_table_enabled,
+            settings.log_path,
+            settings.table_enabled,
         )
 
     _validate_written_exports(written, registry.by_table_key, opts)

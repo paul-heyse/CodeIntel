@@ -164,6 +164,7 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -349,6 +350,7 @@ def t__data_model_usage__compute(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):

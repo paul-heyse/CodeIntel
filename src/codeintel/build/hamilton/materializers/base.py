@@ -77,6 +77,7 @@ def resolve_materialization_context(
         target=target,
         snapshot=env.snapshot,
         gateway=env.gateway,
+        settings=env.settings,
         options=hash_options,
     )
     return MaterializationContext(

@@ -10,7 +10,7 @@ import pandas as pd
 from ibis.common import exceptions as ibis_exceptions
 
 from codeintel.core.hashing import content_hash
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.query_results import records_from_dataframe
 from codeintel.storage.schema.json_schema import json_schema_from_typeddict
