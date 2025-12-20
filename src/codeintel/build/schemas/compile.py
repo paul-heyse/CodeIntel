@@ -12,7 +12,10 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.impl_kind import native_target_names
-from codeintel.build.schemas.contract_service import iter_contracts
+from codeintel.build.schemas.contract_service import (
+    ContractResolutionSettings,
+    iter_contracts,
+)
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.inference_service import (
     HamiltonSchemaProvider,
@@ -405,7 +408,9 @@ def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
     """
     artifacts: list[ExportArtifact] = []
 
-    for contract in iter_contracts():
+    for contract in iter_contracts(
+        settings=ContractResolutionSettings(include_target_metadata=True)
+    ):
         if contract.jsonl_filename is not None:
             artifacts.append(
                 ExportArtifact(

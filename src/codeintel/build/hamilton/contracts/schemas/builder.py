@@ -21,7 +21,7 @@ from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset impo
 )
 from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas import ContractResolutionSettings, iter_contracts_by_table_key
 
 if TYPE_CHECKING:
     from pandera import DataFrameSchema
@@ -120,7 +120,9 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
     dataset_schemas = _get_dataset_schemas()
     schemas: dict[str, DatasetSchema] = {}
 
-    for table_key, contract in iter_contracts_by_table_key():
+    for table_key, contract in iter_contracts_by_table_key(
+        settings=ContractResolutionSettings(include_target_metadata=True)
+    ):
         pandera_schema = dataset_schemas.get(table_key)
 
         if pandera_schema is None:

@@ -21,8 +21,6 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import (
-    AUDIT_LOG_PATH,
-    AUDIT_TABLE_ENABLED,
     MAX_EXPORT_LIMIT,
     AuditRecord,
     ExportCallOptions,
@@ -53,6 +51,7 @@ from codeintel.build.exports.writers import (
     write_jsonl_records,
     write_parquet_relation,
 )
+from codeintel.build.settings import get_build_settings
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.queries.safe import safe_count
 
@@ -380,11 +379,15 @@ def export_all_datasets(
     )
     written.append(manifest_path)
 
-    if AUDIT_LOG_PATH is not None or AUDIT_TABLE_ENABLED:
+    audit_settings = get_build_settings()
+    if (
+        audit_settings.export_audit_log_path is not None
+        or audit_settings.export_audit_table_enabled
+    ):
         log.debug(
             "Export audit enabled: log_path=%s table_enabled=%s",
-            AUDIT_LOG_PATH,
-            AUDIT_TABLE_ENABLED,
+            audit_settings.export_audit_log_path,
+            audit_settings.export_audit_table_enabled,
         )
 
     _validate_written_exports(written, registry.by_table_key, opts)

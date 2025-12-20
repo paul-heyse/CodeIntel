@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from codeintel.build.engine_version import get_build_engine_version
+from codeintel.build.settings import BuildSettings
 from codeintel.build.parameters import TargetParameters
 
 if TYPE_CHECKING:
@@ -31,6 +32,7 @@ def compute_input_hash(
     options_hash: str | None = None,
     *,
     manifests: Mapping[str, OutputManifest] | None = None,
+    settings: BuildSettings | None = None,
 ) -> str:
     """Compute content-addressable hash of a target's inputs.
 
@@ -55,6 +57,8 @@ def compute_input_hash(
     manifests
         Optional pre-loaded mapping of target names to manifests.
         If provided, avoids per-dependency DB round trips.
+    settings
+        Optional BuildSettings to control engine version resolution.
 
     Returns
     -------
@@ -73,6 +77,7 @@ def compute_input_hash(
         gateway=gateway,
         options_hash=options_hash,
         manifests=manifests,
+        settings=settings,
     )
     return input_hash
 
@@ -84,6 +89,7 @@ def compute_input_hash_with_deps(
     options_hash: str | None = None,
     *,
     manifests: Mapping[str, OutputManifest] | None = None,
+    settings: BuildSettings | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Compute input hash and return dependency hash mapping.
 
@@ -104,6 +110,8 @@ def compute_input_hash_with_deps(
     manifests
         Optional pre-loaded mapping of target names to manifests.
         If provided, avoids per-dependency DB round trips.
+    settings
+        Optional BuildSettings to control engine version resolution.
 
     Returns
     -------
@@ -121,7 +129,7 @@ def compute_input_hash_with_deps(
     """
     hasher = hashlib.sha256()
 
-    hasher.update(get_build_engine_version().encode("utf-8"))
+    hasher.update(get_build_engine_version(settings).encode("utf-8"))
     hasher.update(b"|")
 
     hasher.update(snapshot.repo.encode("utf-8"))

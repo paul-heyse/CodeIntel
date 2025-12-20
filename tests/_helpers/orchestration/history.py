@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas import ContractProvider, get_contract_provider
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 
@@ -24,29 +23,57 @@ _MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
 _FUNCTION_HISTORY_TABLE_KEY = "analytics.function_history"
 
 
-@lru_cache(maxsize=1)
-def _contracts_by_table() -> dict[str, DatasetContract]:
-    return dict(iter_contracts_by_table_key())
+_DEFAULT_CONTRACTS_BY_TABLE: dict[str, DatasetContract] | None = None
+_DEFAULT_COLUMNS_BY_TABLE: dict[str, tuple[str, ...]] = {}
 
 
-@lru_cache(maxsize=16)
-def _columns_for_table_key(table_key: str) -> tuple[str, ...]:
-    contract = _contracts_by_table().get(table_key)
+def _contracts_by_table(
+    contract_provider: ContractProvider | None = None,
+) -> dict[str, DatasetContract]:
+    if contract_provider is None:
+        global _DEFAULT_CONTRACTS_BY_TABLE
+        if _DEFAULT_CONTRACTS_BY_TABLE is None:
+            _DEFAULT_CONTRACTS_BY_TABLE = dict(
+                get_contract_provider().iter_contracts_by_table_key()
+            )
+        return _DEFAULT_CONTRACTS_BY_TABLE
+    return dict(contract_provider.iter_contracts_by_table_key())
+
+
+def _columns_for_table_key(
+    table_key: str,
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> tuple[str, ...]:
+    if contract_provider is None and table_key in _DEFAULT_COLUMNS_BY_TABLE:
+        return _DEFAULT_COLUMNS_BY_TABLE[table_key]
+    contract = _contracts_by_table(contract_provider).get(table_key)
     schema = getattr(contract, "schema", None)
     if schema is None:
         return ()
-    return tuple(schema.column_names())
+    columns = tuple(schema.column_names())
+    if contract_provider is None:
+        _DEFAULT_COLUMNS_BY_TABLE[table_key] = columns
+    return columns
 
 
-def _require_columns(table_key: str) -> tuple[str, ...]:
-    columns = _columns_for_table_key(table_key)
+def _require_columns(
+    table_key: str,
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> tuple[str, ...]:
+    columns = _columns_for_table_key(table_key, contract_provider=contract_provider)
     if not columns:
         msg = f"Missing schema columns for {table_key}"
         raise ValueError(msg)
     return columns
 
 
-def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
+def _function_profile_row(
+    spec: SnapshotSpec,
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> tuple[object, ...]:
     """Build a function profile row from a snapshot spec.
 
     Returns
@@ -54,7 +81,9 @@ def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
     tuple[object, ...]
         Row tuple for function_profile table.
     """
-    columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY)
+    columns = _require_columns(
+        _FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider
+    )
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {
@@ -79,7 +108,11 @@ def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
     return tuple(defaults[col] for col in columns)
 
 
-def _module_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
+def _module_profile_row(
+    spec: SnapshotSpec,
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> tuple[object, ...]:
     """Build a module profile row from a snapshot spec.
 
     Returns
@@ -87,7 +120,7 @@ def _module_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
     tuple[object, ...]
         Row tuple for module_profile table.
     """
-    columns = _require_columns(_MODULE_PROFILE_TABLE_KEY)
+    columns = _require_columns(_MODULE_PROFILE_TABLE_KEY, contract_provider=contract_provider)
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {
@@ -106,7 +139,12 @@ def _module_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
     return tuple(defaults[col] for col in columns)
 
 
-def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
+def create_snapshot_db(
+    base_dir: Path,
+    spec: SnapshotSpec,
+    *,
+    contract_provider: ContractProvider | None = None,
+) -> Path:
     """
     Create a minimal snapshot DuckDB with function/module profile rows.
 
@@ -128,10 +166,20 @@ def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
     gateway = open_gateway(cfg)
     con = gateway.con
     apply_all_schemas(con)
-    fp_columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY)
-    mp_columns = _require_columns(_MODULE_PROFILE_TABLE_KEY)
-    fp_df = pd.DataFrame([_function_profile_row(spec)], columns=pd.Index(fp_columns))
-    mp_df = pd.DataFrame([_module_profile_row(spec)], columns=pd.Index(mp_columns))
+    fp_columns = _require_columns(
+        _FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider
+    )
+    mp_columns = _require_columns(
+        _MODULE_PROFILE_TABLE_KEY, contract_provider=contract_provider
+    )
+    fp_df = pd.DataFrame(
+        [_function_profile_row(spec, contract_provider=contract_provider)],
+        columns=pd.Index(fp_columns),
+    )
+    mp_df = pd.DataFrame(
+        [_module_profile_row(spec, contract_provider=contract_provider)],
+        columns=pd.Index(mp_columns),
+    )
     con.register("fp_df", fp_df)
     con.register("mp_df", mp_df)
     con.execute("INSERT INTO analytics.function_profile BY NAME SELECT * FROM fp_df")
@@ -143,10 +191,14 @@ def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
 def insert_function_history_row(
     gateway: StorageGateway,
     spec: SnapshotSpec,
+    *,
+    contract_provider: ContractProvider | None = None,
 ) -> None:
     """Insert a minimal function_history row for validation helpers."""
     con = gateway.con
-    fh_columns = _require_columns(_FUNCTION_HISTORY_TABLE_KEY)
+    fh_columns = _require_columns(
+        _FUNCTION_HISTORY_TABLE_KEY, contract_provider=contract_provider
+    )
     defaults: dict[str, object | None] = dict.fromkeys(fh_columns, None)
     now = datetime.now(tz=UTC)
     defaults.update(

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -17,22 +16,23 @@ from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
 from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
+from codeintel.build.settings import BuildSettings, get_build_settings
 from codeintel.build.table_keys import split_table_key
 from codeintel.core.errors.problem_details import ProblemDetailBuilder
 from codeintel.core.errors.schema import SchemaError
+from codeintel.storage.protocols import ExportRelation
+from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 log = logging.getLogger(__name__)
 
 MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
-AUDIT_LOG_PATH = os.getenv("CODEINTEL_EXPORT_AUDIT_LOG")
-AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ def build_export_relation(
     table_key: str,
     row_limit: int,
     row_offset: int,
-) -> DuckDBRelation:
+) -> ExportRelation:
     """Build a DuckDB relation for export.
 
     Parameters
@@ -337,12 +337,13 @@ def build_export_relation(
 
     Returns
     -------
-    DuckDBRelation
+    ExportRelation
         Relation ready for export.
     """
     expr = build_export_expr(gateway, table_key, limit=row_limit, offset=row_offset)
     sql = compile_export_sql(expr)
-    return gateway.con.sql(sql)
+    relation = gateway.con.sql(sql)
+    return adapt_duckdb_relation(relation)
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +355,7 @@ def write_audit_entry(
     record: AuditRecord,
     *,
     con: DuckDBConnection,
+    settings: BuildSettings | None = None,
 ) -> None:
     """Write an audit entry for an export operation.
 
@@ -363,8 +365,11 @@ def write_audit_entry(
         Audit record to write.
     con
         DuckDB connection for table logging.
+    settings
+        Optional BuildSettings override for audit configuration.
     """
-    if AUDIT_LOG_PATH is None and not AUDIT_TABLE_ENABLED:
+    resolved = get_build_settings() if settings is None else settings
+    if resolved.export_audit_log_path is None and not resolved.export_audit_table_enabled:
         return
     json_record = {
         "table": record.table_name,
@@ -373,12 +378,12 @@ def write_audit_entry(
         "duration_s": record.duration_s,
         "output": str(record.output_path),
     }
-    if AUDIT_LOG_PATH is not None:
-        with Path(AUDIT_LOG_PATH).open("a", encoding="utf-8") as handle:
+    if resolved.export_audit_log_path is not None:
+        with Path(resolved.export_audit_log_path).open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(json_record))
             handle.write("\n")
 
-    if AUDIT_TABLE_ENABLED:
+    if resolved.export_audit_table_enabled:
         con.execute(
             """
             CREATE TABLE IF NOT EXISTS metadata.export_audit (
@@ -430,8 +435,6 @@ def default_validation_schemas() -> list[str]:
 
 
 __all__ = [
-    "AUDIT_LOG_PATH",
-    "AUDIT_TABLE_ENABLED",
     "MAX_EXPORT_LIMIT",
     "AuditRecord",
     "ExportCallOptions",

@@ -12,10 +12,13 @@ from dataclasses import dataclass
 __all__ = [
     "ParsedTableKey",
     "TableKey",
+    "TableKeyValidationError",
+    "is_valid_table_key",
     "parse_table_key",
     "split_table_key",
     "split_table_key_or_default",
     "table_name_from_key",
+    "try_parse_table_key",
     "validate_table_key",
 ]
 
@@ -34,6 +37,10 @@ class ParsedTableKey:
 _TABLE_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*$")
 
 
+class TableKeyValidationError(ValueError):
+    """Raised when a table key is invalid or not schema-qualified."""
+
+
 def validate_table_key(table_key: TableKey) -> None:
     """Validate that a table key is schema-qualified and well-formed.
 
@@ -44,15 +51,24 @@ def validate_table_key(table_key: TableKey) -> None:
 
     Raises
     ------
-    ValueError
+    TableKeyValidationError
         If the table key is not schema-qualified or contains invalid characters.
     """
     if "." not in table_key:
         message = f"Table key must be schema-qualified: {table_key}"
-        raise ValueError(message)
+        raise TableKeyValidationError(message)
     if not _TABLE_KEY_PATTERN.match(table_key):
         message = f"Invalid table key format: {table_key}"
-        raise ValueError(message)
+        raise TableKeyValidationError(message)
+
+
+def is_valid_table_key(table_key: TableKey) -> bool:
+    """Return True when a table key is schema-qualified and valid."""
+    try:
+        validate_table_key(table_key)
+    except TableKeyValidationError:
+        return False
+    return True
 
 
 def parse_table_key(table_key: TableKey) -> ParsedTableKey:
@@ -71,6 +87,14 @@ def parse_table_key(table_key: TableKey) -> ParsedTableKey:
     validate_table_key(table_key)
     schema_name, table_name = table_key.split(".", maxsplit=1)
     return ParsedTableKey(schema=schema_name, name=table_name)
+
+
+def try_parse_table_key(table_key: TableKey) -> ParsedTableKey | None:
+    """Parse a table key, returning None when invalid."""
+    try:
+        return parse_table_key(table_key)
+    except TableKeyValidationError:
+        return None
 
 
 def split_table_key(table_key: TableKey) -> tuple[str, str]:

@@ -50,6 +50,7 @@ from codeintel.core.ibis_typing import (
     le,
     not_null,
 )
+from codeintel.storage.helpers.table_key import is_valid_table_key
 from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
@@ -94,6 +95,13 @@ DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
 )
 
 log = logging.getLogger(__name__)
+
+
+def _ensure_valid_table_key(table_key: str) -> bool:
+    if not is_valid_table_key(table_key):
+        log.debug("Invalid table key provided: %s", table_key)
+        return False
+    return True
 
 
 class UnsafeSqlError(ValueError):
@@ -429,7 +437,10 @@ def safe_count_rows(
     """
     if con is None:
         return None
-    return count_rows_for_tables(con, tuple(tables), repo=repo, commit=commit)
+    table_list = tuple(tables)
+    if any(not _ensure_valid_table_key(table_key) for table_key in table_list):
+        return None
+    return count_rows_for_tables(con, table_list, repo=repo, commit=commit)
 
 
 def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
@@ -453,6 +464,8 @@ def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
     >>> count
     42
     """
+    if not _ensure_valid_table_key(table_key):
+        return None
     try:
         tbl = ibis_facade.table(gateway, table_key)
         return execute_int(tbl.count(), ctx=f"{table_key}.count()")
@@ -482,6 +495,8 @@ def safe_count_with_scope(
     int | None
         Row count or None if query failed.
     """
+    if not _ensure_valid_table_key(table_key):
+        return None
     try:
         tbl = ibis_facade.table(gateway, table_key)
         filtered = filter_by(tbl, tbl.repo == snapshot.repo, tbl.commit == snapshot.commit)
@@ -506,6 +521,8 @@ def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
     bool
         True if table exists, False otherwise.
     """
+    if not _ensure_valid_table_key(table_key):
+        return False
     try:
         ibis_facade.table(gateway, table_key)
     except DUCKDB_QUERY_ERRORS:
@@ -529,6 +546,8 @@ def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
     set[str]
         Column names, or empty set if query failed.
     """
+    if not _ensure_valid_table_key(table_key):
+        return set()
     try:
         tbl = ibis_facade.table(gateway, table_key)
         return set(tbl.columns)
@@ -558,6 +577,8 @@ def safe_count_nulls(
     int
         Count of NULL values, or 0 if query failed.
     """
+    if not _ensure_valid_table_key(table_key):
+        return 0
     try:
         tbl = ibis_facade.table(gateway, table_key)
         col = get_column(tbl, column)
@@ -589,6 +610,8 @@ def safe_min_value(
     float | None
         Minimum value or None if query failed or no data.
     """
+    if not _ensure_valid_table_key(table_key):
+        return None
     try:
         tbl = ibis_facade.table(gateway, table_key)
         col = get_column(tbl, column)
@@ -619,6 +642,8 @@ def safe_max_value(
     float | None
         Maximum value or None if query failed or no data.
     """
+    if not _ensure_valid_table_key(table_key):
+        return None
     try:
         tbl = ibis_facade.table(gateway, table_key)
         col = get_column(tbl, column)
@@ -649,6 +674,8 @@ def safe_count_non_positive(
     int
         Count of non-positive values, or 0 if query failed.
     """
+    if not _ensure_valid_table_key(table_key):
+        return 0
     try:
         tbl = ibis_facade.table(gateway, table_key)
         col = get_column(tbl, column)
@@ -680,6 +707,8 @@ def safe_count_duplicates(
     int
         Count of duplicate values (total rows - distinct), or 0 if query failed.
     """
+    if not _ensure_valid_table_key(table_key):
+        return 0
     try:
         tbl = ibis_facade.table(gateway, table_key)
         col = get_column(tbl, column)
@@ -714,6 +743,8 @@ def safe_not_null_fraction(
     float
         Fraction of non-null values (0.0 to 1.0), or 0.0 if query failed.
     """
+    if not _ensure_valid_table_key(table_key):
+        return 0.0
     try:
         tbl = ibis_facade.table(gateway, table_key)
         col = get_column(tbl, column)
@@ -770,6 +801,10 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
     int
         Count of orphaned references, or 0 if query failed.
     """
+    if not _ensure_valid_table_key(fk.source_table):
+        return 0
+    if not _ensure_valid_table_key(fk.ref_table):
+        return 0
     try:
         src_tbl = ibis_facade.table(gateway, fk.source_table)
         tgt_tbl = ibis_facade.table(gateway, fk.ref_table)
