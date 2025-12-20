@@ -53,25 +53,57 @@ resolve schema lazily at execution time.
 - Optional: extend SchemaManifest with provenance and schema hash metadata (backward compatible).
 
 ## Action items
-[ ] Define SchemaDerivation protocol and SchemaIndex builder from the global TargetGraph/Runtime.
-[ ] Attach SchemaIndex to TargetMetadataService (global graph) and expose read-only access.
-[ ] Implement DagSchemaProvider and wire SchemaService to use it by default.
-[ ] Replace column_order_for_table_key import-time calls with deferred column resolution:
+[x] Define SchemaDerivation protocol and SchemaIndex builder from the global TargetGraph/Runtime.
+[x] Attach SchemaIndex to TargetMetadataService (global graph) and expose read-only access.
+[x] Implement DagSchemaProvider and wire SchemaService to use it by default.
+[x] Replace column_order_for_table_key import-time calls with deferred column resolution:
     - update saver decorator usage to pass a sentinel/empty tuple
     - resolve columns inside DuckDBRowsSaver using SchemaService/SchemaIndex
-[ ] Refactor ContractService to avoid singleton lock re-entrancy and to use DAG-first schemas.
-[ ] Update schema compilation to read from SchemaIndex and honor global-graph determinism:
+[x] Refactor ContractService to avoid singleton lock re-entrancy and to use DAG-first schemas.
+[x] Update schema compilation to read from SchemaIndex and honor global-graph determinism:
     - keep manifest selection tied to TargetMetadataService
     - ensure infer_native defaults align with DAG-first behavior
-[ ] Migrate declared schemas to source-only and add explicit override hooks for non-inferable outputs.
-[ ] Add tests that:
-    - forbid import-time DAG/schema resolution
-    - verify manifest determinism against the global DAG
-    - validate fallback behavior for sources and inferable outputs
-[ ] Add performance and stability safeguards:
-    - cache SchemaIndex in memory
-    - ensure error reporting is deterministic and traceable
-[ ] Update documentation and plan references to reflect DAG-first schema authority.
+[x] Migrate declared schemas to source-only and add explicit override hooks for non-inferable outputs.
+[x] Add tests that:
+    - [x] forbid import-time DAG/schema resolution
+    - [x] verify manifest determinism against the global DAG (source-only registry)
+    - [x] validate override behavior for non-inferable outputs
+[x] Add performance and stability safeguards:
+    - [x] cache SchemaIndex in memory
+    - [x] guard singleton re-entrancy for DAG/bootstrap paths
+    - [x] ensure inference error reporting is deterministic and traceable
+[x] Update documentation and plan references to reflect DAG-first schema authority.
+
+## Open implementation detail
+
+### Declared schemas become source-only
+- Implement `source_declared_schema_provider` in `src/codeintel/core/schemas/declared.py`.
+- Build-facing provider filters out DAG outputs using `TargetSystem.all_table_keys`.
+- Target spec helpers now use full declared registry only for explicit overrides.
+
+### Explicit override hooks for non-inferable outputs
+- `TargetSpecOptions` now accepts `override_tables`.
+- `build_schema_index` treats placeholder schemas as missing overrides and raises for
+  non-inferable outputs without explicit overrides.
+
+### Schema provider behavior after source-only migration
+- Unified provider now falls back to source-only declared schemas; DAG outputs are resolved
+  via SchemaIndex/overrides.
+
+### Tests to add/extend
+- Deterministic manifest tests now use the DAG-first provider.
+- Explicit override tests cover missing override errors and override resolution.
+- Saver tests confirm deferred column resolution at execution time with contract enforcement.
+
+### Optional manifest provenance
+If adopted, extend `SchemaManifest` with additive, opt-in provenance for tables, views, and
+artifacts (manifest version remains v2). The best-in-class design captures schema provenance for
+tables/views and lineage back to source tables for artifacts.
+
+- Tables and views: include `schema_hash`, `derivation_kind`, `derivation_source`.
+- Artifacts: include `source_table_keys` plus `source_schema_hashes` (aligned to table keys).
+- Keep provenance opt-in via `SchemaManifestRequest.include_provenance` to avoid default churn.
+- Update manifest JSON snapshots and diff tooling to tolerate the additive fields.
 
 ## Testing and validation
 - uv run python -m tools.quality_report --output build/quality-results/quality_report.json

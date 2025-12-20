@@ -16,8 +16,10 @@ from codeintel.build.schemas.diff import (
     compute_manifest_diffs,
 )
 from codeintel.build.schemas.manifest import (
+    ArtifactProvenance,
     ExportArtifact,
     SchemaManifest,
+    TableProvenance,
 )
 from codeintel.core.schemas.primitives import Column, TableSchema
 from tests._helpers.assertions.expectation_assertions import (
@@ -273,6 +275,97 @@ class TestSchemaManifestV2:
         expect_not_in("artifacts", json_obj)
 
     @staticmethod
+    def test_v2_manifest_to_json_omits_provenance(
+        sample_table: TableSchema,
+    ) -> None:
+        """Test that provenance fields are omitted when not provided."""
+        manifest = SchemaManifest(
+            version="v2",
+            tables=(sample_table,),
+        )
+        json_obj = manifest.to_json_obj()
+
+        tables = json_obj.get("tables")
+        if not isinstance(tables, list):
+            pytest.fail("Expected tables to be a list")
+        table_obj = tables[0]
+        if not isinstance(table_obj, dict):
+            pytest.fail("Expected table to be a dict")
+        expect_not_in("schema_hash", table_obj)
+        expect_not_in("derivation_kind", table_obj)
+        expect_not_in("derivation_source", table_obj)
+
+    @staticmethod
+    def test_v2_manifest_includes_provenance(
+        sample_table: TableSchema,
+        sample_view: TableSchema,
+        sample_artifact: ExportArtifact,
+    ) -> None:
+        """Test that provenance fields are serialized for tables, views, and artifacts."""
+        table_provenance = {
+            sample_table.table_key: TableProvenance(
+                schema_hash="table-hash",
+                derivation_kind="explicit_override",
+                derivation_source="test_target",
+            )
+        }
+        view_provenance = {
+            sample_view.table_key: TableProvenance(
+                schema_hash="view-hash",
+                derivation_kind="view_inferred",
+                derivation_source="duckdb",
+            )
+        }
+        artifact_provenance = {
+            sample_artifact.filename: ArtifactProvenance(
+                source_table_keys=(sample_table.table_key,),
+                source_schema_hashes=("table-hash",),
+            )
+        }
+        manifest = SchemaManifest(
+            version="v2",
+            tables=(sample_table,),
+            views=(sample_view,),
+            artifacts=(sample_artifact,),
+            table_provenance=table_provenance,
+            view_provenance=view_provenance,
+            artifact_provenance=artifact_provenance,
+        )
+        json_obj = manifest.to_json_obj()
+
+        tables = json_obj.get("tables")
+        views = json_obj.get("views")
+        artifacts = json_obj.get("artifacts")
+        if not isinstance(tables, list):
+            pytest.fail("Expected tables to be a list")
+        if not isinstance(views, list):
+            pytest.fail("Expected views to be a list")
+        if not isinstance(artifacts, list):
+            pytest.fail("Expected artifacts to be a list")
+
+        table_obj = tables[0]
+        view_obj = views[0]
+        artifact_obj = artifacts[0]
+        if not isinstance(table_obj, dict):
+            pytest.fail("Expected table to be a dict")
+        if not isinstance(view_obj, dict):
+            pytest.fail("Expected view to be a dict")
+        if not isinstance(artifact_obj, dict):
+            pytest.fail("Expected artifact to be a dict")
+
+        expect_equal(table_obj["schema_hash"], "table-hash")
+        expect_equal(table_obj["derivation_kind"], "explicit_override")
+        expect_equal(table_obj["derivation_source"], "test_target")
+        expect_equal(view_obj["schema_hash"], "view-hash")
+        expect_equal(view_obj["derivation_kind"], "view_inferred")
+        expect_equal(view_obj["derivation_source"], "duckdb")
+        provenance_obj = artifact_obj.get("provenance")
+        if not isinstance(provenance_obj, dict):
+            pytest.fail("Expected artifact provenance to be a dict")
+        expect_equal(provenance_obj["source_table_keys"], [sample_table.table_key])
+        expect_equal(provenance_obj["source_schema_hashes"], ["table-hash"])
+
+    @staticmethod
     def test_manifest_json_roundtrip(
         sample_table: TableSchema,
         sample_view: TableSchema,
@@ -371,6 +464,70 @@ class TestManifestDiffV2:
         expect_equal(result.tables_with_drift, 0)
         expect_equal(result.views_with_drift, 0)
         expect_equal(result.artifacts_with_drift, 0)
+
+    @staticmethod
+    def test_diff_ignores_provenance_changes(
+        base_table: TableSchema,
+        base_view: TableSchema,
+        base_artifact: ExportArtifact,
+    ) -> None:
+        """Test that provenance-only changes do not register as drift."""
+        expected = SchemaManifest(
+            version="v2",
+            tables=(base_table,),
+            views=(base_view,),
+            artifacts=(base_artifact,),
+            table_provenance={
+                base_table.table_key: TableProvenance(
+                    schema_hash="hash-a",
+                    derivation_kind="explicit_override",
+                    derivation_source="target_a",
+                )
+            },
+            view_provenance={
+                base_view.table_key: TableProvenance(
+                    schema_hash="hash-view-a",
+                    derivation_kind="view_inferred",
+                    derivation_source="duckdb",
+                )
+            },
+            artifact_provenance={
+                base_artifact.filename: ArtifactProvenance(
+                    source_table_keys=(base_table.table_key,),
+                    source_schema_hashes=("hash-a",),
+                )
+            },
+        )
+        actual = SchemaManifest(
+            version="v2",
+            tables=(base_table,),
+            views=(base_view,),
+            artifacts=(base_artifact,),
+            table_provenance={
+                base_table.table_key: TableProvenance(
+                    schema_hash="hash-b",
+                    derivation_kind="inferred_ibis",
+                    derivation_source="target_b",
+                )
+            },
+            view_provenance={
+                base_view.table_key: TableProvenance(
+                    schema_hash="hash-view-b",
+                    derivation_kind="view_inferred",
+                    derivation_source="duckdb",
+                )
+            },
+            artifact_provenance={
+                base_artifact.filename: ArtifactProvenance(
+                    source_table_keys=(base_table.table_key,),
+                    source_schema_hashes=("hash-b",),
+                )
+            },
+        )
+        result = compute_manifest_diffs(expected, actual)
+
+        expect_false(result.has_any_changes)
+        expect_false(result.has_breaking_changes)
 
     @staticmethod
     def test_diff_view_added(
