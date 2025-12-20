@@ -5,8 +5,9 @@ This package uses lazy exports to avoid import cycles with the storage layer.
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
+
+from codeintel.core.imports.lazy import lazy_import
 
 if TYPE_CHECKING:
     from codeintel.build.serving.manifest import ServingSnapshotManifest
@@ -43,7 +44,7 @@ def __getattr__(name: str) -> object:
     if target is None:
         raise AttributeError(name)
     module_name, attr_name = target
-    module = importlib.import_module(module_name)
+    module = lazy_import(module_name)
     value = getattr(module, attr_name)
     globals()[name] = value
     return value

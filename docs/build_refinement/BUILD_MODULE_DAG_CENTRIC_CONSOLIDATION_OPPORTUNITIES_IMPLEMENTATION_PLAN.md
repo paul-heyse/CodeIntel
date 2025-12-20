@@ -1,477 +1,436 @@
-# BUILD MODULE — DAG‑CENTRIC CONSOLIDATION OPPORTUNITIES (IMPLEMENTATION PLAN)
+# BUILD MODULE - DAG-CENTRIC CONSOLIDATION OPPORTUNITIES (IMPLEMENTATION PLAN)
 
-## Context
-This plan captures a set of consolidation opportunities in `src/codeintel/build` that aim to:
+## Context and goals
+The build module has matured into a Hamilton-first, DAG-centric architecture, but several
+capabilities are implemented multiple times across parallel modules. This plan consolidates
+duplicated functionality into canonical services so we can:
 
-- Reduce the number of “ways to do the same thing”.
-- Make the Hamilton DAG the single source of truth for dependencies and execution.
-- Harden boundaries between build orchestration and storage I/O.
-- Improve extensibility and maintainability while preserving (or increasing) functionality.
+- reduce drift between planning and execution
+- harden schema and contract guarantees
+- simplify extensibility for new targets, exports, and serving artifacts
+- keep behavior stable while improving maintainability
 
-This plan is intentionally **DAG-first**: native Hamilton modules + templates are treated as the
-primary system boundary, and everything else becomes an adapter around that core.
+This plan operationalizes the consolidation opportunities identified in the build review and
+should be executed incrementally to preserve stability.
 
-## Success Criteria (Definition of Done)
-Across the scope below:
-
-- There is **one canonical API** for accessing target metadata/runtime/graph (no overlapping
-  registries/catalogs in active use).
-- All native targets in `src/codeintel/build/hamilton/native/*` follow one of a small set of
-  **canonical Hamilton patterns** (single-table, multi-table, tool/artifact, views).
-- Tagging and naming conventions are **uniform** and enforced by guardrails.
-- Build→storage write behavior goes through **Warehouse / saver boundaries** (no ad-hoc writes).
-- Planning/state/observability are unified around a single model and do not drift.
-- Legacy/compatibility code introduced during migration is **fully removed** by the end.
-- Quality gates pass:
+## Success criteria (definition of done)
+- A single canonical schema service resolves TableSchema, Pandera schema, JSON Schema, row
+  bindings, and digests with no conflicting sources of truth.
+- Target metadata, dependencies, and output inventories are derived once and reused everywhere.
+- Export and serving artifact pipelines use a single export engine and shared serialization
+  utilities.
+- Configuration resolution and options hashing are driven by one effective config stack.
+- Planning and execution share one skip/hash evaluator and shared materializer base logic.
+- Utility layers (lazy import, table key validation, tag normalization, error envelopes) are
+  centralized and reused across modules.
+- All quality gates pass:
   - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
   - `uv run pytest -q`
 
-## Guiding Principles
-- **Hamilton DAG is the source of truth**: dependencies are derived, never duplicated in metadata.
-- **Single canonical entrypoints**: one “right import” per concern.
-- **Hard boundaries**:
-  - Build nodes compute; storage writes happen via Warehouse/savers.
-  - Runtime-safe annotations only where Hamilton interprets types.
-- **Delete deprecated code early**: once migrated, remove the old path to avoid confusion.
-- **Guardrails over conventions**: add fast checks to prevent drift.
-
----
-
-## Status (as of 2025-12-18)
-- Overall: Workstream C is largely complete; A/D/E are partially complete; B/F/G/H are pending.
-- Verification: build-scoped `ruff`/`pyright`/`pyrefly` are clean; full `pytest` is currently blocked by a
-  storage import cycle (outside the build-only scope for this plan).
-
-### Status summary
-| Workstream | Status | Notes |
-|---|---|---|
-| A — Target metadata entrypoints | Partially complete | Legacy `codeintel.build.registry` still widely referenced. |
-| B — Canonical target patterns | Not started | Templates exist; refactors not yet rolled out. |
-| C — Tagging + guardrails | Largely complete | Native modules migrated; guardrail added. |
-| D — Materialization boundary | Partially complete | Options helper + metadata typing fixed; remaining direct `MaterializeOptions(...)` call sites. |
-| E — Options loading | Partially complete | Loader added + several migrations; remaining `GraphRuntimeOptions()` call sites. |
-| F — Plan/state/observability | Not started | Requires design decision + refactor of `state*`/`planner`/`observability`. |
-| G — Export consolidation | Not started | Both `build/exports/*` and `hamilton/native/export/*` still exist. |
-| H — support_factory refactor | Not started | `support_factory.py` still monolithic. |
-
----
-
-## Workstream A — Consolidate target metadata entrypoints (one canonical API)
-
-### Goal
-Eliminate overlapping APIs so the codebase has exactly one “target system” abstraction:
-
-- Runtime (Hamilton driver + mappings)
-- TargetGraph (Hamilton-derived dependencies)
-- Indexes (by name / table_key / artifact_name)
-
-### Current state
-Multiple entrypoints overlap in responsibilities:
-- `src/codeintel/build/target_system.py` (already close to the desired end state)
-- `src/codeintel/build/registry.py`
-- `src/codeintel/build/target_catalog.py`
-- `src/codeintel/build/hamilton/native/registry.py`
-
-### Proposed end state
-- `TargetSystem` in `src/codeintel/build/target_system.py` becomes the **only** supported access
-  point for target runtime + graph + indexes.
-- The other modules are either:
-  - Deleted, or
-  - Reduced to **tiny** compatibility shims that delegate to `TargetSystem` (with a clear
-    deprecation window, and then deletion).
-
-### Implementation steps
-1. Inventory imports of the “old” entrypoints:
-   - Find all references to `codeintel.build.registry.get_target_graph`
-   - Find all references to `codeintel.build.target_catalog.load_target_specs/load_target_catalog`
-   - Find all references to `codeintel.build.hamilton.native.registry.*`
-2. Decide (and document) the canonical surfaces:
-   - `load_target_system() -> TargetSystem`
-   - `TargetSystem.graph`, `TargetSystem.runtime`, `TargetSystem.get_target(...)`,
-     `TargetSystem.target_for_table_key(...)`, `TargetSystem.target_for_artifact(...)`
-3. Migrate call sites to `TargetSystem` and delete/replace duplicates.
-4. Add a guardrail to prevent reintroducing non-canonical imports.
-
-### Status
-- [x] Deleted `src/codeintel/build/hamilton/native/registry.py`.
-- [x] Added `src/codeintel/build/hamilton/impl_kind.py` and migrated build call sites off the deleted native registry.
-- [x] Simplified `src/codeintel/build/target_catalog.py` to specs-only (`load_target_specs()`), removing the unused
-  `TargetCatalog`/`load_target_catalog()` surfaces.
-- [ ] Migrate remaining imports of `codeintel.build.registry.get_target_graph` to `codeintel.build.target_system.load_target_system().graph`.
-- [ ] Decommission and delete `src/codeintel/build/registry.py` once downstream imports are removed (tools/tests/docs).
-- [ ] Add a guardrail banning `codeintel.build.registry` imports after migration is complete (to prevent drift).
-
-### Acceptance gates
-- `load_target_system()` is used by all core consumers (CLI, schema provider, validation, planner).
-- No remaining imports of the deprecated entrypoints.
-- Guardrails enforce allowed import set.
-
----
-
-## Workstream B — Standardize native target implementations onto canonical Hamilton patterns
-
-### Goal
-Reduce per-target bespoke wiring. Every native target should use one of a small number of patterns
-implemented as reusable templates.
-
-### Canonical patterns (target-level)
-1. **Single-table dataset materialization**
-   - Compute: `ir.Table` (or rows) with stable schema
-   - Materialize: one saver node
-   - Record: `TargetRunRecord` via `record_from_duckdb_materialization`
-2. **Multi-table dataset materialization**
-   - Compute once, extract N tables/row sets, materialize N savers
-   - Record aggregated via `record_from_duckdb_materializations`
-3. **Tool/artifact targets**
-   - Compute tool output (bytes/str/path)
-   - Save via `FileArtifactSaver`
-   - Record via `record_from_file_artifact_materialization`
-4. **Views/materialized views**
-   - Build view expressions; materialize with the same saver interface used for datasets
-   - Record as for dataset materializations
-
-### Current state
-Templates exist but are not consistently used:
-- `src/codeintel/build/hamilton/templates/materialize_template.py`
-- `src/codeintel/build/hamilton/templates/multi_table_pipeline.py`
-- `src/codeintel/build/hamilton/templates/tool_pipeline.py`
-
-Native modules sometimes implement their own variants of “skip+record+save” glue.
-
-### Proposed end state
-- Native targets are “thin”: business logic + minimal wiring.
-- Templates own the orchestration glue.
-- “One way to do it” per pattern.
-
-### Implementation steps
-1. Create/extend a single templates index that explicitly names supported patterns:
-   - e.g., `codeintel.build.hamilton.templates` re-exports + short aliases
-2. For each native target module:
-   - Categorize the target into one canonical pattern.
-   - Refactor to use the corresponding template.
-   - Delete bespoke glue once migrated.
-3. Add guardrails enforcing:
-   - No ad-hoc “record building” in native modules when a template exists.
-   - No duplication of skip-check logic outside `NativeTargetExecutor`/templates.
-
-### Status
-- [ ] Define/export a canonical templates index (and update call sites to use it).
-- [ ] Roll out pattern refactors across `src/codeintel/build/hamilton/native/*` (domain-by-domain).
-- [ ] Delete bespoke “skip+record+save” glue once each module is migrated.
-- [ ] Add guardrails to prevent bespoke orchestration logic reappearing in native modules.
-
-### Acceptance gates
-- Every target module has clear pattern adherence.
-- Reduced boilerplate in `src/codeintel/build/hamilton/native/*`.
-- Guardrails prevent drift.
-
----
-
-## Workstream C — Unify tagging + naming conventions and enforce via guardrails
-
-### Goal
-Avoid tag drift and make tag-based discovery reliable (for validation, semantic compilation, UI,
-etc.).
-
-### Current state
-Mixed usage:
-- `hamilton.function_modifiers.tag` is used directly in some modules.
-- Wrapper helpers exist in `src/codeintel/build/hamilton/tagging.py`.
-
-### Proposed end state
-- All build DAG modules use `codeintel.build.hamilton.tagging` helpers:
-  - `tag_compute`, `tag_materialize`, `tag_tool`, `tag_dataset`, `tag_artifact`
-- Tag keys and node types always align with `codeintel.core.hamilton.tags`.
-
-### Implementation steps
-1. Migrate all native modules to wrapper tagging.
-2. Add guardrails:
-   - Ban direct imports of `hamilton.function_modifiers.tag` in build DAG modules.
-   - Optionally ban use of raw tag string keys outside `codeintel.core.hamilton.tags` and
-     `codeintel.build.hamilton.tagging`.
-3. Add/extend unit tests that scan `src/codeintel/build/hamilton/native` for forbidden patterns.
-
-### Status
-- [x] Migrated native build DAG modules to `codeintel.build.hamilton.tagging` wrapper helpers.
-- [x] Updated `src/codeintel/build/hamilton/nodes/support_factory.py` to use tagging wrappers (and expanded loader tagging).
-- [x] Added guardrail banning `from hamilton.function_modifiers import ... tag ...` under `src/codeintel/build/`.
-- [ ] Optional: add a small scan unit test that asserts the forbidden tag-import pattern does not exist under
-  `src/codeintel/build/hamilton/native` (guardrails already enforce this in CI/quality gates).
-- [ ] Optional: ban raw tag string keys outside `codeintel.core.hamilton.tags`/`codeintel.build.hamilton.tagging`.
-
-### Acceptance gates
-- Tag discovery in `build/hamilton/validate.py` and semantic compilation remains stable.
-- Guardrails reject drift immediately.
-
----
-
-## Workstream D — Make the build→storage materialization boundary uniform
-
-### Goal
-Ensure “write paths” are consistent, auditable, and safe:
-
-- Build does not call storage policy write APIs directly.
-- Build does not reach into raw ibis table access except via well-known seams.
-- Materialization metadata shapes are stable at Hamilton boundaries.
-
-### Proposed end state
-- Warehouse is the canonical write boundary (or savers that delegate to Warehouse).
-- A small allowlist exists for the *only* places where `.ibis.table(...)` is allowed (facade/adapter).
-- A single helper exists to build `MaterializeOptions` consistently (snapshot/mode/owner_target).
-
-### Implementation steps
-1. Make `MaterializeOptions` creation uniform:
-   - Introduce `materialize_options(env, target_name, *, mode=..., snapshot=...)`.
-2. Centralize any remaining “write policy decisions” in Warehouse (not build).
-3. Guardrails:
-   - Ban `.policy.(delete_for_snapshot|bulk_insert*|delete)(` under `src/codeintel/build`.
-   - Ban `.ibis.table(` under `src/codeintel/build` except approved seams.
-4. Add tests enforcing these invariants (fast regex scan).
-
-### Status
-- [x] Added canonical options builder `src/codeintel/build/hamilton/materialize_options.py`.
-- [x] Hardened saver/DAG metadata boundary typing by ensuring saver metadata is a concrete `dict[str, object]`
-  (Hamilton strict-type-safe) and by standardizing on `boundary_types.MaterializationMetadata`.
-- [~] Migrated several native modules to use `materialize_options(...)`; remaining direct `MaterializeOptions(...)`
-  call sites still exist (notably in adapters/materializers).
-- [x] Added guardrails that enforce build/storage boundaries (e.g., banning build calls to `gateway.policy.*` writes
-  and banning direct `.ibis.table(...)` except approved seams).
-- [ ] Finish migrating remaining `MaterializeOptions(...)` construction to `materialize_options(...)` in build-owned
-  code where the option shape impacts dispatch/boundaries.
-- [ ] Add/extend a fast unit test scanning build native modules for forbidden `.policy.*` and `.ibis.table(...)`
-  calls (guardrails already enforce this globally).
-
-### Acceptance gates
-- A code reviewer can answer “how does data get written?” by reading Warehouse + savers only.
-- Guardrails + tests keep the boundary intact.
-
----
-
-## Workstream E — Unify options loading (fix plan/execution drift)
-
-### Problem
-Planning computes an options hash, but many targets instantiate options via `Options()` and do not
-consume config → options at runtime. This risks:
-- “Recompute when nothing changes”
-- “Don’t recompute when behavior changes”
-
-### Proposed end state
-- A single “options loading” utility exists:
-  - `load_target_options(env, target_name, OptionsType)` (or similar)
-- Options dataclasses can be populated from `env.config.parameters_for(target_name)` deterministically.
-- The same options object used for compute is used for `options_hash` computation.
-
-### Implementation steps
-1. Introduce a canonical options loading API in build/hamilton:
-   - Responsible for extracting per-target config section and validating types.
-2. Standardize each target options dataclass to support deterministic construction:
-   - `@classmethod from_parameters(params: TargetParameters) -> Options`
-3. Update native targets to call `load_target_options(...)` rather than `Options()`.
-4. Ensure planner hashes exactly what execution consumes.
-5. Guardrails:
-   - Ban direct `Options()` instantiation in native modules (allow in tests).
-
-### Status
-- [x] Added canonical options loader `src/codeintel/build/hamilton/options_loading.py`.
-- [~] Migrated a number of native targets to use `load_target_options(...)` (not yet exhaustive).
-- [ ] Migrate remaining direct options instantiations to `load_target_options(...)`, including remaining
-  `GraphRuntimeOptions()` call sites in analytics/graphs modules.
-- [ ] Ensure planner hashing (`options_hash`) exactly reflects the options consumed at execution for all targets.
-- [ ] Add guardrail banning direct `Options()` instantiation in native modules (if still needed after migrations).
-
-### Acceptance gates
-- Changing `codeintel.build.toml` yields predictable recompute behavior.
-- Options hashing explains “why will this run?” deterministically.
-
----
-
-## Workstream F — Unify planning, state, and observability around one model
-
-### Goal
-Reduce duplicated concepts (“state”, “plan”, “observability”) to one canonical model that the CLI
-and internal tools use consistently.
-
-### Current state
-- State computation: `src/codeintel/build/state_computer.py`, `src/codeintel/build/state.py`
-- Planning: `src/codeintel/build/hamilton/planner.py`
-- Observability: `src/codeintel/build/hamilton/observability.py`
-
-### Proposed end state
-- One canonical representation:
-  - A single `BuildPlan`/`PlanEntry` model with statuses + reasons + hashes.
-- State and observability helpers become thin views over the plan (or are merged into the same
-  module).
-
-### Implementation steps
-1. Decide the single source of truth (recommended: planner model, because it is Hamilton-first).
-2. Refactor state and observability utilities to delegate to this model.
-3. Update CLI handlers to use the unified plan/state output.
-4. Add regression tests around:
-   - “missing/stale/current/blocked” classification
-   - staleness explanation (`dep_hashes` diffs)
-
-### Status
-- [ ] Pick the canonical model (planner-first is still the recommended direction).
-- [ ] Refactor `src/codeintel/build/state.py` and `src/codeintel/build/state_computer.py` to become thin views over the canonical plan model.
-- [ ] Refactor `src/codeintel/build/hamilton/observability.py` to attach to the canonical plan model (or merge it).
-- [ ] Update CLI codepaths to use the canonical plan/state model consistently.
-- [ ] Add regression tests for classification + staleness explanations.
-
-### Acceptance gates
-- CLI output is consistent across “status”, “plan”, and “why”.
-- No duplication of hash/manifest logic across modules.
-
----
-
-## Workstream G — Export consolidation (DAG-first export behavior)
-
-### Goal
-Avoid “two export systems” drifting:
-- procedural exports under `src/codeintel/build/exports/*`
-- Hamilton export targets under `src/codeintel/build/hamilton/native/export/*`
-
-### Options (choose one)
-1. **Hamilton targets are canonical**: CLI triggers DAG execution of export targets.
-2. **Shared export engine**: keep `build/exports` as the only implementation of export logic, but
-   Hamilton export targets call into it (so there is one writer).
-
-### Implementation steps
-1. Pick the canonical approach above.
-2. Route all “export entrypoints” through that approach.
-3. Delete the unused path (and update docs).
-4. Add guardrails ensuring there is only one supported export invocation path.
-
-### Status
-- [ ] Decide whether `src/codeintel/build/hamilton/native/export/*` is canonical, or whether it should call into
-  `src/codeintel/build/exports/*` as the single implementation.
-- [ ] Route CLI/export entrypoints through the chosen approach.
-- [ ] Delete the deprecated export path after migration.
-- [ ] Add a guardrail that prevents “two export systems” from reappearing.
-
-### Acceptance gates
-- Exports behave identically regardless of entrypoint.
-- Only one implementation of “write JSONL/Parquet” remains.
-
----
-
-## Workstream H — Reduce complexity in `support_factory` via extracted internals + tighter seams
-
-### Goal
-Lower maintenance cost of dynamic node generation while keeping determinism and typing strength.
-
-### Current state
-`src/codeintel/build/hamilton/nodes/support_factory.py` contains multiple concerns:
-- signature mutation
-- module mutation
-- mapping construction
-- node factory logic (datasets/loaders/artifacts/stubs)
-
-### Proposed end state
-- `support_factory` becomes orchestration; internal helpers hold the mechanics.
-- Clear seams exist for:
-  - signature attachment
-  - node attachment
-  - mapping/index building
-  - table_key validation/parsing (single shared contract)
-
-### Implementation steps
-1. Extract internal helpers (e.g., `_signature_tools.py`, `_module_attach.py`, `_mappings.py`).
-2. Add focused unit tests for each helper and a small integration test for module generation.
-3. Ensure table_key validation/parsing uses the shared contract everywhere.
-4. Remove any now-unused duplicated helper logic.
-
-### Status
-- [ ] Extract internals from `src/codeintel/build/hamilton/nodes/support_factory.py` into focused helper modules.
-- [ ] Add focused unit tests for each extracted helper module.
-- [ ] Add a small integration test for generated-module determinism.
-- [ ] Remove duplicated helper logic once extracted.
-
-### Acceptance gates
-- Smaller `support_factory.py`
-- Deterministic generated module output
-- Stable, test-covered internals
-
----
-
-## Sequencing (recommended)
-
-### Phase 0 — Inventory + guardrails scaffolding
-- Add/extend fast guardrails that will protect refactors from regressions:
-  - tagging API enforcement
-  - materialization boundary enforcement
-  - canonical entrypoint imports
-- Add minimal scan tests under `tests/` for invariants.
-
-### Phase 1 — Options loading unification (Workstream E)
-- Low behavioral risk; improves correctness of planning/skip.
-
-### Phase 2 — Tagging/naming unification (Workstream C)
-- Mostly mechanical; reduces drift and enables better discovery.
-
-### Phase 3 — Canonical patterns rollout (Workstream B)
-- Refactor native targets incrementally domain-by-domain:
-  - ingestion → graphs → analytics → export
-- Delete bespoke glue once each module is migrated.
-
-### Phase 4 — Target system entrypoint consolidation (Workstream A)
-- After patterns stabilize, delete duplicate registries/catalogs to reduce confusion.
-
-### Phase 5 — Plan/state/observability unification (Workstream F)
-- Consolidate models and simplify CLI surfaces.
-
-### Phase 6 — Export consolidation (Workstream G)
-- Choose canonical export path and delete the other.
-
-### Phase 7 — support_factory refactor (Workstream H)
-- Safer after the rest is stable; mostly internal re-organization + tests.
-
-### Phase status
-- [x] Phase 0 — Inventory + guardrails scaffolding (infrastructure largely in place; continue extending as needed).
-- [~] Phase 1 — Options loading unification (partially migrated; remaining call sites listed in Workstream E).
-- [x] Phase 2 — Tagging/naming unification (native modules migrated + guardrail in place).
-- [ ] Phase 3 — Canonical patterns rollout
-- [~] Phase 4 — Target system entrypoint consolidation (native registry/catalog dedup done; main registry shim remains).
-- [ ] Phase 5 — Plan/state/observability unification
-- [ ] Phase 6 — Export consolidation
-- [ ] Phase 7 — support_factory refactor
-
----
-
-## Validation / Quality Gates (run after each phase)
-Use the repo’s consolidated quality gates:
-
-```bash
-scripts/bootstrap_codex.sh
-uv sync
-uv run python -m tools.quality_report --output build/quality-results/quality_report.json
-uv run pytest -q
-```
-
-For fast iteration, also run focused tests/guardrails:
-
-```bash
-uv run python -m tools.guardrails
-uv run pytest -q tests/test_build_storage_architecture_invariants.py
-```
-
-### Current validation note
-At the time of the status update above (2025-12-18), full `pytest` is blocked by an import-time error originating in
-`src/codeintel/storage/*` (outside this plan’s build-only scope). Build-scoped static checks were used instead during
-the refactor iterations.
-
----
-
-## Legacy Code Decommissioning Checklist
-For every workstream that introduces a new canonical surface:
-- Update all call sites to the canonical surface.
-- Add a guardrail banning the old import/pattern.
-- Delete the legacy module or reduce it to a 1–2 function forwarder temporarily.
-- Delete the forwarder once downstream references are gone.
-
-This prevents “half-migrated” ambiguity, which is particularly costly in DAG-centric systems.
-
-### Decommissioning status (as of 2025-12-18)
-- [x] Removed legacy `src/codeintel/build/hamilton/native/registry.py`.
-- [x] Removed legacy `TargetCatalog`/`load_target_catalog()` surface in `src/codeintel/build/target_catalog.py`.
-- [ ] Remove the remaining `src/codeintel/build/registry.py` compatibility shim after downstream imports are migrated
-  to `TargetSystem` (this is the largest remaining “legacy entrypoint”).
+## Current status summary (as of this update)
+- Core schema service, target metadata service, tag index, and export writer utilities exist.
+- BuildRunContext and ExecutionPolicy are in place but are not yet the sole source of config and
+  runtime policy across build/plan/execute.
+- Materializer base helpers are extracted, but skip/hash evaluation is still split across
+  planning, run records, and state computation.
+- Legacy schema sources (TABLE_SCHEMAS and contract providers) remain in use and must be removed
+  once ContractService and schema inference are fully consolidated.
+- Export/serving pipelines are partially consolidated; Hamilton export targets still re-implement
+  parts of the export flow, and serving artifacts are not yet fully routed through a single
+  compiler.
+- Quality gates are not yet green; remaining lint/docstring/type parity issues must be resolved
+  after consolidation changes are finalized.
+
+## Scope inventory (all items in this plan)
+
+### Schema and contracts
+- SCHEMA-1: Unify schema source of truth (TableSchema provider vs Pandera DatasetSchema).
+- SCHEMA-2: Collapse contract metadata duplication (OutputContract, DatasetContract, DatasetSchema).
+- SCHEMA-3: Centralize schema inference across provider_hamilton and schemas/compile.
+- SCHEMA-4: Consolidate JSON Schema generation and digest computation.
+- SCHEMA-5: Standardize row bindings and column order; remove hand-maintained column tuples.
+
+### Targets and DAG
+- TD-1: Consolidate target metadata construction into one TargetMetadata service.
+- TD-2: Unify output inventory derivation (introspect, native/outputs, buildspec).
+- TD-3: Route target spec creation through canonical schema provider (avoid TABLE_SCHEMAS drift).
+- TD-4: Centralize Hamilton tag discovery and parsing in a shared TagIndex.
+- TD-5: Consolidate target lookup by table/artifact using TargetSystem indexes.
+
+### Exports and serving
+- EX-1: Consolidate export pipelines (exports engine vs Hamilton-native export targets).
+- EX-2: Centralize JSON serialization and streaming loops for export formats.
+- EX-3: Use a single schema-manifest compiler for serving and CLI export paths.
+- EX-4: Consolidate semantic registry compilation and tag discovery.
+- EX-5: Unify manifest and marker models across exports, serving, and schema manifests.
+
+### Config and options
+- CO-1: Unify BuildConfig, BuildRunConfig, and execution options into BuildRunContext.
+- CO-2: Standardize target option parsing (from_parameters or typed config layer).
+- CO-3: Consolidate TargetExecution and run-level execution options into one policy model.
+- CO-4: Centralize default parameter definitions and eliminate divergent defaults.
+- CO-5: Ensure options hash reflects the effective config stack (profiles + overrides).
+
+### Execution and hashing
+- EH-1: Extract a shared materializer base for DuckDB and artifact savers.
+- EH-2: Centralize skip/hash evaluation for planning and execution.
+- EH-3: De-duplicate options hash computation logic.
+- EH-4: Unify schema and asset fingerprint semantics across subsystems.
+- EH-5: Consolidate expected output references and inventory (datasets/artifacts).
+
+### Infra and utilities
+- IU-1: Replace scattered lazy import patterns with a shared loader or module re-org.
+- IU-2: Centralize table key parsing and validation.
+- IU-3: Centralize tag value normalization.
+- IU-4: Unify BuildError and ExportError into a single error envelope.
+
+## Constraints and guiding principles
+- Preserve behavior and data output semantics unless explicitly improved.
+- Ship changes in small, reviewable increments with compatibility shims.
+- Keep Hamilton DAG as the authoritative source for dependencies and I/O.
+- Prefer immutable, typed service boundaries to avoid drift and side effects.
+
+## Plan overview (phases)
+Each phase lists deliverables, scope coverage, and acceptance gates.
+
+### Phase 0 - Inventory, design, and guardrails
+Deliverables:
+- A lightweight consolidation map doc listing all Scope IDs and current owners.
+- Architecture tests (report-only initially) that detect duplicate schema sources, target metadata
+  duplication, and export pipeline divergence.
+- Baseline parity tests for schemas, buildspec, exports, and serving artifacts.
+
+Scope coverage:
+- Foundation for all scope items.
+
+Acceptance gates:
+- Guardrail tests compile and run locally (can be report-only until later phases).
+- Baseline snapshots recorded for schema/buildspec/export outputs.
+
+### Phase 1 - Canonical schema and contract services
+Deliverables:
+- A canonical SchemaService that resolves:
+  - TableSchema
+  - Pandera schema
+  - JSON Schema and digest
+  - row model and binding metadata
+- A ContractService that exposes output contracts and dataset contracts from a single source.
+- A unified SchemaInferenceService that supports:
+  - single table inference
+  - batch inference
+  - caching and deterministic error policy
+- A ColumnOrder/RowBinding helper that derives ordered columns from the canonical schema.
+
+Scope coverage:
+- SCHEMA-1, SCHEMA-2, SCHEMA-3, SCHEMA-4, SCHEMA-5
+
+Implementation steps:
+1) Define SchemaService interfaces and adapters that wrap:
+   - existing TableSchema registry
+   - Pandera DatasetSchema registry
+   - JSON Schema generators
+2) Add an internal canonical schema record type that aggregates all schema forms and hashes.
+3) Route schema consumers to the new service via adapters:
+   - `codeintel.build.schemas.registry`
+   - `codeintel.build.schemas.json_schema_registry`
+   - `codeintel.build.schemas.row_registry`
+4) Replace manual column tuple usage in build targets with schema-derived column order helpers.
+5) Add compatibility shims to preserve old provider APIs.
+
+Status update:
+- Completed: SchemaService exists in `codeintel.core.schemas`, build wiring in
+  `codeintel.build.schemas.service`, and adapters in registry/json/row registries.
+- Remaining: ContractService not implemented; SchemaInferenceService is still split between
+  provider_hamilton and schemas/compile. Column order helpers are not yet centralized. TABLE_SCHEMAS
+  and contract provider shims still active.
+
+Acceptance gates:
+- Schema resolution parity checks pass (TableSchema, JSON Schema, row bindings).
+- Export validation results unchanged for a representative dataset set.
+
+### Phase 2 - Target metadata, DAG inventory, and tag index consolidation
+Deliverables:
+- A TargetMetadataService that constructs:
+  - TargetGraph
+  - TargetSystem indexes (by name, table, artifact)
+  - Output inventories (datasets and artifacts)
+- A shared TagIndex for Hamilton tags (targets, datasets, views, semantic tags).
+- A single OutputInventoryService used by:
+  - buildspec compilation
+  - expected outputs
+  - schema manifests
+  - asset tracking
+
+Scope coverage:
+- TD-1, TD-2, TD-3, TD-4, TD-5, EH-5
+
+Implementation steps:
+1) Create TargetMetadataService with deterministic build ordering and caching.
+2) Migrate `target_system`, `introspect`, and `spec/compile` to use this service.
+3) Implement TagIndex that:
+   - standardizes tag normalization
+   - provides discovery for targets and semantic views
+4) Replace direct TABLE_SCHEMAS use in target specs with SchemaService lookups.
+5) Deprecate redundant lookup helpers in provider_unified and contract_provider.
+
+Status update:
+- Completed: TargetMetadataService and TagIndex exist. Buildspec compilation uses the metadata
+  service. Output inventory is available as a service.
+- Remaining: Direct `load_target_system()` usage still exists in contract and enforcement paths.
+  OutputInventory is not yet authoritative in expected output helpers. TABLE_SCHEMAS is still used
+  in target spec helpers and declared schema provider.
+
+Acceptance gates:
+- TargetGraph/TargetSystem parity with existing behavior for all targets.
+- Buildspec output hash matches baseline for a representative repo.
+
+### Phase 3 - Export and serving consolidation
+Deliverables:
+- A single ExportEngine with format-specific adapters for JSONL and Parquet.
+- Shared serializer and streaming writer utilities.
+- A single SchemaManifest compiler used by serving and CLI pipelines.
+- A unified semantic registry compiler that uses TagIndex.
+- Shared manifest/marker base classes with deterministic serialization.
+
+Scope coverage:
+- EX-1, EX-2, EX-3, EX-4, EX-5
+
+Implementation steps:
+1) Extract a shared export pipeline that all export entry points call.
+2) Move JSON serializer and record streaming into common utilities.
+3) Update Hamilton export targets to call ExportEngine (not re-implement logic).
+4) Replace serving artifact schema manifest generation with the shared compiler.
+5) Consolidate semantic registry compilation to use TagIndex and SchemaService.
+6) Introduce a ManifestBase helper for export and serving metadata serialization.
+
+Status update:
+- Completed: Export engine exists, shared writers utility exists, schema manifest compiler is
+  shared and used by serving artifacts.
+- Remaining: Hamilton export targets still implement their own export flow. Semantic registry
+  compilation still uses its own tag parsing helpers and does not consistently reuse TagIndex
+  across all entry points. Export/serving manifest types remain duplicated.
+
+Acceptance gates:
+- Export artifacts are byte-identical (or semantically equivalent) for a known snapshot.
+- Serving artifacts are stable and deterministic across runs.
+
+### Phase 4 - Config and options unification
+Deliverables:
+- BuildRunContext that merges:
+  - BuildConfig (TOML)
+  - BuildRunConfig (profiles and overrides)
+  - BuildExecutionOptions (runtime behavior)
+- A consistent options loading system with:
+  - `from_parameters` support
+  - typed validation helpers
+- A single execution policy model covering resource and runtime hints.
+
+Scope coverage:
+- CO-1, CO-2, CO-3, CO-4, CO-5
+
+Implementation steps:
+1) Define BuildRunContext and map current config usage to it.
+2) Update options hashing to use the effective config stack.
+3) Replace custom option parsers with typed config helpers where feasible.
+4) Align TargetResources and TargetExecution with run-level options.
+5) Remove redundant default parameter definitions.
+
+Status update:
+- Completed: BuildRunContext exists and ExecutionPolicy is defined.
+- Remaining: Options parsing is still split between typed helpers and per-target logic.
+  BuildRunContext is not yet the single entry point for all build flows. Default parameters and
+  profile overlays still live in multiple places. ExecutionPolicy is not yet used for scheduling.
+
+Acceptance gates:
+- Options hash stability verified across old and new stacks.
+- Target option loading produces identical values for existing configs.
+
+### Phase 5 - Execution, hashing, and materializers
+Deliverables:
+- A shared materializer base for:
+  - DuckDB Ibis saver
+  - DuckDB rows saver
+  - File artifact saver
+- A unified skip and hash evaluator used by:
+  - StateComputer
+  - native run records
+- A consolidated fingerprint service for schema and asset versioning.
+
+Scope coverage:
+- EH-1, EH-2, EH-3, EH-4
+
+Implementation steps:
+1) Extract a core materializer workflow with pluggable write strategies.
+2) Replace per-materializer skip/hash logic with the shared evaluator.
+3) Consolidate options hash calls into a single helper.
+4) Align schema hash usage across asset fingerprints and buildspec datasets.
+
+Status update:
+- Completed: Shared materializer base helpers exist and are used by DuckDB and artifact savers.
+- Remaining: Skip/hash evaluation is still spread across planning, run records, and state
+  computation. Options hashing is still invoked via multiple helpers. Fingerprinting alignment is
+  still incomplete.
+
+Acceptance gates:
+- Skip behavior identical in state computation and execution.
+- Materializer error handling unchanged (status and metadata parity).
+
+### Phase 6 - Infra and error modeling cleanup
+Deliverables:
+- A shared LazyImport helper (or re-org) to reduce circular import patterns.
+- Central table key validation utilities used by all entry points.
+- Shared tag normalization utilities used by TagIndex and semantic registry.
+- A unified error envelope that replaces ExportError with BuildError or ProblemDetail.
+
+Scope coverage:
+- IU-1, IU-2, IU-3, IU-4
+
+Implementation steps:
+1) Introduce a lazy-loader utility and migrate repeated patterns to it.
+2) Replace ad-hoc table key validation with a single helper.
+3) Standardize tag normalization in TagIndex and semantic pipelines.
+4) Replace ExportError with a consistent ProblemDetail-based error type.
+
+Status update:
+- Completed: Shared lazy import helpers exist and are used in build and schemas.
+  Tag normalization is centralized in TagIndex, but not all semantic compilers use it.
+  BuildProblemError exists as a unified problem envelope.
+- Remaining: Central table-key validation is not yet wired everywhere. ExportError is still the
+  primary export-facing type and should be collapsed into BuildProblemError. Semantic compilation
+  still has tag parsing logic outside TagIndex.
+
+Acceptance gates:
+- Error outputs are consistent and structured across build and export flows.
+- No new circular import issues are introduced.
+
+## Dependency and sequencing notes
+- Phase 1 (SchemaService) should precede Phase 2 and Phase 3 to avoid repeated schema migrations.
+- Phase 2 (TargetMetadataService and TagIndex) enables Phase 3 (exports/serving) to reuse inventories.
+- Phase 4 (BuildRunContext) should be in place before Phase 5 (skip/hash unification) to ensure
+  hashing uses the effective config stack.
+
+## Migration and compatibility strategy
+- Add compatibility shims that preserve existing public APIs during migration.
+- Use deprecation warnings with a removal window of at least one release cycle.
+- Maintain deterministic outputs for buildspec, schema manifests, and exports until explicitly
+  planned to change.
+
+## Testing and validation plan
+- Unit tests for new services (SchemaService, TargetMetadataService, ExportEngine).
+- Parity tests that compare:
+  - table schemas and JSON schemas
+  - buildspec hash
+  - export artifact checksums
+  - serving artifact manifests
+- Integration tests that exercise a representative snapshot end-to-end.
+
+## Risk register and mitigations
+- Risk: schema drift during migration
+  - Mitigation: parity tests and dual-write/dual-read adapters during Phase 1.
+- Risk: target inventory mismatch affecting buildspec or asset tracking
+  - Mitigation: compare derived inventories to current outputs in Phase 2.
+- Risk: export behavior divergence
+  - Mitigation: byte-level diff of export outputs in Phase 3.
+- Risk: configuration stack mismatch affecting options hash
+  - Mitigation: hash parity checks in Phase 4, controlled rollout.
+
+## Rollout strategy
+- Deliver in incremental PRs per phase with explicit acceptance gates.
+- Keep feature flags for any behavioral changes until parity is confirmed.
+- Update documentation and playbooks after each phase completes.
+
+## Open questions (to resolve before implementation)
+Resolved decisions:
+- SchemaService lives under `codeintel.core.schemas`.
+- BuildRunContext is a factory that produces BuildEnv + execution options.
+- Unified error envelope is a BuildError subclass using ProblemDetail.
+
+Remaining decisions:
+- ContractService final API and ownership (core vs build).
+- Canonical manifest base class location and serialization format (exports/serving/schemas).
+
+## Scope ID mapping (status, remaining work, decommission targets)
+Each scope ID includes its status, the intended final shape, and legacy/compat code to remove
+once the scope item is complete.
+
+### Schema and contracts
+- SCHEMA-1 (partial): SchemaService exists and is wired to build adapters. Finalize all consumers
+  to use SchemaService records (table schema, dataset schema, JSON schema, row binding).
+  Decommission: `codeintel.config.datasets.declared_schemas.TABLE_SCHEMAS` usage in
+  `codeintel.build.schemas.provider_declared`, `codeintel.build.hamilton.native.target_spec_helpers`.
+- SCHEMA-2 (remaining): ContractService not yet implemented. Final design should expose
+  OutputContract + DatasetContract views via a single service.
+  Decommission: `codeintel.build.schemas.contract_provider` once ContractService is canonical.
+- SCHEMA-3 (partial): Inference still split across provider_hamilton and schemas/compile. Final
+  service should expose batch + per-table inference and deterministic fallback semantics.
+  Decommission: inference entry points in `codeintel.build.schemas.provider_hamilton`.
+- SCHEMA-4 (partial): JSON schema/digest flows routed through SchemaService, but not all callers
+  use the canonical digest API. Finalize callers and remove redundant helpers if any appear.
+- SCHEMA-5 (remaining): Column order/row binding helpers not centralized. Finalize a helper that
+  derives ordered columns from SchemaService records and replace manual column tuples.
+  Decommission: any manual column tuple definitions in target specs.
+
+### Targets and DAG
+- TD-1 (partial): TargetMetadataService exists. Remaining is to route all target system access
+  through it and eliminate ad-hoc `load_target_system()` callers.
+  Decommission: direct `load_target_system()` usage in `codeintel.build.schemas.contract_provider`,
+  `codeintel.build.hamilton.contracts.enforcement`, and schema plugin constraints.
+- TD-2 (partial): OutputInventory exists, but is not authoritative in all expected outputs and
+  buildspec paths. Finalize output inventory usage everywhere.
+  Decommission: any direct contract table_key lists where inventory should be canonical.
+- TD-3 (remaining): Target specs still resolve schemas from TABLE_SCHEMAS. Replace with
+  SchemaService lookups via canonical provider.
+  Decommission: TABLE_SCHEMAS usage in `codeintel.build.hamilton.native.target_spec_helpers`.
+- TD-4 (partial): TagIndex exists and normalizes tags. Ensure semantic registry compilation and
+  view discovery always use TagIndex.
+  Decommission: tag parsing helpers that bypass TagIndex in serving compilation.
+- TD-5 (partial): Target lookup by table/artifact exists on TargetSystem. Ensure all lookup paths
+  route through TargetMetadataService for consistency.
+
+### Exports and serving
+- EX-1 (partial): ExportEngine exists. Hamilton export targets still implement custom flow.
+  Decommission: export logic in `codeintel.build.hamilton.native.export.export_targets` once
+  it is routed through ExportEngine.
+- EX-2 (completed): Shared serializer and writer utilities exist in `codeintel.build.exports.writers`.
+  Remaining is to make all export paths use the shared utilities consistently.
+- EX-3 (partial): SchemaManifest compiler is shared; serving artifacts use it. Ensure CLI/export
+  paths are also routed through the shared compiler.
+- EX-4 (partial): Semantic registry compilation still uses bespoke tag parsing. Finalize TagIndex
+  usage and SchemaService-backed column resolution.
+  Decommission: ad-hoc tag parsing in `codeintel.build.serving.semantic_compile`.
+- EX-5 (remaining): Manifest/marker models remain duplicated across exports, serving, and schema
+  manifests. Introduce a ManifestBase and migrate current models to it.
+  Decommission: duplicate manifest dataclasses in `codeintel.build.exports.manifest`,
+  `codeintel.build.serving.manifest`, `codeintel.build.schemas.manifest`.
+
+### Config and options
+- CO-1 (partial): BuildRunContext exists. Migrate all entry points to use it as the canonical
+  factory for BuildEnv and execution options.
+  Decommission: ad-hoc BuildEnv construction outside BuildRunContext.
+- CO-2 (remaining): Standardize target option parsing via typed options helpers. Replace custom
+  parsing in target modules.
+- CO-3 (partial): ExecutionPolicy exists but is not yet integrated into scheduling/execution.
+  Finalize usage across plan/execute.
+- CO-4 (remaining): Default parameters are still duplicated; centralize them and remove divergent
+  defaults.
+- CO-5 (partial): Options hash reflects effective config in some flows; standardize across plan,
+  execution, and state computation.
+
+### Execution and hashing
+- EH-1 (completed): Shared materializer base exists and is used by DuckDB and artifact savers.
+- EH-2 (remaining): Skip/hash evaluation still split across plan/run/state. Introduce a shared
+  evaluator and route all flows through it.
+- EH-3 (partial): Options hash helper exists, but multiple call sites compute hashes differently.
+  Standardize on a single helper and remove local re-implementations.
+- EH-4 (remaining): Fingerprint semantics are still split between assets and schemas. Align
+  schema hash usage across asset fingerprints and buildspec datasets.
+- EH-5 (partial): Output inventory exists but is not authoritative everywhere. Route expected
+  outputs and asset tracking through the inventory service.
+
+### Infra and utilities
+- IU-1 (completed): Lazy import helper exists and is used across build and schemas.
+- IU-2 (remaining): Table key parsing/validation is still ad-hoc in some modules. Introduce a
+  single helper and update callers.
+- IU-3 (partial): Tag normalization exists in TagIndex; ensure all semantic tag pipelines use it.
+- IU-4 (partial): BuildProblemError exists, but ExportError is still used directly. Replace
+  ExportError with the unified BuildProblemError envelope and remove export-specific error types.

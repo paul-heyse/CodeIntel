@@ -41,11 +41,15 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
-from codeintel.build.schemas import SchemaManifest, get_schema_provider
-from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
-from codeintel.build.serving.semantic_compile_hamilton import (
-    collect_semantic_view_tags_from_hamilton,
+from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.compile import (
+    SchemaManifestRequest,
+    compile_schema_manifest,
+)
+from codeintel.build.serving.semantic_compile import (
+    compile_semantic_registry_from_tag_index,
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
@@ -126,10 +130,10 @@ def _package_version(name: str) -> str:
 
 def _semantic_registry_json() -> str:
     schema_provider = get_schema_provider()
-    view_tags = collect_semantic_view_tags_from_hamilton(modules=(_ibis_views,))
-    compiled = compile_semantic_registry_from_views(
+    tag_index = TagIndex.from_modules(modules=(_ibis_views,))
+    compiled = compile_semantic_registry_from_tag_index(
         schema_provider=schema_provider,
-        view_tags=view_tags,
+        tag_index=tag_index,
         version="v1",
     )
     return compiled.to_json() + "\n"
@@ -137,9 +141,17 @@ def _semantic_registry_json() -> str:
 
 def _schema_manifest_json() -> str:
     schema_provider = get_schema_provider()
-    tables = sorted(schema_provider.iter_table_schemas(), key=lambda schema: schema.table_key)
-    manifest = SchemaManifest(version="v1", tables=tuple(tables))
-    return json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    manifest = compile_schema_manifest(
+        provider=schema_provider,
+        request=SchemaManifestRequest(
+            all_targets=True,
+            stable=True,
+            version="v1",
+            include_views=False,
+            include_artifacts=False,
+        ),
+    )
+    return manifest.to_json() + "\n"
 
 
 def _buildspec_json() -> str:

@@ -25,9 +25,8 @@ from codeintel.build.hamilton.native.outputs import expected_artifacts, expected
 from codeintel.build.hashing import (
     compute_input_hash,
     compute_input_hash_with_deps,
-    compute_options_hash,
+    compute_target_options_hash,
 )
-from codeintel.build.parameters import TargetParameters
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.hamilton.records import TargetRunRecord
 
@@ -140,8 +139,8 @@ def compute_target_input_hash_with_deps(
     Returns
     -------
     tuple[str, dict[str, str]]
-        Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency names to their input hashes
-        (or "MISSING" sentinel).
+        Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency names
+        to their input hashes (or "MISSING" sentinel).
     """
     return compute_input_hash_with_deps(
         target,
@@ -150,22 +149,6 @@ def compute_target_input_hash_with_deps(
         options_hash,
         manifests=manifests,
     )
-
-
-def compute_target_options_hash(options: object | None) -> str | None:
-    """Compute hash of plugin configuration options.
-
-    Parameters
-    ----------
-    options
-        Plugin options object (must be JSON-serializable).
-
-    Returns
-    -------
-    str | None
-        16-character hex hash, or None if no options.
-    """
-    return compute_options_hash(options)
 
 
 def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
@@ -183,10 +166,8 @@ def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
     str | None
         16-character options hash, or None when the target has no configuration parameters.
     """
-    params: TargetParameters = env.config.parameters_for(target_name)
-    if len(params) == 0:
-        return None
-    return compute_target_options_hash(params.as_dict())
+    params = env.config.parameters_for(target_name)
+    return compute_target_options_hash(params)
 
 
 @dataclass(frozen=True)
@@ -444,10 +425,11 @@ def create_run_record(
     if env.strict_contracts and status == "succeeded":
         _validate_strict_row_counts(target=target, row_counts=run.row_counts)
 
-    datasets = expected_datasets(target, env.snapshot)
+    datasets = expected_datasets(target, env.snapshot, output_inventory=env.output_inventory)
     artifacts = expected_artifacts(
         target,
         env.snapshot,
+        output_inventory=env.output_inventory,
         path_formatter={
             "build_dir": str(env.paths.build_dir),
             "scip_dir": str(env.paths.scip_dir),

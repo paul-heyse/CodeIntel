@@ -7,7 +7,7 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,

@@ -528,8 +528,8 @@
       "artifacts": [
         {
           "kind": null,
-          "name": "jsonl_export",
-          "path_template": "{export_dir}/codeintel.jsonl"
+          "name": "datasets_manifest_jsonl",
+          "path_template": "{export_dir}/datasets_manifest.json"
         }
       ],
       "deps": [
@@ -545,8 +545,8 @@
       "artifacts": [
         {
           "kind": null,
-          "name": "parquet_export",
-          "path_template": "{export_dir}/codeintel.parquet"
+          "name": "datasets_manifest_parquet",
+          "path_template": "{export_dir}/datasets_manifest.json"
         }
       ],
       "deps": [

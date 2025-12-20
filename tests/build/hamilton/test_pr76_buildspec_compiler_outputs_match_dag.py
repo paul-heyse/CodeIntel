@@ -22,5 +22,5 @@ def test_buildspec_compiler_outputs_match_dag() -> None:
     if export is None:
         pytest.fail("Expected BuildSpec to include export_jsonl target")
     artifact_names = {a.name for a in export.artifacts}
-    if "jsonl_export" not in artifact_names:
-        pytest.fail("Expected export_jsonl artifacts to include jsonl_export")
+    if "datasets_manifest_jsonl" not in artifact_names:
+        pytest.fail("Expected export_jsonl artifacts to include datasets_manifest_jsonl")

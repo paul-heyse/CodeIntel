@@ -10,7 +10,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from codeintel.serving.meta.models import (
+    BuildSpecInfo,
+    QueryLimits,
+    ResourceTemplatesResponse,
+    SemanticLayerInfo,
+    ServingKernelMetaResponse,
+    ServingMetaResponse,
+)
 from codeintel.serving.meta.tooling import runtime_versions, tooling_mismatch_warnings
+from codeintel.serving.models.primitives import ResourceTemplate, SnapshotRef
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.settings import ServingSettings
 
@@ -21,9 +30,9 @@ if TYPE_CHECKING:
 def build_resource_templates_payload(
     ops: ServingOperations,
     *,
-    templates: object,
+    templates: tuple[ResourceTemplate, ...],
     generated_at: datetime,
-) -> dict[str, object]:
+) -> ResourceTemplatesResponse:
     """Build the canonical resource-templates payload for discovery resources.
 
     Returns
@@ -32,20 +41,14 @@ def build_resource_templates_payload(
         Serialized payload for resource template discovery.
     """
     pointer = ops.db.current_pointer()
-    return {
-        "uri": "codeintel://meta/resources",
-        "generated_at": generated_at.isoformat(),
-        "snapshot": {
-            "repo": pointer.repo,
-            "commit": pointer.commit,
-            "run_id": pointer.run_id,
-            "published_at": pointer.published_at.isoformat(),
-        },
-        "templates": templates,
-    }
+    return ResourceTemplatesResponse(
+        generated_at=generated_at,
+        snapshot=SnapshotRef.from_pointer(pointer),
+        templates=templates,
+    )
 
 
-def build_kernel_meta_payload(db: ServingDBManager) -> dict[str, object]:
+def build_kernel_meta_payload(db: ServingDBManager) -> ServingKernelMetaResponse:
     """Build the canonical serving meta payload used by HTTP `/meta` and MCP resources.
 
     This is a refactor of the legacy `SemanticQueryKernel.meta()` implementation into
@@ -65,26 +68,26 @@ def build_kernel_meta_payload(db: ServingDBManager) -> dict[str, object]:
     tables = sum(1 for d in spec.datasets if not d.table_key.startswith("docs.v_"))
     views = sum(1 for d in spec.datasets if d.table_key.startswith("docs.v_"))
 
-    return {
-        "repo": pointer.repo,
-        "commit": pointer.commit,
-        "run_id": pointer.run_id,
-        "published_at": pointer.published_at.isoformat(),
-        "semantic_layer_version": pointer.semantic_layer_version,
-        "buildspec_hash": spec.buildspec_hash,
-        "buildspec_version": spec.spec_version,
-        "duckdb": {"db_path": str(pointer.db_path), "read_only": True},
-        "environment": env_meta,
-        "semantic_views": [
+    return ServingKernelMetaResponse(
+        repo=pointer.repo,
+        commit=pointer.commit,
+        run_id=pointer.run_id,
+        published_at=pointer.published_at,
+        semantic_layer_version=pointer.semantic_layer_version,
+        buildspec_hash=spec.buildspec_hash,
+        buildspec_version=int(spec.spec_version),
+        duckdb={"db_path": str(pointer.db_path), "read_only": True},
+        environment=env_meta,
+        semantic_views=[
             {"id": v.id, "table_key": v.table_key, "entity": v.entity, "grain": v.grain}
             for v in registry.views
             if not v.deprecated
         ],
-        "datasets": [
+        datasets=[
             {"table_key": dataset.table_key, "schema_hash": dataset.schema_hash}
             for dataset in spec.datasets
         ],
-        "targets": [
+        targets=[
             {
                 "name": t.name,
                 "domain": t.domain,
@@ -97,8 +100,8 @@ def build_kernel_meta_payload(db: ServingDBManager) -> dict[str, object]:
             }
             for t in spec.targets
         ],
-        "schema_inventory": {"tables": tables, "views": views},
-    }
+        schema_inventory={"tables": tables, "views": views},
+    )
 
 
 def build_environment_meta_payload(
@@ -114,17 +117,11 @@ def build_environment_meta_payload(
         Environment payload including runtime versions and export limits.
     """
     meta = ops.meta()
-    env_obj = meta.get("environment")
-    environment = env_obj if isinstance(env_obj, dict) else {}
+    environment = meta.environment
     pointer = ops.db.current_pointer()
     runtime = runtime_versions()
     return {
-        "snapshot": {
-            "repo": pointer.repo,
-            "commit": pointer.commit,
-            "run_id": pointer.run_id,
-            "published_at": pointer.published_at.isoformat(),
-        },
+        "snapshot": SnapshotRef.from_pointer(pointer).model_dump(mode="json"),
         "environment": environment,
         "runtime_versions": runtime,
         "warnings": list(tooling_mismatch_warnings(environment, runtime=runtime)),
@@ -143,7 +140,7 @@ class ServingMetaExtras:
 
     features: dict[str, bool]
     inventories: dict[str, int]
-    resource_templates: object
+    resource_templates: tuple[ResourceTemplate, ...]
 
 
 def build_serving_meta_payload(
@@ -152,7 +149,7 @@ def build_serving_meta_payload(
     settings: ServingSettings,
     started_at: datetime,
     extras: ServingMetaExtras,
-) -> dict[str, object]:
+) -> ServingMetaResponse:
     """Build the canonical payload consumed by the FastMCP `serving_meta` tool.
 
     Returns
@@ -162,44 +159,35 @@ def build_serving_meta_payload(
     """
     pointer = ops.db.current_pointer()
     meta = ops.meta()
-
-    env_obj = meta.get("environment")
-    environment = env_obj if isinstance(env_obj, dict) else {}
+    environment = meta.environment
     runtime = runtime_versions()
     warnings = tooling_mismatch_warnings(environment, runtime=runtime)
 
-    return {
-        "server_version": runtime.get("codeintel", "not-installed"),
-        "started_at": started_at.isoformat(),
-        "snapshot": {
-            "repo": pointer.repo,
-            "commit": pointer.commit,
-            "run_id": pointer.run_id,
-            "published_at": pointer.published_at.isoformat(),
-        },
-        "semantic_layer": {
-            "version": str(meta.get("semantic_layer_version", "unknown")),
-            "hash": str(meta.get("semantic_layer_hash", "unknown")),
-            "view_count": extras.inventories.get("views", 0),
-            "schema_manifest_hash": str(meta.get("schema_manifest_hash"))
-            if meta.get("schema_manifest_hash") is not None
-            else None,
-        },
-        "buildspec": {
-            "version": str(meta.get("buildspec_version", "unknown")),
-            "hash": str(meta.get("buildspec_hash", "unknown")),
-            "compiled_at": pointer.published_at.isoformat(),
-        },
-        "read_only": True,
-        "features": extras.features,
-        "limits": {
-            "export_max_rows": settings.export_max_rows,
-            "export_ttl_seconds": settings.mcp_export_ttl_seconds,
-        },
-        "resource_templates": extras.resource_templates,
-        "inventories": extras.inventories,
-        "warnings": list(warnings),
-    }
+    return ServingMetaResponse(
+        server_version=runtime.get("codeintel", "not-installed"),
+        started_at=started_at,
+        snapshot=SnapshotRef.from_pointer(pointer),
+        semantic_layer=SemanticLayerInfo(
+            version=meta.semantic_layer_version,
+            hash="unknown",
+            view_count=extras.inventories.get("views", 0),
+            schema_manifest_hash=None,
+        ),
+        buildspec=BuildSpecInfo(
+            version=str(meta.buildspec_version),
+            hash=meta.buildspec_hash,
+            compiled_at=pointer.published_at,
+        ),
+        read_only=True,
+        features=extras.features,
+        limits=QueryLimits(
+            export_max_rows=settings.export_max_rows,
+            export_ttl_seconds=settings.mcp_export_ttl_seconds,
+        ),
+        resource_templates=extras.resource_templates,
+        inventories=extras.inventories,
+        warnings=tuple(warnings),
+    )
 
 
 __all__ = [

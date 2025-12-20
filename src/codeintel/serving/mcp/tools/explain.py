@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -16,6 +15,7 @@ from codeintel.serving.mcp.tools.shared import (
     maybe_report_progress,
     mcp_correlation_id,
 )
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExplainResponse
 

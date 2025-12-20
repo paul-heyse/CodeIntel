@@ -11,6 +11,7 @@ import math
 from typing import TYPE_CHECKING, Protocol, cast
 
 import ibis.expr.types as it
+import pandas as pd
 
 if TYPE_CHECKING:
     from typing import SupportsFloat, SupportsInt
@@ -21,9 +22,11 @@ __all__ = [
     "coerce_float",
     "coerce_int",
     "coerce_optional_float",
+    "coerce_optional_int",
     "execute_float",
     "execute_int",
     "execute_optional_float",
+    "records_from_dataframe",
 ]
 
 _KIND_FLOAT = "float"
@@ -149,6 +152,26 @@ def coerce_optional_float(value: object | None, *, ctx: str) -> float | None:
     return None if math.isnan(coerced) else coerced
 
 
+def coerce_optional_int(value: object | None, *, ctx: str) -> int | None:
+    """Coerce a value to int, treating None as missing.
+
+    Parameters
+    ----------
+    value
+        Scalar value returned by DuckDB/Ibis.
+    ctx
+        Human-readable context string included in errors.
+
+    Returns
+    -------
+    int | None
+        Coerced integer value, or None when the value is missing.
+    """
+    if value is None:
+        return None
+    return coerce_int(value, ctx=ctx)
+
+
 def execute_int(expr: it.Value, *, ctx: str) -> int:
     """Execute an Ibis scalar expression and coerce the result to int.
 
@@ -204,3 +227,20 @@ def execute_optional_float(expr: it.Value, *, ctx: str) -> float | None:
     """
     raw = cast("ScalarExecution", expr).execute()
     return coerce_optional_float(raw, ctx=ctx)
+
+
+def records_from_dataframe(frame: pd.DataFrame) -> list[dict[str, object]]:
+    """Normalize a DataFrame into row dictionaries with nulls standardized.
+
+    Parameters
+    ----------
+    frame
+        DataFrame to normalize.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        List of row dictionaries with missing values set to None.
+    """
+    sanitized = frame.astype("object").where(pd.notna(frame), None)
+    return sanitized.to_dict(orient="records")

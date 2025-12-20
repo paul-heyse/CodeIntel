@@ -13,23 +13,19 @@ Format-specific serialization is delegated to writer callables.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal
 
-import pyarrow as pa
-import pyarrow.parquet as pq
-
+from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import (
     AUDIT_LOG_PATH,
     AUDIT_TABLE_ENABLED,
     MAX_EXPORT_LIMIT,
     AuditRecord,
     ExportCallOptions,
-    ExportError,
     ExportTarget,
     build_export_relation,
     compute_schema_digest,
@@ -52,6 +48,11 @@ from codeintel.build.exports.manifest import (
     write_per_dataset_manifest,
 )
 from codeintel.build.exports.validation import validate_export_files
+from codeintel.build.exports.writers import (
+    default_json_serializer,
+    write_jsonl_records,
+    write_parquet_relation,
+)
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.queries.safe import safe_count
 
@@ -67,18 +68,6 @@ log = logging.getLogger(__name__)
 ExportFormat = Literal["jsonl", "parquet"]
 
 _EXPORT_RECORD_BATCH_SIZE = 10_000
-
-
-@runtime_checkable
-class _SupportsIsoformat(Protocol):
-    def isoformat(self) -> str: ...
-
-
-def _default_json_serializer(obj: object) -> object:
-    if isinstance(obj, _SupportsIsoformat):
-        return obj.isoformat()
-    msg = f"Type {type(obj)} is not JSON serializable"
-    raise TypeError(msg)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,15 +105,12 @@ def export_jsonl_for_table(
     rel = build_export_relation(gateway, table_key, MAX_EXPORT_LIMIT, 0)
     rows_written = 0
     with output_path.open("w", encoding="utf-8") as handle:
-        reader = rel.fetch_record_batch(_EXPORT_RECORD_BATCH_SIZE)
-        for batch in reader:
-            payload = batch.to_pydict()
-            columns = list(payload.keys())
-            for idx in range(batch.num_rows):
-                record = {name: payload[name][idx] for name in columns}
-                handle.write(json.dumps(record, default=_default_json_serializer))
-                handle.write("\n")
-                rows_written += 1
+        rows_written = write_jsonl_records(
+            handle,
+            rel=rel,
+            serializer=default_json_serializer,
+            batch_size=_EXPORT_RECORD_BATCH_SIZE,
+        )
     duration = perf_counter() - start
     write_audit_entry(
         AuditRecord(
@@ -163,34 +149,11 @@ def export_parquet_for_table(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     start = perf_counter()
     rel = build_export_relation(gateway, table_key, MAX_EXPORT_LIMIT, 0)
-    write_parquet = getattr(rel, "write_parquet", None)
-    if write_parquet is not None:
-        write_parquet(str(output_path))
-        row_count_row = rel.aggregate("count(*)").fetchone()
-        rows = int(row_count_row[0]) if row_count_row else 0
-        duration = perf_counter() - start
-        write_audit_entry(
-            AuditRecord(
-                table_name=table_key,
-                macro="duckdb_relation",
-                rows=rows,
-                duration_s=duration,
-                output_path=output_path,
-            ),
-            con=gateway.con,
-        )
-        return rows
-
-    reader = rel.fetch_record_batch(_EXPORT_RECORD_BATCH_SIZE)
-    rows_written = 0
-    wrote_batches = False
-    with pq.ParquetWriter(str(output_path), reader.schema) as writer:
-        for batch in reader:
-            rows_written += batch.num_rows
-            wrote_batches = True
-            writer.write_table(pa.Table.from_batches([batch], schema=reader.schema))
-    if not wrote_batches:
-        pq.write_table(pa.Table.from_batches([], schema=reader.schema), str(output_path))
+    rows_written = write_parquet_relation(
+        rel=rel,
+        output_path=output_path,
+        batch_size=_EXPORT_RECORD_BATCH_SIZE,
+    )
     duration = perf_counter() - start
     write_audit_entry(
         AuditRecord(
@@ -209,14 +172,14 @@ def _format_spec(gateway: StorageGateway, fmt: ExportFormat) -> _ExportFormatSpe
     if fmt == "jsonl":
         return _ExportFormatSpec(
             format="jsonl",
-            mapping=gateway.datasets.jsonl_mapping or {},
+            mapping=gateway.datasets.jsonl_datasets,
             can_export_capability_key="can_export_jsonl",
             extension=".jsonl",
             write_table=export_jsonl_for_table,
         )
     return _ExportFormatSpec(
         format="parquet",
-        mapping=gateway.datasets.parquet_mapping or {},
+        mapping=gateway.datasets.parquet_datasets,
         can_export_capability_key="can_export_parquet",
         extension=".parquet",
         write_table=export_parquet_for_table,
@@ -225,41 +188,51 @@ def _format_spec(gateway: StorageGateway, fmt: ExportFormat) -> _ExportFormatSpe
 
 def _validate_written_exports(
     written: list[Path],
-    registry_meta: Mapping[str, DatasetContract],
+    registry_by_table_key: Mapping[str, DatasetContract],
     opts: ExportCallOptions,
 ) -> None:
     if not opts.validate_exports:
         return
-    schema_list = opts.schemas or default_validation_schemas()
-    for schema_name in schema_list:
-        matching = [p for p in written if p.name.startswith(schema_name)]
+    table_keys = opts.schemas or default_validation_schemas()
+    for table_key in table_keys:
+        dataset = registry_by_table_key.get(table_key)
+        if dataset is None:
+            log.info("Skipping validation for %s; table key not in registry", table_key)
+            continue
+        dataset_name = dataset.name
+        matching = [p for p in written if p.name.startswith(dataset_name)]
         if not matching:
             continue
-        ds = registry_meta.get(schema_name)
-        if ds is None or ds.json_schema_id is None:
-            log.info("Skipping validation for %s; no JSON Schema configured", schema_name)
+        if dataset.json_schema_id is None:
+            log.info("Skipping validation for %s; no JSON Schema configured", table_key)
             continue
-        profile = resolve_validation_profile(opts, ds)
-        exit_code = validate_export_files(schema_name, matching)
+        profile = resolve_validation_profile(opts, dataset)
+        exit_code = validate_export_files(table_key, matching, dataset_name=dataset_name)
         if exit_code != 0 and profile == "lenient":
             log_export_error(
                 code="export.validation_failed",
                 title="Export validation failed",
-                detail=f"Validation failed for schema {schema_name}",
-                schema=schema_name,
+                detail=f"Validation failed for schema {table_key}",
+                table_key=table_key,
                 files=[str(p) for p in matching],
             )
             continue
         if exit_code != 0:
-            msg = f"Validation failed for schema {schema_name}"
+            msg = f"Validation failed for schema {table_key}"
             log_export_error(
                 code="export.validation_failed",
                 title="Export validation failed",
                 detail=msg,
-                schema=schema_name,
+                table_key=table_key,
                 files=[str(p) for p in matching],
             )
-            raise ExportError(msg)
+            raise BuildProblemError.from_detail(
+                code="export.validation_failed",
+                title="Export validation failed",
+                detail=msg,
+                table_key=table_key,
+                files=[str(p) for p in matching],
+            )
 
 
 def _export_dataset(
@@ -321,6 +294,7 @@ def _export_dataset(
 
     manifest_payload = ExportManifestData(
         dataset=target.dataset_name,
+        artifact=target.output_path.name,
         schema_id=target.dataset.json_schema_id if target.dataset else None,
         schema_version=target.dataset.schema_version if target.dataset else None,
         schema_digest=schema_digest,
@@ -374,9 +348,10 @@ def export_all_datasets(
     document_output_dir.mkdir(parents=True, exist_ok=True)
 
     validate_registry_or_raise(gateway)
-    dataset_mapping = gateway.datasets.mapping
+    registry = gateway.datasets
+    dataset_mapping = {name: contract.table_key for name, contract in registry.by_name.items()}
     spec = _format_spec(gateway, fmt)
-    registry_meta = gateway.datasets.meta or {}
+    registry_meta = registry.by_name
 
     selected = select_dataset_tables(dataset_mapping, spec.mapping, opts.datasets)
     missing_tables = set(spec.mapping) - set(dataset_mapping.values())
@@ -399,8 +374,8 @@ def export_all_datasets(
     manifest_path = write_dataset_manifest(
         document_output_dir,
         dataset_mapping,
-        jsonl_mapping=gateway.datasets.jsonl_mapping or {},
-        parquet_mapping=gateway.datasets.parquet_mapping or {},
+        jsonl_mapping=registry.jsonl_datasets,
+        parquet_mapping=registry.parquet_datasets,
         selected=list(selected.keys()),
     )
     written.append(manifest_path)
@@ -412,7 +387,7 @@ def export_all_datasets(
             AUDIT_TABLE_ENABLED,
         )
 
-    _validate_written_exports(written, registry_meta, opts)
+    _validate_written_exports(written, registry.by_table_key, opts)
     return written
 
 

@@ -130,5 +130,5 @@ def test_fastapi_app_mounts_mcp(tmp_path: Path) -> None:
     expect_in("/mcp", mount_paths)
 
     with TestClient(app) as client:
-        resp = client.get("/semantic/views")
+        resp = client.get("/v1/semantic/views")
         expect_equal(resp.status_code, status.HTTP_200_OK)

@@ -126,16 +126,16 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
     app = create_serving_app(settings=settings, mount_mcp=False)
 
     with TestClient(app) as client:
-        views = client.get("/semantic/views")
+        views = client.get("/v1/semantic/views")
         expect_equal(views.status_code, status.HTTP_200_OK)
         expect_true(any(v["id"] == "demo.view" for v in views.json()["views"]))
 
-        desc = client.get("/semantic/views/demo.view")
+        desc = client.get("/v1/semantic/views/demo.view")
         expect_equal(desc.status_code, status.HTTP_200_OK)
         expect_equal(desc.json()["table_key"], "docs.v_demo")
 
         query = client.post(
-            "/semantic/query",
+            "/v1/semantic/query",
             json={
                 "view_id": "demo.view",
                 "filters": [{"column": "id", "op": "gte", "value": 2}],
@@ -175,7 +175,7 @@ def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         query = client.post(
-            "/semantic/query",
+            "/v1/semantic/query",
             json={
                 "view_id": "demo.view",
                 "filters": [{"column": "nope", "op": "eq", "value": 1}],
@@ -186,8 +186,8 @@ def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
         expect_equal(query.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-def test_semantic_routes_support_correlation_id_and_v1_alias(tmp_path: Path) -> None:
-    """All semantic routes include correlation IDs and support /v1 prefix."""
+def test_semantic_routes_support_correlation_id(tmp_path: Path) -> None:
+    """All semantic routes include correlation IDs."""
     serve_dir = tmp_path / "serve"
     serve_dir.mkdir(parents=True, exist_ok=True)
 
@@ -212,16 +212,12 @@ def test_semantic_routes_support_correlation_id_and_v1_alias(tmp_path: Path) -> 
 
     with TestClient(app) as client:
         correlation_id = "cid-test-123"
-        views = client.get("/semantic/views", headers={"X-Correlation-ID": correlation_id})
+        views = client.get("/v1/semantic/views", headers={"X-Correlation-ID": correlation_id})
         expect_equal(views.status_code, status.HTTP_200_OK)
         expect_equal(views.headers.get("X-Correlation-ID"), correlation_id)
 
-        views_v1 = client.get("/v1/semantic/views", headers={"X-Correlation-ID": correlation_id})
-        expect_equal(views_v1.status_code, status.HTTP_200_OK)
-        expect_equal(views_v1.headers.get("X-Correlation-ID"), correlation_id)
-
         missing = client.get(
-            "/semantic/views/nope.view", headers={"X-Correlation-ID": correlation_id}
+            "/v1/semantic/views/nope.view", headers={"X-Correlation-ID": correlation_id}
         )
         expect_equal(missing.status_code, status.HTTP_404_NOT_FOUND)
         payload = missing.json()
@@ -258,8 +254,8 @@ def test_semantic_routes_support_optional_api_key(tmp_path: Path) -> None:
     app = create_serving_app(settings=settings, mount_mcp=False)
 
     with TestClient(app) as client:
-        denied = client.get("/semantic/views")
+        denied = client.get("/v1/semantic/views")
         expect_equal(denied.status_code, status.HTTP_401_UNAUTHORIZED)
 
-        ok = client.get("/semantic/views", headers={"X-API-Key": "secret-key"})
+        ok = client.get("/v1/semantic/views", headers={"X-API-Key": "secret-key"})
         expect_equal(ok.status_code, status.HTTP_200_OK)

@@ -9,11 +9,13 @@ from __future__ import annotations
 import asyncio
 import sys
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from starlette.requests import Request
 
+from codeintel.serving.contracts.http_routes import SERVING_HTTP_ROUTES
 from codeintel.serving.errors import (
     ERROR_CODE_CATALOG,
     AuthForbiddenError,
@@ -26,8 +28,16 @@ from codeintel.serving.errors import (
 from codeintel.serving.http.errors import problem_from_domain_error
 from codeintel.serving.http.routes import router as http_router
 from codeintel.serving.mcp.app import build_mcp_app
+from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.search.models import SearchQueryResponse
-from codeintel.serving.semantic.models import SemanticExplainResponse, SemanticQueryResponse
+from codeintel.serving.semantic.models import (
+    SemanticCatalogResponse,
+    SemanticCatalogView,
+    SemanticExplainResponse,
+    SemanticQueryResponse,
+    SemanticViewDefaults,
+    SemanticViewDescriptionResponse,
+)
 from codeintel.serving.settings import ServingSettings
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
@@ -51,23 +61,6 @@ EXPECTED_MCP_TOOL_NAMES: frozenset[str] = frozenset(
     }
 )
 
-EXPECTED_HTTP_ROUTES: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("GET", "/semantic/views"),
-        ("GET", "/semantic/views/{view_id}"),
-        ("POST", "/semantic/explain"),
-        ("POST", "/semantic/query"),
-        ("POST", "/export/semantic/{view_id}"),
-        ("GET", "/v1/semantic/views"),
-        ("GET", "/v1/semantic/views/{view_id}"),
-        ("POST", "/v1/semantic/explain"),
-        ("POST", "/v1/semantic/query"),
-        ("POST", "/v1/export/semantic/{view_id}"),
-        ("POST", "/search"),
-        ("POST", "/v1/search"),
-    }
-)
-
 
 class OperationContractsError(RuntimeError):
     """Raised when serving operation contracts are invalid."""
@@ -85,12 +78,40 @@ class _DummyKernel:
         raise RuntimeError(msg)
 
     @staticmethod
-    def catalog() -> dict[str, object]:
-        return {"version": "v1", "snapshot": {}, "views": []}
+    def catalog() -> SemanticCatalogResponse:
+        return SemanticCatalogResponse(
+            version="v1",
+            snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
+            views=[
+                SemanticCatalogView(
+                    id="demo.view",
+                    table_key="docs.v_demo",
+                    entity="demo",
+                    grain="demo",
+                    description=None,
+                    column_count=0,
+                ),
+            ],
+        )
 
     @staticmethod
-    def describe(view_id: str) -> dict[str, object]:
-        return {"id": view_id, "table_key": "docs.v_demo"}
+    def describe(view_id: str) -> SemanticViewDescriptionResponse:
+        return SemanticViewDescriptionResponse(
+            id=view_id,
+            table_key="docs.v_demo",
+            kind="view",
+            entity="demo",
+            grain="demo",
+            description=None,
+            primary_key=[],
+            columns=[],
+            column_types={},
+            joins=[],
+            defaults=SemanticViewDefaults(),
+            deprecated=False,
+            replaced_by=None,
+            snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
+        )
 
     @staticmethod
     def query(request: SemanticQueryRequest) -> SemanticQueryResponse:
@@ -127,8 +148,22 @@ class _DummyKernel:
         )
 
     @staticmethod
-    def meta() -> dict[str, object]:
-        return {"repo": "demo/repo", "commit": "deadbeef", "run_id": "run-1"}
+    def meta() -> ServingKernelMetaResponse:
+        return ServingKernelMetaResponse(
+            repo="demo/repo",
+            commit="deadbeef",
+            run_id="run-1",
+            published_at=datetime.now(UTC),
+            semantic_layer_version="demo",
+            buildspec_hash="deadbeef",
+            buildspec_version=1,
+            duckdb={"version": "0.0.0"},
+            environment={},
+            semantic_views=[],
+            datasets=[],
+            targets=[],
+            schema_inventory={},
+        )
 
     @staticmethod
     def export_rows(request: SemanticExportRequest) -> Iterator[dict[str, object]]:
@@ -163,6 +198,7 @@ class _DummyKernel:
 def _check_semantic_http_routes() -> list[str]:
     issues: list[str] = []
     observed: set[tuple[str, str]] = set()
+    expected_routes = {(spec.method, spec.path) for spec in SERVING_HTTP_ROUTES}
     for route in http_router.routes:
         methods = getattr(route, "methods", None)
         path = getattr(route, "path", None)
@@ -172,14 +208,14 @@ def _check_semantic_http_routes() -> list[str]:
             if isinstance(method, str):
                 observed.add((method, path))
 
-    prefixes = ("/semantic", "/v1/semantic", "/search", "/v1/search", "/export", "/v1/export")
+    prefixes = ("/v1/semantic", "/v1/search", "/v1/export")
     semantic_paths = {item for item in observed if item[1].startswith(prefixes)}
 
-    missing = EXPECTED_HTTP_ROUTES - semantic_paths
+    missing = expected_routes - semantic_paths
     if missing:
         issues.append(f"Missing serving HTTP routes: {sorted(missing)}")
 
-    extra = semantic_paths - EXPECTED_HTTP_ROUTES
+    extra = semantic_paths - expected_routes
     if extra:
         issues.append(f"Unexpected serving HTTP routes: {sorted(extra)}")
 

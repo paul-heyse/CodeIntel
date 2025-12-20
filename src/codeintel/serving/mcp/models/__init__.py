@@ -9,14 +9,6 @@ from codeintel.serving.mcp.models.exports import (
     ExportStatus,
     ExportURIs,
 )
-from codeintel.serving.mcp.models.meta import (
-    DEFAULT_RESOURCE_TEMPLATES,
-    BuildSpecInfo,
-    QueryLimits,
-    ResourceTemplatesResponse,
-    SemanticLayerInfo,
-    ServingMetaResponse,
-)
 from codeintel.serving.mcp.models.primitives import (
     CodeIntelURI,
     ExportId,
@@ -27,6 +19,14 @@ from codeintel.serving.mcp.models.primitives import (
     ViewId,
 )
 from codeintel.serving.mcp.models.semantic import QueryPreview, SemanticQueryToolResponse
+from codeintel.serving.meta.models import (
+    DEFAULT_RESOURCE_TEMPLATES,
+    BuildSpecInfo,
+    QueryLimits,
+    ResourceTemplatesResponse,
+    SemanticLayerInfo,
+    ServingMetaResponse,
+)
 
 __all__ = [
     "DEFAULT_RESOURCE_TEMPLATES",

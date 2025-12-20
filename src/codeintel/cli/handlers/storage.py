@@ -24,7 +24,8 @@ from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
 )
-from codeintel.storage.gateway import StorageConfig, StorageConnectionError, open_gateway
+from codeintel.core.errors.storage import StorageConnectionError
+from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.metadata import (
     validate_dataset_schema_registry,
 )

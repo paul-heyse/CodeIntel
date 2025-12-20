@@ -37,8 +37,8 @@ def export_parquet_for_table(
     ValueError
         If the requested table is not registered in the dataset mapping.
     """
-    dataset_mapping = gateway.datasets.mapping
-    if table_name not in dataset_mapping.values():
+    registry = gateway.datasets
+    if table_name not in registry.by_table_key:
         message = f"Refusing to export unknown dataset table: {table_name}"
         raise ValueError(message)
     _engine_export_parquet_for_table(gateway, table_name, output_path)
@@ -70,12 +70,13 @@ def export_dataset_to_parquet(
     ValueError
         If the dataset name is unknown.
     """
-    dataset_mapping = gateway.datasets.mapping
-    parquet_mapping = gateway.datasets.parquet_mapping or {}
-    if dataset_name not in dataset_mapping:
+    registry = gateway.datasets
+    parquet_mapping = registry.parquet_datasets
+    try:
+        table_name = registry.resolve_table_key(dataset_name)
+    except KeyError as exc:
         message = f"Unknown dataset: {dataset_name}"
-        raise ValueError(message)
-    table_name = dataset_mapping[dataset_name]
+        raise ValueError(message) from exc
     filename = parquet_mapping.get(table_name, f"{dataset_name}.parquet")
     output_path = output_dir / filename
     export_parquet_for_table(gateway, table_name, output_path)

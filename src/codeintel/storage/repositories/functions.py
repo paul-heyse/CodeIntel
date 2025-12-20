@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from codeintel.core.ibis_typing import and_predicates, ge, ibis_bool
+from codeintel.storage.query_results import coerce_optional_int, records_from_dataframe
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -68,12 +68,7 @@ class FunctionRepository(BaseRepository):
 
     @staticmethod
     def _coerce_goid(value: object) -> int | None:
-        if value is None:
-            return None
-        if isinstance(value, (int, float, str, Decimal)):
-            return int(value)
-        message = f"Unexpected goid type: {type(value)!r}"
-        raise ValueError(message)
+        return coerce_optional_int(value, ctx="function_goid_h128")
 
     def _resolve_goid_from_goids_table(
         self,
@@ -262,12 +257,13 @@ class FunctionRepository(BaseRepository):
         expr = table.select("function_goid_h128")
 
         df = pd.DataFrame(expr.execute())
-        records = df.where(pd.notna(df), None).to_dict(orient="records")
+        records = records_from_dataframe(df)
 
         goids: list[int] = []
         for row in records:
             raw = row.get("function_goid_h128")
-            if raw is None:
+            value = coerce_optional_int(raw, ctx="function_goid_h128")
+            if value is None:
                 continue
-            goids.append(int(raw))
+            goids.append(value)
         return goids

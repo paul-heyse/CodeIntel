@@ -75,3 +75,41 @@ def test_no_gateway_accessor_inserts_in_src() -> None:
         offenders,
         message=f"Disallowed gateway accessor insert_* calls in src: {offenders}",
     )
+
+
+def test_no_dataset_name_schema_lookup_helpers() -> None:
+    """Dataset-name JSON schema lookup helpers must stay removed."""
+    root = _repo_root()
+    code_root = root / "src" / "codeintel"
+    symbol = "get_json_schema_for_dataset_name"
+
+    offenders: list[str] = []
+    for path in code_root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        if symbol in text:
+            offenders.append(str(path.relative_to(root)))
+
+    expect_false(
+        offenders,
+        message=f"Dataset-name schema lookup must not reappear; found: {offenders}",
+    )
+
+
+def test_view_materialization_is_centralized() -> None:
+    """View creation must stay centralized in materialization.py."""
+    root = _repo_root()
+    storage_root = root / "src" / "codeintel" / "storage"
+    pattern = re.compile(r"\bcreate_view\(")
+
+    offenders: list[str] = []
+    for path in storage_root.rglob("*.py"):
+        if path.name == "materialization.py":
+            continue
+        text = path.read_text(encoding="utf-8")
+        if pattern.search(text):
+            offenders.append(str(path.relative_to(root)))
+
+    expect_false(
+        offenders,
+        message=f"View creation should be centralized; unexpected create_view: {offenders}",
+    )

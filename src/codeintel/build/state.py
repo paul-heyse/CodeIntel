@@ -19,7 +19,8 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.build.config import load_build_config
+from codeintel.build.config import BuildConfig, BuildConfigStack, load_build_config
+from codeintel.build.run_config import BuildRunConfig
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
@@ -69,6 +70,9 @@ class StateValidator:
         graph: TargetGraph,
         gateway: StorageGateway,
         snapshot: SnapshotRef,
+        *,
+        config: BuildConfig | None = None,
+        run_config: BuildRunConfig | None = None,
     ) -> None:
         """Initialize the state validator.
 
@@ -80,6 +84,10 @@ class StateValidator:
             Storage gateway for manifest access.
         snapshot
             Repository snapshot reference.
+        config
+            Optional build config override. When omitted, loads from repo root.
+        run_config
+            Optional run configuration overrides to apply on top of config.
 
         Raises
         ------
@@ -99,10 +107,18 @@ class StateValidator:
 
         # Create session and computer for delegation
         self._session = BuildSession(snapshot=snapshot, gateway=gateway)
+        base_config = config or load_build_config(snapshot.repo_root)
+        effective_config: BuildConfig = base_config
+        if run_config is not None:
+            overrides = {name: run_config.config_overrides_for_target(name) for name in graph}
+            effective_config = BuildConfigStack.from_base(
+                base_config,
+                run_overrides=overrides,
+            )
         self._computer = StateComputer(
             graph=graph,
             session=self._session,
-            config=load_build_config(snapshot.repo_root),
+            config=effective_config,
         )
 
     def validate(self) -> BuildState:

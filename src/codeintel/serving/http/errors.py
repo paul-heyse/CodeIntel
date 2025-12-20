@@ -14,8 +14,8 @@ from pydantic import BaseModel, ConfigDict
 from codeintel.serving.errors import (
     ERROR_CODE_CATALOG,
     CodeIntelDomainError,
-    ErrorContext,
     ErrorResponse,
+    build_error_context_from_http_request,
     exception_to_error_response,
 )
 from codeintel.serving.http.middleware import get_correlation_id
@@ -81,10 +81,6 @@ def _status_for_code(code: str) -> int:
     return tmpl.http_status
 
 
-def _operation_for_request(request: Request) -> str:
-    return f"http:{request.method} {request.url.path}"
-
-
 def problem_from_error_response(request: Request, error: ErrorResponse) -> ProblemDetail:
     """Convert canonical ErrorResponse to an RFC 9457 ProblemDetail.
 
@@ -130,10 +126,7 @@ def problem_from_domain_error(request: Request, err: CodeIntelDomainError) -> Pr
     ProblemDetail
         Problem detail payload.
     """
-    ctx = ErrorContext(
-        operation=_operation_for_request(request),
-        request_id=get_correlation_id(request),
-    )
+    ctx = build_error_context_from_http_request(request)
     return problem_from_error_response(request, err.to_error_response(context=ctx))
 
 
@@ -152,10 +145,7 @@ def problem_from_exception(request: Request, exc: Exception) -> ProblemDetail:
     ProblemDetail
         Problem detail payload.
     """
-    ctx = ErrorContext(
-        operation=_operation_for_request(request),
-        request_id=get_correlation_id(request),
-    )
+    ctx = build_error_context_from_http_request(request)
     return problem_from_error_response(
         request,
         exception_to_error_response(exc, context=ctx),

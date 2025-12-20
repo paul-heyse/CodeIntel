@@ -431,14 +431,6 @@ class Warehouse:
         )
         return _materialize_with_writer(ctx, options=active, writer=_write)
 
-    def create_or_replace_view(
-        self, table_key: str, expr: ir.Table, *, overwrite: bool = True
-    ) -> None:
-        """Create or replace a view from an Ibis expression."""
-        schema, name = split_table_key(table_key)
-        self.gateway.policy.create_schema_if_not_exists(schema)
-        self.gateway.ibis.con.create_view(name, expr, database=schema, overwrite=overwrite)
-
     def ensure_all_views(self, *, overwrite: bool = True, strict: bool = False) -> None:
         """Ensure all registered views are materialized."""
         self.gateway.policy.ensure_all_views(overwrite=overwrite, strict=strict)

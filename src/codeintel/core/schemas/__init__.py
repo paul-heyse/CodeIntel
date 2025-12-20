@@ -18,20 +18,36 @@ from codeintel.core.schemas.row_models import (
     row_binding_for_table_schema,
 )
 from codeintel.core.schemas.serde import table_schema_from_json_obj
+from codeintel.core.schemas.service import (
+    DatasetSchemaLike,
+    DatasetSchemaProvider,
+    SchemaRecord,
+    SchemaService,
+    clear_schema_service,
+    get_schema_service,
+    set_schema_service,
+)
 
 __all__ = [
     "Column",
     "ColumnType",
     "DatasetContract",
+    "DatasetSchemaLike",
+    "DatasetSchemaProvider",
     "GeneratedRowBinding",
     "Index",
     "MappingSchemaProvider",
     "RowBinding",
     "SchemaProvider",
+    "SchemaRecord",
+    "SchemaService",
     "TableSchema",
     "canonical_type",
+    "clear_schema_service",
+    "get_schema_service",
     "json_schema_from_table_schema",
     "row_binding_for_table_schema",
     "schema_hash",
+    "set_schema_service",
     "table_schema_from_json_obj",
 ]

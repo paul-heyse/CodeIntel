@@ -9,12 +9,15 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
+        SemanticCatalogResponse,
         SemanticExplainResponse,
         SemanticExportRequest,
         SemanticQueryRequest,
         SemanticQueryResponse,
+        SemanticViewDescriptionResponse,
     )
 
 
@@ -68,11 +71,11 @@ class ServingKernelProtocol(Protocol):
         """Return the serving DB manager."""
         ...
 
-    def catalog(self) -> dict[str, object]:
+    def catalog(self) -> SemanticCatalogResponse:
         """Return the semantic view catalog."""
         ...
 
-    def describe(self, view_id: str) -> dict[str, object]:
+    def describe(self, view_id: str) -> SemanticViewDescriptionResponse:
         """Describe a semantic view."""
         ...
 
@@ -92,8 +95,8 @@ class ServingKernelProtocol(Protocol):
         """Execute a search query."""
         ...
 
-    def meta(self) -> dict[str, object]:
-        """Return serving metadata dictionary."""
+    def meta(self) -> ServingKernelMetaResponse:
+        """Return serving metadata."""
         ...
 
     def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:

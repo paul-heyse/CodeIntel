@@ -12,6 +12,7 @@ from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.duckdb_policy_backend import duckdb_schema_exists
 from codeintel.storage.gateway.extensions import require_extension
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.helpers.table_key import split_table_key
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 
@@ -137,16 +138,8 @@ def fts_schema_for_table_key(table_key: str) -> str:
     -------
     str
         Schema name that DuckDB will use for the FTS index objects.
-
-    Raises
-    ------
-    ValueError
-        If ``table_key`` is not schema-qualified.
     """
-    if "." not in table_key:
-        msg = f"Expected schema-qualified table_key, got: {table_key}"
-        raise ValueError(msg)
-    schema, name = table_key.split(".", 1)
+    schema, name = split_table_key(table_key)
     return f"fts_{schema}_{name}"
 
 
@@ -181,11 +174,7 @@ def ensure_fts_index(con: DuckDBConnection, *, table_key: str = "docs.search_doc
     ValueError
         If ``table_key`` is not schema-qualified or the target table does not exist.
     """
-    if "." not in table_key:
-        msg = f"Expected schema-qualified table_key, got: {table_key}"
-        raise ValueError(msg)
-
-    schema, name = table_key.split(".", 1)
+    schema, name = split_table_key(table_key)
     backend = MinimalStorageGateway(con).policy
     if not backend.table_exists(schema=schema, table=name):
         msg = f"Search documents table not found: {table_key}"

@@ -9,11 +9,16 @@ from typing import TYPE_CHECKING
 import anyio
 
 from codeintel.serving.export.formats import suffix_for_export_format, supports_preview
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.export.meta import (
+    ExportArtifactInputs,
+    build_export_artifact_spec,
+    build_export_snapshot_dict,
+)
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.export_dispatch import write_export_to_store
 from codeintel.serving.mcp.models import ExportHandleResponse, ExportSnapshot, SnapshotRef
-from codeintel.serving.mcp.resource_store import ExportArtifactSpec, ResourceStore
+from codeintel.serving.mcp.resource_store import ResourceStore
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
     READ_ONLY_LOCAL_ANNOTATIONS,
@@ -24,9 +29,16 @@ from codeintel.serving.mcp.tools.shared import (
     mcp_correlation_id,
     normalize_export_format_for_tool,
 )
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import FilterSpec, SemanticExportRequest
-from codeintel.serving.snapshot.models import ServingExportSnapshot
+from codeintel.serving.uris import (
+    EXPORT_META_URI_TEMPLATE,
+    export_meta_uri,
+    export_preview_uri,
+    export_sql_uri,
+    export_uri,
+)
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
@@ -37,11 +49,7 @@ def _safe_column_types(ops: ServingOperations, view_id: str) -> dict[str, str]:
         describe = ops.describe(view_id)
     except (KeyError, TypeError, ValueError):
         return {}
-
-    raw_types = describe.get("column_types")
-    if not isinstance(raw_types, dict):
-        return {}
-    return {str(k): str(v) for k, v in raw_types.items()}
+    return {str(k): str(v) for k, v in describe.column_types.items()}
 
 
 def register_export_tool(
@@ -53,13 +61,14 @@ def register_export_tool(
     settings: ServingSettings,
 ) -> None:
     """Register semantic_export tool."""
+    feature_set = ServingFeatureSet.from_settings(settings)
 
     @mcp.tool(
         name="semantic_export",
         description="Export semantic view data and return a resource URI",
         annotations=READ_ONLY_LOCAL_ANNOTATIONS,
         tags={TAG_SEMANTIC, TAG_EXPORT},
-        task=settings.mcp_export_enable_tasks,
+        task=feature_set.enable_mcp_export_tasks,
     )
     async def semantic_export(  # noqa: PLR0914
         view_id: str,
@@ -85,24 +94,26 @@ def register_export_tool(
         ptr = ops.db.current_pointer()
         meta_result = await limiter.run(ops.meta)
         meta_payload = meta_result if isinstance(meta_result, dict) else {}
-        snapshot_dict = ServingExportSnapshot.from_pointer(ptr).model_dump(mode="json") | {
-            "buildspec_hash": str(meta_payload.get("buildspec_hash", "unknown")),
-        }
+        snapshot_dict = build_export_snapshot_dict(
+            ptr, buildspec_hash=str(meta_payload.get("buildspec_hash", "unknown"))
+        )
 
         await maybe_report_progress(ctx, settings=settings, progress=20, total=100)
         column_types = _safe_column_types(ops, view_id)
         columns = tuple(column_types)
         compiled_sql = await limiter.run(ops.export_sql, request)
         query_hash, schema_hash = await limiter.run(ops.export_fingerprint, request)
-        spec = ExportArtifactSpec(
-            view_id=view_id,
-            columns=columns,
-            column_types=column_types,
-            compiled_sql=compiled_sql,
-            snapshot=snapshot_dict,
-            format=format_type,
-            query_hash=query_hash,
-            schema_hash=schema_hash,
+        spec = build_export_artifact_spec(
+            ExportArtifactInputs(
+                view_id=view_id,
+                columns=columns,
+                column_types=column_types,
+                compiled_sql=compiled_sql,
+                snapshot=snapshot_dict,
+                export_format=format_type,
+                query_hash=query_hash,
+                schema_hash=schema_hash,
+            )
         )
 
         cancel_exc = anyio.get_cancelled_exc_class()
@@ -162,18 +173,16 @@ def register_export_tool(
             format=format_type,
             mime_type=artifact.mime_type,
             filename=f"{view_id}{suffix_for_export_format(format_type)}",
-            uri=f"codeintel://exports/{token}",
-            meta_uri=f"codeintel://exports/{token}/meta",
-            preview_uri=f"codeintel://exports/{token}/preview"
-            if supports_preview(format_type)
-            else None,
-            sql_uri=f"codeintel://exports/{token}/sql",
+            uri=export_uri(token),
+            meta_uri=export_meta_uri(token),
+            preview_uri=export_preview_uri(token) if supports_preview(format_type) else None,
+            sql_uri=export_sql_uri(token),
             created_at=stored_meta.created_at,
             expires_at=stored_meta.expires_at,
             row_count=stored_meta.row_count,
             byte_size=artifact.size_bytes,
             snapshot=export_snapshot,
-            note="Use codeintel://exports/{export_id}/meta to discover safe retrieval URIs.",
+            note=f"Use {EXPORT_META_URI_TEMPLATE} to discover safe retrieval URIs.",
         )
 
 

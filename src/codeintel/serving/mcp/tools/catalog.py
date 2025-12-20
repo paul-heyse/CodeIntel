@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -15,6 +14,7 @@ from codeintel.serving.mcp.tools.shared import (
     maybe_report_progress,
     mcp_correlation_id,
 )
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticCatalogResponse
 
@@ -39,11 +39,8 @@ def register_catalog_tool(
     )
     async def semantic_catalog(*, ctx: Context) -> SemanticCatalogResponse:
         start = time.perf_counter()
-        result = await limiter.run(ops.catalog)
-        data = result if isinstance(result, dict) else {}
-        views_obj = data.get("views")
-        views = views_obj if isinstance(views_obj, list) else []
-        row_count = len(views)
+        catalog = await limiter.run(ops.catalog)
+        row_count = len(catalog.views)
         duration_ms = (time.perf_counter() - start) * 1000
         log_query_metrics(
             QueryMetrics(
@@ -58,7 +55,7 @@ def register_catalog_tool(
         )
         await ctx.info("Retrieved semantic catalog")
         await maybe_report_progress(ctx, settings=settings, progress=100, total=100)
-        return SemanticCatalogResponse.model_validate(data)
+        return catalog
 
 
 __all__ = ["register_catalog_tool"]

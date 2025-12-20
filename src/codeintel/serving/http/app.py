@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 
@@ -14,6 +13,7 @@ from fastapi.openapi.utils import get_openapi
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.http.errors import (
     CodeIntelDomainError,
     ProblemDetail,
@@ -25,7 +25,7 @@ from codeintel.serving.http.middleware import (
     correlation_id_and_timing_middleware,
     get_correlation_id,
 )
-from codeintel.serving.http.routes import router as api_router
+from codeintel.serving.http.routes import build_http_router
 from codeintel.serving.http.state import ServingState
 from codeintel.serving.mcp._compat import EventStore
 from codeintel.serving.mcp.app import build_mcp_app
@@ -42,8 +42,6 @@ if TYPE_CHECKING:
 
     from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.operations.protocols import ServingKernelProtocol
-
-LOG = logging.getLogger(__name__)
 
 
 def create_serving_app(
@@ -71,6 +69,7 @@ def create_serving_app(
     binding to a public interface (0.0.0.0, ::) without authentication.
     """
     cfg = settings or ServingSettings.from_env()
+    features = ServingFeatureSet.from_settings(cfg)
 
     # Fail-fast: require auth for public interfaces
     cfg.validate_auth_for_host()
@@ -94,9 +93,9 @@ def create_serving_app(
 
     _install_exception_handlers(app)
     _install_middlewares(app, cfg)
-    app.include_router(api_router)
+    app.include_router(build_http_router(features))
     _install_observability_routes(app, db_manager=runtime.db_manager)
-    _maybe_mount_mcp(app, kernel=runtime.kernel, settings=cfg, enabled=mount_mcp)
+    _maybe_mount_mcp(app, kernel=runtime.kernel, settings=cfg, features=features, enabled=mount_mcp)
 
     app.openapi = lambda: _custom_openapi(app)
     return app
@@ -183,7 +182,8 @@ def _install_observability_routes(app: FastAPI, *, db_manager: ServingDBManager)
 
     @app.get("/meta")
     async def meta() -> dict[str, object]:
-        return await run_in_threadpool(lambda: build_kernel_meta_payload(db_manager))
+        payload = await run_in_threadpool(lambda: build_kernel_meta_payload(db_manager))
+        return payload.model_dump(mode="json")
 
 
 def _maybe_mount_mcp(
@@ -191,6 +191,7 @@ def _maybe_mount_mcp(
     *,
     kernel: ServingKernelProtocol,
     settings: ServingSettings,
+    features: ServingFeatureSet,
     enabled: bool,
 ) -> None:
     """Mount MCP server under /mcp with EventStore for resumability.
@@ -209,6 +210,8 @@ def _maybe_mount_mcp(
         Semantic query kernel for MCP tools.
     settings
         Serving settings for MCP configuration.
+    features
+        Derived feature toggles for MCP configuration.
     enabled
         Whether MCP mounting is enabled.
     """
@@ -220,12 +223,9 @@ def _maybe_mount_mcp(
     # Configure EventStore for SSE polling/resumability
     event_store = None
     retry_interval = None
-    if settings.mcp_enable_event_store:
-        if EventStore is None:
-            LOG.warning("EventStore not available - SSE resumability disabled")
-        else:
-            event_store = EventStore()
-            retry_interval = settings.mcp_retry_interval_ms
+    if features.enable_mcp_event_store:
+        event_store = EventStore()
+        retry_interval = settings.mcp_retry_interval_ms
 
     # gofastmcp 2.x uses http_app() with path="/" to avoid double-prefix
     app.mount(

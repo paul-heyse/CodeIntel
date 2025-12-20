@@ -28,6 +28,7 @@ from codeintel.serving.export.formats import (
     normalize_export_format,
     suffix_for_export_format,
 )
+from codeintel.serving.export.models import ExportArtifactSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -37,20 +38,6 @@ _META_SUFFIX: Final = ".meta.json"
 _CANCEL_SUFFIX: Final = ".cancelled"
 
 _DEFAULT_PREVIEW_ROWS: Final = 5
-
-
-@dataclass(frozen=True, slots=True)
-class ExportArtifactSpec:
-    """Input specification for an export artifact plus its metadata sidecar."""
-
-    view_id: str
-    columns: tuple[str, ...] = ()
-    column_types: dict[str, str] = field(default_factory=dict)
-    compiled_sql: str | None = None
-    snapshot: dict[str, str] = field(default_factory=dict)
-    format: ExportFormat = "ndjson"
-    query_hash: str | None = None
-    schema_hash: str | None = None
 
 
 @dataclass(frozen=True)
@@ -710,4 +697,4 @@ class ResourceStore:
         return self._root / f"{token}{suffix}", mime_type
 
 
-__all__ = ["ExportArtifactSpec", "ResourceStore", "StoredArtifact", "StoredMetadata"]
+__all__ = ["ResourceStore", "StoredArtifact", "StoredMetadata"]

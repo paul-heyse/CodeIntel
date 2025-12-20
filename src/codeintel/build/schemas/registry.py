@@ -21,28 +21,15 @@ Examples
 
 from __future__ import annotations
 
-import importlib
-from functools import lru_cache
 from typing import TYPE_CHECKING
+
+from codeintel.build.schemas.service import clear_schema_service_cache, get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from types import ModuleType
 
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
-
-
-@lru_cache(maxsize=1)
-def _get_provider_unified_module() -> ModuleType:
-    """Load provider_unified lazily with caching to avoid circular imports.
-
-    Returns
-    -------
-    ModuleType
-        The provider_unified module.
-    """
-    return importlib.import_module("codeintel.build.schemas.provider_unified")
 
 
 def get_schema_provider() -> SchemaProvider:
@@ -67,11 +54,7 @@ def get_schema_provider() -> SchemaProvider:
     >>> schema is not None
     True
     """
-    # Lazy import via cached helper to avoid circular dependency at module load time.
-    # provider_unified imports provider_hamilton which triggers a long chain
-    # that eventually comes back through storage.gateway.
-    provider_mod = _get_provider_unified_module()
-    return provider_mod.unified_schema_provider()
+    return get_schema_service().table_provider
 
 
 def require_table_schema(table_key: str) -> TableSchema:
@@ -95,7 +78,7 @@ def require_table_schema(table_key: str) -> TableSchema:
     >>> schema.table_key
     'analytics.function_metrics'
     """
-    return get_schema_provider().require_table_schema(table_key)
+    return get_schema_service().require_table_schema(table_key)
 
 
 def iter_table_schemas() -> Iterable[TableSchema]:
@@ -114,7 +97,7 @@ def iter_table_schemas() -> Iterable[TableSchema]:
     >>> len(schemas) > 0
     True
     """
-    return get_schema_provider().iter_table_schemas()
+    return get_schema_service().iter_table_schemas()
 
 
 def clear_schema_provider_cache() -> None:
@@ -123,8 +106,7 @@ def clear_schema_provider_cache() -> None:
     Clears both the registry cache and the underlying unified provider cache.
     Useful for testing when schema definitions may change between tests.
     """
-    provider_mod = _get_provider_unified_module()
-    provider_mod.clear_unified_provider_cache()
+    clear_schema_service_cache()
 
 
 __all__ = [

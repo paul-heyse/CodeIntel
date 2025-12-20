@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from codeintel.storage.query_results import records_from_dataframe
 from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.validation.pandera_df import validate_df
 
@@ -72,4 +73,4 @@ class DatasetReadRepository(BaseRepository):
             Slice of rows from the requested dataset.
         """
         df = self.read_dataset_dataframe(table_key, limit=limit, offset=offset)
-        return df.to_dict(orient="records")
+        return records_from_dataframe(df)

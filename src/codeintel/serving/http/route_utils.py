@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, TypeVar
 from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.http.middleware import get_correlation_id
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -29,14 +29,13 @@ True
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas.contract_provider import (
-    ContractProvider,
+from codeintel.build.schemas.contract_service import (
     clear_contract_cache,
+    column_order_for_table_key,
     get_contract_for_table_key,
-    get_contract_provider,
+    get_contract_service,
     is_view,
     iter_contracts,
     iter_contracts_by_table_key,
@@ -57,7 +56,6 @@ from codeintel.build.schemas.json_schema_registry import (
     clear_json_schema_cache,
     compute_json_schema_digest,
     get_json_schema,
-    get_json_schema_for_dataset_name,
     get_json_schema_for_table_schema,
 )
 from codeintel.build.schemas.manifest import (
@@ -77,7 +75,12 @@ from codeintel.build.schemas.row_registry import (
     get_row_binding,
     iter_row_bindings,
 )
+from codeintel.build.schemas.service import (
+    clear_schema_service_cache,
+    get_schema_service,
+)
 from codeintel.config.datasets.composites import get_composite_schemas
+from codeintel.core.imports.lazy import lazy_import
 
 if TYPE_CHECKING:
     from codeintel.build.schemas.provider_unified import (
@@ -87,7 +90,7 @@ if TYPE_CHECKING:
     )
 
 # Lazy imports for unified provider to avoid circular imports.
-# provider_unified imports provider_hamilton which triggers a long import chain.
+# provider_unified imports inference_service which triggers a long import chain.
 _LAZY_IMPORTS = {
     "UnifiedSchemaProvider": "codeintel.build.schemas.provider_unified",
     "clear_unified_provider_cache": "codeintel.build.schemas.provider_unified",
@@ -114,7 +117,7 @@ def __getattr__(name: str) -> object:
         If the attribute is not found in this module or lazy imports.
     """
     if name in _LAZY_IMPORTS:
-        module = importlib.import_module(_LAZY_IMPORTS[name])
+        module = lazy_import(_LAZY_IMPORTS[name])
         return getattr(module, name)
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
@@ -122,7 +125,6 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ColumnDiff",
-    "ContractProvider",
     "ExportArtifact",
     "ExportArtifactKind",
     "ManifestDiffResult",
@@ -133,19 +135,21 @@ __all__ = [
     "clear_json_schema_cache",
     "clear_row_binding_cache",
     "clear_schema_provider_cache",
+    "clear_schema_service_cache",
     "clear_unified_provider_cache",
+    "column_order_for_table_key",
     "compute_json_schema_digest",
     "compute_manifest_diffs",
     "compute_schema_diff",
     "declared_schema_provider",
     "get_composite_schemas",
     "get_contract_for_table_key",
-    "get_contract_provider",
+    "get_contract_service",
     "get_json_schema",
-    "get_json_schema_for_dataset_name",
     "get_json_schema_for_table_schema",
     "get_row_binding",
     "get_schema_provider",
+    "get_schema_service",
     "infer_table_schema_from_ibis",
     "infer_view_schema",
     "is_view",

@@ -21,10 +21,8 @@ from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.impl_kind import ImplKind, native_target_names
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.naming import target_node
-from codeintel.build.hamilton.run_records import (
-    compute_target_input_hash_with_deps,
-    compute_target_options_hash,
-)
+from codeintel.build.hash_evaluator import compute_hash_evaluation
+from codeintel.build.hashing import compute_target_options_hash
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -465,17 +463,14 @@ def _compute_entry_for_target(
         )
 
     params = env.config.parameters_for(target_name)
-    options_hash = compute_target_options_hash(params.as_dict()) if len(params) else None
-    input_hash, dep_hashes = compute_target_input_hash_with_deps(
+    options_hash = compute_target_options_hash(params)
+    evaluation = compute_hash_evaluation(
         target=target,
         snapshot=env.snapshot,
         gateway=env.gateway,
         options_hash=options_hash,
         manifests=manifests,
     )
-
-    prior = manifests.get(target_name)
-    prior_dep_hashes = prior.dep_hashes if prior and prior.dep_hashes else {}
 
     if env.is_forced(target_name):
         return PlanEntry(
@@ -484,47 +479,47 @@ def _compute_entry_for_target(
             module=module,
             status="compute",
             reason="forced",
-            input_hash=input_hash,
-            options_hash=options_hash,
-            prior_input_hash=prior.input_hash if prior else None,
+            input_hash=evaluation.input_hash,
+            options_hash=evaluation.options_hash,
+            prior_input_hash=evaluation.stored_hash,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
-            dep_hashes=dep_hashes,
-            prior_dep_hashes=prior_dep_hashes,
+            dep_hashes=evaluation.dep_hashes,
+            prior_dep_hashes=evaluation.prior_dep_hashes,
             impl_kind=impl_kind,
         )
 
-    if prior is None:
+    if evaluation.status == "missing":
         return PlanEntry(
             target=target_name,
             node=node,
             module=module,
             status="compute",
             reason="no_manifest",
-            input_hash=input_hash,
-            options_hash=options_hash,
+            input_hash=evaluation.input_hash,
+            options_hash=evaluation.options_hash,
             prior_input_hash=None,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
-            dep_hashes=dep_hashes,
-            prior_dep_hashes={},
+            dep_hashes=evaluation.dep_hashes,
+            prior_dep_hashes=evaluation.prior_dep_hashes,
             impl_kind=impl_kind,
         )
 
-    if prior.input_hash != input_hash:
+    if evaluation.status == "stale":
         return PlanEntry(
             target=target_name,
             node=node,
             module=module,
             status="compute",
             reason="hash_changed",
-            input_hash=input_hash,
-            options_hash=options_hash,
-            prior_input_hash=prior.input_hash,
+            input_hash=evaluation.input_hash,
+            options_hash=evaluation.options_hash,
+            prior_input_hash=evaluation.stored_hash,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
-            dep_hashes=dep_hashes,
-            prior_dep_hashes=prior_dep_hashes,
+            dep_hashes=evaluation.dep_hashes,
+            prior_dep_hashes=evaluation.prior_dep_hashes,
             impl_kind=impl_kind,
         )
 
@@ -534,13 +529,13 @@ def _compute_entry_for_target(
         module=module,
         status="skip",
         reason="up_to_date",
-        input_hash=input_hash,
-        options_hash=options_hash,
-        prior_input_hash=prior.input_hash,
+        input_hash=evaluation.input_hash,
+        options_hash=evaluation.options_hash,
+        prior_input_hash=evaluation.stored_hash,
         dependencies=tuple(target.dependencies),
         table_keys=tuple(table_keys),
-        dep_hashes=dep_hashes,
-        prior_dep_hashes=prior_dep_hashes,
+        dep_hashes=evaluation.dep_hashes,
+        prior_dep_hashes=evaluation.prior_dep_hashes,
         impl_kind=impl_kind,
     )
 

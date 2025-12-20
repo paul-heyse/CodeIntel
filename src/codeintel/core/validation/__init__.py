@@ -44,7 +44,24 @@ _EXPORT_TO_MODULE: Final[dict[str, str]] = {
     name: module for module, names in _MODULE_EXPORTS.items() for name in names
 }
 
-__all__: Final[tuple[str, ...]] = tuple(sorted(_EXPORT_TO_MODULE))
+__all__: Final[tuple[str, ...]] = (
+    "FUNCTION_VALIDATION_COLS",
+    "GRAPH_VALIDATION_COLS",
+    "BaseValidationOptions",
+    "BaseValidationReporter",
+    "CheckProtocol",
+    "CheckResult",
+    "FunctionValidationReporter",
+    "GraphValidationReporter",
+    "ValidationOutcome",
+    "ValidationReport",
+    "ValidationRunner",
+    "ValidationSeverity",
+    "apply_severity_overrides",
+    "cap_findings",
+    "gateway_timestamp",
+    "has_error_findings",
+)
 
 if TYPE_CHECKING:
     from codeintel.core.validation.findings import (
@@ -119,5 +136,11 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    """Return package attributes for tab-completion."""
+    """Return package attributes for tab-completion.
+
+    Returns
+    -------
+    list[str]
+        Sorted attribute names available on this package.
+    """
     return sorted(set(globals()) | set(__all__))

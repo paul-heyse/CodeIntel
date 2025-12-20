@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
@@ -15,6 +14,7 @@ from codeintel.serving.mcp.tools.shared import (
     maybe_report_progress,
     mcp_correlation_id,
 )
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticViewDescriptionResponse
 
@@ -43,7 +43,6 @@ def register_describe_tool(
         await maybe_report_progress(ctx, settings=settings, progress=10, total=100)
         result = await limiter.run(ops.describe, view_id)
         await maybe_report_progress(ctx, settings=settings, progress=100, total=100)
-        data = result if isinstance(result, dict) else {}
         duration_ms = (time.perf_counter() - start) * 1000
         log_query_metrics(
             QueryMetrics(
@@ -56,7 +55,7 @@ def register_describe_tool(
                 correlation_id=mcp_correlation_id(ctx),
             )
         )
-        return SemanticViewDescriptionResponse.model_validate(data)
+        return result
 
 
 __all__ = ["register_describe_tool"]

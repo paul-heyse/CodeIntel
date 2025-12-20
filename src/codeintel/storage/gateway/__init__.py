@@ -38,8 +38,11 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.core.errors.schema import SchemaError as StorageSchemaError
-    from codeintel.core.errors.storage import StorageQueryError
-    from codeintel.storage.exceptions import StorageConnectionError, StorageError
+    from codeintel.core.errors.storage import (
+        StorageConnectionError,
+        StorageError,
+        StorageQueryError,
+    )
     from codeintel.storage.gateway.accessors import (
         AnalyticsTables,
         BaseTableAccessor,
@@ -99,8 +102,8 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "ReadPoolWarehouse": ("codeintel.storage.gateway.pool", "ReadPoolWarehouse"),
     "SnapshotGatewayResolver": ("codeintel.storage.gateway.protocol", "SnapshotGatewayResolver"),
     "StorageConfig": ("codeintel.storage.gateway.config", "StorageConfig"),
-    "StorageConnectionError": ("codeintel.storage.exceptions", "StorageConnectionError"),
-    "StorageError": ("codeintel.storage.exceptions", "StorageError"),
+    "StorageConnectionError": ("codeintel.core.errors.storage", "StorageConnectionError"),
+    "StorageError": ("codeintel.core.errors.storage", "StorageError"),
     "StorageGateway": ("codeintel.storage.gateway.protocol", "StorageGateway"),
     "StorageQueryError": ("codeintel.core.errors.storage", "StorageQueryError"),
     "StorageSchemaError": ("codeintel.core.errors.schema", "SchemaError"),

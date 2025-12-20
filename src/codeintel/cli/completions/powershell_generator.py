@@ -107,9 +107,11 @@ class PowerShellBackend(ShellBackend):
             f"{self._indent}if ($words.Count -eq 1) {{",
             f"{self._indent}{self._indent}# Complete top-level commands",
             f'{self._indent}{self._indent}{cmds_var}.Keys | Where-Object {{ $_ -like "$wordToComplete*" }} |',
-            f"{self._indent}{self._indent}{self._indent}ForEach-Object {{ "
-            "[System.Management.Automation.CompletionResult]::new($_, $_, "
-            "'ParameterValue', $_) }}",
+            (
+                f"{self._indent}{self._indent}{self._indent}ForEach-Object {{ "
+                "[System.Management.Automation.CompletionResult]::new($_, $_, "
+                "'ParameterValue', $_) }}"
+            ),
             f"{self._indent}{self._indent}return",
             f"{self._indent}}}",
             "",
@@ -118,18 +120,22 @@ class PowerShellBackend(ShellBackend):
             f"{self._indent}{self._indent}if ($words.Count -eq 2) {{",
             f"{self._indent}{self._indent}{self._indent}# Complete subcommands",
             f'{self._indent}{self._indent}{self._indent}{cmds_var}[$command] | Where-Object {{ $_ -like "$wordToComplete*" }} |',
-            f"{self._indent}{self._indent}{self._indent}{self._indent}ForEach-Object {{ "
-            "[System.Management.Automation.CompletionResult]::new($_, $_, "
-            "'ParameterValue', $_) }}",
+            (
+                f"{self._indent}{self._indent}{self._indent}{self._indent}ForEach-Object {{ "
+                "[System.Management.Automation.CompletionResult]::new($_, $_, "
+                "'ParameterValue', $_) }}"
+            ),
             f"{self._indent}{self._indent}}}",
             f"{self._indent}}}",
             "",
             f"{self._indent}# Complete global flags",
             f"{self._indent}if ($wordToComplete.StartsWith('-')) {{",
             f'{self._indent}{self._indent}{flags_var} | Where-Object {{ $_ -like "$wordToComplete*" }} |',
-            f"{self._indent}{self._indent}{self._indent}ForEach-Object {{ "
-            "[System.Management.Automation.CompletionResult]::new($_, $_, "
-            "'ParameterValue', $_) }}",
+            (
+                f"{self._indent}{self._indent}{self._indent}ForEach-Object {{ "
+                "[System.Management.Automation.CompletionResult]::new($_, $_, "
+                "'ParameterValue', $_) }}"
+            ),
             f"{self._indent}}}",
             "}",
         ]

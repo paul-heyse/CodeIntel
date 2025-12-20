@@ -18,12 +18,14 @@ from fastapi.responses import JSONResponse
 from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
-from codeintel.serving.export.formats import (
-    mime_type_for_export_format,
-    suffix_for_export_format,
+from codeintel.serving.export.engine import (
+    ExportDelivery,
+    ExportPlan,
+    build_export_plan,
+    write_export_file,
 )
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.http.streaming import ndjson_response
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest
 
@@ -59,7 +61,7 @@ class ExportMetricsContext:
             Structured metrics payload for logging.
         """
         return QueryMetrics(
-            endpoint="/export/semantic",
+            endpoint="/v1/export/semantic",
             view_id=self.view_id,
             query=None,
             row_count=row_count,
@@ -116,68 +118,60 @@ async def dispatch_semantic_export(
     ExportDispatchResult
         Response payload and optional metrics row count.
     """
-    if payload.format == "ndjson":
+    plan = build_export_plan(payload)
+    if plan.delivery is ExportDelivery.ndjson_stream:
         response = ndjson_response(
             _iter_rows_with_metrics(ops=ops, payload=payload, metrics=metrics),
-            filename=f"{payload.view_id}{suffix_for_export_format(payload.format)}",
+            filename=f"{payload.view_id}{plan.suffix}",
             headers=headers,
         )
         return ExportDispatchResult(response=response, metrics_row_count=None)
-
-    if payload.format == "parquet":
-        response, rows_written = await _parquet_response(ops, payload, headers=headers)
-        return ExportDispatchResult(response=response, metrics_row_count=rows_written)
-
-    if payload.format == "arrow":
-        response, rows_written = await _arrow_response(ops, payload, headers=headers)
+    if plan.delivery is ExportDelivery.binary_file:
+        response, rows_written = await _binary_response(ops, payload, plan, headers=headers)
         return ExportDispatchResult(response=response, metrics_row_count=rows_written)
 
     rows = await run_in_threadpool(lambda: list(ops.export_rows(payload)))
-    response = _json_dict_response(
-        payload.view_id,
-        rows,
-        query_hash=metrics.query_hash,
-        schema_hash=metrics.schema_hash,
-        headers=headers,
-    )
+    response = _json_dict_response(rows, plan=plan, metrics=metrics, headers=headers)
     return ExportDispatchResult(response=response, metrics_row_count=len(rows))
 
 
 def _json_dict_response(
-    view_id: str,
     rows: list[dict[str, object]],
     *,
-    query_hash: str,
-    schema_hash: str | None,
+    plan: ExportPlan,
+    metrics: ExportMetricsContext,
     headers: dict[str, str],
 ) -> Response:
     payload: dict[str, object] = {
-        "view_id": view_id,
+        "view_id": metrics.view_id,
         "rows": rows,
         "count": len(rows),
-        "query_hash": query_hash,
+        "query_hash": metrics.query_hash,
     }
-    if schema_hash is not None:
-        payload["schema_hash"] = schema_hash
+    if metrics.schema_hash is not None:
+        payload["schema_hash"] = metrics.schema_hash
     return JSONResponse(
         content=payload,
-        media_type=mime_type_for_export_format("json"),
+        media_type=plan.mime_type,
         headers=headers,
     )
 
 
-async def _parquet_response(
+async def _binary_response(
     ops: ServingOperations,
     payload: SemanticExportRequest,
+    plan: ExportPlan,
     *,
     headers: dict[str, str],
 ) -> tuple[FileResponse, int]:
-    suffix = suffix_for_export_format("parquet")
-    fd, tmp_path = tempfile.mkstemp(prefix=f"codeintel-export-{payload.view_id}-", suffix=suffix)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=f"codeintel-export-{payload.view_id}-",
+        suffix=plan.suffix,
+    )
     os.close(fd)
     try:
         rows_written = await run_in_threadpool(
-            lambda: ops.export_to_parquet(payload, output_path=Path(tmp_path))
+            lambda: write_export_file(ops, payload, output_path=Path(tmp_path))
         )
     except Exception:
         _unlink_best_effort(tmp_path)
@@ -185,35 +179,8 @@ async def _parquet_response(
 
     response = FileResponse(
         path=tmp_path,
-        media_type=mime_type_for_export_format("parquet"),
-        filename=f"{payload.view_id}{suffix}",
-        headers=headers,
-        background=BackgroundTask(lambda: _unlink_best_effort(tmp_path)),
-    )
-    return response, rows_written
-
-
-async def _arrow_response(
-    ops: ServingOperations,
-    payload: SemanticExportRequest,
-    *,
-    headers: dict[str, str],
-) -> tuple[FileResponse, int]:
-    suffix = suffix_for_export_format("arrow")
-    fd, tmp_path = tempfile.mkstemp(prefix=f"codeintel-export-{payload.view_id}-", suffix=suffix)
-    os.close(fd)
-    try:
-        rows_written = await run_in_threadpool(
-            lambda: ops.export_to_arrow_ipc(payload, output_path=Path(tmp_path))
-        )
-    except Exception:
-        _unlink_best_effort(tmp_path)
-        raise
-
-    response = FileResponse(
-        path=tmp_path,
-        media_type=mime_type_for_export_format("arrow"),
-        filename=f"{payload.view_id}{suffix}",
+        media_type=plan.mime_type,
+        filename=f"{payload.view_id}{plan.suffix}",
         headers=headers,
         background=BackgroundTask(lambda: _unlink_best_effort(tmp_path)),
     )

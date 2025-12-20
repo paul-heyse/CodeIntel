@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 def test_query_metrics_dataclass_is_frozen() -> None:
     """QueryMetrics should be immutable."""
     metrics = QueryMetrics(
-        endpoint="/semantic/query",
+        endpoint="/v1/semantic/query",
         view_id="demo.view",
         query=None,
         row_count=10,
@@ -29,7 +29,7 @@ def test_query_metrics_dataclass_is_frozen() -> None:
         correlation_id="cid-123",
         engine="polars",
     )
-    expect_equal(metrics.endpoint, "/semantic/query")
+    expect_equal(metrics.endpoint, "/v1/semantic/query")
     expect_equal(metrics.view_id, "demo.view")
     expect_equal(metrics.row_count, 10)
     expect_false(metrics.truncated)
@@ -41,7 +41,7 @@ def test_query_metrics_dataclass_is_frozen() -> None:
 def test_query_metrics_default_engine() -> None:
     """Engine field should default to None."""
     metrics = QueryMetrics(
-        endpoint="/search",
+        endpoint="/v1/search",
         view_id=None,
         query="test query",
         row_count=5,
@@ -55,7 +55,7 @@ def test_query_metrics_default_engine() -> None:
 def test_log_query_metrics_logs_structured_data(caplog: LogCaptureFixture) -> None:
     """log_query_metrics should emit structured log with expected fields."""
     metrics = QueryMetrics(
-        endpoint="/semantic/query",
+        endpoint="/v1/semantic/query",
         view_id="function.summary",
         query=None,
         row_count=100,
@@ -74,7 +74,7 @@ def test_log_query_metrics_logs_structured_data(caplog: LogCaptureFixture) -> No
     expect_equal(record.levelname, "INFO")
     expect_in("query_executed", record.message)
 
-    expect_equal(getattr(record, "endpoint", None), "/semantic/query")
+    expect_equal(getattr(record, "endpoint", None), "/v1/semantic/query")
     expect_equal(getattr(record, "view_id", None), "function.summary")
     expect_equal(getattr(record, "query", None), None)
     expect_equal(getattr(record, "row_count", None), 100)
@@ -87,7 +87,7 @@ def test_log_query_metrics_logs_structured_data(caplog: LogCaptureFixture) -> No
 def test_log_query_metrics_rounds_duration(caplog: LogCaptureFixture) -> None:
     """Duration should be rounded to 3 decimal places."""
     metrics = QueryMetrics(
-        endpoint="/search",
+        endpoint="/v1/search",
         view_id=None,
         query="test",
         row_count=1,
@@ -106,7 +106,7 @@ def test_log_query_metrics_rounds_duration(caplog: LogCaptureFixture) -> None:
 def test_log_query_metrics_search_endpoint(caplog: LogCaptureFixture) -> None:
     """Search endpoints should include query text."""
     metrics = QueryMetrics(
-        endpoint="/search",
+        endpoint="/v1/search",
         view_id=None,
         query="authentication handler",
         row_count=25,

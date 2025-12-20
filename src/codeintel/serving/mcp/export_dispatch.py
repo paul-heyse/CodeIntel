@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.serving.export.formats import is_text_export_format
-from codeintel.serving.mcp.resource_store import ExportArtifactSpec, ResourceStore
+from codeintel.serving.export.engine import ExportDelivery, build_export_plan, write_export_file
+from codeintel.serving.export.models import ExportArtifactSpec
+from codeintel.serving.mcp.resource_store import ResourceStore
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest
 
@@ -37,31 +38,24 @@ def write_export_to_store(
     ValueError
         If the export format is unsupported.
     """
-    if is_text_export_format(spec.format):
-        if spec.format == "ndjson":
-            return store.put_with_metadata_stream(
-                ops.export_rows(request),
-                spec=spec,
-                export_id=export_id,
-            )
+    plan = build_export_plan(request)
+
+    if plan.delivery is ExportDelivery.ndjson_stream:
+        return store.put_with_metadata_stream(
+            ops.export_rows(request),
+            spec=spec,
+            export_id=export_id,
+        )
+    if plan.delivery is ExportDelivery.json_rows:
         rows = list(ops.export_rows(request))
         return store.put_with_metadata(rows, spec=spec, export_id=export_id)
-
-    if spec.format == "parquet":
+    if plan.delivery is ExportDelivery.binary_file:
         return store.put_generated_file_with_metadata(
             spec=spec,
             export_id=export_id,
-            write_fn=lambda path: ops.export_to_parquet(request, output_path=path),
+            write_fn=lambda path: write_export_file(ops, request, output_path=path),
         )
-
-    if spec.format == "arrow":
-        return store.put_generated_file_with_metadata(
-            spec=spec,
-            export_id=export_id,
-            write_fn=lambda path: ops.export_to_arrow_ipc(request, output_path=path),
-        )
-
-    msg = f"Unsupported export format: {spec.format}"
+    msg = f"Unsupported export format: {request.format}"
     raise ValueError(msg)
 
 

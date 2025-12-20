@@ -24,6 +24,8 @@ from dataclasses import dataclass, field
 from difflib import get_close_matches
 from typing import TYPE_CHECKING
 
+from codeintel.core.errors.problem_details import ProblemDetail, ProblemDetailBuilder
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -32,6 +34,7 @@ __all__ = [
     "ArtifactNotFoundError",
     "BuildError",
     "BuildErrorCollection",
+    "BuildProblemError",
     "ColumnCountMismatchError",
     "ContractError",
     "ContractViolationError",
@@ -95,6 +98,94 @@ class BuildError(Exception):
             Short identifier like "CONTRACT_SCHEMA_NOT_FOUND".
         """
         return self.__class__.__name__.upper()
+
+
+class BuildProblemError(BuildError):
+    """Build error carrying RFC 9457 Problem Details."""
+
+    def __init__(self, problem_detail: ProblemDetail) -> None:
+        """Initialize with a ProblemDetail payload.
+
+        Parameters
+        ----------
+        problem_detail
+            Problem detail payload to attach to the error.
+        """
+        self.problem_detail = problem_detail
+        super().__init__(problem_detail.detail or problem_detail.title)
+
+    @classmethod
+    def from_detail(
+        cls,
+        *,
+        code: str,
+        title: str,
+        detail: str,
+        status: int = 500,
+        **extras: object,
+    ) -> BuildProblemError:
+        """Create a BuildProblemError from ProblemDetailBuilder inputs.
+
+        Parameters
+        ----------
+        code
+            Problem code (e.g., "build.error").
+        title
+            Short problem title.
+        detail
+            Detailed error message.
+        status
+            HTTP-style status code.
+        **extras
+            Additional context fields.
+
+        Returns
+        -------
+        BuildProblemError
+            BuildProblemError with structured problem detail.
+        """
+        builder = ProblemDetailBuilder(code=code, title=title, status=status)
+        problem = builder.build(detail).with_extensions(**extras)
+        return cls(problem)
+
+    @property
+    def user_message(self) -> str:
+        """Return human-readable error message.
+
+        Returns
+        -------
+        str
+            User-facing error description.
+        """
+        return self.problem_detail.detail or self.problem_detail.title
+
+    @property
+    def actionable_hint(self) -> str | None:
+        """Return suggestion for fixing the error when provided.
+
+        Returns
+        -------
+        str | None
+            Suggested action when present.
+        """
+        suggestion = self.problem_detail.extensions.get("suggestion")
+        return suggestion if isinstance(suggestion, str) else None
+
+    @property
+    def error_code(self) -> str:
+        """Return error code from the problem detail when present.
+
+        Returns
+        -------
+        str
+            Problem detail code or fallback error code.
+        """
+        code = self.problem_detail.extensions.get("code")
+        if isinstance(code, str) and code:
+            return code
+        if self.problem_detail.type:
+            return self.problem_detail.type
+        return super().error_code
 
 
 class ContractError(BuildError):

@@ -1462,7 +1462,9 @@ def t__graph_metrics__compute(
         )
 
         backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
-        base_runtime_options = load_graph_runtime_options(env, target_name=GRAPH_METRICS_TARGET_NAME)
+        base_runtime_options = load_graph_runtime_options(
+            env, target_name=GRAPH_METRICS_TARGET_NAME
+        )
         runtime_options = replace(
             base_runtime_options,
             snapshot=snapshot,

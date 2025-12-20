@@ -1366,7 +1366,6 @@ from codeintel.serving.http.routes import router as api_router
 app.include_router(api_router)
 # Routes available at:
 # - /v1/semantic/views (versioned)
-# - /semantic/views (root alias, same as v1)
 ```
 
 **Benefits**:

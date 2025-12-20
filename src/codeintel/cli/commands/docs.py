@@ -128,7 +128,7 @@ class DocsExportCommand:
         list[str] | None,
         Parameter(
             name="--schema",
-            help="Schema name to validate (repeatable).",
+            help="Table key to validate (repeatable).",
         ),
     ] = None
     datasets: Annotated[

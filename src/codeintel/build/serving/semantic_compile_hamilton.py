@@ -10,24 +10,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from hamilton.driver import Driver
-
+from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from types import ModuleType
-
-
-def _stringify_tag_value(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (bool, float, int)):
-        return str(value)
-    if isinstance(value, list):
-        return ", ".join(str(v) for v in value if v is not None)
-    return str(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,26 +45,20 @@ def discover_semantic_nodes(
     tuple[DiscoveredSemanticNode, ...]
         Discovered semantic nodes, sorted deterministically by semantic_id then table_key.
     """
-    dr = Driver(config or {}, *modules)
-    variables = dr.list_available_variables(
-        tag_filter={ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW},
-    )
-
+    tag_index = TagIndex.from_modules(modules, config=config)
     discovered: list[DiscoveredSemanticNode] = []
-    for var in variables:
-        tags_raw = getattr(var, "tags", None)
-        if not isinstance(tags_raw, dict):
+    for node_name, tags in tag_index.tags_by_node.items():
+        output_kind = tags.get(ht.TAG_OUTPUT_KIND)
+        if output_kind not in {ht.OUTPUT_KIND_SEMANTIC_VIEW, "semantic"}:
             continue
-        table_key_raw = tags_raw.get(ht.TAG_TABLE_KEY)
-        if not isinstance(table_key_raw, str) or not table_key_raw:
+        table_key = tags.get(ht.TAG_TABLE_KEY)
+        if not table_key:
             continue
-
-        tags = {str(k): _stringify_tag_value(v) for k, v in tags_raw.items()}
         discovered.append(
             DiscoveredSemanticNode(
-                node_name=str(getattr(var, "name", "")),
-                table_key=table_key_raw,
-                tags=tags,
+                node_name=node_name,
+                table_key=table_key,
+                tags=dict(tags),
             )
         )
 
@@ -112,8 +93,8 @@ def collect_semantic_view_tags_from_hamilton(
     dict[str, dict[str, str]]
         Mapping from view table key to discovered tag values.
     """
-    nodes = discover_semantic_nodes(modules=modules, config=config)
-    return {n.table_key: n.tags for n in nodes}
+    tag_index = TagIndex.from_modules(modules, config=config)
+    return tag_index.semantic_view_tags()
 
 
 __all__ = [

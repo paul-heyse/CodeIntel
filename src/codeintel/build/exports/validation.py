@@ -14,8 +14,9 @@ import jsonschema
 import pyarrow.parquet as pq
 from referencing import Registry
 
-from codeintel.build.exports.common import ExportError, log_export_error
-from codeintel.build.schemas.json_schema_registry import get_json_schema_for_dataset_name
+from codeintel.build.errors import BuildProblemError
+from codeintel.build.exports.common import log_export_error
+from codeintel.build.schemas.json_schema_registry import get_json_schema
 from codeintel.core.errors.schema import SchemaError
 
 if TYPE_CHECKING:
@@ -24,13 +25,13 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-def _get_generated_schema(schema_name: str) -> dict[str, Any] | None:
-    """Get a generated JSON Schema for the schema name.
+def _get_generated_schema(table_key: str) -> dict[str, Any] | None:
+    """Get a generated JSON Schema for the table key.
 
     Parameters
     ----------
-    schema_name
-        Dataset name (without .json extension).
+    table_key
+        Fully qualified table key (schema.table).
 
     Returns
     -------
@@ -38,9 +39,9 @@ def _get_generated_schema(schema_name: str) -> dict[str, Any] | None:
         Generated JSON Schema, or None if not available.
     """
     try:
-        return get_json_schema_for_dataset_name(schema_name)
-    except SchemaError as e:
-        log.debug("Schema lookup failed for %s: %s", schema_name, e)
+        return get_json_schema(table_key)
+    except (KeyError, SchemaError) as e:
+        log.debug("Schema lookup failed for %s: %s", table_key, e)
         return None
 
 
@@ -119,15 +120,19 @@ def _validate_parquet(path: Path, validator: jsonschema.Draft202012Validator) ->
 
 
 def validate_export_files(
-    schema_name: str,
+    table_key: str,
     paths: list[Path],
+    *,
+    dataset_name: str | None = None,
 ) -> int:
-    """Validate files against the named schema.
+    """Validate files against the table schema.
 
     Parameters
     ----------
-    schema_name
-        Name of the schema (dataset name).
+    table_key
+        Fully qualified table key (schema.table).
+    dataset_name
+        Optional dataset name used for logging context.
     paths
         List of JSONL or Parquet files to validate.
 
@@ -138,18 +143,27 @@ def validate_export_files(
 
     Raises
     ------
-    ExportError
-        If no schema is available for the dataset.
+    from_detail
+        If no schema is available for the table.
     """
-    schema = _get_generated_schema(schema_name)
+    schema = _get_generated_schema(table_key)
     if schema is None:
-        message = f"No JSON Schema available for dataset: {schema_name}"
+        label = dataset_name or table_key
+        message = f"No JSON Schema available for table: {table_key}"
         log_export_error(
             code="export.schema_missing",
             title="Schema missing",
             detail=message,
+            dataset=label,
+            table_key=table_key,
         )
-        raise ExportError(message)
+        raise BuildProblemError.from_detail(
+            code="export.schema_missing",
+            title="Schema missing",
+            detail=message,
+            dataset=label,
+            table_key=table_key,
+        )
 
     validator = jsonschema.Draft202012Validator(schema, registry=Registry())
     all_errors: list[str] = []

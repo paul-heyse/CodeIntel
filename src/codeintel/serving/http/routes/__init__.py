@@ -1,21 +1,26 @@
-"""Route aggregation with API versioning.
-
-The default version (v1) is also mounted at the root for backwards
-compatibility.
-"""
+"""Route aggregation with API versioning."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from codeintel.serving.http.routes.v1 import router as v1_router
+from codeintel.serving.features import ServingFeatureSet
+from codeintel.serving.http.routes.v1 import build_v1_router
 
-router = APIRouter()
 
-# Versioned routes
-router.include_router(v1_router, prefix="/v1", tags=["v1"])
+def build_http_router(features: ServingFeatureSet) -> APIRouter:
+    """Build the root router with all versioned routes.
 
-# Root alias for backwards compatibility (same behavior as v1)
-router.include_router(v1_router, include_in_schema=False)
+    Returns
+    -------
+    APIRouter
+        Router with all enabled versioned routes included.
+    """
+    router = APIRouter()
+    router.include_router(build_v1_router(features), prefix="/v1", tags=["v1"])
+    return router
 
-__all__ = ["router"]
+
+router = build_http_router(ServingFeatureSet.all_enabled())
+
+__all__ = ["build_http_router", "router"]

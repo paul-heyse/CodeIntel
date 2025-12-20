@@ -8,11 +8,11 @@ I/O via Hamilton's saver nodes.
 
 from __future__ import annotations
 
-import time
 import types
 import typing
 from collections.abc import Sequence
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Literal, cast, get_args, get_origin
 
 import pandas as pd
@@ -26,9 +26,13 @@ from codeintel.build.hamilton.materialize_options import (
     append_materialize_options,
     materialize_options,
 )
+from codeintel.build.hamilton.materializers.base import (
+    MaterializationContextError,
+    duration_ms,
+    manifest_row_count,
+    resolve_materialization_context,
+)
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
-from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
-from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
@@ -134,91 +138,73 @@ class DuckDBRowsSaver(DataSaver):
             Metadata describing the write, including status and input hash for
             manifest-based incremental builds.
         """
-        start = time.perf_counter()
+        start = perf_counter()
         input_hash: str | None = None
         result: MaterializationMetadata | None = None
 
         try:
-            if not isinstance(self.env, BuildEnv):
+            prepared = resolve_materialization_context(
+                env=self.env,
+                graph=self.graph,
+                target_name=self.target_name,
+            )
+            if isinstance(prepared, MaterializationContextError):
                 result = _failed(
                     table_key=self.table_key,
-                    duration_ms=_duration_ms(start),
-                    input_hash="",
-                    error=f"Expected env to be BuildEnv, got {type(self.env).__name__}",
-                )
-            elif not isinstance(self.graph, TargetGraph):
-                result = _failed(
-                    table_key=self.table_key,
-                    duration_ms=_duration_ms(start),
-                    input_hash="",
-                    error=f"Expected graph to be TargetGraph, got {type(self.graph).__name__}",
+                    duration_ms=duration_ms(start),
+                    input_hash=prepared.input_hash or "",
+                    error=prepared.message,
                 )
             else:
-                target = self.graph.get(self.target_name)
-                if target is None:
-                    result = _failed(
+                context = prepared
+                input_hash = context.input_hash
+                if context.should_skip:
+                    result = _skipped(
                         table_key=self.table_key,
-                        duration_ms=_duration_ms(start),
-                        input_hash="",
-                        error=f"Target not found in graph: {self.target_name}",
+                        duration_ms=duration_ms(start),
+                        input_hash=input_hash,
+                        row_count=manifest_row_count(self.env, target_name=self.target_name),
+                    )
+                elif data is None:
+                    result = _skipped(
+                        table_key=self.table_key,
+                        duration_ms=duration_ms(start),
+                        input_hash=input_hash,
+                        row_count=None,
                     )
                 else:
-                    options_hash = options_hash_for_target(self.env, self.target_name)
-                    input_hash = compute_input_hash(
-                        target=target,
-                        snapshot=self.env.snapshot,
-                        gateway=self.env.gateway,
-                        options_hash=options_hash,
-                        manifests=self.env.manifest_index,
+                    rows = _coerce_rows(data)
+                    # Validate contract if strict mode is enabled
+                    ContractEnforcer.validate_table_write(self.table_key)
+
+                    warehouse = self.env.warehouse
+                    row_count = _materialize_rows(
+                        warehouse,
+                        _RowsMaterializationRequest(
+                            table_key=self.table_key,
+                            rows=rows,
+                            columns=self.columns,
+                            validate=self.env.validate_outputs,
+                            options=materialize_options(
+                                self.env,
+                                owner_target=self.target_name,
+                                mode="replace",
+                                input_hash=input_hash,
+                            ),
+                        ),
                     )
 
-                    if should_skip_native_target(self.env, target, input_hash):
-                        result = _skipped(
-                            table_key=self.table_key,
-                            duration_ms=_duration_ms(start),
-                            input_hash=input_hash,
-                            row_count=_manifest_row_count(self.env, target_name=self.target_name),
-                        )
-                    elif data is None:
-                        result = _skipped(
-                            table_key=self.table_key,
-                            duration_ms=_duration_ms(start),
-                            input_hash=input_hash,
-                            row_count=None,
-                        )
-                    else:
-                        rows = _coerce_rows(data)
-                        # Validate contract if strict mode is enabled
-                        ContractEnforcer.validate_table_write(self.table_key)
-
-                        warehouse = self.env.warehouse
-                        row_count = _materialize_rows(
-                            warehouse,
-                            _RowsMaterializationRequest(
-                                table_key=self.table_key,
-                                rows=rows,
-                                columns=self.columns,
-                                validate=self.env.validate_outputs,
-                                options=materialize_options(
-                                    self.env,
-                                    owner_target=self.target_name,
-                                    mode="replace",
-                                    input_hash=input_hash,
-                                ),
-                            ),
-                        )
-
-                        result = _succeeded(
-                            table_key=self.table_key,
-                            duration_ms=_duration_ms(start),
-                            input_hash=input_hash,
-                            row_count=row_count,
-                        )
+                    result = _succeeded(
+                        table_key=self.table_key,
+                        duration_ms=duration_ms(start),
+                        input_hash=input_hash,
+                        row_count=row_count,
+                    )
 
         except _RECOVERABLE_EXCEPTIONS as exc:
             result = _failed(
                 table_key=self.table_key,
-                duration_ms=_duration_ms(start),
+                duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error=str(exc),
             )
@@ -226,16 +212,12 @@ class DuckDBRowsSaver(DataSaver):
         if result is None:
             return _failed(
                 table_key=self.table_key,
-                duration_ms=_duration_ms(start),
+                duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error="Unknown row materialization failure",
             )
 
         return result
-
-
-def _duration_ms(start: float) -> float:
-    return (time.perf_counter() - start) * 1000
 
 
 def _succeeded(
@@ -279,16 +261,6 @@ def _failed(
         input_hash=input_hash,
         error=error,
     ).to_dict()
-
-
-def _manifest_row_count(env: BuildEnv, *, target_name: str) -> int | None:
-    index = env.manifest_index
-    if index is None:
-        return None
-    manifest = index.get(target_name)
-    if manifest is None:
-        return None
-    return manifest.row_count
 
 
 def _coerce_rows(data: object) -> tuple[tuple[object, ...], ...]:

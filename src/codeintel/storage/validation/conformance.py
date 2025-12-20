@@ -10,7 +10,7 @@ import duckdb
 import jsonschema
 
 from codeintel.core.errors.schema import SchemaError
-from codeintel.storage.contracts.json_schema import get_json_schema_for_dataset_name
+from codeintel.storage.contracts.json_schema import get_json_schema_for_table_key
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.validation.contract import collect_contract_issues
 
@@ -56,13 +56,13 @@ class ConformanceReport:
         return not self.issues
 
 
-def _get_generated_schema(dataset_name: str) -> dict[str, object] | None:
-    """Get a generated JSON Schema for the dataset name.
+def _get_generated_schema(table_key: str) -> dict[str, object] | None:
+    """Get a generated JSON Schema for the table key.
 
     Parameters
     ----------
-    dataset_name
-        Dataset name.
+    table_key
+        Fully qualified table key (schema.table).
 
     Returns
     -------
@@ -70,9 +70,9 @@ def _get_generated_schema(dataset_name: str) -> dict[str, object] | None:
         Generated JSON Schema, or None if not available.
     """
     try:
-        return get_json_schema_for_dataset_name(dataset_name)
+        return get_json_schema_for_table_key(table_key)
     except SchemaError as e:
-        log.debug("Schema lookup failed for %s: %s", dataset_name, e)
+        log.debug("Schema lookup failed for %s: %s", table_key, e)
         return None
 
 
@@ -101,7 +101,7 @@ def _validate_schema_rows(
     for name, ds in registry.by_name.items():
         if ds.json_schema_id is None:
             continue
-        schema = _get_generated_schema(name)
+        schema = _get_generated_schema(ds.table_key)
         if schema is None:
             continue
         if ds.schema is None:

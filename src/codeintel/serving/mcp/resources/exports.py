@@ -21,6 +21,20 @@ from codeintel.serving.mcp.models import (
     ExportURIs,
     SnapshotRef,
 )
+from codeintel.serving.uris import (
+    EXPORT_BYTES_URI_TEMPLATE,
+    EXPORT_LINES_URI_TEMPLATE,
+    EXPORT_META_URI_TEMPLATE,
+    EXPORT_PREVIEW_URI_TEMPLATE,
+    EXPORT_SQL_URI_TEMPLATE,
+    EXPORT_URI_TEMPLATE,
+    export_bytes_uri_template,
+    export_lines_uri_template,
+    export_meta_uri,
+    export_preview_uri,
+    export_sql_uri,
+    export_uri,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -88,17 +102,17 @@ def _build_export_meta_response(export_id: str, store: ResourceStore) -> dict[st
         buildspec_hash=snapshot_dict.get("buildspec_hash", "unknown"),
     )
 
-    lines_template = f"codeintel://exports/{export_id}/lines{{?offset,limit}}"
-    bytes_template = f"codeintel://exports/{export_id}/bytes{{?offset,limit}}"
     uris = ExportURIs(
-        payload_uri=f"codeintel://exports/{export_id}",
-        meta_uri=f"codeintel://exports/{export_id}/meta",
-        preview_uri=f"codeintel://exports/{export_id}/preview"
-        if supports_preview(meta.format)
+        payload_uri=export_uri(export_id),
+        meta_uri=export_meta_uri(export_id),
+        preview_uri=export_preview_uri(export_id) if supports_preview(meta.format) else None,
+        sql_uri=export_sql_uri(export_id) if meta.compiled_sql else None,
+        lines_uri_template=export_lines_uri_template(export_id)
+        if supports_line_chunks(meta.format)
         else None,
-        sql_uri=f"codeintel://exports/{export_id}/sql" if meta.compiled_sql else None,
-        lines_uri_template=lines_template if supports_line_chunks(meta.format) else None,
-        bytes_uri_template=bytes_template if supports_byte_chunks(meta.format) else None,
+        bytes_uri_template=export_bytes_uri_template(export_id)
+        if supports_byte_chunks(meta.format)
+        else None,
     )
 
     query_spec = ExportQuerySpec(
@@ -140,7 +154,7 @@ def _register_export_read_resource(
     *,
     settings: ServingSettings,
 ) -> None:
-    @mcp.resource("codeintel://exports/{export_id}")
+    @mcp.resource(EXPORT_URI_TEMPLATE)
     def read_export(export_id: str) -> str | bytes:
         artifact = store.get(export_id)
         if artifact.size_bytes > settings.mcp_export_max_full_read_bytes:
@@ -151,15 +165,15 @@ def _register_export_read_resource(
 
 
 def _register_export_metadata_resources(mcp: FastMCP, store: ResourceStore) -> None:
-    @mcp.resource("codeintel://exports/{export_id}/meta")
+    @mcp.resource(EXPORT_META_URI_TEMPLATE)
     def export_meta(export_id: str) -> dict[str, object]:
         return _build_export_meta_response(export_id, store)
 
-    @mcp.resource("codeintel://exports/{export_id}/preview")
+    @mcp.resource(EXPORT_PREVIEW_URI_TEMPLATE)
     def export_preview(export_id: str) -> dict[str, object]:
         return store.get_preview(export_id, max_rows=5)
 
-    @mcp.resource("codeintel://exports/{export_id}/sql")
+    @mcp.resource(EXPORT_SQL_URI_TEMPLATE)
     def export_sql(export_id: str) -> str:
         try:
             meta = store.get_meta(export_id)
@@ -176,7 +190,7 @@ def _register_export_chunk_resources(
     *,
     settings: ServingSettings,
 ) -> None:
-    @mcp.resource("codeintel://exports/{export_id}/lines{?offset,limit}", mime_type="text/plain")
+    @mcp.resource(EXPORT_LINES_URI_TEMPLATE, mime_type="text/plain")
     def export_lines(export_id: str, offset: int = 0, limit: int = 100) -> str:
         _validate_chunk_request(
             offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_lines
@@ -189,10 +203,7 @@ def _register_export_chunk_resources(
             raise ExportChunkRequestError
         return _read_text_chunk(artifact.path, offset=offset, limit=limit)
 
-    @mcp.resource(
-        "codeintel://exports/{export_id}/bytes{?offset,limit}",
-        mime_type="application/octet-stream",
-    )
+    @mcp.resource(EXPORT_BYTES_URI_TEMPLATE, mime_type="application/octet-stream")
     def export_bytes(export_id: str, offset: int = 0, limit: int = 1024) -> bytes:
         _validate_chunk_request(
             offset=offset, limit=limit, max_limit=settings.mcp_export_max_chunk_bytes

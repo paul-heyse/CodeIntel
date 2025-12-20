@@ -22,8 +22,8 @@ def test_export_mappings_cover_required_tables(
         If either Parquet or JSONL mappings omit required tables.
     """
     gateway = docs_export_gateway.gateway
-    jsonl_mapping = gateway.datasets.jsonl_mapping or {}
-    parquet_mapping = gateway.datasets.parquet_mapping or {}
+    jsonl_mapping = gateway.datasets.jsonl_datasets
+    parquet_mapping = gateway.datasets.parquet_datasets
 
     required_tables = {
         "core.goids",
@@ -75,9 +75,9 @@ def test_export_mappings_registered_with_dataset_registry(
     AssertionError
         If any export mapping references an unregistered table.
     """
-    mapping_tables = set(docs_export_gateway.gateway.datasets.mapping.values())
-    jsonl_mapping = docs_export_gateway.gateway.datasets.jsonl_mapping or {}
-    parquet_mapping = docs_export_gateway.gateway.datasets.parquet_mapping or {}
+    mapping_tables = set(docs_export_gateway.gateway.datasets.by_table_key)
+    jsonl_mapping = docs_export_gateway.gateway.datasets.jsonl_datasets
+    parquet_mapping = docs_export_gateway.gateway.datasets.parquet_datasets
     missing_parquet = set(parquet_mapping) - mapping_tables
     missing_jsonl = set(jsonl_mapping) - mapping_tables
     if missing_parquet:

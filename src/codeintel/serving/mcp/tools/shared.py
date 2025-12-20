@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Final
 from mcp import McpError
 
 from codeintel.serving.export.formats import normalize_export_format
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp._compat import Context
 from codeintel.serving.mcp.models import QueryPreview
 from codeintel.serving.semantic.models import FilterSpec, SemanticQueryRequest
@@ -59,7 +60,8 @@ async def maybe_report_progress(
     """Report progress to the MCP host when enabled."""
     if ctx is None:
         return
-    if not settings.mcp_progress_reporting:
+    feature_set = ServingFeatureSet.from_settings(settings)
+    if not feature_set.enable_mcp_progress:
         return
     await ctx.report_progress(progress, total, message)
 

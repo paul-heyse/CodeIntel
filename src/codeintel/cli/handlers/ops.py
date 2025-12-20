@@ -92,7 +92,7 @@ def dataset_list_handler(ctx: CommandContext) -> CliResult[DatasetListResult]:
     """
     gateway = ctx.gateway
     registry = gateway.datasets
-    meta = registry.meta or {}
+    contracts = registry.by_name
 
     dataset_dicts: list[dict[str, str | None]] = [
         {
@@ -101,10 +101,10 @@ def dataset_list_handler(ctx: CommandContext) -> CliResult[DatasetListResult]:
             "is_view": str(contract.is_view),
             "owner_package": contract.owner_package,
         }
-        for name, contract in sorted(meta.items())
+        for name, contract in sorted(contracts.items())
     ]
 
-    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(meta)))
+    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(contracts)))
 
 
 def dataset_describe_handler(

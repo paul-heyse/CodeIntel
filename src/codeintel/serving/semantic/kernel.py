@@ -8,15 +8,14 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from codeintel.core.schemas.hashing import schema_hash
-from codeintel.serving.errors import SemanticColumnNotFoundError
+from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.search.engine import (
     SEARCH_TABLE_NAME,
@@ -31,8 +30,15 @@ from codeintel.serving.semantic.fingerprints import (
     fingerprint_semantic_query,
 )
 from codeintel.serving.semantic.models import (
+    SemanticCatalogResponse,
+    SemanticCatalogView,
     SemanticExplainResponse,
     SemanticQueryResponse,
+    SemanticViewDescriptionResponse,
+)
+from codeintel.serving.semantic.planner import (
+    SemanticQueryPlanner,
+    cleanup_temp_tables_if_needed,
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
@@ -48,16 +54,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
+    from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.search.models import SearchQueryRequest
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.models import (
-        FilterSpec,
         SemanticExportRequest,
         SemanticQueryRequest,
-        SemanticViewSpec,
     )
+    from codeintel.serving.semantic.planner import ResolvedViewContext
     from codeintel.serving.semantic.templates import BoundQuery, DbApiQuery
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
@@ -71,23 +76,6 @@ class UnknownViewIdError(KeyError):
     def __init__(self, view_id: str) -> None:
         super().__init__(view_id)
         self.view_id = view_id
-
-
-@dataclass(frozen=True, slots=True)
-class _ResolvedViewContext:
-    pointer: ServingSnapshotPointer
-    view: SemanticViewSpec
-    inventory: SchemaInventory
-    allowed_columns: list[str]
-    column_types: dict[str, ColumnType] | None
-
-
-@dataclass(frozen=True, slots=True)
-class _PlanInputs:
-    columns: list[str]
-    filters: list[FilterSpec]
-    order_by: list[str]
-    offset: int
 
 
 def _sanitize_float_nan(value: object) -> object:
@@ -121,73 +109,11 @@ class SemanticQueryKernel:
 
     db: ServingDBManager
     settings: ServingSettings
+    _planner: SemanticQueryPlanner = field(init=False, repr=False)
 
-    def _snapshot_context(self, pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
-        """Return the cached snapshot context for a pointer.
-
-        Parameters
-        ----------
-        pointer
-            Snapshot pointer describing the active artifact paths.
-
-        Returns
-        -------
-        ServingSnapshotContext
-            Cached registry/inventory/buildspec for the snapshot.
-        """
-        return self.db.snapshot_context(pointer)
-
-    def _resolve_allowed_columns(
-        self,
-        *,
-        view: SemanticViewSpec,
-        inventory: SchemaInventory,
-    ) -> list[str]:
-        """Resolve allowed columns for a view, enforcing schema manifest when enabled.
-
-        Parameters
-        ----------
-        view
-            Semantic view specification.
-        inventory
-            Schema inventory loaded from the current snapshot.
-
-        Returns
-        -------
-        list[str]
-            Allowed column names in result order.
-
-        Raises
-        ------
-        ValueError
-            If the view's table is missing from the manifest or exposes unknown columns in strict mode.
-        """
-        schema = inventory.get(view.table_key)
-        if schema is None:
-            msg = f"View table_key not present in schema manifest: {view.table_key}"
-            raise ValueError(msg)
-
-        schema_cols = [c.name for c in schema.columns]
-        if not view.columns:
-            return schema_cols
-
-        unknown = sorted(set(view.columns) - set(schema_cols))
-        mode = self.settings.schema_enforcement.lower()
-        if unknown and mode == "strict":
-            msg = f"Semantic view {view.id} exposes unknown columns: {unknown}"
-            raise ValueError(msg)
-        if unknown and mode == "warn":
-            LOG.warning(
-                "serving.semantic.columns.unknown view_id=%s table_key=%s unknown=%s",
-                view.id,
-                view.table_key,
-                unknown,
-            )
-            return [c for c in view.columns if c in schema_cols]
-        if mode == "off":
-            return list(view.columns)
-
-        return list(view.columns)
+    def __post_init__(self) -> None:
+        """Initialize planner after dataclass construction."""
+        self._planner = SemanticQueryPlanner(db=self.db, settings=self.settings)
 
     def _execute_sql(
         self,
@@ -222,17 +148,6 @@ class SemanticQueryKernel:
         """
         return ServingSnapshotIdentity.from_pointer(pointer)
 
-    @staticmethod
-    def _schema_hash_for_table_key(
-        *,
-        inventory: SchemaInventory,
-        table_key: str,
-    ) -> str | None:
-        schema = inventory.get(table_key)
-        if schema is None:
-            return None
-        return schema_hash(schema)
-
     def _fingerprint_semantic_plan(
         self,
         *,
@@ -242,7 +157,7 @@ class SemanticQueryKernel:
         inventory: SchemaInventory,
     ) -> tuple[str, str | None]:
         filter_dicts = [f.model_dump(mode="json") for f in plan.filters]
-        schema_hash_value = self._schema_hash_for_table_key(
+        schema_hash_value = self._planner.schema_hash_for_table_key(
             inventory=inventory, table_key=plan.table_key
         )
         inputs = SemanticQueryFingerprintInput(
@@ -281,7 +196,10 @@ class SemanticQueryKernel:
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
         finally:
-            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=query.temp_tables)
+            cleanup_temp_tables_if_needed(
+                con=warehouse.gateway.con,
+                temp_tables=query.temp_tables,
+            )
 
     def _execute_dbapi_query(
         self, *, warehouse: Warehouse, query: DbApiQuery
@@ -292,111 +210,15 @@ class SemanticQueryKernel:
             raise ValueError(str(exc)) from exc
         return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
 
-    def _resolve_view_context(
-        self, *, pointer: ServingSnapshotPointer, view_id: str
-    ) -> _ResolvedViewContext:
-        context = self._snapshot_context(pointer)
-        inventory = context.inventory
-        view = context.registry.by_id(view_id)
-        allowed_columns = self._resolve_allowed_columns(view=view, inventory=inventory)
-        column_types = _column_types_for_view(view=view, inventory=inventory)
-        return _ResolvedViewContext(
-            pointer=pointer,
-            view=view,
-            inventory=inventory,
-            allowed_columns=allowed_columns,
-            column_types=column_types,
-        )
-
     def _resolve_view_context_for_export(
         self, *, pointer: ServingSnapshotPointer, view_id: str
-    ) -> _ResolvedViewContext:
+    ) -> ResolvedViewContext:
         try:
-            return self._resolve_view_context(pointer=pointer, view_id=view_id)
+            return self._planner.resolve_view_context(pointer=pointer, view_id=view_id)
         except KeyError as exc:
             raise UnknownViewIdError(view_id) from exc
 
-    @staticmethod
-    def _plan_from_inputs(
-        *, ctx: _ResolvedViewContext, inputs: _PlanInputs, limit: int
-    ) -> SemanticQueryPlan:
-        return SemanticQueryPlan(
-            table_key=ctx.view.table_key,
-            columns=inputs.columns,
-            allowed_columns=frozenset(ctx.allowed_columns),
-            filters=inputs.filters,
-            order_by=inputs.order_by,
-            limit=limit,
-            offset=inputs.offset,
-        )
-
-    @staticmethod
-    def _query_plan_inputs(
-        *, ctx: _ResolvedViewContext, request: SemanticQueryRequest
-    ) -> tuple[_PlanInputs, int]:
-        if request.select:
-            unknown = sorted(set(request.select) - set(ctx.allowed_columns))
-            if unknown:
-                raise SemanticColumnNotFoundError(ctx.view.id, unknown[0])
-            columns = list(request.select)
-        else:
-            columns = ctx.allowed_columns
-        effective_limit = request.limit if request.limit else ctx.view.defaults.limit
-        effective_order = request.order_by if request.order_by else ctx.view.defaults.order_by
-        inputs = _PlanInputs(
-            columns=columns,
-            filters=request.filters,
-            order_by=effective_order,
-            offset=request.offset,
-        )
-        return inputs, effective_limit
-
-    @staticmethod
-    def _export_plan_inputs(
-        *, ctx: _ResolvedViewContext, request: SemanticExportRequest
-    ) -> tuple[_PlanInputs, int]:
-        if request.select:
-            unknown = sorted(set(request.select) - set(ctx.allowed_columns))
-            if unknown:
-                raise SemanticColumnNotFoundError(ctx.view.id, unknown[0])
-            columns = list(request.select)
-        else:
-            columns = ctx.allowed_columns
-
-        inputs = _PlanInputs(
-            columns=columns,
-            filters=request.filters,
-            order_by=request.order_by,
-            offset=request.offset,
-        )
-        return inputs, request.limit
-
-    @staticmethod
-    def _compile_safe_sql(
-        *,
-        warehouse: Warehouse,
-        plan: SemanticQueryPlan,
-        column_types: dict[str, ColumnType] | None,
-        cleanup_temp_tables: bool,
-    ) -> tuple[str, tuple[str, ...]]:
-        ibis_con = warehouse.gateway.ibis.con
-        built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
-        try:
-            compiled = built.compile_sql(ibis_con)
-            assert_single_select_statement(compiled)
-        except UnsafeSqlError as exc:
-            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
-            raise ValueError(str(exc)) from exc
-        except Exception:
-            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
-            raise
-
-        if cleanup_temp_tables:
-            _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=built.temp_tables)
-
-        return compiled, built.temp_tables
-
-    def catalog(self) -> dict[str, object]:
+    def catalog(self) -> SemanticCatalogResponse:
         """List all available semantic views.
 
         Returns
@@ -405,27 +227,28 @@ class SemanticQueryKernel:
             Catalog response with version, snapshot, and views.
         """
         pointer = self.db.current_pointer()
-        context = self._snapshot_context(pointer)
+        context = self._planner.snapshot_context(pointer)
         registry = context.registry
 
-        return {
-            "version": registry.version,
-            "snapshot": self._snapshot_dict(pointer),
-            "views": [
-                {
-                    "id": v.id,
-                    "table_key": v.table_key,
-                    "entity": v.entity,
-                    "grain": v.grain,
-                    "description": v.description,
-                    "column_count": len(v.columns),
-                }
-                for v in registry.views
-                if not v.deprecated
-            ],
-        }
+        views = [
+            SemanticCatalogView(
+                id=v.id,
+                table_key=v.table_key,
+                entity=v.entity,
+                grain=v.grain,
+                description=v.description,
+                column_count=len(v.columns),
+            )
+            for v in registry.views
+            if not v.deprecated
+        ]
+        return SemanticCatalogResponse(
+            version=registry.version,
+            snapshot=self._snapshot_dict(pointer),
+            views=views,
+        )
 
-    def describe(self, view_id: str) -> dict[str, object]:
+    def describe(self, view_id: str) -> SemanticViewDescriptionResponse:
         """Describe a single semantic view.
 
         Parameters
@@ -439,7 +262,7 @@ class SemanticQueryKernel:
             View description with schema details.
         """
         pointer = self.db.current_pointer()
-        context = self._snapshot_context(pointer)
+        context = self._planner.snapshot_context(pointer)
         registry = context.registry
         inventory = context.inventory
 
@@ -450,22 +273,22 @@ class SemanticQueryKernel:
         if table_schema is not None:
             column_types = {c.name: c.type for c in table_schema.columns}
 
-        return {
-            "id": view.id,
-            "table_key": view.table_key,
-            "kind": view.kind,
-            "entity": view.entity,
-            "grain": view.grain,
-            "description": view.description,
-            "primary_key": view.primary_key,
-            "columns": view.columns,
-            "column_types": column_types,
-            "joins": view.joins,
-            "defaults": view.defaults.model_dump(mode="json"),
-            "deprecated": view.deprecated,
-            "replaced_by": view.replaced_by,
-            "snapshot": self._snapshot_dict(pointer),
-        }
+        return SemanticViewDescriptionResponse(
+            id=view.id,
+            table_key=view.table_key,
+            kind=view.kind,
+            entity=view.entity,
+            grain=view.grain,
+            description=view.description,
+            primary_key=view.primary_key,
+            columns=view.columns,
+            column_types=column_types,
+            joins=view.joins,
+            defaults=view.defaults,
+            deprecated=view.deprecated,
+            replaced_by=view.replaced_by,
+            snapshot=self._snapshot_dict(pointer),
+        )
 
     def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
         """Execute a semantic view query.
@@ -481,9 +304,11 @@ class SemanticQueryKernel:
             Query results.
         """
         with self.db.connect() as (warehouse, pointer):
-            resolved = self._resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._query_plan_inputs(ctx=resolved, request=request)
-            plan = self._plan_from_inputs(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_query(
+                ctx=resolved, request=request
+            )
+            plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
             rows = self._execute_semantic_plan(
                 warehouse=warehouse,
                 plan=plan,
@@ -494,7 +319,7 @@ class SemanticQueryKernel:
         if truncated:
             rows = rows[:effective_limit]
 
-        fingerprint_plan = self._plan_from_inputs(
+        fingerprint_plan = self._planner.build_plan(
             ctx=resolved, inputs=inputs, limit=effective_limit
         )
         query_hash, schema_hash_value = self._fingerprint_semantic_plan(
@@ -528,10 +353,12 @@ class SemanticQueryKernel:
             Explain output including compiled SQL and plan text.
         """
         with self.db.connect() as (warehouse, pointer):
-            resolved = self._resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._query_plan_inputs(ctx=resolved, request=request)
-            plan = self._plan_from_inputs(ctx=resolved, inputs=inputs, limit=effective_limit)
-            compiled, _temp_tables = self._compile_safe_sql(
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_query(
+                ctx=resolved, request=request
+            )
+            plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit)
+            compiled, _temp_tables = self._planner.compile_plan(
                 warehouse=warehouse,
                 plan=plan,
                 column_types=resolved.column_types,
@@ -562,10 +389,12 @@ class SemanticQueryKernel:
             Compiled SQL string (validated select-only).
         """
         with self.db.connect() as (warehouse, pointer):
-            resolved = self._resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._query_plan_inputs(ctx=resolved, request=request)
-            plan = self._plan_from_inputs(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
-            compiled, _temp_tables = self._compile_safe_sql(
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_query(
+                ctx=resolved, request=request
+            )
+            plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
+            compiled, _temp_tables = self._planner.compile_plan(
                 warehouse=warehouse,
                 plan=plan,
                 column_types=resolved.column_types,
@@ -573,12 +402,12 @@ class SemanticQueryKernel:
             )
             return compiled
 
-    def meta(self) -> dict[str, object]:
+    def meta(self) -> ServingKernelMetaResponse:
         """Return serving metadata for /meta endpoint and tools.
 
         Returns
         -------
-        dict[str, object]
+        ServingKernelMetaResponse
             Comprehensive serving metadata.
         """
         return build_kernel_meta_payload(self.db)
@@ -657,8 +486,10 @@ class SemanticQueryKernel:
         """
         pointer = self.db.current_pointer()
         resolved = self._resolve_view_context_for_export(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self._export_plan_inputs(ctx=resolved, request=request)
-        fingerprint_plan = self._plan_from_inputs(
+        inputs, effective_limit = self._planner.plan_inputs_for_export(
+            ctx=resolved, request=request
+        )
+        fingerprint_plan = self._planner.build_plan(
             ctx=resolved, inputs=inputs, limit=effective_limit
         )
         return self._fingerprint_semantic_plan(
@@ -685,7 +516,7 @@ class SemanticQueryKernel:
             Row dictionary for each result row.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, columns, temp_tables = self._compile_export_query(
+            sql, columns, temp_tables = self._planner.compile_export(
                 warehouse=warehouse,
                 pointer=pointer,
                 request=request,
@@ -700,7 +531,10 @@ class SemanticQueryKernel:
                     for idx in range(row_count):
                         yield {name: payload[name][idx] for name in columns}
             finally:
-                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
+                cleanup_temp_tables_if_needed(
+                    con=warehouse.gateway.con,
+                    temp_tables=temp_tables,
+                )
 
     def export_sql(self, request: SemanticExportRequest) -> str:
         """Return the compiled SQL for an export request.
@@ -716,7 +550,7 @@ class SemanticQueryKernel:
             Compiled DuckDB SQL for the export.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, _columns, temp_tables = self._compile_export_query(
+            sql, _columns, temp_tables = self._planner.compile_export(
                 warehouse=warehouse,
                 pointer=pointer,
                 request=request,
@@ -724,7 +558,10 @@ class SemanticQueryKernel:
             try:
                 return sql
             finally:
-                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
+                cleanup_temp_tables_if_needed(
+                    con=warehouse.gateway.con,
+                    temp_tables=temp_tables,
+                )
 
     def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
         """Write an export result to a Parquet file.
@@ -735,7 +572,7 @@ class SemanticQueryKernel:
             Number of rows written.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, _columns, temp_tables = self._compile_export_query(
+            sql, _columns, temp_tables = self._planner.compile_export(
                 warehouse=warehouse,
                 pointer=pointer,
                 request=request,
@@ -753,7 +590,10 @@ class SemanticQueryKernel:
                     writer.close()
                 return rows_written
             finally:
-                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
+                cleanup_temp_tables_if_needed(
+                    con=warehouse.gateway.con,
+                    temp_tables=temp_tables,
+                )
 
     def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
         """Write an export result to an Arrow IPC file.
@@ -764,7 +604,7 @@ class SemanticQueryKernel:
             Number of rows written.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, _columns, temp_tables = self._compile_export_query(
+            sql, _columns, temp_tables = self._planner.compile_export(
                 warehouse=warehouse,
                 pointer=pointer,
                 request=request,
@@ -785,44 +625,10 @@ class SemanticQueryKernel:
                         writer.write_batch(batch)
                 return rows_written
             finally:
-                _cleanup_temp_tables(con=warehouse.gateway.con, temp_tables=temp_tables)
-
-    def _compile_export_query(
-        self,
-        *,
-        warehouse: Warehouse,
-        pointer: ServingSnapshotPointer,
-        request: SemanticExportRequest,
-    ) -> tuple[str, list[str], tuple[str, ...]]:
-        resolved = self._resolve_view_context_for_export(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self._export_plan_inputs(ctx=resolved, request=request)
-        plan = self._plan_from_inputs(ctx=resolved, inputs=inputs, limit=effective_limit)
-        sql, temp_tables = self._compile_safe_sql(
-            warehouse=warehouse,
-            plan=plan,
-            column_types=resolved.column_types,
-            cleanup_temp_tables=False,
-        )
-        return sql, inputs.columns, temp_tables
-
-
-def _column_types_for_view(
-    *,
-    view: SemanticViewSpec,
-    inventory: SchemaInventory,
-) -> dict[str, ColumnType] | None:
-    table_schema = inventory.get(view.table_key)
-    if table_schema is None:
-        return None
-    return {col.name: col.type for col in table_schema.columns}
-
-
-def _cleanup_temp_tables(*, con: object, temp_tables: tuple[str, ...]) -> None:
-    unregister = getattr(con, "unregister", None)
-    if not callable(unregister):
-        return
-    for table_name in temp_tables:
-        unregister(table_name)
+                cleanup_temp_tables_if_needed(
+                    con=warehouse.gateway.con,
+                    temp_tables=temp_tables,
+                )
 
 
 __all__ = ["SemanticQueryKernel"]

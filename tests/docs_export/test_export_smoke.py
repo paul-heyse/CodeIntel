@@ -116,7 +116,10 @@ def test_export_validation_passes_on_minimal_data(
     export_all_parquet(
         docs_export_gateway.gateway,
         output_dir,
-        options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
+        options=ExportCallOptions(
+            validate_exports=True,
+            schemas=["analytics.function_profile"],
+        ),
     )
 
 
@@ -203,7 +206,10 @@ def test_export_helpers_resolve_dataset_names(
     export_all_jsonl(
         docs_export_gateway.gateway,
         output_dir,
-        options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
+        options=ExportCallOptions(
+            validate_exports=True,
+            schemas=["analytics.function_profile"],
+        ),
     )
 
 

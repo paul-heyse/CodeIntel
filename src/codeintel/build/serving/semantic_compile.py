@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
     TAG_DEFAULT_LIMIT,
@@ -147,6 +148,35 @@ def compile_semantic_registry_from_views(
     return CompiledSemanticRegistry(version=version, views=views)
 
 
+def compile_semantic_registry_from_tag_index(
+    *,
+    schema_provider: SchemaProvider,
+    tag_index: TagIndex,
+    version: str = "v1",
+) -> CompiledSemanticRegistry:
+    """Compile semantic registry from a TagIndex.
+
+    Parameters
+    ----------
+    schema_provider
+        Provider for resolving table schemas.
+    tag_index
+        TagIndex containing normalized Hamilton tags.
+    version
+        Registry version string.
+
+    Returns
+    -------
+    CompiledSemanticRegistry
+        Compiled registry.
+    """
+    return compile_semantic_registry_from_views(
+        schema_provider=schema_provider,
+        view_tags=tag_index.semantic_view_tags(),
+        version=version,
+    )
+
+
 def write_semantic_registry(*, registry: CompiledSemanticRegistry, out_path: Path) -> None:
     """Write semantic registry to file."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,6 +185,7 @@ def write_semantic_registry(*, registry: CompiledSemanticRegistry, out_path: Pat
 
 __all__ = [
     "CompiledSemanticRegistry",
+    "compile_semantic_registry_from_tag_index",
     "compile_semantic_registry_from_views",
     "write_semantic_registry",
 ]

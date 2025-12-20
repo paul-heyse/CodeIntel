@@ -13,7 +13,6 @@ module override semantics (`driver.Builder().allow_module_overrides()`).
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -25,6 +24,7 @@ from codeintel.build.hamilton.introspect import (
 )
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.discovery import load_native_modules
+from codeintel.build.hamilton.runtime import HamiltonRuntime
 from codeintel.build.hamilton.templates import get_template_module
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
@@ -41,43 +41,6 @@ _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
 
 def _all_target_names() -> frozenset[str]:
     return frozenset(target.name for target in load_target_specs())
-
-
-@dataclass(frozen=True)
-class HamiltonRuntime:
-    """Bundled Hamilton Driver and TargetGraph for build execution.
-
-    This dataclass provides convenient access to both the Hamilton Driver
-    (for DAG execution) and the TargetGraph (for target metadata lookup),
-    along with bidirectional mappings between targets and Hamilton nodes.
-
-    Attributes
-    ----------
-    dr
-        Hamilton Driver configured with the appropriate node module.
-    graph
-        Target graph containing all registered targets.
-    target_to_node
-        Mapping from target names to Hamilton node names.
-    node_to_target
-        Mapping from Hamilton node names to target names.
-
-    Examples
-    --------
-    >>> runtime = build_driver()
-    >>> node = runtime.target_to_node.get("function_metrics")
-    >>> node
-    't__function_metrics'
-    >>> result = runtime.dr.execute(
-    ...     [node],
-    ...     inputs={"env": env, "graph": runtime.graph},
-    ... )
-    """
-
-    dr: h_driver.Driver
-    graph: TargetGraph
-    target_to_node: dict[str, str] = field(default_factory=dict)
-    node_to_target: dict[str, str] = field(default_factory=dict)
 
 
 def build_driver(

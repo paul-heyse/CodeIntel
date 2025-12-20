@@ -20,7 +20,7 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
-from codeintel.storage.exceptions import StorageConnectionError
+from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:

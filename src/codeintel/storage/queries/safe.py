@@ -5,8 +5,7 @@ properly handling errors without resorting to blind exception catching.
 Each function handles specific exception types and returns None or default
 values on failure.
 
-This is the canonical location for safe query utilities. The ingestion
-infrastructure module re-exports these for backward compatibility.
+This is the canonical location for safe query utilities.
 
 Examples
 --------

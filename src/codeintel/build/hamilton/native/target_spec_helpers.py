@@ -16,9 +16,9 @@ from typing import TYPE_CHECKING
 from codeintel.build.contracts import OutputContract
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import DEFAULT_EXECUTION, DEFAULT_RESOURCES
+from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.table_keys import validate_table_key
 from codeintel.build.targets import OutputTarget
-from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
-from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -44,19 +44,7 @@ def _validate_table_key(table_key: str) -> None:
     if not table_key:
         msg = "table_key must be non-empty"
         raise ValueError(msg)
-    if "." not in table_key:
-        msg = f"table_key must be fully-qualified 'schema.table', got {table_key!r}"
-        raise ValueError(msg)
-
-    schema, table = split_table_key(table_key)
-    if not schema or not table:
-        msg = f"table_key must be fully-qualified 'schema.table', got {table_key!r}"
-        raise ValueError(msg)
-
-    allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
-    if not set(schema) <= allowed or not set(table) <= allowed:
-        msg = f"table_key must be alphanumeric/underscore, got {table_key!r}"
-        raise ValueError(msg)
+    validate_table_key(table_key)
 
 
 def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
@@ -89,17 +77,14 @@ def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
 def _resolve_table_schemas(table_keys: Iterable[str]) -> tuple[TableSchema, ...]:
     schemas: list[TableSchema] = []
     seen: set[str] = set()
+    provider = declared_schema_provider()
     for table_key in table_keys:
         _validate_table_key(table_key)
         if table_key in seen:
             msg = f"Duplicate table_key in target spec: {table_key}"
             raise ValueError(msg)
         seen.add(table_key)
-        schema = TABLE_SCHEMAS.get(table_key)
-        if schema is None:
-            msg = f"Unknown table schema key: {table_key}"
-            raise KeyError(msg)
-        schemas.append(schema)
+        schemas.append(provider.require_table_schema(table_key))
     return tuple(schemas)
 
 

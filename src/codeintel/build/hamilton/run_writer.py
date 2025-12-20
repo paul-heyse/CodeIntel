@@ -26,7 +26,7 @@ import sqlglot
 
 from codeintel.build.assets.emitter import persist_asset_catalog_for_run
 from codeintel.core.build_manifest import BuildRunRecord
-from codeintel.storage.exceptions import StorageError
+from codeintel.core.errors.storage import StorageError
 from codeintel.storage.tracking.asset_tracking import RunEnvironmentRecord
 
 if TYPE_CHECKING:

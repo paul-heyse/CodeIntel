@@ -12,6 +12,7 @@ from ibis.common import exceptions as ibis_exceptions
 from codeintel.core.hashing import content_hash
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.query_results import records_from_dataframe
 from codeintel.storage.schema.json_schema import json_schema_from_typeddict
 
 if TYPE_CHECKING:
@@ -162,7 +163,7 @@ def _sample_rows(
     try:
         ibis_gw = MinimalStorageGateway(con).ibis
         df = pd.DataFrame(ibis_gw.table(dataset.table_key).limit(limited).execute())
-        return df.to_dict(orient="records")
+        return records_from_dataframe(df)
     except (
         DuckDBError,
         ibis_exceptions.IbisError,

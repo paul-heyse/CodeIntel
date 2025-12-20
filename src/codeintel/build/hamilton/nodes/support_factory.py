@@ -30,6 +30,7 @@ from codeintel.build.hamilton.introspect import (
     derive_target_dependencies,
     target_graph_from_hamilton,
 )
+from codeintel.build.hamilton.runtime import HamiltonRuntime
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
@@ -52,9 +53,9 @@ from codeintel.build.hamilton.tagging import (
     tag_loader_query,
     tag_materialize,
 )
+from codeintel.build.table_keys import split_table_key
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
-from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -83,14 +84,6 @@ class _SupportModuleCache:
 
 
 _MODULE_CACHE = _SupportModuleCache()
-
-
-@dataclass(frozen=True)
-class _IntrospectRuntime:
-    """Minimal runtime wrapper for Hamilton graph introspection."""
-
-    dr: h_driver.Driver
-    graph: TargetGraph
 
 
 def _create_stub_target_node_function(
@@ -375,7 +368,7 @@ def _build_contract_graph() -> TargetGraph:
 
     native_mods = load_native_modules()
     dr = h_driver.Builder().with_modules(*native_mods).allow_module_overrides().build()
-    runtime = _IntrospectRuntime(dr=dr, graph=base_graph)
+    runtime = HamiltonRuntime(dr=dr, graph=base_graph)
     derived = derive_target_dependencies(runtime)
     return target_graph_from_hamilton(
         runtime,

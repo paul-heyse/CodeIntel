@@ -6,12 +6,12 @@ import pytest
 
 from codeintel.analytics.utilities.datasets import get_delete_sql_by_table
 from codeintel.build.schemas import (
-    get_contract_provider,
     get_schema_provider,
     iter_contracts,
     iter_contracts_by_table_key,
 )
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.storage.contracts.provider import get_contract_provider
 
 
 def _require(*, condition: bool, message: str) -> None:
