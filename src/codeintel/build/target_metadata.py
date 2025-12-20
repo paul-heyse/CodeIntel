@@ -321,15 +321,33 @@ class LazyTargetMetadataProvider:
         return self._service
 
     def get_target(self, name: str) -> OutputTarget | None:
-        """Return target metadata by name."""
+        """Return target metadata by name.
+
+        Returns
+        -------
+        OutputTarget | None
+            Target metadata if present, otherwise None.
+        """
         return self._resolve().get_target(name)
 
     def target_for_table_key(self, table_key: str) -> OutputTarget | None:
-        """Return target metadata for a table key."""
+        """Return target metadata for a table key.
+
+        Returns
+        -------
+        OutputTarget | None
+            Target metadata if present, otherwise None.
+        """
         return self._resolve().target_for_table_key(table_key)
 
     def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
-        """Return target metadata for an artifact name."""
+        """Return target metadata for an artifact name.
+
+        Returns
+        -------
+        OutputTarget | None
+            Target metadata if present, otherwise None.
+        """
         return self._resolve().target_for_artifact(artifact_name)
 
 
@@ -373,12 +391,24 @@ def get_target_metadata_service() -> TargetMetadataService:
 
 
 def get_target_metadata_provider() -> TargetMetadataProvider:
-    """Return a lazy target metadata provider."""
+    """Return a lazy target metadata provider.
+
+    Returns
+    -------
+    TargetMetadataProvider
+        Lazy provider that resolves metadata on demand.
+    """
     return LazyTargetMetadataProvider(get_target_metadata_service)
 
 
 def is_target_metadata_loaded() -> bool:
-    """Return True if the target metadata service has been initialized."""
+    """Return True if the target metadata service has been initialized.
+
+    Returns
+    -------
+    bool
+        True when the metadata service has been initialized.
+    """
     return (
         _load_target_system.cache_info().currsize > 0
         or get_target_metadata_service.cache_info().currsize > 0
@@ -397,7 +427,7 @@ __all__ = [
     "TargetMetadataService",
     "TargetSystem",
     "clear_target_metadata_cache",
-    "get_target_metadata_service",
     "get_target_metadata_provider",
+    "get_target_metadata_service",
     "is_target_metadata_loaded",
 ]

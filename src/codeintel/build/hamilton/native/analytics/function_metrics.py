@@ -47,7 +47,7 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 
@@ -109,12 +109,12 @@ def t__function_metrics__compute(
     target = graph.get(FUNCTION_METRICS_TARGET_NAME)
     if target is not None:
         options_hash = options_hash_for_target(env, FUNCTION_METRICS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None

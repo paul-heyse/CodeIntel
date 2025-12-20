@@ -115,7 +115,10 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
     "TargetMetadataService": ("codeintel.build.target_metadata", "TargetMetadataService"),
-    "get_target_metadata_service": ("codeintel.build.target_metadata", "get_target_metadata_service"),
+    "get_target_metadata_service": (
+        "codeintel.build.target_metadata",
+        "get_target_metadata_service",
+    ),
 }
 
 

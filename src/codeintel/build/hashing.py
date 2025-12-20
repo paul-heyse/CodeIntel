@@ -10,11 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.engine_version import get_build_engine_version
-from codeintel.build.settings import BuildSettings
 from codeintel.build.parameters import TargetParameters
+from codeintel.build.settings import BuildSettings
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -25,14 +26,21 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
+@dataclass(frozen=True, slots=True)
+class InputHashOptions:
+    """Optional inputs for computing a target input hash."""
+
+    options_hash: str | None = None
+    manifests: Mapping[str, OutputManifest] | None = None
+    settings: BuildSettings | None = None
+
+
 def compute_input_hash(
     target: OutputTarget,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
-    options_hash: str | None = None,
     *,
-    manifests: Mapping[str, OutputManifest] | None = None,
-    settings: BuildSettings | None = None,
+    options: InputHashOptions | None = None,
 ) -> str:
     """Compute content-addressable hash of a target's inputs.
 
@@ -52,13 +60,8 @@ def compute_input_hash(
         Repository snapshot reference (provides repo/commit).
     gateway
         Storage gateway for loading dependency manifests.
-    options_hash
-        Optional hash of plugin configuration options.
-    manifests
-        Optional pre-loaded mapping of target names to manifests.
-        If provided, avoids per-dependency DB round trips.
-    settings
-        Optional BuildSettings to control engine version resolution.
+    options
+        Optional InputHashOptions for options hash, manifest cache, and settings.
 
     Returns
     -------
@@ -75,9 +78,7 @@ def compute_input_hash(
         target=target,
         snapshot=snapshot,
         gateway=gateway,
-        options_hash=options_hash,
-        manifests=manifests,
-        settings=settings,
+        options=options,
     )
     return input_hash
 
@@ -86,10 +87,8 @@ def compute_input_hash_with_deps(
     target: OutputTarget,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
-    options_hash: str | None = None,
     *,
-    manifests: Mapping[str, OutputManifest] | None = None,
-    settings: BuildSettings | None = None,
+    options: InputHashOptions | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Compute input hash and return dependency hash mapping.
 
@@ -105,13 +104,8 @@ def compute_input_hash_with_deps(
         Repository snapshot reference (provides repo/commit).
     gateway
         Storage gateway for loading dependency manifests.
-    options_hash
-        Optional hash of plugin configuration options.
-    manifests
-        Optional pre-loaded mapping of target names to manifests.
-        If provided, avoids per-dependency DB round trips.
-    settings
-        Optional BuildSettings to control engine version resolution.
+    options
+        Optional InputHashOptions for options hash, manifest cache, and settings.
 
     Returns
     -------
@@ -128,6 +122,11 @@ def compute_input_hash_with_deps(
     {'ast': 'abc123...', 'goids': 'def456...'}
     """
     hasher = hashlib.sha256()
+
+    resolved_options = options or InputHashOptions()
+    options_hash = resolved_options.options_hash
+    manifests = resolved_options.manifests
+    settings = resolved_options.settings
 
     hasher.update(get_build_engine_version(settings).encode("utf-8"))
     hasher.update(b"|")
@@ -248,6 +247,7 @@ def compute_target_options_hash(
 
 
 __all__ = [
+    "InputHashOptions",
     "compute_input_hash",
     "compute_input_hash_with_deps",
     "compute_options_hash",

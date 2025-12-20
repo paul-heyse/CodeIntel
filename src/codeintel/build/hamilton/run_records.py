@@ -24,6 +24,7 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.hash_evaluator import evaluate_hash_state
 from codeintel.build.hashing import (
+    InputHashOptions,
     compute_input_hash,
     compute_input_hash_with_deps,
     compute_target_options_hash,
@@ -111,7 +112,8 @@ def compute_target_input_hash(
     str
         16-character hex hash string.
     """
-    return compute_input_hash(target, snapshot, gateway, options_hash, manifests=manifests)
+    options = InputHashOptions(options_hash=options_hash, manifests=manifests)
+    return compute_input_hash(target, snapshot, gateway, options=options)
 
 
 def compute_target_input_hash_with_deps(
@@ -143,13 +145,8 @@ def compute_target_input_hash_with_deps(
         Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency names
         to their input hashes (or "MISSING" sentinel).
     """
-    return compute_input_hash_with_deps(
-        target,
-        snapshot,
-        gateway,
-        options_hash,
-        manifests=manifests,
-    )
+    options = InputHashOptions(options_hash=options_hash, manifests=manifests)
+    return compute_input_hash_with_deps(target, snapshot, gateway, options=options)
 
 
 def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:

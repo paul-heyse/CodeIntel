@@ -39,7 +39,13 @@ def _split_table_key(table_key: str) -> tuple[str, str] | None:
 
 
 def table_name_from_key(table_key: str) -> str:
-    """Return the dataset/table name component of a table key."""
+    """Return the dataset/table name component of a table key.
+
+    Returns
+    -------
+    str
+        Table name portion of the key.
+    """
     split = _split_table_key(table_key)
     if split is None:
         return table_key
@@ -48,7 +54,13 @@ def table_name_from_key(table_key: str) -> str:
 
 
 def exportable_by_default(table_key: str) -> bool:
-    """Return True when a dataset should be exported by default."""
+    """Return True when a dataset should be exported by default.
+
+    Returns
+    -------
+    bool
+        True when the dataset is exportable by default.
+    """
     split = _split_table_key(table_key)
     if split is None:
         return False
@@ -85,7 +97,13 @@ def _default_export_filename(
 
 
 def default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str | None:
-    """Return deterministic JSON Schema ID for a dataset."""
+    """Return deterministic JSON Schema ID for a dataset.
+
+    Returns
+    -------
+    str | None
+        JSON Schema ID for the dataset, or None when unavailable.
+    """
     if schema is None:
         return None
     split = _split_table_key(table_key)
@@ -98,7 +116,13 @@ def default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str
 
 
 def default_jsonl_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
-    """Return deterministic JSONL filename for a dataset."""
+    """Return deterministic JSONL filename for a dataset.
+
+    Returns
+    -------
+    str | None
+        JSONL filename for the dataset, or None when unavailable.
+    """
     if schema is None:
         return None
     if not exportable_by_default(table_key):
@@ -107,7 +131,13 @@ def default_jsonl_filename(*, table_key: str, schema: TableSchema | None) -> str
 
 
 def default_parquet_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
-    """Return deterministic Parquet filename for a dataset."""
+    """Return deterministic Parquet filename for a dataset.
+
+    Returns
+    -------
+    str | None
+        Parquet filename for the dataset, or None when unavailable.
+    """
     if schema is None:
         return None
     if not exportable_by_default(table_key):

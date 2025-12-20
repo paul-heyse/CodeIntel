@@ -63,7 +63,13 @@ def validate_table_key(table_key: TableKey) -> None:
 
 
 def is_valid_table_key(table_key: TableKey) -> bool:
-    """Return True when a table key is schema-qualified and valid."""
+    """Return True when a table key is schema-qualified and valid.
+
+    Returns
+    -------
+    bool
+        True when the table key is valid.
+    """
     try:
         validate_table_key(table_key)
     except TableKeyValidationError:
@@ -90,7 +96,13 @@ def parse_table_key(table_key: TableKey) -> ParsedTableKey:
 
 
 def try_parse_table_key(table_key: TableKey) -> ParsedTableKey | None:
-    """Parse a table key, returning None when invalid."""
+    """Parse a table key, returning None when invalid.
+
+    Returns
+    -------
+    ParsedTableKey | None
+        Parsed table key, or None when invalid.
+    """
     try:
         return parse_table_key(table_key)
     except TableKeyValidationError:

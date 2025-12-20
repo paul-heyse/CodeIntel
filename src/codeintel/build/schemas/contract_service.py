@@ -16,6 +16,10 @@ from codeintel.core.schemas.contract_policy import (
     default_parquet_filename,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.declared import (
+    declared_schema_provider as core_declared_schema_provider,
+)
+from codeintel.core.schemas.service import SchemaService
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -25,7 +29,6 @@ if TYPE_CHECKING:
     from codeintel.build.targets import OutputTarget
     from codeintel.config.datasets.primitives import CompositeSchema
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.core.schemas.service import SchemaService
 
 __all__ = [
     "ContractProvider",
@@ -36,8 +39,8 @@ __all__ = [
     "column_order_for_table_key",
     "get_contract_for_table_key",
     "get_contract_provider",
-    "get_enriched_contract_service",
     "get_contract_service",
+    "get_enriched_contract_service",
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
@@ -58,6 +61,11 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
         Composition metadata when available.
     """
     return get_composite_schemas().get(table_key)
+
+
+@lru_cache(maxsize=1)
+def _schema_only_service() -> SchemaService:
+    return SchemaService(table_provider=core_declared_schema_provider())
 
 
 def _get_row_binding_safe(service: SchemaService, table_key: str) -> RowBinding | None:
@@ -179,7 +187,18 @@ class SchemaContractService:
     schema_service: SchemaService
 
     def get_dataset_contract(self, table_key: str) -> DatasetContract:
-        """Return the DatasetContract for a table key."""
+        """Return the DatasetContract for a table key.
+
+        Returns
+        -------
+        DatasetContract
+            Dataset contract for the table key.
+
+        Raises
+        ------
+        KeyError
+            Raised when the table key is unknown.
+        """
         if is_view(table_key):
             return _derive_view_contract(service=self.schema_service, view_key=table_key)
 
@@ -195,7 +214,13 @@ class SchemaContractService:
         raise KeyError(msg)
 
     def iter_dataset_contracts(self) -> Iterable[DatasetContract]:
-        """Iterate all known dataset contracts."""
+        """Iterate all known dataset contracts.
+
+        Yields
+        ------
+        DatasetContract
+            Dataset contract entries known to the schema provider.
+        """
         seen: set[str] = set()
         for schema in self.schema_service.table_provider.iter_table_schemas():
             table_key = schema.table_key
@@ -217,20 +242,44 @@ class SchemaContractService:
                 continue
 
     def iter_dataset_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
-        """Iterate dataset contracts as (table_key, contract) pairs."""
+        """Iterate dataset contracts as (table_key, contract) pairs.
+
+        Yields
+        ------
+        tuple[str, DatasetContract]
+            Table key and contract pairs.
+        """
         for contract in self.iter_dataset_contracts():
             yield contract.table_key, contract
 
     def get_contract_for_table_key(self, table_key: str) -> DatasetContract:
-        """Return dataset contract for a table key."""
+        """Return dataset contract for a table key.
+
+        Returns
+        -------
+        DatasetContract
+            Dataset contract for the table key.
+        """
         return self.get_dataset_contract(table_key)
 
     def iter_contracts(self) -> Iterable[DatasetContract]:
-        """Iterate dataset contracts."""
+        """Iterate dataset contracts.
+
+        Returns
+        -------
+        Iterable[DatasetContract]
+            Iterable of dataset contracts.
+        """
         return self.iter_dataset_contracts()
 
     def iter_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
-        """Iterate dataset contracts as (table_key, contract) pairs."""
+        """Iterate dataset contracts as (table_key, contract) pairs.
+
+        Returns
+        -------
+        Iterable[tuple[str, DatasetContract]]
+            Iterable of table key and contract pairs.
+        """
         return self.iter_dataset_contracts_by_table_key()
 
 
@@ -242,12 +291,29 @@ class ContractService:
     target_metadata: TargetMetadataProvider
 
     def get_output_contract(self, target_name: str) -> OutputContract | None:
-        """Return the OutputContract for a target."""
+        """Return the OutputContract for a target.
+
+        Returns
+        -------
+        OutputContract | None
+            Output contract if available, otherwise None.
+        """
         target = self.target_metadata.get_target(target_name)
         return target.contract if target is not None else None
 
     def get_dataset_contract(self, table_key: str) -> DatasetContract:
-        """Return the DatasetContract for a table key."""
+        """Return the DatasetContract for a table key.
+
+        Returns
+        -------
+        DatasetContract
+            Dataset contract for the table key.
+
+        Raises
+        ------
+        KeyError
+            Raised when the table key is unknown.
+        """
         if is_view(table_key):
             return _derive_view_contract(service=self.schema_service, view_key=table_key)
 
@@ -272,7 +338,13 @@ class ContractService:
         raise KeyError(msg)
 
     def iter_dataset_contracts(self) -> Iterable[DatasetContract]:
-        """Iterate all known dataset contracts."""
+        """Iterate all known dataset contracts.
+
+        Yields
+        ------
+        DatasetContract
+            Dataset contract entries known to the schema provider.
+        """
         seen: set[str] = set()
         for schema in self.schema_service.table_provider.iter_table_schemas():
             table_key = schema.table_key
@@ -294,20 +366,44 @@ class ContractService:
                 continue
 
     def iter_dataset_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
-        """Iterate dataset contracts as (table_key, contract) pairs."""
+        """Iterate dataset contracts as (table_key, contract) pairs.
+
+        Yields
+        ------
+        tuple[str, DatasetContract]
+            Table key and contract pairs.
+        """
         for contract in self.iter_dataset_contracts():
             yield contract.table_key, contract
 
     def get_contract_for_table_key(self, table_key: str) -> DatasetContract:
-        """Return dataset contract for a table key."""
+        """Return dataset contract for a table key.
+
+        Returns
+        -------
+        DatasetContract
+            Dataset contract for the table key.
+        """
         return self.get_dataset_contract(table_key)
 
     def iter_contracts(self) -> Iterable[DatasetContract]:
-        """Iterate dataset contracts."""
+        """Iterate dataset contracts.
+
+        Returns
+        -------
+        Iterable[DatasetContract]
+            Iterable of dataset contracts.
+        """
         return self.iter_dataset_contracts()
 
     def iter_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
-        """Iterate dataset contracts as (table_key, contract) pairs."""
+        """Iterate dataset contracts as (table_key, contract) pairs.
+
+        Returns
+        -------
+        Iterable[tuple[str, DatasetContract]]
+            Iterable of table key and contract pairs.
+        """
         return self.iter_dataset_contracts_by_table_key()
 
 
@@ -432,13 +528,25 @@ def _derive_view_contract(*, service: SchemaService, view_key: str) -> DatasetCo
 
 @lru_cache(maxsize=1)
 def get_contract_service() -> SchemaContractService:
-    """Return the schema-only contract service instance."""
-    return SchemaContractService(schema_service=get_schema_service())
+    """Return the schema-only contract service instance.
+
+    Returns
+    -------
+    SchemaContractService
+        Schema-only contract service.
+    """
+    return SchemaContractService(schema_service=_schema_only_service())
 
 
 @lru_cache(maxsize=1)
 def get_enriched_contract_service() -> ContractService:
-    """Return the contract service that includes target metadata."""
+    """Return the contract service that includes target metadata.
+
+    Returns
+    -------
+    ContractService
+        Contract service with target metadata.
+    """
     return ContractService(
         schema_service=get_schema_service(),
         target_metadata=get_target_metadata_provider(),
@@ -448,7 +556,13 @@ def get_enriched_contract_service() -> ContractService:
 def get_contract_provider(
     settings: ContractResolutionSettings | None = None,
 ) -> ContractProvider:
-    """Return a contract provider based on resolution settings."""
+    """Return a contract provider based on resolution settings.
+
+    Returns
+    -------
+    ContractProvider
+        Contract provider configured for the requested resolution mode.
+    """
     if settings is not None and settings.include_target_metadata:
         return get_enriched_contract_service()
     return get_contract_service()
@@ -469,7 +583,13 @@ def get_contract_for_table_key(
     *,
     settings: ContractResolutionSettings | None = None,
 ) -> DatasetContract:
-    """Return a dataset contract for a table key."""
+    """Return a dataset contract for a table key.
+
+    Returns
+    -------
+    DatasetContract
+        Dataset contract for the table key.
+    """
     if settings is not None and settings.include_target_metadata:
         return _get_enriched_contract_for_table_key(table_key)
     return _get_schema_contract_for_table_key(table_key)
@@ -479,7 +599,13 @@ def iter_contracts(
     *,
     settings: ContractResolutionSettings | None = None,
 ) -> Iterable[DatasetContract]:
-    """Iterate dataset contracts based on resolution settings."""
+    """Iterate dataset contracts based on resolution settings.
+
+    Returns
+    -------
+    Iterable[DatasetContract]
+        Iterable of dataset contracts.
+    """
     return get_contract_provider(settings).iter_contracts()
 
 
@@ -487,7 +613,13 @@ def iter_contracts_by_table_key(
     *,
     settings: ContractResolutionSettings | None = None,
 ) -> Iterable[tuple[str, DatasetContract]]:
-    """Iterate dataset contracts as (table_key, contract) pairs."""
+    """Iterate dataset contracts as (table_key, contract) pairs.
+
+    Returns
+    -------
+    Iterable[tuple[str, DatasetContract]]
+        Iterable of table key and contract pairs.
+    """
     return get_contract_provider(settings).iter_contracts_by_table_key()
 
 
@@ -497,6 +629,7 @@ def clear_contract_cache() -> None:
     _get_schema_contract_for_table_key.cache_clear()
     get_enriched_contract_service.cache_clear()
     get_contract_service.cache_clear()
+    _schema_only_service.cache_clear()
 
 
 def column_order_for_table_key(table_key: str) -> tuple[str, ...]:

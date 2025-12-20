@@ -29,7 +29,10 @@ class RecordBatch(Protocol):
 class RecordBatchReader(Protocol):
     """Protocol describing a record batch reader with schema metadata."""
 
-    schema: pa.Schema
+    @property
+    def schema(self) -> pa.Schema:
+        """Return the schema for the record batch stream."""
+        ...
 
     def __iter__(self) -> Iterator[RecordBatch]:
         """Iterate record batches."""

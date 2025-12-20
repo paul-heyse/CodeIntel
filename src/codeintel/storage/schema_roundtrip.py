@@ -138,9 +138,7 @@ def _map_dtype(dtype: exp.DataType) -> DataType:
         msg = "Unsupported column type: MAP without key/value types"
         raise ValueError(msg)
     key_dtype = _ibis_dtype_from_sqlglot(_require_dtype_expression(dtype, index=0, context="MAP"))
-    value_dtype = _ibis_dtype_from_sqlglot(
-        _require_dtype_expression(dtype, index=1, context="MAP")
-    )
+    value_dtype = _ibis_dtype_from_sqlglot(_require_dtype_expression(dtype, index=1, context="MAP"))
     return ibis.dtype(f"map<{key_dtype}, {value_dtype}>")
 
 

@@ -42,7 +42,7 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.targets import TargetGraph
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, Path)
@@ -112,12 +112,12 @@ def _export_manifest_plan(
     target = graph.get(target_name)
     if target is not None:
         options_hash = options_hash_for_target(env, target_name)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
