@@ -225,6 +225,7 @@ def t__function_history__compute(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -650,6 +651,7 @@ def t__test_graph_metrics__compute(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):

@@ -10,7 +10,7 @@ import os
 import re
 from typing import Protocol
 
-from codeintel.storage.gateway.protocol import DuckDBError
+from codeintel.storage.duckdb_types import DuckDBError
 
 __all__ = [
     "DEFAULT_REQUIRED_EXTENSIONS",

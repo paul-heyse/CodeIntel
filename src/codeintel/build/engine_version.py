@@ -7,24 +7,23 @@ be incorrectly reused across incompatible versions of the pipeline.
 
 from __future__ import annotations
 
-from codeintel.build.settings import BuildSettings, get_build_settings
+from codeintel.core.config.settings import BuildSettings
 
 
-def get_build_engine_version(settings: BuildSettings | None = None) -> str:
+def get_build_engine_version(settings: BuildSettings) -> str:
     """Return the build-engine version string from settings.
 
     Parameters
     ----------
     settings
-        Optional build settings override.
+        Build settings.
 
     Returns
     -------
     str
         Build engine version identifier.
     """
-    resolved = get_build_settings() if settings is None else settings
-    return resolved.engine_version
+    return settings.engine_version
 
 
 __all__ = ["get_build_engine_version"]

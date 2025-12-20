@@ -50,8 +50,7 @@ from codeintel.core.ibis_typing import (
     le,
     not_null,
 )
-from codeintel.storage.gateway import ibis_facade
-from codeintel.storage.gateway.protocol import (
+from codeintel.storage.duckdb_types import (
     DuckDBBinderException,
     DuckDBCatalogException,
     DuckDBConnectionException,
@@ -60,6 +59,7 @@ from codeintel.storage.gateway.protocol import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import is_valid_table_key
 from codeintel.storage.query_results import execute_int, execute_optional_float
 from codeintel.storage.sqlglot_tools import extract_table_refs
@@ -71,8 +71,8 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.storage.duckdb_types import DuckDBConnection
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (

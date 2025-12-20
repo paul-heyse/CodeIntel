@@ -38,10 +38,10 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
-    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
-from codeintel.storage.gateway.protocol import DuckDBCatalogException, DuckDBError
+from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError
 
 WriteMode = Literal["append", "replace", "upsert"]
 

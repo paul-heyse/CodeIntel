@@ -117,6 +117,7 @@ def _export_manifest_plan(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -147,6 +148,7 @@ def _export_manifest_plan(
             env.gateway,
             output_path.parent,
             fmt=request.fmt,
+            settings=env.settings.export_audit,
             options=export_options,
         )
         if not output_path.exists():

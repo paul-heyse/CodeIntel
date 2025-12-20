@@ -1,0 +1,89 @@
+"""Contract resolution seams for DAG-free enumeration and overrides."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from codeintel.build.contracts import OutputContract, placeholder_table_schema
+from codeintel.build.schemas import (
+    ContractResolutionSettings,
+    clear_contract_cache,
+    get_contract_for_table_key,
+    iter_contracts,
+)
+from codeintel.build.target_metadata import (
+    OutputInventory,
+    TargetMetadataProvider,
+    clear_target_metadata_cache,
+    is_target_metadata_loaded,
+)
+from codeintel.build.targets import OutputTarget
+from tests._helpers.assertions.expectation_assertions import expect_equal, expect_false, expect_true
+
+
+@dataclass(frozen=True)
+class _StubTargetMetadataProvider(TargetMetadataProvider):
+    target: OutputTarget
+
+    def get_target(self, name: str) -> OutputTarget | None:
+        if name == self.target.name:
+            return self.target
+        return None
+
+    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+        if table_key in self.target.table_keys:
+            return self.target
+        return None
+
+    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+        _ = artifact_name
+        return None
+
+
+def test_schema_only_contracts_do_not_load_target_metadata() -> None:
+    """Verify schema-only contract enumeration stays DAG-free."""
+    clear_target_metadata_cache()
+    clear_contract_cache()
+    expect_false(is_target_metadata_loaded())
+
+    _ = list(iter_contracts())
+
+    expect_false(is_target_metadata_loaded())
+
+
+def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
+    """Verify injected TargetMetadataProvider overrides are applied."""
+    clear_target_metadata_cache()
+    clear_contract_cache()
+
+    table_key = "analytics.function_metrics"
+    contract = OutputContract(
+        tables=(placeholder_table_schema(table_key),),
+        owner="unit-test-owner",
+        jsonl_filenames=("custom.jsonl",),
+    )
+    target = OutputTarget(name="unit_test_target", module="analytics", contract=contract)
+    provider = _StubTargetMetadataProvider(target=target)
+
+    settings = ContractResolutionSettings(
+        include_target_metadata=True,
+        target_metadata_provider=provider,
+    )
+    resolved = get_contract_for_table_key(table_key, settings=settings)
+    expect_equal(resolved.owner, "unit-test-owner")
+    expect_equal(resolved.jsonl_filename, "custom.jsonl")
+    expect_false(is_target_metadata_loaded())
+
+
+def test_contract_resolution_honors_output_inventory() -> None:
+    """Verify output inventory exclusions are respected."""
+    clear_contract_cache()
+    inventory = OutputInventory(
+        datasets_by_target={"stub": ("analytics.function_metrics",)},
+        artifacts_by_target={},
+    )
+    settings = ContractResolutionSettings(output_inventory=inventory)
+
+    table_keys = {contract.table_key for contract in iter_contracts(settings=settings)}
+    expect_true(table_keys)
+    expect_false("analytics.function_metrics" in table_keys)

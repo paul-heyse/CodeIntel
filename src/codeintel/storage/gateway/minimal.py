@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, NoReturn
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.exports import ExportService
 from codeintel.storage.ibis_adapter import IbisGateway
 
 if TYPE_CHECKING:
@@ -106,6 +107,7 @@ class MinimalStorageGateway:
         self._con = connection
         self._ibis: IbisGateway | None = None
         self._policy: DuckDBPolicyBackend | None = None
+        self._exports: ExportService | None = None
         self._schema_provider = schema_provider
 
     @property
@@ -146,6 +148,19 @@ class MinimalStorageGateway:
         if self._policy is None:
             self._policy = DuckDBPolicyBackend(self, schema_provider=self._schema_provider)
         return self._policy
+
+    @property
+    def exports(self) -> ExportService:
+        """Return the export service for this connection.
+
+        Returns
+        -------
+        ExportService
+            Export service wrapper for this gateway.
+        """
+        if self._exports is None:
+            self._exports = ExportService(self)
+        return self._exports
 
     # -------------------------------------------------------------------------
     # Unsupported accessor properties

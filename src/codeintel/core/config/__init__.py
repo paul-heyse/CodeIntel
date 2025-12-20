@@ -31,11 +31,21 @@ from codeintel.core.config.registry import (
     ConfigTypeError,
     ConfigValidationError,
 )
+from codeintel.core.config.settings import (
+    BuildSettings,
+    ExportAuditSettings,
+    HamiltonExecutionSettings,
+    ServingSettings,
+)
 
 __all__ = [
+    "BuildSettings",
     "ConfigAccessor",
     "ConfigNotFoundError",
     "ConfigRegistry",
     "ConfigTypeError",
     "ConfigValidationError",
+    "ExportAuditSettings",
+    "HamiltonExecutionSettings",
+    "ServingSettings",
 ]

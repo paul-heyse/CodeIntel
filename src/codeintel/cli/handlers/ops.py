@@ -30,8 +30,8 @@ from codeintel.cli.core.result_types import (
 from codeintel.cli.errors.results import fail_dataset_not_found
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.http.app import create_serving_app
-from codeintel.serving.mcp.server import main as run_mcp_server
-from codeintel.serving.settings import ServingSettings
+from codeintel.serving.mcp.server import create_mcp_server
+from codeintel.serving.settings import get_serving_settings
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
@@ -364,7 +364,7 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     -----
     This function blocks while the server is running.
     """
-    settings = ServingSettings.from_env()
+    settings = get_serving_settings()
     host = ctx.params.get_str("host") or settings.host
     port = ctx.params.get_int("port", settings.port)
     reload = ctx.params.get_bool("reload", default=False)
@@ -403,14 +403,14 @@ def serve_http_handler(ctx: CommandContext) -> CliResult[ServeStartResult]:
     # Run with appropriate mode
     if workers > 1:
         uvicorn.run(
-            "codeintel.serving.http.app:create_serving_app",
+            "codeintel.cli.serving_factory:create_serving_app_from_env",
             factory=True,
             workers=workers,
             **uvicorn_config,  # type: ignore[arg-type]
         )
     elif reload:
         uvicorn.run(
-            "codeintel.serving.http.app:create_serving_app",
+            "codeintel.cli.serving_factory:create_serving_app_from_env",
             factory=True,
             reload=True,
             **uvicorn_config,  # type: ignore[arg-type]
@@ -449,11 +449,21 @@ def serve_mcp_handler(_ctx: CommandContext) -> CliResult[ServeStartResult]:
     CliResult[ServeStartResult]
         Server start result (after server stops).
     """
-    settings = ServingSettings.from_env()
+    settings = get_serving_settings()
     pointer = ServingSnapshotPointer.load(settings.serve_dir / "current.json")
 
     LOG.info("Starting MCP server (transport=%s)", settings.mcp_transport)
-    run_mcp_server()
+    mcp = create_mcp_server(settings)
+    if settings.mcp_transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(
+            transport="streamable-http",
+            host=settings.host,
+            port=settings.port,
+            json_response=True,
+            stateless_http=False,
+        )
 
     is_http = settings.mcp_transport != "stdio"
     host: str | None = settings.host if is_http else None

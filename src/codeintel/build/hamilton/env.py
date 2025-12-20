@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from codeintel.build.assets.fingerprinting import (
     DEFAULT_FINGERPRINT_POLICY,
 )
+from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
@@ -56,6 +57,10 @@ class BuildEnv:
         DI providers for external tools (SCIP indexer, type checker, etc.).
     config
         Build configuration loaded from codeintel.build.toml.
+    settings
+        Build settings injected by the CLI/runtime boundary.
+    execution_settings
+        Hamilton execution settings (parallelism + DuckDB options).
     profile
         Optional policy profile name (e.g., "fast", "full", "ci").
         Used to select execution variants in later phases.
@@ -96,6 +101,8 @@ class BuildEnv:
     paths: BuildPaths
     providers: Providers
     config: BuildConfig
+    settings: BuildSettings
+    execution_settings: HamiltonExecutionSettings = field(default_factory=HamiltonExecutionSettings)
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None

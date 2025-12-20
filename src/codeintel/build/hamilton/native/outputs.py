@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.target_inventory import get_output_inventory
 
 if TYPE_CHECKING:
     from codeintel.build.target_metadata import OutputInventory
@@ -45,9 +45,8 @@ def expected_datasets(
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
-    >>> from codeintel.build.target_metadata import get_target_metadata_service
-    >>> graph = get_target_metadata_service().system.graph
-    >>> target = graph.get("function_metrics")
+    >>> from codeintel.build.target_catalog import load_target_specs
+    >>> target = next(t for t in load_target_specs() if t.name == "function_metrics")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_datasets(target, snapshot)
     >>> len(refs)
@@ -55,7 +54,7 @@ def expected_datasets(
     >>> refs[0].table_key
     'analytics.function_metrics'
     """
-    resolved_inventory = output_inventory or get_target_metadata_service().outputs
+    resolved_inventory = output_inventory or get_output_inventory()
     table_keys = resolved_inventory.datasets_for(target.name)
     if not table_keys:
         return ()
@@ -99,16 +98,15 @@ def expected_artifacts(
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
-    >>> from codeintel.build.target_metadata import get_target_metadata_service
-    >>> graph = get_target_metadata_service().system.graph
-    >>> target = graph.get("scip")
+    >>> from codeintel.build.target_catalog import load_target_specs
+    >>> target = next(t for t in load_target_specs() if t.name == "scip")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_artifacts(target, snapshot)
     >>> len(refs) > 0
     True
     """
     artifact_specs = target.contract.artifacts
-    resolved_inventory = output_inventory or get_target_metadata_service().outputs
+    resolved_inventory = output_inventory or get_output_inventory()
     allowed = set(resolved_inventory.artifacts_for(target.name))
     if not allowed:
         return ()

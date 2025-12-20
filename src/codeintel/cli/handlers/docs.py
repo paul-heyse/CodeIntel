@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports import ExportCallOptions, ExportOptions, run_validated_exports
+from codeintel.build.settings import get_build_settings
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
@@ -230,12 +231,14 @@ def _build_export_options(params: DocsExportParams) -> ExportOptions:
     ExportOptions
         Export options configured for validation and dataset selection.
     """
+    build_settings = get_build_settings()
     return ExportOptions(
         export=ExportCallOptions(
             validate_exports=params.require_validation,
             schemas=params.schemas,
             datasets=params.datasets,
         ),
+        settings=build_settings.export_audit,
         validator=_validate_dataset_contract
         if params.require_validation
         else (lambda _gateway: None),

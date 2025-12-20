@@ -12,7 +12,9 @@ from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.run_config import BuildRunConfig
-from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
+from codeintel.build.target_inventory import get_output_inventory
+from codeintel.build.target_metadata import OutputInventory
+from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 
 if TYPE_CHECKING:
     from collections.abc import Mapping as MappingABC
@@ -34,6 +36,8 @@ class BuildRunContext:
     paths: BuildPaths
     providers: Providers
     config: BuildConfig
+    settings: BuildSettings
+    execution_settings: HamiltonExecutionSettings | None = None
     run_config: BuildRunConfig | None = None
     execution_options: BuildExecutionOptions | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
@@ -88,13 +92,16 @@ class BuildRunContext:
         fingerprint_policy = self.fingerprint_policy or DEFAULT_FINGERPRINT_POLICY
         output_inventory = self.output_inventory
         if output_inventory is None:
-            output_inventory = get_target_metadata_service().outputs
+            output_inventory = get_output_inventory()
+        execution_settings = self.execution_settings or HamiltonExecutionSettings()
         return BuildEnv(
             gateway=self.gateway,
             snapshot=self.snapshot,
             paths=self.paths,
             providers=self.providers,
             config=stacked,
+            settings=self.settings,
+            execution_settings=execution_settings,
             profile=profile,
             force_targets=self.force_targets,
             manifest_index=self.manifest_index,
@@ -116,7 +123,12 @@ class BuildRunContext:
         if self.execution_options is not None:
             return self.execution_options
         profile = self.run_config.profile_name if self.run_config is not None else None
-        return BuildExecutionOptions(profile=profile)
+        execution_settings = self.execution_settings or HamiltonExecutionSettings()
+        return BuildExecutionOptions(
+            profile=profile,
+            parallel_backend=execution_settings.parallel_backend,
+            max_workers=execution_settings.max_workers,
+        )
 
     def execution_policy_for(self, target: OutputTarget) -> ExecutionPolicy:
         """Return resolved execution policy for a target.

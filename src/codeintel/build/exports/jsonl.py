@@ -9,6 +9,7 @@ from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relati
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
 from codeintel.build.exports.writers import default_json_serializer
+from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
@@ -24,6 +25,7 @@ def export_jsonl_for_table(
     table_name: str,
     output_path: Path,
     *,
+    settings: ExportAuditSettings,
     serializer: Callable[[object], object] | None = None,
 ) -> None:
     """Export a single DuckDB table to JSONL.
@@ -36,6 +38,8 @@ def export_jsonl_for_table(
         Fully qualified table name (schema.table) to export.
     output_path
         Destination path for the JSONL file.
+    settings
+        Export audit settings.
     serializer
         Custom JSON serializer for complex types.
 
@@ -51,13 +55,15 @@ def export_jsonl_for_table(
     if serializer is not None:
         msg = "export_jsonl_for_table does not support custom serializer in engine mode"
         raise ValueError(msg)
-    _engine_export_jsonl_for_table(gateway, table_name, output_path)
+    _engine_export_jsonl_for_table(gateway, table_name, output_path, settings)
 
 
 def export_dataset_to_jsonl(
     gateway: StorageGateway,
     dataset_name: str,
     output_dir: Path,
+    *,
+    settings: ExportAuditSettings,
 ) -> Path:
     """Export a dataset resolved through the dataset registry to JSONL.
 
@@ -69,6 +75,8 @@ def export_dataset_to_jsonl(
         Logical dataset name to export (e.g., ``function_profile``).
     output_dir
         Destination directory for the JSONL file.
+    settings
+        Export audit settings.
 
     Returns
     -------
@@ -89,7 +97,7 @@ def export_dataset_to_jsonl(
         raise ValueError(message) from exc
     filename = jsonl_mapping.get(table_name, f"{dataset_name}.jsonl")
     output_path = output_dir / filename
-    export_jsonl_for_table(gateway, table_name, output_path)
+    export_jsonl_for_table(gateway, table_name, output_path, settings=settings)
     return output_path
 
 
@@ -97,6 +105,7 @@ def export_all_jsonl(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
+    settings: ExportAuditSettings,
     options: ExportCallOptions | None = None,
 ) -> list[Path]:
     """Export configured datasets to JSONL files under `Document Output/`.
@@ -107,6 +116,8 @@ def export_all_jsonl(
         StorageGateway providing the DuckDB connection.
     document_output_dir
         Target directory where JSONL artifacts are written.
+    settings
+        Export audit settings.
     options
         Export options controlling dataset selection and validation.
 
@@ -119,6 +130,7 @@ def export_all_jsonl(
         gateway,
         document_output_dir,
         fmt="jsonl",
+        settings=settings,
         options=options,
     )
 
@@ -127,6 +139,7 @@ def export_repo_map_json(
     gateway: StorageGateway,
     document_output_dir: Path,
     *,
+    settings: ExportAuditSettings,
     format_output: Literal["json", "jsonl"] = "json",
 ) -> Path:
     """Export the repo_map table as JSON or JSONL.
@@ -137,6 +150,8 @@ def export_repo_map_json(
         StorageGateway providing the DuckDB connection.
     document_output_dir
         Target directory where the export artifact is written.
+    settings
+        Export audit settings.
     format_output
         Output format; "json" produces a single JSON array, "jsonl"
         produces newline-delimited JSON records.
@@ -169,7 +184,7 @@ def export_repo_map_json(
             handle.write("]\n")
     else:
         output_path = document_output_dir / "repo_map.jsonl"
-        export_jsonl_for_table(gateway, table_name, output_path)
+        export_jsonl_for_table(gateway, table_name, output_path, settings=settings)
     return output_path
 
 

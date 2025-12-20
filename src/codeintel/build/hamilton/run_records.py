@@ -30,6 +30,7 @@ from codeintel.build.hashing import (
     compute_target_options_hash,
 )
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.config.settings import BuildSettings
 from codeintel.core.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
@@ -89,6 +90,7 @@ def compute_target_input_hash(
     target: OutputTarget,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
+    settings: BuildSettings,
     options_hash: str | None = None,
     manifests: Mapping[str, OutputManifest] | None = None,
 ) -> str:
@@ -102,6 +104,8 @@ def compute_target_input_hash(
         Repository snapshot reference.
     gateway
         Storage gateway for loading dependency manifests.
+    settings
+        Build settings for engine version hashing.
     options_hash
         Optional hash of plugin options.
     manifests
@@ -113,7 +117,7 @@ def compute_target_input_hash(
         16-character hex hash string.
     """
     options = InputHashOptions(options_hash=options_hash, manifests=manifests)
-    return compute_input_hash(target, snapshot, gateway, options=options)
+    return compute_input_hash(target, snapshot, gateway, settings=settings, options=options)
 
 
 def compute_target_input_hash_with_deps(
@@ -121,6 +125,7 @@ def compute_target_input_hash_with_deps(
     target: OutputTarget,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
+    settings: BuildSettings,
     options_hash: str | None = None,
     manifests: Mapping[str, OutputManifest] | None = None,
 ) -> tuple[str, dict[str, str]]:
@@ -134,6 +139,8 @@ def compute_target_input_hash_with_deps(
         Repository snapshot reference.
     gateway
         Storage gateway for loading dependency manifests.
+    settings
+        Build settings for engine version hashing.
     options_hash
         Optional hash of plugin options.
     manifests
@@ -146,7 +153,13 @@ def compute_target_input_hash_with_deps(
         to their input hashes (or "MISSING" sentinel).
     """
     options = InputHashOptions(options_hash=options_hash, manifests=manifests)
-    return compute_input_hash_with_deps(target, snapshot, gateway, options=options)
+    return compute_input_hash_with_deps(
+        target,
+        snapshot,
+        gateway,
+        settings=settings,
+        options=options,
+    )
 
 
 def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:

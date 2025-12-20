@@ -10,7 +10,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.target_inventory import get_output_inventory
+from codeintel.build.target_metadata import OutputInventory
 from codeintel.core.schemas.declared import (
     declared_schema_provider as core_declared_schema_provider,
 )
@@ -31,8 +32,23 @@ def declared_schema_provider() -> SchemaProvider:
     SchemaProvider
         Provider exposing only source table schemas (excluding DAG outputs).
     """
-    service = get_target_metadata_service()
-    return source_declared_schema_provider(exclude_table_keys=service.system.all_table_keys)
+    return declared_schema_provider_for_inventory(get_output_inventory())
+
+
+def declared_schema_provider_for_inventory(inventory: OutputInventory) -> SchemaProvider:
+    """Return a source-only declared schema provider for a given inventory.
+
+    Parameters
+    ----------
+    inventory
+        Output inventory used to exclude DAG-produced table keys.
+
+    Returns
+    -------
+    SchemaProvider
+        Provider exposing only source table schemas.
+    """
+    return source_declared_schema_provider(exclude_table_keys=inventory.all_dataset_keys)
 
 
 def full_declared_schema_provider() -> SchemaProvider:
@@ -48,5 +64,6 @@ def full_declared_schema_provider() -> SchemaProvider:
 
 __all__ = [
     "declared_schema_provider",
+    "declared_schema_provider_for_inventory",
     "full_declared_schema_provider",
 ]

@@ -511,6 +511,7 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -539,6 +540,7 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):

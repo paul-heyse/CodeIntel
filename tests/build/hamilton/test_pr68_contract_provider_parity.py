@@ -17,6 +17,12 @@ from codeintel.build.schemas import (
     iter_contracts_by_table_key,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.storage.contracts.provider import (
+    clear_contract_cache as clear_storage_contract_cache,
+)
+from codeintel.storage.contracts.provider import (
+    get_contract_for_table_key as get_storage_contract_for_table_key,
+)
 from codeintel.storage.views.inventory import discover_derived_docs_views
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -217,6 +223,29 @@ class TestContractCacheManagement:
 
         # Both should have same values even after cache clear
         expect_equal(contract1.table_key, contract2.table_key)
+
+
+class TestBuildStorageContractParity:
+    """Ensure build and storage contract providers align."""
+
+    @staticmethod
+    def test_storage_contract_matches_build_contract() -> None:
+        """Verify build and storage contracts agree on core fields."""
+        clear_storage_contract_cache()
+        table_key = "analytics.function_metrics"
+
+        build_contract = get_contract_for_table_key(table_key)
+        storage_contract = get_storage_contract_for_table_key(table_key)
+
+        expect_equal(build_contract.table_key, storage_contract.table_key)
+        expect_equal(build_contract.name, storage_contract.name)
+        expect_equal(build_contract.is_view, storage_contract.is_view)
+        expect_equal(build_contract.owner_package, storage_contract.owner_package)
+        expect_equal(build_contract.family, storage_contract.family)
+        expect_equal(build_contract.json_schema_id, storage_contract.json_schema_id)
+        expect_equal(build_contract.jsonl_filename, storage_contract.jsonl_filename)
+        expect_equal(build_contract.parquet_filename, storage_contract.parquet_filename)
+        expect_equal(build_contract.tags, storage_contract.tags)
 
 
 class TestContractMetadataDerivation:

@@ -468,6 +468,7 @@ def _compute_entry_for_target(
         target=target,
         snapshot=env.snapshot,
         gateway=env.gateway,
+        settings=env.settings,
         options_hash=options_hash,
         manifests=manifests,
     )

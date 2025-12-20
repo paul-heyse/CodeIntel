@@ -154,6 +154,7 @@ def t__function_contracts__compute(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
@@ -332,6 +333,7 @@ def t__function_effects__compute(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):

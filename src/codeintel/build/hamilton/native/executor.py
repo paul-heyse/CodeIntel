@@ -153,6 +153,7 @@ class NativeTargetExecutor:
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
+            settings=env.settings,
             options_hash=resolved_options_hash,
             manifests=env.manifest_index,
         )
