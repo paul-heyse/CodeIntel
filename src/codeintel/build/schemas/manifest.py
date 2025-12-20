@@ -16,6 +16,12 @@ if TYPE_CHECKING:
 
 
 ExportArtifactKind = Literal["parquet", "jsonl", "json", "csv"]
+ManifestDerivationKind = Literal[
+    "explicit_override",
+    "inferred_ibis",
+    "declared_source",
+    "view_inferred",
+]
 
 
 @dataclass(frozen=True)
@@ -73,6 +79,68 @@ class ExportArtifact(ManifestBase):
 
 
 @dataclass(frozen=True)
+class TableProvenance(ManifestBase):
+    """Describe schema provenance for a table or view.
+
+    Parameters
+    ----------
+    schema_hash
+        Stable hash of the schema definition.
+    derivation_kind
+        Label describing how the schema was derived.
+    derivation_source
+        Source identifier for the derivation.
+    """
+
+    schema_hash: str
+    derivation_kind: ManifestDerivationKind
+    derivation_source: str
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable provenance payload.
+        """
+        return {
+            "schema_hash": self.schema_hash,
+            "derivation_kind": self.derivation_kind,
+            "derivation_source": self.derivation_source,
+        }
+
+
+@dataclass(frozen=True)
+class ArtifactProvenance(ManifestBase):
+    """Describe lineage metadata for an export artifact.
+
+    Parameters
+    ----------
+    source_table_keys
+        Ordered table keys that feed this artifact.
+    source_schema_hashes
+        Schema hashes aligned to the source table keys.
+    """
+
+    source_table_keys: tuple[str, ...]
+    source_schema_hashes: tuple[str, ...]
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable representation.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable artifact provenance payload.
+        """
+        return {
+            "source_table_keys": list(self.source_table_keys),
+            "source_schema_hashes": list(self.source_schema_hashes),
+        }
+
+
+@dataclass(frozen=True)
 class SchemaManifest(ManifestBase):
     """Stable manifest of schemas compiled for a build selection.
 
@@ -90,6 +158,12 @@ class SchemaManifest(ManifestBase):
         View schemas included in this manifest (v2 only).
     artifacts
         Export artifact specifications (v2 only).
+    table_provenance
+        Optional per-table provenance metadata (v2 additive).
+    view_provenance
+        Optional per-view provenance metadata (v2 additive).
+    artifact_provenance
+        Optional per-artifact provenance metadata (v2 additive).
 
     Notes
     -----
@@ -102,6 +176,9 @@ class SchemaManifest(ManifestBase):
     tables: tuple[TableSchema, ...] = ()
     views: tuple[TableSchema, ...] = field(default_factory=tuple)
     artifacts: tuple[ExportArtifact, ...] = field(default_factory=tuple)
+    table_provenance: dict[str, TableProvenance] = field(default_factory=dict)
+    view_provenance: dict[str, TableProvenance] = field(default_factory=dict)
+    artifact_provenance: dict[str, ArtifactProvenance] = field(default_factory=dict)
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable manifest representation.
@@ -114,13 +191,34 @@ class SchemaManifest(ManifestBase):
         result: dict[str, object] = {"version": self.version}
 
         if self.tables:
-            result["tables"] = [table.to_json_obj() for table in self.tables]
+            tables: list[dict[str, object]] = []
+            for table in self.tables:
+                table_obj = table.to_json_obj()
+                provenance = self.table_provenance.get(table.table_key)
+                if provenance is not None:
+                    table_obj.update(provenance.to_json_obj())
+                tables.append(table_obj)
+            result["tables"] = tables
 
         if self.views:
-            result["views"] = [view.to_json_obj() for view in self.views]
+            views: list[dict[str, object]] = []
+            for view in self.views:
+                view_obj = view.to_json_obj()
+                provenance = self.view_provenance.get(view.table_key)
+                if provenance is not None:
+                    view_obj.update(provenance.to_json_obj())
+                views.append(view_obj)
+            result["views"] = views
 
         if self.artifacts:
-            result["artifacts"] = [artifact.to_json_obj() for artifact in self.artifacts]
+            artifacts: list[dict[str, object]] = []
+            for artifact in self.artifacts:
+                artifact_obj = artifact.to_json_obj()
+                provenance = self.artifact_provenance.get(artifact.filename)
+                if provenance is not None:
+                    artifact_obj["provenance"] = provenance.to_json_obj()
+                artifacts.append(artifact_obj)
+            result["artifacts"] = artifacts
 
         return result
 
@@ -133,7 +231,14 @@ class SchemaManifest(ManifestBase):
         bool
             True if manifest contains views or artifacts.
         """
-        return bool(self.views or self.artifacts)
+        return self.version == "v2"
 
 
-__all__ = ["ExportArtifact", "ExportArtifactKind", "SchemaManifest"]
+__all__ = [
+    "ArtifactProvenance",
+    "ExportArtifact",
+    "ExportArtifactKind",
+    "ManifestDerivationKind",
+    "SchemaManifest",
+    "TableProvenance",
+]

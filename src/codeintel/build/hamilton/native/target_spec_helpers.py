@@ -13,12 +13,12 @@ from dataclasses import dataclass
 from string import Formatter
 from typing import TYPE_CHECKING
 
-from codeintel.build.contracts import OutputContract
+from codeintel.build.contracts import OutputContract, placeholder_table_schema
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import DEFAULT_EXECUTION, DEFAULT_RESOURCES
-from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.table_keys import validate_table_key
 from codeintel.build.targets import OutputTarget
+from codeintel.core.schemas.declared import get_declared_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -74,17 +74,44 @@ def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
                 raise ValueError(msg)
 
 
-def _resolve_table_schemas(table_keys: Iterable[str]) -> tuple[TableSchema, ...]:
+def _resolve_table_schemas(
+    table_keys: Iterable[str],
+    override_tables: Iterable[TableSchema],
+) -> tuple[TableSchema, ...]:
     schemas: list[TableSchema] = []
     seen: set[str] = set()
-    provider = declared_schema_provider()
+    overrides: dict[str, TableSchema] = {}
+
+    for table_schema in override_tables:
+        _validate_table_key(table_schema.table_key)
+        if table_schema.table_key in overrides:
+            msg = f"Duplicate override table schema: {table_schema.table_key}"
+            raise ValueError(msg)
+        overrides[table_schema.table_key] = table_schema
+
     for table_key in table_keys:
         _validate_table_key(table_key)
         if table_key in seen:
             msg = f"Duplicate table_key in target spec: {table_key}"
             raise ValueError(msg)
         seen.add(table_key)
-        schemas.append(provider.require_table_schema(table_key))
+        override_schema = overrides.get(table_key)
+        if override_schema is not None:
+            schemas.append(override_schema)
+            continue
+
+        declared_schema = get_declared_schema(table_key)
+        if declared_schema is not None:
+            schemas.append(declared_schema)
+            continue
+
+        schemas.append(placeholder_table_schema(table_key))
+
+    extra_overrides = sorted(set(overrides) - seen)
+    if extra_overrides:
+        msg = f"Override tables not declared in table_keys: {extra_overrides}"
+        raise ValueError(msg)
+
     return tuple(schemas)
 
 
@@ -96,6 +123,8 @@ class TargetSpecOptions:
     ----------
     table_keys
         Fully qualified table keys produced by the target (schema.table).
+    override_tables
+        Explicit TableSchema overrides for non-inferable outputs.
     artifacts
         Artifact specs produced by the target.
     resources
@@ -107,6 +136,7 @@ class TargetSpecOptions:
     """
 
     table_keys: tuple[str, ...] = ()
+    override_tables: tuple[TableSchema, ...] = ()
     artifacts: tuple[ArtifactSpec, ...] = ()
     resources: TargetResources = DEFAULT_RESOURCES
     execution: TargetExecution = DEFAULT_EXECUTION
@@ -154,7 +184,7 @@ def make_output_target(
     resolved = TargetSpecOptions() if options is None else options
     _validate_artifact_specs(resolved.artifacts)
     try:
-        tables = _resolve_table_schemas(resolved.table_keys)
+        tables = _resolve_table_schemas(resolved.table_keys, resolved.override_tables)
     except KeyError as exc:
         msg = f"Unknown table schema key in target spec {name}: {exc}"
         raise ValueError(msg) from exc

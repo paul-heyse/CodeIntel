@@ -51,6 +51,10 @@ Diff a compiled schema manifest against an expected file.
 │      --include-artifacts        comparison (v2 format). [env var:            │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_ARTIFACT │
 │                                 S] [default: false]                          │
+│    INCLUDE-PROVENANCE           Include provenance metadata in comparison    │
+│      --include-provenance       (v2 format). [env var:                       │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_PROVENAN │
+│                                 CE] [default: false]                         │
 │    --flags                      [env var: CODEINTEL_BUILD_SCHEMA_DIFF_FLAGS] │
 │                                 [default: --flags]                           │
 │    ROOT --root -r               Explicit project root directory. [env var:   │

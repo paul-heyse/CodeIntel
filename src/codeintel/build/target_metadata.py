@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, cast
 from codeintel.build.hamilton.introspect import derive_target_outputs
 from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.core.imports.lazy import lazy_getattr
-from codeintel.core.schemas.declared import declared_schema_provider
+from codeintel.core.schemas.declared import source_declared_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -312,7 +312,9 @@ def get_target_metadata_service() -> TargetMetadataService:
     )
     schema_index = build_schema_index(
         system=system,
-        declared_provider=declared_schema_provider(),
+        declared_provider=source_declared_schema_provider(
+            exclude_table_keys=system.all_table_keys,
+        ),
         inference_service=get_schema_inference_service(),
     )
     derived = derive_target_outputs(system.runtime)

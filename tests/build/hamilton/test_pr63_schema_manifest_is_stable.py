@@ -7,12 +7,12 @@ import json
 import pytest
 
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
-from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.provider_unified import unified_schema_provider
 
 
 def test_pr63_schema_manifest_is_stable() -> None:
     """Compiling the same manifest twice should yield identical JSON."""
-    provider = declared_schema_provider()
+    provider = unified_schema_provider()
     request = SchemaManifestRequest(
         targets=("risk_factors",),
         only_native=True,

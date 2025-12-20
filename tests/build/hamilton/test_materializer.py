@@ -11,8 +11,11 @@ from typing import TYPE_CHECKING, cast
 import pandas as pd
 
 from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
+from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import (
@@ -162,3 +165,57 @@ def test_materialize_table_validates_when_schema_available(
     meta = saver.save_data(expr)
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=len(df))
+
+
+def test_rows_saver_resolves_deferred_columns(
+    fresh_gateway: StorageGateway,
+    tmp_path: Path,
+) -> None:
+    """DuckDBRowsSaver should resolve deferred columns at execution time."""
+    repo = "r"
+    commit = "c"
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
+    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    graph = _make_graph()
+    table_key = "core.modules"
+    target = graph.get("modules")
+
+    schema = get_schema_service().require_table_schema(table_key)
+    column_names = tuple(col.name for col in schema.columns)
+    values_by_column: dict[str, object] = {}
+    for column in schema.columns:
+        if column.type == "JSON":
+            values_by_column[column.name] = "[]"
+        elif column.type in {"INTEGER", "BIGINT", "DECIMAL(38,0)"}:
+            values_by_column[column.name] = 1
+        elif column.type == "DOUBLE":
+            values_by_column[column.name] = 1.0
+        elif column.type == "BOOLEAN":
+            values_by_column[column.name] = True
+        else:
+            values_by_column[column.name] = f"value_{column.name}"
+    values_by_column["repo"] = repo
+    values_by_column["commit"] = commit
+    row = tuple(values_by_column[name] for name in column_names)
+
+    saver = DuckDBRowsSaver(
+        env=env,
+        graph=graph,
+        target_name="modules",
+        table_key=table_key,
+        columns=deferred_columns_for_table_key(table_key),
+    )
+
+    with ContractEnforcer.for_target(target, strict=True):
+        meta = saver.save_data((row,))
+
+    expect_equal(meta["status"], expected="succeeded")
+    expect_equal(meta["row_count"], expected=1)
+
+    row_result = fresh_gateway.con.execute(
+        "SELECT * FROM core.modules WHERE repo=? AND commit=?",
+        [repo, commit],
+    ).fetchone()
+    expect_true(row_result is not None, message="Expected row materialization to persist data")
+    persisted = cast("tuple[object, ...]", row_result)
+    expect_equal(persisted, expected=row)

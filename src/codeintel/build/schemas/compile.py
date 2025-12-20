@@ -20,18 +20,25 @@ from codeintel.build.schemas.inference_service import (
     infer_table_schemas,
     inferable_native_table_keys,
 )
-from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
+from codeintel.build.schemas.manifest import (
+    ArtifactProvenance,
+    ExportArtifact,
+    SchemaManifest,
+    TableProvenance,
+)
 from codeintel.build.schemas.provider_unified import (
     UnifiedSchemaProvider,
     non_inferable_schema_provider,
 )
 from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
+    from codeintel.build.schemas.schema_index import SchemaIndex
     from codeintel.build.targets import TargetGraph, TargetModule
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
@@ -41,6 +48,10 @@ _logger = logging.getLogger(__name__)
 
 DEFAULT_SCHEMA_MANIFEST_VERSION = "v1"
 V2_SCHEMA_MANIFEST_VERSION = "v2"
+DECLARED_SOURCE_KIND = "declared_source"
+DECLARED_SOURCE_NAME = "declared"
+VIEW_DERIVATION_KIND = "view_inferred"
+VIEW_DERIVATION_SOURCE = "duckdb"
 
 
 @dataclass(frozen=True)
@@ -69,6 +80,8 @@ class SchemaManifestRequest:
         When True, include DuckDB view schemas in the manifest (v2).
     include_artifacts
         When True, include export artifact specifications in the manifest (v2).
+    include_provenance
+        When True, include per-entry provenance fields in the manifest (v2).
     """
 
     targets: tuple[str, ...] | None = None
@@ -81,6 +94,7 @@ class SchemaManifestRequest:
     version: str = DEFAULT_SCHEMA_MANIFEST_VERSION
     include_views: bool = False
     include_artifacts: bool = False
+    include_provenance: bool = False
 
 
 @dataclass(frozen=True)
@@ -430,6 +444,143 @@ class V2Extras:
     artifacts: tuple[ExportArtifact, ...] = ()
 
 
+@dataclass(frozen=True)
+class ManifestProvenance:
+    """Container for manifest provenance mappings.
+
+    Parameters
+    ----------
+    table_provenance
+        Per-table provenance metadata.
+    view_provenance
+        Per-view provenance metadata.
+    artifact_provenance
+        Per-artifact provenance metadata.
+    """
+
+    table_provenance: dict[str, TableProvenance]
+    view_provenance: dict[str, TableProvenance]
+    artifact_provenance: dict[str, ArtifactProvenance]
+
+
+def _schema_hash_for_table_key(
+    table_key: str,
+    *,
+    known_hashes: dict[str, str],
+    provider: SchemaProvider,
+) -> str:
+    """Resolve the schema hash for a table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    known_hashes
+        Cache of precomputed schema hashes keyed by table key.
+    provider
+        Schema provider used to resolve the table schema if needed.
+
+    Returns
+    -------
+    str
+        Schema hash for the table.
+
+    Raises
+    ------
+    KeyError
+        If the table schema is unknown to the provider.
+    """
+    cached = known_hashes.get(table_key)
+    if cached is not None:
+        return cached
+    schema = provider.get_table_schema(table_key)
+    if schema is None:
+        msg = f"Unknown table schema for provenance: {table_key}"
+        raise KeyError(msg)
+    computed = schema_hash(schema)
+    known_hashes[table_key] = computed
+    return computed
+
+
+def _collect_manifest_provenance(
+    *,
+    tables: tuple[TableSchema, ...],
+    views: tuple[TableSchema, ...],
+    artifacts: tuple[ExportArtifact, ...],
+    provider: SchemaProvider,
+    schema_index: SchemaIndex,
+) -> ManifestProvenance:
+    """Collect provenance metadata for manifest entries.
+
+    Parameters
+    ----------
+    tables
+        Table schemas included in the manifest.
+    views
+        View schemas included in the manifest.
+    artifacts
+        Export artifacts included in the manifest.
+    provider
+        Schema provider used for fallback table resolution.
+    schema_index
+        Schema index derived from the global target system.
+
+    Returns
+    -------
+    ManifestProvenance
+        Provenance mappings for tables, views, and artifacts.
+    """
+    table_provenance: dict[str, TableProvenance] = {}
+    view_provenance: dict[str, TableProvenance] = {}
+    artifact_provenance: dict[str, ArtifactProvenance] = {}
+    known_hashes: dict[str, str] = {}
+
+    for table in tables:
+        derivation = schema_index.derivations.get(table.table_key)
+        if derivation is None:
+            derivation_kind = DECLARED_SOURCE_KIND
+            derivation_source = DECLARED_SOURCE_NAME
+        else:
+            derivation_kind = derivation.kind
+            derivation_source = derivation.source
+        table_hash = schema_hash(table)
+        known_hashes[table.table_key] = table_hash
+        table_provenance[table.table_key] = TableProvenance(
+            schema_hash=table_hash,
+            derivation_kind=derivation_kind,
+            derivation_source=derivation_source,
+        )
+
+    for view in views:
+        view_hash = schema_hash(view)
+        view_provenance[view.table_key] = TableProvenance(
+            schema_hash=view_hash,
+            derivation_kind=VIEW_DERIVATION_KIND,
+            derivation_source=VIEW_DERIVATION_SOURCE,
+        )
+
+    for artifact in artifacts:
+        source_table_keys = (artifact.table_key,) if artifact.table_key is not None else ()
+        source_schema_hashes = tuple(
+            _schema_hash_for_table_key(
+                table_key,
+                known_hashes=known_hashes,
+                provider=provider,
+            )
+            for table_key in source_table_keys
+        )
+        artifact_provenance[artifact.filename] = ArtifactProvenance(
+            source_table_keys=source_table_keys,
+            source_schema_hashes=source_schema_hashes,
+        )
+
+    return ManifestProvenance(
+        table_provenance=table_provenance,
+        view_provenance=view_provenance,
+        artifact_provenance=artifact_provenance,
+    )
+
+
 def compile_schema_manifest_for_table_keys(
     table_keys: Iterable[str],
     *,
@@ -512,13 +663,34 @@ def compile_schema_manifest(
         batch_inferer=batch_inferer,
     )
     extras, version = _resolve_v2_extras(request=req, con=con)
+    if req.include_provenance and version == DEFAULT_SCHEMA_MANIFEST_VERSION:
+        version = V2_SCHEMA_MANIFEST_VERSION
 
-    return compile_schema_manifest_for_table_keys(
+    manifest = compile_schema_manifest_for_table_keys(
         table_keys,
         provider=active_provider,
         version=version,
         stable=req.stable,
         extras=extras,
+    )
+    if not req.include_provenance:
+        return manifest
+
+    provenance = _collect_manifest_provenance(
+        tables=manifest.tables,
+        views=manifest.views,
+        artifacts=manifest.artifacts,
+        provider=active_provider,
+        schema_index=service.schema_index,
+    )
+    return SchemaManifest(
+        version=manifest.version,
+        tables=manifest.tables,
+        views=manifest.views,
+        artifacts=manifest.artifacts,
+        table_provenance=provenance.table_provenance,
+        view_provenance=provenance.view_provenance,
+        artifact_provenance=provenance.artifact_provenance,
     )
 
 

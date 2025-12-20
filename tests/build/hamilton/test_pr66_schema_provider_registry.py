@@ -17,22 +17,37 @@ from codeintel.build.schemas import (
     iter_table_schemas,
     require_table_schema,
 )
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.schemas import schema_hash
+from codeintel.core.schemas.declared import iter_declared_schemas
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
 
-def _get_declared_schemas() -> dict[str, TableSchema]:
-    """Get declared schemas as a dict for comparison.
+def _get_full_declared_schemas() -> dict[str, TableSchema]:
+    """Return the full declared schema registry.
 
     Returns
     -------
     dict[str, TableSchema]
-        Mapping from table_key to declared schema.
+        Mapping from table_key to declared schema (sources + outputs).
     """
-    return {s.table_key: s for s in declared_schema_provider().iter_table_schemas()}
+    return {schema.table_key: schema for schema in iter_declared_schemas()}
 
+
+def _source_only_declared_schemas() -> dict[str, TableSchema]:
+    """Return source-only declared schemas from the build provider.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping from table_key to source-only declared schema.
+    """
+    return {
+        schema.table_key: schema
+        for schema in declared_schema_provider().iter_table_schemas()
+    }
 
 def test_get_schema_provider_returns_valid_provider() -> None:
     """Verify get_schema_provider returns a valid SchemaProvider."""
@@ -108,10 +123,19 @@ def test_iter_table_schemas_contains_expected_keys() -> None:
         pytest.fail(f"Missing expected schema keys: {missing}")
 
 
+def test_declared_schema_provider_is_source_only() -> None:
+    """Verify declared_schema_provider excludes DAG outputs."""
+    provider_keys = set(_source_only_declared_schemas())
+    outputs = set(get_target_metadata_service().system.all_table_keys)
+    overlap = sorted(provider_keys & outputs)
+    if overlap:
+        pytest.fail(f"Declared provider leaked output keys: {overlap[:10]}")
+
+
 def test_every_declared_key_resolves_via_provider() -> None:
-    """Verify all declared schema keys resolve through the provider."""
+    """Verify all full declared schema keys resolve through the provider."""
     provider = get_schema_provider()
-    declared_schemas = _get_declared_schemas()
+    declared_schemas = _get_full_declared_schemas()
     missing_keys: list[str] = []
 
     for key in declared_schemas:
@@ -124,9 +148,9 @@ def test_every_declared_key_resolves_via_provider() -> None:
 
 
 def test_provider_schemas_match_declared_schemas() -> None:
-    """Verify provider returns identical schemas as declared_schema_provider."""
+    """Verify source-only schemas match declared definitions."""
     provider = get_schema_provider()
-    declared_schemas = _get_declared_schemas()
+    declared_schemas = _source_only_declared_schemas()
     mismatches: list[str] = []
 
     for key, declared_schema in declared_schemas.items():
@@ -141,9 +165,9 @@ def test_provider_schemas_match_declared_schemas() -> None:
 
 
 def test_provider_schema_count_at_least_declared() -> None:
-    """Verify provider has at least as many schemas as declared."""
+    """Verify provider has at least as many schemas as source-only declared."""
     provider_count = len(list(iter_table_schemas()))
-    declared_count = len(_get_declared_schemas())
+    declared_count = len(_source_only_declared_schemas())
     # Provider may have more schemas from Hamilton inference
     if provider_count < declared_count:
         pytest.fail(f"Provider has {provider_count} schemas, declared has {declared_count}")

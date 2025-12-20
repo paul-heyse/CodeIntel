@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.build.contracts import is_placeholder_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
     from codeintel.build.target_metadata import TargetSystem
 
 
-SchemaDerivationKind = Literal["inferred_ibis", "contract_override"]
+SchemaDerivationKind = Literal["explicit_override", "inferred_ibis"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +39,7 @@ class SchemaIndex:
     inference_service: SchemaInferenceService
     fallback_to_override_on_error: bool = True
     _cache: dict[str, TableSchema] = field(default_factory=dict, repr=False)
+    _inference_errors: dict[str, str] = field(default_factory=dict, repr=False)
 
     def get_table_schema(
         self,
@@ -90,11 +92,13 @@ class SchemaIndex:
                         table_key,
                         declared_provider=self.declared_provider,
                     )
-                except (KeyError, RuntimeError, TypeError, ValueError):
+                except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+                    self._record_inference_error(table_key, exc)
                     if not self.fallback_to_override_on_error:
                         raise
                     schema = derivation.override_schema
                 else:
+                    self._clear_inference_error(table_key)
                     self._cache[table_key] = inferred
                     schema = inferred
         elif derivation.override_schema is not None:
@@ -124,6 +128,37 @@ class SchemaIndex:
     def clear_cache(self) -> None:
         """Clear cached inferred schemas."""
         self._cache.clear()
+        self._inference_errors.clear()
+
+    def get_inference_error(self, table_key: str) -> str | None:
+        """Return the most recent inference error for a table key.
+
+        Returns
+        -------
+        str | None
+            Error message when inference failed for the table key.
+        """
+        return self._inference_errors.get(table_key)
+
+    def iter_inference_errors(self) -> Iterable[tuple[str, str]]:
+        """Iterate inference errors in deterministic order.
+
+        Yields
+        ------
+        tuple[str, str]
+            Table key and error message.
+        """
+        for table_key in sorted(self._inference_errors):
+            yield table_key, self._inference_errors[table_key]
+
+    def _record_inference_error(self, table_key: str, exc: Exception) -> None:
+        detail = str(exc)
+        label = type(exc).__name__
+        message = f"{label}: {detail}" if detail else label
+        self._inference_errors[table_key] = message
+
+    def _clear_inference_error(self, table_key: str) -> None:
+        self._inference_errors.pop(table_key, None)
 
 
 def build_schema_index(
@@ -138,22 +173,42 @@ def build_schema_index(
     -------
     SchemaIndex
         Schema index derived from the target system.
+
+    Raises
+    ------
+    ValueError
+        If non-inferable outputs are missing explicit overrides.
     """
     inferable = inference_service.inferable_table_keys(graph=system.graph)
     derivations: dict[str, SchemaDerivation] = {}
+    missing_overrides: list[tuple[str, str]] = []
 
     for target in system.graph.all_targets:
         for table_key in target.contract.table_keys:
             override_schema = target.contract.get_table(table_key)
-            kind: SchemaDerivationKind = (
-                "inferred_ibis" if table_key in inferable else "contract_override"
-            )
+            if override_schema is not None and is_placeholder_schema(override_schema):
+                override_schema = None
+            if table_key in inferable:
+                kind: SchemaDerivationKind = "inferred_ibis"
+            else:
+                if override_schema is None:
+                    missing_overrides.append((table_key, target.name))
+                    continue
+                kind = "explicit_override"
             derivations[table_key] = SchemaDerivation(
                 table_key=table_key,
                 kind=kind,
                 source=target.name,
                 override_schema=override_schema,
             )
+
+    if missing_overrides:
+        missing = ", ".join(
+            f"{table_key} (target={target_name})"
+            for table_key, target_name in sorted(missing_overrides)
+        )
+        msg = f"Missing explicit schema overrides for non-inferable outputs: {missing}"
+        raise ValueError(msg)
 
     return SchemaIndex(
         derivations=derivations,

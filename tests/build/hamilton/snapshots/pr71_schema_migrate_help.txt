@@ -43,6 +43,10 @@ Update expected manifest to match current schemas.
 │      --include-artifacts        migration (v2 format). [env var:             │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_INCLUDE_ARTIF │
 │                                 ACTS] [default: false]                       │
+│    INCLUDE-PROVENANCE           Include provenance metadata in migration (v2 │
+│      --include-provenance       format). [env var:                           │
+│                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_INCLUDE_PROVE │
+│                                 NANCE] [default: false]                      │
 │    --flags                      [env var:                                    │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_FLAGS]        │
 │                                 [default: --flags]                           │

@@ -110,6 +110,14 @@ class BuildSchemaCompileCommand:
             negative=(),
         ),
     ] = False
+    include_provenance: Annotated[
+        bool,
+        Parameter(
+            name=["--include-provenance"],
+            help="Include provenance metadata for schemas and artifacts (v2 format).",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -213,6 +221,14 @@ class BuildSchemaDiffCommand:
             negative=(),
         ),
     ] = False
+    include_provenance: Annotated[
+        bool,
+        Parameter(
+            name=["--include-provenance"],
+            help="Include provenance metadata in comparison (v2 format).",
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 
@@ -297,6 +313,14 @@ class BuildSchemaMigrateCommand:
         Parameter(
             name=["--include-artifacts"],
             help="Include export artifact metadata in migration (v2 format).",
+            negative=(),
+        ),
+    ] = False
+    include_provenance: Annotated[
+        bool,
+        Parameter(
+            name=["--include-provenance"],
+            help="Include provenance metadata in migration (v2 format).",
             negative=(),
         ),
     ] = False

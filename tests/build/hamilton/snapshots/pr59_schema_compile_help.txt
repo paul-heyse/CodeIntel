@@ -42,6 +42,10 @@ Compile a deterministic schema manifest for selected targets.
 │   --include-artifacts        manifest (v2 format). [env var:                 │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_INCLUDE_ARTIFACT │
 │                              S] [default: false]                             │
+│ INCLUDE-PROVENANCE           Include provenance metadata for schemas and     │
+│   --include-provenance       artifacts (v2 format). [env var:                │
+│                              CODEINTEL_BUILD_SCHEMA_COMPILE_INCLUDE_PROVENAN │
+│                              CE] [default: false]                            │
 │ --flags                      [env var: CODEINTEL_BUILD_SCHEMA_COMPILE_FLAGS] │
 │                              [default: --flags]                              │
 │ ROOT --root -r               Explicit project root directory. [env var:      │

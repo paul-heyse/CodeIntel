@@ -62,8 +62,35 @@ def declared_schema_provider() -> SchemaProvider:
     return MappingSchemaProvider(dict(_registry()))
 
 
+def source_declared_schema_provider(*, exclude_table_keys: Iterable[str]) -> SchemaProvider:
+    """Return a SchemaProvider that filters out excluded table keys.
+
+    Parameters
+    ----------
+    exclude_table_keys
+        Table keys to exclude from the provider (e.g., DAG-produced outputs).
+
+    Returns
+    -------
+    SchemaProvider
+        Schema provider exposing only source table schemas.
+    """
+    return _source_declared_schema_provider(frozenset(exclude_table_keys))
+
+
+@lru_cache(maxsize=4)
+def _source_declared_schema_provider(exclude_table_keys: frozenset[str]) -> SchemaProvider:
+    filtered = {
+        table_key: schema
+        for table_key, schema in _registry().items()
+        if table_key not in exclude_table_keys
+    }
+    return MappingSchemaProvider(filtered)
+
+
 __all__ = [
     "declared_schema_provider",
     "get_declared_schema",
     "iter_declared_schemas",
+    "source_declared_schema_provider",
 ]

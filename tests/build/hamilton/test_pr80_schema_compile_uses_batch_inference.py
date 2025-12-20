@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.contracts import placeholder_table_schema
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.target_metadata import get_target_metadata_service
@@ -29,10 +30,13 @@ class _SpyBatchInferer:
         *,
         declared_provider: SchemaProvider,
     ) -> dict[str, TableSchema]:
+        if declared_provider is None:
+            msg = "declared_provider is required"
+            raise ValueError(msg)
         self.calls += 1
         keys = tuple(sorted(table_keys))
         self.seen.append(keys)
-        return {k: declared_provider.require_table_schema(k) for k in keys}
+        return {key: placeholder_table_schema(key) for key in keys}
 
 
 def test_pr80_schema_compile_uses_batch_inference() -> None:
