@@ -43,8 +43,8 @@ from codeintel.build.schemas.contract_service import (
     column_order_for_table_key,
     get_contract_for_table_key,
     get_contract_provider,
-    get_enriched_contract_service,
     get_contract_service,
+    get_enriched_contract_service,
     is_view,
     iter_contracts,
     iter_contracts_by_table_key,
@@ -134,11 +134,11 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ColumnDiff",
+    "ContractProvider",
+    "ContractResolutionSettings",
     "DeferredColumns",
     "ExportArtifact",
     "ExportArtifactKind",
-    "ContractProvider",
-    "ContractResolutionSettings",
     "ManifestDiffResult",
     "SchemaContractService",
     "SchemaDiff",

@@ -11,7 +11,18 @@ from codeintel.build.settings import BuildSettings, get_build_settings
 
 
 def get_build_engine_version(settings: BuildSettings | None = None) -> str:
-    """Return the build-engine version string from settings."""
+    """Return the build-engine version string from settings.
+
+    Parameters
+    ----------
+    settings
+        Optional build settings override.
+
+    Returns
+    -------
+    str
+        Build engine version identifier.
+    """
     resolved = get_build_settings() if settings is None else settings
     return resolved.engine_version
 

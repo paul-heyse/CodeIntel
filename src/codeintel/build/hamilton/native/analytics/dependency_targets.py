@@ -53,7 +53,7 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -218,12 +218,12 @@ def t__external_deps__compute_calls(
     target = graph.get(EXTERNAL_DEPS_TARGET_NAME)
     if target is not None:
         options_hash = options_hash_for_target(env, EXTERNAL_DEPS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
@@ -454,12 +454,12 @@ def t__entrypoints__compute(
     target = graph.get(ENTRYPOINTS_TARGET_NAME)
     if target is not None:
         options_hash = options_hash_for_target(env, ENTRYPOINTS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None

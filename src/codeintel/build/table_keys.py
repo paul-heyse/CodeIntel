@@ -5,8 +5,14 @@ from __future__ import annotations
 from codeintel.storage.helpers.table_key import (
     ParsedTableKey,
     TableKeyValidationError,
+)
+from codeintel.storage.helpers.table_key import (
     parse_table_key as _parse_table_key,
+)
+from codeintel.storage.helpers.table_key import (
     split_table_key as _split_table_key,
+)
+from codeintel.storage.helpers.table_key import (
     validate_table_key as _validate_table_key,
 )
 

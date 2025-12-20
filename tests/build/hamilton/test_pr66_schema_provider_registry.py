@@ -44,10 +44,8 @@ def _source_only_declared_schemas() -> dict[str, TableSchema]:
     dict[str, TableSchema]
         Mapping from table_key to source-only declared schema.
     """
-    return {
-        schema.table_key: schema
-        for schema in declared_schema_provider().iter_table_schemas()
-    }
+    return {schema.table_key: schema for schema in declared_schema_provider().iter_table_schemas()}
+
 
 def test_get_schema_provider_returns_valid_provider() -> None:
     """Verify get_schema_provider returns a valid SchemaProvider."""

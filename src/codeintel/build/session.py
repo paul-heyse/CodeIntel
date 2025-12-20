@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -96,12 +96,12 @@ class BuildSession:
 
         # Use preloaded manifests if available
         manifests = self._manifest_cache if self._manifests_preloaded else None
+        options = InputHashOptions(options_hash=options_hash, manifests=manifests)
         hash_value = compute_input_hash(
             target,
             self.snapshot,
             self.gateway,
-            options_hash,
-            manifests=manifests,
+            options=options,
         )
         self._hash_cache[cache_key] = hash_value
         return hash_value

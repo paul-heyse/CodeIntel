@@ -50,7 +50,6 @@ from codeintel.core.ibis_typing import (
     le,
     not_null,
 )
-from codeintel.storage.helpers.table_key import is_valid_table_key
 from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.gateway.protocol import (
     DuckDBBinderException,
@@ -61,6 +60,7 @@ from codeintel.storage.gateway.protocol import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
+from codeintel.storage.helpers.table_key import is_valid_table_key
 from codeintel.storage.query_results import execute_int, execute_optional_float
 from codeintel.storage.sqlglot_tools import extract_table_refs
 
@@ -221,7 +221,9 @@ def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) 
 def _validate_ingress_functions(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:
     reason = "policy_violation"
     deny = {name.lower() for name in policy.deny_functions}
-    allow = {name.lower() for name in policy.allowed_functions} if policy.allowed_functions else None
+    allow = (
+        {name.lower() for name in policy.allowed_functions} if policy.allowed_functions else None
+    )
     if not deny and allow is None:
         return
     for func_name in _extract_function_names(root):

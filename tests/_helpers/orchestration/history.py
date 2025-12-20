@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -23,7 +24,12 @@ _MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
 _FUNCTION_HISTORY_TABLE_KEY = "analytics.function_history"
 
 
-_DEFAULT_CONTRACTS_BY_TABLE: dict[str, DatasetContract] | None = None
+@dataclass(slots=True)
+class _ContractCache:
+    contracts_by_table: dict[str, DatasetContract] | None = None
+
+
+_DEFAULT_CONTRACT_CACHE = _ContractCache()
 _DEFAULT_COLUMNS_BY_TABLE: dict[str, tuple[str, ...]] = {}
 
 
@@ -31,13 +37,23 @@ def _contracts_by_table(
     contract_provider: ContractProvider | None = None,
 ) -> dict[str, DatasetContract]:
     if contract_provider is None:
-        global _DEFAULT_CONTRACTS_BY_TABLE
-        if _DEFAULT_CONTRACTS_BY_TABLE is None:
-            _DEFAULT_CONTRACTS_BY_TABLE = dict(
+        if _DEFAULT_CONTRACT_CACHE.contracts_by_table is None:
+            _DEFAULT_CONTRACT_CACHE.contracts_by_table = dict(
                 get_contract_provider().iter_contracts_by_table_key()
             )
-        return _DEFAULT_CONTRACTS_BY_TABLE
+        return _DEFAULT_CONTRACT_CACHE.contracts_by_table
     return dict(contract_provider.iter_contracts_by_table_key())
+
+
+def contracts_cache_initialized() -> bool:
+    """Return True if the default contract cache has been populated.
+
+    Returns
+    -------
+    bool
+        True when the default contract cache has been populated.
+    """
+    return _DEFAULT_CONTRACT_CACHE.contracts_by_table is not None
 
 
 def _columns_for_table_key(
@@ -81,9 +97,7 @@ def _function_profile_row(
     tuple[object, ...]
         Row tuple for function_profile table.
     """
-    columns = _require_columns(
-        _FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider
-    )
+    columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider)
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {
@@ -154,6 +168,8 @@ def create_snapshot_db(
         Directory to place the database file.
     spec
         Snapshot specification.
+    contract_provider
+        Optional contract provider override for deterministic tests.
 
     Returns
     -------
@@ -166,12 +182,8 @@ def create_snapshot_db(
     gateway = open_gateway(cfg)
     con = gateway.con
     apply_all_schemas(con)
-    fp_columns = _require_columns(
-        _FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider
-    )
-    mp_columns = _require_columns(
-        _MODULE_PROFILE_TABLE_KEY, contract_provider=contract_provider
-    )
+    fp_columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider)
+    mp_columns = _require_columns(_MODULE_PROFILE_TABLE_KEY, contract_provider=contract_provider)
     fp_df = pd.DataFrame(
         [_function_profile_row(spec, contract_provider=contract_provider)],
         columns=pd.Index(fp_columns),
@@ -196,9 +208,7 @@ def insert_function_history_row(
 ) -> None:
     """Insert a minimal function_history row for validation helpers."""
     con = gateway.con
-    fh_columns = _require_columns(
-        _FUNCTION_HISTORY_TABLE_KEY, contract_provider=contract_provider
-    )
+    fh_columns = _require_columns(_FUNCTION_HISTORY_TABLE_KEY, contract_provider=contract_provider)
     defaults: dict[str, object | None] = dict.fromkeys(fh_columns, None)
     now = datetime.now(tz=UTC)
     defaults.update(
@@ -232,4 +242,8 @@ def insert_function_history_row(
     con.execute("INSERT INTO analytics.function_history BY NAME SELECT * FROM fh_df")
 
 
-__all__ = ["create_snapshot_db", "insert_function_history_row"]
+__all__ = [
+    "contracts_cache_initialized",
+    "create_snapshot_db",
+    "insert_function_history_row",
+]

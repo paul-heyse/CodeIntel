@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.hashing import compute_input_hash_with_deps
+from codeintel.build.hashing import InputHashOptions, compute_input_hash_with_deps
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -144,12 +144,12 @@ def compute_hash_evaluation(
             commit=snapshot.commit,
         )
 
+    options = InputHashOptions(options_hash=options_hash, manifests=manifests)
     input_hash, dep_hashes = compute_input_hash_with_deps(
         target,
         snapshot,
         gateway,
-        options_hash,
-        manifests=manifests,
+        options=options,
     )
 
     prior_dep_hashes: dict[str, str] = {}

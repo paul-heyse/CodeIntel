@@ -41,7 +41,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
@@ -506,12 +506,12 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
     target = graph.get(CFG_DFG_METRICS_TARGET_NAME)
     if target is not None:
         options_hash = options_hash_for_target(env, CFG_DFG_METRICS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
@@ -534,12 +534,12 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
     target = graph.get(CFG_DFG_METRICS_TARGET_NAME)
     if target is not None:
         options_hash = options_hash_for_target(env, CFG_DFG_METRICS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
-            options_hash=options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None

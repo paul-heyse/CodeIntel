@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
-from typing import Protocol, SupportsInt, TextIO, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, SupportsInt, TextIO, cast, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.parquet as pq

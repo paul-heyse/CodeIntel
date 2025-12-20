@@ -14,7 +14,7 @@ import pytest
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hamilton.run_records import SkipCheckRequest, should_skip
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.build import make_build_config, make_build_paths, make_snapshot
@@ -121,12 +121,12 @@ class TestHashComputation:
         manifest_index = {"dep": dep_manifest}
 
         try:
+            hash_options = InputHashOptions(options_hash="opts", manifests=manifest_index)
             hash_value = compute_input_hash(
                 target,
                 snapshot,
                 fake_gateway,
-                options_hash="opts",
-                manifests=manifest_index,
+                options=hash_options,
             )
         except RuntimeError as e:
             if "load_manifest called" in str(e):
@@ -161,12 +161,15 @@ class TestHashComputation:
             output_hash="out_v1",
         )
 
+        hash_options_v1 = InputHashOptions(
+            options_hash="opts",
+            manifests={"upstream": manifest_v1},
+        )
         hash_1 = compute_input_hash(
             target,
             snapshot,
             fake_gateway,
-            options_hash="opts",
-            manifests={"upstream": manifest_v1},
+            options=hash_options_v1,
         )
 
         manifest_v2 = OutputManifest(
@@ -180,12 +183,15 @@ class TestHashComputation:
             output_hash="out_v2",
         )
 
+        hash_options_v2 = InputHashOptions(
+            options_hash="opts",
+            manifests={"upstream": manifest_v2},
+        )
         hash_2 = compute_input_hash(
             target,
             snapshot,
             fake_gateway,
-            options_hash="opts",
-            manifests={"upstream": manifest_v2},
+            options=hash_options_v2,
         )
 
         if hash_1 == hash_2:
@@ -365,19 +371,18 @@ class TestHashCascadeComplete:
 
         manifests_v1 = {"a": manifest_a_v1, "b": manifest_b_v1}
 
+        hash_options_v1 = InputHashOptions(options_hash="opts", manifests=manifests_v1)
         hash_b_v1 = compute_input_hash(
             target_b,
             snapshot,
             fake_gateway,
-            options_hash="opts",
-            manifests=manifests_v1,
+            options=hash_options_v1,
         )
         hash_c_v1 = compute_input_hash(
             target_c,
             snapshot,
             fake_gateway,
-            options_hash="opts",
-            manifests=manifests_v1,
+            options=hash_options_v1,
         )
 
         manifest_a_v2 = OutputManifest(
@@ -403,19 +408,18 @@ class TestHashCascadeComplete:
 
         manifests_v2 = {"a": manifest_a_v2, "b": manifest_b_v2}
 
+        hash_options_v2 = InputHashOptions(options_hash="opts", manifests=manifests_v2)
         hash_b_v2 = compute_input_hash(
             target_b,
             snapshot,
             fake_gateway,
-            options_hash="opts",
-            manifests=manifests_v2,
+            options=hash_options_v2,
         )
         hash_c_v2 = compute_input_hash(
             target_c,
             snapshot,
             fake_gateway,
-            options_hash="opts",
-            manifests=manifests_v2,
+            options=hash_options_v2,
         )
 
         if hash_b_v1 == hash_b_v2:
@@ -437,20 +441,20 @@ class TestHashCascadeComplete:
             module="analytics",
         )
 
+        hash_options_v1 = InputHashOptions(options_hash="opts_v1", manifests={})
         hash_1 = compute_input_hash(
             target,
             snapshot,
             fake_gateway,
-            options_hash="opts_v1",
-            manifests={},
+            options=hash_options_v1,
         )
 
+        hash_options_v2 = InputHashOptions(options_hash="opts_v2", manifests={})
         hash_2 = compute_input_hash(
             target,
             snapshot,
             fake_gateway,
-            options_hash="opts_v2",
-            manifests={},
+            options=hash_options_v2,
         )
 
         if hash_1 == hash_2:

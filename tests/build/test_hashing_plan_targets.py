@@ -11,7 +11,7 @@ import pytest
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.errors import CycleDetectedError
-from codeintel.build.hashing import compute_input_hash, compute_options_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash, compute_options_hash
 from codeintel.build.settings import BuildSettings
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
@@ -73,19 +73,18 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
         export_audit_table_enabled=False,
     )
 
+    hash_options = InputHashOptions(options_hash="opts", settings=settings)
     hash1 = compute_input_hash(
         target,
         snapshot,
         cast("Any", gateway),
-        options_hash="opts",
-        settings=settings,
+        options=hash_options,
     )
     hash2 = compute_input_hash(
         target,
         snapshot,
         cast("Any", gateway),
-        options_hash="opts",
-        settings=settings,
+        options=hash_options,
     )
 
     expect_equal(hash1, hash2)

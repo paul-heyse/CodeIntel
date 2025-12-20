@@ -43,7 +43,13 @@ def _resolve_export_audit_table_enabled() -> bool:
 
 @lru_cache(maxsize=1)
 def get_build_settings() -> BuildSettings:
-    """Return cached build settings resolved from the environment."""
+    """Return cached build settings resolved from the environment.
+
+    Returns
+    -------
+    BuildSettings
+        Resolved build settings.
+    """
     return BuildSettings(
         engine_version=_resolve_engine_version(),
         export_audit_log_path=_resolve_export_audit_log_path(),

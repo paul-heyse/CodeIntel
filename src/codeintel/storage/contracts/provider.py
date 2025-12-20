@@ -30,8 +30,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
 
-
-
 def is_view(table_key: str) -> bool:
     """Return True when the table key represents a docs view.
 

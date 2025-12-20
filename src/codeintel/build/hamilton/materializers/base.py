@@ -11,7 +11,7 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
     should_skip_native_target,
 )
-from codeintel.build.hashing import compute_input_hash
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -72,12 +72,12 @@ def resolve_materialization_context(
         return MaterializationContextError(message=f"Target not found in graph: {target_name}")
 
     options_hash = options_hash_for_target(env, target_name)
+    hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
     input_hash = compute_input_hash(
         target=target,
         snapshot=env.snapshot,
         gateway=env.gateway,
-        options_hash=options_hash,
-        manifests=env.manifest_index,
+        options=hash_options,
     )
     return MaterializationContext(
         target=target,
