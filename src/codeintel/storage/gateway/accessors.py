@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.ibis_adapter import IbisGateway
@@ -20,6 +21,7 @@ from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway.config import StorageConfig
@@ -408,3 +410,20 @@ class DuckDBGateway:
             DuckDB relation for the requested table/view.
         """
         return self.con.table(name)
+
+    def export_database(self, *, directory: Path) -> None:
+        """Export the database to a directory via DuckDB EXPORT DATABASE."""
+        DuckDBSession.export_database(self.con, directory=directory)
+
+    def import_database(self, *, directory: Path) -> None:
+        """Import the database from a directory via DuckDB IMPORT DATABASE.
+
+        Raises
+        ------
+        RuntimeError
+            If the gateway is read-only.
+        """
+        if self.config.read_only:
+            msg = "Cannot import into a read-only storage gateway"
+            raise RuntimeError(msg)
+        DuckDBSession.import_database(self.con, directory=directory)

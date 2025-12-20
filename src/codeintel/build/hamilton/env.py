@@ -57,7 +57,7 @@ class BuildEnv:
     config
         Build configuration loaded from codeintel.build.toml.
     profile
-        Optional policy profile name (e.g., "fast", "full", "default").
+        Optional policy profile name (e.g., "fast", "full", "ci").
         Used to select execution variants in later phases.
     force_targets
         Set of target names that should bypass skip checks and always
@@ -85,7 +85,7 @@ class BuildEnv:
     ...     paths=paths,
     ...     providers=providers,
     ...     config=config,
-    ...     profile="default",
+    ...     profile="full",
     ...     force_targets=frozenset(["function_metrics"]),
     ... )
     >>> driver.execute(["t__risk_factors"], inputs={"env": env})

@@ -11,7 +11,6 @@ from codeintel.build.table_keys import parse_table_key, split_table_key
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
-from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -97,10 +96,10 @@ def _exportable_by_default(table_key: str) -> bool:
     bool
         True when the table is exportable by default.
     """
-    if "." not in table_key:
+    try:
+        schema_prefix, table_name = split_table_key(table_key)
+    except ValueError:
         return False
-
-    schema_prefix, table_name = table_key.split(".", maxsplit=1)
 
     if schema_prefix == "build":
         return False
@@ -525,10 +524,7 @@ def _derive_view_contract(*, service: SchemaService, view_key: str) -> DatasetCo
     )
 
 
-class _ContractServiceHolder(SingletonHolder["ContractService"]):
-    """Singleton holder for ContractService."""
-
-
+@lru_cache(maxsize=1)
 def get_contract_service() -> ContractService:
     """Return the singleton ContractService instance.
 
@@ -537,11 +533,9 @@ def get_contract_service() -> ContractService:
     ContractService
         ContractService instance.
     """
-    return _ContractServiceHolder.get(
-        lambda: ContractService(
-            schema_service=get_schema_service(),
-            target_metadata=get_target_metadata_service(),
-        )
+    return ContractService(
+        schema_service=get_schema_service(),
+        target_metadata=get_target_metadata_service(),
     )
 
 
@@ -587,7 +581,7 @@ def iter_contracts_by_table_key() -> Iterable[tuple[str, DatasetContract]]:
 def clear_contract_cache() -> None:
     """Clear cached dataset contracts."""
     get_contract_for_table_key.cache_clear()
-    _ContractServiceHolder.reset()
+    get_contract_service.cache_clear()
 
 
 def column_order_for_table_key(table_key: str) -> tuple[str, ...]:
@@ -603,8 +597,7 @@ def column_order_for_table_key(table_key: str) -> tuple[str, ...]:
     tuple[str, ...]
         Ordered column names, or empty tuple when schema is unavailable.
     """
-    contract = get_contract_for_table_key(table_key)
-    schema = contract.schema
+    schema = get_schema_service().get_table_schema(table_key)
     if schema is None:
         return ()
     return tuple(column.name for column in schema.columns)

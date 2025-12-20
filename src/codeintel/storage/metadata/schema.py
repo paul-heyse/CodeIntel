@@ -84,6 +84,38 @@ METADATA_TABLES: tuple[TableSchema, ...] = (
     ),
     TableSchema(
         schema="metadata",
+        name="derived_lineage_columns",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("downstream_table", "VARCHAR", nullable=False),
+            Column("downstream_column", "VARCHAR", nullable=False),
+            Column("upstream_table", "VARCHAR", nullable=False),
+            Column("upstream_column", "VARCHAR", nullable=False),
+            Column("edge_type", "VARCHAR", nullable=False),
+        ],
+        primary_key=(
+            "repo",
+            "commit",
+            "downstream_table",
+            "downstream_column",
+            "upstream_table",
+            "upstream_column",
+            "edge_type",
+        ),
+        indexes=(
+            Index(
+                "idx_derived_lineage_columns_downstream",
+                ("repo", "commit", "downstream_table", "downstream_column"),
+            ),
+            Index(
+                "idx_derived_lineage_columns_upstream",
+                ("repo", "commit", "upstream_table", "upstream_column"),
+            ),
+        ),
+    ),
+    TableSchema(
+        schema="metadata",
         name="pipeline_runs",
         columns=[
             Column("run_id", "VARCHAR", nullable=False),

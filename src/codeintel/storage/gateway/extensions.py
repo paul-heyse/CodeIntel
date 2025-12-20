@@ -13,8 +13,10 @@ from typing import Protocol
 from codeintel.storage.gateway.protocol import DuckDBError
 
 __all__ = [
+    "DEFAULT_REQUIRED_EXTENSIONS",
     "DuckDBExecutor",
     "load_extensions_from_env",
+    "load_required_extensions",
     "parse_extensions_env",
     "require_extension",
 ]
@@ -30,6 +32,7 @@ class DuckDBExecutor(Protocol):
 
 _EXTENSION_NAME_PATTERN = re.compile(r"^[A-Za-z0-9_]+$")
 _EXTENSIONS_ENV = "CODEINTEL_DUCKDB_EXTENSIONS"
+DEFAULT_REQUIRED_EXTENSIONS: tuple[str, ...] = ("json",)
 
 
 def _validate_extension_name(extension: str) -> None:
@@ -73,6 +76,20 @@ def load_extensions_from_env(con: DuckDBExecutor, *, allow_install: bool) -> Non
         if allow_install:
             con.execute(f"INSTALL {extension}")
         con.execute(f"LOAD {extension}")
+
+
+def load_required_extensions(con: DuckDBExecutor, *, allow_install: bool) -> None:
+    """Ensure default required DuckDB extensions are loaded.
+
+    Parameters
+    ----------
+    con
+        Active DuckDB connection.
+    allow_install
+        When True, attempt `INSTALL` before `LOAD`. Use False for read-only paths.
+    """
+    for extension in DEFAULT_REQUIRED_EXTENSIONS:
+        require_extension(con, extension, allow_install=allow_install)
 
 
 def require_extension(con: DuckDBExecutor, extension: str, *, allow_install: bool) -> None:

@@ -9,6 +9,7 @@ import duckdb
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
@@ -116,6 +117,14 @@ class StorageGateway(MinimalGateway, Protocol):
 
     def table(self, name: str) -> DuckDBRelation:
         """Return a relation for a fully qualified table or view name."""
+        ...
+
+    def export_database(self, *, directory: Path) -> None:
+        """Export the database to a directory via DuckDB EXPORT DATABASE."""
+        ...
+
+    def import_database(self, *, directory: Path) -> None:
+        """Import the database from a directory via DuckDB IMPORT DATABASE."""
         ...
 
 

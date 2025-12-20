@@ -15,6 +15,7 @@ from sqlglot import diff as sqlglot_diff
 
 from codeintel.storage.sqlglot_tools import (
     ParseError,
+    canonicalize_expression_duckdb,
     extract_table_keys_duckdb,
     fingerprint_sql_duckdb,
     parse_one_duckdb,
@@ -94,8 +95,8 @@ def diff_sql_structural(*, before: str, after: str) -> SqlStructuralDiffSummary:
         Structural diff summary.
     """
     try:
-        before_ast = parse_one_duckdb(before)
-        after_ast = parse_one_duckdb(after)
+        before_ast = canonicalize_expression_duckdb(parse_one_duckdb(before))
+        after_ast = canonicalize_expression_duckdb(parse_one_duckdb(after))
         actions = sqlglot_diff(before_ast, after_ast)
         counts: dict[str, int] = {}
         for action in actions:

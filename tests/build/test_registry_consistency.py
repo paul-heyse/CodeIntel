@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.build.hamilton.naming import target_node
-from codeintel.build.target_system import load_target_system
+from codeintel.build.target_metadata import get_target_metadata_service
 from tests._helpers.assertions import expect_true
 
 
@@ -13,7 +13,7 @@ class TestRegistryConsistency:
     @staticmethod
     def test_all_targets_have_hamilton_nodes() -> None:
         """Every OutputTarget must have a corresponding Hamilton target node."""
-        target_system = load_target_system()
+        target_system = get_target_metadata_service().system
         runtime = target_system.runtime
         graph = target_system.graph
         missing = {

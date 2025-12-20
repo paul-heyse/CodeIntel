@@ -355,7 +355,7 @@ def _execute_build_hamilton(
         cache_dir = override if override.is_absolute() else (runtime.root / override)
 
     execution_options = BuildExecutionOptions(
-        profile="default",
+        profile=runtime.project.default_profile,
         parallel_backend=execution.parallel_backend,
         max_workers=execution.max_workers,
         enable_hamilton_cache=execution.enable_cache,
@@ -1254,7 +1254,7 @@ def build_plan_handler(
             providers=providers,
             config=config,
             run_config=None,
-            execution_options=BuildExecutionOptions(profile="default"),
+            execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=frozenset(plan_args.force or ()),
             manifest_index=manifest_index,
         )
@@ -1339,7 +1339,7 @@ def _compute_plan_for_explain(
             providers=providers,
             config=config,
             run_config=None,
-            execution_options=BuildExecutionOptions(profile="default"),
+            execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=force_targets,
             manifest_index=manifest_index,
         )

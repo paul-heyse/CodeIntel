@@ -10,14 +10,11 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.build.assets.fingerprinting import (
-    ArtifactVersionInput,
-    TableVersionInput,
-    compute_table_schema_hash,
-)
+from codeintel.build.assets.fingerprinting import ArtifactVersionInput, TableVersionInput
 from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.errors.storage import StorageError
 from codeintel.core.ibis_typing import filter_by
+from codeintel.core.schemas.hashing import compute_table_schema_hash
 from codeintel.storage.gateway import DuckDBError, ibis_facade
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,

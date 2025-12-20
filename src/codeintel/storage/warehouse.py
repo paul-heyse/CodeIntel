@@ -653,8 +653,7 @@ def _maybe_enable_profiling(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     con.execute("PRAGMA enable_profiling='json'")
-    escaped = str(output).replace("'", "''")
-    con.execute(f"PRAGMA profiling_output='{escaped}'")
+    con.execute("PRAGMA profiling_output=?", [str(output)])
     return output
 
 

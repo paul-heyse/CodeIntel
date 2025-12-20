@@ -18,6 +18,7 @@ __all__ = [
     "replace_dataset_dataflow_edges",
     "replace_dataset_dataflow_nodes",
     "replace_dataset_schema_registry",
+    "replace_derived_lineage_columns",
     "replace_derived_lineage_edges",
 ]
 
@@ -148,6 +149,58 @@ def replace_derived_lineage_edges(
             edge_type
         )
         VALUES (?, ?, ?, ?, ?)
+        """,
+        row_list,
+    )
+
+
+def replace_derived_lineage_columns(
+    con: DuckDBPyConnection,
+    *,
+    repo: str,
+    commit: str,
+    edge_type: str,
+    rows: Iterable[tuple[str, str, str, str, str, str, str]],
+) -> None:
+    """Replace derived lineage column edges for a snapshot.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection.
+    repo
+        Repository identifier.
+    commit
+        Commit identifier.
+    edge_type
+        Edge type name.
+    rows
+        Row iterable in table order:
+        (repo, commit, downstream_table, downstream_column,
+         upstream_table, upstream_column, edge_type).
+    """
+    con.execute(
+        """
+        DELETE FROM metadata.derived_lineage_columns
+        WHERE repo = ? AND commit = ? AND edge_type = ?
+        """,
+        [repo, commit, edge_type],
+    )
+    row_list = list(rows)
+    if not row_list:
+        return
+    con.executemany(
+        """
+        INSERT INTO metadata.derived_lineage_columns (
+            repo,
+            commit,
+            downstream_table,
+            downstream_column,
+            upstream_table,
+            upstream_column,
+            edge_type
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         row_list,
     )

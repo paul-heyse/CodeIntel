@@ -48,7 +48,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 
 log = logging.getLogger(__name__)
@@ -138,7 +138,7 @@ def t__function_metrics__compute(
     graph=source("graph"),
     target_name=value(FUNCTION_METRICS_TARGET_NAME),
     table_key=value(FUNCTION_METRICS_TABLE_KEY),
-    columns=value(column_order_for_table_key(FUNCTION_METRICS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(FUNCTION_METRICS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -176,7 +176,7 @@ def function_metrics__metrics_rows(
     graph=source("graph"),
     target_name=value(FUNCTION_METRICS_TARGET_NAME),
     table_key=value(FUNCTION_TYPES_TABLE_KEY),
-    columns=value(column_order_for_table_key(FUNCTION_TYPES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(FUNCTION_TYPES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -214,7 +214,7 @@ def function_metrics__types_rows(
     graph=source("graph"),
     target_name=value(FUNCTION_METRICS_TARGET_NAME),
     table_key=value(FUNCTION_VALIDATION_TABLE_KEY),
-    columns=value(column_order_for_table_key(FUNCTION_VALIDATION_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(FUNCTION_VALIDATION_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

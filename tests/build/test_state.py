@@ -10,7 +10,7 @@ import pytest
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.state import BuildState, StateValidator, TargetState
-from codeintel.build.target_system import load_target_system
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
@@ -805,7 +805,7 @@ class TestWithRealRegistry:
         snapshot: SnapshotRef,
     ) -> None:
         """Validate using the full target registry."""
-        graph = load_target_system().graph
+        graph = get_target_metadata_service().system.graph
         validator = StateValidator(graph, fresh_gateway, snapshot)
         state = validator.validate()
 
@@ -818,7 +818,7 @@ class TestWithRealRegistry:
         snapshot: SnapshotRef,
     ) -> None:
         """Verify state covers all registered targets."""
-        graph = load_target_system().graph
+        graph = get_target_metadata_service().system.graph
         validator = StateValidator(graph, fresh_gateway, snapshot)
         state = validator.validate()
 

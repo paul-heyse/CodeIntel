@@ -51,7 +51,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.graphs.runtime import resolve_graph_runtime
@@ -214,7 +214,7 @@ def t__function_contracts__compute(
     graph=source("graph"),
     target_name=value(FUNCTION_CONTRACTS_TARGET_NAME),
     table_key=value(FUNCTION_CONTRACTS_TABLE_KEY),
-    columns=value(column_order_for_table_key(FUNCTION_CONTRACTS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(FUNCTION_CONTRACTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -390,7 +390,7 @@ def t__function_effects__compute(
     graph=source("graph"),
     target_name=value(FUNCTION_EFFECTS_TARGET_NAME),
     table_key=value(FUNCTION_EFFECTS_TABLE_KEY),
-    columns=value(column_order_for_table_key(FUNCTION_EFFECTS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(FUNCTION_EFFECTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

@@ -1,1 +1,1 @@
-"""Tests for the core build system."""
+"""Test package for build-related tests."""

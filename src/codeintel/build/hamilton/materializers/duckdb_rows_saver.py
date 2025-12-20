@@ -33,6 +33,8 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
+from codeintel.build.schemas.column_resolution import DeferredColumns, resolve_columns
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
@@ -74,7 +76,7 @@ class DuckDBRowsSaver(DataSaver):
     graph: TargetGraph
     target_name: str
     table_key: str
-    columns: tuple[str, ...]
+    columns: tuple[str, ...] | DeferredColumns
 
     @classmethod
     def name(cls) -> str:
@@ -137,6 +139,11 @@ class DuckDBRowsSaver(DataSaver):
         MaterializationMetadata
             Metadata describing the write, including status and input hash for
             manifest-based incremental builds.
+
+        Raises
+        ------
+        ValueError
+            If the provided data does not contain row tuples.
         """
         start = perf_counter()
         input_hash: str | None = None
@@ -178,12 +185,19 @@ class DuckDBRowsSaver(DataSaver):
                     ContractEnforcer.validate_table_write(self.table_key)
 
                     warehouse = self.env.warehouse
+                    resolved_columns = resolve_columns(
+                        self.columns,
+                        schema_service=get_schema_service(),
+                    )
+                    if not resolved_columns:
+                        msg = f"Missing column order for {self.table_key}"
+                        raise ValueError(msg)
                     row_count = _materialize_rows(
                         warehouse,
                         _RowsMaterializationRequest(
                             table_key=self.table_key,
                             rows=rows,
-                            columns=self.columns,
+                            columns=resolved_columns,
                             validate=self.env.validate_outputs,
                             options=materialize_options(
                                 self.env,

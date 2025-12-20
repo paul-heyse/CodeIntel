@@ -83,7 +83,7 @@ def resolve_materialization_context(
         target=target,
         input_hash=input_hash,
         options_hash=options_hash,
-        should_skip=should_skip_native_target(env, target, input_hash),
+        should_skip=should_skip_native_target(env, target, input_hash, options_hash=options_hash),
     )
 
 

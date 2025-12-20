@@ -49,7 +49,7 @@ from codeintel.storage.helpers.table_key import (
     split_table_key,
     split_table_key_or_default,
 )
-from codeintel.storage.queries.safe import assert_single_select_statement
+from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
@@ -282,7 +282,7 @@ def _build_insert_select(
     exp.Insert
         SQLGlot INSERT expression.
     """
-    select_ast = assert_single_select_statement(select_sql)
+    select_ast = assert_select_perimeter(select_sql, policy=SqlIngressPolicy())
     insert_schema = exp.Schema(
         this=exp.Table(
             this=exp.to_identifier(table_name),
@@ -1010,7 +1010,10 @@ class DuckDBPolicyBackend:
             return
 
         qualified_name = f"{table_schema.schema}.{table_schema.name}"
-        info = self.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
+        info = self.con.execute(
+            "SELECT * FROM pragma_table_info(?)",
+            [qualified_name],
+        ).fetchall()
         actual_columns = [row[1] for row in info]
         expected_columns = [col.name for col in table_schema.columns]
         if actual_columns != expected_columns:
@@ -1074,7 +1077,10 @@ class DuckDBPolicyBackend:
                 columns = [col.name for col in table_schema.columns]
             elif _duckdb_table_exists(self.con, schema=schema, table=table):
                 qualified_name = f"{schema}.{table}"
-                info = self.con.execute(f"PRAGMA table_info({qualified_name})").fetchall()
+                info = self.con.execute(
+                    "SELECT * FROM pragma_table_info(?)",
+                    [qualified_name],
+                ).fetchall()
                 columns = [row[1] for row in info]
             else:
                 message = f"Missing table {table_key}"

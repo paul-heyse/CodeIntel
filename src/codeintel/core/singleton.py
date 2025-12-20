@@ -19,7 +19,7 @@ Example
 
 from __future__ import annotations
 
-from threading import Lock
+from threading import Lock, local
 from typing import TYPE_CHECKING, ClassVar, cast
 
 if TYPE_CHECKING:
@@ -31,6 +31,24 @@ class SingletonNotInitializedError(RuntimeError):
 
     def __init__(self, cls_name: str) -> None:
         super().__init__(f"{cls_name} singleton not initialized")
+
+
+class SingletonReentrancyError(RuntimeError):
+    """Raised when a singleton is recursively initialized."""
+
+    def __init__(self, cls_name: str) -> None:
+        super().__init__(f"{cls_name} singleton initialization is re-entrant")
+
+
+_THREAD_STATE = local()
+
+
+def _get_initializing() -> set[type[object]]:
+    current = getattr(_THREAD_STATE, "initializing", None)
+    if current is None:
+        current = set()
+        _THREAD_STATE.initializing = current
+    return current
 
 
 class SingletonHolder[T]:
@@ -76,13 +94,22 @@ class SingletonHolder[T]:
 
         Raises
         ------
+        SingletonReentrancyError
+            If the singleton factory reenters initialization for the same holder.
         SingletonNotInitializedError
             If the singleton remains uninitialized after invoking the factory.
         """
         if cls._instance is None:
+            initializing = _get_initializing()
+            if cls in initializing:
+                raise SingletonReentrancyError(cls.__name__)
             with cls._lock:
                 if cls._instance is None:
-                    cls._instance = factory()
+                    initializing.add(cls)
+                    try:
+                        cls._instance = factory()
+                    finally:
+                        initializing.discard(cls)
         if cls._instance is None:
             raise SingletonNotInitializedError(cls.__name__)
         return cast("T", cls._instance)
@@ -120,4 +147,8 @@ class SingletonHolder[T]:
         return cls._instance is not None
 
 
-__all__ = ["SingletonHolder"]
+__all__ = [
+    "SingletonHolder",
+    "SingletonNotInitializedError",
+    "SingletonReentrancyError",
+]

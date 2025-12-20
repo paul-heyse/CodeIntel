@@ -9,6 +9,7 @@ from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relati
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
 from codeintel.build.exports.writers import default_json_serializer
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -154,7 +155,7 @@ def export_repo_map_json(
         with output_path.open("w", encoding="utf-8") as handle:
             handle.write("[")
             first = True
-            reader = rel.fetch_record_batch(10_000)
+            reader = rel.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
             for batch in reader:
                 payload = batch.to_pydict()
                 columns = list(payload.keys())

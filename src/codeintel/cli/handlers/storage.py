@@ -12,20 +12,27 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     GenerateMacrosResult,
     ProfileStorageResult,
+    StorageDatabaseExportResult,
+    StorageDatabaseImportResult,
     ValidateMacrosResult,
 )
 from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
+    fail_storage_connection,
 )
 from codeintel.core.errors.storage import StorageConnectionError
+from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.gateway.minimal import MinimalStorageGateway
+from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.metadata import (
     validate_dataset_schema_registry,
 )
@@ -55,6 +62,24 @@ def _readonly_gateway(db_path: Path) -> Iterator[StorageGateway]:
         Open gateway that closes on context exit.
     """
     gw = open_gateway(StorageConfig.for_readonly(db_path))
+    try:
+        yield gw
+    finally:
+        gw.close()
+
+
+@contextmanager
+def _gateway_for_import(db_path: Path) -> Iterator[MinimalStorageGateway]:
+    cfg = StorageConfig(
+        db_path=db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )
+    session = DuckDBSession(cfg)
+    con = session.open()
+    gw = MinimalStorageGateway(con)
     try:
         yield gw
     finally:
@@ -224,6 +249,86 @@ def profile_storage_handler(
     )
 
 
+def export_database_handler(
+    ctx: CommandContext,
+) -> CliResult[StorageDatabaseExportResult]:
+    """Export the DuckDB database to a directory.
+
+    Returns
+    -------
+    CliResult[StorageDatabaseExportResult]
+        Export result payload.
+    """
+    output_dir = ctx.params.get_path("output_dir")
+    if output_dir is None:
+        return fail_missing_output_path("output_dir")
+    db_path = ctx.params.get_path("db_path")
+    start = perf_counter()
+
+    if db_path is not None:
+        try:
+            session = DuckDBSession(StorageConfig.for_readonly(db_path))
+            con = session.open_reader()
+            gw = MinimalStorageGateway(con)
+            try:
+                gw.export_database(directory=output_dir)
+            finally:
+                gw.close()
+        except DuckDBError as exc:
+            LOG.warning("Failed to connect to database at %s: %s", db_path, exc)
+            return fail_storage_connection(db_path, str(exc))
+    else:
+        ctx.gateway.export_database(directory=output_dir)
+
+    duration = perf_counter() - start
+    return CliResult.ok(
+        StorageDatabaseExportResult(
+            db_path=str(db_path or ctx.gateway.config.db_path),
+            output_dir=str(output_dir),
+            duration_seconds=duration,
+        )
+    )
+
+
+def import_database_handler(
+    ctx: CommandContext,
+) -> CliResult[StorageDatabaseImportResult]:
+    """Import a DuckDB database from a directory.
+
+    Returns
+    -------
+    CliResult[StorageDatabaseImportResult]
+        Import result payload.
+    """
+    input_dir = ctx.params.get_path("input_dir")
+    if input_dir is None:
+        return fail_missing_output_path("input_dir")
+    if not input_dir.is_dir():
+        return fail_missing_output_path("input_dir")
+
+    db_path = ctx.params.get_path("db_path")
+    start = perf_counter()
+
+    if db_path is not None:
+        try:
+            with _gateway_for_import(db_path) as gw:
+                gw.import_database(directory=input_dir)
+        except DuckDBError as exc:
+            LOG.warning("Failed to connect to database at %s: %s", db_path, exc)
+            return fail_storage_connection(db_path, str(exc))
+    else:
+        ctx.gateway.import_database(directory=input_dir)
+
+    duration = perf_counter() - start
+    return CliResult.ok(
+        StorageDatabaseImportResult(
+            db_path=str(db_path or ctx.gateway.config.db_path),
+            input_dir=str(input_dir),
+            duration_seconds=duration,
+        )
+    )
+
+
 def _resolve_profile_output_dir(ctx: CommandContext) -> Path | None:
     output_dir_str = ctx.params.get_str("output_dir")
     if output_dir_str is None:
@@ -260,8 +365,12 @@ def _select_profile_gateway(ctx: CommandContext, db_path: Path) -> StorageGatewa
 __all__ = [
     "GenerateMacrosResult",
     "ProfileStorageResult",
+    "StorageDatabaseExportResult",
+    "StorageDatabaseImportResult",
     "ValidateMacrosResult",
+    "export_database_handler",
     "generate_macros_handler",
+    "import_database_handler",
     "profile_storage_handler",
     "validate_macros_handler",
 ]

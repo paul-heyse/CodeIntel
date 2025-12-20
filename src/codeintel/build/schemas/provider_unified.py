@@ -1,127 +1,33 @@
-"""Unified schema provider with fallback chain.
-
-This module provides a unified schema provider that resolves schemas through
-a three-tier fallback chain:
-
-1. Hamilton-native inference (for q__-driven Ibis compute nodes)
-2. Target-declared schemas from OutputContract.tables (for plugin wrappers)
-3. Raw declared schemas from declared_schema_provider() (for source tables)
-
-This enables all table keys to be resolvable through a single interface while
-preferring dynamically inferred schemas where available.
-"""
+"""Unified schema provider rooted in the global Hamilton DAG."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.core.imports.lazy import lazy_import
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from types import ModuleType
 
-    from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
 
 
-@lru_cache(maxsize=2)
-def _get_module(name: str) -> ModuleType:
-    """Load a module lazily with caching.
-
-    Parameters
-    ----------
-    name
-        Fully qualified module name.
-
-    Returns
-    -------
-    ModuleType
-        Imported module instance.
-    """
-    return lazy_import(name)
-
-
-def _get_target_graph() -> TargetGraph:
-    """Return the target graph, importing lazily to avoid circular dependencies.
-
-    Returns
-    -------
-    TargetGraph
-        The singleton target graph instance.
-    """
-    return get_target_metadata_service().system.graph
-
-
-def _find_producing_target(table_key: str) -> OutputTarget | None:
-    """Find the target that produces a given table key.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-
-    Returns
-    -------
-    OutputTarget | None
-        The target producing this table key, or None if not found.
-    """
-    return get_target_metadata_service().system.target_for_table_key(table_key)
-
-
 @dataclass
 class UnifiedSchemaProvider:
-    """Schema provider with fallback chain: inferred -> target-declared -> declared.
-
-    This provider implements a three-tier resolution strategy:
-
-    1. **Hamilton-native inference**: For table keys produced by q__-driven
-       Ibis compute nodes, infer the schema by executing the compute function
-       in an ephemeral environment.
-
-    2. **Target-declared schemas**: For table keys produced by targets that
-       declare their output schemas in OutputContract.tables (e.g., plugin
-       wrappers and compute targets).
-
-    3. **Raw declared schemas**: Fall back to the declared_schema_provider()
-       for source tables or tables not yet migrated to the target system.
-
-    Parameters
-    ----------
-    declared
-        The base declared schema provider for fallback.
-    inferable_table_keys
-        Set of table keys that can be inferred via Hamilton native compute.
-    fallback_to_declared_on_error
-        When True, fall back to declared schemas if inference fails.
-        Defaults to True.
-
-    Examples
-    --------
-    >>> from codeintel.build.schemas.provider_unified import unified_schema_provider
-    >>> provider = unified_schema_provider()
-    >>> schema = provider.get_table_schema("analytics.function_metrics")
-    >>> schema is not None
-    True
-    """
+    """Schema provider that resolves DAG outputs first, sources last."""
 
     declared: SchemaProvider
-    inferable_table_keys: frozenset[str]
-    fallback_to_declared_on_error: bool = True
-    _cache: dict[str, TableSchema] = field(default_factory=dict)
+    schema_index: SchemaIndex
+    allow_inference: bool = True
+    fallback_to_override_on_error: bool = True
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
-        """Resolve schema via fallback chain.
-
-        Resolution order:
-        1. Hamilton-native inference (for inferable targets)
-        2. Target-declared output schema (for non-inferable targets)
-        3. Raw declared schema (for source/raw tables)
+        """Return the schema for a table key if known.
 
         Parameters
         ----------
@@ -131,44 +37,15 @@ class UnifiedSchemaProvider:
         Returns
         -------
         TableSchema | None
-            Resolved schema, or None when unknown to all sources.
+            Resolved table schema, or None if not found.
         """
-        # Check cache first
-        cached = self._cache.get(table_key)
-        if cached is not None:
-            return cached
-
-        # 1. Try Hamilton-native inference
-        if table_key in self.inferable_table_keys:
-            try:
-                # Lazy import to avoid circular dependency.
-                inference_mod = _get_module("codeintel.build.schemas.inference_service")
-                service = inference_mod.get_schema_inference_service()
-                inferred = service.infer_table_schema(
-                    table_key=table_key,
-                    declared_provider=self.declared,
-                )
-            except Exception:
-                if not self.fallback_to_declared_on_error:
-                    raise
-                # Fall through to next resolution step
-            else:
-                self._cache[table_key] = inferred
-                return inferred
-
-        # 2. Try target-declared output schema
-        target = _find_producing_target(table_key)
-        if target is not None:
-            output_schema = target.contract.get_table(table_key)
-            if output_schema is not None:
-                self._cache[table_key] = output_schema
-                return output_schema
-
-        # 3. Fall back to raw declared schema
-        declared_schema = self.declared.get_table_schema(table_key)
-        if declared_schema is not None:
-            self._cache[table_key] = declared_schema
-        return declared_schema
+        schema = self.schema_index.get_table_schema(
+            table_key,
+            allow_inference=self.allow_inference,
+        )
+        if schema is not None:
+            return schema
+        return self.declared.get_table_schema(table_key)
 
     def require_table_schema(self, table_key: str) -> TableSchema:
         """Return schema for table_key, raising when unknown.
@@ -195,104 +72,83 @@ class UnifiedSchemaProvider:
         return schema
 
     def iter_table_schemas(self) -> Iterable[TableSchema]:
-        """Iterate all known table schemas from all sources.
-
-        Yields schemas in priority order (inferred > target-declared > declared),
-        deduplicating by table_key.
+        """Iterate all known table schemas.
 
         Yields
         ------
         TableSchema
-            Each known table schema.
+            Table schemas from the DAG and declared providers.
         """
         seen: set[str] = set()
-
-        # 1. Yield cached inferred schemas first (highest priority).
-        #
-        # We intentionally do *not* trigger inference here. Iteration should be
-        # side-effect free; inference happens only when a caller explicitly asks
-        # for a table schema via `get_table_schema()` / `require_table_schema()`.
-        for table_key in sorted(self.inferable_table_keys):
-            if table_key in seen:
-                continue
-            schema = self._cache.get(table_key)
-            if schema is not None:
-                seen.add(table_key)
-                yield schema
-
-        # 2. Yield target-declared schemas
-        graph = _get_target_graph()
-        for target in graph.all_targets:
-            for schema in target.contract.tables:
-                if schema.table_key not in seen:
-                    seen.add(schema.table_key)
-                    yield schema
-
-        # 3. Yield declared schemas (lowest priority)
+        for schema in self.schema_index.iter_table_schemas(allow_inference=self.allow_inference):
+            seen.add(schema.table_key)
+            yield schema
         for schema in self.declared.iter_table_schemas():
-            if schema.table_key not in seen:
-                seen.add(schema.table_key)
-                yield schema
+            if schema.table_key in self.schema_index.derivations:
+                continue
+            if schema.table_key in seen:
+                continue
+            seen.add(schema.table_key)
+            yield schema
+
+    @property
+    def inferable_table_keys(self) -> frozenset[str]:
+        """Return table keys that can be inferred from the DAG.
+
+        Returns
+        -------
+        frozenset[str]
+            Table keys eligible for inference.
+        """
+        return self.schema_index.inferable_table_keys
+
+    def with_inference(self, *, allow_inference: bool) -> UnifiedSchemaProvider:
+        """Return a copy with inference enabled or disabled.
+
+        Returns
+        -------
+        UnifiedSchemaProvider
+            Provider configured with the requested inference setting.
+        """
+        return UnifiedSchemaProvider(
+            declared=self.declared,
+            schema_index=self.schema_index,
+            allow_inference=allow_inference,
+            fallback_to_override_on_error=self.fallback_to_override_on_error,
+        )
 
 
-@lru_cache
+@lru_cache(maxsize=2)
+def _build_provider(*, allow_inference: bool) -> UnifiedSchemaProvider:
+    service = get_target_metadata_service()
+    return UnifiedSchemaProvider(
+        declared=declared_schema_provider(),
+        schema_index=service.schema_index,
+        allow_inference=allow_inference,
+    )
+
+
 def unified_schema_provider() -> UnifiedSchemaProvider:
-    """Return the unified schema provider with full fallback chain.
-
-    The provider is cached for the lifetime of the process. Use
-    `clear_unified_provider_cache()` to reset if needed.
+    """Return the DAG-first schema provider.
 
     Returns
     -------
     UnifiedSchemaProvider
-        Cached unified provider instance.
-
-    Examples
-    --------
-    >>> provider = unified_schema_provider()
-    >>> schema = provider.require_table_schema("analytics.function_metrics")
-    >>> schema.table_key
-    'analytics.function_metrics'
+        Provider with inference enabled.
     """
-    # Lazy import to avoid circular dependency.
-    inference_mod = _get_module("codeintel.build.schemas.inference_service")
-
-    declared = declared_schema_provider()
-    graph = _get_target_graph()
-
-    declared_keys = {schema.table_key for schema in declared.iter_table_schemas()}
-    target_declared_keys = {
-        schema.table_key for target in graph.all_targets for schema in target.contract.tables
-    }
-    service = inference_mod.get_schema_inference_service()
-    inferable = frozenset(
-        key
-        for key in service.inferable_table_keys(graph=graph)
-        if key not in declared_keys and key not in target_declared_keys
-    )
-
-    return UnifiedSchemaProvider(
-        declared=declared,
-        inferable_table_keys=inferable,
-        fallback_to_declared_on_error=True,
-    )
+    return _build_provider(allow_inference=True)
 
 
 @lru_cache(maxsize=1)
 def non_inferable_schema_provider() -> UnifiedSchemaProvider:
-    """Return a unified schema provider with inference disabled.
+    """Return a schema provider with inference disabled.
 
     Returns
     -------
     UnifiedSchemaProvider
-        Unified provider that resolves only target-declared and declared schemas.
+        Provider with inference disabled.
     """
-    declared = declared_schema_provider()
-    return UnifiedSchemaProvider(
-        declared=declared,
-        inferable_table_keys=frozenset(),
-        fallback_to_declared_on_error=True,
-    )
+    return _build_provider(allow_inference=False)
 
 
 def clear_unified_provider_cache() -> None:
@@ -300,7 +156,7 @@ def clear_unified_provider_cache() -> None:
 
     Useful for testing when schema definitions or targets may change.
     """
-    unified_schema_provider.cache_clear()
+    _build_provider.cache_clear()
 
 
 __all__ = [

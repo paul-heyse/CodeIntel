@@ -26,7 +26,7 @@ Diff a compiled schema manifest against an expected file.
 │    INFER-NATIVE --infer-native  Infer schemas for inferable native targets   │
 │      --infer                    (fallback to declared on errors). [env var:  │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INFER_NATIVE]    │
-│                                 [default: false]                             │
+│                                 [default: true]                              │
 │    STABLE --stable              Force deterministic ordering and             │
 │                                 canonicalized output. [env var:              │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_STABLE]          │

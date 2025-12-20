@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.core.schemas.provider import SchemaProvider
 
 _CANON: dict[str, str] = {
     "TIMESTAMP WITH TIME ZONE": "TIMESTAMPTZ",
@@ -56,7 +57,34 @@ def schema_hash(schema: TableSchema) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def compute_table_schema_hash(
+    table_key: str,
+    *,
+    schema_provider: SchemaProvider,
+) -> str | None:
+    """Return a deterministic schema hash for a known dataset table key.
+
+    Parameters
+    ----------
+    table_key
+        Fully-qualified dataset table key (e.g., "analytics.function_metrics").
+    schema_provider
+        Schema provider used to resolve the table schema.
+
+    Returns
+    -------
+    str | None
+        SHA256 hex digest of (column_name:type) pairs, or None if table_key
+        is not registered or has no schema (e.g., view).
+    """
+    schema = schema_provider.get_table_schema(table_key)
+    if schema is None:
+        return None
+    return schema_hash(schema)
+
+
 __all__ = [
     "canonical_type",
+    "compute_table_schema_hash",
     "schema_hash",
 ]

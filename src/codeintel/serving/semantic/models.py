@@ -204,6 +204,15 @@ class SemanticCatalogResponse(BaseModel):
     views: list[SemanticCatalogView]
 
 
+class ColumnLineageRef(BaseModel):
+    """Reference to an upstream column in lineage metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_key: str
+    column: str
+
+
 class SemanticViewDescriptionResponse(BaseModel):
     """Response payload for ``GET /semantic/views/{view_id}``."""
 
@@ -223,6 +232,7 @@ class SemanticViewDescriptionResponse(BaseModel):
     deprecated: bool = False
     replaced_by: str | None = None
     snapshot: ServingSnapshotIdentity
+    lineage: dict[str, list[ColumnLineageRef]] = Field(default_factory=dict)
 
 
 class SemanticExportRequest(BaseModel):
@@ -274,6 +284,7 @@ class SemanticExportRequest(BaseModel):
 
 
 __all__ = [
+    "ColumnLineageRef",
     "ExportFormat",
     "FilterSpec",
     "Op",

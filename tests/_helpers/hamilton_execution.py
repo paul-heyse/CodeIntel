@@ -33,9 +33,10 @@ from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.providers import create_default_providers
-from codeintel.build.target_system import load_target_system
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 if TYPE_CHECKING:
@@ -140,7 +141,7 @@ class HamiltonTestBuilder:
     commit_sha: str = DEFAULT_COMMIT
     providers: Providers | None = None
     config: BuildConfig | None = None
-    profile: str = "default"
+    profile: str = DEFAULT_PROFILE_NAME
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
     _graph: TargetGraph | None = field(default=None, repr=False)
@@ -260,7 +261,7 @@ class HamiltonTestBuilder:
         Parameters
         ----------
         profile
-            Profile name (e.g., "default", "fast", "full").
+            Profile name (e.g., "full", "fast", "ci").
 
         Returns
         -------
@@ -364,7 +365,7 @@ class HamiltonTestBuilder:
             Target graph for looking up targets.
         """
         if self._graph is None:
-            self._graph = load_target_system().graph
+            self._graph = get_target_metadata_service().system.graph
         return self._graph
 
     def build_env(self) -> BuildEnv:

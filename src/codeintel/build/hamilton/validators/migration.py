@@ -41,6 +41,7 @@ from codeintel.build.hamilton.validators.dataframe import (
     NoNullsInColumnsValidator,
     UniqueColumnsValidator,
 )
+from codeintel.build.table_keys import split_table_key
 
 if TYPE_CHECKING:
     from hamilton.data_quality.base import BaseDefaultValidator
@@ -389,7 +390,10 @@ def generate_migration_code(
 
     validators_str = "\n".join(validator_lines)
 
-    domain, table = table_key.split(".", maxsplit=1) if "." in table_key else ("main", table_key)
+    try:
+        domain, table = split_table_key(table_key)
+    except ValueError:
+        domain, table = "main", table_key
 
     # Generate the code
     code = f"""

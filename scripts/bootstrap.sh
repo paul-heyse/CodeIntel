@@ -5,7 +5,7 @@
 #
 # What it does:
 #   1) Installs uv if missing (user-local)
-#   2) Ensures Python 3.13.9 is installed via uv and pinned for this project
+#   2) Ensures Python 3.13.11 is installed via uv and pinned for this project
 #   3) Creates/uses a project-local .venv (no system Python)
 #   4) Installs deps via `uv sync` (prefers --locked when uv.lock present)
 #   5) Optionally generates PATH_MAP for editor deep links in remote containers
@@ -35,7 +35,7 @@ mkdir -p \
 
 
 # ------------- Config (change defaults here if needed) -------------
-PY_VER_DEFAULT="${PY_VER_DEFAULT:-3.13.9}"
+PY_VER_DEFAULT="${PY_VER_DEFAULT:-3.13.11}"
 PIN_PYTHON="${PIN_PYTHON:-1}"             # 1=uv python pin <ver>
 GENERATE_PATH_MAP="${GENERATE_PATH_MAP:-1}" # 1=create docs/_build/path_map.txt if in container
 USE_LOCK="${USE_LOCK:-no}"                 # yes|no|auto -> --locked only when explicitly requested
@@ -48,13 +48,13 @@ INCLUDE_EXTRAS="${INCLUDE_EXTRAS:-${UV_EXTRAS:-}}" # comma/space-separated extra
 #   --no-pin-python      : do not uv python pin
 #   --no-path-map        : don't generate docs/_build/path_map.txt
 #   --use-lock[=yes|no|auto] : optionally pass --locked to uv sync
-#   --py 3.13.9          : override Python version
+#   --py 3.13.11         : override Python version
 usage() {
   cat <<'USAGE'
 Usage: scripts/bootstrap.sh [options]
 
 Options:
-  --py <x.y.z>         Pin/install this Python version via uv (default: 3.13.9)
+  --py <x.y.z>         Pin/install this Python version via uv (default: 3.13.11)
   --no-pin-python      Skip `uv python pin`
   --no-path-map        Do not generate docs/_build/path_map.txt
   --use-lock=<auto|yes|no>
@@ -68,7 +68,7 @@ for arg in "$@"; do
     --no-pin-python) PIN_PYTHON=0;;
     --no-path-map) GENERATE_PATH_MAP=0;;
     --use-lock=*) USE_LOCK="${arg#*=}";;
-    --py) shift; PY_VER_DEFAULT="${1:?--py requires a version like 3.13.9}";;
+    --py) shift; PY_VER_DEFAULT="${1:?--py requires a version like 3.13.11}";;
     --py=*) PY_VER_DEFAULT="${arg#*=}";;
   esac
 done

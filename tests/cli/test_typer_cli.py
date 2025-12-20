@@ -17,6 +17,7 @@ from codeintel.cli.project import (
     find_project_root,
     load_project_config,
 )
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -44,7 +45,7 @@ def temp_project(tmp_path: Path) -> Path:
     """
     config = ProjectConfig(
         repo="test/repo",
-        default_profile="default",
+        default_profile=DEFAULT_PROFILE_NAME,
     )
     config_path = tmp_path / PROJECT_FILE
     config_path.write_text(f"repo: {config.repo}\ndefault_profile: {config.default_profile}\n")
@@ -73,7 +74,7 @@ def test_load_project_config_parses_yaml(temp_project: Path) -> None:
     """Verify YAML config is parsed correctly."""
     config = load_project_config(temp_project)
     expect_equal(config.repo, "test/repo")
-    expect_equal(config.default_profile, "default")
+    expect_equal(config.default_profile, DEFAULT_PROFILE_NAME)
 
 
 @pytest.mark.xdist_group("cli_shared_flags")

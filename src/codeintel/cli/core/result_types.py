@@ -149,6 +149,46 @@ class ExportResult:
     duration_seconds: float | None = None
 
 
+@result_type
+@dataclass(frozen=True)
+class StorageDatabaseExportResult:
+    """Result type for storage database export.
+
+    Parameters
+    ----------
+    db_path
+        Database path that was exported.
+    output_dir
+        Directory containing the exported database.
+    duration_seconds
+        Optional export duration.
+    """
+
+    db_path: str
+    output_dir: str
+    duration_seconds: float | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class StorageDatabaseImportResult:
+    """Result type for storage database import.
+
+    Parameters
+    ----------
+    db_path
+        Database path that received the import.
+    input_dir
+        Directory containing the exported database to import.
+    duration_seconds
+        Optional import duration.
+    """
+
+    db_path: str
+    input_dir: str
+    duration_seconds: float | None = None
+
+
 @dataclass(frozen=True)
 class OperationListResult:
     """Result from op list command.
@@ -1744,6 +1784,8 @@ __all__ = [
     "ProfileStorageResult",
     "ServeStartResult",
     "StatusResult",
+    "StorageDatabaseExportResult",
+    "StorageDatabaseImportResult",
     "StorageQueryResult",
     "StorageStatusResult",
     "SubsystemDetailResult",

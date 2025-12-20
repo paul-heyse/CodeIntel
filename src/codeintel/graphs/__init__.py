@@ -48,7 +48,8 @@ The graphs package uses hexagonal architecture:
 All builder modules have been consolidated into their corresponding plugins
 under plugins/builders/. Pure computation logic is in compute/.
 
-Graph/target integration is driven by the build TargetSystem in `codeintel.build.target_system`.
+Graph/target integration is driven by the build target metadata service in
+`codeintel.build.target_metadata`.
 """
 
 from __future__ import annotations

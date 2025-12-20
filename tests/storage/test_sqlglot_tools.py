@@ -7,6 +7,7 @@ import pytest
 from codeintel.storage.sqlglot_tools import (
     ParseError,
     canonical_sql_duckdb,
+    extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
     fingerprint_sql_duckdb,
     parse_one_duckdb,
@@ -60,3 +61,19 @@ def test_canonical_sql_is_stable_for_equivalent_sql() -> None:
     a = canonical_sql_duckdb("SELECT 1")
     b = canonical_sql_duckdb("  select 1  ")
     expect_equal(a, b, label="canonical")
+
+
+def test_extract_column_lineage_maps_output_columns() -> None:
+    """extract_column_lineage_duckdb returns upstream column references."""
+    sql = """
+    SELECT
+        m.module AS module,
+        m.repo || ':' || m.commit AS repo_commit
+    FROM core.modules AS m
+    """
+    lineage = extract_column_lineage_duckdb(sql)
+    expect_equal(lineage["module"], frozenset({"core.modules.module"}))
+    expect_equal(
+        lineage["repo_commit"],
+        frozenset({"core.modules.repo", "core.modules.commit"}),
+    )

@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+import ibis.expr.types as ir
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.contracts import ArtifactSpec
@@ -44,9 +44,6 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
-
-if TYPE_CHECKING:
-    import ibis.expr.types as ir
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, Path)
 

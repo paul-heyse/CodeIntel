@@ -19,8 +19,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.build.config import BuildConfig, BuildConfigStack, load_build_config
+from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.run_config import BuildRunConfig
+from codeintel.build.run_context import BuildRunContext
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
@@ -108,13 +109,7 @@ class StateValidator:
         # Create session and computer for delegation
         self._session = BuildSession(snapshot=snapshot, gateway=gateway)
         base_config = config or load_build_config(snapshot.repo_root)
-        effective_config: BuildConfig = base_config
-        if run_config is not None:
-            overrides = {name: run_config.config_overrides_for_target(name) for name in graph}
-            effective_config = BuildConfigStack.from_base(
-                base_config,
-                run_overrides=overrides,
-            )
+        effective_config = BuildRunContext.build_config_stack(base_config, run_config)
         self._computer = StateComputer(
             graph=graph,
             session=self._session,
