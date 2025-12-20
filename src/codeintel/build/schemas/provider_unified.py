@@ -13,12 +13,13 @@ preferring dynamically inferred schemas where available.
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.imports.lazy import lazy_import
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -41,9 +42,9 @@ def _get_module(name: str) -> ModuleType:
     Returns
     -------
     ModuleType
-        The loaded module.
+        Imported module instance.
     """
-    return importlib.import_module(name)
+    return lazy_import(name)
 
 
 def _get_target_graph() -> TargetGraph:
@@ -54,8 +55,7 @@ def _get_target_graph() -> TargetGraph:
     TargetGraph
         The singleton target graph instance.
     """
-    target_system_mod = _get_module("codeintel.build.target_system")
-    return target_system_mod.load_target_system().graph
+    return get_target_metadata_service().system.graph
 
 
 def _find_producing_target(table_key: str) -> OutputTarget | None:
@@ -71,8 +71,7 @@ def _find_producing_target(table_key: str) -> OutputTarget | None:
     OutputTarget | None
         The target producing this table key, or None if not found.
     """
-    target_system_mod = _get_module("codeintel.build.target_system")
-    return target_system_mod.load_target_system().target_for_table_key(table_key)
+    return get_target_metadata_service().system.target_for_table_key(table_key)
 
 
 @dataclass
@@ -143,10 +142,9 @@ class UnifiedSchemaProvider:
         if table_key in self.inferable_table_keys:
             try:
                 # Lazy import to avoid circular dependency.
-                hamilton_mod = _get_module("codeintel.build.schemas.provider_hamilton")
-                infer_schema_for_table_key = hamilton_mod.infer_schema_for_table_key
-
-                inferred = infer_schema_for_table_key(
+                inference_mod = _get_module("codeintel.build.schemas.inference_service")
+                service = inference_mod.get_schema_inference_service()
+                inferred = service.infer_table_schema(
                     table_key=table_key,
                     declared_provider=self.declared,
                 )
@@ -257,7 +255,7 @@ def unified_schema_provider() -> UnifiedSchemaProvider:
     'analytics.function_metrics'
     """
     # Lazy import to avoid circular dependency.
-    hamilton_mod = _get_module("codeintel.build.schemas.provider_hamilton")
+    inference_mod = _get_module("codeintel.build.schemas.inference_service")
 
     declared = declared_schema_provider()
     graph = _get_target_graph()
@@ -266,15 +264,33 @@ def unified_schema_provider() -> UnifiedSchemaProvider:
     target_declared_keys = {
         schema.table_key for target in graph.all_targets for schema in target.contract.tables
     }
+    service = inference_mod.get_schema_inference_service()
     inferable = frozenset(
         key
-        for key in hamilton_mod.inferable_native_table_keys(graph=graph)
+        for key in service.inferable_table_keys(graph=graph)
         if key not in declared_keys and key not in target_declared_keys
     )
 
     return UnifiedSchemaProvider(
         declared=declared,
         inferable_table_keys=inferable,
+        fallback_to_declared_on_error=True,
+    )
+
+
+@lru_cache(maxsize=1)
+def non_inferable_schema_provider() -> UnifiedSchemaProvider:
+    """Return a unified schema provider with inference disabled.
+
+    Returns
+    -------
+    UnifiedSchemaProvider
+        Unified provider that resolves only target-declared and declared schemas.
+    """
+    declared = declared_schema_provider()
+    return UnifiedSchemaProvider(
+        declared=declared,
+        inferable_table_keys=frozenset(),
         fallback_to_declared_on_error=True,
     )
 
@@ -290,5 +306,6 @@ def clear_unified_provider_cache() -> None:
 __all__ = [
     "UnifiedSchemaProvider",
     "clear_unified_provider_cache",
+    "non_inferable_schema_provider",
     "unified_schema_provider",
 ]

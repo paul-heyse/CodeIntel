@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.build.manifest_base import ManifestBase
+
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
@@ -17,7 +19,7 @@ ExportArtifactKind = Literal["parquet", "jsonl", "json", "csv"]
 
 
 @dataclass(frozen=True)
-class ExportArtifact:
+class ExportArtifact(ManifestBase):
     """Specification for an export artifact (Parquet, JSONL, etc.).
 
     Export artifacts represent file outputs tied to table data, enabling
@@ -71,7 +73,7 @@ class ExportArtifact:
 
 
 @dataclass(frozen=True)
-class SchemaManifest:
+class SchemaManifest(ManifestBase):
     """Stable manifest of schemas compiled for a build selection.
 
     The manifest captures table schemas, view schemas (v2), and export

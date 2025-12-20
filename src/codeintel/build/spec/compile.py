@@ -10,20 +10,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.impl_kind import native_target_names
-from codeintel.build.hamilton.introspect import derive_target_dependencies, derive_target_outputs
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
+from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
 from codeintel.core.schemas.hashing import schema_hash
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
-    from codeintel.build.hamilton.introspect import DerivedTargetOutputs
-    from codeintel.build.targets import OutputTarget
+    from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
 
@@ -71,8 +69,8 @@ def _artifact_specs_for_target(
 def _compile_target_specs(
     *,
     runtime: HamiltonRuntime,
-    deps_by_target: Mapping[str, tuple[str, ...]],
-    derived_outputs: DerivedTargetOutputs,
+    graph: TargetGraph,
+    derived_outputs: OutputInventory,
 ) -> tuple[tuple[TargetSpec, ...], frozenset[str]]:
     """Compile TargetSpec collection and table_key inventory.
 
@@ -80,8 +78,8 @@ def _compile_target_specs(
     ----------
     runtime
         Hamilton runtime containing the TargetGraph.
-    deps_by_target
-        Direct target dependency mapping derived from the Hamilton graph.
+    graph
+        Target graph describing target dependencies.
     derived_outputs
         Derived output table keys and artifact names by target.
 
@@ -94,12 +92,12 @@ def _compile_target_specs(
     target_specs: list[TargetSpec] = []
     native_names = native_target_names(runtime)
 
-    for target_name in sorted(deps_by_target):
-        target = runtime.graph.get(target_name)
+    for target_name in sorted(graph):
+        target = graph.get(target_name)
         impl_kind = "native" if target_name in native_names else "wrapper"
 
-        outputs = derived_outputs.datasets_by_target.get(target_name, ())
-        artifacts = derived_outputs.artifacts_by_target.get(target_name, ())
+        outputs = derived_outputs.datasets_for(target_name)
+        artifacts = derived_outputs.artifacts_for(target_name)
 
         all_table_keys.update(outputs)
 
@@ -108,7 +106,7 @@ def _compile_target_specs(
                 name=target_name,
                 domain=target.module,
                 impl_kind=impl_kind,
-                deps=deps_by_target.get(target_name, ()),
+                deps=target.dependencies,
                 outputs=tuple(outputs),
                 artifacts=_artifact_specs_for_target(target, artifact_names=artifacts),
             )
@@ -168,14 +166,15 @@ def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> Buil
     """
     opts = options or BuildSpecCompileOptions()
 
-    runtime = build_driver()
-    deps_by_target = derive_target_dependencies(runtime)
-    derived_outputs = derive_target_outputs(runtime)
+    service = get_target_metadata_service()
+    runtime = service.system.runtime
+    graph = service.system.graph
+    derived_outputs = service.outputs
 
     provider = get_schema_provider()
     target_specs, all_table_keys = _compile_target_specs(
         runtime=runtime,
-        deps_by_target=deps_by_target,
+        graph=graph,
         derived_outputs=derived_outputs,
     )
     dataset_specs = _compile_dataset_specs(

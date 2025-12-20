@@ -1,35 +1,19 @@
 """Storage layer exceptions and error types.
 
-This module defines exception types for the storage layer and re-exports
-DuckDB error types for consistent error handling. It provides a clean
-abstraction over database-specific errors.
-
-Note
-----
-This module intentionally has minimal imports from other codeintel packages
-to prevent circular imports. Only standard library and third-party packages
-are imported here.
+This module re-exports canonical storage errors from
+``codeintel.core.errors.storage`` and DuckDB error types for consistent
+error handling. It remains as a thin compatibility layer for historical
+imports while core owns the canonical error surface.
 """
 
 from __future__ import annotations
 
 from duckdb import Error as DuckDBError
 
+from codeintel.core.errors.storage import StorageConnectionError, StorageError
+
 # Re-export DuckDB errors for catch blocks
 DUCKDB_ERRORS: tuple[type[Exception], ...] = (DuckDBError,)
-
-
-class StorageError(Exception):
-    """Base exception for storage layer errors.
-
-    This exception wraps database-specific errors (like duckdb.Error)
-    to provide a clean abstraction boundary. Code outside the storage
-    layer should catch this instead of database-specific exceptions.
-    """
-
-
-class StorageConnectionError(StorageError):
-    """Error establishing or maintaining a database connection."""
 
 
 __all__ = [

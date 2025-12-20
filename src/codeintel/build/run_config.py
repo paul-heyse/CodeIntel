@@ -61,5 +61,22 @@ class BuildRunConfig:
         )
         return PluginOptionsResolver(config_source)
 
+    def config_overrides_for_target(self, target_name: str) -> Mapping[str, Any]:
+        """Return merged config overrides for a target name.
+
+        Parameters
+        ----------
+        target_name
+            Target name used as the plugin identifier in config layers.
+
+        Returns
+        -------
+        Mapping[str, Any]
+            Merged configuration mapping for the target, or empty mapping.
+        """
+        resolver = self.build_options_resolver()
+        options = resolver.config_source.get_plugin_options(target_name)
+        return options or {}
+
 
 __all__ = ["BuildRunConfig"]

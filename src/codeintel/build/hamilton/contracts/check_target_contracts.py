@@ -13,14 +13,14 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.introspect import derive_target_outputs
+from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
 from codeintel.core.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
+    from codeintel.build.targets import TargetGraph
 
 
 class TargetContractsError(RuntimeError):
@@ -95,16 +95,11 @@ def _check_catalog_completeness(runtime: HamiltonRuntime) -> list[str]:
     return issues
 
 
-def _check_contract_outputs(runtime: HamiltonRuntime) -> list[str]:
+def _check_contract_outputs(graph: TargetGraph, outputs: OutputInventory) -> list[str]:
     issues: list[str] = []
-    graph = getattr(runtime, "graph", None)
-    all_targets = getattr(graph, "all_targets", None)
-    if not isinstance(all_targets, tuple):
-        return ["Hamilton runtime does not expose graph.all_targets tuple"]
-
-    derived = derive_target_outputs(runtime)
-    datasets_by_target = derived.datasets_by_target
-    artifacts_by_target = derived.artifacts_by_target
+    all_targets = graph.all_targets
+    datasets_by_target = outputs.datasets_by_target
+    artifacts_by_target = outputs.artifacts_by_target
 
     for target in all_targets:
         name = getattr(target, "name", None)
@@ -140,11 +135,13 @@ def main() -> int:
     int
         Process exit code (0 = success, 1 = failure).
     """
-    runtime = build_driver(enable_cache=False)
+    service = get_target_metadata_service()
+    runtime = service.system.runtime
+    graph = service.system.graph
 
     issues: list[str] = []
     issues.extend(_check_catalog_completeness(runtime))
-    issues.extend(_check_contract_outputs(runtime))
+    issues.extend(_check_contract_outputs(graph, service.outputs))
 
     if issues:
         err = TargetContractsError(issues=issues)

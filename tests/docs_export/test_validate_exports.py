@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports import (
     ExportCallOptions,
-    ExportError,
     export_all_jsonl,
     export_all_parquet,
     validate_export_files,
@@ -51,7 +51,7 @@ def test_validate_jsonl_happy_path(tmp_path: Path) -> None:
             }
         ],
     )
-    exit_code = validate_export_files("call_graph_edges", [data_path])
+    exit_code = validate_export_files("graph.call_graph_edges", [data_path])
     expect_equal(exit_code, 0)
 
 
@@ -68,7 +68,7 @@ def test_validate_jsonl_failure(tmp_path: Path) -> None:
             }
         ],
     )
-    exit_code = validate_export_files("call_graph_edges", [data_path])
+    exit_code = validate_export_files("graph.call_graph_edges", [data_path])
     expect_not_equal(exit_code, 0)
 
 
@@ -96,11 +96,14 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
             null_commit=True,
         )
         output_dir = tmp_path / "out"
-        with pytest.raises(ExportError):
+        with pytest.raises(BuildProblemError):
             export_all_parquet(
                 ctx.gateway,
                 output_dir,
-                options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
+                options=ExportCallOptions(
+                    validate_exports=True,
+                    schemas=["analytics.function_profile"],
+                ),
             )
 
 
@@ -125,11 +128,14 @@ def test_export_logs_problem_detail_on_validation_failure(
         )
         output_dir = tmp_path / "out_jsonl"
         caplog.set_level("ERROR")
-        with pytest.raises(ExportError):
+        with pytest.raises(BuildProblemError):
             export_all_jsonl(
                 ctx.gateway,
                 output_dir,
-                options=ExportCallOptions(validate_exports=True, schemas=["function_profile"]),
+                options=ExportCallOptions(
+                    validate_exports=True,
+                    schemas=["analytics.function_profile"],
+                ),
             )
         error_logs = [
             rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()

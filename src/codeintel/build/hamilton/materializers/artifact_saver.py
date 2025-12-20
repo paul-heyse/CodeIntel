@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import os
 import tempfile
-import time
 import types
 import typing
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 from hamilton.io.data_adapters import DataSaver
@@ -22,10 +22,13 @@ from hamilton.io.data_adapters import DataSaver
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.materializers.base import (
+    MaterializationContextError,
+    duration_ms,
+    resolve_materialization_context,
+)
 from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
 from codeintel.build.hamilton.native.outputs import expected_artifacts
-from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
-from codeintel.build.hashing import compute_input_hash
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.tracking.asset_tracking import AssetRecord
 
@@ -142,30 +145,28 @@ class FileArtifactSaver(DataSaver):
         MaterializationMetadata
             Metadata describing the write, including status and input hash.
         """
-        start = time.perf_counter()
+        start = perf_counter()
         input_hash: str | None = None
         result: MaterializationMetadata | None = None
 
         try:
-            target = self.graph.get(self.target_name)
-            if target is None:
+            prepared = resolve_materialization_context(
+                env=self.env,
+                graph=self.graph,
+                target_name=self.target_name,
+            )
+            if isinstance(prepared, MaterializationContextError):
                 result = _failed(
                     artifact_name=self.artifact_name,
-                    duration_ms=_duration_ms(start),
-                    input_hash="",
-                    error=f"Target not found in graph: {self.target_name}",
+                    duration_ms=duration_ms(start),
+                    input_hash=prepared.input_hash or "",
+                    error=prepared.message,
                 )
             else:
-                options_hash = options_hash_for_target(self.env, self.target_name)
-                input_hash = compute_input_hash(
-                    target=target,
-                    snapshot=self.env.snapshot,
-                    gateway=self.env.gateway,
-                    options_hash=options_hash,
-                    manifests=self.env.manifest_index,
-                )
+                context = prepared
+                input_hash = context.input_hash
 
-                if should_skip_native_target(self.env, target, input_hash):
+                if context.should_skip:
                     resolved = _resolve_artifact_path(
                         self.env,
                         self.graph,
@@ -174,14 +175,14 @@ class FileArtifactSaver(DataSaver):
                     )
                     result = _skipped(
                         artifact_name=self.artifact_name,
-                        duration_ms=_duration_ms(start),
+                        duration_ms=duration_ms(start),
                         input_hash=input_hash,
                         path=str(resolved) if resolved is not None else None,
                     )
                 elif data is None:
                     result = _skipped(
                         artifact_name=self.artifact_name,
-                        duration_ms=_duration_ms(start),
+                        duration_ms=duration_ms(start),
                         input_hash=input_hash,
                         path=None,
                     )
@@ -192,7 +193,7 @@ class FileArtifactSaver(DataSaver):
                     if output_path is None:
                         return _failed(
                             artifact_name=self.artifact_name,
-                            duration_ms=_duration_ms(start),
+                            duration_ms=duration_ms(start),
                             input_hash=input_hash,
                             error=f"Artifact path could not be resolved: {self.artifact_name}",
                         )
@@ -220,7 +221,7 @@ class FileArtifactSaver(DataSaver):
                         )
                         result = _succeeded(
                             artifact_name=self.artifact_name,
-                            duration_ms=_duration_ms(start),
+                            duration_ms=duration_ms(start),
                             input_hash=input_hash,
                             path=str(output_path),
                             size_bytes=size_bytes,
@@ -245,7 +246,7 @@ class FileArtifactSaver(DataSaver):
                         )
                         result = _succeeded(
                             artifact_name=self.artifact_name,
-                            duration_ms=_duration_ms(start),
+                            duration_ms=duration_ms(start),
                             input_hash=input_hash,
                             path=str(output_path),
                             size_bytes=size_bytes,
@@ -272,7 +273,7 @@ class FileArtifactSaver(DataSaver):
 
                         result = _succeeded(
                             artifact_name=self.artifact_name,
-                            duration_ms=_duration_ms(start),
+                            duration_ms=duration_ms(start),
                             input_hash=input_hash,
                             path=str(output_path),
                             size_bytes=len(content_bytes),
@@ -281,7 +282,7 @@ class FileArtifactSaver(DataSaver):
         except _RECOVERABLE_EXCEPTIONS as exc:
             result = _failed(
                 artifact_name=self.artifact_name,
-                duration_ms=_duration_ms(start),
+                duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error=str(exc),
             )
@@ -289,16 +290,12 @@ class FileArtifactSaver(DataSaver):
         if result is None:
             return _failed(
                 artifact_name=self.artifact_name,
-                duration_ms=_duration_ms(start),
+                duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error="Unknown artifact materialization failure",
             )
 
         return result
-
-
-def _duration_ms(start: float) -> float:
-    return (time.perf_counter() - start) * 1000
 
 
 def _same_path(a: Path, b: Path) -> bool:
@@ -373,6 +370,7 @@ def _resolve_artifact_path(
     artifacts = expected_artifacts(
         target,
         env.snapshot,
+        output_inventory=env.output_inventory,
         path_formatter={
             "build_dir": str(env.paths.build_dir),
             "scip_dir": str(env.paths.scip_dir),

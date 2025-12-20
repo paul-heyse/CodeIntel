@@ -14,6 +14,7 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 
 def test_set_signature_attaches_signature_and_annotations() -> None:
     """set_signature attaches a synthetic signature used by Hamilton."""
+
     def fn(**_kwargs: object) -> object:
         return None
 

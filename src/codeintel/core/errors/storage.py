@@ -9,6 +9,7 @@ from __future__ import annotations
 from codeintel.core.errors.base import CodeIntelStorageError
 from codeintel.core.errors.taxonomy import (
     COLUMN_NOT_FOUND,
+    CONNECTION_FAILED,
     QUERY_FAILED,
     TABLE_NOT_FOUND,
 )
@@ -64,6 +65,64 @@ class ColumnNotFoundError(QueryError):
         """
         self.column = column
         super().__init__(table, f"column '{column}' not found")
+
+
+class StorageError(CodeIntelStorageError):
+    """Storage error with structured Problem Details support."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        table: str | None = None,
+        query: str | None = None,
+        cause: Exception | None = None,
+    ) -> None:
+        """Initialize storage error.
+
+        Parameters
+        ----------
+        message
+            Error message.
+        table
+            Table involved in the error.
+        query
+            SQL query that failed (truncated to 200 chars).
+        cause
+            Underlying exception.
+        """
+        super().__init__(
+            error_code=QUERY_FAILED,
+            message=message,
+            table=table,
+            query=query,
+            cause=cause,
+        )
+
+
+class StorageConnectionError(CodeIntelStorageError):
+    """Storage connection error with structured Problem Details support."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        cause: Exception | None = None,
+    ) -> None:
+        """Initialize storage connection error.
+
+        Parameters
+        ----------
+        message
+            Error message.
+        cause
+            Underlying exception.
+        """
+        super().__init__(
+            error_code=CONNECTION_FAILED,
+            message=message,
+            cause=cause,
+        )
 
 
 class StorageQueryError(CodeIntelStorageError):
@@ -163,6 +222,8 @@ __all__ = [
     "ColumnNotFoundError",
     "QueryError",
     "StorageColumnNotFoundError",
+    "StorageConnectionError",
+    "StorageError",
     "StorageQueryError",
     "StorageTableNotFoundError",
     "TableNotFoundError",

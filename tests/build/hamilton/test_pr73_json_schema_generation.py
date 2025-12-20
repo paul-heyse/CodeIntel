@@ -22,7 +22,6 @@ from codeintel.build.schemas.json_schema_registry import (
     clear_json_schema_cache,
     compute_json_schema_digest,
     get_json_schema,
-    get_json_schema_for_dataset_name,
 )
 from codeintel.core.schemas.json_schema_gen import (
     json_schema_from_table_schema,
@@ -474,11 +473,11 @@ class TestJsonSchemaRegistry:
             pytest.fail("Schema should be cached")
 
     @staticmethod
-    def test_get_json_schema_for_dataset_name() -> None:
-        """Verify get_json_schema_for_dataset_name works."""
-        schema = get_json_schema_for_dataset_name("function_metrics")
+    def test_get_json_schema_for_table_key() -> None:
+        """Verify get_json_schema works for a table key."""
+        schema = get_json_schema("analytics.function_metrics")
 
-        if schema is not None and schema["$schema"] != EXPECTED_SCHEMA_VERSION:
+        if schema["$schema"] != EXPECTED_SCHEMA_VERSION:
             pytest.fail(f"Expected schema version {EXPECTED_SCHEMA_VERSION}")
 
     @staticmethod
@@ -531,7 +530,7 @@ class TestParityWithHandMaintained:
             hand_maintained = json_module.load(f)
 
         # Get generated schema
-        generated = get_json_schema_for_dataset_name("function_profile")
+        generated = get_json_schema("analytics.function_profile")
 
         if generated is None:
             pytest.skip("Generated schema not available for function_profile")

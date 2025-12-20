@@ -41,9 +41,6 @@ Newly Migrated (Phase 4):
 from __future__ import annotations
 
 from codeintel.build.hamilton.native.analytics.classification_targets import (
-    SEMANTIC_ROLES_FUNCTIONS_COLS,
-    SEMANTIC_ROLES_MODULES_COLS,
-    TEST_PROFILE_COLS,
     SemanticRolesResult,
     TestProfileComputeResult,
     semantic_roles__functions_rows,
@@ -77,8 +74,6 @@ from codeintel.build.hamilton.native.analytics.dependency_targets import (
     t__external_deps__compute_calls,
 )
 from codeintel.build.hamilton.native.analytics.function_detail_targets import (
-    FUNCTION_CONTRACTS_COLS,
-    FUNCTION_EFFECTS_COLS,
     FunctionContractsResult,
     FunctionEffectsResult,
     function_contracts__rows,
@@ -89,8 +84,6 @@ from codeintel.build.hamilton.native.analytics.function_detail_targets import (
     t__function_effects__compute,
 )
 from codeintel.build.hamilton.native.analytics.function_metrics import (
-    FUNCTION_METRICS_COLS,
-    FUNCTION_TYPES_COLS,
     FunctionAnalyticsResult,
     function_metrics__metrics_rows,
     function_metrics__types_rows,
@@ -142,13 +135,6 @@ from codeintel.build.hamilton.native.analytics.subsystem_targets import (
 )
 
 __all__ = [
-    "FUNCTION_CONTRACTS_COLS",
-    "FUNCTION_EFFECTS_COLS",
-    "FUNCTION_METRICS_COLS",
-    "FUNCTION_TYPES_COLS",
-    "SEMANTIC_ROLES_FUNCTIONS_COLS",
-    "SEMANTIC_ROLES_MODULES_COLS",
-    "TEST_PROFILE_COLS",
     "AstFeaturesResult",
     "ConfigDataFlowComputeResult",
     "FunctionAnalyticsResult",

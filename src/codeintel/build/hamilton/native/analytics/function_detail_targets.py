@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
@@ -42,6 +41,8 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.hamilton.row_serialization import row_to_tuple
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
@@ -50,12 +51,10 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
+from codeintel.build.schemas import column_order_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.graphs.runtime import resolve_graph_runtime
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
@@ -79,20 +78,6 @@ TARGET_SPECS = (
         description="Inferred function pre/postconditions.",
         options=TargetSpecOptions(table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,)),
     ),
-)
-
-# Column definitions for function_contracts table
-FUNCTION_CONTRACTS_COLS: tuple[str, ...] = (
-    "repo",
-    "commit",
-    "function_goid_h128",
-    "preconditions_json",
-    "postconditions_json",
-    "raises_json",
-    "param_nullability_json",
-    "return_nullability",
-    "contract_confidence",
-    "created_at",
 )
 
 
@@ -121,24 +106,6 @@ class FunctionContractsResult:
             True if rows is not None and no error occurred.
         """
         return self.error is None
-
-
-def _row_to_tuple(row: Mapping[str, object], cols: tuple[str, ...]) -> tuple[object, ...]:
-    """Convert a dict row to a tuple in column order.
-
-    Parameters
-    ----------
-    row
-        Row mapping from column name to value.
-    cols
-        Column names in the desired order.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Values in column order.
-    """
-    return tuple(row.get(col) for col in cols)
 
 
 @tag_compute(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
@@ -247,7 +214,7 @@ def t__function_contracts__compute(
     graph=source("graph"),
     target_name=value(FUNCTION_CONTRACTS_TARGET_NAME),
     table_key=value(FUNCTION_CONTRACTS_TABLE_KEY),
-    columns=value(FUNCTION_CONTRACTS_COLS),
+    columns=value(column_order_for_table_key(FUNCTION_CONTRACTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -273,7 +240,8 @@ def function_contracts__rows(
     if t__function_contracts__compute.rows is None:
         return None
     return tuple(
-        _row_to_tuple(row, FUNCTION_CONTRACTS_COLS) for row in t__function_contracts__compute.rows
+        row_to_tuple(FUNCTION_CONTRACTS_TABLE_KEY, row)
+        for row in t__function_contracts__compute.rows
     )
 
 
@@ -314,25 +282,6 @@ def t__function_contracts(
 # ---------------------------------------------------------------------------
 # function_effects target
 # ---------------------------------------------------------------------------
-
-
-FUNCTION_EFFECTS_COLS: tuple[str, ...] = (
-    "repo",
-    "commit",
-    "function_goid_h128",
-    "is_pure",
-    "uses_io",
-    "touches_db",
-    "uses_time",
-    "uses_randomness",
-    "modifies_globals",
-    "modifies_closure",
-    "spawns_threads_or_tasks",
-    "has_transitive_effects",
-    "purity_confidence",
-    "effects_json",
-    "created_at",
-)
 
 
 @dataclass(frozen=True)
@@ -409,9 +358,10 @@ def t__function_effects__compute(
             log.warning("Failed to resolve graph runtime: %s", exc)
             graph_runtime = None
 
-        opts = FunctionEffectsOptions(
-            max_call_depth=3,
-            require_all_callees_pure=True,
+        opts = load_target_options(
+            env,
+            target_name=FUNCTION_EFFECTS_TARGET_NAME,
+            options_type=FunctionEffectsOptions,
         )
         inputs = FunctionEffectsInputs(
             catalog_provider=catalog,
@@ -440,7 +390,7 @@ def t__function_effects__compute(
     graph=source("graph"),
     target_name=value(FUNCTION_EFFECTS_TARGET_NAME),
     table_key=value(FUNCTION_EFFECTS_TABLE_KEY),
-    columns=value(FUNCTION_EFFECTS_COLS),
+    columns=value(column_order_for_table_key(FUNCTION_EFFECTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -460,7 +410,7 @@ def function_effects__rows(
     if t__function_effects__compute.rows is None:
         return None
     return tuple(
-        _row_to_tuple(row, FUNCTION_EFFECTS_COLS) for row in t__function_effects__compute.rows
+        row_to_tuple(FUNCTION_EFFECTS_TABLE_KEY, row) for row in t__function_effects__compute.rows
     )
 
 
@@ -487,8 +437,6 @@ def t__function_effects(
 
 
 __all__ = [
-    "FUNCTION_CONTRACTS_COLS",
-    "FUNCTION_EFFECTS_COLS",
     "FunctionContractsResult",
     "FunctionEffectsResult",
     "function_contracts__rows",

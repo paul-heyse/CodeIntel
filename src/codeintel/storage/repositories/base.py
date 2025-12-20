@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from codeintel.core.repository import PagedResult
+from codeintel.storage.query_results import records_from_dataframe
 from codeintel.storage.validation.pandera_df import validate_df
 from codeintel.storage.warehouse import Warehouse
 
@@ -133,8 +134,7 @@ class BaseRepository:
             List of row dictionaries.
         """
         df = self._ibis_to_df(expr, table_key)
-        sanitized = df.astype("object").where(pd.notna(df), None)
-        return sanitized.to_dict(orient="records")
+        return records_from_dataframe(df)
 
     def _ibis_to_one(
         self,
@@ -221,7 +221,7 @@ class BaseRepository:
         if table_key:
             df = validate_df(table_key, df)
 
-        all_rows: list[RowDict] = df.to_dict(orient="records")
+        all_rows = records_from_dataframe(df)
         truncated = len(all_rows) > limit
         items = all_rows[:limit]
 
@@ -259,5 +259,4 @@ class BaseRepository:
         """
         df = pd.DataFrame(expr.execute())
         validated = validate_df(table_key, df)
-        sanitized = validated.astype("object").where(pd.notna(validated), None)
-        return sanitized.to_dict(orient="records")
+        return records_from_dataframe(validated)

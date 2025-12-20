@@ -18,8 +18,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas.registry import get_schema_provider
-from codeintel.core.schemas.row_models import row_binding_for_table_schema
+from codeintel.build.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -59,9 +58,8 @@ def get_row_binding(table_key: str) -> GeneratedRowBinding:
     Raises ``KeyError`` (via ``require_table_schema``) if no schema is
     found for the table key.
     """
-    provider = get_schema_provider()
-    table_schema = provider.require_table_schema(table_key)
-    return row_binding_for_table_schema(table_schema=table_schema)
+    service = get_schema_service()
+    return service.require_row_binding(table_key)
 
 
 def iter_row_bindings() -> Iterable[GeneratedRowBinding]:
@@ -83,9 +81,11 @@ def iter_row_bindings() -> Iterable[GeneratedRowBinding]:
     >>> all(b.table_key for b in bindings)
     True
     """
-    provider = get_schema_provider()
-    for table_schema in provider.iter_table_schemas():
-        yield row_binding_for_table_schema(table_schema=table_schema)
+    service = get_schema_service()
+    for table_schema in service.iter_table_schemas():
+        binding = service.get_row_binding(table_schema.table_key)
+        if binding is not None:
+            yield binding
 
 
 def clear_row_binding_cache() -> None:
@@ -102,6 +102,7 @@ def clear_row_binding_cache() -> None:
     >>> # bindings are equivalent but regenerated
     """
     get_row_binding.cache_clear()
+    get_schema_service().clear_caches()
 
 
 __all__ = [

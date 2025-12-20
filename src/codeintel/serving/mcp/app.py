@@ -11,6 +11,7 @@ import anyio
 from starlette.responses import JSONResponse, PlainTextResponse
 
 from codeintel.serving.auth.policy import mcp_auth_provider
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp._compat import FastMCP
 from codeintel.serving.mcp.middleware_stack import build_mcp_middleware
 from codeintel.serving.mcp.prompts import register_prompts
@@ -57,6 +58,7 @@ def build_mcp_app(
         Configured FastMCP application instance.
     """
     ops = ServingOperations(kernel=kernel, settings=settings)
+    features = ServingFeatureSet.from_settings(settings)
     store = ResourceStore(
         settings.serve_dir / "exports",
         ttl_seconds=settings.mcp_export_ttl_seconds,
@@ -91,15 +93,15 @@ def build_mcp_app(
     register_describe_tool(mcp, ops, query_limiter, settings=settings)
     register_query_tool(mcp, ops, query_limiter, settings=settings)
 
-    if settings.mcp_enable_explain:
+    if features.enable_mcp_explain:
         register_explain_tool(mcp, ops, query_limiter, settings=settings)
-    if settings.mcp_enable_meta:
+    if features.enable_mcp_meta:
         register_meta_tool(
             mcp, ops, query_limiter, settings=settings, started_at=_SERVER_STARTED_AT
         )
-    if settings.mcp_enable_search:
+    if features.enable_mcp_search:
         register_search_tool(mcp, ops, query_limiter, settings=settings)
-    if settings.mcp_enable_export:
+    if features.enable_mcp_export:
         register_export_tool(mcp, ops, export_limiter, store, settings=settings)
 
     register_resources(mcp, ops, store, settings=settings)

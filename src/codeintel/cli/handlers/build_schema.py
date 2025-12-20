@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, cast, get_args
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.schemas.diff import compute_manifest_diffs
 from codeintel.build.schemas.manifest import ExportArtifact, SchemaManifest
-from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import (
     fail_execution_failed,
@@ -151,7 +151,7 @@ def _compile_manifest(
     )
 
     manifest = compile_schema_manifest(
-        provider=declared_schema_provider(),
+        provider=get_schema_provider(),
         request=request,
         con=gateway_con,
     )

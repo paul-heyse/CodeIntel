@@ -160,11 +160,11 @@ class TargetGraph:
 
     How to Obtain a TargetGraph
     ---------------------------
-    Use ``load_target_system().graph`` from `codeintel.build.target_system` to get the
-    singleton graph with Hamilton-derived dependencies:
+    Use ``get_target_metadata_service().system.graph`` from `codeintel.build.target_metadata`
+    to get the singleton graph with Hamilton-derived dependencies:
 
-    >>> from codeintel.build.target_system import load_target_system
-    >>> graph = load_target_system().graph
+    >>> from codeintel.build.target_metadata import get_target_metadata_service
+    >>> graph = get_target_metadata_service().system.graph
     >>> "modules" in graph
     True
     >>> deps = graph.dependencies_of("goids")

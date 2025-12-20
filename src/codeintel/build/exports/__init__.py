@@ -15,7 +15,6 @@ from __future__ import annotations
 from codeintel.build.exports.common import (
     AuditRecord,
     ExportCallOptions,
-    ExportError,
     ExportTarget,
     default_validation_schemas,
 )
@@ -53,7 +52,6 @@ from codeintel.build.exports.validation import validate_export_files
 __all__ = [
     "AuditRecord",
     "ExportCallOptions",
-    "ExportError",
     "ExportManifestData",
     "ExportOptions",
     "ExportRunner",

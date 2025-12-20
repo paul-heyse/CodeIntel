@@ -33,8 +33,10 @@ Example
 
 from __future__ import annotations
 
+import copy
 import logging
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
@@ -49,6 +51,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "BuildConfig",
+    "BuildConfigStack",
     "ConfigSection",
     "load_build_config",
 ]
@@ -170,96 +173,6 @@ class BuildConfig:
         parse_sections("", data)
         return config
 
-    def get_section(self, name: str) -> ConfigSection | None:
-        """Get a configuration section by name.
-
-        Parameters
-        ----------
-        name
-            Section name (e.g., "analytics.hotspots").
-
-        Returns
-        -------
-        ConfigSection | None
-            Section if found.
-        """
-        return self.sections.get(name)
-
-    def parameters_for(self, target_name: str) -> TargetParameters:
-        """Get parameters for a target, merging module and target sections.
-
-        Looks up configuration in this order:
-        1. Module-level section (e.g., "analytics")
-        2. Target-level section (e.g., "analytics.hotspots")
-
-        Target-level values override module-level.
-
-        Parameters
-        ----------
-        target_name
-            Target name to get parameters for.
-
-        Returns
-        -------
-        TargetParameters
-            Merged parameters.
-        """
-        modules = ["ingestion", "graphs", "analytics", "export"]
-
-        result_values: dict[str, Any] = {}
-
-        def merge_nested_sections(*, prefix: str) -> None:
-            """Merge nested section values under a target section into dict parameters.
-
-            For example, given a TOML structure like:
-
-            [analytics.function_metrics.features]
-            eager_hydration = true
-
-            the nested section name ``analytics.function_metrics.features`` is merged into:
-            ``{"features": {"eager_hydration": True}}``.
-            """
-            base_prefix = f"{prefix}."
-            nested_sections = sorted(
-                (name, section)
-                for name, section in self.sections.items()
-                if name.startswith(base_prefix)
-            )
-            for name, section in nested_sections:
-                remainder = name[len(base_prefix) :]
-                if not remainder:
-                    continue
-                parts = remainder.split(".")
-
-                cursor: dict[str, Any] = result_values
-                for part in parts[:-1]:
-                    existing = cursor.get(part)
-                    if not isinstance(existing, dict):
-                        nested: dict[str, Any] = {}
-                        cursor[part] = nested
-                        cursor = nested
-                    else:
-                        cursor = existing
-
-                leaf_key = parts[-1]
-                existing_leaf = cursor.get(leaf_key)
-                if not isinstance(existing_leaf, dict):
-                    cursor[leaf_key] = dict(section.values)
-                else:
-                    existing_leaf.update(section.values)
-
-        for module in modules:
-            module_section = self.sections.get(module)
-            if module_section:
-                result_values.update(module_section.values)
-
-            target_section = self.sections.get(f"{module}.{target_name}")
-            if target_section:
-                result_values.update(target_section.values)
-                merge_nested_sections(prefix=f"{module}.{target_name}")
-
-        return TargetParameters(result_values)
-
     @overload
     def get(self, key: str) -> object | None: ...
 
@@ -292,6 +205,184 @@ class BuildConfig:
                 return default
 
         return current
+
+    def raw_data(self) -> dict[str, Any]:
+        """Return a shallow copy of raw TOML data.
+
+        Returns
+        -------
+        dict[str, Any]
+            Raw configuration data as a new dictionary.
+        """
+        return dict(self._raw)
+
+    def get_section(self, name: str) -> ConfigSection | None:
+        """Get a configuration section by name.
+
+        Parameters
+        ----------
+        name
+            Section name (e.g., "analytics.hotspots").
+
+        Returns
+        -------
+        ConfigSection | None
+            Section if found.
+        """
+        return self.sections.get(name)
+
+    @staticmethod
+    def _merge_section_values(
+        *,
+        result_values: dict[str, Any],
+        section: ConfigSection | None,
+    ) -> None:
+        if section is None:
+            return
+        result_values.update(section.values)
+
+    def _merge_nested_sections(
+        self,
+        *,
+        result_values: dict[str, Any],
+        prefix: str,
+    ) -> None:
+        base_prefix = f"{prefix}."
+        nested_sections = sorted(
+            (name, section)
+            for name, section in self.sections.items()
+            if name.startswith(base_prefix)
+        )
+        for name, section in nested_sections:
+            remainder = name[len(base_prefix) :]
+            if not remainder:
+                continue
+            parts = remainder.split(".")
+            self._merge_nested_values(
+                result_values=result_values,
+                parts=parts,
+                values=section.values,
+            )
+
+    @staticmethod
+    def _merge_nested_values(
+        *,
+        result_values: dict[str, Any],
+        parts: list[str],
+        values: Mapping[str, Any],
+    ) -> None:
+        cursor: dict[str, Any] = result_values
+        for part in parts[:-1]:
+            existing = cursor.get(part)
+            if not isinstance(existing, dict):
+                nested: dict[str, Any] = {}
+                cursor[part] = nested
+                cursor = nested
+            else:
+                cursor = existing
+
+        leaf_key = parts[-1]
+        existing_leaf = cursor.get(leaf_key)
+        if not isinstance(existing_leaf, dict):
+            cursor[leaf_key] = dict(values)
+        else:
+            existing_leaf.update(values)
+
+    def parameters_for(self, target_name: str) -> TargetParameters:
+        """Get parameters for a target, merging module and target sections.
+
+        Looks up configuration in this order:
+        1. Module-level section (e.g., "analytics")
+        2. Target-level section (e.g., "analytics.hotspots")
+
+        Target-level values override module-level.
+
+        Parameters
+        ----------
+        target_name
+            Target name to get parameters for.
+
+        Returns
+        -------
+        TargetParameters
+            Merged parameters.
+        """
+        modules = ["ingestion", "graphs", "analytics", "export"]
+
+        result_values: dict[str, Any] = {}
+        defaults = DEFAULT_PARAMETERS.get(target_name)
+        if defaults:
+            result_values.update(copy.deepcopy(defaults))
+
+        for module in modules:
+            self._merge_section_values(
+                result_values=result_values,
+                section=self.sections.get(module),
+            )
+
+            target_prefix = f"{module}.{target_name}"
+            target_section = self.sections.get(target_prefix)
+            if target_section is not None:
+                result_values.update(target_section.values)
+                self._merge_nested_sections(result_values=result_values, prefix=target_prefix)
+
+        return TargetParameters(result_values)
+
+
+@dataclass
+class BuildConfigStack(BuildConfig):
+    """BuildConfig wrapper that overlays BuildRunConfig-derived overrides."""
+
+    run_overrides: Mapping[str, Mapping[str, Any]] | None = None
+
+    @classmethod
+    def from_base(
+        cls,
+        base: BuildConfig,
+        *,
+        run_overrides: Mapping[str, Mapping[str, Any]] | None = None,
+    ) -> BuildConfigStack:
+        """Create a BuildConfigStack from an existing BuildConfig.
+
+        Parameters
+        ----------
+        base
+            Base BuildConfig instance to copy.
+        run_overrides
+            Optional per-target override mappings.
+
+        Returns
+        -------
+        BuildConfigStack
+            BuildConfigStack with overlayed run overrides.
+        """
+        return cls(
+            config_path=base.config_path,
+            sections=dict(base.sections),
+            _raw=base.raw_data(),
+            run_overrides=run_overrides,
+        )
+
+    def parameters_for(self, target_name: str) -> TargetParameters:
+        """Return parameters with overrides applied.
+
+        Parameters
+        ----------
+        target_name
+            Target name to get parameters for.
+
+        Returns
+        -------
+        TargetParameters
+            Parameters merged with run overrides.
+        """
+        base = super().parameters_for(target_name)
+        if not self.run_overrides:
+            return base
+        overrides = self.run_overrides.get(target_name)
+        if not overrides:
+            return base
+        return base.merge(TargetParameters(dict(overrides)))
 
 
 def load_build_config(project_root: Path) -> BuildConfig:

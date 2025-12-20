@@ -14,6 +14,8 @@ __all__ = [
     "TableKey",
     "parse_table_key",
     "split_table_key",
+    "split_table_key_or_default",
+    "table_name_from_key",
     "validate_table_key",
 ]
 
@@ -93,3 +95,42 @@ def split_table_key(table_key: TableKey) -> tuple[str, str]:
     """
     parsed = parse_table_key(table_key)
     return parsed.schema, parsed.name
+
+
+def split_table_key_or_default(table_key: TableKey, *, default_schema: str) -> tuple[str, str]:
+    """Split a table key, falling back to a default schema when unqualified.
+
+    Parameters
+    ----------
+    table_key
+        Table key, optionally schema-qualified.
+    default_schema
+        Schema to use when table_key is unqualified.
+
+    Returns
+    -------
+    tuple[str, str]
+        Schema and table name.
+    """
+    if "." not in table_key:
+        return default_schema, table_key
+    return split_table_key(table_key)
+
+
+def table_name_from_key(table_key: TableKey) -> str:
+    """Return the table name component from a table key.
+
+    Parameters
+    ----------
+    table_key
+        Table key, optionally schema-qualified.
+
+    Returns
+    -------
+    str
+        Table name component.
+    """
+    if "." not in table_key:
+        return table_key
+    _, name = split_table_key(table_key)
+    return name

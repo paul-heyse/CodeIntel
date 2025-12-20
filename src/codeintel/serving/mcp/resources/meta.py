@@ -8,18 +8,20 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.serving.errors import MetaArtifactNotFoundError, MetaSqlUnsafeError
-from codeintel.serving.mcp.models import (
-    DEFAULT_RESOURCE_TEMPLATES,
-    ResourceTemplatesResponse,
-)
 from codeintel.serving.mcp.protocols import ServingSnapshotPointerProtocol
+from codeintel.serving.meta.models import DEFAULT_RESOURCE_TEMPLATES
 from codeintel.serving.meta.service import (
     build_environment_meta_payload,
     build_resource_templates_payload,
 )
-from codeintel.serving.semantic.models import (
-    SemanticCatalogResponse,
-    SemanticViewDescriptionResponse,
+from codeintel.serving.uris import (
+    META_ENVIRONMENT_URI,
+    META_RESOURCES_URI,
+    META_SERVING_URI,
+    META_VIEWS_SQL_DIFF_URI,
+    META_VIEWS_SQL_URI,
+    SEMANTIC_VIEW_URI_TEMPLATE,
+    SEMANTIC_VIEWS_URI,
 )
 from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
 
@@ -76,7 +78,7 @@ def _build_resource_templates_response(ops: ServingOperations) -> dict[str, obje
         templates=DEFAULT_RESOURCE_TEMPLATES,
         generated_at=datetime.now(UTC),
     )
-    return ResourceTemplatesResponse.model_validate(payload).model_dump(mode="json")
+    return payload.model_dump(mode="json")
 
 
 def register_meta_resources(
@@ -87,33 +89,31 @@ def register_meta_resources(
 ) -> None:
     """Register meta and semantic discovery resources."""
 
-    @mcp.resource("codeintel://semantic/views")
+    @mcp.resource(SEMANTIC_VIEWS_URI)
     def semantic_views() -> dict[str, object]:
-        return SemanticCatalogResponse.model_validate(ops.catalog()).model_dump(mode="json")
+        return ops.catalog().model_dump(mode="json")
 
-    @mcp.resource("codeintel://semantic/views/{view_id}")
+    @mcp.resource(SEMANTIC_VIEW_URI_TEMPLATE)
     def view_description(view_id: str) -> dict[str, object]:
-        return SemanticViewDescriptionResponse.model_validate(ops.describe(view_id)).model_dump(
-            mode="json"
-        )
+        return ops.describe(view_id).model_dump(mode="json")
 
-    @mcp.resource("codeintel://meta/serving")
+    @mcp.resource(META_SERVING_URI)
     def serving_meta_resource() -> dict[str, object]:
-        return ops.meta()
+        return ops.meta().model_dump(mode="json")
 
-    @mcp.resource("codeintel://meta/resources")
+    @mcp.resource(META_RESOURCES_URI)
     def resource_templates() -> dict[str, object]:
         return _build_resource_templates_response(ops)
 
-    @mcp.resource("codeintel://meta/environment", mime_type="application/json", tags={"meta"})
+    @mcp.resource(META_ENVIRONMENT_URI, mime_type="application/json", tags={"meta"})
     def environment() -> dict[str, object]:
         return build_environment_meta_payload(ops, settings=settings)
 
-    @mcp.resource("codeintel://meta/views_sql", mime_type="application/json", tags={"meta"})
+    @mcp.resource(META_VIEWS_SQL_URI, mime_type="application/json", tags={"meta"})
     def views_sql() -> dict[str, object]:
         return _read_views_sql(ops.db.current_pointer())
 
-    @mcp.resource("codeintel://meta/views_sql_diff", mime_type="application/json", tags={"meta"})
+    @mcp.resource(META_VIEWS_SQL_DIFF_URI, mime_type="application/json", tags={"meta"})
     def views_sql_diff() -> dict[str, object]:
         return _read_views_sql_diff(ops.db.current_pointer())
 

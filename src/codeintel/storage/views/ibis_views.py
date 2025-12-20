@@ -2,13 +2,11 @@
 
 This module provides view builders registered via the Ibis view registry.
 Each builder function takes an IbisViewGateway and returns an Ibis table expression.
-
-The legacy create_* functions are maintained for backward compatibility.
 """
 
 from __future__ import annotations
 
-from typing import Protocol, cast
+from typing import cast
 
 import ibis
 import ibis.expr.types as it
@@ -20,39 +18,6 @@ from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view
 
 _HAMILTON_TYPE_HINTS = (IbisViewGateway, it.Table)
-
-
-class _IbisCreateViewConnection(Protocol):
-    def create_view(
-        self,
-        name: str,
-        expr: it.Table,
-        *,
-        database: str | None = None,
-        overwrite: bool = True,
-    ) -> None: ...
-
-
-def _create_view(con: _IbisCreateViewConnection, qualified_name: str, expr: it.Table) -> None:
-    """Create view using database qualifier when provided.
-
-    Ibis 11+ requires the `database` parameter for schema-qualified names.
-    This method automatically splits "schema.view" into the correct form.
-
-    Parameters
-    ----------
-    con
-        Ibis DuckDB backend connection.
-    qualified_name
-        View name, optionally schema-qualified (e.g., "analytics.v_function_summary").
-    expr
-        Ibis table expression defining the view.
-    """
-    if "." in qualified_name:
-        database, view_name = qualified_name.split(".", 1)
-        con.create_view(view_name, expr, database=database, overwrite=True)
-    else:
-        con.create_view(qualified_name, expr, overwrite=True)
 
 
 def _sql_table(ibis_gw: IbisViewGateway, sql_expr: str) -> it.Table:

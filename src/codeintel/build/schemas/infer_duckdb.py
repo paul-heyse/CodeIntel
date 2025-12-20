@@ -22,9 +22,9 @@ import sqlglot
 import sqlglot.expressions as exp
 from sqlglot.errors import ParseError
 
+from codeintel.build.table_keys import split_table_key
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.constants import DUCKDB_DIALECT
-from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     import ibis.expr.types as ir

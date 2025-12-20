@@ -5,11 +5,10 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.models import QueryPreview, SemanticQueryToolResponse
 from codeintel.serving.mcp.runtime import QueryLimiter
-from codeintel.serving.mcp.sql_fingerprint import sqlglot_canonical_sha256
 from codeintel.serving.mcp.tools.shared import (
     PREVIEW_ROW_COUNT,
     READ_ONLY_LOCAL_ANNOTATIONS,
@@ -20,7 +19,9 @@ from codeintel.serving.mcp.tools.shared import (
     mcp_correlation_id,
     try_sample_summary,
 )
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
+from codeintel.serving.semantic.fingerprints import sqlglot_canonical_sha256
 
 if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
@@ -34,6 +35,7 @@ def register_query_tool(
     settings: ServingSettings,
 ) -> None:
     """Register semantic_query tool."""
+    feature_set = ServingFeatureSet.from_settings(settings)
 
     @mcp.tool(
         name="semantic_query",
@@ -80,7 +82,7 @@ def register_query_tool(
             )
 
         summary: str | None = None
-        if settings.mcp_enable_sampling and preview is not None:
+        if feature_set.enable_mcp_sampling and preview is not None:
             should_sample = truncated or row_count >= settings.mcp_sample_threshold
             if should_sample:
                 summary = await try_sample_summary(

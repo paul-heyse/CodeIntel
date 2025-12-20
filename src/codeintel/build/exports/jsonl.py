@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relation
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
+from codeintel.build.exports.writers import default_json_serializer
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -15,35 +16,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.exports.common import ExportCallOptions
     from codeintel.storage.gateway import StorageGateway
-
-
-@runtime_checkable
-class _SupportsIsoformat(Protocol):
-    def isoformat(self) -> str: ...
-
-
-def _default_serializer(obj: object) -> object:
-    """Serialize objects for JSON output.
-
-    Parameters
-    ----------
-    obj
-        Object to serialize.
-
-    Returns
-    -------
-    object
-        JSON-serializable representation.
-
-    Raises
-    ------
-    TypeError
-        If object is not serializable.
-    """
-    if isinstance(obj, _SupportsIsoformat):
-        return obj.isoformat()
-    message = f"Type {type(obj)} is not JSON serializable"
-    raise TypeError(message)
 
 
 def export_jsonl_for_table(
@@ -71,8 +43,8 @@ def export_jsonl_for_table(
     ValueError
         If the requested table is not registered in the dataset mapping.
     """
-    dataset_mapping = gateway.datasets.mapping
-    if table_name not in dataset_mapping.values():
+    registry = gateway.datasets
+    if table_name not in registry.by_table_key:
         message = f"Refusing to export unknown dataset table: {table_name}"
         raise ValueError(message)
     if serializer is not None:
@@ -107,12 +79,13 @@ def export_dataset_to_jsonl(
     ValueError
         If the dataset name is unknown.
     """
-    dataset_mapping = gateway.datasets.mapping
-    jsonl_mapping = gateway.datasets.jsonl_mapping or {}
-    if dataset_name not in dataset_mapping:
+    registry = gateway.datasets
+    jsonl_mapping = registry.jsonl_datasets
+    try:
+        table_name = registry.resolve_table_key(dataset_name)
+    except KeyError as exc:
         message = f"Unknown dataset: {dataset_name}"
-        raise ValueError(message)
-    table_name = dataset_mapping[dataset_name]
+        raise ValueError(message) from exc
     filename = jsonl_mapping.get(table_name, f"{dataset_name}.jsonl")
     output_path = output_dir / filename
     export_jsonl_for_table(gateway, table_name, output_path)
@@ -191,7 +164,7 @@ def export_repo_map_json(
                         first = False
                     else:
                         handle.write(",")
-                    handle.write(json.dumps(record, default=_default_serializer))
+                    handle.write(json.dumps(record, default=default_json_serializer))
             handle.write("]\n")
     else:
         output_path = document_output_dir / "repo_map.jsonl"

@@ -25,11 +25,15 @@ from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.schema import SchemaError as StorageSchemaError
-from codeintel.core.errors.storage import QueryError as StorageQueryError
-from codeintel.core.errors.storage import StorageQueryError as StructuredStorageQueryError
-from codeintel.storage.exceptions import (
+from codeintel.core.errors.storage import (
+    QueryError as StorageQueryError,
+)
+from codeintel.core.errors.storage import (
     StorageConnectionError,
     StorageError,
+)
+from codeintel.core.errors.storage import (
+    StorageQueryError as StructuredStorageQueryError,
 )
 
 if TYPE_CHECKING:

@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
 from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
-from codeintel.core.errors import ProblemDetailBuilder
+from codeintel.build.table_keys import split_table_key
+from codeintel.core.errors.problem_details import ProblemDetailBuilder
 from codeintel.core.errors.schema import SchemaError
-from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
@@ -39,11 +40,14 @@ AUDIT_TABLE_ENABLED = os.getenv("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 # ---------------------------------------------------------------------------
 
 
-class ExportError(Exception):
-    """Export operation failure."""
-
-
-def export_problem(code: str, title: str, detail: str, **extras: object) -> Exception:
+def export_problem(
+    code: str,
+    title: str,
+    detail: str,
+    *,
+    status: int = 500,
+    **extras: object,
+) -> BuildProblemError:
     """Create an export error with structured problem details.
 
     Parameters
@@ -54,20 +58,29 @@ def export_problem(code: str, title: str, detail: str, **extras: object) -> Exce
         Short problem title.
     detail
         Detailed error message.
+    status
+        HTTP-style status code.
     **extras
         Additional context fields.
 
     Returns
     -------
-    Exception
-        ExportError with structured details.
+    BuildProblemError
+        BuildProblemError with structured details.
     """
-    builder = ProblemDetailBuilder(code=code, title=title, status=500)
-    problem_detail = builder.build(detail).with_extensions(**extras)
-    return ExportError(problem_detail.detail or title)
+    builder = ProblemDetailBuilder(code=code, title=title, status=status)
+    problem = builder.build(detail).with_extensions(**extras)
+    return BuildProblemError(problem)
 
 
-def log_export_error(code: str, title: str, detail: str, **extras: object) -> None:
+def log_export_error(
+    code: str,
+    title: str,
+    detail: str,
+    *,
+    status: int = 500,
+    **extras: object,
+) -> None:
     """Log an export error with structured problem details.
 
     Parameters
@@ -78,12 +91,14 @@ def log_export_error(code: str, title: str, detail: str, **extras: object) -> No
         Short problem title.
     detail
         Detailed error message.
+    status
+        HTTP-style status code.
     **extras
         Additional context fields.
     """
-    builder = ProblemDetailBuilder(code=code, title=title, status=500)
-    problem_detail = builder.build(detail).with_extensions(**extras)
-    log.error(json.dumps(problem_detail.to_dict()))
+    builder = ProblemDetailBuilder(code=code, title=title, status=status)
+    error = BuildProblemError(builder.build(detail).with_extensions(**extras))
+    log.error(json.dumps(error.problem_detail.to_dict()))
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +129,15 @@ class ExportTarget:
 
 @dataclass(frozen=True)
 class ExportCallOptions:
-    """Options controlling dataset selection, validation, and macro enforcement."""
+    """Options controlling dataset selection, validation, and macro enforcement.
+
+    Attributes
+    ----------
+    schemas
+        Optional list of table keys to validate.
+    datasets
+        Optional list of dataset names to export.
+    """
 
     validate_exports: bool = True
     schemas: list[str] | None = None
@@ -140,12 +163,12 @@ def validate_registry_or_raise(gateway: StorageGateway) -> None:
     ------
     ValueError
         If required tables or views are missing from the registry.
-    ExportError
+    from_detail
         If tables exist but their schemas do not match expectations.
     """
     missing_tables: list[str] = []
-    for dataset_name, table_key in gateway.datasets.mapping.items():
-        schema_name, table_name = split_table_key(table_key)
+    for dataset_name, contract in gateway.datasets.by_name.items():
+        schema_name, table_name = split_table_key(contract.table_key)
         exists = gateway.execute(
             """
             SELECT 1
@@ -156,7 +179,7 @@ def validate_registry_or_raise(gateway: StorageGateway) -> None:
             [schema_name, table_name],
         ).fetchone()
         if exists is None:
-            missing_tables.append(f"{dataset_name} -> {table_key}")
+            missing_tables.append(f"{dataset_name} -> {contract.table_key}")
 
     if missing_tables:
         message = "Dataset registry missing tables/views: " + ", ".join(sorted(missing_tables))
@@ -172,7 +195,11 @@ def validate_registry_or_raise(gateway: StorageGateway) -> None:
             detail=detail,
             stage="dataset_registry",
         )
-        raise ExportError(detail) from exc
+        raise BuildProblemError.from_detail(
+            code="export.validation_failed",
+            title="Export validation failed",
+            detail=detail,
+        ) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -390,16 +417,16 @@ def write_audit_entry(
 
 
 def default_validation_schemas() -> list[str]:
-    """Return the set of dataset names that should be validated by default.
+    """Return the set of table keys that should be validated by default.
 
     Derived from contracts in the build.schemas contract provider.
 
     Returns
     -------
     list[str]
-        Sorted dataset names with JSON Schema validation configured.
+        Sorted table keys with JSON Schema validation configured.
     """
-    return sorted(c.name for c in iter_contracts() if c.json_schema_id is not None)
+    return sorted(c.table_key for c in iter_contracts() if c.json_schema_id is not None)
 
 
 __all__ = [
@@ -408,7 +435,6 @@ __all__ = [
     "MAX_EXPORT_LIMIT",
     "AuditRecord",
     "ExportCallOptions",
-    "ExportError",
     "ExportTarget",
     "build_export_relation",
     "compute_schema_digest",

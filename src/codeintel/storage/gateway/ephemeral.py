@@ -1,17 +1,17 @@
 """Ephemeral DuckDB gateway utilities.
 
-This module is the single place outside tests where we import DuckDB directly.
-It provides helpers for in-memory connections that support schema compilation
-and inference workflows.
+This module provides helpers for in-memory connections that support schema
+compilation and inference workflows while reusing DuckDBSession bootstrapping.
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import duckdb
-
+from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 
 if TYPE_CHECKING:
@@ -34,7 +34,15 @@ def ephemeral_gateway(*, schema_provider: SchemaProvider) -> Iterator[MinimalSto
     MinimalStorageGateway
         In-memory gateway suitable for schema compilation/inference.
     """
-    con = duckdb.connect(":memory:")
+    cfg = StorageConfig(
+        db_path=Path(":memory:"),
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )
+    session = DuckDBSession(cfg)
+    con = session.open()
     gateway = MinimalStorageGateway(con, schema_provider=schema_provider)
     try:
         yield gateway

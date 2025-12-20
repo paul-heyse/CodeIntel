@@ -30,6 +30,7 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
+from codeintel.build.hamilton.row_serialization import row_to_tuple
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
@@ -38,12 +39,11 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
+from codeintel.build.schemas import column_order_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.analytics.testing.profiles.builder import TestProfileBuildResult
@@ -76,28 +76,6 @@ TARGET_SPECS = (
         description="Per-test profile with coverage and characteristics.",
         options=TargetSpecOptions(table_keys=TEST_PROFILE_TABLE_KEYS),
     ),
-)
-
-# Column definitions - must match the bulk_insert order in core.py
-SEMANTIC_ROLES_FUNCTIONS_COLS: tuple[str, ...] = (
-    "repo",
-    "commit",
-    "function_goid_h128",
-    "role",
-    "framework",
-    "role_confidence",
-    "role_sources_json",
-    "created_at",
-)
-
-SEMANTIC_ROLES_MODULES_COLS: tuple[str, ...] = (
-    "repo",
-    "commit",
-    "module",
-    "role",
-    "role_confidence",
-    "role_sources_json",
-    "created_at",
 )
 
 
@@ -197,7 +175,7 @@ def t__semantic_roles__compute(
     graph=source("graph"),
     target_name=value(SEMANTIC_ROLES_TARGET_NAME),
     table_key=value(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
-    columns=value(SEMANTIC_ROLES_FUNCTIONS_COLS),
+    columns=value(column_order_for_table_key(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -232,7 +210,7 @@ def semantic_roles__functions_rows(
     graph=source("graph"),
     target_name=value(SEMANTIC_ROLES_TARGET_NAME),
     table_key=value(SEMANTIC_ROLES_MODULES_TABLE_KEY),
-    columns=value(SEMANTIC_ROLES_MODULES_COLS),
+    columns=value(column_order_for_table_key(SEMANTIC_ROLES_MODULES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -300,9 +278,6 @@ def t__semantic_roles(
 
 
 __all__ = [
-    "SEMANTIC_ROLES_FUNCTIONS_COLS",
-    "SEMANTIC_ROLES_MODULES_COLS",
-    "TEST_PROFILE_COLS",
     "SemanticRolesResult",
     "TestProfileComputeResult",
     "semantic_roles__functions_rows",
@@ -320,62 +295,12 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-TEST_PROFILE_COLS = (
-    "repo",
-    "commit",
-    "test_id",
-    "test_goid_h128",
-    "urn",
-    "rel_path",
-    "module",
-    "qualname",
-    "language",
-    "kind",
-    "status",
-    "duration_ms",
-    "markers",
-    "flaky",
-    "last_run_at",
-    "functions_covered",
-    "functions_covered_count",
-    "primary_function_goids",
-    "subsystems_covered",
-    "subsystems_covered_count",
-    "primary_subsystem_id",
-    "assert_count",
-    "raise_count",
-    "uses_parametrize",
-    "uses_fixtures",
-    "io_bound",
-    "uses_network",
-    "uses_db",
-    "uses_filesystem",
-    "uses_subprocess",
-    "flakiness_score",
-    "importance_score",
-    "notes",
-    "tg_degree",
-    "tg_weighted_degree",
-    "tg_proj_degree",
-    "tg_proj_weight",
-    "tg_proj_clustering",
-    "tg_proj_betweenness",
-    "created_at",
-)
-
-
 @dataclass(frozen=True)
 class TestProfileComputeResult:
     """Result from test profile computation."""
 
     result: TestProfileBuildResult | None
     error: str | None = None
-
-
-def _test_profile_row_to_tuple(
-    row: Mapping[str, object], cols: tuple[str, ...]
-) -> tuple[object, ...]:
-    return tuple(row.get(col) for col in cols)
 
 
 @tag_compute(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
@@ -411,7 +336,7 @@ def t__test_profile__compute(
     graph=source("graph"),
     target_name=value(TEST_PROFILE_TARGET_NAME),
     table_key=value(TEST_PROFILE_TABLE_KEY),
-    columns=value(TEST_PROFILE_COLS),
+    columns=value(column_order_for_table_key(TEST_PROFILE_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -433,8 +358,7 @@ def test_profile__rows(
     if t__test_profile__compute.result.rows is None:
         return None
     return tuple(
-        _test_profile_row_to_tuple(row, TEST_PROFILE_COLS)
-        for row in t__test_profile__compute.result.rows
+        row_to_tuple(TEST_PROFILE_TABLE_KEY, row) for row in t__test_profile__compute.result.rows
     )
 
 

@@ -24,10 +24,7 @@ import logging
 
 from hamilton.function_modifiers import source, value
 
-from codeintel.analytics.functions.function_history import (
-    FUNCTION_HISTORY_COLS,
-    build_function_history_rows,
-)
+from codeintel.analytics.functions.function_history import build_function_history_rows
 from codeintel.analytics.graphs.subsystem_agreement import compute_subsystem_agreement
 from codeintel.analytics.graphs.subsystem_graph_metrics import (
     compute_subsystem_graph_metrics,
@@ -36,14 +33,9 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
-from codeintel.analytics.history.history_timeseries import HISTORY_TIMESERIES_COLS
 from codeintel.analytics.testing.compute import (
     TestGraphMetricsResult,
     compute_test_graph_metrics_pure,
-)
-from codeintel.analytics.testing.graph_metrics import (
-    TEST_GRAPH_METRICS_FUNCTIONS_COLS,
-    TEST_GRAPH_METRICS_TESTS_COLS,
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
@@ -68,6 +60,7 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
+from codeintel.build.schemas import column_order_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
 from codeintel.storage.queries.safe import count_rows_for_snapshot
@@ -188,7 +181,7 @@ def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | Non
     graph=source("graph"),
     target_name=value(FUNCTION_HISTORY_TARGET_NAME),
     table_key=value(FUNCTION_HISTORY_TABLE_KEY),
-    columns=value(tuple(FUNCTION_HISTORY_COLS)),
+    columns=value(column_order_for_table_key(FUNCTION_HISTORY_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -214,7 +207,7 @@ def t__function_history__compute(
     Returns
     -------
     tuple[tuple[object, ...], ...] | None
-        Row tuples matching FUNCTION_HISTORY_COLS schema, or None when skipped.
+        Row tuples matching the function_history schema order, or None when skipped.
 
     Notes
     -----
@@ -282,7 +275,7 @@ def t__function_history(
     graph=source("graph"),
     target_name=value(HISTORY_TIMESERIES_TARGET_NAME),
     table_key=value(HISTORY_TIMESERIES_TABLE_KEY),
-    columns=value(tuple(HISTORY_TIMESERIES_COLS)),
+    columns=value(column_order_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -675,7 +668,7 @@ def t__test_graph_metrics__compute(
     graph=source("graph"),
     target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
     table_key=value(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
-    columns=value(tuple(TEST_GRAPH_METRICS_TESTS_COLS)),
+    columns=value(column_order_for_table_key(TEST_GRAPH_METRICS_TESTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -709,7 +702,7 @@ def test_graph_metrics__tests_rows(
     graph=source("graph"),
     target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
     table_key=value(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    columns=value(tuple(TEST_GRAPH_METRICS_FUNCTIONS_COLS)),
+    columns=value(column_order_for_table_key(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

@@ -167,18 +167,12 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
         )
 
         catalog = kernel.catalog()
-        expect_equal(catalog.get("version"), "v1")
-        views_raw = catalog.get("views")
-        if not isinstance(views_raw, list):
-            pytest.fail("Expected catalog.views to be a list")
-        expect_true(any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw))
+        expect_equal(catalog.version, "v1")
+        expect_true(any(view.id == "demo.view" for view in catalog.views))
 
         desc = kernel.describe("demo.view")
-        expect_equal(desc.get("table_key"), "docs.v_demo")
-        column_types_raw = desc.get("column_types")
-        if not isinstance(column_types_raw, dict):
-            pytest.fail("Expected desc.column_types to be a dict")
-        expect_equal(column_types_raw.get("id"), "INTEGER")
+        expect_equal(desc.table_key, "docs.v_demo")
+        expect_equal(desc.column_types.get("id"), "INTEGER")
 
         req = SemanticQueryRequest(
             view_id="demo.view",
@@ -192,7 +186,7 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
         expect_equal([row["id"] for row in res.rows], [3, 2])
 
         meta = kernel.meta()
-        expect_equal(meta["schema_inventory"], {"tables": 1, "views": 1})
+        expect_equal(meta.schema_inventory, {"tables": 1, "views": 1})
     finally:
         await manager.stop()
 

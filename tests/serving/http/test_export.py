@@ -156,7 +156,7 @@ def test_export_json_format(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "json", "limit": 100},
         )
 
@@ -174,7 +174,7 @@ def test_export_ndjson_format(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "ndjson", "limit": 100},
         )
 
@@ -196,7 +196,7 @@ def test_export_ndjson_content_disposition(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "ndjson"},
         )
 
@@ -212,7 +212,7 @@ def test_export_with_filters(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
                 "format": "ndjson",
@@ -233,7 +233,7 @@ def test_export_with_select_columns(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
                 "format": "ndjson",
@@ -256,7 +256,7 @@ def test_export_with_order_by(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
                 "format": "ndjson",
@@ -280,7 +280,7 @@ def test_export_view_not_found(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/nonexistent.view",
+            "/v1/export/semantic/nonexistent.view",
             json={"view_id": "nonexistent.view", "format": "json"},
         )
 
@@ -296,7 +296,7 @@ def test_export_invalid_filter_column(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         response = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
                 "format": "json",
@@ -339,21 +339,21 @@ def test_export_respects_api_key(tmp_path: Path) -> None:
 
     with TestClient(app) as client:
         denied = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "json"},
         )
         expect_equal(denied.status_code, status.HTTP_401_UNAUTHORIZED)
 
         allowed = client.post(
-            "/export/semantic/export.test",
+            "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "json"},
             headers={"X-API-Key": "export-secret"},
         )
         expect_equal(allowed.status_code, status.HTTP_200_OK)
 
 
-def test_export_v1_alias(tmp_path: Path) -> None:
-    """Export endpoints should be accessible via /v1 prefix."""
+def test_export_v1_route(tmp_path: Path) -> None:
+    """Export endpoints are versioned under /v1."""
     settings = _setup_serving_env(tmp_path)
     app = create_serving_app(settings=settings, mount_mcp=False)
 

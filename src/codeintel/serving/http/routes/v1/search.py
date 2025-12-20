@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
-from codeintel.serving.http.metrics import QueryMetrics
 from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
+from codeintel.serving.metrics import QueryMetrics
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
 
 router = APIRouter(prefix="/search", tags=["search"], dependencies=[Depends(require_api_key)])
@@ -42,7 +42,7 @@ async def search(
         response: SearchQueryResponse, duration_ms: float, correlation_id: str
     ) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/search",
+            endpoint="/v1/search",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=None,
@@ -55,7 +55,7 @@ async def search(
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/search",
+            endpoint="/v1/search",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=None,

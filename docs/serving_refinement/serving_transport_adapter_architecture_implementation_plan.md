@@ -81,7 +81,7 @@ This plan implements the consolidation recommendations captured during the servi
   - `ExportFormat` (canonical alias)
   - `ExportFormatSpec` (format → `mime_type`, `suffix`)
   - `EXPORT_FORMATS` mapping and helpers
-- `codeintel.serving.mcp.tooling_meta`
+- `codeintel.serving.meta.tooling`
   - `runtime_versions()` and `tooling_mismatch_warnings(...)`
 - `codeintel.serving.semantic.filter_ops`
   - `allowed_ops_for_column_type(...)`
@@ -488,4 +488,3 @@ Repo-level validation (recommended once parallel build work stabilizes)
 - **Better extensibility**: new endpoints/tools/resources can be added by implementing operations once and
   exposing through thin HTTP/FastMCP adapters.
 - **Maintainability**: significantly smaller per-transport modules and clearer contracts between layers.
-

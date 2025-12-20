@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.datasets.registry import load_dataset_registry
-from codeintel.storage.exceptions import StorageConnectionError
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata import bootstrap_metadata_datasets
@@ -69,7 +69,7 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
                 include_views=config.ensure_views and not config.read_only,
             )
     except duckdb.Error as exc:
-        raise StorageConnectionError(str(exc)) from exc
+        raise StorageConnectionError(str(exc), cause=exc) from exc
     return gateway
 
 

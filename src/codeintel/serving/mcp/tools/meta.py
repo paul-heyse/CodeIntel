@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from codeintel.serving.http.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.models import DEFAULT_RESOURCE_TEMPLATES, ServingMetaResponse
 from codeintel.serving.mcp.runtime import QueryLimiter
@@ -17,6 +17,7 @@ from codeintel.serving.mcp.tools.shared import (
     mcp_correlation_id,
 )
 from codeintel.serving.meta.service import ServingMetaExtras, build_serving_meta_payload
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from codeintel.serving.operations.ops import ServingOperations
 
 if TYPE_CHECKING:
@@ -24,11 +25,8 @@ if TYPE_CHECKING:
 
 
 async def _catalog_view_count(ops: ServingOperations, limiter: QueryLimiter) -> int:
-    catalog_data = await limiter.run(ops.catalog)
-    catalog_dict = catalog_data if isinstance(catalog_data, dict) else {}
-    views_obj = catalog_dict.get("views")
-    views = views_obj if isinstance(views_obj, list) else []
-    return len(views)
+    catalog = await limiter.run(ops.catalog)
+    return len(catalog.views)
 
 
 def register_meta_tool(
@@ -52,13 +50,14 @@ def register_meta_tool(
         await ctx.info("Retrieving serving metadata")
 
         view_count = await _catalog_view_count(ops, limiter)
+        feature_set = ServingFeatureSet.from_settings(settings)
         features = {
-            "supports_explain": settings.mcp_enable_explain,
-            "supports_export": settings.mcp_enable_export,
-            "supports_export_tasks": settings.mcp_export_enable_tasks,
-            "supports_search": settings.mcp_enable_search,
+            "supports_explain": feature_set.enable_mcp_explain,
+            "supports_export": feature_set.enable_mcp_export,
+            "supports_export_tasks": feature_set.enable_mcp_export_tasks,
+            "supports_search": feature_set.enable_mcp_search,
             "supports_resources": True,
-            "supports_sampling": settings.mcp_enable_sampling,
+            "supports_sampling": feature_set.enable_mcp_sampling,
         }
         extras = ServingMetaExtras(
             features=features,
@@ -85,7 +84,7 @@ def register_meta_tool(
             )
         )
 
-        return ServingMetaResponse.model_validate(payload)
+        return payload
 
 
 __all__ = ["register_meta_tool"]

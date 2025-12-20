@@ -14,6 +14,7 @@ from codeintel.config.datasets.contracts import get_row_bindings
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.helpers.table_key import split_table_key, table_name_from_key
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -40,14 +41,14 @@ _NON_EXPORTABLE_ANALYTICS_TABLES: frozenset[str] = frozenset({"tags_index"})
 
 
 def _table_name_from_key(table_key: str) -> str:
-    return table_key.split(".", maxsplit=1)[1] if "." in table_key else table_key
+    return table_name_from_key(table_key)
 
 
 def _exportable_by_default(table_key: str) -> bool:
     if "." not in table_key:
         return False
 
-    schema_prefix, table_name = table_key.split(".", maxsplit=1)
+    schema_prefix, table_name = split_table_key(table_key)
 
     if schema_prefix == "build":
         return False
@@ -82,7 +83,7 @@ def _default_export_filename(
 def _default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str | None:
     if schema is None or "." not in table_key:
         return None
-    schema_prefix = table_key.split(".", maxsplit=1)[0]
+    schema_prefix, _ = split_table_key(table_key)
     if schema_prefix == "build":
         return None
     return _table_name_from_key(table_key)
@@ -138,7 +139,7 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
 
 
 def _derive_contract_from_schema(table_key: str, schema: TableSchema | None) -> DatasetContract:
-    schema_prefix, table_name = table_key.split(".", maxsplit=1)
+    schema_prefix, table_name = split_table_key(table_key)
     row_binding = _get_row_binding_safe(table_key)
     composition = _get_composition_for_table_key(table_key)
     return DatasetContract(
@@ -160,7 +161,7 @@ def _derive_contract_from_schema(table_key: str, schema: TableSchema | None) -> 
 
 
 def _derive_view_contract(view_key: str) -> DatasetContract:
-    schema_prefix, view_name = view_key.split(".", maxsplit=1)
+    schema_prefix, view_name = split_table_key(view_key)
     provider = get_schema_provider()
     schema = provider.get_table_schema(view_key)
     row_binding = _get_row_binding_safe(view_key)

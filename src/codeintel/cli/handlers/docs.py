@@ -11,12 +11,8 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.exports import (
-    ExportCallOptions,
-    ExportError,
-    ExportOptions,
-    run_validated_exports,
-)
+from codeintel.build.errors import BuildProblemError
+from codeintel.build.exports import ExportCallOptions, ExportOptions, run_validated_exports
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
@@ -315,7 +311,7 @@ def docs_export_handler(
                     output_dir=params.output_dir,
                     options=export_options,
                 )
-            except ExportError as exc:
+            except BuildProblemError as exc:
                 message = str(exc) or "Validation failed"
                 return CliResult.fail(
                     validation_error(

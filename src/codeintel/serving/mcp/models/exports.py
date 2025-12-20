@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from codeintel.serving.export.formats import ExportFormat
 from codeintel.serving.mcp.models.primitives import SnapshotRef
+from codeintel.serving.uris import EXPORT_BYTES_URI_TEMPLATE, EXPORT_LINES_URI_TEMPLATE
 
 ExportStatus = Literal["ready", "expired", "missing", "error"]
 
@@ -38,11 +39,11 @@ class ExportURIs(BaseModel):
     sql_uri: str | None = Field(default=None, description="URI to fetch compiled SQL (if stored).")
     lines_uri_template: str | None = Field(
         default=None,
-        description="URI template for chunked line reads: codeintel://exports/{export_id}/lines{?offset,limit}.",
+        description=(f"URI template for chunked line reads: {EXPORT_LINES_URI_TEMPLATE}."),
     )
     bytes_uri_template: str | None = Field(
         default=None,
-        description="URI template for chunked byte reads: codeintel://exports/{export_id}/bytes{?offset,limit}.",
+        description=(f"URI template for chunked byte reads: {EXPORT_BYTES_URI_TEMPLATE}."),
     )
 
 

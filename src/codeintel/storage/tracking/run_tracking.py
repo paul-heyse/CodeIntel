@@ -9,15 +9,17 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from codeintel.storage.helpers.json import (
+    decode_json_dict,
     deserialize_str_tuple,
+    encode_json_compact,
     serialize_str_sequence,
 )
 from codeintel.storage.helpers.time import utc_now
+from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -45,6 +47,18 @@ StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 - ``failed``: Step failed with an error
 - ``skipped``: Step was skipped (e.g., unchanged inputs)
 """
+
+
+def _coerce_row_counts(raw: dict[str, object]) -> dict[str, int]:
+    """Coerce row count payload values to ints.
+
+    Returns
+    -------
+    dict[str, int]
+        Row counts normalized to integer values.
+    """
+    return {key: coerce_int(value, ctx=f"row_counts[{key}]") for key, value in raw.items()}
+
 
 ModuleKind = Literal["ingestion", "graphs", "analytics", "export"]
 """Classification of pipeline module."""
@@ -365,11 +379,9 @@ class PipelineRunTracking:
             Step record to persist.
         """
         row_counts_json = (
-            json.dumps(dict(record.row_counts), separators=(",", ":"))
-            if record.row_counts
-            else None
+            encode_json_compact(dict(record.row_counts)) if record.row_counts else None
         )
-        extra_json = json.dumps(dict(record.extra), separators=(",", ":")) if record.extra else None
+        extra_json = encode_json_compact(dict(record.extra)) if record.extra else None
 
         self.con.execute(
             """
@@ -444,8 +456,10 @@ class PipelineRunTracking:
             row_counts_raw,
             extra_raw,
         ) in rows:
-            row_counts = json.loads(row_counts_raw) if row_counts_raw else None
-            extra = json.loads(extra_raw) if extra_raw else None
+            row_counts = (
+                _coerce_row_counts(decode_json_dict(row_counts_raw)) if row_counts_raw else None
+            )
+            extra = decode_json_dict(extra_raw) if extra_raw else None
             results.append(
                 PipelineStepRecord(
                     run_id=str(run_id_val),

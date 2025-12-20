@@ -10,7 +10,9 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field, fields
+from pathlib import Path
 from typing import TYPE_CHECKING, Self, TypeVar, cast
 
 import networkx as nx
@@ -23,7 +25,6 @@ from codeintel.graphs.engine.factory import EngineBuildOptions, build_graph_engi
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping
-    from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.graphs.engine import GraphEngine
@@ -52,6 +53,146 @@ class GraphRuntimeOptions:
     engine: GraphEngine | None = None
     graph_cache_dir: Path | None = None
     features: GraphFeatureFlags = field(default_factory=GraphFeatureFlags)
+
+    @classmethod
+    def from_parameters(cls, params: Mapping[str, object]) -> GraphRuntimeOptions:
+        """Build GraphRuntimeOptions from raw configuration parameters.
+
+        Parameters
+        ----------
+        params
+            Mapping of configuration values (typically from BuildConfig).
+
+        Returns
+        -------
+        GraphRuntimeOptions
+            Parsed options with defaults applied.
+        """
+        graphs_raw = params.get("graphs")
+        graphs = cls._parse_graph_kind(graphs_raw) if graphs_raw is not None else GraphKind.ALL
+
+        eager_raw = params.get("eager")
+        eager = cls._parse_bool(eager_raw, key="eager") if eager_raw is not None else False
+
+        validate_raw = params.get("validate")
+        validate = (
+            cls._parse_bool(validate_raw, key="validate") if validate_raw is not None else False
+        )
+
+        cache_key_raw = params.get("cache_key")
+        cache_key = (
+            cls._parse_str(cache_key_raw, key="cache_key") if cache_key_raw is not None else None
+        )
+
+        graph_cache_dir_raw = params.get("graph_cache_dir")
+        graph_cache_dir = (
+            cls._parse_graph_cache_dir(graph_cache_dir_raw)
+            if graph_cache_dir_raw is not None
+            else None
+        )
+
+        backend_raw = params.get("backend")
+        backend = cls._parse_graph_backend(backend_raw) if backend_raw is not None else None
+
+        features_raw = params.get("features")
+        features = (
+            cls._parse_graph_features(features_raw)
+            if features_raw is not None
+            else GraphFeatureFlags()
+        )
+
+        return cls(
+            snapshot=None,
+            backend=backend,
+            graphs=graphs,
+            eager=eager,
+            validate=validate,
+            cache_key=cache_key,
+            engine=None,
+            graph_cache_dir=graph_cache_dir,
+            features=features,
+        )
+
+    @staticmethod
+    def _parse_bool(value: object, *, key: str) -> bool:
+        if isinstance(value, bool):
+            return value
+        message = f"Expected {key} to be bool, got {type(value)}"
+        raise TypeError(message)
+
+    @staticmethod
+    def _parse_str(value: object, *, key: str) -> str:
+        if isinstance(value, str):
+            return value
+        message = f"Expected {key} to be str, got {type(value)}"
+        raise TypeError(message)
+
+    @staticmethod
+    def _parse_graph_cache_dir(value: object) -> Path:
+        if isinstance(value, str):
+            return Path(value)
+        if isinstance(value, Path):
+            return value
+        message = f"Expected graph_cache_dir to be str|Path, got {type(value)}"
+        raise TypeError(message)
+
+    @staticmethod
+    def _parse_graph_kind(value: object) -> GraphKind:
+        if isinstance(value, GraphKind):
+            return value
+        if isinstance(value, int):
+            return GraphKind(value)
+        if isinstance(value, str):
+            tokens = [t.strip() for t in value.split(",") if t.strip()]
+            if not tokens:
+                message = "graphs value must not be empty"
+                raise ValueError(message)
+            kind = GraphKind.NONE
+            for token in tokens:
+                name = token.upper()
+                try:
+                    kind |= GraphKind[name]
+                except KeyError as exc:
+                    message = f"Unknown GraphKind: {token!r}"
+                    raise ValueError(message) from exc
+            return kind
+        if isinstance(value, list):
+            kind = GraphKind.NONE
+            for item in value:
+                kind |= GraphRuntimeOptions._parse_graph_kind(item)
+            return kind
+        message = f"Unsupported graphs value type: {type(value)}"
+        raise TypeError(message)
+
+    @staticmethod
+    def _parse_graph_backend(value: object) -> GraphBackendConfig:
+        if isinstance(value, GraphBackendConfig):
+            return value
+        if isinstance(value, dict):
+            try:
+                backend = GraphBackendConfig(**value)
+            except TypeError as exc:
+                message = f"Invalid backend mapping for GraphBackendConfig: {value!r}"
+                raise TypeError(message) from exc
+            return backend
+        message = f"Unsupported backend value type: {type(value)}"
+        raise TypeError(message)
+
+    @staticmethod
+    def _parse_graph_features(value: object) -> GraphFeatureFlags:
+        if isinstance(value, GraphFeatureFlags):
+            value.validate()
+            return value
+        if isinstance(value, dict):
+            try:
+                flags = GraphFeatureFlags(**value)
+            except TypeError as exc:
+                message = f"Invalid features mapping for GraphFeatureFlags: {value!r}"
+                raise TypeError(message) from exc
+            flags.validate()
+            return flags
+        message = f"Unsupported features value type: {type(value)}"
+        raise TypeError(message)
 
     @property
     def resolved_backend(self) -> GraphBackendConfig:

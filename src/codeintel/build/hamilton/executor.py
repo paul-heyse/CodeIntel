@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import hamilton.base as h_base
 
+from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
@@ -358,6 +359,17 @@ class HamiltonBuildExecutor:
             runtime=context.runtime,
         )
 
+    def _effective_max_workers(self, graph: TargetGraph) -> int | None:
+        limits: list[int] = []
+        for target in graph.all_targets:
+            policy = ExecutionPolicy(run_options=self._options, target_execution=target.execution)
+            max_workers = policy.effective_max_workers()
+            if max_workers is not None:
+                limits.append(max_workers)
+        if not limits:
+            return self._options.max_workers
+        return min(limits)
+
     def _build_runtime(
         self,
         *,
@@ -375,17 +387,17 @@ class HamiltonBuildExecutor:
         config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
         telemetry_hook: NodeTelemetryHook | None = None
 
-        parallel_adapter = create_parallel_adapter(
-            self._options.parallel_backend,
-            max_workers=self._options.max_workers,
-            thread_name_prefix="codeintel-build",
-        )
-
         hook_options = self._options.hook_options(env=env)
 
         def _adapter_factory(graph: TargetGraph) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
             adapters: list[LifecycleAdapter] = []
+            effective_max_workers = self._effective_max_workers(graph)
+            parallel_adapter = create_parallel_adapter(
+                self._options.parallel_backend,
+                max_workers=effective_max_workers,
+                thread_name_prefix="codeintel-build",
+            )
             if parallel_adapter is not None:
                 adapters.append(parallel_adapter)
             else:

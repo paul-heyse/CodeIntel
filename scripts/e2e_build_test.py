@@ -38,6 +38,10 @@ from typing import TYPE_CHECKING
 
 import duckdb
 from codeintel.build.executor import BuildExecutor, ExecutorEnv
+from codeintel.build.plan import PlanGenerator
+from codeintel.build.registry import get_target_graph
+from codeintel.build.resolver import BuildResolver
+from codeintel.config.resolver import resolve_tools_config
 from codeintel.core.process import (
     CommandExecutionError,
     CommandExecutor,
@@ -45,12 +49,8 @@ from codeintel.core.process import (
 )
 
 from codeintel.build.exports import ExportCallOptions, export_all_jsonl, export_all_parquet
-from codeintel.build.plan import PlanGenerator
-from codeintel.build.registry import get_target_graph
-from codeintel.build.resolver import BuildResolver
 from codeintel.build.state import StateValidator
 from codeintel.config.primitives import BuildLayoutOptions, BuildPaths, SnapshotRef
-from codeintel.config.resolver import resolve_tools_config
 from codeintel.storage.gateway import StorageConfig, open_gateway
 
 if TYPE_CHECKING:

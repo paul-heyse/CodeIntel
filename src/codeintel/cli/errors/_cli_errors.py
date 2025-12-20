@@ -25,10 +25,10 @@ from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.schema import SchemaError as StorageSchemaError
-from codeintel.core.errors.storage import StorageQueryError
-from codeintel.storage.exceptions import (
+from codeintel.core.errors.storage import (
     StorageConnectionError,
     StorageError,
+    StorageQueryError,
 )
 
 CLI_EXIT_SUCCESS = 0

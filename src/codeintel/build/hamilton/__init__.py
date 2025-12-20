@@ -29,8 +29,9 @@ True
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import TYPE_CHECKING
+
+from codeintel.core.imports.lazy import lazy_import
 
 __all__ = [
     "BuildEnv",
@@ -148,7 +149,7 @@ def __getattr__(name: str) -> object:
     """
     if name in _LAZY_IMPORTS:
         module_name, attr_name = _LAZY_IMPORTS[name]
-        module = import_module(module_name)
+        module = lazy_import(module_name)
         value = getattr(module, attr_name)
         globals()[name] = value
         return value

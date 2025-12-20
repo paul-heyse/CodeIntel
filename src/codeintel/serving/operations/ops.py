@@ -21,12 +21,15 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
+        SemanticCatalogResponse,
         SemanticExplainResponse,
         SemanticExportRequest,
         SemanticQueryRequest,
         SemanticQueryResponse,
+        SemanticViewDescriptionResponse,
     )
 
 
@@ -51,17 +54,17 @@ class ServingOperations:
         """
         return self.kernel.db
 
-    def catalog(self) -> dict[str, object]:
+    def catalog(self) -> SemanticCatalogResponse:
         """Return the semantic catalog.
 
         Returns
         -------
-        dict[str, object]
+        SemanticCatalogResponse
             Catalog payload.
         """
         return self.kernel.catalog()
 
-    def describe(self, view_id: str) -> dict[str, object]:
+    def describe(self, view_id: str) -> SemanticViewDescriptionResponse:
         """Describe a semantic view.
 
         Parameters
@@ -71,7 +74,7 @@ class ServingOperations:
 
         Returns
         -------
-        dict[str, object]
+        SemanticViewDescriptionResponse
             View description payload.
 
         Raises
@@ -200,12 +203,12 @@ class ServingOperations:
                 details={"reason": str(exc)},
             ) from exc
 
-    def meta(self) -> dict[str, object]:
+    def meta(self) -> ServingKernelMetaResponse:
         """Return serving metadata.
 
         Returns
         -------
-        dict[str, object]
+        ServingKernelMetaResponse
             Metadata payload.
         """
         return self.kernel.meta()

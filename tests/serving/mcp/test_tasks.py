@@ -26,12 +26,15 @@ if TYPE_CHECKING:
 
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
     from codeintel.serving.mcp.protocols import ServingDBManagerProtocol
+    from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
+        SemanticCatalogResponse,
         SemanticExplainResponse,
         SemanticExportRequest,
         SemanticQueryRequest,
         SemanticQueryResponse,
+        SemanticViewDescriptionResponse,
     )
 
 
@@ -166,10 +169,10 @@ class _SlowExportKernel:
     def db(self) -> ServingDBManagerProtocol:
         return self.inner.db
 
-    def catalog(self) -> dict[str, object]:
+    def catalog(self) -> SemanticCatalogResponse:
         return self.inner.catalog()
 
-    def describe(self, view_id: str) -> dict[str, object]:
+    def describe(self, view_id: str) -> SemanticViewDescriptionResponse:
         return self.inner.describe(view_id)
 
     def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
@@ -181,7 +184,7 @@ class _SlowExportKernel:
     def search(self, request: SearchQueryRequest) -> SearchQueryResponse:
         return self.inner.search(request)
 
-    def meta(self) -> dict[str, object]:
+    def meta(self) -> ServingKernelMetaResponse:
         return self.inner.meta()
 
     def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:

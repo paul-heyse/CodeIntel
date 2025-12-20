@@ -41,12 +41,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
-from sqlglot import parse_one
 
 import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
-from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.helpers.table_key import (
+    split_table_key,
+    split_table_key_or_default,
+)
+from codeintel.storage.queries.safe import assert_single_select_statement
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
@@ -279,7 +282,7 @@ def _build_insert_select(
     exp.Insert
         SQLGlot INSERT expression.
     """
-    select_ast = parse_one(select_sql, dialect=DUCKDB_DIALECT)
+    select_ast = assert_single_select_statement(select_sql)
     insert_schema = exp.Schema(
         this=exp.Table(
             this=exp.to_identifier(table_name),
@@ -792,11 +795,7 @@ class DuckDBPolicyBackend:
         commit
             Commit identifier.
         """
-        if "." in table_key:
-            schema, table = table_key.split(".", 1)
-        else:
-            schema = "main"
-            table = table_key
+        schema, table = split_table_key_or_default(table_key, default_schema="main")
         columns = self._get_table_columns(schema, table)
         if not columns:
             return

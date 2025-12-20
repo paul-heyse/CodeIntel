@@ -407,7 +407,8 @@ Acceptance gates
 **Objective**: reduce indirection and eliminate dependency direction mistakes.
 
 Targets (examples)
-- `src/codeintel/serving/http/routes/semantic.py` and `.../search.py` are compat re-exports.
+- Legacy HTTP compat re-exports (`serving/http/routes/semantic.py`, `.../search.py`) removed in
+  the serving legacy cleanup.
 - `src/codeintel/serving/mcp/protocols.py` re-exports operations protocols.
 - `src/codeintel/serving/errors/catalog.py` currently acts as a shim (should become real canonical home after Phase 1).
 
@@ -443,4 +444,3 @@ Because we’re in a design-stage refactor, the preferred approach is:
 3. Phase 8 (MCP module decomposition) — improves maintainability without changing behavior.
 4. Phase 6 + Phase 9 (export semantics + explicit exceptions) — improves correctness/hardness.
 5. Phase 10 + Phase 11 (kernel split + auth unification) — larger refactors; do when the above is stable.
-

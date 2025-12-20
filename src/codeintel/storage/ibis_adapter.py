@@ -239,7 +239,7 @@ class IbisGateway:
         This method automatically splits "schema.table" into the correct form.
         """
         if "." in table_name:
-            database, name = table_name.split(".", 1)
+            database, name = split_table_key(table_name)
             return self.con.table(name, database=database)
         return self.con.table(table_name)
 

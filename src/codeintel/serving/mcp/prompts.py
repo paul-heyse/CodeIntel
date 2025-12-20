@@ -15,11 +15,13 @@ from mcp import McpError
 from mcp.types import PromptMessage
 
 from codeintel.serving.export.formats import default_export_format, export_format_choices
+from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type, parse_filter_value
 from codeintel.serving.semantic.models import Op
 from codeintel.serving.settings import ServingSettings
+from codeintel.serving.uris import META_VIEWS_SQL_DIFF_URI, META_VIEWS_SQL_URI
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +169,8 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
 def _register_query_wizard(
     mcp: FastMCP, *, settings: ServingSettings, kernel: ServingOperations | None
 ) -> None:
+    feature_set = ServingFeatureSet.from_settings(settings)
+
     @mcp.prompt(
         name="wizard_query_view",
         description="Interactive query wizard (uses elicitation when supported).",
@@ -231,7 +235,7 @@ def _register_query_wizard(
                 (
                     "If sampling is enabled server-side and supported client-side, "
                     "large results may include a summary. "
-                    f"sampling_enabled={settings.mcp_enable_sampling}"
+                    f"sampling_enabled={feature_set.enable_mcp_sampling}"
                 ),
                 role="assistant",
             ),
@@ -248,12 +252,12 @@ def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
     def what_changed_between_snapshots() -> list[PromptMessage]:
         return [
             Message(
-                "Call `resources/read` on `codeintel://meta/views_sql_diff` (if present).",
+                f"Call `resources/read` on `{META_VIEWS_SQL_DIFF_URI}` (if present).",
                 role="assistant",
             ),
             Message(
                 (
-                    "Then use `resources/read` on `codeintel://meta/views_sql` "
+                    f"Then use `resources/read` on `{META_VIEWS_SQL_URI}` "
                     "for full compiled SQL if needed."
                 ),
                 role="assistant",
@@ -295,6 +299,7 @@ def _accepted_data(result: object | None) -> object | None:
 
 
 def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[PromptMessage]:
+    feature_set = ServingFeatureSet.from_settings(settings)
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
         Message(
@@ -304,7 +309,7 @@ def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[Prompt
         Message(
             (
                 "Export formats: ndjson/json (text) and parquet/arrow (binary). "
-                f"export_tasks_enabled={settings.mcp_export_enable_tasks}"
+                f"export_tasks_enabled={feature_set.enable_mcp_export_tasks}"
             ),
             role="assistant",
         ),
@@ -312,6 +317,7 @@ def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[Prompt
 
 
 def _wizard_query_view_no_elicitation(settings: ServingSettings) -> list[PromptMessage]:
+    feature_set = ServingFeatureSet.from_settings(settings)
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
         Message(
@@ -321,7 +327,7 @@ def _wizard_query_view_no_elicitation(settings: ServingSettings) -> list[PromptM
             ),
             role="assistant",
         ),
-        Message(f"sampling_enabled={settings.mcp_enable_sampling}", role="assistant"),
+        Message(f"sampling_enabled={feature_set.enable_mcp_sampling}", role="assistant"),
     ]
 
 
@@ -332,10 +338,7 @@ def _maybe_get_columns(kernel: ServingOperations | None, *, view_id: str) -> lis
         desc = kernel.describe(view_id)
     except (KeyError, TypeError, ValueError):
         return None
-    columns_obj = desc.get("columns")
-    if not isinstance(columns_obj, list):
-        return None
-    columns = [col for col in columns_obj if isinstance(col, str) and col]
+    columns = [col for col in desc.columns if isinstance(col, str) and col]
     return columns or None
 
 
@@ -412,10 +415,7 @@ def _maybe_get_column_types(
         desc = kernel.describe(view_id)
     except (KeyError, TypeError, ValueError):
         return None
-    types_obj = desc.get("column_types")
-    if not isinstance(types_obj, dict):
-        return None
-    return {str(k): str(v) for k, v in types_obj.items()}
+    return {str(k): str(v) for k, v in desc.column_types.items()}
 
 
 __all__ = ["register_prompts"]

@@ -20,16 +20,8 @@ from typing import TYPE_CHECKING
 from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.ast_features.persist import features_to_row
-from codeintel.analytics.compute.data_models import (
-    DATA_MODEL_USAGE_COLS,
-    build_data_model_usage_rows,
-)
+from codeintel.analytics.compute.data_models import build_data_model_usage_rows
 from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
-from codeintel.analytics.data_models.core import (
-    DATA_MODEL_FIELDS_COLS,
-    DATA_MODEL_RELATIONSHIPS_COLS,
-    DATA_MODELS_COLS,
-)
 from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.profiles import (
     build_file_profile,
@@ -63,6 +55,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
+from codeintel.build.schemas import column_order_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.storage.helpers.module_index import load_module_map
@@ -185,7 +178,7 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     graph=source("graph"),
     target_name=value(DATA_MODELS_TARGET_NAME),
     table_key=value(DATA_MODELS_TABLE_KEY),
-    columns=value(tuple(DATA_MODELS_COLS)),
+    columns=value(column_order_for_table_key(DATA_MODELS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -214,7 +207,7 @@ def data_models__model_rows(
     graph=source("graph"),
     target_name=value(DATA_MODELS_TARGET_NAME),
     table_key=value(DATA_MODEL_FIELDS_TABLE_KEY),
-    columns=value(tuple(DATA_MODEL_FIELDS_COLS)),
+    columns=value(column_order_for_table_key(DATA_MODEL_FIELDS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -243,7 +236,7 @@ def data_models__field_rows(
     graph=source("graph"),
     target_name=value(DATA_MODELS_TARGET_NAME),
     table_key=value(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
-    columns=value(tuple(DATA_MODEL_RELATIONSHIPS_COLS)),
+    columns=value(column_order_for_table_key(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -322,7 +315,7 @@ def t__data_models(
     graph=source("graph"),
     target_name=value(DATA_MODEL_USAGE_TARGET_NAME),
     table_key=value(DATA_MODEL_USAGE_TABLE_KEY),
-    columns=value(tuple(DATA_MODEL_USAGE_COLS)),
+    columns=value(column_order_for_table_key(DATA_MODEL_USAGE_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -345,7 +338,7 @@ def t__data_model_usage__compute(
     Returns
     -------
     tuple[tuple[object, ...], ...] | None
-        Row tuples for analytics.data_model_usage in DATA_MODEL_USAGE_COLS order.
+        Row tuples for analytics.data_model_usage in schema order.
         Returns None when manifest-skip indicates the target is current.
     """
     target = graph.get(DATA_MODEL_USAGE_TARGET_NAME)

@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from codeintel.build.engine_version import get_build_engine_version
+from codeintel.build.parameters import TargetParameters
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -195,8 +197,52 @@ def compute_options_hash(options: object | None) -> str | None:
     return hasher.hexdigest()[:16]
 
 
+def compute_options_hash_for_parameters(params: TargetParameters) -> str | None:
+    """Compute options hash for a TargetParameters instance.
+
+    Parameters
+    ----------
+    params
+        TargetParameters to hash.
+
+    Returns
+    -------
+    str | None
+        16-character hex hash string, or None when parameters are empty.
+    """
+    if len(params) == 0:
+        return None
+    return compute_options_hash(params.as_dict())
+
+
+def compute_target_options_hash(
+    options: TargetParameters | Mapping[str, object] | None,
+) -> str | None:
+    """Compute options hash for target configuration parameters.
+
+    Parameters
+    ----------
+    options
+        TargetParameters or mapping of configuration values.
+
+    Returns
+    -------
+    str | None
+        16-character hex hash string, or None when options are empty.
+    """
+    if options is None:
+        return None
+    if isinstance(options, TargetParameters):
+        return compute_options_hash_for_parameters(options)
+    if len(options) == 0:
+        return None
+    return compute_options_hash(options)
+
+
 __all__ = [
     "compute_input_hash",
     "compute_input_hash_with_deps",
     "compute_options_hash",
+    "compute_options_hash_for_parameters",
+    "compute_target_options_hash",
 ]

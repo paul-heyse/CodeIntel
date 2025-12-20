@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
-from codeintel.serving.http.metrics import QueryMetrics
 from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
+from codeintel.serving.metrics import QueryMetrics
 from codeintel.serving.semantic.models import (
     SemanticCatalogResponse,
     SemanticExplainResponse,
@@ -42,12 +42,11 @@ async def list_views(
     """
 
     def _success(
-        payload: dict[str, object], duration_ms: float, correlation_id: str
+        payload: SemanticCatalogResponse, duration_ms: float, correlation_id: str
     ) -> QueryMetrics:
-        views_obj = payload.get("views")
-        views = views_obj if isinstance(views_obj, list) else []
+        views = payload.views
         return QueryMetrics(
-            endpoint="/semantic/views",
+            endpoint="/v1/semantic/views",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=None,
@@ -58,7 +57,7 @@ async def list_views(
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/semantic/views",
+            endpoint="/v1/semantic/views",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=None,
@@ -67,10 +66,7 @@ async def list_views(
             truncated=False,
         )
 
-    payload = await run_in_threadpool_with_metrics(
-        background, request, ops.catalog, _success, _error
-    )
-    return SemanticCatalogResponse.model_validate(payload)
+    return await run_in_threadpool_with_metrics(background, request, ops.catalog, _success, _error)
 
 
 @router.get("/views/{view_id}", response_model=SemanticViewDescriptionResponse)
@@ -100,10 +96,10 @@ async def describe_view(
     """
 
     def _success(
-        _payload: dict[str, object], duration_ms: float, correlation_id: str
+        _payload: SemanticViewDescriptionResponse, duration_ms: float, correlation_id: str
     ) -> QueryMetrics:
         return QueryMetrics(
-            endpoint=f"/semantic/views/{view_id}",
+            endpoint=f"/v1/semantic/views/{view_id}",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=view_id,
@@ -114,7 +110,7 @@ async def describe_view(
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
         return QueryMetrics(
-            endpoint=f"/semantic/views/{view_id}",
+            endpoint=f"/v1/semantic/views/{view_id}",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=view_id,
@@ -123,10 +119,9 @@ async def describe_view(
             truncated=False,
         )
 
-    payload = await run_in_threadpool_with_metrics(
+    return await run_in_threadpool_with_metrics(
         background, request, ops.describe, _success, _error, view_id
     )
-    return SemanticViewDescriptionResponse.model_validate(payload)
 
 
 @router.post("/query", response_model=SemanticQueryResponse)
@@ -159,7 +154,7 @@ async def query_view(
         response: SemanticQueryResponse, duration_ms: float, correlation_id: str
     ) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/semantic/query",
+            endpoint="/v1/semantic/query",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=payload.view_id,
@@ -172,7 +167,7 @@ async def query_view(
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/semantic/query",
+            endpoint="/v1/semantic/query",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=payload.view_id,
@@ -216,7 +211,7 @@ async def explain_view(
         _response: SemanticExplainResponse, duration_ms: float, correlation_id: str
     ) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/semantic/explain",
+            endpoint="/v1/semantic/explain",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=payload.view_id,
@@ -227,7 +222,7 @@ async def explain_view(
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
         return QueryMetrics(
-            endpoint="/semantic/explain",
+            endpoint="/v1/semantic/explain",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=payload.view_id,

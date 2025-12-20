@@ -29,11 +29,15 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.core.errors.schema import SchemaError as StorageSchemaError
-from codeintel.core.errors.storage import QueryError as StorageQueryError
-from codeintel.core.errors.storage import StorageQueryError as StructuredStorageQueryError
-from codeintel.storage.exceptions import (
+from codeintel.core.errors.storage import (
+    QueryError as StorageQueryError,
+)
+from codeintel.core.errors.storage import (
     StorageConnectionError,
     StorageError,
+)
+from codeintel.core.errors.storage import (
+    StorageQueryError as StructuredStorageQueryError,
 )
 from tests._helpers.gateway import GatewayFactory
 

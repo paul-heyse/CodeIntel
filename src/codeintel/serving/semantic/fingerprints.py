@@ -20,6 +20,9 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sqlglot import parse_one
+from sqlglot.errors import ParseError
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
@@ -63,6 +66,27 @@ def short_sha256_hex(text: str, *, length: int = 16) -> str:
     """
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return digest[:length]
+
+
+def sqlglot_canonical_sha256(sql: str) -> str:
+    """Canonicalize SQL via SQLGlot and return sha256 hex digest.
+
+    Parameters
+    ----------
+    sql
+        SQL string to canonicalize and hash.
+
+    Returns
+    -------
+    str
+        SHA256 hex digest of the canonical SQL form.
+    """
+    canonical = sql
+    try:
+        canonical = parse_one(sql, read="duckdb").sql(dialect="duckdb")
+    except (ParseError, ValueError):
+        canonical = sql
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def fingerprint(payload: Mapping[str, object], *, prefix: str = "q_") -> str:
@@ -321,5 +345,6 @@ __all__ = [
     "fingerprint_search",
     "fingerprint_semantic_query",
     "short_sha256_hex",
+    "sqlglot_canonical_sha256",
     "stable_json_dumps",
 ]

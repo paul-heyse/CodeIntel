@@ -22,8 +22,9 @@ from hamilton.caching.adapter import (
 
 from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
-from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
+from codeintel.build.hamilton import HamiltonBuildExecutor
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -32,12 +33,13 @@ from codeintel.build.hamilton.observability import (
 )
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.providers import create_default_providers
+from codeintel.build.run_context import BuildRunContext
 from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
 from codeintel.build.state import BuildState, StateValidator
-from codeintel.build.target_system import load_target_system
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     BuildAssetsResult,
@@ -347,33 +349,42 @@ def _execute_build_hamilton(
         frozenset(execution.wrapper_allowlist) if execution.wrapper_allowlist else None
     )
 
-    env = BuildEnv(
-        gateway=gateway,
-        snapshot=runtime.snapshot,
-        paths=runtime.paths,
-        providers=providers,
-        config=config,
-        profile="default",
-        force_targets=frozenset(execution.force or ()),
-        manifest_index=manifest_index,
-        validate_outputs=execution.validate_outputs,
-        strict_contracts=execution.strict_contracts,
-        wrapper_allowlist=wrapper_allowlist_frozen,
-    )
-
     cache_dir = runtime.paths.build_dir / ".hamilton_cache"
     if execution.cache_dir:
         override = Path(execution.cache_dir).expanduser()
         cache_dir = override if override.is_absolute() else (runtime.root / override)
 
+    execution_options = BuildExecutionOptions(
+        profile="default",
+        parallel_backend=execution.parallel_backend,
+        max_workers=execution.max_workers,
+        enable_hamilton_cache=execution.enable_cache,
+        cache_dir=str(cache_dir),
+    )
+    context = BuildRunContext(
+        snapshot=runtime.snapshot,
+        gateway=gateway,
+        paths=runtime.paths,
+        providers=providers,
+        config=config,
+        run_config=None,
+        execution_options=execution_options,
+        force_targets=frozenset(execution.force or ()),
+        validate_outputs=execution.validate_outputs,
+        strict_contracts=execution.strict_contracts,
+        wrapper_allowlist=wrapper_allowlist_frozen,
+        manifest_index=manifest_index,
+    )
+    env = context.build_env()
+
     if execution.clear_cache:
         shutil.rmtree(cache_dir, ignore_errors=True)
 
     executor = HamiltonBuildExecutor(
-        profile="default",
-        parallel_backend=execution.parallel_backend,
-        max_workers=execution.max_workers,
-        enable_cache=execution.enable_cache,
+        profile=execution_options.profile,
+        parallel_backend=execution_options.parallel_backend,
+        max_workers=execution_options.max_workers,
+        enable_cache=execution_options.enable_hamilton_cache,
         cache_dir=str(cache_dir),
     )
     hamilton_result = executor.run(env=env, targets=execution.goals)
@@ -686,7 +697,7 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = load_target_system().graph
+    graph = get_target_metadata_service().system.graph
 
     LOG.info(
         "build.status repo=%s commit=%s",
@@ -898,7 +909,7 @@ def build_run_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = load_target_system().graph
+    graph = get_target_metadata_service().system.graph
     scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
 
     try:
@@ -1135,7 +1146,7 @@ def build_graph_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = load_target_system().graph
+    graph = get_target_metadata_service().system.graph
 
     targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
@@ -1204,7 +1215,7 @@ def build_plan_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = load_target_system().graph
+    graph = get_target_metadata_service().system.graph
     plan_args = _parse_plan_args(ctx)
 
     try:
@@ -1236,16 +1247,18 @@ def build_plan_handler(
             )
         }
 
-        env = BuildEnv(
-            gateway=gateway,
+        context = BuildRunContext(
             snapshot=runtime.snapshot,
+            gateway=gateway,
             paths=runtime.paths,
             providers=providers,
             config=config,
-            profile="default",
+            run_config=None,
+            execution_options=BuildExecutionOptions(profile="default"),
             force_targets=frozenset(plan_args.force or ()),
             manifest_index=manifest_index,
         )
+        env = context.build_env()
 
         plan = compute_plan(
             env=env,
@@ -1319,16 +1332,18 @@ def _compute_plan_for_explain(
         )
         manifest_index = {m.target: m for m in manifests_list}
 
-        env = BuildEnv(
-            gateway=gateway,
+        context = BuildRunContext(
             snapshot=runtime.snapshot,
+            gateway=gateway,
             paths=runtime.paths,
             providers=providers,
             config=config,
-            profile="default",
+            run_config=None,
+            execution_options=BuildExecutionOptions(profile="default"),
             force_targets=force_targets,
             manifest_index=manifest_index,
         )
+        env = context.build_env()
 
         return compute_plan(
             env=env,
@@ -1360,7 +1375,7 @@ def build_explain_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = load_target_system().graph
+    graph = get_target_metadata_service().system.graph
     params = _resolve_build_explain_params(ctx, graph=graph)
     if isinstance(params, CliResult):
         return params

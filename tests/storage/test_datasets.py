@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.schemas import get_contract_provider
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.storage.contracts import get_contract_provider
 from codeintel.storage.datasets import (
     DatasetRegistry,
     build_dataset_dependency_graph,
@@ -208,14 +208,13 @@ def test_load_dataset_registry_from_db(fresh_gateway: StorageGateway) -> None:
     expect_true(len(registry.by_table_key) > 0, message="by_table_key populated")
 
 
-def test_dataset_registry_mapping_property() -> None:
-    """Verify mapping returns name -> table_key dict."""
+def test_dataset_registry_by_name_contains_contract() -> None:
+    """Verify by_name exposes dataset contracts."""
     registry = _sample_registry()
 
-    mapping = registry.mapping
+    contract = registry.by_name["ast_nodes"]
 
-    expect_is_instance(mapping, dict)
-    expect_equal(mapping["ast_nodes"], "core.ast_nodes", label="mapping value")
+    expect_equal(contract.table_key, "core.ast_nodes", label="by_name contract")
 
 
 def test_dataset_registry_tables_property() -> None:
@@ -240,49 +239,22 @@ def test_dataset_registry_views_property() -> None:
     expect_not_in("ast_nodes", views)
 
 
-def test_dataset_registry_meta_property() -> None:
-    """Verify meta returns by_name alias."""
+def test_dataset_registry_jsonl_datasets_contains_table_key() -> None:
+    """Verify jsonl_datasets includes expected table keys."""
     registry = _sample_registry()
 
-    meta = registry.meta
+    jsonl_datasets = registry.jsonl_datasets
 
-    expect_true(meta is registry.by_name, message="meta alias")
-    expect_in("ast_nodes", meta)
+    expect_in("core.ast_nodes", jsonl_datasets)
 
 
-def test_dataset_registry_jsonl_mapping_property() -> None:
-    """Verify jsonl_mapping returns jsonl_datasets alias."""
+def test_dataset_registry_parquet_datasets_contains_table_key() -> None:
+    """Verify parquet_datasets includes expected table keys."""
     registry = _sample_registry()
 
-    jsonl_mapping = registry.jsonl_mapping
+    parquet_datasets = registry.parquet_datasets
 
-    expect_true(jsonl_mapping is registry.jsonl_datasets, message="jsonl mapping alias")
-
-
-def test_dataset_registry_parquet_mapping_property() -> None:
-    """Verify parquet_mapping returns parquet_datasets alias."""
-    registry = _sample_registry()
-
-    parquet_mapping = registry.parquet_mapping
-
-    expect_true(parquet_mapping is registry.parquet_datasets, message="parquet mapping alias")
-
-
-def test_dataset_registry_table_for_name() -> None:
-    """Verify table_for_name is alias for resolve_table_key."""
-    registry = _sample_registry()
-
-    table_key = registry.table_for_name("ast_nodes")
-
-    expect_equal(table_key, "core.ast_nodes", label="table_for_name")
-
-
-def test_dataset_registry_table_for_name_raises_on_unknown() -> None:
-    """Verify table_for_name raises KeyError for unknown dataset."""
-    registry = _sample_registry()
-
-    with pytest.raises(KeyError, match="Unknown dataset"):
-        registry.table_for_name("nonexistent_dataset")
+    expect_in("core.ast_nodes", parquet_datasets)
 
 
 def test_describe_all_datasets_returns_serializable_list(

@@ -73,8 +73,8 @@ class ContractEnforcer:
 
         Examples
         --------
-        >>> from codeintel.build.target_system import load_target_system
-        >>> graph = load_target_system().graph
+        >>> from codeintel.build.target_metadata import get_target_metadata_service
+        >>> graph = get_target_metadata_service().system.graph
         >>> target = graph.get("risk_factors")
         >>> with ContractEnforcer.for_target(target, strict=True):
         ...     # All writes in this block are validated

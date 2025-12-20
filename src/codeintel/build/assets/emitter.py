@@ -15,9 +15,9 @@ from codeintel.build.assets.fingerprinting import (
     TableVersionInput,
     compute_table_schema_hash,
 )
-from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.registry import get_schema_provider
+from codeintel.core.errors.storage import StorageError
 from codeintel.core.ibis_typing import filter_by
-from codeintel.storage.exceptions import StorageError
 from codeintel.storage.gateway import DuckDBError, ibis_facade
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,
@@ -71,7 +71,7 @@ def _resolve_schema_provider(env: BuildEnv) -> SchemaProvider:
     provider = env.gateway.policy.schema_provider
     if provider is not None:
         return provider
-    return declared_schema_provider()
+    return get_schema_provider()
 
 
 def _try_table_row_count_for_snapshot(

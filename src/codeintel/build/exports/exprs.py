@@ -15,7 +15,10 @@ from typing import TYPE_CHECKING
 
 import ibis
 
-from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.build.schemas.contract_service import (
+    column_order_for_table_key,
+    get_contract_for_table_key,
+)
 from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
@@ -71,10 +74,9 @@ def build_export_expr(
     except KeyError:
         contract = None
         schema = None
-    if schema is not None:
-        column_order = [col.name for col in schema.columns]
-    else:
-        column_order = list(expr.columns)
+    column_order = (
+        list(column_order_for_table_key(table_key)) if schema is not None else list(expr.columns)
+    )
 
     normalized: list[it.Value] = []
     for col_name in column_order:

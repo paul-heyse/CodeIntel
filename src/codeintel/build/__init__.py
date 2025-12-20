@@ -46,8 +46,9 @@ Use ``load_target_system().graph`` to access the singleton target graph instance
 
 from __future__ import annotations
 
-from importlib import import_module
 from typing import TYPE_CHECKING
+
+from codeintel.core.imports.lazy import lazy_import
 
 __all__ = [
     "DEFAULT_EXECUTION",
@@ -59,6 +60,7 @@ __all__ = [
     "BuildErrorCollection",
     "BuildRunConfig",
     "BuildRunRecord",
+    "ExecutionPolicy",
     "OutputContract",
     "OutputManifest",
     "OutputTarget",
@@ -76,6 +78,7 @@ __all__ = [
 if TYPE_CHECKING:
     from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
     from codeintel.build.errors import BuildError, BuildErrorCollection
+    from codeintel.build.execution_policy import ExecutionPolicy
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
     from codeintel.build.resources import (
@@ -97,6 +100,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "ArtifactSpec": ("codeintel.build.contracts", "ArtifactSpec"),
     "BuildError": ("codeintel.build.errors", "BuildError"),
     "BuildErrorCollection": ("codeintel.build.errors", "BuildErrorCollection"),
+    "ExecutionPolicy": ("codeintel.build.execution_policy", "ExecutionPolicy"),
     "BuildRunConfig": ("codeintel.build.run_config", "BuildRunConfig"),
     "BuildRunRecord": ("codeintel.core.build_manifest", "BuildRunRecord"),
     "OutputContract": ("codeintel.build.contracts", "OutputContract"),
@@ -129,7 +133,7 @@ def __getattr__(name: str) -> object:
     """
     if name in _LAZY_IMPORTS:
         module_name, attr_name = _LAZY_IMPORTS[name]
-        module = import_module(module_name)
+        module = lazy_import(module_name)
         value = getattr(module, attr_name)
         globals()[name] = value
         return value
