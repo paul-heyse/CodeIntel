@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from datetime import datetime
+from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -35,10 +36,16 @@ from codeintel.storage.schema.json_schema import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway import StorageGateway
 
 
 MAX_HYPOTHESIS_EXAMPLES = 15
+
+
+@lru_cache(maxsize=1)
+def _contracts_by_table_key() -> dict[str, DatasetContract]:
+    return dict(iter_contracts_by_table_key())
 
 
 def _json_safe(value: object) -> object:
@@ -69,8 +76,7 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
     """Generate schemas from TypedDict should validate generated call graph edges."""
     schema = json_schema_from_typeddict(CallGraphEdgeRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
-    contracts = dict(iter_contracts_by_table_key())
-    contract = contracts["graph.call_graph_edges"]
+    contract = _contracts_by_table_key()["graph.call_graph_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     columns = [col.name for col in contract.schema.columns] if contract.schema else []
     values = tuple(cast("dict[str, object]", row)[col] for col in columns)
@@ -86,8 +92,7 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     row_dict = dataclasses.asdict(row)
     validate_row_with_schema({key: _json_safe(value) for key, value in row_dict.items()}, schema)
     values = row.to_tuple()
-    contracts = dict(iter_contracts_by_table_key())
-    contract = contracts["graph.symbol_use_edges"]
+    contract = _contracts_by_table_key()["graph.symbol_use_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     if len(values) != expected_len:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
@@ -99,8 +104,7 @@ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
     """Generate schemas should align with test coverage edge TypedDict and serializer."""
     schema = json_schema_from_typeddict(TestCoverageEdgeRow)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
-    contracts = dict(iter_contracts_by_table_key())
-    contract = contracts["analytics.test_coverage_edges"]
+    contract = _contracts_by_table_key()["analytics.test_coverage_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     columns = [col.name for col in contract.schema.columns] if contract.schema else []
     values = tuple(cast("dict[str, object]", row)[col] for col in columns)
@@ -114,8 +118,7 @@ def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None
     """Generate schemas should align with behavioral coverage TypedDict and serializer."""
     schema = json_schema_from_typeddict(BehavioralCoverageRowModel)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
-    contracts = dict(iter_contracts_by_table_key())
-    contract = contracts["analytics.behavioral_coverage"]
+    contract = _contracts_by_table_key()["analytics.behavioral_coverage"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
     columns = [col.name for col in contract.schema.columns] if contract.schema else []
     values = tuple(cast("dict[str, object]", row)[col] for col in columns)

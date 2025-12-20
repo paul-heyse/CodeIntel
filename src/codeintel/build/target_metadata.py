@@ -6,7 +6,7 @@ import importlib
 from dataclasses import dataclass
 from functools import lru_cache
 from types import MappingProxyType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.build.hamilton.introspect import derive_target_outputs
 from codeintel.build.hamilton.tag_index import TagIndex
@@ -292,6 +292,47 @@ class TargetMetadataService:
         return self.system.target_for_artifact(artifact_name)
 
 
+class TargetMetadataProvider(Protocol):
+    """Protocol for resolving target metadata."""
+
+    def get_target(self, name: str) -> OutputTarget | None:
+        """Return target metadata by name."""
+        ...
+
+    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+        """Return target metadata for a table key."""
+        ...
+
+    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+        """Return target metadata for an artifact name."""
+        ...
+
+
+@dataclass(slots=True)
+class LazyTargetMetadataProvider:
+    """Lazy provider that loads the target metadata service on demand."""
+
+    factory: Callable[[], TargetMetadataService]
+    _service: TargetMetadataService | None = None
+
+    def _resolve(self) -> TargetMetadataService:
+        if self._service is None:
+            self._service = self.factory()
+        return self._service
+
+    def get_target(self, name: str) -> OutputTarget | None:
+        """Return target metadata by name."""
+        return self._resolve().get_target(name)
+
+    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+        """Return target metadata for a table key."""
+        return self._resolve().target_for_table_key(table_key)
+
+    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+        """Return target metadata for an artifact name."""
+        return self._resolve().target_for_artifact(artifact_name)
+
+
 @lru_cache(maxsize=1)
 def get_target_metadata_service() -> TargetMetadataService:
     """Return the canonical target metadata service.
@@ -331,9 +372,32 @@ def get_target_metadata_service() -> TargetMetadataService:
     )
 
 
+def get_target_metadata_provider() -> TargetMetadataProvider:
+    """Return a lazy target metadata provider."""
+    return LazyTargetMetadataProvider(get_target_metadata_service)
+
+
+def is_target_metadata_loaded() -> bool:
+    """Return True if the target metadata service has been initialized."""
+    return (
+        _load_target_system.cache_info().currsize > 0
+        or get_target_metadata_service.cache_info().currsize > 0
+    )
+
+
+def clear_target_metadata_cache() -> None:
+    """Clear cached target metadata services."""
+    _load_target_system.cache_clear()
+    get_target_metadata_service.cache_clear()
+
+
 __all__ = [
     "OutputInventory",
+    "TargetMetadataProvider",
     "TargetMetadataService",
     "TargetSystem",
+    "clear_target_metadata_cache",
     "get_target_metadata_service",
+    "get_target_metadata_provider",
+    "is_target_metadata_loaded",
 ]

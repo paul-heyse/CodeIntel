@@ -12,6 +12,7 @@ import pytest
 from codeintel.build.contracts import OutputContract
 from codeintel.build.errors import CycleDetectedError
 from codeintel.build.hashing import compute_input_hash, compute_options_hash
+from codeintel.build.settings import BuildSettings
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
@@ -43,9 +44,7 @@ class _FakeGateway:
     build: _FakeBuildAccessor
 
 
-def test_compute_input_hash_differentiates_dependency_hashes(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> None:
     """Input hash uses repo/commit/target/dependency input_hashes deterministically.
 
     Note: Uses input_hash (not output_hash) for cascade semantics - changes in
@@ -68,10 +67,26 @@ def test_compute_input_hash_differentiates_dependency_hashes(
         dependencies=("dep", "missing"),
     )
     snapshot = make_snapshot(tmp_path, repo="demo", commit="c1")
-    monkeypatch.setenv("CODEINTEL_BUILD_ENGINE_VERSION", "test")
+    settings = BuildSettings(
+        engine_version="test",
+        export_audit_log_path=None,
+        export_audit_table_enabled=False,
+    )
 
-    hash1 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
-    hash2 = compute_input_hash(target, snapshot, cast("Any", gateway), options_hash="opts")
+    hash1 = compute_input_hash(
+        target,
+        snapshot,
+        cast("Any", gateway),
+        options_hash="opts",
+        settings=settings,
+    )
+    hash2 = compute_input_hash(
+        target,
+        snapshot,
+        cast("Any", gateway),
+        options_hash="opts",
+        settings=settings,
+    )
 
     expect_equal(hash1, hash2)
 

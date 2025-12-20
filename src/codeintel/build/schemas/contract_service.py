@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.table_keys import parse_table_key, split_table_key
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.table_keys import split_table_key
+from codeintel.build.target_metadata import TargetMetadataProvider, get_target_metadata_provider
 from codeintel.config.datasets.composites import get_composite_schemas
+from codeintel.core.schemas.contract_policy import (
+    default_json_schema_id,
+    default_jsonl_filename,
+    default_parquet_filename,
+)
 from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
@@ -17,37 +22,26 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.contracts import OutputContract
-    from codeintel.build.target_metadata import TargetMetadataService
     from codeintel.build.targets import OutputTarget
     from codeintel.config.datasets.primitives import CompositeSchema
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.service import SchemaService
 
 __all__ = [
+    "ContractProvider",
+    "ContractResolutionSettings",
     "ContractService",
+    "SchemaContractService",
     "clear_contract_cache",
     "column_order_for_table_key",
     "get_contract_for_table_key",
+    "get_contract_provider",
+    "get_enriched_contract_service",
     "get_contract_service",
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
 ]
-
-
-_NON_EXPORTABLE_CORE_TABLES: frozenset[str] = frozenset(
-    {
-        "file_state",
-        "ingest_runs",
-        "repo_map",
-        "scip_occurrences",
-        "scip_symbols",
-        "test_results",
-        "test_summary",
-    }
-)
-
-_NON_EXPORTABLE_ANALYTICS_TABLES: frozenset[str] = frozenset({"tags_index"})
 
 
 def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
@@ -64,152 +58,6 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
         Composition metadata when available.
     """
     return get_composite_schemas().get(table_key)
-
-
-def _table_name_from_key(table_key: str) -> str:
-    """Return the dataset/table name part of a table key.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-
-    Returns
-    -------
-    str
-        Table name portion of the key.
-    """
-    parsed = parse_table_key(table_key)
-    return parsed.name
-
-
-def _exportable_by_default(table_key: str) -> bool:
-    """Return True if a dataset should be exported by default.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-
-    Returns
-    -------
-    bool
-        True when the table is exportable by default.
-    """
-    try:
-        schema_prefix, table_name = split_table_key(table_key)
-    except ValueError:
-        return False
-
-    if schema_prefix == "build":
-        return False
-
-    if schema_prefix == "core":
-        return table_name not in _NON_EXPORTABLE_CORE_TABLES
-
-    if schema_prefix == "graph":
-        return not (table_name == "import_modules" or table_name.startswith("v_"))
-
-    if schema_prefix == "analytics":
-        is_internal_metrics_ext = table_name.endswith("_metrics_ext") and table_name.startswith(
-            ("cfg_", "dfg_")
-        )
-        return (
-            table_name not in _NON_EXPORTABLE_ANALYTICS_TABLES
-            and not table_name.endswith("_cache")
-            and not is_internal_metrics_ext
-        )
-
-    return True
-
-
-def _default_export_filename(
-    table_key: str,
-    *,
-    kind: Literal["jsonl", "parquet"],
-) -> str:
-    """Return the deterministic export filename for a table key.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-    kind
-        Export kind ("jsonl" or "parquet").
-
-    Returns
-    -------
-    str
-        Default export filename for the dataset.
-    """
-    name = _table_name_from_key(table_key)
-    return f"{name}.{kind}"
-
-
-def _default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str | None:
-    """Return deterministic JSON Schema ID for a dataset.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-    schema
-        TableSchema for the dataset when available.
-
-    Returns
-    -------
-    str | None
-        JSON Schema ID when exportable, else None.
-    """
-    if schema is None:
-        return None
-    if not _exportable_by_default(table_key):
-        return None
-    return _table_name_from_key(table_key)
-
-
-def _default_jsonl_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
-    """Return deterministic JSONL filename for a dataset.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-    schema
-        TableSchema for the dataset when available.
-
-    Returns
-    -------
-    str | None
-        Default JSONL filename when exportable, else None.
-    """
-    if schema is None:
-        return None
-    if not _exportable_by_default(table_key):
-        return None
-    return _default_export_filename(table_key, kind="jsonl")
-
-
-def _default_parquet_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
-    """Return deterministic Parquet filename for a dataset.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-    schema
-        TableSchema for the dataset when available.
-
-    Returns
-    -------
-    str | None
-        Default Parquet filename when exportable, else None.
-    """
-    if schema is None:
-        return None
-    if not _exportable_by_default(table_key):
-        return None
-    return _default_export_filename(table_key, kind="parquet")
 
 
 def _get_row_binding_safe(service: SchemaService, table_key: str) -> RowBinding | None:
@@ -301,47 +149,105 @@ def _extract_indexed_metadata(
     return None
 
 
+class ContractProvider(Protocol):
+    """Protocol for dataset contract providers."""
+
+    def get_contract_for_table_key(self, table_key: str) -> DatasetContract:
+        """Return a dataset contract for a table key."""
+        ...
+
+    def iter_contracts(self) -> Iterable[DatasetContract]:
+        """Iterate dataset contracts."""
+        ...
+
+    def iter_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
+        """Iterate dataset contracts as (table_key, contract) pairs."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
-class ContractService:
-    """Resolve dataset and output contracts from build metadata."""
+class ContractResolutionSettings:
+    """Settings controlling contract resolution behavior."""
+
+    include_target_metadata: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class SchemaContractService:
+    """Resolve dataset contracts without target metadata."""
 
     schema_service: SchemaService
-    target_metadata: TargetMetadataService
+
+    def get_dataset_contract(self, table_key: str) -> DatasetContract:
+        """Return the DatasetContract for a table key."""
+        if is_view(table_key):
+            return _derive_view_contract(service=self.schema_service, view_key=table_key)
+
+        schema = self.schema_service.table_provider.get_table_schema(table_key)
+        if schema is not None:
+            return _derive_contract_from_schema(
+                service=self.schema_service,
+                table_key=table_key,
+                schema=schema,
+            )
+
+        msg = f"Unknown table key: {table_key}"
+        raise KeyError(msg)
+
+    def iter_dataset_contracts(self) -> Iterable[DatasetContract]:
+        """Iterate all known dataset contracts."""
+        seen: set[str] = set()
+        for schema in self.schema_service.table_provider.iter_table_schemas():
+            table_key = schema.table_key
+            if table_key in seen:
+                continue
+            seen.add(table_key)
+            try:
+                yield self.get_dataset_contract(table_key)
+            except KeyError:
+                continue
+
+        for view_key in discover_derived_docs_views():
+            if view_key in seen:
+                continue
+            seen.add(view_key)
+            try:
+                yield self.get_dataset_contract(view_key)
+            except KeyError:
+                continue
+
+    def iter_dataset_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
+        """Iterate dataset contracts as (table_key, contract) pairs."""
+        for contract in self.iter_dataset_contracts():
+            yield contract.table_key, contract
+
+    def get_contract_for_table_key(self, table_key: str) -> DatasetContract:
+        """Return dataset contract for a table key."""
+        return self.get_dataset_contract(table_key)
+
+    def iter_contracts(self) -> Iterable[DatasetContract]:
+        """Iterate dataset contracts."""
+        return self.iter_dataset_contracts()
+
+    def iter_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
+        """Iterate dataset contracts as (table_key, contract) pairs."""
+        return self.iter_dataset_contracts_by_table_key()
+
+
+@dataclass(frozen=True, slots=True)
+class ContractService:
+    """Resolve dataset and output contracts with target metadata."""
+
+    schema_service: SchemaService
+    target_metadata: TargetMetadataProvider
 
     def get_output_contract(self, target_name: str) -> OutputContract | None:
-        """Return the OutputContract for a target.
-
-        Parameters
-        ----------
-        target_name
-            Target name to resolve.
-
-        Returns
-        -------
-        OutputContract | None
-            OutputContract when the target exists.
-        """
+        """Return the OutputContract for a target."""
         target = self.target_metadata.get_target(target_name)
         return target.contract if target is not None else None
 
     def get_dataset_contract(self, table_key: str) -> DatasetContract:
-        """Return the DatasetContract for a table key.
-
-        Parameters
-        ----------
-        table_key
-            Fully qualified table key (schema.table).
-
-        Returns
-        -------
-        DatasetContract
-            Derived dataset contract.
-
-        Raises
-        ------
-        KeyError
-            If the table key is unknown to all schema sources.
-        """
+        """Return the DatasetContract for a table key."""
         if is_view(table_key):
             return _derive_view_contract(service=self.schema_service, view_key=table_key)
 
@@ -366,13 +272,7 @@ class ContractService:
         raise KeyError(msg)
 
     def iter_dataset_contracts(self) -> Iterable[DatasetContract]:
-        """Iterate all known dataset contracts.
-
-        Yields
-        ------
-        DatasetContract
-            Derived dataset contract for each known table or view.
-        """
+        """Iterate all known dataset contracts."""
         seen: set[str] = set()
         for schema in self.schema_service.table_provider.iter_table_schemas():
             table_key = schema.table_key
@@ -394,15 +294,21 @@ class ContractService:
                 continue
 
     def iter_dataset_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
-        """Iterate dataset contracts as (table_key, contract) pairs.
-
-        Yields
-        ------
-        tuple[str, DatasetContract]
-            Table key and dataset contract pair.
-        """
+        """Iterate dataset contracts as (table_key, contract) pairs."""
         for contract in self.iter_dataset_contracts():
             yield contract.table_key, contract
+
+    def get_contract_for_table_key(self, table_key: str) -> DatasetContract:
+        """Return dataset contract for a table key."""
+        return self.get_dataset_contract(table_key)
+
+    def iter_contracts(self) -> Iterable[DatasetContract]:
+        """Iterate dataset contracts."""
+        return self.iter_dataset_contracts()
+
+    def iter_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
+        """Iterate dataset contracts as (table_key, contract) pairs."""
+        return self.iter_dataset_contracts_by_table_key()
 
 
 def _derive_contract_from_target(
@@ -418,15 +324,15 @@ def _derive_contract_from_target(
 
     json_schema_id = _extract_indexed_metadata(contract, table_key, contract.json_schema_ids)
     if json_schema_id is None:
-        json_schema_id = _default_json_schema_id(table_key=table_key, schema=schema)
+        json_schema_id = default_json_schema_id(table_key=table_key, schema=schema)
 
     jsonl_filename = _extract_indexed_metadata(contract, table_key, contract.jsonl_filenames)
     if jsonl_filename is None:
-        jsonl_filename = _default_jsonl_filename(table_key=table_key, schema=schema)
+        jsonl_filename = default_jsonl_filename(table_key=table_key, schema=schema)
 
     parquet_filename = _extract_indexed_metadata(contract, table_key, contract.parquet_filenames)
     if parquet_filename is None:
-        parquet_filename = _default_parquet_filename(table_key=table_key, schema=schema)
+        parquet_filename = default_parquet_filename(table_key=table_key, schema=schema)
 
     description = contract.description
     if description is None and schema is not None:
@@ -466,9 +372,9 @@ def _derive_contract_from_schema(
     row_binding = _get_row_binding_safe(service, table_key)
     description = schema.description if schema is not None else None
     composition = _get_composition_for_table_key(table_key)
-    json_schema_id = _default_json_schema_id(table_key=table_key, schema=schema)
-    jsonl_filename = _default_jsonl_filename(table_key=table_key, schema=schema)
-    parquet_filename = _default_parquet_filename(table_key=table_key, schema=schema)
+    json_schema_id = default_json_schema_id(table_key=table_key, schema=schema)
+    jsonl_filename = default_jsonl_filename(table_key=table_key, schema=schema)
+    parquet_filename = default_parquet_filename(table_key=table_key, schema=schema)
 
     return DatasetContract(
         table_key=table_key,
@@ -498,9 +404,9 @@ def _derive_view_contract(*, service: SchemaService, view_key: str) -> DatasetCo
     row_binding = _get_row_binding_safe(service, view_key)
     description = schema.description if schema is not None else None
     composition = _get_composition_for_table_key(view_key)
-    json_schema_id = _default_json_schema_id(table_key=view_key, schema=schema)
-    jsonl_filename = _default_jsonl_filename(table_key=view_key, schema=schema)
-    parquet_filename = _default_parquet_filename(table_key=view_key, schema=schema)
+    json_schema_id = default_json_schema_id(table_key=view_key, schema=schema)
+    jsonl_filename = default_jsonl_filename(table_key=view_key, schema=schema)
+    parquet_filename = default_parquet_filename(table_key=view_key, schema=schema)
 
     return DatasetContract(
         table_key=view_key,
@@ -525,62 +431,71 @@ def _derive_view_contract(*, service: SchemaService, view_key: str) -> DatasetCo
 
 
 @lru_cache(maxsize=1)
-def get_contract_service() -> ContractService:
-    """Return the singleton ContractService instance.
+def get_contract_service() -> SchemaContractService:
+    """Return the schema-only contract service instance."""
+    return SchemaContractService(schema_service=get_schema_service())
 
-    Returns
-    -------
-    ContractService
-        ContractService instance.
-    """
+
+@lru_cache(maxsize=1)
+def get_enriched_contract_service() -> ContractService:
+    """Return the contract service that includes target metadata."""
     return ContractService(
         schema_service=get_schema_service(),
-        target_metadata=get_target_metadata_service(),
+        target_metadata=get_target_metadata_provider(),
     )
 
 
+def get_contract_provider(
+    settings: ContractResolutionSettings | None = None,
+) -> ContractProvider:
+    """Return a contract provider based on resolution settings."""
+    if settings is not None and settings.include_target_metadata:
+        return get_enriched_contract_service()
+    return get_contract_service()
+
+
 @lru_cache(maxsize=256)
-def get_contract_for_table_key(table_key: str) -> DatasetContract:
-    """Return a dataset contract for a table key.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table key (schema.table).
-
-    Returns
-    -------
-    DatasetContract
-        Dataset contract for the table key.
-    """
-    return get_contract_service().get_dataset_contract(table_key)
+def _get_schema_contract_for_table_key(table_key: str) -> DatasetContract:
+    return get_contract_service().get_contract_for_table_key(table_key)
 
 
-def iter_contracts() -> Iterable[DatasetContract]:
-    """Iterate all dataset contracts known to the contract service.
-
-    Returns
-    -------
-    Iterable[DatasetContract]
-        Dataset contracts.
-    """
-    return get_contract_service().iter_dataset_contracts()
+@lru_cache(maxsize=256)
+def _get_enriched_contract_for_table_key(table_key: str) -> DatasetContract:
+    return get_enriched_contract_service().get_contract_for_table_key(table_key)
 
 
-def iter_contracts_by_table_key() -> Iterable[tuple[str, DatasetContract]]:
-    """Iterate dataset contracts as (table_key, contract) pairs.
+def get_contract_for_table_key(
+    table_key: str,
+    *,
+    settings: ContractResolutionSettings | None = None,
+) -> DatasetContract:
+    """Return a dataset contract for a table key."""
+    if settings is not None and settings.include_target_metadata:
+        return _get_enriched_contract_for_table_key(table_key)
+    return _get_schema_contract_for_table_key(table_key)
 
-    Returns
-    -------
-    Iterable[tuple[str, DatasetContract]]
-        Table key to contract pairs.
-    """
-    return get_contract_service().iter_dataset_contracts_by_table_key()
+
+def iter_contracts(
+    *,
+    settings: ContractResolutionSettings | None = None,
+) -> Iterable[DatasetContract]:
+    """Iterate dataset contracts based on resolution settings."""
+    return get_contract_provider(settings).iter_contracts()
+
+
+def iter_contracts_by_table_key(
+    *,
+    settings: ContractResolutionSettings | None = None,
+) -> Iterable[tuple[str, DatasetContract]]:
+    """Iterate dataset contracts as (table_key, contract) pairs."""
+    return get_contract_provider(settings).iter_contracts_by_table_key()
 
 
 def clear_contract_cache() -> None:
     """Clear cached dataset contracts."""
-    get_contract_for_table_key.cache_clear()
+    _get_enriched_contract_for_table_key.cache_clear()
+    _get_schema_contract_for_table_key.cache_clear()
+    get_enriched_contract_service.cache_clear()
     get_contract_service.cache_clear()
 
 

@@ -3,19 +3,17 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Iterable, Iterator
-from typing import TYPE_CHECKING, Protocol, SupportsInt, TextIO, cast, runtime_checkable
+from collections.abc import Callable, Iterable
+from typing import Protocol, SupportsInt, TextIO, cast, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from duckdb import DuckDBPyRelation
-    from duckdb import Expression as DuckDBExpression
 
 
 @runtime_checkable
@@ -29,90 +27,6 @@ class SupportsIsoformat(Protocol):
         -------
         str
             ISO-8601 formatted string.
-        """
-        ...
-
-
-class RecordBatch(Protocol):
-    """Protocol for record batches emitted by DuckDB relations."""
-
-    num_rows: int
-
-    def to_pydict(self) -> dict[str, list[object]]:
-        """Return a columnar mapping for the batch.
-
-        Returns
-        -------
-        dict[str, list[object]]
-            Mapping of column names to column values.
-        """
-        ...
-
-
-class RecordBatchReader(Protocol):
-    """Protocol describing a RecordBatch reader with schema metadata."""
-
-    schema: pa.Schema
-
-    def __iter__(self) -> Iterator[RecordBatch]:
-        """Iterate RecordBatch values.
-
-        Returns
-        -------
-        Iterator[RecordBatch]
-            Iterator of record batches.
-        """
-        ...
-
-
-class DuckDBRelation(Protocol):
-    """Protocol surface for DuckDB relation exports."""
-
-    def fetch_record_batch(
-        self, rows_per_batch: int = DEFAULT_ARROW_BATCH_SIZE
-    ) -> RecordBatchReader:
-        """Return an iterator of record batches.
-
-        Parameters
-        ----------
-        rows_per_batch
-            Number of rows per batch.
-
-        Returns
-        -------
-        RecordBatchReader
-            RecordBatch reader for the relation.
-        """
-        ...
-
-    def aggregate(
-        self,
-        aggr_expr: DuckDBExpression | str,
-        group_expr: DuckDBExpression | str = "",
-    ) -> DuckDBPyRelation:
-        """Return an aggregated relation for an expression.
-
-        Parameters
-        ----------
-        aggr_expr
-            Aggregation expression.
-        group_expr
-            Optional grouping expression.
-
-        Returns
-        -------
-        DuckDBRelation
-            Relation with aggregation applied.
-        """
-        ...
-
-    def fetchone(self) -> tuple[object, ...] | None:
-        """Return the next row, or None when no rows remain.
-
-        Returns
-        -------
-        tuple[object, ...] | None
-            Row tuple, or None when no rows remain.
         """
         ...
 
@@ -182,7 +96,7 @@ def _coerce_row_count(value: object) -> int:
 def write_jsonl_records(
     handle: TextIO,
     *,
-    rel: DuckDBRelation,
+    rel: ExportRelation,
     record_type: str | None = None,
     serializer: Callable[[object], object] = default_json_serializer,
     batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
@@ -224,7 +138,7 @@ def write_jsonl_records(
 
 def write_parquet_relation(
     *,
-    rel: DuckDBRelation,
+    rel: ExportRelation,
     output_path: Path,
     batch_size: int = 10_000,
 ) -> int:
@@ -280,7 +194,7 @@ def _iter_batches(reader: Iterable[RecordBatch]) -> Iterable[RecordBatch]:
 
 
 __all__ = [
-    "DuckDBRelation",
+    "ExportRelation",
     "RecordBatch",
     "RecordBatchReader",
     "SupportsIsoformat",

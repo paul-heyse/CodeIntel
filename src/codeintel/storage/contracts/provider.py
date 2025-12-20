@@ -11,10 +11,15 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.config.datasets.contracts import get_row_bindings
+from codeintel.core.schemas.contract_policy import (
+    default_json_schema_id,
+    default_jsonl_filename,
+    default_parquet_filename,
+)
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.schema_provider import get_schema_provider
-from codeintel.storage.helpers.table_key import split_table_key, table_name_from_key
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
@@ -25,80 +30,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
 
-_NON_EXPORTABLE_CORE_TABLES: frozenset[str] = frozenset(
-    {
-        "file_state",
-        "ingest_runs",
-        "repo_map",
-        "scip_occurrences",
-        "scip_symbols",
-        "test_results",
-        "test_summary",
-    }
-)
-
-_NON_EXPORTABLE_ANALYTICS_TABLES: frozenset[str] = frozenset({"tags_index"})
-
-
-def _table_name_from_key(table_key: str) -> str:
-    return table_name_from_key(table_key)
-
-
-def _exportable_by_default(table_key: str) -> bool:
-    if "." not in table_key:
-        return False
-
-    schema_prefix, table_name = split_table_key(table_key)
-
-    if schema_prefix == "build":
-        return False
-
-    if schema_prefix == "core":
-        return table_name not in _NON_EXPORTABLE_CORE_TABLES
-
-    if schema_prefix == "graph":
-        return not (table_name == "import_modules" or table_name.startswith("v_"))
-
-    if schema_prefix == "analytics":
-        is_internal_metrics_ext = table_name.endswith("_metrics_ext") and table_name.startswith(
-            ("cfg_", "dfg_")
-        )
-        return (
-            table_name not in _NON_EXPORTABLE_ANALYTICS_TABLES
-            and not table_name.endswith("_cache")
-            and not is_internal_metrics_ext
-        )
-
-    return True
-
-
-def _default_export_filename(
-    table_key: str,
-    *,
-    kind: Literal["jsonl", "parquet"],
-) -> str:
-    return f"{_table_name_from_key(table_key)}.{kind}"
-
-
-def _default_json_schema_id(*, table_key: str, schema: TableSchema | None) -> str | None:
-    if schema is None or "." not in table_key:
-        return None
-    schema_prefix, _ = split_table_key(table_key)
-    if schema_prefix == "build":
-        return None
-    return _table_name_from_key(table_key)
-
-
-def _default_jsonl_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
-    if schema is None or not _exportable_by_default(table_key):
-        return None
-    return _default_export_filename(table_key, kind="jsonl")
-
-
-def _default_parquet_filename(*, table_key: str, schema: TableSchema | None) -> str | None:
-    if schema is None or not _exportable_by_default(table_key):
-        return None
-    return _default_export_filename(table_key, kind="parquet")
 
 
 def is_view(table_key: str) -> bool:
@@ -147,9 +78,9 @@ def _derive_contract_from_schema(table_key: str, schema: TableSchema | None) -> 
         name=table_name,
         schema=schema,
         row_binding=row_binding,
-        json_schema_id=_default_json_schema_id(table_key=table_key, schema=schema),
-        jsonl_filename=_default_jsonl_filename(table_key=table_key, schema=schema),
-        parquet_filename=_default_parquet_filename(table_key=table_key, schema=schema),
+        json_schema_id=default_json_schema_id(table_key=table_key, schema=schema),
+        jsonl_filename=default_jsonl_filename(table_key=table_key, schema=schema),
+        parquet_filename=default_parquet_filename(table_key=table_key, schema=schema),
         is_view=False,
         owner_package=_owner_package_from_prefix(schema_prefix),
         tags=frozenset({"base_table"}),
@@ -171,9 +102,9 @@ def _derive_view_contract(view_key: str) -> DatasetContract:
         name=view_name,
         schema=schema,
         row_binding=row_binding,
-        json_schema_id=_default_json_schema_id(table_key=view_key, schema=schema),
-        jsonl_filename=_default_jsonl_filename(table_key=view_key, schema=schema),
-        parquet_filename=_default_parquet_filename(table_key=view_key, schema=schema),
+        json_schema_id=default_json_schema_id(table_key=view_key, schema=schema),
+        jsonl_filename=default_jsonl_filename(table_key=view_key, schema=schema),
+        parquet_filename=default_parquet_filename(table_key=view_key, schema=schema),
         is_view=True,
         owner_package=_owner_package_from_prefix(schema_prefix),
         tags=frozenset({"docs_view", "read_only"}),

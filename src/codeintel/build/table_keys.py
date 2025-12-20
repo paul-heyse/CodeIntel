@@ -4,14 +4,9 @@ from __future__ import annotations
 
 from codeintel.storage.helpers.table_key import (
     ParsedTableKey,
-)
-from codeintel.storage.helpers.table_key import (
+    TableKeyValidationError,
     parse_table_key as _parse_table_key,
-)
-from codeintel.storage.helpers.table_key import (
     split_table_key as _split_table_key,
-)
-from codeintel.storage.helpers.table_key import (
     validate_table_key as _validate_table_key,
 )
 
@@ -26,12 +21,12 @@ def validate_table_key(table_key: str) -> None:
 
     Raises
     ------
-    ValueError
+    TableKeyValidationError
         If the table key is empty or invalid.
     """
     if not table_key:
         msg = "table_key must be non-empty"
-        raise ValueError(msg)
+        raise TableKeyValidationError(msg)
     _validate_table_key(table_key)
 
 

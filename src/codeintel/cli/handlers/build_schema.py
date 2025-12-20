@@ -13,6 +13,7 @@ from codeintel.build.schemas.diff import compute_manifest_diffs
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
     ExportArtifact,
+    ManifestDerivationKind,
     SchemaManifest,
     TableProvenance,
 )
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
 _VALID_MODULES: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
 
 _ALLOWED_COLUMN_TYPES: frozenset[str] = frozenset(get_args(ColumnType))
+_ALLOWED_DERIVATION_KINDS: frozenset[str] = frozenset(get_args(ManifestDerivationKind))
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,67 @@ def _parse_description(value: object, *, ctx: str) -> str | None:
         return value
     msg = f"Expected string or null for {ctx}"
     raise TypeError(msg)
+
+
+def _parse_optional_str(value: object, *, ctx: str) -> str | None:
+    """Parse an optional string field.
+
+    Parameters
+    ----------
+    value
+        Raw value to parse.
+    ctx
+        Context string for error reporting.
+
+    Returns
+    -------
+    str | None
+        Parsed string or None.
+
+    Raises
+    ------
+    TypeError
+        If the value is not a string or null.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    msg = f"Expected string or null for {ctx}"
+    raise TypeError(msg)
+
+
+def _parse_derivation_kind(
+    value: object,
+    *,
+    ctx: str,
+) -> ManifestDerivationKind | None:
+    """Parse a derivation kind value.
+
+    Parameters
+    ----------
+    value
+        Raw derivation kind value.
+    ctx
+        Context string for error reporting.
+
+    Returns
+    -------
+    ManifestDerivationKind | None
+        Parsed derivation kind or None when missing.
+
+    Raises
+    ------
+    ValueError
+        If the value is not a supported derivation kind.
+    """
+    raw = _parse_optional_str(value, ctx=ctx)
+    if raw is None:
+        return None
+    if raw not in _ALLOWED_DERIVATION_KINDS:
+        msg = f"Unsupported derivation kind: {raw}"
+        raise ValueError(msg)
+    return cast("ManifestDerivationKind", raw)
 
 
 def _parse_module(module_raw: str | None) -> TargetModule | None:
@@ -298,17 +361,18 @@ def _parse_table_provenance(
 
     Raises
     ------
-    TypeError
-        If provenance fields are not strings when provided.
     ValueError
         If provenance fields are incomplete.
     """
-    schema_hash = _parse_description(table_obj.get("schema_hash"), ctx=f"{ctx}.schema_hash")
-    derivation_kind = _parse_description(
+    schema_hash = _parse_optional_str(
+        table_obj.get("schema_hash"),
+        ctx=f"{ctx}.schema_hash",
+    )
+    derivation_kind = _parse_derivation_kind(
         table_obj.get("derivation_kind"),
         ctx=f"{ctx}.derivation_kind",
     )
-    derivation_source = _parse_description(
+    derivation_source = _parse_optional_str(
         table_obj.get("derivation_source"),
         ctx=f"{ctx}.derivation_source",
     )
@@ -389,6 +453,70 @@ def _parse_artifact_provenance(
     )
 
 
+def _parse_schema_entries(
+    items: list[object],
+    *,
+    ctx: str,
+) -> tuple[list[TableSchema], dict[str, TableProvenance]]:
+    """Parse table or view entries with provenance from JSON.
+
+    Parameters
+    ----------
+    items
+        Raw list of JSON entries to parse.
+    ctx
+        Context string for error reporting.
+
+    Returns
+    -------
+    tuple[list[TableSchema], dict[str, TableProvenance]]
+        Parsed schemas and provenance mapping keyed by table_key.
+    """
+    schemas: list[TableSchema] = []
+    provenance_map: dict[str, TableProvenance] = {}
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        schema = _parse_table_from_json(item)
+        schemas.append(schema)
+        provenance = _parse_table_provenance(item, ctx=f"{ctx}[{idx}]")
+        if provenance is not None:
+            provenance_map[schema.table_key] = provenance
+    return schemas, provenance_map
+
+
+def _parse_artifacts_section(
+    items: list[object],
+    *,
+    ctx: str,
+) -> tuple[list[ExportArtifact], dict[str, ArtifactProvenance]]:
+    """Parse artifact entries with provenance from JSON.
+
+    Parameters
+    ----------
+    items
+        Raw list of JSON artifact entries.
+    ctx
+        Context string for error reporting.
+
+    Returns
+    -------
+    tuple[list[ExportArtifact], dict[str, ArtifactProvenance]]
+        Parsed artifacts and provenance mapping keyed by filename.
+    """
+    artifacts: list[ExportArtifact] = []
+    provenance_map: dict[str, ArtifactProvenance] = {}
+    for idx, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        artifact = _parse_artifact_from_json(item)
+        artifacts.append(artifact)
+        provenance = _parse_artifact_provenance(item, ctx=f"{ctx}[{idx}]")
+        if provenance is not None:
+            provenance_map[artifact.filename] = provenance
+    return artifacts, provenance_map
+
+
 def _parse_manifest_from_json(obj: dict[str, object]) -> SchemaManifest:
     """Parse a SchemaManifest from a JSON object.
 
@@ -416,47 +544,23 @@ def _parse_manifest_from_json(obj: dict[str, object]) -> SchemaManifest:
     if not isinstance(tables_raw, list):
         msg = "Expected 'tables' to be a list"
         raise TypeError(msg)
-    tables: list[TableSchema] = []
-    table_provenance: dict[str, TableProvenance] = {}
-    for idx, table_obj in enumerate(tables_raw):
-        if not isinstance(table_obj, dict):
-            continue
-        table = _parse_table_from_json(table_obj)
-        tables.append(table)
-        provenance = _parse_table_provenance(table_obj, ctx=f"tables[{idx}]")
-        if provenance is not None:
-            table_provenance[table.table_key] = provenance
+    tables, table_provenance = _parse_schema_entries(tables_raw, ctx="tables")
 
     # Parse views (v2 feature)
     views_raw = obj.get("views", [])
     if not isinstance(views_raw, list):
         msg = "Expected 'views' to be a list"
         raise TypeError(msg)
-    views: list[TableSchema] = []
-    view_provenance: dict[str, TableProvenance] = {}
-    for idx, view_obj in enumerate(views_raw):
-        if not isinstance(view_obj, dict):
-            continue
-        view = _parse_table_from_json(view_obj)
-        views.append(view)
-        provenance = _parse_table_provenance(view_obj, ctx=f"views[{idx}]")
-        if provenance is not None:
-            view_provenance[view.table_key] = provenance
+    views, view_provenance = _parse_schema_entries(views_raw, ctx="views")
 
     # Parse artifacts (v2 feature)
     artifacts_raw = obj.get("artifacts", [])
     if not isinstance(artifacts_raw, list):
         artifacts_raw = []
-    artifacts: list[ExportArtifact] = []
-    artifact_provenance: dict[str, ArtifactProvenance] = {}
-    for idx, artifact_obj in enumerate(artifacts_raw):
-        if not isinstance(artifact_obj, dict):
-            continue
-        artifact = _parse_artifact_from_json(artifact_obj)
-        artifacts.append(artifact)
-        provenance = _parse_artifact_provenance(artifact_obj, ctx=f"artifacts[{idx}]")
-        if provenance is not None:
-            artifact_provenance[artifact.filename] = provenance
+    artifacts, artifact_provenance = _parse_artifacts_section(
+        artifacts_raw,
+        ctx="artifacts",
+    )
 
     return SchemaManifest(
         version=version,

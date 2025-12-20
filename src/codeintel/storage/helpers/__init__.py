@@ -36,6 +36,8 @@ from codeintel.storage.helpers.json import (
 )
 from codeintel.storage.helpers.table_key import (
     TableKey,
+    TableKeyValidationError,
+    is_valid_table_key,
     parse_table_key,
     split_table_key,
     validate_table_key,
@@ -44,9 +46,11 @@ from codeintel.storage.helpers.time import utc_now
 
 __all__ = [
     "TableKey",
+    "TableKeyValidationError",
     "decode_json",
     "decode_json_dict",
     "decode_json_list",
+    "is_valid_table_key",
     "deserialize_str_tuple",
     "encode_json_compact",
     "parse_table_key",
