@@ -31,6 +31,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.build.schemas.column_resolution import (
+    DeferredColumns,
+    deferred_columns_for_table_key,
+)
 from codeintel.build.schemas.contract_service import (
     clear_contract_cache,
     column_order_for_table_key,
@@ -125,6 +129,7 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ColumnDiff",
+    "DeferredColumns",
     "ExportArtifact",
     "ExportArtifactKind",
     "ManifestDiffResult",
@@ -142,6 +147,7 @@ __all__ = [
     "compute_manifest_diffs",
     "compute_schema_diff",
     "declared_schema_provider",
+    "deferred_columns_for_table_key",
     "get_composite_schemas",
     "get_contract_for_table_key",
     "get_contract_service",

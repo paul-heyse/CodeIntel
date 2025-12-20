@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.schemas.provider_hamilton import HamiltonSchemaProvider
+from codeintel.build.schemas.inference_service import HamiltonSchemaProvider
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
 

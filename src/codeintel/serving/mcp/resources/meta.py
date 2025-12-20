@@ -23,7 +23,11 @@ from codeintel.serving.uris import (
     SEMANTIC_VIEW_URI_TEMPLATE,
     SEMANTIC_VIEWS_URI,
 )
-from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
+from codeintel.storage.queries.safe import (
+    SqlIngressPolicy,
+    UnsafeSqlError,
+    assert_select_perimeter,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -58,7 +62,7 @@ def _read_views_sql(pointer: ServingSnapshotPointerProtocol) -> dict[str, object
             msg = f"views_sql.json entry for {view_id!r} is not a string"
             raise TypeError(msg)
         try:
-            assert_single_select_statement(sql)
+            assert_select_perimeter(sql, policy=SqlIngressPolicy())
         except UnsafeSqlError as exc:
             raise MetaSqlUnsafeError(str(view_id)) from exc
     return views_sql

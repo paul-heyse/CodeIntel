@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import hamilton.base as h_base
 
-from codeintel.build.execution_policy import ExecutionPolicy
+from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
@@ -195,7 +195,7 @@ class HamiltonBuildExecutor:
     Parameters
     ----------
     profile
-        Optional policy profile name (e.g., "fast", "full", "default").
+        Optional policy profile name (e.g., "fast", "full", "ci").
     enable_cache
         When True, enable Hamilton's on-disk caching adapter for nodes decorated with
         ``@cache``.
@@ -360,15 +360,7 @@ class HamiltonBuildExecutor:
         )
 
     def _effective_max_workers(self, graph: TargetGraph) -> int | None:
-        limits: list[int] = []
-        for target in graph.all_targets:
-            policy = ExecutionPolicy(run_options=self._options, target_execution=target.execution)
-            max_workers = policy.effective_max_workers()
-            if max_workers is not None:
-                limits.append(max_workers)
-        if not limits:
-            return self._options.max_workers
-        return min(limits)
+        return effective_max_workers_for_graph(run_options=self._options, graph=graph)
 
     def _build_runtime(
         self,

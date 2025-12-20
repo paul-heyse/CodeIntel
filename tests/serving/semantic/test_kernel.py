@@ -19,6 +19,7 @@ from codeintel.serving.semantic.models import (
 )
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
+from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
 if TYPE_CHECKING:
@@ -187,6 +188,84 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
 
         meta = kernel.meta()
         expect_equal(meta.schema_inventory, {"tables": 1, "views": 1})
+    finally:
+        await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_kernel_describe_includes_lineage(tmp_path: Path) -> None:
+    """Describe includes column lineage when metadata is present."""
+    db_path = tmp_path / "codeintel.duckdb"
+    _make_snapshot_db(db_path)
+
+    con = duckdb.connect(str(db_path))
+    try:
+        apply_metadata_ddl(con)
+        con.execute(
+            """
+            INSERT INTO metadata.derived_lineage_columns (
+                repo,
+                commit,
+                downstream_table,
+                downstream_column,
+                upstream_table,
+                upstream_column,
+                edge_type
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                "demo/repo",
+                "deadbeef",
+                "docs.v_demo",
+                "label",
+                "docs.demo",
+                "label",
+                "derived_column_depends_on",
+            ],
+        )
+    finally:
+        con.close()
+
+    registry_path = tmp_path / "semantic_registry.json"
+    manifest_path = tmp_path / "schema_manifest.json"
+    buildspec_path = tmp_path / "buildspec.json"
+    _write_registry(registry_path)
+    _write_schema_manifest(manifest_path)
+    _write_buildspec(buildspec_path)
+
+    pointer_path = tmp_path / "current.json"
+    _write_pointer(
+        pointer_path,
+        db_path=db_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
+
+    manager = ServingDBManager(
+        pointer_path=pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        poll_interval_s=0.01,
+    )
+    await manager.start()
+    try:
+        kernel = SemanticQueryKernel(
+            db=manager,
+            settings=ServingSettings(
+                serve_dir=tmp_path,
+                hot_swap=False,
+                pool_size=1,
+                poll_interval_s=0.01,
+                result_engine="pandas",
+                schema_enforcement="strict",
+            ),
+        )
+
+        desc = kernel.describe("demo.view")
+        expect_true("label" in desc.lineage, message="lineage entry present")
+        expect_equal(desc.lineage["label"][0].table_key, "docs.demo")
+        expect_equal(desc.lineage["label"][0].column, "label")
     finally:
         await manager.stop()
 

@@ -21,7 +21,7 @@ This package uses Hamilton lifecycle adapters for telemetry and contract enforce
 Example
 -------
 >>> from codeintel.build.hamilton import BuildEnv, HamiltonBuildExecutor
->>> executor = HamiltonBuildExecutor(profile="default")
+>>> executor = HamiltonBuildExecutor(profile="full")
 >>> result = executor.run(env=env, targets=["risk_factors"])
 >>> result.success
 True

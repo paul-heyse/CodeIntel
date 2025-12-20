@@ -27,6 +27,7 @@ from codeintel.storage.ibis_adapter import IbisGateway
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from pathlib import Path
 
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
@@ -238,3 +239,14 @@ class MinimalStorageGateway:
             Relation bound to the requested table/view.
         """
         return self._con.table(name)
+
+    def export_database(self, *, directory: Path) -> None:
+        """Export the database to a directory via DuckDB EXPORT DATABASE."""
+        directory.mkdir(parents=True, exist_ok=True)
+        escaped_dir = str(directory).replace("'", "''")
+        self._con.execute(f"EXPORT DATABASE '{escaped_dir}'")
+
+    def import_database(self, *, directory: Path) -> None:
+        """Import the database from a directory via DuckDB IMPORT DATABASE."""
+        escaped_dir = str(directory).replace("'", "''")
+        self._con.execute(f"IMPORT DATABASE '{escaped_dir}'")

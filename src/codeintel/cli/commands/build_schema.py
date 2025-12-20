@@ -71,7 +71,7 @@ class BuildSchemaCompileCommand:
             help="Infer schemas for inferable native targets (fallback to declared on errors).",
             negative=(),
         ),
-    ] = False
+    ] = True
     stable: Annotated[
         bool,
         Parameter(
@@ -164,7 +164,7 @@ class BuildSchemaDiffCommand:
             help="Infer schemas for inferable native targets (fallback to declared on errors).",
             negative=(),
         ),
-    ] = False
+    ] = True
     stable: Annotated[
         bool,
         Parameter(
@@ -267,7 +267,7 @@ class BuildSchemaMigrateCommand:
             help="Infer schemas for inferable native targets (fallback to declared on errors).",
             negative=(),
         ),
-    ] = False
+    ] = True
     stable: Annotated[
         bool,
         Parameter(

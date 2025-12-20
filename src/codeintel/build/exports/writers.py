@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Protocol, SupportsInt, TextIO, cast, runtime_c
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -66,7 +68,9 @@ class RecordBatchReader(Protocol):
 class DuckDBRelation(Protocol):
     """Protocol surface for DuckDB relation exports."""
 
-    def fetch_record_batch(self, rows_per_batch: int = 1_000_000) -> RecordBatchReader:
+    def fetch_record_batch(
+        self, rows_per_batch: int = DEFAULT_ARROW_BATCH_SIZE
+    ) -> RecordBatchReader:
         """Return an iterator of record batches.
 
         Parameters
@@ -181,7 +185,7 @@ def write_jsonl_records(
     rel: DuckDBRelation,
     record_type: str | None = None,
     serializer: Callable[[object], object] = default_json_serializer,
-    batch_size: int = 10_000,
+    batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
 ) -> int:
     """Write JSONL records from a DuckDB relation.
 

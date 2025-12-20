@@ -557,7 +557,7 @@ def compute_plan(
     env
         Build environment with gateway, snapshot, and configuration.
     graph
-        Target graph to use. If None, uses the graph from the build TargetSystem.
+        Target graph to use. If None, uses the graph from the target metadata service.
     requested
         Tuple of target names requested by the user.
     graph_source

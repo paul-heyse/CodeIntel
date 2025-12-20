@@ -102,6 +102,9 @@ FULL_PROFILE = ExecutionProfile(
     metadata={"version": "1.0.0", "category": "builtin"},
 )
 
+DEFAULT_PROFILE_NAME = FULL_PROFILE.name
+_LEGACY_DEFAULT_PROFILE_ALIAS = "default"
+
 CI_PROFILE = ExecutionProfile(
     name="ci",
     description="CI/CD profile optimized for automated pipelines.",
@@ -172,6 +175,8 @@ def get_profile(name: str) -> ExecutionProfile:
     """
     if name in BUILTIN_PROFILES:
         return BUILTIN_PROFILES[name]
+    if name == _LEGACY_DEFAULT_PROFILE_ALIAS:
+        return FULL_PROFILE
     if name in _custom_profiles:
         return _custom_profiles[name]
     available = list(BUILTIN_PROFILES.keys()) + list(_custom_profiles.keys())
@@ -192,6 +197,7 @@ def list_profiles() -> tuple[str, ...]:
 
 __all__ = [
     "CI_PROFILE",
+    "DEFAULT_PROFILE_NAME",
     "FAST_PROFILE",
     "FULL_PROFILE",
     "ExecutionProfile",

@@ -14,14 +14,16 @@ from cyclopts import App, Parameter
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.storage import (
+    export_database_handler,
     generate_macros_handler,
+    import_database_handler,
     profile_storage_handler,
     validate_macros_handler,
 )
 
 storage_app = App(
     name="storage",
-    help="Storage validation utilities.",
+    help="Storage utilities.",
 )
 
 
@@ -88,6 +90,52 @@ class ProfileStorageCommand:
             negative=(),
         ),
     ] = False
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("storage.export_db", handler=export_database_handler, config=_STORAGE_CONFIG)
+@storage_app.command(name="export-db")
+@dataclass
+class ExportDatabaseCommand:
+    """Export the DuckDB database directory using EXPORT DATABASE."""
+
+    db_path: Annotated[
+        Path | None,
+        Parameter(
+            name="--db-path",
+            help="Path to DuckDB database.",
+        ),
+    ] = None
+    output_dir: Annotated[
+        Path,
+        Parameter(
+            name="--output-dir",
+            help="Directory to write the export into.",
+        ),
+    ] = field(default_factory=lambda: Path("build/db_export"))
+    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+
+
+@cli_command("storage.import_db", handler=import_database_handler, config=_STORAGE_CONFIG)
+@storage_app.command(name="import-db")
+@dataclass
+class ImportDatabaseCommand:
+    """Import a DuckDB database directory using IMPORT DATABASE."""
+
+    db_path: Annotated[
+        Path | None,
+        Parameter(
+            name="--db-path",
+            help="Path to DuckDB database.",
+        ),
+    ] = None
+    input_dir: Annotated[
+        Path,
+        Parameter(
+            name="--input-dir",
+            help="Directory containing a DuckDB EXPORT DATABASE dump.",
+        ),
+    ] = field(default_factory=lambda: Path("build/db_export"))
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

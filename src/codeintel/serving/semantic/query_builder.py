@@ -2,8 +2,8 @@
 
 All user-provided identifiers are validated against an explicit allowlist from
 the semantic registry. User-provided scalar values are parameterized via
-``ibis.param(...)`` and bound at compile/execute time; large IN-lists are staged
-via Arrow-backed memtables with explicit cleanup.
+``ibis.param(...)`` and bound at compile/execute time; IN-lists are staged via
+Arrow-backed memtables with explicit cleanup.
 """
 
 from __future__ import annotations
@@ -64,7 +64,8 @@ class SemanticQueryPlan:
     offset: int
 
 
-_IN_LIST_MEMTABLE_THRESHOLD = 500
+_IN_LIST_MEMTABLE_THRESHOLD = 0
+# Always stage IN-list values to avoid embedding literals in compiled SQL.
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,7 +22,10 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
-from codeintel.storage.gateway.extensions import load_extensions_from_env
+from codeintel.storage.gateway.extensions import (
+    load_extensions_from_env,
+    load_required_extensions,
+)
 from codeintel.storage.schema import apply_all_schemas
 
 if TYPE_CHECKING:
@@ -41,6 +44,10 @@ DuckDBConnectConfig = dict[str, DuckDBConnectConfigValue]
 _READ_ONLY_DUCKDB_CONFIG_DEFAULTS: DuckDBConnectConfig = {
     "autoinstall_known_extensions": False,
     "autoload_known_extensions": False,
+}
+_DEFAULT_DUCKDB_PRAGMAS: dict[str, bool] = {
+    "enable_object_cache": True,
+    "enable_progress_bar": False,
 }
 
 
@@ -71,6 +78,8 @@ class DuckDBSession:
             self.config,
             duckdb_config=self._resolve_duckdb_config(),
         )
+        _apply_duckdb_pragmas(con)
+        load_required_extensions(con, allow_install=not self.config.read_only)
         load_extensions_from_env(con, allow_install=not self.config.read_only)
         _attach_history_if_needed(con, self.config)
         _apply_schema(con, self.config)
@@ -99,6 +108,8 @@ class DuckDBSession:
             cfg,
             duckdb_config=readonly_duckdb_config or None,
         )
+        _apply_duckdb_pragmas(con)
+        load_required_extensions(con, allow_install=False)
         load_extensions_from_env(con, allow_install=False)
         _attach_history_if_needed(con, cfg)
         _bootstrap_duckdb_secrets_from_env(con)
@@ -313,6 +324,11 @@ def _attach_history_if_needed(con: DuckDBConnection, config: StorageConfig) -> N
 def _apply_schema(con: DuckDBConnection, config: StorageConfig) -> None:
     if config.apply_schema and not config.read_only:
         apply_all_schemas(con)
+
+
+def _apply_duckdb_pragmas(con: DuckDBConnection) -> None:
+    for pragma, value in _DEFAULT_DUCKDB_PRAGMAS.items():
+        con.execute(f"PRAGMA {pragma}=?", [value])
 
 
 def _run_init_sql_from_env(con: DuckDBConnection) -> None:

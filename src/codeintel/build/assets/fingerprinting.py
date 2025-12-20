@@ -12,12 +12,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.hashing import schema_hash
-
-if TYPE_CHECKING:
-    from codeintel.core.schemas.provider import SchemaProvider
+from codeintel.core.schemas.hashing import compute_table_schema_hash
 
 
 class FingerprintMode(Enum):
@@ -191,28 +187,6 @@ class FingerprintPolicy:
 
 # Default policy for new builds
 DEFAULT_FINGERPRINT_POLICY = FingerprintPolicy(mode=FingerprintMode.STABLE_V1)
-
-
-def compute_table_schema_hash(table_key: str, *, schema_provider: SchemaProvider) -> str | None:
-    """Return a deterministic schema hash for a known dataset table_key.
-
-    Parameters
-    ----------
-    table_key
-        Fully-qualified dataset table key (e.g., "analytics.function_metrics").
-    schema_provider
-        Schema provider used to resolve the table schema.
-
-    Returns
-    -------
-    str | None
-        SHA256 hex digest of (column_name:type) pairs, or None if table_key
-        is not registered or has no schema (e.g., view).
-    """
-    schema = schema_provider.get_table_schema(table_key)
-    if schema is None:
-        return None
-    return schema_hash(schema)
 
 
 __all__ = [

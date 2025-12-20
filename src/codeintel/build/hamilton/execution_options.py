@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.hooks import HookOptions
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -46,7 +47,7 @@ class BuildExecutionOptions:
             return self.profile
         if env.profile is not None:
             return env.profile
-        return "default"
+        return DEFAULT_PROFILE_NAME
 
     def resolved_cache_dir(self, *, env: BuildEnv) -> Path:
         """Resolve the cache directory for this run.

@@ -55,7 +55,11 @@ from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.metadata.sync import sync_derived_lineage_edges
+from codeintel.storage.metadata.sync import (
+    sync_derived_lineage_columns,
+    sync_derived_lineage_edges,
+)
+from codeintel.storage.sqlglot_tools import extract_column_lineage_duckdb
 from codeintel.storage.views import ibis_views as _ibis_views
 from codeintel.storage.views.dependencies import extract_referenced_table_keys
 from codeintel.storage.views.diff import diff_view_sql_maps
@@ -214,8 +218,10 @@ def _views_sql_json(env: BuildEnv) -> str:
         sql_by_view[spec.table_key.lower()] = ibis_gateway.con.compile(expr)
 
     lineage: dict[str, frozenset[str]] = {}
+    column_lineage: dict[str, dict[str, frozenset[str]]] = {}
     for view_key, sql in sql_by_view.items():
         lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
+        column_lineage[view_key] = extract_column_lineage_duckdb(sql)
 
     try:
         sync_derived_lineage_edges(
@@ -224,6 +230,18 @@ def _views_sql_json(env: BuildEnv) -> str:
     except DuckDBError:
         LOG.exception(
             "Failed to sync derived lineage edges repo=%s commit=%s", env.repo, env.commit
+        )
+
+    try:
+        sync_derived_lineage_columns(
+            env.gateway.con,
+            repo=env.repo,
+            commit=env.commit,
+            lineage=column_lineage,
+        )
+    except DuckDBError:
+        LOG.exception(
+            "Failed to sync derived lineage columns repo=%s commit=%s", env.repo, env.commit
         )
 
     return json.dumps(sql_by_view, indent=2, sort_keys=True, ensure_ascii=False) + "\n"

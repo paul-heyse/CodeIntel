@@ -44,6 +44,33 @@ class BuildRunContext:
     output_inventory: OutputInventory | None = None
     fingerprint_policy: FingerprintPolicy | None = None
 
+    @staticmethod
+    def build_config_stack(
+        config: BuildConfig,
+        run_config: BuildRunConfig | None,
+    ) -> BuildConfig:
+        """Return the effective config stack for this run.
+
+        Parameters
+        ----------
+        config
+            Base build configuration.
+        run_config
+            Optional run configuration with per-target overrides.
+
+        Returns
+        -------
+        BuildConfig
+            Effective configuration stack with run overrides applied.
+        """
+        overrides = None
+        if run_config is not None:
+            overrides = run_config.config_overrides_for_target
+        run_overrides: Mapping[str, Mapping[str, object]] | None = None
+        if overrides is not None:
+            run_overrides = _RunOverridesView(overrides)
+        return BuildConfigStack.from_base(config, run_overrides=run_overrides)
+
     def build_env(self) -> BuildEnv:
         """Construct BuildEnv with merged configuration and options.
 
@@ -52,13 +79,7 @@ class BuildRunContext:
         BuildEnv
             Build environment derived from the run context.
         """
-        overrides = None
-        if self.run_config is not None:
-            overrides = self.run_config.config_overrides_for_target
-        run_overrides: Mapping[str, Mapping[str, object]] | None = None
-        if overrides is not None:
-            run_overrides = _RunOverridesView(overrides)
-        stacked = BuildConfigStack.from_base(self.config, run_overrides=run_overrides)
+        stacked = self.build_config_stack(self.config, self.run_config)
         profile = None
         if self.execution_options and self.execution_options.profile:
             profile = self.execution_options.profile

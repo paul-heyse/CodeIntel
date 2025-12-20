@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from codeintel.storage import gateway as gateway_pkg
 from tests.cli._harness import CliTestHarness
 
@@ -38,7 +39,7 @@ def _write_project_file(repo_root: Path, repo: str, commit: str, db_rel_path: Pa
             [
                 f"repo: {repo}",
                 f"commit: {commit}",
-                "default_profile: default",
+                f"default_profile: {DEFAULT_PROFILE_NAME}",
                 "storage:",
                 f"  db_path: {db_rel_path.as_posix()}",
             ]

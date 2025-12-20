@@ -177,7 +177,12 @@ class NativeTargetExecutor:
         >>> if executor.should_skip():
         ...     return executor.skip()
         """
-        return should_skip_native_target(self.env, self.target, self.input_hash)
+        return should_skip_native_target(
+            self.env,
+            self.target,
+            self.input_hash,
+            options_hash=self.options_hash,
+        )
 
     def skip(self) -> TargetRunRecord:
         """Create a skipped record for this target.

@@ -13,7 +13,7 @@ Example Project Config
 .. code-block:: yaml
 
     repo: github.com/org/my-repo
-    default_profile: default
+    default_profile: full
     ingest:
       recipe: builtin.default
     analytics:
@@ -32,6 +32,8 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, Field
+
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 
 LOG = logging.getLogger(__name__)
 
@@ -115,7 +117,7 @@ class ProjectConfig(BaseModel):
     """
 
     repo: str
-    default_profile: str = "default"
+    default_profile: str = DEFAULT_PROFILE_NAME
     ingest: IngestProjectConfig = Field(default=IngestProjectConfig())
     analytics: AnalyticsProjectConfig = Field(default=AnalyticsProjectConfig())
     graphs: GraphsProjectConfig = Field(default=GraphsProjectConfig())

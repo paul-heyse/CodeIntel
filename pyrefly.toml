@@ -5,7 +5,7 @@ project-excludes = [
     "**/tests/fixtures/heuristics/**",
 ]
 search-path = ["src", "."]
-python-version = "3.13.9"
+python-version = "3.13.11"
 
 # Type-check behavior
 infer-with-first-use = true

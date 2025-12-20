@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -14,17 +15,35 @@ from codeintel.storage.schema import apply_all_schemas
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs.history_config import SnapshotSpec
 
-_CONTRACTS_BY_TABLE = dict(iter_contracts_by_table_key())
-_FP_CONTRACT = _CONTRACTS_BY_TABLE["analytics.function_profile"]
-_MP_CONTRACT = _CONTRACTS_BY_TABLE["analytics.module_profile"]
-_FH_CONTRACT = _CONTRACTS_BY_TABLE["analytics.function_history"]
+_FUNCTION_PROFILE_TABLE_KEY = "analytics.function_profile"
+_MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
+_FUNCTION_HISTORY_TABLE_KEY = "analytics.function_history"
 
-_FP_COLUMNS = _FP_CONTRACT.schema.column_names() if _FP_CONTRACT.schema else []
-_MP_COLUMNS = _MP_CONTRACT.schema.column_names() if _MP_CONTRACT.schema else []
-_FUNCTION_HISTORY_COLUMNS = _FH_CONTRACT.schema.column_names() if _FH_CONTRACT.schema else []
+
+@lru_cache(maxsize=1)
+def _contracts_by_table() -> dict[str, DatasetContract]:
+    return dict(iter_contracts_by_table_key())
+
+
+@lru_cache(maxsize=16)
+def _columns_for_table_key(table_key: str) -> tuple[str, ...]:
+    contract = _contracts_by_table().get(table_key)
+    schema = getattr(contract, "schema", None)
+    if schema is None:
+        return ()
+    return tuple(schema.column_names())
+
+
+def _require_columns(table_key: str) -> tuple[str, ...]:
+    columns = _columns_for_table_key(table_key)
+    if not columns:
+        msg = f"Missing schema columns for {table_key}"
+        raise ValueError(msg)
+    return columns
 
 
 def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
@@ -35,7 +54,7 @@ def _function_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
     tuple[object, ...]
         Row tuple for function_profile table.
     """
-    columns = _FP_COLUMNS
+    columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY)
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {
@@ -68,7 +87,7 @@ def _module_profile_row(spec: SnapshotSpec) -> tuple[object, ...]:
     tuple[object, ...]
         Row tuple for module_profile table.
     """
-    columns = _MP_COLUMNS
+    columns = _require_columns(_MODULE_PROFILE_TABLE_KEY)
     defaults: dict[str, object | None] = dict.fromkeys(columns, None)
     defaults.update(
         {
@@ -109,8 +128,10 @@ def create_snapshot_db(base_dir: Path, spec: SnapshotSpec) -> Path:
     gateway = open_gateway(cfg)
     con = gateway.con
     apply_all_schemas(con)
-    fp_df = pd.DataFrame([_function_profile_row(spec)], columns=pd.Index(_FP_COLUMNS))
-    mp_df = pd.DataFrame([_module_profile_row(spec)], columns=pd.Index(_MP_COLUMNS))
+    fp_columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY)
+    mp_columns = _require_columns(_MODULE_PROFILE_TABLE_KEY)
+    fp_df = pd.DataFrame([_function_profile_row(spec)], columns=pd.Index(fp_columns))
+    mp_df = pd.DataFrame([_module_profile_row(spec)], columns=pd.Index(mp_columns))
     con.register("fp_df", fp_df)
     con.register("mp_df", mp_df)
     con.execute("INSERT INTO analytics.function_profile BY NAME SELECT * FROM fp_df")
@@ -125,7 +146,8 @@ def insert_function_history_row(
 ) -> None:
     """Insert a minimal function_history row for validation helpers."""
     con = gateway.con
-    defaults: dict[str, object | None] = dict.fromkeys(_FUNCTION_HISTORY_COLUMNS, None)
+    fh_columns = _require_columns(_FUNCTION_HISTORY_TABLE_KEY)
+    defaults: dict[str, object | None] = dict.fromkeys(fh_columns, None)
     now = datetime.now(tz=UTC)
     defaults.update(
         {
@@ -151,8 +173,8 @@ def insert_function_history_row(
         }
     )
     fh_df = pd.DataFrame(
-        [tuple(defaults[col] for col in _FUNCTION_HISTORY_COLUMNS)],
-        columns=pd.Index(_FUNCTION_HISTORY_COLUMNS),
+        [tuple(defaults[col] for col in fh_columns)],
+        columns=pd.Index(fh_columns),
     )
     con.register("fh_df", fh_df)
     con.execute("INSERT INTO analytics.function_history BY NAME SELECT * FROM fh_df")

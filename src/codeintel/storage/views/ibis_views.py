@@ -13,7 +13,7 @@ import ibis.expr.types as it
 
 from codeintel.core.hamilton.semantic_tags import semantic_view
 from codeintel.core.ibis_typing import ibis_bool, ne, or_predicates
-from codeintel.storage.queries.safe import assert_single_select_statement
+from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view
 
@@ -35,7 +35,7 @@ def _sql_table(ibis_gw: IbisViewGateway, sql_expr: str) -> it.Table:
     it.Table
         Ibis table expression for the SQL query.
     """
-    assert_single_select_statement(sql_expr)
+    assert_select_perimeter(sql_expr, policy=SqlIngressPolicy())
     return ibis_gw.con.sql(sql_expr)
 
 

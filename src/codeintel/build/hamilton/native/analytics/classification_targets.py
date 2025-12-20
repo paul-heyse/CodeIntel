@@ -39,7 +39,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 
@@ -175,7 +175,7 @@ def t__semantic_roles__compute(
     graph=source("graph"),
     target_name=value(SEMANTIC_ROLES_TARGET_NAME),
     table_key=value(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
-    columns=value(column_order_for_table_key(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -210,7 +210,7 @@ def semantic_roles__functions_rows(
     graph=source("graph"),
     target_name=value(SEMANTIC_ROLES_TARGET_NAME),
     table_key=value(SEMANTIC_ROLES_MODULES_TABLE_KEY),
-    columns=value(column_order_for_table_key(SEMANTIC_ROLES_MODULES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(SEMANTIC_ROLES_MODULES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -336,7 +336,7 @@ def t__test_profile__compute(
     graph=source("graph"),
     target_name=value(TEST_PROFILE_TARGET_NAME),
     table_key=value(TEST_PROFILE_TABLE_KEY),
-    columns=value(column_order_for_table_key(TEST_PROFILE_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(TEST_PROFILE_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

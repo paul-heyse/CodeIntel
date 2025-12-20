@@ -15,7 +15,8 @@ Key concepts:
 Import patterns::
 
 
-    from codeintel.build import load_target_system, OutputTarget, TargetGraph
+    from codeintel.build import OutputTarget, TargetGraph
+    from codeintel.build.target_metadata import get_target_metadata_service
 
 
     from codeintel.build.contracts import OutputContract, ArtifactSpec, TableSchema
@@ -41,7 +42,7 @@ CLI usage::
     codeintel build status
     codeintel build history
 
-Use ``load_target_system().graph`` to access the singleton target graph instance.
+Use ``get_target_metadata_service().system.graph`` to access the canonical target graph instance.
 """
 
 from __future__ import annotations
@@ -66,13 +67,13 @@ __all__ = [
     "OutputTarget",
     "TargetExecution",
     "TargetGraph",
+    "TargetMetadataService",
     "TargetModule",
     "TargetParameters",
     "TargetResources",
-    "TargetSystem",
     "compute_input_hash",
     "compute_options_hash",
-    "load_target_system",
+    "get_target_metadata_service",
 ]
 
 if TYPE_CHECKING:
@@ -88,7 +89,7 @@ if TYPE_CHECKING:
         TargetResources,
     )
     from codeintel.build.run_config import BuildRunConfig
-    from codeintel.build.target_system import TargetSystem, load_target_system
+    from codeintel.build.target_metadata import TargetMetadataService, get_target_metadata_service
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
     from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 
@@ -113,8 +114,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "TargetResources": ("codeintel.build.resources", "TargetResources"),
     "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
-    "TargetSystem": ("codeintel.build.target_system", "TargetSystem"),
-    "load_target_system": ("codeintel.build.target_system", "load_target_system"),
+    "TargetMetadataService": ("codeintel.build.target_metadata", "TargetMetadataService"),
+    "get_target_metadata_service": ("codeintel.build.target_metadata", "get_target_metadata_service"),
 }
 
 

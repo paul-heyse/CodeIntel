@@ -116,13 +116,26 @@ class UnsafeSqlError(ValueError):
 
 
 _DISALLOWED_SQL_NODES: tuple[type[exp.Expression], ...] = (
+    exp.Analyze,
+    exp.Attach,
     exp.Alter,
     exp.Command,
     exp.Copy,
     exp.Create,
     exp.Delete,
+    exp.Detach,
     exp.Drop,
+    exp.Grant,
     exp.Insert,
+    exp.Merge,
+    exp.Pragma,
+    exp.Refresh,
+    exp.Revoke,
+    exp.Rollback,
+    exp.Commit,
+    exp.Set,
+    exp.Transaction,
+    exp.Use,
     exp.Update,
 )
 
@@ -133,6 +146,7 @@ class SqlIngressPolicy:
 
     allowed_schemas: frozenset[str] | None = None
     allowed_tables: frozenset[str] | None = None
+    allowed_functions: frozenset[str] | None = None
     deny_functions: frozenset[str] = frozenset()
     allow_unqualified_tables: bool = True
     allow_cross_database_references: bool = False
@@ -199,9 +213,13 @@ def _validate_ingress_tables(root: exp.Expression, *, policy: SqlIngressPolicy) 
 def _validate_ingress_functions(root: exp.Expression, *, policy: SqlIngressPolicy) -> None:
     reason = "policy_violation"
     deny = {name.lower() for name in policy.deny_functions}
-    if not deny:
+    allow = {name.lower() for name in policy.allowed_functions} if policy.allowed_functions else None
+    if not deny and allow is None:
         return
     for func_name in _extract_function_names(root):
+        if allow is not None and func_name.lower() not in allow:
+            detail = f"Function {func_name!r} is not allowed"
+            raise UnsafeSqlError(reason, detail=detail)
         if func_name.lower() in deny:
             detail = f"Function {func_name!r} is not allowed"
             raise UnsafeSqlError(reason, detail=detail)

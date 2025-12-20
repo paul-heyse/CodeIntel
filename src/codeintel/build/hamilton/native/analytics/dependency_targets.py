@@ -54,7 +54,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.storage.helpers.module_index import load_module_map
@@ -245,7 +245,7 @@ def t__external_deps__compute_calls(
     graph=source("graph"),
     target_name=value(EXTERNAL_DEPS_TARGET_NAME),
     table_key=value(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
-    columns=value(column_order_for_table_key(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, target_="external_deps__calls_rows"
@@ -272,7 +272,7 @@ def external_deps__calls_rows(
     graph=source("graph"),
     target_name=value(EXTERNAL_DEPS_TARGET_NAME),
     table_key=value(EXTERNAL_DEPENDENCIES_TABLE_KEY),
-    columns=value(column_order_for_table_key(EXTERNAL_DEPENDENCIES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(EXTERNAL_DEPENDENCIES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -477,7 +477,7 @@ def t__entrypoints__compute(
     graph=source("graph"),
     target_name=value(ENTRYPOINTS_TARGET_NAME),
     table_key=value(ENTRYPOINTS_TABLE_KEY),
-    columns=value(column_order_for_table_key(ENTRYPOINTS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(ENTRYPOINTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__entrypoint_rows"
@@ -504,7 +504,7 @@ def entrypoints__entrypoint_rows(
     graph=source("graph"),
     target_name=value(ENTRYPOINTS_TARGET_NAME),
     table_key=value(ENTRYPOINT_TESTS_TABLE_KEY),
-    columns=value(column_order_for_table_key(ENTRYPOINT_TESTS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(ENTRYPOINT_TESTS_TABLE_KEY)),
 )
 @tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__test_rows")
 def entrypoints__test_rows(

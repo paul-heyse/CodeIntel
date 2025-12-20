@@ -20,7 +20,11 @@ from ibis.common.exceptions import IbisError
 
 from codeintel.storage.gateway.protocol import DuckDBError, MinimalGateway
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.metadata.sync import sync_derived_lineage_edges
+from codeintel.storage.metadata.sync import (
+    sync_derived_lineage_columns,
+    sync_derived_lineage_edges,
+)
+from codeintel.storage.sqlglot_tools import extract_column_lineage_duckdb
 from codeintel.storage.views.dependencies import (
     build_dependency_graph_from_sql,
     extract_referenced_table_keys,
@@ -137,11 +141,23 @@ def _sync_view_lineage(gateway: MinimalGateway, *, sql_by_view: dict[str, str]) 
         return
 
     lineage: dict[str, frozenset[str]] = {}
+    column_lineage: dict[str, dict[str, frozenset[str]]] = {}
     for raw_key, sql in sql_by_view.items():
         view_key = raw_key.lower()
         lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
+        column_lineage[view_key] = extract_column_lineage_duckdb(sql)
 
     try:
         sync_derived_lineage_edges(gateway.con, repo=repo, commit=commit, lineage=lineage)
     except DuckDBError:
         log.exception("Failed to sync derived lineage edges repo=%s commit=%s", repo, commit)
+
+    try:
+        sync_derived_lineage_columns(
+            gateway.con,
+            repo=repo,
+            commit=commit,
+            lineage=column_lineage,
+        )
+    except DuckDBError:
+        log.exception("Failed to sync derived lineage columns repo=%s commit=%s", repo, commit)

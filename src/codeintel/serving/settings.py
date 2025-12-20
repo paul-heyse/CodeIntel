@@ -18,6 +18,7 @@ from codeintel.core.env import (
     is_set,
     split_csv,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 
 @dataclass(frozen=True)
@@ -150,7 +151,7 @@ class ServingSettings:
     gzip_minimum_size: int = 500
     enable_gzip: bool = True
     export_max_rows: int = 100_000
-    export_batch_size: int = 10_000
+    export_batch_size: int = DEFAULT_ARROW_BATCH_SIZE
     enable_export_endpoints: bool = True
 
     # MCP Context Features
@@ -256,7 +257,10 @@ class ServingSettings:
             gzip_minimum_size=get_required_int("CODEINTEL_SERVE_GZIP_MIN_SIZE", default=500),
             enable_gzip=get_required_bool("CODEINTEL_SERVE_GZIP", default=True),
             export_max_rows=get_required_int("CODEINTEL_SERVE_EXPORT_MAX_ROWS", default=100_000),
-            export_batch_size=get_required_int("CODEINTEL_SERVE_EXPORT_BATCH_SIZE", default=10_000),
+            export_batch_size=get_required_int(
+                "CODEINTEL_SERVE_EXPORT_BATCH_SIZE",
+                default=DEFAULT_ARROW_BATCH_SIZE,
+            ),
             enable_export_endpoints=get_required_bool(
                 "CODEINTEL_SERVE_ENABLE_EXPORT", default=True
             ),

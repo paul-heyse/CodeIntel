@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.resources import IsolationKind, TargetExecution
+
+if TYPE_CHECKING:
+    from codeintel.build.targets import TargetGraph
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,4 +69,34 @@ class ExecutionPolicy:
         return min(run_limit, target_limit)
 
 
-__all__ = ["ExecutionPolicy"]
+def effective_max_workers_for_graph(
+    *,
+    run_options: BuildExecutionOptions,
+    graph: TargetGraph,
+) -> int | None:
+    """Return the effective max workers for a target graph.
+
+    Parameters
+    ----------
+    run_options
+        Run-level execution options.
+    graph
+        Target graph whose per-target execution limits are evaluated.
+
+    Returns
+    -------
+    int | None
+        Effective maximum worker count for the run.
+    """
+    limits: list[int] = []
+    for target in graph.all_targets:
+        policy = ExecutionPolicy(run_options=run_options, target_execution=target.execution)
+        max_workers = policy.effective_max_workers()
+        if max_workers is not None:
+            limits.append(max_workers)
+    if not limits:
+        return run_options.max_workers
+    return min(limits)
+
+
+__all__ = ["ExecutionPolicy", "effective_max_workers_for_graph"]

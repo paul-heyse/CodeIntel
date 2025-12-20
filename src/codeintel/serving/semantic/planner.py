@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.serving.errors import SemanticColumnNotFoundError
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
-from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
+from codeintel.storage.queries.safe import (
+    SqlIngressPolicy,
+    UnsafeSqlError,
+    assert_select_perimeter,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -235,7 +239,7 @@ class SemanticQueryPlanner:
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
         try:
             compiled = built.compile_sql(ibis_con)
-            assert_single_select_statement(compiled)
+            assert_select_perimeter(compiled, policy=SqlIngressPolicy())
         except UnsafeSqlError as exc:
             cleanup_temp_tables_if_needed(
                 con=warehouse.gateway.con,

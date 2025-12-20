@@ -10,7 +10,7 @@ from codeintel.core.plugins.execution.options import (
     PluginOptionsResolver,
     ProfiledConfigSource,
 )
-from codeintel.core.plugins.execution.profiles import get_profile
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME, get_profile
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 class BuildRunConfig:
     """Configuration for a single build/analytics run."""
 
-    profile_name: str = "full"
+    profile_name: str = DEFAULT_PROFILE_NAME
     cli_overrides: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     scope_paths: list[str] | None = None
     output_dir: Path | None = None

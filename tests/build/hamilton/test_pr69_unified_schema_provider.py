@@ -1,11 +1,10 @@
-"""Tests for PR-69: Unified schema provider with fallback chain.
+"""Tests for PR-69: Unified schema provider with DAG-first schema resolution.
 
-This module validates that the unified schema provider correctly resolves
-schemas through the three-tier fallback chain:
+This module validates that the unified schema provider:
 
-1. Hamilton-native inference (for q__-driven Ibis compute nodes)
-2. Target-declared schemas from OutputContract.tables
-3. Raw declared schemas from declared_schema_provider()
+1. Resolves target outputs through the global DAG (SchemaIndex).
+2. Uses declared schemas only for non-target source tables.
+3. Preserves deterministic iteration and caching behavior.
 """
 
 from __future__ import annotations
@@ -24,10 +23,10 @@ from codeintel.build.schemas import (
     require_table_schema,
     unified_schema_provider,
 )
-from codeintel.build.schemas.provider_hamilton import inferable_native_table_keys
-from codeintel.build.target_system import load_target_system
+from codeintel.build.target_metadata import get_target_metadata_service
 
 if TYPE_CHECKING:
+    from codeintel.build.schemas.schema_index import SchemaIndex
     from codeintel.core.schemas.primitives import TableSchema
 
 
@@ -40,6 +39,31 @@ def _get_declared_schemas() -> dict[str, TableSchema]:
         Mapping from table_key to declared schema.
     """
     return {s.table_key: s for s in declared_schema_provider().iter_table_schemas()}
+
+
+def _get_schema_index() -> SchemaIndex:
+    """Return the DAG-derived schema index.
+
+    Returns
+    -------
+    SchemaIndex
+        Schema index tied to the global target graph.
+    """
+    return get_target_metadata_service().schema_index
+
+
+def _declared_source_keys() -> list[str]:
+    declared = _get_declared_schemas()
+    derivations = _get_schema_index().derivations
+    return sorted(set(declared) - set(derivations))
+
+
+def _non_inferable_table_key() -> str | None:
+    schema_index = _get_schema_index()
+    for table_key in schema_index.derivations:
+        if table_key not in schema_index.inferable_table_keys:
+            return table_key
+    return None
 
 
 # -----------------------------------------------------------------------------
@@ -83,64 +107,51 @@ def test_clear_unified_provider_cache_works() -> None:
     clear_unified_provider_cache()
     provider2 = unified_schema_provider()
     # After cache clear, we may get a different instance but same schemas
-    schema1 = provider1.get_table_schema("core.modules")
-    schema2 = provider2.get_table_schema("core.modules")
+    table_key = _non_inferable_table_key()
+    if table_key is None:
+        pytest.skip("No non-inferable table keys found in this environment")
+    schema1 = provider1.get_table_schema(table_key)
+    schema2 = provider2.get_table_schema(table_key)
     if schema1 != schema2:
         pytest.fail("Providers return different schemas after cache clear")
 
 
 # -----------------------------------------------------------------------------
-# Parity tests with declared schemas
+# Parity tests with declared source schemas
 # -----------------------------------------------------------------------------
 
 
-def test_unified_provider_resolves_all_declared_table_keys() -> None:
-    """Verify all declared schema keys resolve through unified provider."""
+def test_unified_provider_resolves_declared_source_keys() -> None:
+    """Verify declared source keys resolve through unified provider."""
     provider = unified_schema_provider()
-    declared_schemas = _get_declared_schemas()
-    missing_keys: list[str] = []
+    source_keys = _declared_source_keys()
+    if not source_keys:
+        pytest.skip("No declared source-only keys found in this environment")
 
-    for key in declared_schemas:
-        schema = provider.get_table_schema(key)
-        if schema is None:
-            missing_keys.append(key)
-
+    missing_keys = [key for key in source_keys if provider.get_table_schema(key) is None]
     if missing_keys:
-        pytest.fail(f"Missing keys in unified provider: {missing_keys[:10]}...")
+        pytest.fail(f"Missing declared source keys: {missing_keys[:10]}...")
 
 
-def test_unified_provider_schemas_match_declared_schemas() -> None:
-    """Verify unified provider returns identical schemas as declared_schema_provider."""
+def test_unified_provider_source_schemas_match_declared() -> None:
+    """Verify source table schemas match declared definitions."""
     provider = unified_schema_provider()
     declared_schemas = _get_declared_schemas()
-    mismatches: list[str] = []
+    source_keys = _declared_source_keys()
+    if not source_keys:
+        pytest.skip("No declared source-only keys found in this environment")
 
-    for key, declared_schema in declared_schemas.items():
+    mismatches: list[str] = []
+    for key in source_keys:
         provider_schema = provider.get_table_schema(key)
-        if provider_schema is None:
-            mismatches.append(f"{key}: not found in provider")
-        # Note: Inferred schemas may differ from declared, so we only check
-        # column count and names match as a basic sanity check
-        elif len(provider_schema.columns) != len(declared_schema.columns):
-            mismatches.append(
-                f"{key}: column count mismatch "
-                f"(provider={len(provider_schema.columns)}, "
-                f"declared={len(declared_schema.columns)})"
-            )
+        declared_schema = declared_schemas.get(key)
+        if provider_schema is None or declared_schema is None:
+            mismatches.append(f"{key}: missing schema")
+        elif provider_schema != declared_schema:
+            mismatches.append(f"{key}: provider schema differs from declared")
 
     if mismatches:
         pytest.fail("Schema mismatches:\n" + "\n".join(mismatches[:10]))
-
-
-def test_unified_provider_schema_count_at_least_declared() -> None:
-    """Verify unified provider has at least as many schemas as declared."""
-    provider_count = len(list(iter_table_schemas()))
-    declared_count = len(_get_declared_schemas())
-    # Unified provider may have MORE schemas from Hamilton inference, never fewer
-    if provider_count < declared_count:
-        pytest.fail(
-            f"Unified provider has fewer schemas ({provider_count}) than declared ({declared_count})"
-        )
 
 
 # -----------------------------------------------------------------------------
@@ -155,15 +166,32 @@ def test_unified_provider_has_inferable_table_keys() -> None:
         pytest.fail("Provider missing inferable_table_keys attribute")
     if not isinstance(provider.inferable_table_keys, frozenset):
         pytest.fail("inferable_table_keys should be a frozenset")
+    if provider.inferable_table_keys != _get_schema_index().inferable_table_keys:
+        pytest.fail("inferable_table_keys should align with the schema index")
 
 
 def test_inferable_table_keys_not_empty() -> None:
     """Verify there are some inferable table keys in the target graph."""
-    graph = load_target_system().graph
-    inferable = inferable_native_table_keys(graph=graph)
+    inferable = _get_schema_index().inferable_table_keys
     # We expect at least some inferable keys from Hamilton native compute
     if len(inferable) == 0:
         pytest.skip("No inferable table keys found - may be expected in test env")
+
+
+def test_schema_index_covers_target_table_keys() -> None:
+    """Verify schema index derivations cover all target table keys."""
+    service = get_target_metadata_service()
+    derivation_keys = set(service.schema_index.derivations)
+    expected_keys = set(service.system.all_table_keys)
+    if derivation_keys != expected_keys:
+        missing = sorted(expected_keys - derivation_keys)
+        extra = sorted(derivation_keys - expected_keys)
+        details = []
+        if missing:
+            details.append(f"missing={missing[:5]}")
+        if extra:
+            details.append(f"extra={extra[:5]}")
+        pytest.fail("Schema index key mismatch: " + ", ".join(details))
 
 
 def test_unified_provider_has_declared_fallback() -> None:
@@ -171,24 +199,26 @@ def test_unified_provider_has_declared_fallback() -> None:
     provider = unified_schema_provider()
     if not hasattr(provider, "declared"):
         pytest.fail("Provider missing declared attribute")
-    # The declared fallback should be the declared_schema_provider
+    source_keys = _declared_source_keys()
+    if not source_keys:
+        pytest.skip("No declared source-only keys found in this environment")
     declared = declared_schema_provider()
-    # They should be functionally equivalent
-    test_key = "core.modules"
-    declared_schema = declared.get_table_schema(test_key)
+    declared_schema = declared.get_table_schema(source_keys[0])
     if declared_schema is None:
-        pytest.fail(f"Declared provider missing {test_key}")
+        pytest.fail(f"Declared provider missing {source_keys[0]}")
 
 
-def test_unified_provider_fallback_to_declared_for_unknown_inferable() -> None:
-    """Verify fallback works when inference fails or key not inferable."""
+def test_unified_provider_fallback_to_declared_for_sources() -> None:
+    """Verify fallback works when table keys are not produced by the DAG."""
     provider = unified_schema_provider()
-    # Source tables like core.modules aren't inferable via Hamilton
-    # but should still resolve via declared fallback
-    schema = provider.get_table_schema("core.modules")
+    source_keys = _declared_source_keys()
+    if not source_keys:
+        pytest.skip("No declared source-only keys found in this environment")
+    table_key = source_keys[0]
+    schema = provider.get_table_schema(table_key)
     if schema is None:
-        pytest.fail("Failed to resolve core.modules via fallback")
-    if schema.table_key != "core.modules":
+        pytest.fail(f"Failed to resolve {table_key} via fallback")
+    if schema.table_key != table_key:
         pytest.fail(f"Wrong table_key: {schema.table_key}")
 
 
@@ -264,15 +294,24 @@ def test_get_table_schema_returns_none_for_unknown_key() -> None:
 def test_unified_provider_caches_resolved_schemas() -> None:
     """Verify unified provider caches resolved schemas internally."""
     clear_unified_provider_cache()
-    provider = unified_schema_provider()
+    provider = unified_schema_provider().with_inference(allow_inference=False)
+    schema_index = _get_schema_index()
+    override_keys = [
+        table_key
+        for table_key, derivation in schema_index.derivations.items()
+        if derivation.override_schema is not None
+    ]
+    if not override_keys:
+        pytest.skip("No override schemas available for caching test")
+    table_key = override_keys[0]
 
     # First access should populate cache
-    schema1 = provider.get_table_schema("core.modules")
+    schema1 = provider.get_table_schema(table_key)
     if schema1 is None:
-        pytest.fail("Failed to resolve core.modules")
+        pytest.fail(f"Failed to resolve {table_key}")
 
     # Second access should return cached result
-    schema2 = provider.get_table_schema("core.modules")
+    schema2 = provider.get_table_schema(table_key)
     if schema1 is not schema2:
         pytest.fail("Provider did not return cached schema")
 
@@ -283,10 +322,16 @@ def test_unified_provider_has_dataclass_fields() -> None:
     # Verify the dataclass has expected attributes
     if not hasattr(provider, "declared"):
         pytest.fail("Provider missing declared attribute")
+    if not hasattr(provider, "schema_index"):
+        pytest.fail("Provider missing schema_index attribute")
+    if not hasattr(provider, "allow_inference"):
+        pytest.fail("Provider missing allow_inference attribute")
+    if provider.allow_inference is not True:
+        pytest.fail("Unified provider should default to allow_inference=True")
     if not hasattr(provider, "inferable_table_keys"):
         pytest.fail("Provider missing inferable_table_keys attribute")
-    if not hasattr(provider, "fallback_to_declared_on_error"):
-        pytest.fail("Provider missing fallback_to_declared_on_error attribute")
+    if not hasattr(provider, "fallback_to_override_on_error"):
+        pytest.fail("Provider missing fallback_to_override_on_error attribute")
 
 
 # -----------------------------------------------------------------------------
@@ -296,8 +341,8 @@ def test_unified_provider_has_dataclass_fields() -> None:
 
 def test_target_contract_schemas_accessible() -> None:
     """Verify schemas from target contracts are accessible."""
-    graph = load_target_system().graph
-    provider = unified_schema_provider()
+    graph = get_target_metadata_service().system.graph
+    provider = unified_schema_provider().with_inference(allow_inference=False)
 
     # Find a target with declared output schemas
     for target in graph.all_targets:
@@ -323,17 +368,23 @@ def test_unified_provider_works_with_get_schema_provider() -> None:
     """Verify unified provider integrates correctly with registry."""
     clear_schema_provider_cache()
     provider = get_schema_provider()
-    schema = provider.require_table_schema("analytics.function_metrics")
+    table_key = _non_inferable_table_key()
+    if table_key is None:
+        pytest.skip("No non-inferable table keys found in this environment")
+    schema = provider.require_table_schema(table_key)
     if schema is None:
-        pytest.fail("Failed to resolve analytics.function_metrics")
-    if schema.table_key != "analytics.function_metrics":
+        pytest.fail(f"Failed to resolve {table_key}")
+    if schema.table_key != table_key:
         pytest.fail(f"Wrong table_key: {schema.table_key}")
 
 
 def test_unified_provider_works_with_require_table_schema() -> None:
     """Verify unified provider integrates correctly with convenience function."""
-    schema = require_table_schema("core.goids")
+    table_key = _non_inferable_table_key()
+    if table_key is None:
+        pytest.skip("No non-inferable table keys found in this environment")
+    schema = require_table_schema(table_key)
     if schema is None:
-        pytest.fail("Failed to resolve core.goids")
-    if schema.table_key != "core.goids":
+        pytest.fail(f"Failed to resolve {table_key}")
+    if schema.table_key != table_key:
         pytest.fail(f"Wrong table_key: {schema.table_key}")

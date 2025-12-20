@@ -75,7 +75,7 @@ class SchemaManifestRequest:
     module: TargetModule | None = None
     all_targets: bool = False
     only_native: bool = False
-    infer_native: bool = False
+    infer_native: bool = True
     batch_infer_native: bool = True
     stable: bool = True
     version: str = DEFAULT_SCHEMA_MANIFEST_VERSION
@@ -254,6 +254,8 @@ def _apply_native_inference(
     SchemaProvider
         Provider potentially wrapped with native inference.
     """
+    if isinstance(provider, UnifiedSchemaProvider):
+        return provider.with_inference(allow_inference=request.infer_native)
     if not request.infer_native:
         if isinstance(provider, (HamiltonSchemaProvider, UnifiedSchemaProvider)):
             return non_inferable_schema_provider()

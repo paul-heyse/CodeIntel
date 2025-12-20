@@ -30,6 +30,7 @@ from codeintel.serving.semantic.fingerprints import (
     fingerprint_semantic_query,
 )
 from codeintel.serving.semantic.models import (
+    ColumnLineageRef,
     SemanticCatalogResponse,
     SemanticCatalogView,
     SemanticExplainResponse,
@@ -42,7 +43,13 @@ from codeintel.serving.semantic.planner import (
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
-from codeintel.storage.queries.safe import UnsafeSqlError, assert_single_select_statement
+from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.metadata import load_derived_lineage_columns
+from codeintel.storage.queries.safe import (
+    SqlIngressPolicy,
+    UnsafeSqlError,
+    assert_select_perimeter,
+)
 
 try:
     import polars as pl
@@ -191,7 +198,7 @@ class SemanticQueryKernel:
         ibis_con = warehouse.gateway.ibis.con
         try:
             sql = query.compile_sql(ibis_con)
-            assert_single_select_statement(sql)
+            assert_select_perimeter(sql, policy=SqlIngressPolicy())
             return self._execute_sql(warehouse=warehouse, sql=sql)
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
@@ -205,7 +212,7 @@ class SemanticQueryKernel:
         self, *, warehouse: Warehouse, query: DbApiQuery
     ) -> list[dict[str, object]]:
         try:
-            assert_single_select_statement(query.sql)
+            assert_select_perimeter(query.sql, policy=SqlIngressPolicy())
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
         return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
@@ -273,6 +280,34 @@ class SemanticQueryKernel:
         if table_schema is not None:
             column_types = {c.name: c.type for c in table_schema.columns}
 
+        lineage: dict[str, list[ColumnLineageRef]] = {}
+        try:
+            with self.db.connect() as (warehouse, _):
+                if warehouse.gateway.policy.table_exists(
+                    schema="metadata",
+                    table="derived_lineage_columns",
+                ):
+                    raw_lineage = load_derived_lineage_columns(
+                        warehouse.gateway.con,
+                        repo=pointer.repo,
+                        commit=pointer.commit,
+                        downstream_table=view.table_key.lower(),
+                    )
+                    lineage = {
+                        downstream: [
+                            ColumnLineageRef(table_key=table_key, column=column)
+                            for table_key, column in refs
+                        ]
+                        for downstream, refs in raw_lineage.items()
+                    }
+        except DuckDBError:
+            LOG.debug(
+                "Unable to load lineage for view=%s repo=%s commit=%s",
+                view.table_key,
+                pointer.repo,
+                pointer.commit,
+            )
+
         return SemanticViewDescriptionResponse(
             id=view.id,
             table_key=view.table_key,
@@ -288,6 +323,7 @@ class SemanticQueryKernel:
             deprecated=view.deprecated,
             replaced_by=view.replaced_by,
             snapshot=self._snapshot_dict(pointer),
+            lineage=lineage,
         )
 
     def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:

@@ -55,7 +55,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.storage.helpers.module_index import load_module_map
@@ -178,7 +178,7 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
     graph=source("graph"),
     target_name=value(DATA_MODELS_TARGET_NAME),
     table_key=value(DATA_MODELS_TABLE_KEY),
-    columns=value(column_order_for_table_key(DATA_MODELS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DATA_MODELS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -207,7 +207,7 @@ def data_models__model_rows(
     graph=source("graph"),
     target_name=value(DATA_MODELS_TARGET_NAME),
     table_key=value(DATA_MODEL_FIELDS_TABLE_KEY),
-    columns=value(column_order_for_table_key(DATA_MODEL_FIELDS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DATA_MODEL_FIELDS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -236,7 +236,7 @@ def data_models__field_rows(
     graph=source("graph"),
     target_name=value(DATA_MODELS_TARGET_NAME),
     table_key=value(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
-    columns=value(column_order_for_table_key(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -315,7 +315,7 @@ def t__data_models(
     graph=source("graph"),
     target_name=value(DATA_MODEL_USAGE_TARGET_NAME),
     table_key=value(DATA_MODEL_USAGE_TABLE_KEY),
-    columns=value(column_order_for_table_key(DATA_MODEL_USAGE_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DATA_MODEL_USAGE_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

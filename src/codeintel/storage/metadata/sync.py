@@ -18,6 +18,7 @@ from codeintel.storage.metadata.bootstrap import (
     replace_dataset_dataflow_edges,
     replace_dataset_dataflow_nodes,
     replace_dataset_schema_registry,
+    replace_derived_lineage_columns,
     replace_derived_lineage_edges,
 )
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
@@ -30,7 +31,9 @@ if TYPE_CHECKING:
 __all__ = [
     "bootstrap_metadata_datasets",
     "load_dataset_schema_registry",
+    "load_derived_lineage_columns",
     "sync_dataset_dataflow_graph",
+    "sync_derived_lineage_columns",
     "sync_derived_lineage_edges",
     "validate_dataset_schema_registry",
 ]
@@ -230,3 +233,73 @@ def sync_derived_lineage_edges(
         edge_type=edge_type,
         rows=rows,
     )
+
+
+def sync_derived_lineage_columns(
+    con: DuckDBPyConnection,
+    *,
+    repo: str,
+    commit: str,
+    lineage: Mapping[str, Mapping[str, frozenset[str]]],
+    edge_type: str = "derived_column_depends_on",
+) -> None:
+    """Persist derived column lineage edges for a snapshot."""
+    rows: list[tuple[str, str, str, str, str, str, str]] = []
+    for downstream_table, column_map in lineage.items():
+        for downstream_column, upstream_columns in column_map.items():
+            for upstream in upstream_columns:
+                if "." not in upstream:
+                    continue
+                table_key, column = upstream.rsplit(".", maxsplit=1)
+                if table_key == downstream_table:
+                    continue
+                rows.append(
+                    (
+                        repo,
+                        commit,
+                        downstream_table,
+                        downstream_column,
+                        table_key,
+                        column,
+                        edge_type,
+                    )
+                )
+
+    replace_derived_lineage_columns(
+        con,
+        repo=repo,
+        commit=commit,
+        edge_type=edge_type,
+        rows=rows,
+    )
+
+
+def load_derived_lineage_columns(
+    con: DuckDBPyConnection,
+    *,
+    repo: str,
+    commit: str,
+    downstream_table: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """Load derived column lineage for a single downstream table.
+
+    Returns
+    -------
+    dict[str, list[tuple[str, str]]]
+        Mapping of downstream column to upstream (table_key, column) references.
+    """
+    rows = con.execute(
+        """
+        SELECT downstream_column, upstream_table, upstream_column
+        FROM metadata.derived_lineage_columns
+        WHERE repo = ? AND commit = ? AND downstream_table = ?
+        ORDER BY downstream_column, upstream_table, upstream_column
+        """,
+        [repo, commit, downstream_table],
+    ).fetchall()
+    out: dict[str, list[tuple[str, str]]] = {}
+    for downstream_column, upstream_table, upstream_column in rows:
+        out.setdefault(str(downstream_column), []).append(
+            (str(upstream_table), str(upstream_column))
+        )
+    return out

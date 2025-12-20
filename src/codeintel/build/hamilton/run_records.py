@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Literal, Self
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
+from codeintel.build.hash_evaluator import evaluate_hash_state
 from codeintel.build.hashing import (
     compute_input_hash,
     compute_input_hash_with_deps,
@@ -179,7 +180,32 @@ class SkipCheckRequest:
     repo: str
     commit: str
     input_hash: str
+    options_hash: str | None = None
     manifest_index: Mapping[str, OutputManifest] | None = None
+
+
+def _resolve_manifest(request: SkipCheckRequest) -> OutputManifest | None:
+    """Resolve a manifest from request inputs.
+
+    Parameters
+    ----------
+    request
+        Skip check inputs including optional manifest index.
+
+    Returns
+    -------
+    OutputManifest | None
+        Resolved manifest when available, otherwise None.
+    """
+    if request.manifest_index is not None:
+        manifest = request.manifest_index.get(request.target)
+        if manifest is not None:
+            return manifest
+    return request.gateway.build.load_manifest(
+        target=request.target,
+        repo=request.repo,
+        commit=request.commit,
+    )
 
 
 def should_skip(request: SkipCheckRequest) -> bool:
@@ -196,22 +222,20 @@ def should_skip(request: SkipCheckRequest) -> bool:
     bool
         True if the target can be skipped (output is still valid).
     """
-    prior = request.manifest_index.get(request.target) if request.manifest_index else None
-    if prior is None:
-        prior = request.gateway.build.load_manifest(
-            target=request.target,
-            repo=request.repo,
-            commit=request.commit,
-        )
-    if prior is None:
-        return False
-    return prior.input_hash == request.input_hash
+    manifest = _resolve_manifest(request)
+    evaluation = evaluate_hash_state(
+        manifest=manifest,
+        input_hash=request.input_hash,
+        options_hash=request.options_hash,
+    )
+    return evaluation.status == "current"
 
 
 def should_skip_native_target(
     env: BuildEnv,
     target: OutputTarget,
     input_hash: str,
+    options_hash: str | None = None,
 ) -> bool:
     """Return True if a native target can be skipped based on manifest.
 
@@ -223,6 +247,8 @@ def should_skip_native_target(
         Target to check for skip eligibility.
     input_hash
         Current computed input hash for the target.
+    options_hash
+        Optional configuration options hash.
 
     Returns
     -------
@@ -231,6 +257,9 @@ def should_skip_native_target(
     """
     if target.name in env.force_targets:
         return False
+    resolved_options_hash = options_hash
+    if resolved_options_hash is None:
+        resolved_options_hash = options_hash_for_target(env, target.name)
 
     request = SkipCheckRequest(
         gateway=env.gateway,
@@ -238,6 +267,7 @@ def should_skip_native_target(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
         input_hash=input_hash,
+        options_hash=resolved_options_hash,
         manifest_index=env.manifest_index,
     )
     return should_skip(request)

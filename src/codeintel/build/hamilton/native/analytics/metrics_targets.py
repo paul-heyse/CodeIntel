@@ -60,7 +60,7 @@ from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
 from codeintel.storage.queries.safe import count_rows_for_snapshot
@@ -181,7 +181,7 @@ def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | Non
     graph=source("graph"),
     target_name=value(FUNCTION_HISTORY_TARGET_NAME),
     table_key=value(FUNCTION_HISTORY_TABLE_KEY),
-    columns=value(column_order_for_table_key(FUNCTION_HISTORY_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(FUNCTION_HISTORY_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -275,7 +275,7 @@ def t__function_history(
     graph=source("graph"),
     target_name=value(HISTORY_TIMESERIES_TARGET_NAME),
     table_key=value(HISTORY_TIMESERIES_TABLE_KEY),
-    columns=value(column_order_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -668,7 +668,7 @@ def t__test_graph_metrics__compute(
     graph=source("graph"),
     target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
     table_key=value(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
-    columns=value(column_order_for_table_key(TEST_GRAPH_METRICS_TESTS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(TEST_GRAPH_METRICS_TESTS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -702,7 +702,7 @@ def test_graph_metrics__tests_rows(
     graph=source("graph"),
     target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
     table_key=value(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    columns=value(column_order_for_table_key(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

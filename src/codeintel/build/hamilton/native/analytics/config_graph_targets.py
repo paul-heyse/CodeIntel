@@ -42,7 +42,7 @@ from codeintel.build.hamilton.run_records import options_hash_for_target, should
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.schemas import column_order_for_table_key
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import CatalogService
 from codeintel.core.hamilton.records import TargetRunRecord
@@ -243,7 +243,7 @@ def t__config_data_flow__compute(
     graph=source("graph"),
     target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
     table_key=value(CONFIG_DATA_FLOW_TABLE_KEY),
-    columns=value(column_order_for_table_key(CONFIG_DATA_FLOW_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CONFIG_DATA_FLOW_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -272,7 +272,7 @@ def config_data_flow__rows(
     graph=source("graph"),
     target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
     table_key=value(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY),
-    columns=value(column_order_for_table_key(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CONFIG_GRAPH_METRICS_KEYS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -301,7 +301,7 @@ def config_graph_metrics_keys__rows(
     graph=source("graph"),
     target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
     table_key=value(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY),
-    columns=value(column_order_for_table_key(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CONFIG_GRAPH_METRICS_MODULES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -330,7 +330,7 @@ def config_graph_metrics_modules__rows(
     graph=source("graph"),
     target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
     table_key=value(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY),
-    columns=value(column_order_for_table_key(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CONFIG_PROJECTION_KEY_EDGES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -359,7 +359,7 @@ def config_projection_key_edges__rows(
     graph=source("graph"),
     target_name=value(CONFIG_DATA_FLOW_TARGET_NAME),
     table_key=value(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY),
-    columns=value(column_order_for_table_key(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CONFIG_PROJECTION_MODULE_EDGES_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -557,7 +557,7 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
     graph=source("graph"),
     target_name=value(CFG_DFG_METRICS_TARGET_NAME),
     table_key=value(CFG_FUNCTION_METRICS_TABLE_KEY),
-    columns=value(column_order_for_table_key(CFG_FUNCTION_METRICS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CFG_FUNCTION_METRICS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -586,7 +586,7 @@ def cfg_function_metrics__rows(
     graph=source("graph"),
     target_name=value(CFG_DFG_METRICS_TARGET_NAME),
     table_key=value(CFG_BLOCK_METRICS_TABLE_KEY),
-    columns=value(column_order_for_table_key(CFG_BLOCK_METRICS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CFG_BLOCK_METRICS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -615,7 +615,7 @@ def cfg_block_metrics__rows(
     graph=source("graph"),
     target_name=value(CFG_DFG_METRICS_TARGET_NAME),
     table_key=value(CFG_FUNCTION_METRICS_EXT_TABLE_KEY),
-    columns=value(column_order_for_table_key(CFG_FUNCTION_METRICS_EXT_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(CFG_FUNCTION_METRICS_EXT_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -644,7 +644,7 @@ def cfg_function_metrics_ext__rows(
     graph=source("graph"),
     target_name=value(CFG_DFG_METRICS_TARGET_NAME),
     table_key=value(DFG_FUNCTION_METRICS_TABLE_KEY),
-    columns=value(column_order_for_table_key(DFG_FUNCTION_METRICS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DFG_FUNCTION_METRICS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -673,7 +673,7 @@ def dfg_function_metrics__rows(
     graph=source("graph"),
     target_name=value(CFG_DFG_METRICS_TARGET_NAME),
     table_key=value(DFG_BLOCK_METRICS_TABLE_KEY),
-    columns=value(column_order_for_table_key(DFG_BLOCK_METRICS_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DFG_BLOCK_METRICS_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",
@@ -702,7 +702,7 @@ def dfg_block_metrics__rows(
     graph=source("graph"),
     target_name=value(CFG_DFG_METRICS_TARGET_NAME),
     table_key=value(DFG_FUNCTION_METRICS_EXT_TABLE_KEY),
-    columns=value(column_order_for_table_key(DFG_FUNCTION_METRICS_EXT_TABLE_KEY)),
+    columns=value(deferred_columns_for_table_key(DFG_FUNCTION_METRICS_EXT_TABLE_KEY)),
 )
 @tag_compute(
     domain="analytics",

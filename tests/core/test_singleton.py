@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 import pytest
 
-from codeintel.core.singleton import SingletonHolder, SingletonNotInitializedError
+from codeintel.core.singleton import (
+    SingletonHolder,
+    SingletonNotInitializedError,
+    SingletonReentrancyError,
+)
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -75,6 +79,10 @@ class CountingHolder(SingletonHolder[int]):
         cls.call_count = 0
 
 
+class ReentrantHolder(SingletonHolder[int]):
+    """Holder used to verify re-entrant initialization handling."""
+
+
 @pytest.fixture(autouse=True)
 def reset_singletons() -> None:
     """Reset all singleton holders before each test."""
@@ -82,6 +90,7 @@ def reset_singletons() -> None:
     AnotherRegistryHolder.reset()
     CountingHolder.reset()
     CountingHolder.reset_count()
+    ReentrantHolder.reset()
 
 
 def test_singleton_get_creates_instance_via_factory() -> None:
@@ -274,3 +283,13 @@ def test_singleton_factory_exception_propagates() -> None:
         SampleRegistryHolder.get(failing_factory)
 
     expect_true(not SampleRegistryHolder.is_initialized())
+
+
+def test_singleton_reentrancy_raises_error() -> None:
+    """Verify re-entrant initialization raises SingletonReentrancyError."""
+
+    def reentrant_factory() -> int:
+        return ReentrantHolder.get(reentrant_factory)
+
+    with pytest.raises(SingletonReentrancyError):
+        ReentrantHolder.get(reentrant_factory)
