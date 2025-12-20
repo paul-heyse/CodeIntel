@@ -273,10 +273,11 @@ def _check_error_parity() -> list[str]:
             msg = f"Contract test expects domain errors only, got {type(exc).__name__}"
             raise TypeError(msg)
         problem = problem_from_domain_error(request, exc)
-        if problem.code != expected_code:
+        problem_code = problem.extensions.get("code")
+        if problem_code != expected_code:
             issues.append(
                 "HTTP problem code mismatch: "
-                f"expected={expected_code} got={problem.code} exc={type(exc).__name__}"
+                f"expected={expected_code} got={problem_code} exc={type(exc).__name__}"
             )
         tmpl = ERROR_CODE_CATALOG.get(expected_code)
         if tmpl is None or tmpl.http_status is None:

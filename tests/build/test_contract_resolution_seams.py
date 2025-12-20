@@ -36,7 +36,8 @@ class _StubTargetMetadataProvider(TargetMetadataProvider):
         return None
 
     def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
-        _ = artifact_name
+        if artifact_name in self.target.contract.artifact_names:
+            return self.target
         return None
 
 

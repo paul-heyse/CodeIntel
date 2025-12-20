@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.serving.settings import ServingSettings
+from codeintel.serving.settings import ServingSettings, get_serving_settings
 from tests._helpers.assertions.expectation_assertions import (
     expect_false,
     expect_true,
@@ -162,7 +162,7 @@ def test_disabled_via_env_var(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_false(settings.auth_required_for_remote)
     # Should not raise
     settings.validate_auth_for_host()
@@ -182,5 +182,5 @@ def test_auth_required_for_remote_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.auth_required_for_remote)

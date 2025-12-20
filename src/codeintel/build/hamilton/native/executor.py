@@ -39,6 +39,7 @@ from codeintel.build.hamilton.run_records import (
     save_manifest,
     should_skip_native_target,
 )
+from codeintel.build.hashing import InputHashOptions
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
@@ -149,13 +150,16 @@ class NativeTargetExecutor:
         if resolved_options_hash is None:
             resolved_options_hash = options_hash_for_target(env, target_name)
 
+        hash_options = InputHashOptions(
+            options_hash=resolved_options_hash,
+            manifests=env.manifest_index,
+        )
         input_hash = compute_target_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
             settings=env.settings,
-            options_hash=resolved_options_hash,
-            manifests=env.manifest_index,
+            options=hash_options,
         )
 
         return cls(

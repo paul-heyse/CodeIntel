@@ -6,7 +6,7 @@ import contextlib
 import os
 from typing import TYPE_CHECKING
 
-from codeintel.serving.settings import ServingSettings
+from codeintel.serving.settings import get_serving_settings
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -45,7 +45,7 @@ def _set_env(env: dict[str, str]) -> Iterator[None]:
 def test_settings_defaults(tmp_path: Path) -> None:
     """Defaults load when env vars are unset."""
     with _set_env({"CODEINTEL_SERVE_DIR": str(tmp_path)}):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.serve_dir, tmp_path.resolve())
     expect_true(settings.hot_swap)
     expect_equal(settings.pool_size, DEFAULT_POOL_SIZE)
@@ -71,7 +71,7 @@ def test_settings_overrides(tmp_path: Path) -> None:
             "CODEINTEL_AUTH_TOKEN": expected_auth,
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
 
     expect_equal(settings.serve_dir, (tmp_path / "serve").resolve())
     expect_false(settings.hot_swap)

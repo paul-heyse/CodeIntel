@@ -39,7 +39,7 @@ from codeintel.build.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.build.settings import get_build_settings, get_hamilton_execution_settings
-from codeintel.build.state import BuildState, StateValidator
+from codeintel.build.state import BuildState, StateValidationOptions, StateValidator
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
@@ -716,7 +716,12 @@ def build_status_handler(
 
     gateway = ctx.gateway
     build_settings = get_build_settings()
-    validator = StateValidator(graph, gateway, runtime.snapshot, settings=build_settings)
+    validator = StateValidator(
+        graph,
+        gateway,
+        runtime.snapshot,
+        options=StateValidationOptions(settings=build_settings),
+    )
     state = validator.validate()
 
     if module:

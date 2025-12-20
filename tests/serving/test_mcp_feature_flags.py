@@ -6,7 +6,7 @@ import contextlib
 import os
 from typing import TYPE_CHECKING
 
-from codeintel.serving.settings import ServingSettings
+from codeintel.serving.settings import ServingSettings, get_serving_settings
 from tests._helpers.assertions.expectation_assertions import (
     expect_false,
     expect_true,
@@ -60,7 +60,7 @@ def test_disable_search_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_SEARCH": "0",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_false(settings.mcp_enable_search)
     expect_true(settings.mcp_enable_explain)
     expect_true(settings.mcp_enable_meta)
@@ -75,7 +75,7 @@ def test_disable_explain_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_EXPLAIN": "0",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.mcp_enable_search)
     expect_false(settings.mcp_enable_explain)
     expect_true(settings.mcp_enable_meta)
@@ -90,7 +90,7 @@ def test_disable_meta_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_META": "0",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.mcp_enable_search)
     expect_true(settings.mcp_enable_explain)
     expect_false(settings.mcp_enable_meta)
@@ -105,7 +105,7 @@ def test_disable_export_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_EXPORT": "0",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.mcp_enable_search)
     expect_true(settings.mcp_enable_explain)
     expect_true(settings.mcp_enable_meta)
@@ -121,7 +121,7 @@ def test_disable_multiple_tools_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_META": "0",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_false(settings.mcp_enable_search)
     expect_true(settings.mcp_enable_explain)
     expect_false(settings.mcp_enable_meta)
@@ -136,7 +136,7 @@ def test_enable_search_explicitly_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_SEARCH": "1",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.mcp_enable_search)
 
 
@@ -151,7 +151,7 @@ def test_enable_all_explicitly_via_env(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_EXPORT": "1",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.mcp_enable_search)
     expect_true(settings.mcp_enable_explain)
     expect_true(settings.mcp_enable_meta)
@@ -169,7 +169,7 @@ def test_disable_all_optional_tools(tmp_path: Path) -> None:
             "CODEINTEL_MCP_ENABLE_EXPORT": "0",
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_false(settings.mcp_enable_search)
     expect_false(settings.mcp_enable_explain)
     expect_false(settings.mcp_enable_meta)

@@ -27,6 +27,7 @@ from codeintel.ingestion.compute import DocstringsExtractStep, RepoScanStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
+from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.tools import write_dummy_scip_files
@@ -247,6 +248,7 @@ def build_target_context_for_target(
         paths=build_paths,
         providers=providers,
         config=BuildConfig.empty(),
+        settings=TEST_BUILD_SETTINGS,
         profile=cfg.profile,
     )
 

@@ -23,7 +23,7 @@ from codeintel.build.hamilton.templates import materialize_template
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.build import make_build_config, make_build_paths
+from tests._helpers.build import TEST_BUILD_SETTINGS, make_build_config, make_build_paths
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
@@ -51,6 +51,7 @@ def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
         paths=paths,
         providers=providers,
         config=config,
+        settings=TEST_BUILD_SETTINGS,
         force_targets=frozenset({"modules"}),
     )
 

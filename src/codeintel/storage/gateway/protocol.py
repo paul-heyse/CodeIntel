@@ -34,7 +34,6 @@ __all__ = [
     "DuckDBInvalidInputException",
     "DuckDBProgrammingError",
     "DuckDBRelation",
-    "ExportService",
     "MinimalGateway",
     "SnapshotGatewayResolver",
     "StorageGateway",
@@ -42,27 +41,82 @@ __all__ = [
 
 
 if TYPE_CHECKING:
-    import duckdb
-
-    type DuckDBConnection = duckdb.DuckDBPyConnection
-    type DuckDBRelation = duckdb.DuckDBPyRelation
-    type DuckDBError = duckdb.Error
-    type DuckDBCatalogException = duckdb.CatalogException
-    type DuckDBConnectionException = duckdb.ConnectionException
-    type DuckDBDatabaseError = duckdb.DatabaseError
-    type DuckDBInvalidInputException = duckdb.InvalidInputException
-    type DuckDBProgrammingError = duckdb.ProgrammingError
-    type DuckDBBinderException = duckdb.BinderException
+    from duckdb import (
+        BinderException as DuckDBBinderException,
+    )
+    from duckdb import (
+        CatalogException as DuckDBCatalogException,
+    )
+    from duckdb import (
+        ConnectionException as DuckDBConnectionException,
+    )
+    from duckdb import (
+        DatabaseError as DuckDBDatabaseError,
+    )
+    from duckdb import (
+        DuckDBPyConnection as DuckDBConnection,
+    )
+    from duckdb import (
+        DuckDBPyRelation as DuckDBRelation,
+    )
+    from duckdb import (
+        Error as DuckDBError,
+    )
+    from duckdb import (
+        InvalidInputException as DuckDBInvalidInputException,
+    )
+    from duckdb import (
+        ProgrammingError as DuckDBProgrammingError,
+    )
 else:
-    type DuckDBConnection = object
-    type DuckDBRelation = object
-    type DuckDBError = Exception
-    type DuckDBCatalogException = Exception
-    type DuckDBConnectionException = Exception
-    type DuckDBDatabaseError = Exception
-    type DuckDBInvalidInputException = Exception
-    type DuckDBProgrammingError = Exception
-    type DuckDBBinderException = Exception
+    try:
+        import duckdb
+    except ImportError:
+        DuckDBConnection = object
+        DuckDBRelation = object
+
+        class DuckDBError(Exception):
+            """Fallback DuckDB error when duckdb is unavailable."""
+
+
+        class DuckDBCatalogError(DuckDBError):
+            """Fallback DuckDB catalog error when duckdb is unavailable."""
+
+
+        class DuckDBConnectionError(DuckDBError):
+            """Fallback DuckDB connection error when duckdb is unavailable."""
+
+
+        class DuckDBDatabaseError(DuckDBError):
+            """Fallback DuckDB database error when duckdb is unavailable."""
+
+
+        class DuckDBInvalidInputError(DuckDBError):
+            """Fallback DuckDB invalid input error when duckdb is unavailable."""
+
+
+        class DuckDBProgrammingError(DuckDBError):
+            """Fallback DuckDB programming exception when duckdb is unavailable."""
+
+
+        class DuckDBBinderError(DuckDBError):
+            """Fallback DuckDB binder error when duckdb is unavailable."""
+
+
+        DuckDBCatalogException = DuckDBCatalogError
+        DuckDBConnectionException = DuckDBConnectionError
+        DuckDBInvalidInputException = DuckDBInvalidInputError
+        DuckDBBinderException = DuckDBBinderError
+    else:
+        DuckDBConnection = duckdb.DuckDBPyConnection
+        DuckDBRelation = duckdb.DuckDBPyRelation
+        DuckDBError = duckdb.Error
+        DuckDBCatalogException = duckdb.CatalogException
+        DuckDBConnectionException = duckdb.ConnectionException
+        DuckDBDatabaseError = duckdb.DatabaseError
+        DuckDBInvalidInputException = duckdb.InvalidInputException
+        DuckDBProgrammingError = duckdb.ProgrammingError
+        DuckDBBinderException = duckdb.BinderException
 
 
 class MinimalGateway(Protocol):

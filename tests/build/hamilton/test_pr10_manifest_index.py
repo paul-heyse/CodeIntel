@@ -17,7 +17,12 @@ from codeintel.build.hamilton.run_records import SkipCheckRequest, should_skip
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
-from tests._helpers.build import make_build_config, make_build_paths, make_snapshot
+from tests._helpers.build import (
+    TEST_BUILD_SETTINGS,
+    make_build_config,
+    make_build_paths,
+    make_snapshot,
+)
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
@@ -55,6 +60,7 @@ class TestBuildEnvManifestIndex:
             paths=make_build_paths(tmp_path),
             providers=cast("Providers", FakeProviders.defaults()),
             config=make_build_config(),
+            settings=TEST_BUILD_SETTINGS,
             manifest_index=manifest_index,
         )
 
@@ -75,6 +81,7 @@ class TestBuildEnvManifestIndex:
             paths=make_build_paths(tmp_path),
             providers=cast("Providers", FakeProviders.defaults()),
             config=make_build_config(),
+            settings=TEST_BUILD_SETTINGS,
         )
 
         if env.manifest_index is not None:
@@ -126,6 +133,7 @@ class TestHashComputation:
                 target,
                 snapshot,
                 fake_gateway,
+                settings=TEST_BUILD_SETTINGS,
                 options=hash_options,
             )
         except RuntimeError as e:
@@ -169,6 +177,7 @@ class TestHashComputation:
             target,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v1,
         )
 
@@ -191,6 +200,7 @@ class TestHashComputation:
             target,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v2,
         )
 
@@ -304,6 +314,7 @@ class TestManifestPrefetch:
             paths=make_build_paths(tmp_path),
             providers=cast("Providers", FakeProviders.defaults()),
             config=make_build_config(),
+            settings=TEST_BUILD_SETTINGS,
             manifest_index=manifest_index,
         )
 
@@ -376,12 +387,14 @@ class TestHashCascadeComplete:
             target_b,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v1,
         )
         hash_c_v1 = compute_input_hash(
             target_c,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v1,
         )
 
@@ -413,12 +426,14 @@ class TestHashCascadeComplete:
             target_b,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v2,
         )
         hash_c_v2 = compute_input_hash(
             target_c,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v2,
         )
 
@@ -446,6 +461,7 @@ class TestHashCascadeComplete:
             target,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v1,
         )
 
@@ -454,6 +470,7 @@ class TestHashCascadeComplete:
             target,
             snapshot,
             fake_gateway,
+            settings=TEST_BUILD_SETTINGS,
             options=hash_options_v2,
         )
 

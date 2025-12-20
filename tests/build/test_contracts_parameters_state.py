@@ -12,10 +12,11 @@ import pytest
 from codeintel.build.contracts import ArtifactSpec, OutputContract, TableSchema
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.parameters import ParameterError, TargetParameters
-from codeintel.build.state import BuildState, StateValidator, TargetState
+from codeintel.build.state import BuildState, StateValidationOptions, StateValidator, TargetState
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -29,6 +30,11 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.storage.gateway import StorageGateway
+
+TEST_BUILD_SETTINGS = BuildSettings(
+    engine_version="test",
+    export_audit=ExportAuditSettings(),
+)
 
 
 class FakeBuildStore:
@@ -163,7 +169,12 @@ def test_state_validator_missing_and_current() -> None:
     target = _make_target("single")
     snapshot = _snapshot()
 
-    current_hash = compute_input_hash(target, snapshot, _make_gateway({}))
+    current_hash = compute_input_hash(
+        target,
+        snapshot,
+        _make_gateway({}),
+        settings=TEST_BUILD_SETTINGS,
+    )
     manifest = sample_manifest(
         target="single",
         params=ManifestParams(input_hash=current_hash),
@@ -171,7 +182,12 @@ def test_state_validator_missing_and_current() -> None:
     gateway = _make_gateway({"single": manifest})
     graph = TargetGraph()
     graph.register(target)
-    validator = StateValidator(graph, gateway, snapshot)
+    validator = StateValidator(
+        graph,
+        gateway,
+        snapshot,
+        options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+    )
 
     state = validator.validate().get("single")
     expect_equal(state.status, "current")
@@ -179,7 +195,12 @@ def test_state_validator_missing_and_current() -> None:
     expect_equal(state.blocking_deps, ())
     expect_is_none(state.blocking_reason)
 
-    missing_validator = StateValidator(graph, _make_gateway({}), snapshot)
+    missing_validator = StateValidator(
+        graph,
+        _make_gateway({}),
+        snapshot,
+        options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+    )
     missing_state = missing_validator.validate().get("single")
     expect_equal(missing_state.status, "missing")
     expect_is_none(missing_state.blocking_reason)
@@ -196,7 +217,12 @@ def test_state_validator_stale_and_blocked_propagation() -> None:
     graph = TargetGraph()
     graph.register(root)
     graph.register(leaf)
-    validator = StateValidator(graph, _make_gateway(manifests), snapshot)
+    validator = StateValidator(
+        graph,
+        _make_gateway(manifests),
+        snapshot,
+        options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+    )
 
     result = validator.validate()
     root_state = result.get("root")

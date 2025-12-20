@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from starlette.requests import Request
 
-from codeintel.serving.errors import error_from_code
+from codeintel.serving.errors.mapping import error_from_code
 from codeintel.serving.errors.problem_adapter import problem_detail_from_error_response
 from codeintel.serving.http.errors import problem_from_error_response
 from tests._helpers.assertions.expectation_assertions import (

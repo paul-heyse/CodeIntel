@@ -9,7 +9,6 @@ from codeintel.build.hashing import InputHashOptions, compute_input_hash_with_de
 from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
 
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
@@ -113,8 +112,7 @@ def compute_hash_evaluation(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     settings: BuildSettings,
-    options_hash: str | None = None,
-    manifests: Mapping[str, OutputManifest] | None = None,
+    options: InputHashOptions | None = None,
 ) -> HashEvaluation:
     """Compute hash evaluation for a target.
 
@@ -128,16 +126,18 @@ def compute_hash_evaluation(
         Storage gateway for manifest lookup.
     settings
         Build settings for engine version hashing.
-    options_hash
-        Optional options hash for configuration.
-    manifests
-        Optional pre-loaded manifest mapping.
+    options
+        Optional hash options (options hash + manifest cache).
 
     Returns
     -------
     HashEvaluation
         Evaluation result with dependency hashes.
     """
+    resolved_options = options or InputHashOptions()
+    options_hash = resolved_options.options_hash
+    manifests = resolved_options.manifests
+
     manifest = None
     if manifests is not None:
         manifest = manifests.get(target.name)
@@ -148,13 +148,12 @@ def compute_hash_evaluation(
             commit=snapshot.commit,
         )
 
-    options = InputHashOptions(options_hash=options_hash, manifests=manifests)
     input_hash, dep_hashes = compute_input_hash_with_deps(
         target,
         snapshot,
         gateway,
         settings=settings,
-        options=options,
+        options=resolved_options,
     )
 
     prior_dep_hashes: dict[str, str] = {}

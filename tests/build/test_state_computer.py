@@ -16,11 +16,12 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.session import BuildSession
-from codeintel.build.state import StateValidator
+from codeintel.build.state import StateValidationOptions, StateValidator
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -34,6 +35,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.storage.gateway import StorageGateway
+
+TEST_BUILD_SETTINGS = BuildSettings(
+    engine_version="test",
+    export_audit=ExportAuditSettings(),
+)
 
 
 def make_snapshot(tmp_path: Path, repo: str = "test/repo", commit: str = "abc123") -> SnapshotRef:
@@ -92,7 +98,11 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session)
 
         state = computer.compute_all()
@@ -118,7 +128,11 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session)
 
         # Compute the actual input hash
@@ -156,7 +170,11 @@ class TestStateComputer:
         manifest = make_manifest("test_target", input_hash="old_hash_123")
         fresh_gateway.build.save_manifest(manifest)
 
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session)
 
         state = computer.compute_all()
@@ -188,7 +206,11 @@ class TestStateComputer:
         graph.register(main_target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
 
         # Save manifest only for main, not for dependency
         main_hash = session.get_input_hash(main_target)
@@ -227,7 +249,11 @@ class TestStateComputer:
         graph.register(main_target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
 
         # Save manifest for dependency with wrong hash (stale)
         dep_manifest = make_manifest("dependency", input_hash="stale_hash")
@@ -276,7 +302,11 @@ class TestStateComputer:
         graph.register(t3)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
 
         # Mark t1 as current via a matching manifest.
         t1_hash = session.get_input_hash(t1)
@@ -309,7 +339,11 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session)
 
         state = computer.compute_single("single")
@@ -334,7 +368,11 @@ class TestStateComputer:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session)
 
         # Compute multiple times
@@ -371,11 +409,20 @@ class TestStateValidatorEquivalence:
         snapshot = make_snapshot(tmp_path)
 
         # Use StateValidator
-        validator = StateValidator(graph=graph, gateway=fresh_gateway, snapshot=snapshot)
+        validator = StateValidator(
+            graph=graph,
+            gateway=fresh_gateway,
+            snapshot=snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         validator_state = validator.validate()
 
         # Use StateComputer
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session)
         computer_state = computer.compute_all()
 
@@ -399,7 +446,11 @@ class TestStateValidatorEquivalence:
         graph.register(target)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
 
         # Save manifest with correct hash
         hash_val = session.get_input_hash(target)
@@ -407,11 +458,20 @@ class TestStateValidatorEquivalence:
         fresh_gateway.build.save_manifest(manifest)
 
         # Use StateValidator
-        validator = StateValidator(graph=graph, gateway=fresh_gateway, snapshot=snapshot)
+        validator = StateValidator(
+            graph=graph,
+            gateway=fresh_gateway,
+            snapshot=snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         validator_state = validator.validate()
 
         # Use StateComputer
-        session2 = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session2 = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session2)
         computer_state = computer.compute_all()
 
@@ -442,7 +502,11 @@ class TestStateValidatorEquivalence:
         graph.register(main)
 
         snapshot = make_snapshot(tmp_path)
-        session = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
 
         # Save manifest for main with correct hash (but dep is missing)
         main_hash = session.get_input_hash(main)
@@ -450,11 +514,20 @@ class TestStateValidatorEquivalence:
         fresh_gateway.build.save_manifest(manifest)
 
         # Use StateValidator
-        validator = StateValidator(graph=graph, gateway=fresh_gateway, snapshot=snapshot)
+        validator = StateValidator(
+            graph=graph,
+            gateway=fresh_gateway,
+            snapshot=snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         validator_state = validator.validate()
 
         # Use StateComputer
-        session2 = BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+        session2 = BuildSession(
+            snapshot=snapshot,
+            gateway=fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         computer = StateComputer(graph=graph, session=session2)
         computer_state = computer.compute_all()
 

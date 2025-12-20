@@ -72,7 +72,7 @@ def compute_input_hash(
 
     Examples
     --------
-    >>> hash_value = compute_input_hash(target, snapshot, gateway)
+    >>> hash_value = compute_input_hash(target, snapshot, gateway, settings=settings)
     >>> len(hash_value)
     16
     """

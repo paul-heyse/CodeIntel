@@ -19,6 +19,7 @@ from codeintel.build.providers import create_default_providers
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
+from tests._helpers.build import TEST_BUILD_SETTINGS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -77,6 +78,7 @@ def make_build_env(
         paths=paths,
         providers=providers,
         config=config,
+        settings=TEST_BUILD_SETTINGS,
         profile=DEFAULT_PROFILE_NAME,
     )
 

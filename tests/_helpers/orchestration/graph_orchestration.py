@@ -20,6 +20,7 @@ from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
+from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
@@ -133,6 +134,7 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
         paths=paths,
         providers=providers,
         config=BuildConfig.empty(),
+        settings=TEST_BUILD_SETTINGS,
     )
     goids_record = TargetRunRecord(
         target="goids",
