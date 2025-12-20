@@ -6,7 +6,7 @@ import contextlib
 import os
 from typing import TYPE_CHECKING
 
-from codeintel.serving.settings import ServingSettings
+from codeintel.serving.settings import ServingSettings, get_serving_settings
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -134,7 +134,7 @@ def test_uvicorn_workers_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_workers, OVERRIDE_WORKERS)
 
 
@@ -146,7 +146,7 @@ def test_uvicorn_loop_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_loop, "uvloop")
 
 
@@ -158,7 +158,7 @@ def test_uvicorn_http_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_http, "httptools")
 
 
@@ -170,7 +170,7 @@ def test_uvicorn_limit_concurrency_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_limit_concurrency, OVERRIDE_LIMIT_CONCURRENCY)
 
 
@@ -182,7 +182,7 @@ def test_uvicorn_limit_concurrency_empty_is_none(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_is_none(settings.uvicorn_limit_concurrency)
 
 
@@ -194,7 +194,7 @@ def test_uvicorn_limit_max_requests_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_limit_max_requests, OVERRIDE_LIMIT_MAX_REQUESTS)
 
 
@@ -206,7 +206,7 @@ def test_uvicorn_timeout_keep_alive_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_timeout_keep_alive, OVERRIDE_TIMEOUT_KEEP_ALIVE)
 
 
@@ -218,7 +218,7 @@ def test_uvicorn_backlog_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_backlog, OVERRIDE_BACKLOG)
 
 
@@ -230,7 +230,7 @@ def test_uvicorn_access_log_disabled_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_false(settings.uvicorn_access_log)
 
 
@@ -242,7 +242,7 @@ def test_uvicorn_server_header_enabled_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.uvicorn_server_header)
 
 
@@ -254,7 +254,7 @@ def test_uvicorn_proxy_headers_enabled_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_true(settings.uvicorn_proxy_headers)
 
 
@@ -266,7 +266,7 @@ def test_uvicorn_forwarded_allow_ips_from_env(tmp_path: Path) -> None:
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):
-        settings = ServingSettings.from_env()
+        settings = get_serving_settings()
     expect_equal(settings.uvicorn_forwarded_allow_ips, "10.0.0.0/8")
 
 

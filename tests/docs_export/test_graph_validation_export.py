@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.build.exports import export_all_jsonl, export_all_parquet
 from codeintel.config.datasets.columns import serialize_row
+from codeintel.core.config.settings import ExportAuditSettings
 from tests._helpers import provision_docs_export_ready
 
 if TYPE_CHECKING:
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsGraphValidationRow as GraphValidationRow,
     )
+
+EXPORT_SETTINGS = ExportAuditSettings()
 
 
 GRAPH_VALIDATION_COLUMNS: tuple[str, ...] = (
@@ -74,8 +77,8 @@ def test_graph_validation_export(tmp_path: Path) -> None:
     )
 
     doc_out = tmp_path / "Document Output"
-    export_all_jsonl(gateway, doc_out)
-    export_all_parquet(gateway, doc_out)
+    export_all_jsonl(gateway, doc_out, settings=EXPORT_SETTINGS)
+    export_all_parquet(gateway, doc_out, settings=EXPORT_SETTINGS)
 
     jsonl_path = doc_out / "graph_validation.jsonl"
     parquet_path = doc_out / "graph_validation.parquet"

@@ -48,7 +48,8 @@ class ExportService:
         """
         return build_export_relation(self.gateway.con, sql=sql)
 
-    def audit_enabled(self, settings: ExportAuditSettings) -> bool:
+    @staticmethod
+    def audit_enabled(settings: ExportAuditSettings) -> bool:
         """Return True when audit logging is enabled.
 
         Parameters

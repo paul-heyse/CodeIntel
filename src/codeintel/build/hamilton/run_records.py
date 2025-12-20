@@ -91,8 +91,7 @@ def compute_target_input_hash(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     settings: BuildSettings,
-    options_hash: str | None = None,
-    manifests: Mapping[str, OutputManifest] | None = None,
+    options: InputHashOptions | None = None,
 ) -> str:
     """Compute input hash for a target using the build hashing infrastructure.
 
@@ -106,17 +105,14 @@ def compute_target_input_hash(
         Storage gateway for loading dependency manifests.
     settings
         Build settings for engine version hashing.
-    options_hash
-        Optional hash of plugin options.
-    manifests
-        Optional pre-loaded manifest index to avoid per-dependency DB calls.
+    options
+        Optional hash options (options_hash + manifest cache).
 
     Returns
     -------
     str
         16-character hex hash string.
     """
-    options = InputHashOptions(options_hash=options_hash, manifests=manifests)
     return compute_input_hash(target, snapshot, gateway, settings=settings, options=options)
 
 
@@ -126,8 +122,7 @@ def compute_target_input_hash_with_deps(
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     settings: BuildSettings,
-    options_hash: str | None = None,
-    manifests: Mapping[str, OutputManifest] | None = None,
+    options: InputHashOptions | None = None,
 ) -> tuple[str, dict[str, str]]:
     """Compute input hash and dependency hash mapping.
 
@@ -141,10 +136,8 @@ def compute_target_input_hash_with_deps(
         Storage gateway for loading dependency manifests.
     settings
         Build settings for engine version hashing.
-    options_hash
-        Optional hash of plugin options.
-    manifests
-        Optional pre-loaded manifest index to avoid per-dependency DB calls.
+    options
+        Optional hash options (options_hash + manifest cache).
 
     Returns
     -------
@@ -152,7 +145,6 @@ def compute_target_input_hash_with_deps(
         Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency names
         to their input hashes (or "MISSING" sentinel).
     """
-    options = InputHashOptions(options_hash=options_hash, manifests=manifests)
     return compute_input_hash_with_deps(
         target,
         snapshot,

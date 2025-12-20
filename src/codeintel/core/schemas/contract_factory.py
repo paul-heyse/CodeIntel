@@ -24,6 +24,7 @@ _OWNER_PACKAGE_BY_PREFIX: dict[str, Literal["core", "analytics", "graphs", "qa",
     "docs": "docs",
     "qa": "qa",
 }
+_EXPECTED_TABLE_KEY_PARTS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +61,7 @@ def is_docs_view(table_key: str) -> bool:
 
 def _split_table_key(table_key: str) -> tuple[str, str]:
     parts = table_key.split(".", maxsplit=1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
+    if len(parts) != _EXPECTED_TABLE_KEY_PARTS or not parts[0] or not parts[1]:
         msg = f"Invalid table key: {table_key!r}"
         raise ValueError(msg)
     return parts[0], parts[1]
@@ -137,7 +138,7 @@ def build_dataset_contract(
 
     tags = frozenset({"docs_view", "read_only"}) if is_view else frozenset({"base_table"})
     if overrides is not None and overrides.tags:
-        tags = tags | overrides.tags
+        tags |= overrides.tags
 
     return DatasetContract(
         table_key=table_key,

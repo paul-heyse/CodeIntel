@@ -16,6 +16,7 @@ from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
@@ -31,6 +32,27 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.config.primitives import BuildPaths, SnapshotRef
+
+TEST_BUILD_SETTINGS = BuildSettings(
+    engine_version="test",
+    export_audit=ExportAuditSettings(),
+)
+
+
+def make_build_settings(engine_version: str = "test") -> BuildSettings:
+    """Return BuildSettings for tests.
+
+    Parameters
+    ----------
+    engine_version
+        Engine version identifier to embed in hashes.
+
+    Returns
+    -------
+    BuildSettings
+        Build settings for tests.
+    """
+    return BuildSettings(engine_version=engine_version, export_audit=ExportAuditSettings())
 
 
 def make_snapshot(

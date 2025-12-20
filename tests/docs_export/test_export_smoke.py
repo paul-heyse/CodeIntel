@@ -14,6 +14,7 @@ from codeintel.build.exports import (
     export_dataset_to_jsonl,
     export_dataset_to_parquet,
 )
+from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.datasets import DatasetRegistry
 from tests._helpers import TestContext, provision_docs_export_ready
@@ -21,6 +22,8 @@ from tests._helpers import TestContext, provision_docs_export_ready
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
+
+EXPORT_SETTINGS = ExportAuditSettings()
 
 
 @pytest.fixture
@@ -55,11 +58,13 @@ def test_export_all_writes_expected_files(docs_export_gateway: TestContext, tmp_
     export_all_parquet(
         docs_export_gateway.gateway,
         output_dir,
+        settings=EXPORT_SETTINGS,
         options=ExportCallOptions(validate_exports=False),
     )
     export_all_jsonl(
         docs_export_gateway.gateway,
         output_dir,
+        settings=EXPORT_SETTINGS,
         options=ExportCallOptions(validate_exports=False),
     )
 
@@ -116,6 +121,7 @@ def test_export_validation_passes_on_minimal_data(
     export_all_parquet(
         docs_export_gateway.gateway,
         output_dir,
+        settings=EXPORT_SETTINGS,
         options=ExportCallOptions(
             validate_exports=True,
             schemas=["analytics.function_profile"],
@@ -130,11 +136,13 @@ def test_export_subset_by_dataset_name(docs_export_gateway: TestContext, tmp_pat
     export_all_parquet(
         docs_export_gateway.gateway,
         output_dir,
+        settings=EXPORT_SETTINGS,
         options=ExportCallOptions(validate_exports=False, datasets=selected),
     )
     export_all_jsonl(
         docs_export_gateway.gateway,
         output_dir,
+        settings=EXPORT_SETTINGS,
         options=ExportCallOptions(validate_exports=False, datasets=selected),
     )
 
@@ -174,6 +182,7 @@ def test_export_subset_validates_dataset_names(
         export_all_jsonl(
             docs_export_gateway.gateway,
             output_dir,
+            settings=EXPORT_SETTINGS,
             options=ExportCallOptions(validate_exports=False, datasets=["missing_dataset"]),
         )
 
@@ -184,10 +193,16 @@ def test_export_helpers_resolve_dataset_names(
     """Dataset-aware export helpers resolve registry names to filenames."""
     output_dir = tmp_path / "Document Output"
     jsonl_path = export_dataset_to_jsonl(
-        docs_export_gateway.gateway, "function_metrics", output_dir
+        docs_export_gateway.gateway,
+        "function_metrics",
+        output_dir,
+        settings=EXPORT_SETTINGS,
     )
     parquet_path = export_dataset_to_parquet(
-        docs_export_gateway.gateway, "function_metrics", output_dir
+        docs_export_gateway.gateway,
+        "function_metrics",
+        output_dir,
+        settings=EXPORT_SETTINGS,
     )
     if not jsonl_path.exists():
         message = f"JSONL export not written: {jsonl_path}"
@@ -202,10 +217,16 @@ def test_export_helpers_resolve_dataset_names(
         message = f"Unexpected Parquet path: {parquet_path.name}"
         pytest.fail(message)
     with pytest.raises(ValueError, match="Unknown dataset"):
-        export_dataset_to_jsonl(docs_export_gateway.gateway, "missing_dataset", output_dir)
+        export_dataset_to_jsonl(
+            docs_export_gateway.gateway,
+            "missing_dataset",
+            output_dir,
+            settings=EXPORT_SETTINGS,
+        )
     export_all_jsonl(
         docs_export_gateway.gateway,
         output_dir,
+        settings=EXPORT_SETTINGS,
         options=ExportCallOptions(
             validate_exports=True,
             schemas=["analytics.function_profile"],
@@ -235,5 +256,6 @@ def test_export_validation_runs_against_registry(
         export_all_jsonl(
             docs_export_gateway.gateway,
             output_dir,
+            settings=EXPORT_SETTINGS,
             options=ExportCallOptions(validate_exports=False),
         )

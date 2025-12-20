@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
@@ -36,11 +36,111 @@ from codeintel.storage.schema.json_schema import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from hypothesis.strategies import SearchStrategy
+
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.gateway import StorageGateway
 
 
 MAX_HYPOTHESIS_EXAMPLES = 15
+TEXT_SAMPLES = ["alpha", "bravo", "charlie", "delta", "echo"]
+CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
+    {
+        "repo": "alpha",
+        "commit": "bravo",
+        "caller_goid_h128": 1,
+        "callee_goid_h128": 2,
+        "callsite_path": "src/app.py",
+        "callsite_line": 10,
+        "callsite_col": 4,
+        "language": "python",
+        "kind": "function",
+        "resolved_via": "static",
+        "confidence": 0.9,
+        "evidence_json": {"evidence": "value"},
+    },
+    {
+        "repo": "charlie",
+        "commit": "delta",
+        "caller_goid_h128": 3,
+        "callee_goid_h128": None,
+        "callsite_path": "src/lib.ts",
+        "callsite_line": 42,
+        "callsite_col": 0,
+        "language": "javascript",
+        "kind": "method",
+        "resolved_via": None,
+        "confidence": None,
+        "evidence_json": None,
+    },
+]
+
+
+def _naive_datetime(year: int, month: int, day: int) -> datetime:
+    return datetime(year, month, day, tzinfo=UTC).replace(tzinfo=None)
+
+
+def _short_text() -> SearchStrategy[str]:
+    return st.sampled_from(TEXT_SAMPLES)
+
+
+def _optional_text() -> SearchStrategy[str | None]:
+    return st.sampled_from([None, *TEXT_SAMPLES])
+
+
+def _small_int() -> SearchStrategy[int]:
+    return st.sampled_from([0, 1, 2, 3, 5, 8, 13])
+
+
+def _optional_int() -> SearchStrategy[int | None]:
+    return st.sampled_from([None, 0, 1, 2, 3, 5, 8, 13])
+
+
+def _small_float() -> SearchStrategy[float]:
+    return st.sampled_from([0.0, 0.5, 1.0])
+
+
+def _optional_float() -> SearchStrategy[float | None]:
+    return st.sampled_from([None, 0.0, 0.5, 1.0])
+
+
+def _call_graph_edge_strategy() -> SearchStrategy[CallGraphEdgeRow]:
+    return st.sampled_from(CALL_GRAPH_EDGE_SAMPLES)
+
+
+def _symbol_use_row_strategy() -> SearchStrategy[SymbolUseRow]:
+    return st.builds(
+        SymbolUseRow,
+        symbol=_short_text(),
+        def_path=_short_text(),
+        use_path=_short_text(),
+        same_file=st.booleans(),
+        same_module=st.booleans(),
+        def_goid_h128=_optional_int(),
+        use_goid_h128=_optional_int(),
+    )
+
+
+def _behavioral_coverage_strategy() -> SearchStrategy[BehavioralCoverageRowModel]:
+    mapping: dict[str, SearchStrategy[object]] = {
+        "repo": _short_text(),
+        "commit": _short_text(),
+        "test_id": _short_text(),
+        "test_goid_h128": _optional_int(),
+        "rel_path": _short_text(),
+        "qualname": _optional_text(),
+        "behavior_tags": st.just({"tag": "value"}),
+        "tag_source": _short_text(),
+        "heuristic_version": _optional_text(),
+        "llm_model": _optional_text(),
+        "llm_run_id": _optional_text(),
+        "created_at": st.datetimes(
+            min_value=_naive_datetime(2000, 1, 1),
+            max_value=_naive_datetime(2030, 1, 1),
+            timezones=st.just(UTC),
+        ),
+    }
+    return cast("SearchStrategy[BehavioralCoverageRowModel]", st.fixed_dictionaries(mapping))
 
 
 @lru_cache(maxsize=1)
@@ -71,7 +171,7 @@ def _json_safe(value: object) -> object:
 
 
 @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
-@given(st.from_type(CallGraphEdgeRow))
+@given(_call_graph_edge_strategy())
 def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
     """Generate schemas from TypedDict should validate generated call graph edges."""
     schema = json_schema_from_typeddict(CallGraphEdgeRow)
@@ -85,7 +185,7 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
 
 
 @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
-@given(st.from_type(SymbolUseRow))
+@given(_symbol_use_row_strategy())
 def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     """Generate schemas should align with symbol use dataclass and serializer."""
     schema = json_schema_from_typeddict(SymbolUseRow)
@@ -113,7 +213,7 @@ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
 
 
 @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
-@given(st.from_type(BehavioralCoverageRowModel))
+@given(_behavioral_coverage_strategy())
 def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
     """Generate schemas should align with behavioral coverage TypedDict and serializer."""
     schema = json_schema_from_typeddict(BehavioralCoverageRowModel)

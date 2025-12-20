@@ -17,6 +17,7 @@ from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.storage.gateway import open_memory_gateway
+from tests._helpers.build import TEST_BUILD_SETTINGS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -55,6 +56,7 @@ def _make_env(tmp_path: Path, config: BuildConfig, snapshot: SnapshotRef) -> Bui
         paths=paths,
         providers=cast("Providers", None),
         config=config,
+        settings=TEST_BUILD_SETTINGS,
         manifest_index={},
     )
 

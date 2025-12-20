@@ -37,6 +37,7 @@ from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
+from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -1001,6 +1002,7 @@ def build_callgraph_fixture_repo(
         paths=paths,
         providers=providers,
         config=BuildConfig.empty(),
+        settings=TEST_BUILD_SETTINGS,
     )
     goids_record = TargetRunRecord(
         target="goids",

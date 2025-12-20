@@ -14,6 +14,7 @@ from codeintel.build.exports import (
     export_all_parquet,
     validate_export_files,
 )
+from codeintel.core.config.settings import ExportAuditSettings
 from tests._helpers import (
     GatewayOptions,
     ProvisioningConfig,
@@ -24,6 +25,8 @@ from tests._helpers.assertions import expect_equal, expect_not_equal, expect_tru
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+EXPORT_SETTINGS = ExportAuditSettings()
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
@@ -100,6 +103,7 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
             export_all_parquet(
                 ctx.gateway,
                 output_dir,
+                settings=EXPORT_SETTINGS,
                 options=ExportCallOptions(
                     validate_exports=True,
                     schemas=["analytics.function_profile"],
@@ -132,6 +136,7 @@ def test_export_logs_problem_detail_on_validation_failure(
             export_all_jsonl(
                 ctx.gateway,
                 output_dir,
+                settings=EXPORT_SETTINGS,
                 options=ExportCallOptions(
                     validate_exports=True,
                     schemas=["analytics.function_profile"],

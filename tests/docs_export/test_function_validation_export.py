@@ -9,12 +9,15 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.exports import export_all_jsonl, export_all_parquet
+from codeintel.core.config.settings import ExportAuditSettings
 from tests._helpers.builders import FunctionValidationRow, insert_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.storage.gateway import StorageGateway
+
+EXPORT_SETTINGS = ExportAuditSettings()
 
 
 def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Path) -> None:
@@ -39,8 +42,8 @@ def test_function_validation_export(fresh_gateway: StorageGateway, tmp_path: Pat
 
     jsonl_dir = tmp_path / "jsonl"
     parquet_dir = tmp_path / "parquet"
-    export_all_jsonl(gateway, jsonl_dir)
-    export_all_parquet(gateway, parquet_dir)
+    export_all_jsonl(gateway, jsonl_dir, settings=EXPORT_SETTINGS)
+    export_all_parquet(gateway, parquet_dir, settings=EXPORT_SETTINGS)
 
     jsonl_file = jsonl_dir / "function_validation.jsonl"
     parquet_file = parquet_dir / "function_validation.parquet"

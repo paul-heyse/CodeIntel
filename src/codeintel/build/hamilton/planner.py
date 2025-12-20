@@ -22,7 +22,7 @@ from codeintel.build.hamilton.impl_kind import ImplKind, native_target_names
 from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hash_evaluator import compute_hash_evaluation
-from codeintel.build.hashing import compute_target_options_hash
+from codeintel.build.hashing import InputHashOptions, compute_target_options_hash
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -464,13 +464,13 @@ def _compute_entry_for_target(
 
     params = env.config.parameters_for(target_name)
     options_hash = compute_target_options_hash(params)
+    hash_options = InputHashOptions(options_hash=options_hash, manifests=manifests)
     evaluation = compute_hash_evaluation(
         target=target,
         snapshot=env.snapshot,
         gateway=env.gateway,
         settings=env.settings,
-        options_hash=options_hash,
-        manifests=manifests,
+        options=hash_options,
     )
 
     if env.is_forced(target_name):

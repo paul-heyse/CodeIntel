@@ -37,6 +37,7 @@ from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
+from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 if TYPE_CHECKING:
@@ -398,6 +399,7 @@ class HamiltonTestBuilder:
             paths=paths,
             providers=self._resolve_providers(),
             config=self._resolve_config(),
+            settings=TEST_BUILD_SETTINGS,
             profile=self.profile,
             force_targets=self.force_targets,
             validate_outputs=self.validate_outputs,

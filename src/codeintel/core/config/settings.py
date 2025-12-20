@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from ipaddress import ip_address
 from pathlib import Path
 
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
@@ -125,8 +126,7 @@ class ServingSettings:
         if not self.auth_required_for_remote:
             return
 
-        public_hosts = {"0.0.0.0", "::", ""}
-        if self.host in public_hosts and not self.auth_token and not self.api_key:
+        if _is_unspecified_host(self.host) and not self.auth_token and not self.api_key:
             msg = (
                 f"Security error: Binding to {self.host!r} requires authentication. "
                 f"Set CODEINTEL_AUTH_TOKEN or CODEINTEL_SERVE_API_KEY, "
@@ -155,6 +155,15 @@ class ServingSettings:
                 f"Got uvicorn_workers={self.uvicorn_workers}."
             )
             raise ValueError(msg)
+
+
+def _is_unspecified_host(host: str) -> bool:
+    if not host:
+        return True
+    try:
+        return ip_address(host).is_unspecified
+    except ValueError:
+        return False
 
 
 __all__ = [

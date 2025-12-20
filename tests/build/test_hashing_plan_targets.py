@@ -16,6 +16,7 @@ from codeintel.build.settings import BuildSettings
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.datasets.primitives import Column, TableSchema
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.core.config.settings import ExportAuditSettings
 from tests._helpers import make_snapshot
 from tests._helpers.assertions import (
     expect_equal,
@@ -69,21 +70,22 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
     snapshot = make_snapshot(tmp_path, repo="demo", commit="c1")
     settings = BuildSettings(
         engine_version="test",
-        export_audit_log_path=None,
-        export_audit_table_enabled=False,
+        export_audit=ExportAuditSettings(),
     )
 
-    hash_options = InputHashOptions(options_hash="opts", settings=settings)
+    hash_options = InputHashOptions(options_hash="opts")
     hash1 = compute_input_hash(
         target,
         snapshot,
         cast("Any", gateway),
+        settings=settings,
         options=hash_options,
     )
     hash2 = compute_input_hash(
         target,
         snapshot,
         cast("Any", gateway),
+        settings=settings,
         options=hash_options,
     )
 

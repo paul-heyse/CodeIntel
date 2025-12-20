@@ -17,6 +17,7 @@ Integration Points
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig, load_build_config
@@ -33,6 +34,15 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class StateValidationOptions:
+    """Inputs required to compute target state."""
+
+    settings: BuildSettings
+    config: BuildConfig | None = None
+    run_config: BuildRunConfig | None = None
 
 
 class StateValidator:
@@ -58,10 +68,13 @@ class StateValidator:
         Storage gateway for accessing manifests.
     snapshot
         Repository snapshot reference (repo, commit, repo_root).
+    options
+        State validation options (build settings + config overrides).
 
     Examples
     --------
-    >>> validator = StateValidator(graph, gateway, snapshot, settings=build_settings)
+    >>> options = StateValidationOptions(settings=build_settings)
+    >>> validator = StateValidator(graph, gateway, snapshot, options=options)
     >>> state = validator.validate()
     >>> state.by_status("missing")
     ('ast', 'modules', ...)
@@ -73,9 +86,7 @@ class StateValidator:
         gateway: StorageGateway,
         snapshot: SnapshotRef,
         *,
-        settings: BuildSettings,
-        config: BuildConfig | None = None,
-        run_config: BuildRunConfig | None = None,
+        options: StateValidationOptions,
     ) -> None:
         """Initialize the state validator.
 
@@ -87,12 +98,8 @@ class StateValidator:
             Storage gateway for manifest access.
         snapshot
             Repository snapshot reference.
-        settings
-            Build settings for input hash computation.
-        config
-            Optional build config override. When omitted, loads from repo root.
-        run_config
-            Optional run configuration overrides to apply on top of config.
+        options
+            State validation options (build settings + config overrides).
 
         Raises
         ------
@@ -111,9 +118,13 @@ class StateValidator:
             raise ValueError(msg)
 
         # Create session and computer for delegation
-        self._session = BuildSession(snapshot=snapshot, gateway=gateway, settings=settings)
-        base_config = config or load_build_config(snapshot.repo_root)
-        effective_config = BuildRunContext.build_config_stack(base_config, run_config)
+        self._session = BuildSession(
+            snapshot=snapshot,
+            gateway=gateway,
+            settings=options.settings,
+        )
+        base_config = options.config or load_build_config(snapshot.repo_root)
+        effective_config = BuildRunContext.build_config_stack(base_config, options.run_config)
         self._computer = StateComputer(
             graph=graph,
             session=self._session,
@@ -160,6 +171,7 @@ class StateValidator:
 
 __all__ = [
     "BuildState",
+    "StateValidationOptions",
     "StateValidator",
     "TargetState",
 ]

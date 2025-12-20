@@ -19,7 +19,12 @@ from codeintel.build.hamilton.planner import (
 )
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
-from tests._helpers.build import make_build_config, make_build_paths, make_snapshot
+from tests._helpers.build import (
+    TEST_BUILD_SETTINGS,
+    make_build_config,
+    make_build_paths,
+    make_snapshot,
+)
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
@@ -67,6 +72,7 @@ def make_test_build_env(
         paths=paths,
         providers=providers,
         config=config,
+        settings=TEST_BUILD_SETTINGS,
         force_targets=force_targets or frozenset(),
         manifest_index=manifest_index,
     )

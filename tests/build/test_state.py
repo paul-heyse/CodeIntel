@@ -9,11 +9,12 @@ import pytest
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hashing import compute_input_hash
-from codeintel.build.state import BuildState, StateValidator, TargetState
+from codeintel.build.state import BuildState, StateValidationOptions, StateValidator, TargetState
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
@@ -26,6 +27,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.storage.gateway import StorageGateway
+
+TEST_BUILD_SETTINGS = BuildSettings(
+    engine_version="test",
+    export_audit=ExportAuditSettings(),
+)
 
 
 def _create_test_graph() -> TargetGraph:
@@ -143,7 +149,12 @@ def validator(
     StateValidator
         Validator configured for testing.
     """
-    return StateValidator(test_graph, fresh_gateway, snapshot)
+    return StateValidator(
+        test_graph,
+        fresh_gateway,
+        snapshot,
+        options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+    )
 
 
 class TestTargetState:
@@ -408,7 +419,12 @@ class TestStateValidatorInit:
         snapshot: SnapshotRef,
     ) -> None:
         """Create a state validator with valid inputs."""
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         expect_is_not_none(validator)
 
     @staticmethod
@@ -427,7 +443,12 @@ class TestStateValidatorInit:
         graph.register(target)
 
         with pytest.raises(ValueError, match="validation failed"):
-            StateValidator(graph, fresh_gateway, snapshot)
+            StateValidator(
+                graph,
+                fresh_gateway,
+                snapshot,
+                options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+            )
 
 
 class TestValidateEmptyDatabase:
@@ -457,7 +478,12 @@ class TestValidateCurrentTargets:
     ) -> None:
         """Target with matching hash should be current."""
         target = test_graph.get("modules")
-        correct_hash = compute_input_hash(target, snapshot, fresh_gateway)
+        correct_hash = compute_input_hash(
+            target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
 
         manifest = OutputManifest(
             target="modules",
@@ -470,7 +496,12 @@ class TestValidateCurrentTargets:
         )
         fresh_gateway.build.save_manifest(manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(state.get("modules").status, "current")
@@ -484,7 +515,12 @@ class TestValidateCurrentTargets:
     ) -> None:
         """Chain of targets with valid hashes should all be current."""
         modules_target = test_graph.get("modules")
-        modules_hash = compute_input_hash(modules_target, snapshot, fresh_gateway)
+        modules_hash = compute_input_hash(
+            modules_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         modules_manifest = OutputManifest(
             target="modules",
             repo=snapshot.repo,
@@ -498,7 +534,12 @@ class TestValidateCurrentTargets:
         fresh_gateway.build.save_manifest(modules_manifest)
 
         ast_target = test_graph.get("ast")
-        ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
+        ast_hash = compute_input_hash(
+            ast_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         ast_manifest = OutputManifest(
             target="ast",
             repo=snapshot.repo,
@@ -511,7 +552,12 @@ class TestValidateCurrentTargets:
         )
         fresh_gateway.build.save_manifest(ast_manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(state.get("modules").status, "current")
@@ -539,7 +585,12 @@ class TestValidateStaleTargets:
         )
         fresh_gateway.build.save_manifest(manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         modules_state = state.get("modules")
@@ -558,7 +609,12 @@ class TestValidateBlockedTargets:
     ) -> None:
         """Target should be blocked when dependency is missing."""
         ast_target = test_graph.get("ast")
-        ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
+        ast_hash = compute_input_hash(
+            ast_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         ast_manifest = OutputManifest(
             target="ast",
             repo=snapshot.repo,
@@ -570,7 +626,12 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(ast_manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(state.get("modules").status, "missing")
@@ -599,7 +660,12 @@ class TestValidateBlockedTargets:
         fresh_gateway.build.save_manifest(modules_manifest)
 
         ast_target = test_graph.get("ast")
-        ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
+        ast_hash = compute_input_hash(
+            ast_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         ast_manifest = OutputManifest(
             target="ast",
             repo=snapshot.repo,
@@ -611,7 +677,12 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(ast_manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(state.get("modules").status, "stale")
@@ -640,7 +711,12 @@ class TestValidateBlockedTargets:
         fresh_gateway.build.save_manifest(modules_manifest)
 
         ast_target = test_graph.get("ast")
-        ast_hash = compute_input_hash(ast_target, snapshot, fresh_gateway)
+        ast_hash = compute_input_hash(
+            ast_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         ast_manifest = OutputManifest(
             target="ast",
             repo=snapshot.repo,
@@ -653,7 +729,12 @@ class TestValidateBlockedTargets:
         fresh_gateway.build.save_manifest(ast_manifest)
 
         goids_target = test_graph.get("goids")
-        goids_hash = compute_input_hash(goids_target, snapshot, fresh_gateway)
+        goids_hash = compute_input_hash(
+            goids_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         goids_manifest = OutputManifest(
             target="goids",
             repo=snapshot.repo,
@@ -665,7 +746,12 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(goids_manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(state.get("modules").status, "stale")
@@ -707,7 +793,12 @@ class TestValidateBlockedTargets:
         fresh_gateway.build.save_manifest(ast_manifest)
 
         metrics_target = test_graph.get("function_metrics")
-        metrics_hash = compute_input_hash(metrics_target, snapshot, fresh_gateway)
+        metrics_hash = compute_input_hash(
+            metrics_target,
+            snapshot,
+            fresh_gateway,
+            settings=TEST_BUILD_SETTINGS,
+        )
         metrics_manifest = OutputManifest(
             target="function_metrics",
             repo=snapshot.repo,
@@ -719,7 +810,12 @@ class TestValidateBlockedTargets:
         )
         fresh_gateway.build.save_manifest(metrics_manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         metrics_state = state.get("function_metrics")
@@ -771,7 +867,12 @@ class TestEdgeCases:
         )
         fresh_gateway.build.save_manifest(unknown_manifest)
 
-        validator = StateValidator(test_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            test_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
 
         with caplog.at_level("WARNING"):
             state = validator.validate()
@@ -788,7 +889,12 @@ class TestEdgeCases:
         """Validating empty graph should work."""
         empty_graph = TargetGraph()
 
-        validator = StateValidator(empty_graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            empty_graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(len(state.targets), 0)
@@ -806,7 +912,12 @@ class TestWithRealRegistry:
     ) -> None:
         """Validate using the full target registry."""
         graph = get_target_metadata_service().system.graph
-        validator = StateValidator(graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(len(state.by_status("missing")), len(graph))
@@ -819,7 +930,12 @@ class TestWithRealRegistry:
     ) -> None:
         """Verify state covers all registered targets."""
         graph = get_target_metadata_service().system.graph
-        validator = StateValidator(graph, fresh_gateway, snapshot)
+        validator = StateValidator(
+            graph,
+            fresh_gateway,
+            snapshot,
+            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        )
         state = validator.validate()
 
         expect_equal(len(state.targets), len(graph))

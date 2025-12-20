@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from codeintel.core.config.settings import ExportAuditSettings
     from codeintel.storage.gateway import StorageConfig, StorageGateway
 
 
@@ -48,10 +49,12 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
         gateway: StorageGateway,
         document_output_dir: Path,
         *,
+        settings: ExportAuditSettings,
         options: ExportCallOptions | None = None,
     ) -> None:
         _ = gateway
         _ = document_output_dir
+        _ = settings
         opts = options or ExportCallOptions()
         calls.append(f"parquet:{opts.datasets}")
 
@@ -59,10 +62,12 @@ def test_run_validated_exports_invokes_validator_before_exports(tmp_path: Path) 
         gateway: StorageGateway,
         document_output_dir: Path,
         *,
+        settings: ExportAuditSettings,
         options: ExportCallOptions | None = None,
     ) -> list[Path]:
         _ = gateway
         _ = document_output_dir
+        _ = settings
         opts = options or ExportCallOptions()
         calls.append(f"jsonl:{opts.datasets}")
         return [tmp_path / "dummy.jsonl"]

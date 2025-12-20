@@ -7,12 +7,15 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.exports import export_jsonl_for_table
 from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.core.config.settings import ExportAuditSettings
 from tests._helpers import provision_graph_ready_repo
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.storage.gateway import DuckDBConnection
+
+EXPORT_SETTINGS = ExportAuditSettings()
 
 
 def _setup_edge_table(con: DuckDBConnection, table: str) -> None:
@@ -48,7 +51,7 @@ def test_call_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     )
 
     out = tmp_path / "call_graph_edges.jsonl"
-    export_jsonl_for_table(gateway, table, out)
+    export_jsonl_for_table(gateway, table, out, settings=EXPORT_SETTINGS)
 
     content = out.read_text(encoding="utf-8").splitlines()
     if not content:
@@ -89,7 +92,7 @@ def test_import_graph_edges_export_includes_repo_commit(tmp_path: Path) -> None:
     )
 
     out = tmp_path / "import_graph_edges.jsonl"
-    export_jsonl_for_table(gateway, table, out)
+    export_jsonl_for_table(gateway, table, out, settings=EXPORT_SETTINGS)
 
     content = out.read_text(encoding="utf-8").splitlines()
     if not content:

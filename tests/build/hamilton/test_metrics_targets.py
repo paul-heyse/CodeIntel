@@ -20,7 +20,7 @@ from codeintel.build.hamilton.native.analytics.metrics_targets import (
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.build import make_build_config, make_build_paths
+from tests._helpers.build import TEST_BUILD_SETTINGS, make_build_config, make_build_paths
 from tests._helpers.fakes.fake_providers import FakeProviders
 
 if TYPE_CHECKING:
@@ -61,6 +61,7 @@ def _make_env(
         paths=paths,
         providers=providers,
         config=config,
+        settings=TEST_BUILD_SETTINGS,
         force_targets=force_targets
         or frozenset({"subsystem_graph_metrics", "symbol_graph_metrics", "subsystem_agreement"}),
     )
