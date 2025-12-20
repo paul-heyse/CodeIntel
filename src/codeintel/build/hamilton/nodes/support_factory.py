@@ -30,7 +30,6 @@ from codeintel.build.hamilton.introspect import (
     derive_target_dependencies,
     target_graph_from_hamilton,
 )
-from codeintel.build.hamilton.runtime import HamiltonRuntime
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
@@ -46,6 +45,7 @@ from codeintel.build.hamilton.nodes.mappings import SupportNodeMappings
 from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.runtime import HamiltonRuntime
 from codeintel.build.hamilton.tagging import (
     tag_artifact,
     tag_dataset,
