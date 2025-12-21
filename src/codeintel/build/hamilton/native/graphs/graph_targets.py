@@ -1298,7 +1298,7 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
     step(_call_graph_views_filter_edges, env=source("env")),
     step(_call_graph_views_build_call_count_stats),
     step(_call_graph_views_finalize_call_counts, env=source("env")),
-    namespace=None,
+    namespace="call_graph_function_call_counts",
     on_input="q__graph__call_graph_edges",
 )
 @tag_compute(
@@ -1354,7 +1354,7 @@ def call_graph_function_call_counts(
     step(_call_graph_views_filter_edges, env=source("env")),
     step(_call_graph_views_prepare_depth_tables),
     step(_call_graph_views_finalize_depth_stats, env=source("env")),
-    namespace=None,
+    namespace="call_graph_call_depth_stats",
     on_input="q__graph__call_graph_edges",
 )
 @tag_compute(

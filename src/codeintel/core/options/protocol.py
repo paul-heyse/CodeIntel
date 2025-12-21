@@ -10,9 +10,6 @@ from typing import Protocol, Self, runtime_checkable
 
 from codeintel.core.validation.outcome import ValidationOutcome
 
-type ValidationResult = ValidationOutcome
-"""Backwards-compatible type alias for ``ValidationOutcome``."""
-
 
 @runtime_checkable
 class OptionsProtocol(Protocol):
@@ -69,5 +66,4 @@ class OptionsProtocol(Protocol):
 __all__ = [
     "OptionsProtocol",
     "ValidationOutcome",
-    "ValidationResult",
 ]

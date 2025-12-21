@@ -183,7 +183,7 @@ class DatasetSchema:
         return pandera_to_json_schema(self.pandera_schema)
 
     def get_row_model(self) -> type[Any]:
-        """Return or generate the TypedDict row model.
+        """Return or generate the row model class.
 
         If a pre-computed row model was provided at construction, returns it.
         Otherwise, generates one from the Pandera schema. Generated models
@@ -192,15 +192,12 @@ class DatasetSchema:
         Returns
         -------
         type[Any]
-            TypedDict class for this dataset's rows.
+            Row model class for this dataset's rows.
 
         Notes
         -----
-        The generated TypedDict has the same structure as manually-defined
-        row models but is derived directly from the Pandera schema. This
-        ensures the row model always matches the validation schema.
-
-        Architecture Reference: Section 5.3.1 - Migrate row models
+        The generated model is derived directly from the Pandera schema to
+        ensure the row model always matches the validation schema.
         """
         if self.row_model is not None:
             return self.row_model

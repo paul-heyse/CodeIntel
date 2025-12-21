@@ -8,7 +8,7 @@ Hamilton-inferred, compiled manifests, etc.).
 
 from __future__ import annotations
 
-from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.hashing import canonical_type, schema_hash
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
@@ -37,7 +37,6 @@ __all__ = [
     "GeneratedRowBinding",
     "Index",
     "MappingSchemaProvider",
-    "RowBinding",
     "SchemaProvider",
     "SchemaRecord",
     "SchemaService",

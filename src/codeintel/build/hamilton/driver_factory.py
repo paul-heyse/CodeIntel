@@ -1,13 +1,11 @@
 """Construct Hamilton drivers for build execution.
 
 This module is the single composition root for Hamilton build execution. The
-core strategy is **templates + native overrides**:
+core strategy is **native-only**:
 
-- A template module provides fallback nodes for *all* targets.
-- Native modules override templates where explicit implementations exist.
+- Native modules provide nodes for all targets.
 
-This eliminates mode switching and exclusion lists by relying on Hamilton's
-module override semantics (`driver.Builder().allow_module_overrides()`).
+This removes template-based fallback execution and wrapper mode switching.
 """
 
 from __future__ import annotations
@@ -24,8 +22,11 @@ from codeintel.build.hamilton.introspect import (
 )
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.discovery import load_native_modules
+from codeintel.build.hamilton.nodes.support_factory import (
+    SupportGenerationOptions,
+    get_support_module,
+)
 from codeintel.build.hamilton.runtime import HamiltonRuntime
-from codeintel.build.hamilton.templates import get_template_module
 from codeintel.build.target_catalog import load_target_specs
 from codeintel.build.targets import TargetGraph
 
@@ -53,8 +54,8 @@ def build_driver(
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
-    Constructs a Hamilton Driver using template nodes and native overrides,
-    then returns it bundled with the target graph and mappings.
+    Constructs a Hamilton Driver using native target modules, then returns it
+    bundled with the target graph and mappings.
 
     Parameters
     ----------
@@ -84,10 +85,7 @@ def build_driver(
 
     Notes
     -----
-    The module order is significant:
-
-    1. Template module is loaded first and defines a complete fallback DAG.
-    2. Native modules load afterwards and override any colliding node names.
+    Native modules are loaded to define the complete DAG.
 
     Examples
     --------
@@ -100,18 +98,22 @@ def build_driver(
     for target in targets:
         base_graph.register(target)
 
-    template_mod = get_template_module()
     native_mods = load_native_modules()
+    support_module = get_support_module(
+        options=SupportGenerationOptions(
+            include_target_stubs=False,
+            include_dataset_nodes=True,
+            include_loader_nodes=True,
+            include_artifact_nodes=True,
+        )
+    )
 
     adapter_list = list(adapters) if adapters else []
     if adapter_factory is not None:
         adapter_list.extend(adapter_factory(base_graph))
 
     builder = (
-        h_driver.Builder()
-        .with_config(config or {})
-        .with_modules(template_mod, *native_mods)
-        .allow_module_overrides()
+        h_driver.Builder().with_config(config or {}).with_modules(*native_mods, support_module)
     )
     if enable_cache:
         cache_path = _DEFAULT_HAMILTON_CACHE_DIR if cache_dir is None else Path(cache_dir)

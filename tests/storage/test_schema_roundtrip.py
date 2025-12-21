@@ -74,6 +74,38 @@ CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
         "evidence_json": None,
     },
 ]
+TEST_COVERAGE_EDGE_SAMPLES: list[TestCoverageEdgeRow] = [
+    {
+        "test_id": "test_demo",
+        "test_goid_h128": 101,
+        "function_goid_h128": 202,
+        "urn": "urn:ci:test:demo",
+        "repo": "alpha",
+        "commit": "bravo",
+        "rel_path": "tests/test_demo.py",
+        "qualname": "TestDemo.test_demo",
+        "covered_lines": 12,
+        "executable_lines": 20,
+        "coverage_ratio": 0.6,
+        "last_status": "passed",
+        "created_at": datetime(2023, 1, 1, tzinfo=UTC),
+    },
+    {
+        "test_id": None,
+        "test_goid_h128": None,
+        "function_goid_h128": None,
+        "urn": None,
+        "repo": None,
+        "commit": None,
+        "rel_path": None,
+        "qualname": None,
+        "covered_lines": None,
+        "executable_lines": None,
+        "coverage_ratio": None,
+        "last_status": None,
+        "created_at": None,
+    },
+]
 
 
 def _naive_datetime(year: int, month: int, day: int) -> datetime:
@@ -106,6 +138,10 @@ def _optional_float() -> SearchStrategy[float | None]:
 
 def _call_graph_edge_strategy() -> SearchStrategy[CallGraphEdgeRow]:
     return st.sampled_from(CALL_GRAPH_EDGE_SAMPLES)
+
+
+def _test_coverage_edge_strategy() -> SearchStrategy[TestCoverageEdgeRow]:
+    return st.sampled_from(TEST_COVERAGE_EDGE_SAMPLES)
 
 
 def _symbol_use_row_strategy() -> SearchStrategy[SymbolUseRow]:
@@ -199,7 +235,7 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
 
 
 @settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
-@given(st.from_type(TestCoverageEdgeRow))
+@given(_test_coverage_edge_strategy())
 def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
     """Generate schemas should align with test coverage edge TypedDict and serializer."""
     schema = json_schema_from_typeddict(TestCoverageEdgeRow)

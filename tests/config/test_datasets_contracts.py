@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
 
 from codeintel.build.schemas import (
@@ -13,10 +11,11 @@ from codeintel.build.schemas import (
     iter_contracts_by_table_key,
     iter_row_bindings,
 )
-from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
+_SHA256_HEX_LEN: int = 64
 
 
 def require(*, condition: bool, message: str) -> None:
@@ -119,18 +118,28 @@ def test_dataset_contract_counts_match() -> None:
     )
 
 
-def test_row_binding_dataclass() -> None:
-    """Verify RowBinding dataclass behaves correctly."""
-
-    def dummy_serializer(_row: Mapping[str, object]) -> tuple[object, ...]:
-        return ()
-
-    binding = RowBinding(row_type=dict, to_tuple=dummy_serializer)
-    require(condition=binding.row_type is dict, message="row_type should store provided type")
-    require(
-        condition=binding.to_tuple is dummy_serializer,
-        message="to_tuple should store the serializer",
+def test_generated_row_binding_has_provenance() -> None:
+    """Verify GeneratedRowBinding includes provenance metadata."""
+    schema = TableSchema(
+        schema="test",
+        name="example",
+        columns=[Column(name="id", type="INTEGER", nullable=False)],
     )
+    binding = row_binding_for_table_schema(table_schema=schema)
+    require(
+        condition=isinstance(binding, GeneratedRowBinding),
+        message="row_binding_for_table_schema should return GeneratedRowBinding",
+    )
+    require(
+        condition=binding.table_key == "test.example",
+        message="table_key should match schema table key",
+    )
+    require(
+        condition=len(binding.schema_hash) == _SHA256_HEX_LEN,
+        message="schema_hash should be a SHA-256 hex string",
+    )
+    require(condition=callable(binding.serializer), message="serializer should be callable")
+    require(condition=isinstance(binding.row_model, type), message="row_model should be a type")
 
 
 def test_dataset_contract_capabilities() -> None:

@@ -9,7 +9,6 @@ from codeintel.build.hashing import InputHashOptions, compute_input_hash_with_de
 from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
-
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.build_manifest import OutputManifest

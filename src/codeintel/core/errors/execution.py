@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.storage.exceptions import DUCKDB_ERRORS
+from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.core.plugins.types.result import PluginExecutionRecord
 
 
 PLUGIN_CATCHABLE_ERRORS: tuple[type[Exception], ...] = (
-    *DUCKDB_ERRORS,
+    DuckDBError,
     AttributeError,
     LookupError,
     RuntimeError,

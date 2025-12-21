@@ -69,54 +69,17 @@ if TYPE_CHECKING:
         ProgrammingError as DuckDBProgrammingError,
     )
 else:
-    try:
-        import duckdb
-    except ImportError:
-        DuckDBConnection = object
-        DuckDBRelation = object
+    import duckdb
 
-        class DuckDBError(Exception):
-            """Fallback DuckDB error when duckdb is unavailable."""
-
-
-        class DuckDBCatalogError(DuckDBError):
-            """Fallback DuckDB catalog error when duckdb is unavailable."""
-
-
-        class DuckDBConnectionError(DuckDBError):
-            """Fallback DuckDB connection error when duckdb is unavailable."""
-
-
-        class DuckDBDatabaseError(DuckDBError):
-            """Fallback DuckDB database error when duckdb is unavailable."""
-
-
-        class DuckDBInvalidInputError(DuckDBError):
-            """Fallback DuckDB invalid input error when duckdb is unavailable."""
-
-
-        class DuckDBProgrammingError(DuckDBError):
-            """Fallback DuckDB programming exception when duckdb is unavailable."""
-
-
-        class DuckDBBinderError(DuckDBError):
-            """Fallback DuckDB binder error when duckdb is unavailable."""
-
-
-        DuckDBCatalogException = DuckDBCatalogError
-        DuckDBConnectionException = DuckDBConnectionError
-        DuckDBInvalidInputException = DuckDBInvalidInputError
-        DuckDBBinderException = DuckDBBinderError
-    else:
-        DuckDBConnection = duckdb.DuckDBPyConnection
-        DuckDBRelation = duckdb.DuckDBPyRelation
-        DuckDBError = duckdb.Error
-        DuckDBCatalogException = duckdb.CatalogException
-        DuckDBConnectionException = duckdb.ConnectionException
-        DuckDBDatabaseError = duckdb.DatabaseError
-        DuckDBInvalidInputException = duckdb.InvalidInputException
-        DuckDBProgrammingError = duckdb.ProgrammingError
-        DuckDBBinderException = duckdb.BinderException
+    DuckDBConnection = duckdb.DuckDBPyConnection
+    DuckDBRelation = duckdb.DuckDBPyRelation
+    DuckDBError = duckdb.Error
+    DuckDBCatalogException = duckdb.CatalogException
+    DuckDBConnectionException = duckdb.ConnectionException
+    DuckDBDatabaseError = duckdb.DatabaseError
+    DuckDBInvalidInputException = duckdb.InvalidInputException
+    DuckDBProgrammingError = duckdb.ProgrammingError
+    DuckDBBinderException = duckdb.BinderException
 
 
 class MinimalGateway(Protocol):

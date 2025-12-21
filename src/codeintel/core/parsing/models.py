@@ -79,10 +79,6 @@ class ParsedFunction:
     return_annotation: Any | None
     param_any_flags: Mapping[str, bool]
     return_is_any: bool
-    # Graph compatibility fields
-    is_async: bool = False
-    decorator_names: tuple[str, ...] = ()
-    parameters: tuple[str, ...] = ()
 
     @property
     def local_name(self) -> str:

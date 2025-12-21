@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from codeintel.storage.exports.service import (
+    ExportAuditContext,
     ExportAuditRecord,
     ExportService,
     audit_enabled,
@@ -11,6 +12,7 @@ from codeintel.storage.exports.service import (
 )
 
 __all__ = [
+    "ExportAuditContext",
     "ExportAuditRecord",
     "ExportService",
     "audit_enabled",

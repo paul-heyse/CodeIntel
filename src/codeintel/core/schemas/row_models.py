@@ -4,9 +4,9 @@ Row models are a derived convenience for typed row-shaped data interchange,
 not a separate schema authority. They are generated on demand from ``TableSchema``
 and cached for reuse.
 
-This module also provides ``GeneratedRowBinding``, a schema-generated equivalent
-to the legacy ``RowBinding`` that includes provenance metadata (table_key,
-schema_hash) for cache invalidation and debugging.
+This module also provides ``GeneratedRowBinding``, a schema-generated row binding
+that includes provenance metadata (table_key, schema_hash) for cache invalidation
+and debugging.
 
 Additionally, it provides utilities for generating TypedDicts from Pandera
 DataFrameSchema definitions for interoperability with validation boundaries.
@@ -132,10 +132,8 @@ def row_serializer_for_table_schema(*, table_schema: TableSchema) -> RowSerializ
 class GeneratedRowBinding:
     """Schema-generated row binding with provenance metadata.
 
-    This class provides a drop-in replacement for the legacy ``RowBinding``
-    dataclass while adding schema provenance for cache invalidation and
-    debugging. The ``row_type`` and ``to_tuple`` properties maintain
-    compatibility with the legacy interface.
+    This class provides a schema-generated binding while adding provenance for
+    cache invalidation and debugging.
 
     Parameters
     ----------
@@ -170,7 +168,7 @@ class GeneratedRowBinding:
 
 
 def row_binding_for_table_schema(*, table_schema: TableSchema) -> GeneratedRowBinding:
-    """Generate a complete RowBinding from a TableSchema.
+    """Generate a complete row binding from a TableSchema.
 
     This function creates a ``GeneratedRowBinding`` containing both the row
     model (frozen dataclass) and serializer, along with provenance metadata

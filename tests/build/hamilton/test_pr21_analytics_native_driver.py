@@ -1,8 +1,4 @@
-"""Tests for PR-21: Native analytics driver composition.
-
-The build system uses a single driver composition path: template support nodes
-plus native targets, relying on Hamilton's module override semantics.
-"""
+"""Tests for PR-21: Native analytics driver composition."""
 
 from __future__ import annotations
 
@@ -63,33 +59,6 @@ def test_auto_driver_excludes_wrapper_for_native_targets() -> None:
                 f"Found '{node_name}' but no '{compute_node_name}', "
                 f"suggesting wrapper instead of native"
             )
-
-
-def test_auto_driver_includes_loader_nodes() -> None:
-    """Verify auto driver includes loader nodes from assets module."""
-    all_nodes = list_available_nodes()
-
-    # Loader nodes should be present from the assets module
-    # Check for a few key loader nodes used by native analytics
-
-    # These should exist if the analytics targets are registered
-    expected_loader_patterns = [
-        "q__graph__goids",
-        "q__analytics__coverage_lines",
-        "q__core__modules",
-        "q__core__file_state",
-        "q__graph__import_graph_edges",
-    ]
-
-    missing_loaders = [node for node in expected_loader_patterns if node not in all_nodes]
-
-    # It's okay if some loaders are missing (depends on what's generated)
-    # but we should have at least one
-    if len(missing_loaders) == len(expected_loader_patterns):
-        pytest.fail(
-            f"No expected loader nodes found. Missing: {missing_loaders}. "
-            f"Assets module may not be loaded."
-        )
 
 
 def test_risk_factors_native_still_present_in_wave2() -> None:

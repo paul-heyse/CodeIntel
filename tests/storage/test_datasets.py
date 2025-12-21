@@ -13,7 +13,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.row_models import row_binding_for_table_schema
 from codeintel.storage.contracts import get_contract_provider
 from codeintel.storage.datasets import (
     DatasetRegistry,
@@ -36,8 +38,6 @@ from tests._helpers.dataset_factories import sample_dataset_registry
 from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -280,18 +280,6 @@ def _require(*, condition: bool, message: str) -> None:
         pytest.fail(message)
 
 
-def _stub_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
-    """
-    Convert a mapping to a tuple of values.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Values from the mapping.
-    """
-    return tuple(row.values())
-
-
 def test_json_schema_ids_attached_to_datasets() -> None:
     """Datasets loaded from DuckDB should include JSON Schema identifiers when present."""
     gateway = GatewayFactory().without_validation().open()
@@ -309,11 +297,16 @@ def test_json_schema_ids_attached_to_datasets() -> None:
 
 def test_require_row_binding_behavior() -> None:
     """Row binding helpers should expose deterministic behavior."""
-    binding = RowBinding(row_type=dict, to_tuple=_stub_to_tuple)
+    table_schema = TableSchema(
+        schema="dummy",
+        name="table",
+        columns=[Column(name="id", type="INTEGER", nullable=False)],
+    )
+    binding = row_binding_for_table_schema(table_schema=table_schema)
     dataset_with_binding = DatasetContract(
-        table_key="dummy.table",
+        table_key=table_schema.table_key,
         name="dummy",
-        schema=None,
+        schema=table_schema,
         row_binding=binding,
     )
     _require(

@@ -106,13 +106,6 @@ class BuildRunCommand:
             negative=(),
         ),
     ] = False
-    wrapper_allowlist: Annotated[
-        list[str] | None,
-        Parameter(
-            name=["--wrapper-allowlist"],
-            help="Only allow wrapper implementation for these targets (comma-separated).",
-        ),
-    ] = None
     publish_serving_snapshot: Annotated[
         bool,
         Parameter(

@@ -7,6 +7,7 @@ import time
 from typing import TYPE_CHECKING
 
 import anyio
+from fastmcp import Context, FastMCP
 
 from codeintel.serving.export.formats import suffix_for_export_format, supports_preview
 from codeintel.serving.export.meta import (
@@ -15,7 +16,6 @@ from codeintel.serving.export.meta import (
     build_export_snapshot_dict,
 )
 from codeintel.serving.features import ServingFeatureSet
-from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.export_dispatch import write_export_to_store
 from codeintel.serving.mcp.models import ExportHandleResponse, ExportSnapshot, SnapshotRef
 from codeintel.serving.mcp.resource_store import ResourceStore

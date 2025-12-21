@@ -87,6 +87,11 @@ def _compile_target_specs(
     -------
     tuple[tuple[TargetSpec, ...], frozenset[str]]
         Compiled TargetSpecs and the set of produced dataset table keys.
+
+    Raises
+    ------
+    RuntimeError
+        If any target does not resolve to a native implementation.
     """
     all_table_keys: set[str] = set()
     target_specs: list[TargetSpec] = []
@@ -94,7 +99,10 @@ def _compile_target_specs(
 
     for target_name in sorted(graph):
         target = graph.get(target_name)
-        impl_kind = "native" if target_name in native_names else "wrapper"
+        if target_name not in native_names:
+            msg = f"Target '{target_name}' lacks a native implementation"
+            raise RuntimeError(msg)
+        impl_kind = "native"
 
         outputs = derived_outputs.datasets_for(target_name)
         artifacts = derived_outputs.artifacts_for(target_name)

@@ -2,7 +2,7 @@
 
 This module provides a deterministic, runtime-derived answer to:
 
-- "Is this target implemented by a native module, or is it using the template/wrapper path?"
+- "Is this target implemented by a native module?"
 
 We intentionally avoid maintaining hand-edited allowlists. The Hamilton driver already knows which
 callable backs each `t__*` node; we use that as the source of truth.
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
 
 
-ImplKind = Literal["native", "wrapper"]
+ImplKind = Literal["native"]
 
 
 def native_target_names(runtime: HamiltonRuntime) -> frozenset[str]:
@@ -59,16 +59,23 @@ def target_impl_kind(runtime: HamiltonRuntime, *, target_name: str) -> ImplKind:
     Returns
     -------
     ImplKind
-        "native" when the target is backed by a native module callable, otherwise "wrapper".
+        "native" when the target is backed by a native module callable.
+
+    Raises
+    ------
+    ValueError
+        If the target does not resolve to a native implementation.
     """
     nodes = runtime.dr.graph.nodes
     node = nodes.get(target_node(target_name))
     if node is None:
-        return "wrapper"
+        msg = f"Target '{target_name}' lacks a native implementation"
+        raise ValueError(msg)
     mod = getattr(getattr(node, "callable", None), "__module__", "")
     if isinstance(mod, str) and mod.startswith("codeintel.build.hamilton.native."):
         return "native"
-    return "wrapper"
+    msg = f"Target '{target_name}' lacks a native implementation"
+    raise ValueError(msg)
 
 
 __all__ = [

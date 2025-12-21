@@ -296,7 +296,7 @@ class ResourceStore:
             If ``spec.format`` is unsupported.
         """
         normalized = normalize_export_format(spec.format)
-        if normalized not in {"jsonl", "json"}:
+        if normalized not in {"ndjson", "json"}:
             msg = "put_with_metadata only supports format='ndjson', 'jsonl', or 'json'"
             raise ValueError(msg)
 
@@ -309,7 +309,7 @@ class ResourceStore:
 
         path, mime_type = self._artifact_path_for_format(token, spec.format)
         try:
-            if normalized == "jsonl":
+            if normalized == "ndjson":
                 with path.open("w", encoding="utf-8") as f:
                     for row in rows:
                         f.write(json.dumps(row, default=str) + "\n")
@@ -384,7 +384,7 @@ class ResourceStore:
             If ``spec.format`` is not ``"ndjson"`` or ``"jsonl"``.
         """
         normalized = normalize_export_format(spec.format)
-        if normalized != "jsonl":
+        if normalized != "ndjson":
             msg = "Streaming export only supports format='ndjson' or 'jsonl'"
             raise ValueError(msg)
 

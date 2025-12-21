@@ -109,7 +109,6 @@ class BuildEnv:
     output_inventory: OutputInventory | None = None
     validate_outputs: bool = False
     strict_contracts: bool = False
-    wrapper_allowlist: frozenset[str] | None = None
     fingerprint_policy: FingerprintPolicy = field(
         default_factory=lambda: DEFAULT_FINGERPRINT_POLICY
     )

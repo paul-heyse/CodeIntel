@@ -58,10 +58,8 @@ class _VersionState:
     policy: FingerprintPolicy
 
 
-def _impl_kind(plugin_name: str) -> str:
-    if plugin_name.startswith("native:"):
-        return "native"
-    return "wrapper"
+def _impl_kind(_plugin_name: str) -> str:
+    return "native"
 
 
 def _resolve_schema_provider(env: BuildEnv) -> SchemaProvider:

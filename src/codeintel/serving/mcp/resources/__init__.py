@@ -25,7 +25,8 @@ from codeintel.serving.mcp.resources.exports import register_export_resources
 from codeintel.serving.mcp.resources.meta import register_meta_resources
 
 if TYPE_CHECKING:
-    from codeintel.serving.mcp._compat import FastMCP
+    from fastmcp import FastMCP
+
     from codeintel.serving.mcp.resource_store import ResourceStore
     from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.settings import ServingSettings

@@ -13,7 +13,7 @@ from codeintel.serving.settings import ServingSettings, get_serving_settings
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
-    from codeintel.serving.mcp._compat import FastMCP
+    from fastmcp import FastMCP
 
 
 def create_mcp_server(

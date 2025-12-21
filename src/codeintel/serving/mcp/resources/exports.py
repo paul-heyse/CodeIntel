@@ -39,7 +39,8 @@ from codeintel.serving.uris import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.serving.mcp._compat import FastMCP
+    from fastmcp import FastMCP
+
     from codeintel.serving.mcp.resource_store import ResourceStore
     from codeintel.serving.settings import ServingSettings
 

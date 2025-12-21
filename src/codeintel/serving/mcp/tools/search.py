@@ -5,7 +5,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-from codeintel.serving.mcp._compat import Context, FastMCP
+from fastmcp import Context, FastMCP
+
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (
     READ_ONLY_LOCAL_ANNOTATIONS,

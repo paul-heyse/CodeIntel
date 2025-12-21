@@ -10,6 +10,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastmcp.server.event_store import EventStore
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -28,7 +29,6 @@ from codeintel.serving.http.middleware import (
 )
 from codeintel.serving.http.routes import build_http_router
 from codeintel.serving.http.state import ServingState
-from codeintel.serving.mcp._compat import EventStore
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.runtime import build_runtime

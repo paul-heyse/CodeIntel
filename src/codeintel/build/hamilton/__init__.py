@@ -2,17 +2,14 @@
 
 Hamilton is the orchestration layer for CodeIntel's build graph. This package provides:
 
-- Driver construction for dynamic wrapper nodes and native pipelines
+- Driver construction for native pipelines
 - Execution via ``HamiltonBuildExecutor``
 - Planning (``compute_plan`` / ``explain_plan``) and DAG observability exports
 - Contract enforcement hooks for datasets and artifacts
 
 Driver construction
 -------------------
-The build DAG is composed using **templates + native overrides**:
-
-- A template module provides fallback nodes for all targets.
-- Native modules override templates via Hamilton module override semantics.
+The build DAG is composed using native target modules only.
 
 Observability
 -------------
