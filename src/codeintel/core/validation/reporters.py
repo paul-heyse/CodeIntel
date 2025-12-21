@@ -31,9 +31,14 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphValidationRow as GraphValidationRow,
 )
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
+
+    from codeintel.core.schemas.row_models import RowSerializer
+
+RowT = TypeVar("RowT")
 
 FUNCTION_VALIDATION_COLS: list[str] = [
     "repo",
@@ -57,8 +62,20 @@ GRAPH_VALIDATION_COLS: list[str] = [
     "metadata",
     "created_at",
 ]
+FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
+GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
 
-RowT = TypeVar("RowT")
+
+def _row_serializer(table_key: str, fallback_columns: Sequence[str]) -> RowSerializer:
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return lambda row: serialize_row(row, fallback_columns)
+
+    binding = service.get_row_binding(table_key)
+    if binding is None:
+        return lambda row: serialize_row(row, fallback_columns)
+    return binding.serializer
 
 
 @dataclass
@@ -177,7 +194,8 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        return tuple(serialize_row(r, FUNCTION_VALIDATION_COLS) for r in self.rows)
+        serializer = _row_serializer(FUNCTION_VALIDATION_TABLE_KEY, FUNCTION_VALIDATION_COLS)
+        return tuple(serializer(r) for r in self.rows)
 
 
 @dataclass
@@ -256,7 +274,8 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        return tuple(serialize_row(r, GRAPH_VALIDATION_COLS) for r in self.rows)
+        serializer = _row_serializer(GRAPH_VALIDATION_TABLE_KEY, GRAPH_VALIDATION_COLS)
+        return tuple(serializer(r) for r in self.rows)
 
 
 def gateway_timestamp() -> datetime:

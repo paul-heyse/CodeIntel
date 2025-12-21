@@ -16,7 +16,12 @@ from codeintel.build.hamilton.contracts.schemas import (
     DatasetSchemaRegistry,
 )
 from codeintel.build.hamilton.contracts.schemas.constraints import extract_constraints_from_pandera
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    iter_contracts,
+    iter_contracts_by_table_key,
+)
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -53,7 +58,11 @@ def dataset_describe_structured(*, table_key: str) -> CliResult[DatasetDescribeR
     CliResult[DatasetDescribeResult]
         Dataset details.
     """
-    contracts = dict(iter_contracts_by_table_key())
+    contracts = dict(
+        iter_contracts_by_table_key(
+            settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+        )
+    )
     contract = contracts.get(table_key)
     if contract is None:
         return fail_dataset_not_found(table_key)
@@ -90,21 +99,23 @@ def dataset_list_handler(ctx: CommandContext) -> CliResult[DatasetListResult]:
     CliResult[DatasetListResult]
         List of datasets.
     """
-    gateway = ctx.gateway
-    registry = gateway.datasets
-    contracts = registry.by_name
+    _ = ctx
+    contracts = sorted(
+        iter_contracts(settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)),
+        key=lambda contract: contract.name,
+    )
 
     dataset_dicts: list[dict[str, str | None]] = [
         {
-            "name": name,
+            "name": contract.name,
             "table_key": contract.table_key,
             "is_view": str(contract.is_view),
             "owner_package": contract.owner_package,
         }
-        for name, contract in sorted(contracts.items())
+        for contract in contracts
     ]
 
-    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(contracts)))
+    return CliResult.ok(DatasetListResult(datasets=dataset_dicts, count=len(dataset_dicts)))
 
 
 def dataset_describe_handler(

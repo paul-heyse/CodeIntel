@@ -16,7 +16,6 @@ from tests._helpers.rows import list_public_exports
 def test_functions_module_exports() -> None:
     """Functions API should retain expected callables and options."""
     expected = {
-        "FUNCTION_HISTORY_COLS",
         "FunctionAnalyticsOptions",
         "build_function_history_rows",
         "compute_function_contracts",
@@ -57,7 +56,6 @@ def test_history_module_exports() -> None:
     """History API should expose timeseries helpers."""
     expected = {
         "FileCommitDelta",
-        "HISTORY_TIMESERIES_COLS",
         "build_history_timeseries_rows",
         "iter_file_history",
     }

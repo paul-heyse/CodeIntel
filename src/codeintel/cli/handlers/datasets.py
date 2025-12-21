@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas.contract_registry import get_dag_free_contracts_by_table_key
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
@@ -64,7 +64,7 @@ def _contracts_by_table_key_provider() -> Mapping[str, DatasetContract]:
     Mapping[str, DatasetContract]
         Mapping from table_key to contract.
     """
-    return dict(iter_contracts_by_table_key())
+    return get_dag_free_contracts_by_table_key()
 
 
 DEFAULT_DATASET_DEPS = DatasetDependencies(

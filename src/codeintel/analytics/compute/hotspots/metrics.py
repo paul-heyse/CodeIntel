@@ -105,7 +105,9 @@ def _run_git_log(
     repo_root: Path, max_commits: int, runner: ToolRunner | None = None
 ) -> list[str] | None:
     resolved_root = repo_root.resolve()
-    active_runner = runner or ToolRunner(cache_dir=resolved_root / "build" / ".tool_cache")
+    if runner is None:
+        log.warning("ToolRunner not provided for git churn; skipping git log.")
+        return None
     args = [
         "git",
         "log",
@@ -115,7 +117,7 @@ def _run_git_log(
         "--pretty=format:COMMIT\t%H\t%an",
         "--no-renames",
     ]
-    result = active_runner.run(
+    result = runner.run(
         "git",
         args,
         options=ToolRunOptions(cwd=resolved_root),
@@ -200,7 +202,8 @@ def build_hotspots(
     max_commits
         Maximum number of commits to scan for churn data.
     runner
-        Optional shared ToolRunner for git invocations (defaults to a local cache).
+        Optional shared ToolRunner for git invocations. When omitted, git churn data
+        is skipped and scores are based on AST complexity only.
 
     Notes
     -----

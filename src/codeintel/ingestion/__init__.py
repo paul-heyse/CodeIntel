@@ -12,7 +12,6 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 
 **Adapters** (implementations):
 - `DuckDBStorageAdapter`: DuckDB-specific storage operations
-- `ToolRunnerAdapter`: External tool execution via ToolService
 - `FilesystemDiscoveryAdapter`: File system module discovery
 - `HashChangeDetectionAdapter`: Blake2b hash-based change detection
 
@@ -39,7 +38,6 @@ from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
-    ToolRunnerAdapter,
 )
 from codeintel.ingestion.infrastructure import normalize_rel_path
 from codeintel.ingestion.infrastructure.scanning import (
@@ -65,18 +63,12 @@ from codeintel.ingestion.ports import (
     ScipResult,
     TestResult,
 )
-from codeintel.ingestion.tracker import (
-    ChangeTracker,
-    ChangeTrackerDatasetView,
-)
 
 __all__ = [
     "BatchResult",
     "ChangeDetectionPort",
     "ChangeRequest",
     "ChangeSet",
-    "ChangeTracker",
-    "ChangeTrackerDatasetView",
     "CoverageFileData",
     "CoverageResult",
     "DiagnosticResult",
@@ -92,7 +84,6 @@ __all__ = [
     "ScanProfile",
     "ScipResult",
     "TestResult",
-    "ToolRunnerAdapter",
     "WorkerConfig",
     "create_executor",
     "default_code_profile",

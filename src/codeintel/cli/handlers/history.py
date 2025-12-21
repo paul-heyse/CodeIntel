@@ -18,16 +18,20 @@ from typing import TYPE_CHECKING
 from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.history.history_timeseries import (
-    HISTORY_TIMESERIES_COLS,
     HistoryTimeseriesOptions,
     build_history_timeseries_rows,
 )
+from codeintel.build.config import load_build_config
+from codeintel.build.providers import create_default_providers
+from codeintel.build.run_context import BuildRunContext
+from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.settings import get_build_settings, get_hamilton_execution_settings
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
 from codeintel.cli.errors.results import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
-from codeintel.config.primitives import SnapshotRef
-from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.storage.gateway import (
     DuckDBError,
     DuckDBInvalidInputException,
@@ -40,6 +44,7 @@ from codeintel.storage.gateway import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
@@ -83,6 +88,29 @@ def _coerce_enum_param(value: object | None, *, default: str) -> str:
     if isinstance(value, Enum):
         return str(value.value)
     return str(value)
+
+
+def _build_history_env(
+    ctx: CommandContext,
+    snapshot: SnapshotRef,
+    gateway: StorageGateway,
+) -> BuildEnv:
+    tools = ctx.runtime.tools if ctx.has_runtime else ToolsConfig.default()
+    providers = create_default_providers(tools)
+    config = load_build_config(snapshot.repo_root)
+    build_settings = get_build_settings()
+    execution_settings = get_hamilton_execution_settings()
+    paths = ctx.runtime.paths if ctx.has_runtime else BuildPaths.from_repo_root(snapshot.repo_root)
+    context = BuildRunContext(
+        snapshot=snapshot,
+        gateway=gateway,
+        paths=paths,
+        providers=providers,
+        config=config,
+        settings=build_settings,
+        execution_settings=execution_settings,
+    )
+    return context.build_env()
 
 
 def _write_synthetic_history_rows(
@@ -220,6 +248,11 @@ def _persist_history_timeseries_rows(
         Repository slug.
     commits
         List of commits to delete before inserting.
+
+    Raises
+    ------
+    RuntimeError
+        If the history_timeseries schema is unavailable.
     """
     if not rows:
         return
@@ -232,10 +265,14 @@ def _persist_history_timeseries_rows(
             repo=repo,
             commit=commit,
         )
+    schema = get_schema_service().get_table_schema("analytics.history_timeseries")
+    if schema is None:
+        msg = "Missing schema for analytics.history_timeseries"
+        raise RuntimeError(msg)
     backend.bulk_insert(
         "analytics.history_timeseries",
         list(rows),
-        columns=HISTORY_TIMESERIES_COLS,
+        columns=tuple(schema.column_names()),
     )
 
 
@@ -301,11 +338,12 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         db_resolver = _build_db_resolver(gateway, snapshot_resolver, snapshot_gateways)
 
         try:
+            env = _build_history_env(ctx, snapshot, gateway)
             rows = build_history_timeseries_rows(
                 snapshot,
                 db_resolver,
                 options=options,
-                runner=ToolRunner(cache_dir=repo_root / "build" / ".tool_cache"),
+                runner=env.providers.tool_runner,
             )
             _persist_history_timeseries_rows(gateway, rows, repo, commits)
         except DuckDBInvalidInputException as exc:

@@ -31,7 +31,6 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
-    ToolRunner,
     ToolRunResult,
 )
 from codeintel.ingestion.engine.plugins import (
@@ -75,7 +74,6 @@ __all__ = [
     "ToolPluginRegistry",
     "ToolPluginResult",
     "ToolRunResult",
-    "ToolRunner",
     "ToolService",
     "ToolStatus",
     "build_default_registry",

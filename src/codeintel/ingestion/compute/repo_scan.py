@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.change_detection import ChangeRequest
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
+MODULES_TABLE_KEY = "core.modules"
 
 
 class RepoScanStep:
@@ -110,17 +112,28 @@ class RepoScanStep:
         )
         change_set = self._change_detection.compute_changes(change_request, modules)
 
-        module_rows: list[list[object]] = [
-            [module.module_name, module.rel_path, repo, commit, "python", "[]", "[]"]
+        serializer = row_serializer_for_table_key(MODULES_TABLE_KEY)
+        module_rows: list[tuple[object, ...]] = [
+            serializer(
+                {
+                    "module": module.module_name,
+                    "path": module.rel_path,
+                    "repo": repo,
+                    "commit": commit,
+                    "language": "python",
+                    "tags": "[]",
+                    "owners": "[]",
+                }
+            )
             for module in modules
         ]
 
         table_counts: dict[str, int] = {}
         if module_rows:
             scope = f"{repo}@{commit}"
-            self._storage.delete_by_params("core.modules", [repo, commit])
-            result = self._storage.write_batch("core.modules", module_rows, scope=scope)
-            table_counts["core.modules"] = result.rows_affected
+            self._storage.delete_by_params(MODULES_TABLE_KEY, [repo, commit])
+            result = self._storage.write_batch(MODULES_TABLE_KEY, module_rows, scope=scope)
+            table_counts[MODULES_TABLE_KEY] = result.rows_affected
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",

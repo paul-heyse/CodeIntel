@@ -62,6 +62,27 @@ def get_row_binding(table_key: str) -> GeneratedRowBinding:
     return service.require_row_binding(table_key)
 
 
+@lru_cache(maxsize=256)
+def column_names_for_table_key(table_key: str) -> tuple[str, ...]:
+    """Return column names for a table key from the schema provider.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
+    Returns
+    -------
+    tuple[str, ...]
+        Column names in schema order, or empty tuple if the table is unknown.
+    """
+    service = get_schema_service()
+    schema = service.get_table_schema(table_key)
+    if schema is None:
+        return ()
+    return tuple(schema.column_names())
+
+
 def iter_row_bindings() -> Iterable[GeneratedRowBinding]:
     """Iterate all available row bindings.
 
@@ -102,11 +123,13 @@ def clear_row_binding_cache() -> None:
     >>> # bindings are equivalent but regenerated
     """
     get_row_binding.cache_clear()
+    column_names_for_table_key.cache_clear()
     get_schema_service().clear_caches()
 
 
 __all__ = [
     "clear_row_binding_cache",
+    "column_names_for_table_key",
     "get_row_binding",
     "iter_row_bindings",
 ]

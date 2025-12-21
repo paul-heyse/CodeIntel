@@ -16,16 +16,22 @@ True
 
 from __future__ import annotations
 
-import dataclasses
-import logging
-from functools import cache
-from typing import TYPE_CHECKING, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
-from codeintel.build.hamilton.native.discovery import load_native_modules
+from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.hamilton.tags import (
+    NODE_TYPE_DATASET,
+    NODE_TYPE_MATERIALIZE,
+    TAG_NODE_TYPE,
+    TAG_TABLE_KEY,
+    TAG_TARGET,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import ItemsView, Iterator, ValuesView
+    from collections.abc import ItemsView, Iterator, Mapping, ValuesView
+
+    from hamilton.node import Node
 
     from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
 
@@ -35,285 +41,83 @@ __all__ = [
     "get_schema",
 ]
 
-log = logging.getLogger(__name__)
 
-_QUERY_PARAM_PREFIX = "q__"
-_QUERY_PARAM_MIN_PARTS = 3
-_SCHEMA_OUTPUT_TAG_KEY = "hamilton.internal.schema_output"
-_TARGET_TAG_KEY = "target"
-
-
-def _iter_module_callables(module: object) -> Iterator[object]:
-    for attr_name in dir(module):
-        value = getattr(module, attr_name, None)
-        if value is None:
-            continue
-        if callable(value):
-            yield value
+def _dataset_node_names(table_key: str) -> frozenset[str]:
+    service = get_target_metadata_service()
+    return frozenset(
+        node_name
+        for node_name, tags in service.tag_index.tags_by_node.items()
+        if tags.get(TAG_NODE_TYPE) == NODE_TYPE_DATASET and tags.get(TAG_TABLE_KEY) == table_key
+    )
 
 
-def _get_decorators(func: object) -> list[object]:
-    decorators = getattr(func, "decorate_nodes", None)
-    if isinstance(decorators, list):
-        return decorators
-    if isinstance(decorators, tuple):
-        return list(decorators)
-    return []
-
-
-def _extract_target_and_schema(decorators: list[object]) -> tuple[str | None, str | None]:
-    target: str | None = None
-    schema_str: str | None = None
-    for decorator in decorators:
-        tags = getattr(decorator, "tags", None)
-        if not isinstance(tags, dict):
-            continue
-        target_raw = tags.get(_TARGET_TAG_KEY)
-        if isinstance(target_raw, str) and target_raw:
-            target = target_raw
-        schema_raw = tags.get(_SCHEMA_OUTPUT_TAG_KEY)
-        if isinstance(schema_raw, str) and schema_raw:
-            schema_str = schema_raw
-    return target, schema_str
-
-
-def _extract_consumed_table_keys(func: object) -> list[str]:
-    annotations = getattr(func, "__annotations__", None)
-    if not isinstance(annotations, dict):
-        return []
-
-    consumes: list[str] = []
-    for param_name in annotations:
-        if not isinstance(param_name, str) or param_name == "return":
-            continue
-        if not param_name.startswith(_QUERY_PARAM_PREFIX):
-            continue
-        parts = param_name.split("__")
-        if len(parts) < _QUERY_PARAM_MIN_PARTS:
-            continue
-        consumes.append(f"{parts[1]}.{parts[2]}")
-    return consumes
-
-
-def _find_dataclass_type_from_check_output(func: object) -> type[object] | None:
-    transforms = getattr(func, "transform", None)
-    if not isinstance(transforms, (list, tuple)):
-        return None
-
-    for transform in transforms:
-        if type(transform).__name__ != "check_output":
-            continue
-        kwargs = getattr(transform, "default_validator_kwargs", None)
-        if not isinstance(kwargs, dict):
-            continue
-        data_type = kwargs.get("data_type")
-        if isinstance(data_type, type) and dataclasses.is_dataclass(data_type):
-            return data_type
-    return None
-
-
-def _unwrap_optional_type(type_obj: object) -> object:
-    origin = get_origin(type_obj)
-    if origin is None:
-        return type_obj
-
-    args = [arg for arg in get_args(type_obj) if arg is not type(None)]
-    if len(args) == 1:
-        return args[0]
-    return type_obj
-
-
-def _find_dataclass_type_from_return_annotation(
-    func: object, module: object
-) -> type[object] | None:
-    try:
-        hints = get_type_hints(func, globalns=vars(module))
-    except (NameError, TypeError):
-        log.debug(
-            "Failed to resolve type hints for %s",
-            getattr(func, "__name__", "<unknown>"),
-            exc_info=True,
-        )
-        return None
-
-    return_type = hints.get("return")
-    if return_type is None:
-        return None
-
-    actual_type = _unwrap_optional_type(return_type)
-    if isinstance(actual_type, type) and dataclasses.is_dataclass(actual_type):
-        return actual_type
-    return None
-
-
-def _schema_from_dataclass(dataclass_type: type[object]) -> dict[str, str] | None:
-    try:
-        try:
-            hints = get_type_hints(dataclass_type)
-        except (NameError, TypeError):
-            hints = {}
-
-        fields_raw = getattr(dataclass_type, "__dataclass_fields__", None)
-        if not isinstance(fields_raw, dict):
-            return None
-
-        schema: dict[str, str] = {}
-        for field_name, field_obj in fields_raw.items():
-            if not isinstance(field_name, str):
-                continue
-            default_type = getattr(field_obj, "type", object)
-            schema[field_name] = _type_to_string(hints.get(field_name, default_type))
-    except TypeError:
-        log.debug("Failed to extract schema from %s", dataclass_type, exc_info=True)
-        return None
-    else:
-        return schema
-
-
-@cache
-def _get_hamilton_target_metadata() -> dict[str, dict[str, list[str]]]:
-    """Load target metadata from Hamilton native modules.
-
-    Extracts schema information from Hamilton decorators (`@tag`, `@schema.output`)
-    which define the authoritative source of truth for data schemas.
-
-    Returns
-    -------
-    dict[str, dict[str, list[str]]]
-        Mapping of target names to dict with 'produces', 'consumes', and 'schema' info.
-    """
-    result: dict[str, dict[str, list[str]]] = {}
-    modules = load_native_modules()
-
-    for module in modules:
-        for func in _iter_module_callables(module):
-            decorators = _get_decorators(func)
-            if not decorators:
-                continue
-
-            target, schema_str = _extract_target_and_schema(decorators)
-            if target is None:
-                continue
-
-            entry = result.setdefault(target, {"produces": [], "consumes": [], "schemas": []})
-            entry["consumes"].extend(_extract_consumed_table_keys(func))
-            if schema_str is not None:
-                entry["schemas"].append(schema_str)
-
-    return result
-
-
-def get_hamilton_schema_for_target(target: str) -> dict[str, str] | None:
-    """Get the schema definition for a target from Hamilton metadata.
-
-    Parameters
-    ----------
-    target
-        Target name to get schema for.
-
-    Returns
-    -------
-    dict[str, str] | None
-        Column name to type mapping, or None if not found.
-    """
-    metadata = _get_hamilton_target_metadata()
-    target_info = metadata.get(target)
-    if not target_info or not target_info.get("schemas"):
-        return None
-
-    # Parse the schema string (format: "col1=type1,col2=type2,...")
-    schema_str = target_info["schemas"][0]
+def _materialize_nodes(tags_by_node: Mapping[str, dict[str, str]]) -> dict[str, str]:
     result: dict[str, str] = {}
-    for pair in schema_str.split(","):
-        if "=" in pair:
-            col_name, col_type = pair.split("=", 1)
-            result[col_name.strip()] = col_type.strip()
-
+    for node_name, tags in tags_by_node.items():
+        if tags.get(TAG_NODE_TYPE) != NODE_TYPE_MATERIALIZE:
+            continue
+        target = tags.get(TAG_TARGET)
+        if isinstance(target, str) and target:
+            result[node_name] = target
     return result
 
 
-@cache
-def get_hamilton_dataclass_schemas() -> dict[str, dict[str, str]]:
-    """Extract schemas from dataclass return types in Hamilton modules.
-
-    For modules that return dataclass results, the dataclass fields define
-    the schema. This function extracts those field definitions.
-
-    Looks for dataclass types in:
-    1. @check_output(data_type=...) decorators (stored in transform)
-    2. Function return type annotations
-
-    Multiple functions may have the same target (compute + materialize).
-    We only record a schema once a valid dataclass is found.
-
-    Returns
-    -------
-    dict[str, dict[str, str]]
-        Mapping of target name to field schema (field name -> type string).
-    """
-    result: dict[str, dict[str, str]] = {}
-    modules = load_native_modules()
-
-    for module in modules:
-        for func in _iter_module_callables(module):
-            decorators = _get_decorators(func)
-            target, _ = _extract_target_and_schema(decorators)
-            if target is None or target in result:
-                continue
-
-            dataclass_type = _find_dataclass_type_from_check_output(func)
-            if dataclass_type is None:
-                dataclass_type = _find_dataclass_type_from_return_annotation(func, module)
-            if dataclass_type is None:
-                continue
-
-            schema = _schema_from_dataclass(dataclass_type)
-            if schema is None:
-                continue
-            result[target] = schema
-
-    return result
+def _node_depends_on_dataset(
+    node: Node,
+    *,
+    dataset_nodes: frozenset[str],
+) -> bool:
+    visited: set[str] = set()
+    stack = list(node.dependencies)
+    while stack:
+        current = stack.pop()
+        if current.name in visited:
+            continue
+        visited.add(current.name)
+        if current.name in dataset_nodes:
+            return True
+        stack.extend(current.dependencies)
+    return False
 
 
-def _type_to_string(t: object) -> str:
-    """Convert a type annotation to a string representation.
+def _producer_targets(table_key: str) -> tuple[str, ...]:
+    service = get_target_metadata_service()
+    dataset_nodes = _dataset_node_names(table_key)
+    if not dataset_nodes:
+        return ()
+    targets = {
+        tags.get(TAG_TARGET)
+        for node_name, tags in service.tag_index.tags_by_node.items()
+        if node_name in dataset_nodes
+    }
+    return tuple(sorted(target for target in targets if isinstance(target, str) and target))
 
-    Parameters
-    ----------
-    t
-        Type annotation to convert.
 
-    Returns
-    -------
-    str
-        Human-readable string representation of the type.
-    """
-    # Handle None type
-    if t is type(None):
-        return "None"
-    # Handle string annotations (forward references)
-    if isinstance(t, str):
-        return t
-    # Handle classes with __name__
-    name = getattr(t, "__name__", None)
-    if isinstance(name, str):
-        return name
-    # Handle generic types
-    origin = getattr(t, "__origin__", None)
-    if origin is not None:
-        args = getattr(t, "__args__", ())
-        args_str = ", ".join(_type_to_string(a) for a in args)
-        origin_name = getattr(origin, "__name__", str(origin))
-        return f"{origin_name}[{args_str}]"
-    return str(t)
+def _consumer_targets(table_key: str) -> tuple[str, ...]:
+    service = get_target_metadata_service()
+    dataset_nodes = _dataset_node_names(table_key)
+    if not dataset_nodes:
+        return ()
+
+    nodes = service.system.runtime.dr.graph.nodes
+    materialize_nodes = _materialize_nodes(service.tag_index.tags_by_node)
+    consumers: set[str] = set()
+    for node_name, target_name in materialize_nodes.items():
+        node = nodes.get(node_name)
+        if node is None:
+            continue
+        if _node_depends_on_dataset(node, dataset_nodes=dataset_nodes):
+            consumers.add(target_name)
+    return tuple(sorted(consumers))
 
 
 class DatasetSchemaRegistry:
     """Global registry for all DatasetSchema instances.
 
     This registry is the authoritative source for dataset schemas. It
-    integrates with existing infrastructure (DATASET_CONTRACTS and
-    Pandera schemas) to provide the unified schema architecture.
+    projects from the canonical schema provider (Hamilton inference +
+    declared sources) and applies Pandera constraint overlays to form the
+    unified schema architecture.
 
     Attributes
     ----------
@@ -512,14 +316,9 @@ class DatasetSchemaRegistry:
 
         Notes
         -----
-        Uses Hamilton native module metadata as the source of truth.
+        Uses Hamilton tag metadata and the target graph as the source of truth.
         """
-        metadata = _get_hamilton_target_metadata()
-        result: list[str] = []
-        for target, info in metadata.items():
-            if table_key in info.get("produces", []):
-                result.append(target)
-        return result
+        return list(_producer_targets(table_key))
 
     @staticmethod
     def consumers_of(table_key: str) -> list[str]:
@@ -537,14 +336,9 @@ class DatasetSchemaRegistry:
 
         Notes
         -----
-        Uses Hamilton native module metadata as the source of truth.
+        Uses Hamilton tag metadata and the target graph as the source of truth.
         """
-        metadata = _get_hamilton_target_metadata()
-        result: list[str] = []
-        for target, info in metadata.items():
-            if table_key in info.get("consumes", []):
-                result.append(target)
-        return result
+        return list(_consumer_targets(table_key))
 
 
 SCHEMA_REGISTRY = DatasetSchemaRegistry()

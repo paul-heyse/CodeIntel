@@ -37,6 +37,7 @@ from codeintel.build.schemas.column_resolution import (
 )
 from codeintel.build.schemas.contract_service import (
     ContractProvider,
+    ContractResolutionMode,
     ContractResolutionSettings,
     SchemaContractService,
     clear_contract_cache,
@@ -81,6 +82,7 @@ from codeintel.build.schemas.registry import (
 )
 from codeintel.build.schemas.row_registry import (
     clear_row_binding_cache,
+    column_names_for_table_key,
     get_row_binding,
     iter_row_bindings,
 )
@@ -135,6 +137,7 @@ def __getattr__(name: str) -> object:
 __all__ = [
     "ColumnDiff",
     "ContractProvider",
+    "ContractResolutionMode",
     "ContractResolutionSettings",
     "DeferredColumns",
     "ExportArtifact",
@@ -150,6 +153,7 @@ __all__ = [
     "clear_schema_provider_cache",
     "clear_schema_service_cache",
     "clear_unified_provider_cache",
+    "column_names_for_table_key",
     "column_order_for_table_key",
     "compute_json_schema_digest",
     "compute_manifest_diffs",

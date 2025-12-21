@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
+CONFIG_VALUES_TABLE_KEY = "analytics.config_values"
 
 
 def flatten_dict(
@@ -280,8 +282,9 @@ class ConfigIngestStep(BaseExtractStep):
         ExecutionResult
             Execution result with row counts.
         """
-        all_rows: list[list[object]] = []
+        all_rows: list[tuple[object, ...]] = []
         errors: list[str] = []
+        serializer = row_serializer_for_table_key(CONFIG_VALUES_TABLE_KEY)
 
         for record in config_files:
             content = self._discovery.read_text(record.file_path)
@@ -297,24 +300,26 @@ class ConfigIngestStep(BaseExtractStep):
 
             for key, _value in kvs:
                 all_rows.append(
-                    [
-                        repo,
-                        commit,
-                        record.rel_path,
-                        config_format,
-                        key,
-                        "[]",
-                        "[]",
-                        0,
-                    ]
+                    serializer(
+                        {
+                            "repo": repo,
+                            "commit": commit,
+                            "config_path": record.rel_path,
+                            "format": config_format,
+                            "key": key,
+                            "reference_paths": "[]",
+                            "reference_modules": "[]",
+                            "reference_count": 0,
+                        }
+                    )
                 )
 
         table_counts: dict[str, int] = {}
 
         if all_rows:
             scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("analytics.config_values", all_rows, scope=scope)
-            table_counts["analytics.config_values"] = result.rows_affected
+            result = self._storage.write_batch(CONFIG_VALUES_TABLE_KEY, all_rows, scope=scope)
+            table_counts[CONFIG_VALUES_TABLE_KEY] = result.rows_affected
 
         log.info(
             "Config ingest: repo=%s commit=%s files=%d values=%d",

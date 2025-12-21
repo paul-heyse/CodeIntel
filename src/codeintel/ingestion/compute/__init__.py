@@ -21,44 +21,13 @@ Modules
 - config_ingest: Configuration file flattening
 - repo_scan: Repository scanning and module discovery
 
-Example
--------
-```python
-from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
-from codeintel.ingestion.compute import AstExtractStep
-
-
-storage = DuckDBStorageAdapter(gateway)
-discovery = FilesystemDiscoveryAdapter(repo_root)
-
-
-step = AstExtractStep(storage=storage, discovery=discovery)
-result = step.execute(modules, repo="my-repo", commit="abc123")
-print(f"Wrote {result.rows_written} rows")
-```
+Note
+----
+This package is intended for internal use by Hamilton-native ingestion targets.
+Import modules directly (e.g., ``codeintel.ingestion.compute.ast_extract``) rather
+than relying on package-level re-exports.
 """
 
 from __future__ import annotations
 
-from codeintel.ingestion.compute.ast_extract import AstExtractStep
-from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
-from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
-from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
-from codeintel.ingestion.compute.cst_extract import CstExtractStep
-from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
-from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
-from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
-
-__all__ = [
-    "AstExtractStep",
-    "BaseExtractStep",
-    "ConfigIngestStep",
-    "CoverageIngestStep",
-    "CstExtractStep",
-    "DocstringsExtractStep",
-    "ExecutionResult",
-    "RepoScanStep",
-    "TestsIngestStep",
-    "TypingIngestStep",
-]
+__all__: list[str] = []

@@ -6,6 +6,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, TypeVar
 
 from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -20,12 +21,24 @@ def load_columns_by_table() -> dict[str, list[str]]:
     Returns
     -------
     dict[str, list[str]]
-        Mapping of table key to column names.
+        Mapping of table key to column names. Uses the configured schema
+        service when available, otherwise falls back to declared schemas.
     """
-    return {
-        table_key: [col.name for col in schema.columns]
-        for table_key, schema in TABLE_SCHEMAS.items()
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return {
+            table_key: [col.name for col in schema.columns]
+            for table_key, schema in TABLE_SCHEMAS.items()
+        }
+
+    columns = {
+        schema.table_key: list(schema.column_names()) for schema in service.iter_table_schemas()
     }
+    for table_key, schema in TABLE_SCHEMAS.items():
+        if table_key not in columns:
+            columns[table_key] = [col.name for col in schema.columns]
+    return columns
 
 
 def serialize_row(row: Mapping[_Column, object], columns: Sequence[_Column]) -> tuple[object, ...]:

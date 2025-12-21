@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 import sqlglot.expressions as exp
 
 import codeintel.storage.views.ibis_views as _ibis_views
+from codeintel.core.schemas.row_models import normalize_row_value
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import (
@@ -1074,12 +1075,11 @@ class DuckDBPolicyBackend:
 
         schema, table = split_table_key(table_key)
 
+        table_schema = (
+            self.schema_provider.get_table_schema(table_key) if self.schema_provider else None
+        )
+
         if columns is None:
-            table_schema = (
-                self.schema_provider.get_table_schema(table_key)
-                if self.schema_provider is not None
-                else None
-            )
             if table_schema is not None:
                 columns = [col.name for col in table_schema.columns]
             elif _duckdb_table_exists(self.con, schema=schema, table=table):
@@ -1095,9 +1095,20 @@ class DuckDBPolicyBackend:
 
         insert_expr = _build_insert(schema, table, columns)
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
+        columns_tuple = tuple(columns)
+        column_type_by_name: dict[str, str] = (
+            {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
+        )
+        normalized_rows = [
+            tuple(
+                self._coerce_insert_value(column, value, column_type_by_name)
+                for column, value in zip(columns_tuple, row, strict=True)
+            )
+            for row in rows
+        ]
 
         log.debug("Bulk insert into %s: %d rows", table_key, len(rows))
-        self.con.executemany(sql, rows)
+        self.con.executemany(sql, normalized_rows)
         return len(rows)
 
     @classmethod
@@ -1107,11 +1118,12 @@ class DuckDBPolicyBackend:
         value: object,
         column_type_by_name: Mapping[str, str],
     ) -> object:
-        if value is None:
+        normalized = normalize_row_value(value)
+        if normalized is None:
             return None
         if column_type_by_name.get(column) != "JSON":
-            return value
-        return normalize_duckdb_json_value(value)
+            return normalized
+        return normalize_duckdb_json_value(normalized)
 
     def bulk_insert_mappings(
         self,

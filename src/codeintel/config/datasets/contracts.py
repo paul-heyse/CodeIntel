@@ -17,6 +17,7 @@ from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
@@ -35,16 +36,33 @@ def get_table_schemas() -> dict[str, TableSchema]:
 
 @lru_cache(maxsize=1)
 def get_row_bindings() -> dict[str, GeneratedRowBinding]:
-    """Return schema-generated row bindings for all declared table schemas.
+    """Return schema-generated row bindings for available table schemas.
 
     Returns
     -------
     dict[str, GeneratedRowBinding]
-        Mapping from table_key to a schema-generated row binding.
+        Mapping from table_key to a schema-generated row binding. When a
+        SchemaService is configured, DAG-first schemas are used; otherwise
+        declared schemas are used as a fallback.
     """
     bindings: dict[str, GeneratedRowBinding] = {}
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        service = None
+
+    if service is None:
+        for table_key, schema in TABLE_SCHEMAS.items():
+            bindings[table_key] = row_binding_for_table_schema(table_schema=schema)
+        return bindings
+
+    for schema in service.iter_table_schemas():
+        binding = service.get_row_binding(schema.table_key)
+        if binding is not None:
+            bindings[schema.table_key] = binding
     for table_key, schema in TABLE_SCHEMAS.items():
-        bindings[table_key] = row_binding_for_table_schema(table_schema=schema)
+        if table_key not in bindings:
+            bindings[table_key] = row_binding_for_table_schema(table_schema=schema)
     return bindings
 
 

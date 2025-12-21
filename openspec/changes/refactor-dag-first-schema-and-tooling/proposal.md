@@ -10,6 +10,8 @@ with production inference and a single tool execution surface aligned with Hamil
   with production inference and derivation provenance.
 - Restrict declared schemas to source-only inputs and explicit overrides; generate row bindings
   and Pandera schemas from the DAG-first registry.
+- Establish explicit contract resolution modes with a DAG-first default and a DAG-free registry
+  for CLI enumeration.
 - Treat inference failures as hard errors when no viable non-DAG alternative exists.
 - Consolidate tool execution on ToolService/ToolRunner surfaced via BuildEnv providers.
 - Route all ingestion through Hamilton native targets and integrate SCIP table ingestion.

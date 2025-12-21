@@ -21,6 +21,7 @@ from dataclasses import dataclass, make_dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
+import numpy as np
 import pandas as pd
 
 from codeintel.core.schemas.hashing import schema_hash
@@ -101,13 +102,48 @@ def row_model_for_table_schema(*, table_schema: TableSchema) -> type[object]:
 
 RowSerializer = Callable[[Mapping[str, object]], tuple[object, ...]]
 
+_ROW_VALUE_CONTAINERS: tuple[type[object], ...] = (dict, list, tuple, set)
+_ROW_VALUE_BINARY: tuple[type[object], ...] = (bytes, bytearray, memoryview)
+
+
+def _is_missing_value(value: object) -> bool:
+    if isinstance(value, _ROW_VALUE_CONTAINERS):
+        return False
+    if isinstance(value, _ROW_VALUE_BINARY):
+        return False
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def normalize_row_value(value: object) -> object:
+    """Normalize row values for serialization and insertion.
+
+    Returns
+    -------
+    object
+        Normalized value suitable for row serialization.
+    """
+    if value is None:
+        return None
+    if _is_missing_value(value):
+        return None
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, pd.Timestamp):
+        return value.to_pydatetime()
+    if isinstance(value, pd.Timedelta):
+        return value.to_pytimedelta()
+    return value
+
 
 @lru_cache(maxsize=2048)
 def _row_serializer_cached(signature: tuple[tuple[str, ColumnType, bool], ...]) -> RowSerializer:
     column_names = tuple(name for name, _col_type, _nullable in signature)
 
     def _serialize(row: Mapping[str, object]) -> tuple[object, ...]:
-        return tuple(row[col] for col in column_names)
+        return tuple(normalize_row_value(row[col]) for col in column_names)
 
     return _serialize
 
@@ -374,7 +410,7 @@ def row_serializer_from_pandera(
         tuple[Any, ...]
             Values ordered according to schema columns.
         """
-        return tuple(row[col] for col in columns)
+        return tuple(normalize_row_value(row[col]) for col in columns)
 
     return serialize
 
@@ -382,6 +418,7 @@ def row_serializer_from_pandera(
 __all__ = [
     "GeneratedRowBinding",
     "RowSerializer",
+    "normalize_row_value",
     "row_binding_for_table_schema",
     "row_model_for_table_schema",
     "row_serializer_for_table_schema",

@@ -12,7 +12,7 @@ from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.build.schemas import ContractResolutionSettings, iter_contracts_by_table_key
+from codeintel.build.schemas import get_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -714,14 +714,11 @@ def _build_schema_from_table_schema(
 def _materialize_schemas() -> dict[str, DataFrameSchema]:
     schemas: dict[str, DataFrameSchema] = {}
 
-    for _, contract in iter_contracts_by_table_key(
-        settings=ContractResolutionSettings(include_target_metadata=True)
-    ):
-        if contract.schema is None or contract.is_view:
-            continue
-        schemas[contract.table_key] = _build_schema_from_table_schema(
-            table_key=contract.table_key,
-            table_schema=contract.schema,
+    provider = get_schema_provider()
+    for table_schema in provider.iter_table_schemas():
+        schemas[table_schema.table_key] = _build_schema_from_table_schema(
+            table_key=table_schema.table_key,
+            table_schema=table_schema,
         )
     return schemas
 

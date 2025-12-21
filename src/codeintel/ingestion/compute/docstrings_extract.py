@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
-from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
 from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
+DOCSTRINGS_TABLE_KEY = "core.docstrings"
 
 
 @dataclass(frozen=True)
@@ -289,27 +290,33 @@ class DocstringsExtractStep(BaseExtractStep):
             created_at=datetime.now(UTC),
         )
 
-        columns = load_columns_by_table().get("core.docstrings", [])
-        if not columns:
-            return ExecutionResult.failed("core.docstrings missing from schema provider")
+        try:
+            serializer = row_serializer_for_table_key(DOCSTRINGS_TABLE_KEY)
+        except RuntimeError as exc:
+            return ExecutionResult.failed(str(exc))
         all_rows: list[tuple[object, ...]] = []
         processed_paths: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
             processed_paths.append(module.rel_path)
             docstrings = _extract_module_docstrings(module, source, ctx)
-            all_rows.extend(serialize_row(ds, columns) for ds in docstrings)
+            all_rows.extend(serializer(ds) for ds in docstrings)
 
         if processed_paths:
             self._storage.delete_by_paths(
-                "core.docstrings",
+                DOCSTRINGS_TABLE_KEY,
                 processed_paths,
                 path_column="rel_path",
                 repo=repo,
                 commit=commit,
             )
 
-        table_counts = self._write_and_count("core.docstrings", all_rows, repo=repo, commit=commit)
+        table_counts = self._write_and_count(
+            DOCSTRINGS_TABLE_KEY,
+            all_rows,
+            repo=repo,
+            commit=commit,
+        )
 
         log.info(
             "Docstring extraction: repo=%s commit=%s rows=%d",

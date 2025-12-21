@@ -138,6 +138,12 @@ def _iter_git_log_lines(
     default_branch: str,
     runner: ToolRunner | None,
 ) -> list[str] | None:
+    if runner is None:
+        log.warning(
+            "ToolRunner not provided for git history; skipping git log for %s",
+            rel_path,
+        )
+        return None
     since_arg: list[str] = []
     if max_history_days is not None:
         cutoff = datetime.now(tz=UTC) - timedelta(days=max_history_days)
@@ -158,8 +164,7 @@ def _iter_git_log_lines(
         rel_path,
     ]
 
-    active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
-    result = active_runner.run(
+    result = runner.run(
         "git",
         args,
         options=ToolRunOptions(cwd=repo_root),
@@ -198,7 +203,7 @@ def iter_file_history(
     default_branch:
         Branch or commit selector to anchor the log (e.g., ``HEAD`` or ``main``).
     runner:
-        Optional shared ToolRunner for git invocations.
+        Optional shared ToolRunner for git invocations. When omitted, git history is skipped.
 
     Returns
     -------

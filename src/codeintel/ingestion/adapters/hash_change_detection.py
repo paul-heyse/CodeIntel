@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
 
-from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.ibis_typing import filter_by, ibis_bool, window_over
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.ports.change_detection import (
@@ -20,6 +19,7 @@ from codeintel.ingestion.ports.change_detection import (
     FileDigest,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import ibis_facade
 
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+FILE_STATE_TABLE_KEY = "core.file_state"
 
 
 class HashChangeDetectionAdapter:
@@ -236,32 +237,34 @@ class HashChangeDetectionAdapter:
             return
 
         gateway = getattr(self._storage, "_gateway", None)
+        serializer = row_serializer_for_table_key(FILE_STATE_TABLE_KEY)
         rows = [
-            (
-                repo,
-                commit,
-                rel_path,
-                language,
-                digest.size_bytes,
-                digest.mtime_ns,
-                digest.content_hash,
+            serializer(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "rel_path": rel_path,
+                    "language": language,
+                    "size_bytes": digest.size_bytes,
+                    "mtime_ns": digest.mtime_ns,
+                    "content_hash": digest.content_hash,
+                }
             )
             for rel_path, digest in sorted(state.items())
         ]
         if gateway is not None:
             backend = DuckDBPolicyBackend(cast("StorageGateway", gateway))
-            columns = load_columns_by_table().get("core.file_state", [])
-            backend.delete_for_snapshot("core.file_state", repo=repo, commit=commit)
-            backend.bulk_insert("core.file_state", rows, columns=columns)
+            backend.delete_for_snapshot(FILE_STATE_TABLE_KEY, repo=repo, commit=commit)
+            backend.bulk_insert(FILE_STATE_TABLE_KEY, rows)
             return
 
-        self._storage.ensure_schema("core.file_state")
+        self._storage.ensure_schema(FILE_STATE_TABLE_KEY)
         for rel_path in state:
             self._storage.execute_query(
                 "DELETE FROM core.file_state WHERE repo = ? AND rel_path = ? AND language = ?",
                 [repo, rel_path, language],
             )
-        self._storage.write_batch("core.file_state", rows)
+        self._storage.write_batch(FILE_STATE_TABLE_KEY, rows)
 
     @staticmethod
     def compute_file_digest(path: Path) -> FileDigest | None:

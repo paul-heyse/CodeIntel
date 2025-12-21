@@ -45,7 +45,12 @@ def test_build_creates_dataset_schema() -> None:
         tags=frozenset({"test"}),
     )
 
-    result = build_dataset_schema(contract, pandera_schema)
+    result = build_dataset_schema(
+        table_key=contract.table_key,
+        contract=contract,
+        pandera_schema=pandera_schema,
+        table_schema=None,
+    )
 
     _require(condition=isinstance(result, DatasetSchema), message="should return DatasetSchema")
     _require(condition=result.name == "test.example", message="name mismatch")
@@ -71,7 +76,12 @@ def test_build_copies_metadata_from_contract() -> None:
         deprecation_message="Use new_table instead",
     )
 
-    result = build_dataset_schema(contract, pandera_schema)
+    result = build_dataset_schema(
+        table_key=contract.table_key,
+        contract=contract,
+        pandera_schema=pandera_schema,
+        table_schema=None,
+    )
 
     _require(
         condition=result.metadata.description == "My description", message="description mismatch"
@@ -113,7 +123,12 @@ def test_build_includes_ddl_schema_if_available() -> None:
         schema=ddl_schema,
     )
 
-    result = build_dataset_schema(contract, pandera_schema)
+    result = build_dataset_schema(
+        table_key=contract.table_key,
+        contract=contract,
+        pandera_schema=pandera_schema,
+        table_schema=ddl_schema,
+    )
 
     _require(condition=result.ddl_schema is ddl_schema, message="ddl_schema should be included")
 
@@ -135,7 +150,12 @@ def test_build_includes_row_model_from_binding() -> None:
         row_binding=row_binding,
     )
 
-    result = build_dataset_schema(contract, pandera_schema)
+    result = build_dataset_schema(
+        table_key=contract.table_key,
+        contract=contract,
+        pandera_schema=pandera_schema,
+        table_schema=table_schema,
+    )
 
     _require(
         condition=result.row_model is row_binding.row_model,
@@ -162,7 +182,12 @@ def test_build_includes_composition_if_available() -> None:
         composition=composition,
     )
 
-    result = build_dataset_schema(contract, pandera_schema)
+    result = build_dataset_schema(
+        table_key=contract.table_key,
+        contract=contract,
+        pandera_schema=pandera_schema,
+        table_schema=None,
+    )
 
     _require(condition=result.composition is composition, message="composition should be included")
 

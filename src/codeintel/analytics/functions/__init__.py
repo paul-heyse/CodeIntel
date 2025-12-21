@@ -20,10 +20,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.functions.config import FunctionAnalyticsOptions
-from codeintel.analytics.functions.function_history import (
-    FUNCTION_HISTORY_COLS,
-    build_function_history_rows,
-)
+from codeintel.analytics.functions.function_history import build_function_history_rows
 from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.analytics.utilities.lazy_module import make_lazy_getattr
 
@@ -40,7 +37,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
-    "FUNCTION_HISTORY_COLS",
     "FunctionAnalyticsOptions",
     "FunctionAnalyticsResult",
     "build_function_history_rows",

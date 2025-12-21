@@ -246,7 +246,11 @@ def t__function_history__compute(
         )
         if should_skip_native_target(env, target, input_hash):
             return None
-    return build_function_history_rows(env.gateway, env.snapshot)
+    return build_function_history_rows(
+        env.gateway,
+        env.snapshot,
+        runner=env.providers.tool_runner,
+    )
 
 
 @tag_materialize(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)

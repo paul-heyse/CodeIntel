@@ -15,8 +15,8 @@ if TYPE_CHECKING:
         DuckDBStorageAdapter,
         FilesystemDiscoveryAdapter,
         HashChangeDetectionAdapter,
-        ToolRunnerAdapter,
     )
+    from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.ingestion.engine.service import ToolService
     from codeintel.storage.gateway import StorageGateway

@@ -12,15 +12,75 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import ExecutionResult
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
+TEST_RESULTS_TABLE_KEY = "core.test_results"
+TEST_SUMMARY_TABLE_KEY = "core.test_summary"
+
+
+def _build_test_result_rows(
+    tests: Sequence[Mapping[str, object]],
+    *,
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    serializer: Callable[[Mapping[str, object]], tuple[object, ...]],
+) -> list[tuple[object, ...]]:
+    rows: list[tuple[object, ...]] = []
+    for test in tests:
+        nodeid = str(test.get("nodeid", ""))
+        outcome = str(test.get("outcome", "unknown"))
+        duration = test.get("duration", 0.0)
+        longrepr = test.get("longrepr")
+        rel_path = nodeid.split("::", maxsplit=1)[0] if "::" in nodeid else nodeid
+
+        rows.append(
+            serializer(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "nodeid": nodeid,
+                    "rel_path": rel_path,
+                    "outcome": outcome,
+                    "duration": duration,
+                    "longrepr": longrepr[:1000] if isinstance(longrepr, str) else None,
+                    "created_at": created_at,
+                }
+            )
+        )
+    return rows
+
+
+def _build_test_summary_rows(
+    summary: Mapping[str, object],
+    *,
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    serializer: Callable[[Mapping[str, object]], tuple[object, ...]],
+) -> list[tuple[object, ...]]:
+    return [
+        serializer(
+            {
+                "repo": repo,
+                "commit": commit,
+                "passed": summary.get("passed", 0),
+                "failed": summary.get("failed", 0),
+                "skipped": summary.get("skipped", 0),
+                "error": summary.get("error", 0),
+                "duration": summary.get("duration", 0.0),
+                "created_at": created_at,
+            }
+        )
+    ]
 
 
 class TestsIngestStep:
@@ -86,54 +146,37 @@ class TestsIngestStep:
             log.warning("Failed to read test report: %s", exc)
             return ExecutionResult.failed(f"Failed to read test report: {exc}")
 
-        all_rows: list[list[object]] = []
         tests = data.get("tests", [])
+        result_serializer = row_serializer_for_table_key(TEST_RESULTS_TABLE_KEY)
+        summary_serializer = row_serializer_for_table_key(TEST_SUMMARY_TABLE_KEY)
 
-        for test in tests:
-            nodeid = test.get("nodeid", "")
-            outcome = test.get("outcome", "unknown")
-            duration = test.get("duration", 0.0)
-            longrepr = test.get("longrepr")
-
-            rel_path = nodeid.split("::")[0] if "::" in nodeid else nodeid
-
-            all_rows.append(
-                [
-                    repo,
-                    commit,
-                    nodeid,
-                    rel_path,
-                    outcome,
-                    duration,
-                    longrepr[:1000] if longrepr else None,
-                    created_at,
-                ]
-            )
+        all_rows = _build_test_result_rows(
+            tests,
+            repo=repo,
+            commit=commit,
+            created_at=created_at,
+            serializer=result_serializer,
+        )
 
         table_counts: dict[str, int] = {}
 
         if all_rows:
             scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("core.test_results", all_rows, scope=scope)
-            table_counts["core.test_results"] = result.rows_affected
+            result = self._storage.write_batch(TEST_RESULTS_TABLE_KEY, all_rows, scope=scope)
+            table_counts[TEST_RESULTS_TABLE_KEY] = result.rows_affected
 
         summary = data.get("summary", {})
-        summary_rows: list[list[object]] = [
-            [
-                repo,
-                commit,
-                summary.get("passed", 0),
-                summary.get("failed", 0),
-                summary.get("skipped", 0),
-                summary.get("error", 0),
-                summary.get("duration", 0.0),
-                created_at,
-            ]
-        ]
+        summary_rows = _build_test_summary_rows(
+            summary,
+            repo=repo,
+            commit=commit,
+            created_at=created_at,
+            serializer=summary_serializer,
+        )
 
         if summary_rows:
-            result = self._storage.write_batch("core.test_summary", summary_rows)
-            table_counts["core.test_summary"] = result.rows_affected
+            result = self._storage.write_batch(TEST_SUMMARY_TABLE_KEY, summary_rows)
+            table_counts[TEST_SUMMARY_TABLE_KEY] = result.rows_affected
 
         log.info(
             "Tests ingest: repo=%s commit=%s tests=%d",

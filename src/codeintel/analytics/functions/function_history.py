@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.history.git_history import iter_file_history
+from codeintel.build.hamilton.row_serialization import row_to_tuple
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.gateway import ibis_facade
 
@@ -25,29 +26,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.engine.infrastructure import ToolRunner
     from codeintel.storage.gateway import StorageGateway
 
-FUNCTION_HISTORY_COLS = [
-    "repo",
-    "commit",
-    "function_goid_h128",
-    "urn",
-    "rel_path",
-    "module",
-    "qualname",
-    "created_in_commit",
-    "created_at",
-    "last_modified_commit",
-    "last_modified_at",
-    "age_days",
-    "commit_count",
-    "author_count",
-    "lines_added",
-    "lines_deleted",
-    "churn_score",
-    "stability_bucket",
-    "history_window_start",
-    "history_window_end",
-    "created_at_row",
-]
+FUNCTION_HISTORY_TABLE_KEY = "analytics.function_history"
 
 log = logging.getLogger(__name__)
 
@@ -107,14 +86,15 @@ def build_function_history_rows(
     snapshot
         Repository and commit identifiers.
     runner
-        Optional shared ToolRunner for git invocations.
+        Optional shared ToolRunner for git invocations. When omitted, git history
+        is skipped and churn metrics default to zero.
     min_lines_threshold
         Minimum number of overlapping line edits required to count a commit towards churn.
 
     Returns
     -------
     tuple[tuple[object, ...], ...]
-        Row tuples matching FUNCTION_HISTORY_COLS schema, ready for bulk insert.
+        Row tuples matching the schema order, ready for bulk insert.
     """
     max_history_days = 365
     default_branch = "main"
@@ -142,11 +122,14 @@ def build_function_history_rows(
             _update_aggregates(aggregates, spans, delta, min_lines_threshold)
 
     insert_rows = [
-        _build_insert_row(
-            span,
-            aggregates.get(span.goid, FuncHistoryAgg()),
-            now=now,
-            window_start=window_start,
+        row_to_tuple(
+            FUNCTION_HISTORY_TABLE_KEY,
+            _build_insert_row(
+                span,
+                aggregates.get(span.goid, FuncHistoryAgg()),
+                now=now,
+                window_start=window_start,
+            ),
         )
         for spans in spans_by_path.values()
         for span in spans
@@ -238,7 +221,7 @@ def _build_insert_row(
     *,
     now: datetime,
     window_start: datetime | None,
-) -> tuple[object, ...]:
+) -> dict[str, object]:
     age_days = (now - agg.first_ts).days if agg.first_ts is not None else None
     churn_score = _compute_churn_score(agg.lines_added, agg.lines_deleted, span.loc)
     stability = _classify_stability(
@@ -247,29 +230,29 @@ def _build_insert_row(
         churn_score=churn_score,
         window_days=None if window_start is None else int((now - window_start).days),
     )
-    return (
-        span.repo,
-        span.commit,
-        span.goid,
-        span.urn,
-        span.rel_path,
-        span.module,
-        span.qualname,
-        agg.first_commit,
-        agg.first_ts,
-        agg.last_commit,
-        agg.last_ts,
-        age_days,
-        agg.commit_count,
-        len(agg.authors),
-        agg.lines_added,
-        agg.lines_deleted,
-        churn_score,
-        stability,
-        window_start,
-        now,
-        now,
-    )
+    return {
+        "repo": span.repo,
+        "commit": span.commit,
+        "function_goid_h128": span.goid,
+        "urn": span.urn,
+        "rel_path": span.rel_path,
+        "module": span.module,
+        "qualname": span.qualname,
+        "created_in_commit": agg.first_commit,
+        "created_at": agg.first_ts,
+        "last_modified_commit": agg.last_commit,
+        "last_modified_at": agg.last_ts,
+        "age_days": age_days,
+        "commit_count": agg.commit_count,
+        "author_count": len(agg.authors),
+        "lines_added": agg.lines_added,
+        "lines_deleted": agg.lines_deleted,
+        "churn_score": churn_score,
+        "stability_bucket": stability,
+        "history_window_start": window_start,
+        "history_window_end": now,
+        "created_at_row": now,
+    }
 
 
 def _load_function_spans(

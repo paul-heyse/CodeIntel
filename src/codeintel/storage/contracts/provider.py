@@ -15,7 +15,7 @@ from codeintel.core.schemas.contract_factory import (
     is_docs_view,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.core.schemas.service import SchemaService
+from codeintel.core.schemas.service import SchemaService, get_schema_service
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.views.inventory import discover_derived_docs_views
@@ -43,7 +43,10 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
 
 @lru_cache(maxsize=1)
 def _schema_service() -> SchemaService:
-    return SchemaService(table_provider=get_schema_provider())
+    try:
+        return get_schema_service()
+    except RuntimeError:
+        return SchemaService(table_provider=get_schema_provider())
 
 
 @lru_cache(maxsize=256)

@@ -28,6 +28,9 @@ skip/rebuild decisions across ingestion and build targets.
   - Production inference is enabled by default for inferable outputs and is recorded with
     derivation provenance (explicit override vs inferred).
   - Inference failures are hard errors when no non-DAG alternative exists.
+- Decision: Contract resolution defaults to DAG-first (FULL) with explicit declared-only mode.
+  - Default contract provider includes target metadata and DAG outputs.
+  - DAG-free enumeration is available via declared-only settings or a CLI registry.
 - Decision: Declared schemas are source-only.
   - Declared schema providers are reserved for non-DAG inputs and explicit overrides.
   - Schema-only enumeration remains DAG-free via a declared-only provider.

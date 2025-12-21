@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 import ibis
 
+from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import (
     DuckDBConnection,
@@ -52,27 +53,7 @@ class HistoryTimeseriesOptions:
     selection_strategy: str = "risk_score"
 
 
-HISTORY_TIMESERIES_COLS = [
-    "repo",
-    "entity_kind",
-    "entity_stable_id",
-    "function_goid_h128",
-    "module",
-    "rel_path",
-    "language",
-    "qualname",
-    "commit",
-    "commit_ts",
-    "loc",
-    "cyclomatic_complexity",
-    "coverage_ratio",
-    "static_error_count",
-    "typedness_bucket",
-    "risk_score",
-    "risk_level",
-    "bucket_label",
-    "created_at_row",
-]
+HISTORY_TIMESERIES_TABLE_KEY = "analytics.history_timeseries"
 
 log = logging.getLogger(__name__)
 
@@ -160,12 +141,13 @@ def build_history_timeseries_rows(
     options
         History timeseries configuration options.
     runner
-        Optional ToolRunner for git timestamp lookups.
+        Optional ToolRunner for git timestamp lookups. When omitted, commit timestamps
+        fall back to the current time.
 
     Returns
     -------
     tuple[tuple[object, ...], ...]
-        Row tuples matching HISTORY_TIMESERIES_COLS schema, ready for bulk insert.
+        Row tuples matching the schema order, ready for bulk insert.
     """
     if not options.commits:
         log.info("No commits provided for history_timeseries; skipping.")
@@ -177,6 +159,7 @@ def build_history_timeseries_rows(
         return ()
 
     now = datetime.now(tz=UTC)
+    serializer = row_serializer_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)
     rows: list[tuple[object, ...]] = []
     for commit in options.commits:
         con_ci = db_resolver(commit)
@@ -185,7 +168,8 @@ def build_history_timeseries_rows(
 
         if options.entity_kind in {"function", "both"}:
             rows.extend(
-                _collect_function_rows_for_commit(
+                serializer(row)
+                for row in _collect_function_rows_for_commit(
                     snapshot,
                     con_ci,
                     commit_ctx=commit_ctx,
@@ -194,7 +178,8 @@ def build_history_timeseries_rows(
             )
         if options.entity_kind in {"module", "both"}:
             rows.extend(
-                _collect_module_rows_for_commit(
+                serializer(row)
+                for row in _collect_module_rows_for_commit(
                     snapshot,
                     con_ci,
                     commit_ctx=commit_ctx,
@@ -336,7 +321,7 @@ def _collect_function_rows_for_commit(
     *,
     commit_ctx: CommitContext,
     selection: set[str],
-) -> Iterable[tuple[object, ...]]:
+) -> Iterable[dict[str, object]]:
     """Collect function timeseries rows for a single commit.
 
     Parameters
@@ -352,8 +337,8 @@ def _collect_function_rows_for_commit(
 
     Yields
     ------
-    tuple[object, ...]
-        Row tuples for analytics.history_timeseries.
+    dict[str, object]
+        Row mappings for analytics.history_timeseries.
     """
     conn = ibis.duckdb.from_connection(con_ci)
     table = conn.table("function_profile", database="analytics")
@@ -400,27 +385,27 @@ def _collect_function_rows_for_commit(
         if stable_id not in selection:
             continue
         goid_val = int(goid)
-        yield (
-            snapshot.repo,
-            "function",
-            stable_id,
-            goid_val,
-            str(module),
-            str(rel_path),
-            str(language),
-            str(qualname),
-            commit_ctx.commit,
-            commit_ctx.commit_ts,
-            _safe_number(loc),
-            _safe_number(cyclomatic_complexity),
-            _safe_number(coverage_ratio),
-            _safe_number(static_error_count),
-            typedness_bucket,
-            _safe_number(risk_score),
-            risk_level,
-            commit_ctx.commit_ts.date().isoformat(),
-            commit_ctx.created_at,
-        )
+        yield {
+            "repo": snapshot.repo,
+            "entity_kind": "function",
+            "entity_stable_id": stable_id,
+            "function_goid_h128": goid_val,
+            "module": str(module),
+            "rel_path": str(rel_path),
+            "language": str(language),
+            "qualname": str(qualname),
+            "commit": commit_ctx.commit,
+            "commit_ts": commit_ctx.commit_ts,
+            "loc": _safe_number(loc),
+            "cyclomatic_complexity": _safe_number(cyclomatic_complexity),
+            "coverage_ratio": _safe_number(coverage_ratio),
+            "static_error_count": _safe_number(static_error_count),
+            "typedness_bucket": typedness_bucket,
+            "risk_score": _safe_number(risk_score),
+            "risk_level": risk_level,
+            "bucket_label": commit_ctx.commit_ts.date().isoformat(),
+            "created_at_row": commit_ctx.created_at,
+        }
 
 
 def _collect_module_rows_for_commit(
@@ -429,7 +414,7 @@ def _collect_module_rows_for_commit(
     *,
     commit_ctx: CommitContext,
     selection: set[str],
-) -> Iterable[tuple[object, ...]]:
+) -> Iterable[dict[str, object]]:
     """Collect module timeseries rows for a single commit.
 
     Parameters
@@ -445,8 +430,8 @@ def _collect_module_rows_for_commit(
 
     Yields
     ------
-    tuple[object, ...]
-        Row tuples for analytics.history_timeseries.
+    dict[str, object]
+        Row mappings for analytics.history_timeseries.
     """
     conn = ibis.duckdb.from_connection(con_ci)
     table = conn.table("module_profile", database="analytics")
@@ -484,27 +469,27 @@ def _collect_module_rows_for_commit(
         )
         if stable_id not in selection:
             continue
-        yield (
-            snapshot.repo,
-            "module",
-            stable_id,
-            None,
-            str(module),
-            str(path),
-            str(language),
-            None,
-            commit_ctx.commit,
-            commit_ctx.commit_ts,
-            None,
-            None,
-            _safe_number(module_coverage_ratio),
-            None,
-            None,
-            _safe_number(max_risk_score),
-            None,
-            commit_ctx.commit_ts.date().isoformat(),
-            commit_ctx.created_at,
-        )
+        yield {
+            "repo": snapshot.repo,
+            "entity_kind": "module",
+            "entity_stable_id": stable_id,
+            "function_goid_h128": None,
+            "module": str(module),
+            "rel_path": str(path),
+            "language": str(language),
+            "qualname": None,
+            "commit": commit_ctx.commit,
+            "commit_ts": commit_ctx.commit_ts,
+            "loc": None,
+            "cyclomatic_complexity": None,
+            "coverage_ratio": _safe_number(module_coverage_ratio),
+            "static_error_count": None,
+            "typedness_bucket": None,
+            "risk_score": _safe_number(max_risk_score),
+            "risk_level": None,
+            "bucket_label": commit_ctx.commit_ts.date().isoformat(),
+            "created_at_row": commit_ctx.created_at,
+        }
 
 
 def _fetch_commit_timestamp(
@@ -513,8 +498,10 @@ def _fetch_commit_timestamp(
     runner: ToolRunner | None = None,
 ) -> datetime | None:
     args = ["git", "show", "-s", "--format=%cI", commit]
-    active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
-    result = active_runner.run(
+    if runner is None:
+        log.warning("ToolRunner not provided for git timestamps; using fallback for %s", commit)
+        return None
+    result = runner.run(
         "git",
         args,
         options=ToolRunOptions(cwd=repo_root),
