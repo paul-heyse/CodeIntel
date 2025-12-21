@@ -32,7 +32,8 @@ from codeintel.storage.queries.safe import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.serving.mcp._compat import FastMCP
+    from fastmcp import FastMCP
+
     from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.settings import ServingSettings
 

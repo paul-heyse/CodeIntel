@@ -11,28 +11,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from codeintel.config.datasets.primitives import (
-        CompositeSchema,
-        RowDictType,
-        RowToTuple,
-        TableSchema,
-    )
-
-
-@dataclass(frozen=True)
-class RowBinding:
-    """Connect a DuckDB table key to a TypedDict row model and serializer.
-
-    Parameters
-    ----------
-    row_type
-        The TypedDict class defining the row shape.
-    to_tuple
-        Function to serialize a row dict to a tuple for INSERT.
-    """
-
-    row_type: RowDictType
-    to_tuple: RowToTuple
+    from codeintel.config.datasets.primitives import CompositeSchema, TableSchema
+    from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 
 @dataclass(frozen=True)
@@ -49,7 +29,7 @@ class DatasetContract:
         Statically defined TableSchema when the dataset is backed by a table;
         None when the dataset is a view.
     row_binding
-        Optional binding to a TypedDict row model and serializer.
+        Optional binding to a schema-generated row model and serializer.
     json_schema_id
         Optional JSON Schema identifier (without .json) used for export validation.
     jsonl_filename
@@ -91,7 +71,7 @@ class DatasetContract:
     table_key: str
     name: str
     schema: TableSchema | None
-    row_binding: RowBinding | None = None
+    row_binding: GeneratedRowBinding | None = None
     json_schema_id: str | None = None
     jsonl_filename: str | None = None
     parquet_filename: str | None = None
@@ -121,12 +101,12 @@ class DatasetContract:
         """
         return self.row_binding is not None
 
-    def require_row_binding(self) -> RowBinding:
+    def require_row_binding(self) -> GeneratedRowBinding:
         """Return the row binding or raise a clear error if missing.
 
         Returns
         -------
-        RowBinding
+        GeneratedRowBinding
             Configured row binding for this dataset.
 
         Raises
@@ -175,5 +155,4 @@ class DatasetContract:
 
 __all__ = [
     "DatasetContract",
-    "RowBinding",
 ]

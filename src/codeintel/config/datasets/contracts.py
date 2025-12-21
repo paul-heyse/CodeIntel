@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
-from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
-from codeintel.core.schemas.row_models import row_binding_for_table_schema
+from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
@@ -34,27 +34,22 @@ def get_table_schemas() -> dict[str, TableSchema]:
 
 
 @lru_cache(maxsize=1)
-def get_row_bindings() -> dict[str, RowBinding]:
+def get_row_bindings() -> dict[str, GeneratedRowBinding]:
     """Return schema-generated row bindings for all declared table schemas.
 
     Returns
     -------
-    dict[str, RowBinding]
-        Mapping from table_key to a schema-generated RowBinding.
+    dict[str, GeneratedRowBinding]
+        Mapping from table_key to a schema-generated row binding.
     """
-    bindings: dict[str, RowBinding] = {}
+    bindings: dict[str, GeneratedRowBinding] = {}
     for table_key, schema in TABLE_SCHEMAS.items():
-        generated = row_binding_for_table_schema(table_schema=schema)
-        bindings[table_key] = RowBinding(
-            row_type=generated.row_model,
-            to_tuple=generated.serializer,
-        )
+        bindings[table_key] = row_binding_for_table_schema(table_schema=schema)
     return bindings
 
 
 __all__ = [
     "DatasetContract",
-    "RowBinding",
     "get_composite_schemas",
     "get_row_bindings",
     "get_table_schemas",

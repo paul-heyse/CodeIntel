@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypedDict
-
 import pytest
 from pandera import Column, DataFrameSchema
 
@@ -13,12 +11,10 @@ from codeintel.build.hamilton.contracts.schemas.builder import (
 )
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetSchema
 from codeintel.config.datasets.primitives import CompositeSchema
-from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.primitives import Column as DuckDBColumn
 from codeintel.core.schemas.primitives import TableSchema
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
+from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -124,26 +120,27 @@ def test_build_includes_ddl_schema_if_available() -> None:
 
 def test_build_includes_row_model_from_binding() -> None:
     """Row model is extracted from row binding if available."""
-
-    class MyRow(TypedDict):
-        col: str
-
-    def to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
-        return (row["col"],)
-
     pandera_schema = DataFrameSchema({"col": Column(str)})
-    row_binding = RowBinding(row_type=MyRow, to_tuple=to_tuple)
+    table_schema = TableSchema(
+        schema="test",
+        name="example",
+        columns=[DuckDBColumn(name="col", type="VARCHAR")],
+    )
+    row_binding = row_binding_for_table_schema(table_schema=table_schema)
 
     contract = DatasetContract(
         table_key="test.example",
         name="example",
-        schema=None,
+        schema=table_schema,
         row_binding=row_binding,
     )
 
     result = build_dataset_schema(contract, pandera_schema)
 
-    _require(condition=result.row_model is MyRow, message="row_model should be included")
+    _require(
+        condition=result.row_model is row_binding.row_model,
+        message="row_model should be included from row binding",
+    )
 
 
 def test_build_includes_composition_if_available() -> None:

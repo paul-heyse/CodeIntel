@@ -10,11 +10,12 @@ from codeintel.core.schemas.contract_policy import (
     default_jsonl_filename,
     default_parquet_filename,
 )
-from codeintel.core.schemas.contract_primitives import DatasetContract, RowBinding
+from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.service import SchemaService
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema
+    from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 
 _OWNER_PACKAGE_BY_PREFIX: dict[str, Literal["core", "analytics", "graphs", "qa", "docs"]] = {
@@ -73,14 +74,10 @@ def _owner_package_from_prefix(
     return _OWNER_PACKAGE_BY_PREFIX.get(schema_prefix)
 
 
-def _resolve_row_binding(schema_service: SchemaService, table_key: str) -> RowBinding | None:
-    generated = schema_service.get_row_binding(table_key)
-    if generated is None:
-        return None
-    return RowBinding(
-        row_type=generated.row_model,
-        to_tuple=generated.serializer,
-    )
+def _resolve_row_binding(
+    schema_service: SchemaService, table_key: str
+) -> GeneratedRowBinding | None:
+    return schema_service.get_row_binding(table_key)
 
 
 def build_dataset_contract(

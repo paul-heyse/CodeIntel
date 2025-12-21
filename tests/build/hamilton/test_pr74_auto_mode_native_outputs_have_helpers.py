@@ -1,8 +1,8 @@
 """Tests for PR-74: Auto mode helper nodes for native outputs.
 
 PR-74 ensures that auto-mode driver composition emits d__/q__/df__/a__ helper nodes
-for native targets, enabling native->native composition through the same loader
-conventions used by wrapper targets.
+for native targets, enabling native->native composition through consistent loader
+conventions.
 """
 
 from __future__ import annotations

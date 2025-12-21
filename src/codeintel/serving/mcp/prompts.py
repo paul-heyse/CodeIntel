@@ -10,13 +10,13 @@ import json
 from dataclasses import dataclass
 from typing import cast
 
+from fastmcp import Context, FastMCP
 from fastmcp.prompts import Message
 from mcp import McpError
 from mcp.types import PromptMessage
 
 from codeintel.serving.export.formats import default_export_format, export_format_choices
 from codeintel.serving.features import ServingFeatureSet
-from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type, parse_filter_value
 from codeintel.serving.semantic.models import Op

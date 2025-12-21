@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,8 @@ from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.storage.duckdb_types import DuckDBConnection
     from codeintel.storage.gateway.protocol import MinimalGateway
 
@@ -25,6 +28,15 @@ class ExportAuditRecord:
     rows: int | None
     duration_s: float
     output_path: Path
+
+
+@dataclass(frozen=True, slots=True)
+class ExportAuditContext:
+    """Context bundle for export audit logging."""
+
+    con: DuckDBConnection
+    settings: ExportAuditSettings
+    ensure_table: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,8 +99,11 @@ class ExportService:
         """
         write_export_audit(
             record=record,
-            con=self.gateway.con,
-            settings=settings,
+            context=ExportAuditContext(
+                con=self.gateway.con,
+                settings=settings,
+                ensure_table=self.gateway.policy.ensure_export_audit_table,
+            ),
             sql=sql,
             plan=plan,
         )
@@ -136,8 +151,7 @@ def build_export_relation(
 def write_export_audit(
     record: ExportAuditRecord,
     *,
-    con: DuckDBConnection,
-    settings: ExportAuditSettings,
+    context: ExportAuditContext,
     sql: str | None = None,
     plan: str | None = None,
 ) -> None:
@@ -147,16 +161,14 @@ def write_export_audit(
     ----------
     record
         Audit record describing the export.
-    con
-        DuckDB connection used for metadata logging.
-    settings
-        Export audit settings.
+    context
+        Export audit context for connections and settings.
     sql
         Optional SQL statement for the export.
     plan
         Optional query plan text.
     """
-    if not audit_enabled(settings):
+    if not audit_enabled(context.settings):
         return
 
     json_record = {
@@ -166,31 +178,20 @@ def write_export_audit(
         "duration_s": record.duration_s,
         "output": str(record.output_path),
     }
-    if settings.log_path is not None:
-        with settings.log_path.open("a", encoding="utf-8") as handle:
+    if context.settings.log_path is not None:
+        with context.settings.log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(json_record))
             handle.write("\n")
 
-    if settings.table_enabled:
-        con.execute(
-            """
-            CREATE TABLE IF NOT EXISTS metadata.export_audit (
-                dataset TEXT,
-                macro TEXT,
-                rows BIGINT,
-                duration_s DOUBLE,
-                output_path TEXT,
-                sql TEXT,
-                plan TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """,
-        )
-        con.execute(
+    if context.settings.table_enabled:
+        if context.ensure_table is not None:
+            context.ensure_table()
+        created_at = datetime.now(tz=UTC)
+        context.con.execute(
             """
             INSERT INTO metadata.export_audit
-                (dataset, macro, rows, duration_s, output_path, sql, plan)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (dataset, macro, rows, duration_s, output_path, sql, plan, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 record.table_name,
@@ -200,11 +201,13 @@ def write_export_audit(
                 str(record.output_path),
                 sql,
                 plan,
+                created_at,
             ],
         )
 
 
 __all__ = [
+    "ExportAuditContext",
     "ExportAuditRecord",
     "ExportService",
     "audit_enabled",

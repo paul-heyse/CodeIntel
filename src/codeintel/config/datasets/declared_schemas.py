@@ -2182,7 +2182,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
                 "run_id", "VARCHAR", description="Run ID that first produced/recorded this version"
             ),
             Column("target", "VARCHAR", description="Target that produced this asset version"),
-            Column("impl_kind", "VARCHAR", description="wrapper|native"),
+            Column("impl_kind", "VARCHAR", description="native"),
             Column("status", "VARCHAR", nullable=False, description="materialized|reused|failed"),
             Column("location", "VARCHAR", description="Table name/view name/path/URI"),
             Column("input_hash", "VARCHAR", description="Target input hash at version creation"),

@@ -189,11 +189,11 @@ def _schema_digest(dataset: DatasetContract) -> str | None:
     if dataset.json_schema_id is None:
         return None
     row_binding = dataset.row_binding
-    if row_binding is None or row_binding.row_type is None:
+    if row_binding is None or row_binding.row_model is None:
         return None
     schema_id = f"https://schemas.codeintel.dev/export/{dataset.json_schema_id}.json"
     schema = json_schema_from_typeddict(
-        row_binding.row_type,
+        row_binding.row_model,
         additional_properties=True,
         schema_id=schema_id,
         title=f"{dataset.name} export",

@@ -138,7 +138,6 @@ class BuildExecutionArgs:
     run_mode: RunMode
     validate_outputs: bool
     strict_contracts: bool
-    wrapper_allowlist: list[str] | None
     publish_serving_snapshot: bool
     parallel_backend: str
     max_workers: int | None
@@ -346,10 +345,6 @@ def _execute_build_hamilton(
     manifest_index = {m.target: m for m in manifests_list}
     LOG.debug("build.cli.hamilton.manifest_index count=%d", len(manifest_index))
 
-    wrapper_allowlist_frozen = (
-        frozenset(execution.wrapper_allowlist) if execution.wrapper_allowlist else None
-    )
-
     cache_dir = runtime.paths.build_dir / ".hamilton_cache"
     if execution.cache_dir:
         override = Path(execution.cache_dir).expanduser()
@@ -381,7 +376,6 @@ def _execute_build_hamilton(
         force_targets=frozenset(execution.force or ()),
         validate_outputs=execution.validate_outputs,
         strict_contracts=execution.strict_contracts,
-        wrapper_allowlist=wrapper_allowlist_frozen,
         manifest_index=manifest_index,
     )
     env = context.build_env()
@@ -754,7 +748,6 @@ class _BuildRunParams:
     force: list[str] | None
     validate_outputs: bool
     strict_contracts: bool
-    wrapper_allowlist: list[str] | None
     publish_serving_snapshot: bool
     parallel_backend: str
     max_workers: int | None
@@ -809,17 +802,6 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     force_list = ctx.params.get_list("force")
     force: list[str] | None = force_list if force_list else None
 
-    wrapper_allowlist_list = None
-    wrapper_allowlist_raw = ctx.params.get_list("wrapper_allowlist")
-    if wrapper_allowlist_raw:
-        # Handle comma-separated string or list
-        wrapper_allowlist_list = []
-        for item in wrapper_allowlist_raw:
-            if isinstance(item, str) and "," in item:
-                wrapper_allowlist_list.extend(item.split(","))
-            else:
-                wrapper_allowlist_list.append(str(item))
-
     parallel_backend_raw = ctx.params.get_str("parallel_backend")
     max_workers_raw = ctx.params.get_int("max_workers", 0)
     max_workers = max_workers_raw or None
@@ -836,7 +818,6 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         force=force,
         validate_outputs=ctx.params.get_bool("validate_outputs"),
         strict_contracts=ctx.params.get_bool("strict_contracts"),
-        wrapper_allowlist=wrapper_allowlist_list,
         publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
         parallel_backend=parallel_backend,
         max_workers=max_workers,
@@ -948,7 +929,6 @@ def build_run_handler(
         run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
         validate_outputs=params.validate_outputs,
         strict_contracts=params.strict_contracts,
-        wrapper_allowlist=params.wrapper_allowlist,
         publish_serving_snapshot=params.publish_serving_snapshot,
         parallel_backend=params.parallel_backend,
         max_workers=params.max_workers,

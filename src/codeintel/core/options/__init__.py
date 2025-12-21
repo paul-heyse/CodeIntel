@@ -18,11 +18,10 @@ True
 from __future__ import annotations
 
 from codeintel.core.options.base import BaseOptions
-from codeintel.core.options.protocol import OptionsProtocol, ValidationOutcome, ValidationResult
+from codeintel.core.options.protocol import OptionsProtocol, ValidationOutcome
 
 __all__ = [
     "BaseOptions",
     "OptionsProtocol",
     "ValidationOutcome",
-    "ValidationResult",
 ]

@@ -1092,17 +1092,16 @@ print(intro.summary_for_llm())
 3. Use `typed_dict_from_pandera()` to generate row models
 4. Inherit `SchemaValidationMixin` in adapters for validation
 
-### Migration from Manual Models
+### Row Model Access
 
-Use the migration utilities to validate compatibility:
+Manual row models have been removed; schema-generated row models are canonical.
+Use the schema registry to obtain a TypedDict row model when needed:
 
 ```python
-from codeintel.build.hamilton.contracts.schemas.row_migration import validate_row_model_compatibility
+from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
 
-status = validate_row_model_compatibility("analytics.function_metrics")
-if status.compatible:
-    # Safe to switch to schema-generated model
-    ...
+schema = SCHEMA_REGISTRY.require("analytics.function_metrics")
+row_model = schema.get_row_model()
 ```
 
 ---

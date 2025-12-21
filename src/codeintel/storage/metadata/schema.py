@@ -10,11 +10,27 @@ from __future__ import annotations
 from codeintel.core.schemas.primitives import Column, Index, TableSchema
 
 __all__ = [
+    "EXPORT_AUDIT_TABLE",
     "METADATA_TABLES",
 ]
 
+EXPORT_AUDIT_TABLE = TableSchema(
+    schema="metadata",
+    name="export_audit",
+    columns=[
+        Column("dataset", "VARCHAR", nullable=False),
+        Column("macro", "VARCHAR", nullable=False),
+        Column("rows", "BIGINT"),
+        Column("duration_s", "DOUBLE", nullable=False),
+        Column("output_path", "VARCHAR", nullable=False),
+        Column("sql", "VARCHAR"),
+        Column("plan", "VARCHAR"),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+)
 
 METADATA_TABLES: tuple[TableSchema, ...] = (
+    EXPORT_AUDIT_TABLE,
     TableSchema(
         schema="metadata",
         name="dataset_schema_registry",

@@ -22,7 +22,7 @@ def test_buildspec_serdes_is_deterministic() -> None:
             TargetSpec(
                 name="b",
                 domain="analytics",
-                impl_kind="wrapper",
+                impl_kind="native",
                 deps=("z", "a"),
                 outputs=("analytics.zz", "analytics.aa"),
                 artifacts=(ArtifactOutSpec(name="out_b", kind="jsonl"),),

@@ -80,7 +80,7 @@ def build_dataset_schema(
 
     row_model = None
     if contract.row_binding is not None:
-        row_model = contract.row_binding.row_type
+        row_model = contract.row_binding.row_model
 
     return DatasetSchema(
         name=contract.table_key,

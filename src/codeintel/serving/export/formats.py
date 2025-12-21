@@ -6,7 +6,6 @@ from codeintel.core.exports import formats as core_formats
 
 ExportFormat = core_formats.ExportFormat
 ExportFormatSpec = core_formats.ExportFormatSpec
-normalize_export_format = core_formats.normalize_export_format
 resolve_export_format_spec = core_formats.resolve_export_format_spec
 mime_type_for_export_format = core_formats.mime_type_for_export_format
 suffix_for_export_format = core_formats.suffix_for_export_format
@@ -28,6 +27,20 @@ EXPORT_FORMATS: dict[ExportFormat, ExportFormatSpec] = {
     **_CORE_EXPORT_FORMATS,
     "ndjson": _NDJSON_SPEC,
 }
+
+
+def normalize_export_format(fmt: str) -> ExportFormat:
+    """Normalize export format for serving (keep ndjson as canonical).
+
+    Returns
+    -------
+    ExportFormat
+        Canonical export format identifier for serving.
+    """
+    normalized = core_formats.normalize_export_format(fmt)
+    if normalized == "jsonl":
+        return "ndjson"
+    return normalized
 
 
 def default_export_format() -> ExportFormat:

@@ -13,7 +13,6 @@ Design Principles
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
@@ -85,9 +84,7 @@ class PlanEntry:
     artifact_keys
         Tuple of artifact keys this target produces (future use).
     impl_kind
-        Implementation kind: "wrapper" (generated module wrapping plugin)
-        or "native" (native Hamilton pipeline). Used for Phase 3 migration.
-        Defaults to "wrapper" for backward compatibility.
+        Implementation kind. Native Hamilton pipelines are required.
 
     Examples
     --------
@@ -119,7 +116,7 @@ class PlanEntry:
     artifact_keys: tuple[str, ...] = ()
     dep_hashes: dict[str, str] = field(default_factory=dict)
     prior_dep_hashes: dict[str, str] = field(default_factory=dict)
-    impl_kind: ImplKind = "wrapper"
+    impl_kind: ImplKind = "native"
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -436,6 +433,11 @@ def _compute_entry_for_target(
     -------
     PlanEntry
         Computed plan entry for this target.
+
+    Raises
+    ------
+    RuntimeError
+        If the target does not resolve to a native implementation.
     """
     target_name = target.name
     node = target_node(target_name)
@@ -445,7 +447,10 @@ def _compute_entry_for_target(
     blocked_deps = [
         dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
     ]
-    impl_kind: ImplKind = "native" if target_name in native_names else "wrapper"
+    if target_name not in native_names:
+        msg = f"Target '{target_name}' lacks a native implementation"
+        raise RuntimeError(msg)
+    impl_kind: ImplKind = "native"
 
     if blocked_deps:
         return PlanEntry(
@@ -625,17 +630,6 @@ def compute_plan(
         )
         entries.append(entry)
         upstream_status[target_name] = entry.status
-
-    # Check wrapper deprecation if allowlist is set
-    if env.wrapper_allowlist is not None:
-        for entry in entries:
-            if entry.impl_kind == "wrapper" and entry.target not in env.wrapper_allowlist:
-                warnings.warn(
-                    f"Target '{entry.target}' uses wrapper implementation "
-                    f"but is not in allowlist. Consider migrating to native.",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
 
     return HamiltonBuildPlan(
         requested=requested,

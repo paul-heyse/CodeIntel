@@ -70,7 +70,7 @@ class SchemaManifestRequest:
     all_targets
         When True, include all targets across all modules.
     only_native
-        When True, restrict selection to targets with native implementations.
+        Deprecated compatibility flag; selection is native-only regardless.
     infer_native
         When True, infer schemas for inferable native outputs (fallback to declared on error).
     batch_infer_native
@@ -113,7 +113,7 @@ class TableKeySelection:
     all_targets
         When True, include all targets across all modules.
     only_native
-        When True, restrict selection to targets with native implementations.
+        Deprecated compatibility flag; selection is native-only regardless.
     stable
         When True, preserve deterministic ordering.
     """
@@ -200,12 +200,11 @@ def _table_keys_for_selection(
     KeyError
         If explicit targets are requested but missing.
     ValueError
-        If only_native is True and no targets match.
+        If any selected target lacks a native implementation.
     """
     targets = list(selection.targets) if selection.targets else None
     module = selection.module
     all_targets = selection.all_targets
-    only_native = selection.only_native
     stable = selection.stable
 
     if targets:
@@ -219,12 +218,11 @@ def _table_keys_for_selection(
     else:
         selected = list(graph.all_targets) if all_targets or not (targets or module) else []
 
-    if only_native:
-        native_names = native_target_names(runtime)
-        selected = [t for t in selected if t.name in native_names]
-        if not selected:
-            msg = "No native targets matched selection"
-            raise ValueError(msg)
+    native_names = native_target_names(runtime)
+    missing_native = [t.name for t in selected if t.name not in native_names]
+    if missing_native:
+        msg = "Targets lack native implementations: " + ", ".join(sorted(missing_native))
+        raise ValueError(msg)
 
     table_keys: list[str] = []
     for target in selected:

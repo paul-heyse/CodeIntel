@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import anyio
+from fastmcp import FastMCP
 from starlette.responses import JSONResponse, PlainTextResponse
 
 from codeintel.serving.auth.policy import mcp_auth_provider
 from codeintel.serving.features import ServingFeatureSet
-from codeintel.serving.mcp._compat import FastMCP
 from codeintel.serving.mcp.middleware_stack import build_mcp_middleware
 from codeintel.serving.mcp.prompts import register_prompts
 from codeintel.serving.mcp.protocols import SemanticKernelProtocol

@@ -43,7 +43,6 @@ class BuildRunContext:
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
     strict_contracts: bool = False
-    wrapper_allowlist: frozenset[str] | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     output_inventory: OutputInventory | None = None
     fingerprint_policy: FingerprintPolicy | None = None
@@ -108,7 +107,6 @@ class BuildRunContext:
             output_inventory=output_inventory,
             validate_outputs=self.validate_outputs,
             strict_contracts=self.strict_contracts,
-            wrapper_allowlist=self.wrapper_allowlist,
             fingerprint_policy=fingerprint_policy,
         )
 

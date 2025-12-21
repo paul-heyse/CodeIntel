@@ -1,4 +1,4 @@
-"""Lightweight JSON Schema generation from TypedDict row models."""
+"""Lightweight JSON Schema generation from row models."""
 
 from __future__ import annotations
 
@@ -203,11 +203,11 @@ def generate_export_schemas(
             continue
         ds = datasets.get(name) if isinstance(datasets, Mapping) else None
         row_binding = contract.row_binding or getattr(ds, "row_binding", None)
-        if row_binding is None or row_binding.row_type is None:
+        if row_binding is None or row_binding.row_model is None:
             continue
         schema_id = f"https://schemas.codeintel.dev/export/{contract.json_schema_id}.json"
         schema = json_schema_from_typeddict(
-            row_binding.row_type,
+            row_binding.row_model,
             additional_properties=True,
             schema_id=schema_id,
             title=f"{name} export",

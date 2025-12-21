@@ -215,8 +215,6 @@ def _parse_target(value: object, *, idx: int) -> TargetSpec:
     impl_kind_typed: ImplKind
     if impl_kind == "native":
         impl_kind_typed = "native"
-    elif impl_kind == "wrapper":
-        impl_kind_typed = "wrapper"
     else:
         msg = f"Unsupported impl_kind: {impl_kind}"
         raise ValueError(msg)

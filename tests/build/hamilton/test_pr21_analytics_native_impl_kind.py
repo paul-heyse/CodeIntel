@@ -1,9 +1,4 @@
-"""Tests for PR-21: Native analytics targets show correct impl_kind in plan.
-
-This module validates that the migrated analytics targets (coverage_functions,
-hotspots, subsystems) are correctly marked as "native" in build plans, while
-non-migrated targets remain as "wrapper".
-"""
+"""Tests for PR-21: Native analytics targets show correct impl_kind in plan."""
 
 from __future__ import annotations
 

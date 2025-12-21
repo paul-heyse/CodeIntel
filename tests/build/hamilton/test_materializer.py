@@ -150,7 +150,6 @@ def test_materialize_table_validates_when_schema_available(
         manifest_index=env.manifest_index,
         validate_outputs=True,
         strict_contracts=env.strict_contracts,
-        wrapper_allowlist=env.wrapper_allowlist,
         fingerprint_policy=env.fingerprint_policy,
     )
     graph = _make_graph()

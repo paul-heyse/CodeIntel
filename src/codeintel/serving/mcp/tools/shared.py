@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Final
 
+from fastmcp import Context
 from mcp import McpError
 
 from codeintel.serving.export.formats import normalize_export_format
 from codeintel.serving.features import ServingFeatureSet
-from codeintel.serving.mcp._compat import Context
 from codeintel.serving.mcp.models import QueryPreview
 from codeintel.serving.semantic.models import FilterSpec, SemanticQueryRequest
 

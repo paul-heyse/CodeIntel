@@ -24,10 +24,6 @@ Build targets with automatic dependency resolution.
 │   --strict-contracts          contract. [env var:                            │
 │                               CODEINTEL_BUILD_RUN_STRICT_CONTRACTS]          │
 │                               [default: false]                               │
-│ WRAPPER-ALLOWLIST             Only allow wrapper implementation for these    │
-│   --wrapper-allowlist         targets (comma-separated). [env var:           │
-│   --empty-wrapper-allowlist   CODEINTEL_BUILD_RUN_WRAPPER_ALLOWLIST]         │
-│                               [default: (none)]                              │
 │ PUBLISH-SERVING-SNAPSHOT      Publish an immutable serving snapshot (writes  │
 │   --publish-serving-snapshot  current.json and snapshot artifacts). [env     │
 │                               var:                                           │

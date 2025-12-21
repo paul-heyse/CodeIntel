@@ -71,7 +71,7 @@ def build_export_plan(request: SemanticExportRequest) -> ExportPlan:
         If the export format is unsupported.
     """
     normalized = normalize_export_format(request.format)
-    if normalized == "jsonl":
+    if normalized in {"jsonl", "ndjson"}:
         delivery = ExportDelivery.ndjson_stream
     elif normalized == "json":
         delivery = ExportDelivery.json_rows

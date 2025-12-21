@@ -6,8 +6,9 @@ import time
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from fastmcp import Context, FastMCP
+
 from codeintel.serving.features import ServingFeatureSet
-from codeintel.serving.mcp._compat import Context, FastMCP
 from codeintel.serving.mcp.models import DEFAULT_RESOURCE_TEMPLATES, ServingMetaResponse
 from codeintel.serving.mcp.runtime import QueryLimiter
 from codeintel.serving.mcp.tools.shared import (

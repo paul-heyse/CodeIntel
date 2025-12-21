@@ -49,6 +49,7 @@ from codeintel.storage.helpers.table_key import (
     split_table_key,
     split_table_key_or_default,
 )
+from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
 from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
@@ -740,7 +741,7 @@ class DuckDBPolicyBackend:
                 )
             )
 
-    def delete_repo_commit(
+    def _delete_repo_commit(
         self,
         schema: str,
         table: str,
@@ -781,7 +782,7 @@ class DuckDBPolicyBackend:
         """Delete rows for a specific repo/commit from a table.
 
         This is a convenience method that accepts a table_key and routes to
-        delete_repo_commit. Supports both schema-qualified names
+        _delete_repo_commit. Supports both schema-qualified names
         (e.g., 'analytics.function_metrics') and simple table names
         (e.g., 'sample_simple_batch') which default to the 'main' schema.
 
@@ -800,7 +801,7 @@ class DuckDBPolicyBackend:
         if not columns:
             return
         if "repo" in columns and "commit" in columns:
-            self.delete_repo_commit(schema, table, repo, commit)
+            self._delete_repo_commit(schema, table, repo, commit)
             return
 
         if "repo" in columns:
@@ -862,7 +863,7 @@ class DuckDBPolicyBackend:
         commit
             Commit identifier.
         """
-        self.delete_repo_commit("analytics", "cfg_metrics", repo, commit)
+        self._delete_repo_commit("analytics", "cfg_metrics", repo, commit)
 
     def _clear_dfg_metrics(self, repo: str, commit: str) -> None:
         """Clear DFG metrics for a snapshot.
@@ -874,7 +875,7 @@ class DuckDBPolicyBackend:
         commit
             Commit identifier.
         """
-        self.delete_repo_commit("analytics", "dfg_metrics", repo, commit)
+        self._delete_repo_commit("analytics", "dfg_metrics", repo, commit)
 
     def ensure_all_schemas(
         self,
@@ -962,6 +963,12 @@ class DuckDBPolicyBackend:
             Additional DDL statements to execute.
         """
         self.ensure_all_schemas(drop_existing=False, extra_ddl=extra_ddl)
+
+    def ensure_export_audit_table(self) -> None:
+        """Ensure the metadata.export_audit table exists."""
+        self.create_schema_if_not_exists(EXPORT_AUDIT_TABLE.schema)
+        self.create_table_from_schema(EXPORT_AUDIT_TABLE, drop_existing=False, if_not_exists=True)
+        self.create_indexes_from_schema(EXPORT_AUDIT_TABLE)
 
     def ensure_table(self, table_key: str, *, create_if_missing: bool = True) -> None:
         """
