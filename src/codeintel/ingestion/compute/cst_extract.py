@@ -18,6 +18,7 @@ from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
 )
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
+CST_NODES_TABLE_KEY = "core.cst_nodes"
 
 
 ASYNC_FUNC_DEF = getattr(cst, "AsyncFunctionDef", cst.FunctionDef)
@@ -169,8 +171,9 @@ class CstExtractStep(BaseExtractStep):
         ExecutionResult
             Execution result with row counts.
         """
-        all_rows: list[list[object]] = []
+        all_rows: list[tuple[object, ...]] = []
         warnings: list[str] = []
+        serializer = row_serializer_for_table_key(CST_NODES_TABLE_KEY)
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_cst(module, source)
@@ -182,18 +185,25 @@ class CstExtractStep(BaseExtractStep):
             for row in result.rows:
                 rel_path, node_id, kind, span, snippet, parents, qnames = row
                 all_rows.append(
-                    [
-                        rel_path,
-                        node_id,
-                        kind,
-                        span,
-                        snippet,
-                        list(parents),
-                        list(qnames),
-                    ]
+                    serializer(
+                        {
+                            "path": rel_path,
+                            "node_id": node_id,
+                            "kind": kind,
+                            "span": span,
+                            "text_preview": snippet,
+                            "parents": list(parents),
+                            "qnames": list(qnames),
+                        }
+                    )
                 )
 
-        table_counts = self._write_and_count("core.cst_nodes", all_rows, repo=repo, commit=commit)
+        table_counts = self._write_and_count(
+            CST_NODES_TABLE_KEY,
+            all_rows,
+            repo=repo,
+            commit=commit,
+        )
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",

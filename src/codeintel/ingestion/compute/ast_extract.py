@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)
+AST_NODES_TABLE_KEY = "core.ast_nodes"
+AST_METRICS_TABLE_KEY = "core.ast_metrics"
 
 
 @dataclass
@@ -79,8 +82,8 @@ class AstRowInfo:
 class ModuleAstResult:
     """Result from processing a single module's AST."""
 
-    ast_rows: list[list[object]]
-    metric_row: list[object] | None
+    ast_rows: list[dict[str, object]]
+    metric_row: dict[str, object] | None
 
 
 class AstVisitor(ast.NodeVisitor):
@@ -98,7 +101,7 @@ class AstVisitor(ast.NodeVisitor):
         """
         self.rel_path = rel_path
         self.module_name = module_name
-        self.ast_rows: list[list[object]] = []
+        self.ast_rows: list[dict[str, object]] = []
         self.metrics = AstMetrics(rel_path=rel_path)
         self._scope_stack: list[str] = []
         self._depth = 0
@@ -260,26 +263,26 @@ class AstVisitor(ast.NodeVisitor):
             digest_size=16,
         ).hexdigest()
         self.ast_rows.append(
-            [
-                self.rel_path,
-                info.node_type,
-                info.name,
-                info.qualname,
-                lineno,
-                end_lineno,
-                info.decorator_start_line,
-                info.decorator_end_line,
-                col,
-                end_col,
-                info.parent_qualname,
-                info.decorators,
-                info.docstring,
-                h,
-            ]
+            {
+                "path": self.rel_path,
+                "node_type": info.node_type,
+                "name": info.name,
+                "qualname": info.qualname,
+                "lineno": lineno,
+                "end_lineno": end_lineno,
+                "decorator_start_line": info.decorator_start_line,
+                "decorator_end_line": info.decorator_end_line,
+                "col_offset": col,
+                "end_col_offset": end_col,
+                "parent_qualname": info.parent_qualname,
+                "decorators": info.decorators,
+                "docstring": info.docstring,
+                "hash": h,
+            }
         )
 
 
-def _build_metric_row(metrics: AstMetrics) -> list[object]:
+def _build_metric_row(metrics: AstMetrics) -> dict[str, object]:
     """Build a metric row from AstMetrics.
 
     Returns
@@ -287,16 +290,16 @@ def _build_metric_row(metrics: AstMetrics) -> list[object]:
     list[object]
         Row data for metric table.
     """
-    return [
-        metrics.rel_path,
-        metrics.node_count,
-        metrics.function_count,
-        metrics.class_count,
-        metrics.avg_depth,
-        metrics.max_depth,
-        metrics.complexity,
-        datetime.now(UTC),
-    ]
+    return {
+        "rel_path": metrics.rel_path,
+        "node_count": metrics.node_count,
+        "function_count": metrics.function_count,
+        "class_count": metrics.class_count,
+        "avg_depth": metrics.avg_depth,
+        "max_depth": metrics.max_depth,
+        "complexity": metrics.complexity,
+        "generated_at": datetime.now(UTC),
+    }
 
 
 def _extract_module_ast(
@@ -373,9 +376,11 @@ class AstExtractStep(BaseExtractStep):
         ExecutionResult
             Execution result with row counts.
         """
-        ast_rows: list[list[object]] = []
-        metric_rows: list[list[object]] = []
+        ast_rows: list[tuple[object, ...]] = []
+        metric_rows: list[tuple[object, ...]] = []
         warnings: list[str] = []
+        ast_serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
+        metrics_serializer = row_serializer_for_table_key(AST_METRICS_TABLE_KEY)
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_ast(module, source)
@@ -383,14 +388,19 @@ class AstExtractStep(BaseExtractStep):
                 warnings.append(f"Failed to extract AST from {module.rel_path}")
                 continue
 
-            ast_rows.extend(result.ast_rows)
+            ast_rows.extend(ast_serializer(row) for row in result.ast_rows)
             if result.metric_row is not None:
-                metric_rows.append(result.metric_row)
+                metric_rows.append(metrics_serializer(result.metric_row))
 
-        table_counts = self._write_and_count("core.ast_nodes", ast_rows, repo=repo, commit=commit)
+        table_counts = self._write_and_count(
+            AST_NODES_TABLE_KEY,
+            ast_rows,
+            repo=repo,
+            commit=commit,
+        )
         if metric_rows:
-            result = self._storage.write_batch("core.ast_metrics", metric_rows)
-            table_counts["core.ast_metrics"] = result.rows_affected
+            result = self._storage.write_batch(AST_METRICS_TABLE_KEY, metric_rows)
+            table_counts[AST_METRICS_TABLE_KEY] = result.rows_affected
 
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",

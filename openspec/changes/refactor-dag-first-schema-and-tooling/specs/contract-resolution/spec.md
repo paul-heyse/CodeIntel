@@ -20,6 +20,18 @@ alternative schema is available for the dataset.
 - **WHEN** schema inference fails for a DAG-produced table key without a fallback override
 - **THEN** schema resolution fails with a hard error
 
+### Requirement: Contract resolution defaults to DAG-first outputs
+Contract resolution SHALL default to the DAG-first provider with target metadata and output
+overrides, and SHALL provide an explicit declared-only mode for DAG-free enumeration.
+
+#### Scenario: Default contract resolution includes DAG outputs
+- **WHEN** a caller resolves contracts without specifying a resolution mode
+- **THEN** DAG-produced table keys are included with target metadata overrides applied
+
+#### Scenario: Declared-only mode is DAG-free
+- **WHEN** a caller requests declared-only contract resolution
+- **THEN** DAG-produced table keys are excluded and the Hamilton DAG is not initialized
+
 ## MODIFIED Requirements
 ### Requirement: Schema-only contract enumeration is DAG-free
 Schema-only contract enumeration SHALL use the declared-only provider and SHALL NOT initialize

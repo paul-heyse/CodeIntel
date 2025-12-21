@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.schemas.contract_service import (
+    ContractResolutionMode,
     ContractResolutionSettings,
     iter_contracts,
 )
@@ -400,7 +401,7 @@ def _collect_export_artifacts(*, stable: bool) -> tuple[ExportArtifact, ...]:
     artifacts: list[ExportArtifact] = []
 
     for contract in iter_contracts(
-        settings=ContractResolutionSettings(include_target_metadata=True)
+        settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)
     ):
         if contract.jsonl_filename is not None:
             artifacts.append(

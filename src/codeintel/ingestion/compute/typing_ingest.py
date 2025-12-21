@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
 )
@@ -24,8 +23,11 @@ from codeintel.core.schemas.generated_rows.analytics import (
 )
 from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.tools import ToolStatus
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
+TYPEDNESS_TABLE_KEY = "analytics.typedness"
+DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -275,7 +277,7 @@ class TypingIngestStep:
         repo: str,
         commit: str,
         diag_counts: DiagnosticCounts,
-    ) -> tuple[list[list[object]], list[list[object]]]:
+    ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
         """Process modules and build rows.
 
         Parameters
@@ -291,15 +293,14 @@ class TypingIngestStep:
 
         Returns
         -------
-        tuple[list[list[object]], list[list[object]]]
+        tuple[list[tuple[object, ...]], list[tuple[object, ...]]]
             Typedness rows and diagnostic rows.
         """
-        columns_by_table = load_columns_by_table()
-        typedness_columns = columns_by_table["analytics.typedness"]
-        diagnostics_columns = columns_by_table["analytics.static_diagnostics"]
+        typedness_serializer = row_serializer_for_table_key(TYPEDNESS_TABLE_KEY)
+        diagnostics_serializer = row_serializer_for_table_key(DIAGNOSTICS_TABLE_KEY)
 
-        typedness_rows: list[list[object]] = []
-        diagnostic_rows: list[list[object]] = []
+        typedness_rows: list[tuple[object, ...]] = []
+        diagnostic_rows: list[tuple[object, ...]] = []
 
         for module in modules:
             if not module.rel_path.endswith(".py"):
@@ -334,23 +335,20 @@ class TypingIngestStep:
                 untyped_defs=info.untyped_defs,
                 overlay_needed=overlay_needed,
             )
-            typedness_rows.append(list(serialize_row(row, typedness_columns)))
+            typedness_rows.append(typedness_serializer(row))
 
             diagnostic_rows.append(
-                list(
-                    serialize_row(
-                        StaticDiagnosticRow(
-                            repo=repo,
-                            commit=commit,
-                            rel_path=module.rel_path,
-                            pyright_errors=pyright_errors,
-                            pyrefly_errors=pyrefly_errors,
-                            ruff_errors=ruff_errors,
-                            total_errors=type_error_count,
-                            has_errors=type_error_count > 0,
-                        ),
-                        diagnostics_columns,
-                    )
+                diagnostics_serializer(
+                    StaticDiagnosticRow(
+                        repo=repo,
+                        commit=commit,
+                        rel_path=module.rel_path,
+                        pyright_errors=pyright_errors,
+                        pyrefly_errors=pyrefly_errors,
+                        ruff_errors=ruff_errors,
+                        total_errors=type_error_count,
+                        has_errors=type_error_count > 0,
+                    ),
                 )
             )
 
@@ -358,8 +356,8 @@ class TypingIngestStep:
 
     def _persist_rows(
         self,
-        typedness_rows: list[list[object]],
-        diagnostic_rows: list[list[object]],
+        typedness_rows: list[tuple[object, ...]],
+        diagnostic_rows: list[tuple[object, ...]],
         repo: str,
         commit: str,
     ) -> ExecutionResult:
@@ -391,7 +389,7 @@ class TypingIngestStep:
             typedness_paths = [str(row[2]) for row in typedness_rows]
 
             self._storage.delete_by_paths(
-                "analytics.typedness",
+                TYPEDNESS_TABLE_KEY,
                 typedness_paths,
                 path_column="path",
                 repo=repo,
@@ -399,22 +397,22 @@ class TypingIngestStep:
             )
 
             scope = f"{repo}@{commit}"
-            result = self._storage.write_batch("analytics.typedness", typedness_rows, scope=scope)
-            table_counts["analytics.typedness"] = result.rows_affected
+            result = self._storage.write_batch(TYPEDNESS_TABLE_KEY, typedness_rows, scope=scope)
+            table_counts[TYPEDNESS_TABLE_KEY] = result.rows_affected
 
         if diagnostic_rows:
             diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
 
             self._storage.delete_by_paths(
-                "analytics.static_diagnostics",
+                DIAGNOSTICS_TABLE_KEY,
                 diagnostic_paths,
                 path_column="rel_path",
                 repo=repo,
                 commit=commit,
             )
 
-            result = self._storage.write_batch("analytics.static_diagnostics", diagnostic_rows)
-            table_counts["analytics.static_diagnostics"] = result.rows_affected
+            result = self._storage.write_batch(DIAGNOSTICS_TABLE_KEY, diagnostic_rows)
+            table_counts[DIAGNOSTICS_TABLE_KEY] = result.rows_affected
 
         log.info(
             "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",

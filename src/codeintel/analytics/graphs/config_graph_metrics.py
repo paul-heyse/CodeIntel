@@ -14,7 +14,8 @@ from codeintel.analytics.compute.graphs import (
     projection_metrics,
 )
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES
-from codeintel.analytics.utilities.datasets import validate_tuple_rows
+from codeintel.analytics.utilities.datasets import validate_contract_rows
+from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
@@ -143,17 +144,14 @@ def _projection_rows(
         }
         for src, dst, data in proj.edges(data=True)
     ]
-    node_rows = validate_tuple_rows(
-        node_contract.table_key,
-        node_dicts,
-        schema=node_contract.schema,
+    node_rows = validate_contract_rows(node_contract.table_key, node_dicts)
+    edge_rows = validate_contract_rows(edge_contract.table_key, edge_dicts)
+    node_serializer = row_serializer_for_table_key(node_contract.table_key)
+    edge_serializer = row_serializer_for_table_key(edge_contract.table_key)
+    return (
+        [node_serializer(row) for row in node_rows],
+        [edge_serializer(row) for row in edge_rows],
     )
-    edge_rows = validate_tuple_rows(
-        edge_contract.table_key,
-        edge_dicts,
-        schema=edge_contract.schema,
-    )
-    return node_rows, edge_rows
 
 
 def _projection_payload(

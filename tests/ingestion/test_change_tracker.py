@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, TypedDict
 import pytest
 
 from codeintel.ingestion import DuckDBStorageAdapter, HashChangeDetectionAdapter
-from codeintel.ingestion.compute import DocstringsExtractStep
+from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from codeintel.ingestion.ports.change_detection import ChangeRequest, ChangeSet
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.tracker import ChangeTracker, IncrementalIngestPolicy

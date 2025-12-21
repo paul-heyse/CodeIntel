@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion.compute import DocstringsExtractStep
+from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     build_repo_with_variants,

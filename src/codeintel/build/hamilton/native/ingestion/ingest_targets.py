@@ -49,13 +49,11 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.compute import (
-    ConfigIngestStep,
-    CoverageIngestStep,
-    TestsIngestStep,
-    TypingIngestStep,
-)
+from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
+from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
+from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
+from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
 

@@ -10,13 +10,9 @@ The Hamilton native module is at:
 from __future__ import annotations
 
 from codeintel.analytics.history.git_history import FileCommitDelta, iter_file_history
-from codeintel.analytics.history.history_timeseries import (
-    HISTORY_TIMESERIES_COLS,
-    build_history_timeseries_rows,
-)
+from codeintel.analytics.history.history_timeseries import build_history_timeseries_rows
 
 __all__ = [
-    "HISTORY_TIMESERIES_COLS",
     "FileCommitDelta",
     "build_history_timeseries_rows",
     "iter_file_history",

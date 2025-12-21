@@ -26,9 +26,11 @@ from codeintel.ingestion import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
-    ToolRunnerAdapter,
 )
-from codeintel.ingestion.compute import CoverageIngestStep, RepoScanStep, TypingIngestStep
+from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
+from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
+from codeintel.ingestion.compute.repo_scan import RepoScanStep
+from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunOptions
 from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService

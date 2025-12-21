@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.compute.base import ExecutionResult
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -21,6 +22,7 @@ if TYPE_CHECKING:
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 log = logging.getLogger(__name__)
+COVERAGE_LINES_TABLE_KEY = "analytics.coverage_lines"
 
 
 class CoverageIngestStep:
@@ -94,20 +96,45 @@ class CoverageIngestStep:
             log.warning("Coverage export failed: %s", result.error)
             return ExecutionResult.failed(f"Coverage export failed: {result.error}")
 
-        all_rows: list[list[object]] = []
+        all_rows: list[tuple[object, ...]] = []
         file_count = 0
+        serializer = row_serializer_for_table_key(COVERAGE_LINES_TABLE_KEY)
 
         for file_data in result.files:
             file_count += 1
             rel_path = file_data.rel_path
 
             all_rows.extend(
-                [repo, commit, rel_path, line_num, True, True, 1, 0, created_at]
+                serializer(
+                    {
+                        "repo": repo,
+                        "commit": commit,
+                        "rel_path": rel_path,
+                        "line": line_num,
+                        "is_executable": True,
+                        "is_covered": True,
+                        "hits": 1,
+                        "context_count": 0,
+                        "created_at": created_at,
+                    }
+                )
                 for line_num in file_data.executed_lines
             )
 
             all_rows.extend(
-                [repo, commit, rel_path, line_num, True, False, 0, 0, created_at]
+                serializer(
+                    {
+                        "repo": repo,
+                        "commit": commit,
+                        "rel_path": rel_path,
+                        "line": line_num,
+                        "is_executable": True,
+                        "is_covered": False,
+                        "hits": 0,
+                        "context_count": 0,
+                        "created_at": created_at,
+                    }
+                )
                 for line_num in file_data.missing_lines
             )
 
@@ -116,9 +143,11 @@ class CoverageIngestStep:
         if all_rows:
             scope = f"{repo}@{commit}"
             write_result = self._storage.write_batch(
-                "analytics.coverage_lines", all_rows, scope=scope
+                COVERAGE_LINES_TABLE_KEY,
+                all_rows,
+                scope=scope,
             )
-            table_counts["analytics.coverage_lines"] = write_result.rows_affected
+            table_counts[COVERAGE_LINES_TABLE_KEY] = write_result.rows_affected
 
         log.info(
             "Coverage ingest: repo=%s commit=%s files=%d lines=%d",

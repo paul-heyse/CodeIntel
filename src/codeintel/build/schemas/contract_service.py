@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.schemas.provider_declared import declared_schema_provider_for_inventory
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.target_inventory import get_output_inventory
 from codeintel.build.target_metadata import (
     OutputInventory,
     TargetMetadataProvider,
@@ -20,9 +22,6 @@ from codeintel.core.schemas.contract_factory import (
     is_docs_view,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
-from codeintel.core.schemas.declared import (
-    declared_schema_provider as core_declared_schema_provider,
-)
 from codeintel.core.schemas.service import SchemaService
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
@@ -34,6 +33,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ContractProvider",
+    "ContractResolutionMode",
     "ContractResolutionSettings",
     "ContractService",
     "SchemaContractService",
@@ -46,6 +46,7 @@ __all__ = [
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
+    "overrides_from_output_contract",
 ]
 
 
@@ -77,11 +78,13 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
 
 
 @lru_cache(maxsize=1)
-def _schema_only_service() -> SchemaService:
-    return SchemaService(table_provider=core_declared_schema_provider())
+def _declared_only_service() -> SchemaService:
+    inventory = get_output_inventory()
+    provider = declared_schema_provider_for_inventory(inventory)
+    return SchemaService(table_provider=provider)
 
 
-def _schema_only_service_for_inventory(inventory: OutputInventory) -> SchemaService:
+def _declared_only_service_for_inventory(inventory: OutputInventory) -> SchemaService:
     return SchemaService(table_provider=declared_schema_provider_for_inventory(inventory))
 
 
@@ -118,11 +121,66 @@ def _extract_indexed_metadata(
     return None
 
 
-def _overrides_from_output_contract(
+def overrides_from_output_contract(
     contract: OutputContract,
     *,
     table_key: str,
 ) -> DatasetContractOverrides:
+    """
+    Build dataset contract overrides from an output contract and table key.
+
+    Extended Summary
+    ----------------
+    This helper pulls per-table metadata out of an OutputContract to seed
+    DatasetContract derivation. It aligns JSON schema IDs and export filenames
+    by table position, so downstream contract builders can override defaults
+    without re-parsing target metadata. It is used by ContractService when
+    enriching schema-derived contracts with target-specific metadata.
+
+    Parameters
+    ----------
+    contract : OutputContract
+        Output contract providing table metadata for a build target.
+    table_key : str
+        Fully qualified table key (schema.table) to resolve metadata for.
+
+    Returns
+    -------
+    DatasetContractOverrides
+        Override values sourced from the output contract. Per-table fields are
+        None when the table key is not present in the contract.
+
+    Notes
+    -----
+    - Time complexity is O(n) for the table key lookup in the contract table
+      list; memory overhead is constant.
+    - No I/O, caching, or global state is touched; the function is pure.
+
+    Examples
+    --------
+    >>> from codeintel.build.contracts import OutputContract
+    >>> from codeintel.core.schemas.primitives import Column, TableSchema
+    >>> contract = OutputContract(
+    ...     tables=(
+    ...         TableSchema(
+    ...             schema="core",
+    ...             name="symbols",
+    ...             columns=[Column("name", "VARCHAR")],
+    ...         ),
+    ...     ),
+    ...     json_schema_ids=("core.symbols.v1",),
+    ...     jsonl_filenames=("symbols.jsonl",),
+    ...     parquet_filenames=("symbols.parquet",),
+    ...     owner="core-team",
+    ... )
+    >>> overrides = overrides_from_output_contract(contract, table_key="core.symbols")
+    >>> overrides.json_schema_id
+    'core.symbols.v1'
+
+    >>> missing = overrides_from_output_contract(contract, table_key="core.missing")
+    >>> missing.json_schema_id is None
+    True
+    """
     json_schema_id = _extract_indexed_metadata(contract, table_key, contract.json_schema_ids)
     jsonl_filename = _extract_indexed_metadata(contract, table_key, contract.jsonl_filenames)
     parquet_filename = _extract_indexed_metadata(contract, table_key, contract.parquet_filenames)
@@ -157,11 +215,18 @@ class ContractProvider(Protocol):
         ...
 
 
+class ContractResolutionMode(Enum):
+    """Contract resolution mode."""
+
+    FULL = "full"
+    DECLARED_ONLY = "declared_only"
+
+
 @dataclass(frozen=True, slots=True)
 class ContractResolutionSettings:
     """Settings controlling contract resolution behavior."""
 
-    include_target_metadata: bool = False
+    mode: ContractResolutionMode = ContractResolutionMode.FULL
     target_metadata_provider: TargetMetadataProvider | None = None
     output_inventory: OutputInventory | None = None
 
@@ -307,9 +372,7 @@ class ContractService:
             msg = f"Unknown table key: {table_key}"
             raise KeyError(msg)
         overrides = (
-            _overrides_from_output_contract(target.contract, table_key=table_key)
-            if target
-            else None
+            overrides_from_output_contract(target.contract, table_key=table_key) if target else None
         )
         composition = _get_composition_for_table_key(table_key)
         return build_dataset_contract(
@@ -392,14 +455,14 @@ class ContractService:
 
 @lru_cache(maxsize=1)
 def get_contract_service() -> SchemaContractService:
-    """Return the schema-only contract service instance.
+    """Return the declared-only contract service instance.
 
     Returns
     -------
     SchemaContractService
-        Schema-only contract service.
+        Declared-only contract service.
     """
-    return SchemaContractService(schema_service=_schema_only_service())
+    return SchemaContractService(schema_service=_declared_only_service())
 
 
 @lru_cache(maxsize=1)
@@ -426,19 +489,30 @@ def get_contract_provider(
     -------
     ContractProvider
         Contract provider configured for the requested resolution mode.
+
+    Raises
+    ------
+    ValueError
+        Raised when the resolution mode is unsupported.
     """
-    if settings is not None and settings.include_target_metadata:
+    if settings is None:
+        return get_enriched_contract_service()
+    mode = settings.mode
+    if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:
             return ContractService(
                 schema_service=get_schema_service(),
                 target_metadata=settings.target_metadata_provider,
             )
         return get_enriched_contract_service()
-    if settings is not None and settings.output_inventory is not None:
-        return SchemaContractService(
-            schema_service=_schema_only_service_for_inventory(settings.output_inventory)
-        )
-    return get_contract_service()
+    if mode is ContractResolutionMode.DECLARED_ONLY:
+        if settings.output_inventory is not None:
+            return SchemaContractService(
+                schema_service=_declared_only_service_for_inventory(settings.output_inventory)
+            )
+        return get_contract_service()
+    msg = f"Unsupported contract resolution mode: {mode}"
+    raise ValueError(msg)
 
 
 @lru_cache(maxsize=256)
@@ -462,8 +536,16 @@ def get_contract_for_table_key(
     -------
     DatasetContract
         Dataset contract for the table key.
+
+    Raises
+    ------
+    ValueError
+        Raised when the resolution mode is unsupported.
     """
-    if settings is not None and settings.include_target_metadata:
+    if settings is None:
+        return _get_enriched_contract_for_table_key(table_key)
+    mode = settings.mode
+    if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:
             service = ContractService(
                 schema_service=get_schema_service(),
@@ -471,12 +553,15 @@ def get_contract_for_table_key(
             )
             return service.get_contract_for_table_key(table_key)
         return _get_enriched_contract_for_table_key(table_key)
-    if settings is not None and settings.output_inventory is not None:
-        service = SchemaContractService(
-            schema_service=_schema_only_service_for_inventory(settings.output_inventory)
-        )
-        return service.get_contract_for_table_key(table_key)
-    return _get_schema_contract_for_table_key(table_key)
+    if mode is ContractResolutionMode.DECLARED_ONLY:
+        if settings.output_inventory is not None:
+            service = SchemaContractService(
+                schema_service=_declared_only_service_for_inventory(settings.output_inventory)
+            )
+            return service.get_contract_for_table_key(table_key)
+        return _get_schema_contract_for_table_key(table_key)
+    msg = f"Unsupported contract resolution mode: {mode}"
+    raise ValueError(msg)
 
 
 def iter_contracts(
@@ -513,7 +598,7 @@ def clear_contract_cache() -> None:
     _get_schema_contract_for_table_key.cache_clear()
     get_enriched_contract_service.cache_clear()
     get_contract_service.cache_clear()
-    _schema_only_service.cache_clear()
+    _declared_only_service.cache_clear()
 
 
 def column_order_for_table_key(table_key: str) -> tuple[str, ...]:

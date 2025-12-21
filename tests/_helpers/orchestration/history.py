@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.build.schemas import ContractProvider, get_contract_provider
+from codeintel.build.schemas import (
+    ContractProvider,
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    get_contract_provider,
+)
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 
@@ -39,7 +44,9 @@ def _contracts_by_table(
     if contract_provider is None:
         if _DEFAULT_CONTRACT_CACHE.contracts_by_table is None:
             _DEFAULT_CONTRACT_CACHE.contracts_by_table = dict(
-                get_contract_provider().iter_contracts_by_table_key()
+                get_contract_provider(
+                    settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+                ).iter_contracts_by_table_key()
             )
         return _DEFAULT_CONTRACT_CACHE.contracts_by_table
     return dict(contract_provider.iter_contracts_by_table_key())

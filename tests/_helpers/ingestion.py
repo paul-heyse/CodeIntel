@@ -22,7 +22,8 @@ from codeintel.ingestion import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.compute import DocstringsExtractStep, RepoScanStep
+from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
+from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile

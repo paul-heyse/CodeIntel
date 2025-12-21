@@ -32,10 +32,6 @@ HashChangeDetectionAdapter
     Implements ``ChangeDetectionPort`` using Blake2b hash-based change
     detection. Computes file digests to detect modified sources.
 
-ToolRunnerAdapter
-    Implements ``ToolPort`` using ``ToolService`` for external tool
-    execution (SCIP indexers, coverage tools, etc.).
-
 When to Use Adapters vs Direct Gateway Access
 ---------------------------------------------
 **Use adapters when:**
@@ -63,11 +59,9 @@ from codeintel.ingestion.adapters.duckdb_storage import (
 )
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
-from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 
 __all__ = [
     "DuckDBStorageAdapter",
     "FilesystemDiscoveryAdapter",
     "HashChangeDetectionAdapter",
-    "ToolRunnerAdapter",
 ]

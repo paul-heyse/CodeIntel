@@ -22,8 +22,15 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 from codeintel.build.hamilton.contracts.schemas.validation import validate_df
-from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    get_contract_for_table_key,
+)
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.core.schemas.row_models import normalize_row_value
+
+_FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
 
 def _table_supports_snapshot_delete(table_key: str) -> bool:
@@ -89,7 +96,7 @@ def get_analytics_dataset_contract(
         Contract for the requested table key.
     """
     _ = gateway
-    return get_contract_for_table_key(table_key)
+    return get_contract_for_table_key(table_key, settings=_FULL_CONTRACT_SETTINGS)
 
 
 def get_function_ast_features_contract(
@@ -104,7 +111,10 @@ def get_function_ast_features_contract(
         Contract describing analytics.function_ast_features.
     """
     _ = gateway
-    return get_contract_for_table_key("analytics.function_ast_features")
+    return get_contract_for_table_key(
+        "analytics.function_ast_features",
+        settings=_FULL_CONTRACT_SETTINGS,
+    )
 
 
 def insert_analytics_rows(
@@ -178,7 +188,10 @@ def validate_contract_rows(
         return []
     df = validate_df(table_key, pd.DataFrame(rows))
     normalized = df.where(pd.notna(df), None)
-    return normalized.to_dict(orient="records")
+    records = normalized.to_dict(orient="records")
+    return [
+        {key: normalize_row_value(value) for key, value in record.items()} for record in records
+    ]
 
 
 __all__ = [
@@ -244,5 +257,8 @@ def validate_tuple_rows(
 
     validated = validate_df(table_key, df)
     normalized = validated.where(pd.notna(validated), None)
-    ordered = normalized.loc[:, columns_index]
-    return [tuple(row) for row in ordered.itertuples(index=False, name=None)]
+    ordered = normalized.loc[:, columns_index].astype("object")
+    return [
+        tuple(normalize_row_value(value) for value in row)
+        for row in ordered.itertuples(index=False, name=None)
+    ]

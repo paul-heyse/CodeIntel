@@ -95,6 +95,29 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
     expect_equal(hash1, hashlib.sha256(combined).hexdigest()[:16])
 
 
+def test_compute_input_hash_includes_file_state_hash(tmp_path: Path) -> None:
+    """Input hash should incorporate file_state_hash when provided."""
+    gateway = _FakeGateway(build=_FakeBuildAccessor({}))
+    target = OutputTarget(name="main", module="ingestion")
+    snapshot = make_snapshot(tmp_path, repo="demo", commit="c1")
+    settings = BuildSettings(
+        engine_version="test",
+        export_audit=ExportAuditSettings(),
+    )
+
+    hash_options = InputHashOptions(options_hash="opts", file_state_hash="state123")
+    hash_value = compute_input_hash(
+        target,
+        snapshot,
+        cast("Any", gateway),
+        settings=settings,
+        options=hash_options,
+    )
+
+    combined = b"test|demo:c1|main||file_state:state123|opts"
+    expect_equal(hash_value, hashlib.sha256(combined).hexdigest()[:16])
+
+
 def test_compute_options_hash_json_and_fallback() -> None:
     """Options hash handles JSON-able and non-JSON objects."""
     options_hash = compute_options_hash({"a": 1, "b": [2, 3]})

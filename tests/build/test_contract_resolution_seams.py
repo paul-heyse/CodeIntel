@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from codeintel.build.contracts import OutputContract, placeholder_table_schema
 from codeintel.build.schemas import (
+    ContractResolutionMode,
     ContractResolutionSettings,
     clear_contract_cache,
     get_contract_for_table_key,
@@ -47,7 +48,11 @@ def test_schema_only_contracts_do_not_load_target_metadata() -> None:
     clear_contract_cache()
     expect_false(is_target_metadata_loaded())
 
-    _ = list(iter_contracts())
+    _ = list(
+        iter_contracts(
+            settings=ContractResolutionSettings(mode=ContractResolutionMode.DECLARED_ONLY)
+        )
+    )
 
     expect_false(is_target_metadata_loaded())
 
@@ -67,7 +72,7 @@ def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
     provider = _StubTargetMetadataProvider(target=target)
 
     settings = ContractResolutionSettings(
-        include_target_metadata=True,
+        mode=ContractResolutionMode.FULL,
         target_metadata_provider=provider,
     )
     resolved = get_contract_for_table_key(table_key, settings=settings)
@@ -83,7 +88,10 @@ def test_contract_resolution_honors_output_inventory() -> None:
         datasets_by_target={"stub": ("analytics.function_metrics",)},
         artifacts_by_target={},
     )
-    settings = ContractResolutionSettings(output_inventory=inventory)
+    settings = ContractResolutionSettings(
+        mode=ContractResolutionMode.DECLARED_ONLY,
+        output_inventory=inventory,
+    )
 
     table_keys = {contract.table_key for contract in iter_contracts(settings=settings)}
     expect_true(table_keys)

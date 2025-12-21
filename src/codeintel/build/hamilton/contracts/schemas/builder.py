@@ -21,12 +21,19 @@ from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset impo
 )
 from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
-from codeintel.build.schemas import ContractResolutionSettings, iter_contracts_by_table_key
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    get_schema_service,
+    iter_contracts_by_table_key,
+)
+from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
     from pandera import DataFrameSchema
 
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.primitives import TableSchema
 
 __all__ = [
     "build_all_schemas",
@@ -35,8 +42,11 @@ __all__ = [
 
 
 def build_dataset_schema(
+    *,
+    table_key: str,
     contract: DatasetContract,
     pandera_schema: DataFrameSchema,
+    table_schema: TableSchema | None,
 ) -> DatasetSchema:
     """Create a DatasetSchema from a DatasetContract and Pandera schema.
 
@@ -45,10 +55,14 @@ def build_dataset_schema(
 
     Parameters
     ----------
+    table_key
+        Fully qualified table key (schema.table).
     contract
         Existing DatasetContract with metadata.
     pandera_schema
         Pandera DataFrameSchema defining structure and constraints.
+    table_schema
+        TableSchema resolved from the canonical schema provider.
 
     Returns
     -------
@@ -60,8 +74,14 @@ def build_dataset_schema(
     >>> from codeintel.build.schemas import get_contract_for_table_key
     >>> from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
     >>> contract = get_contract_for_table_key("analytics.function_metrics")
+    >>> table_schema = get_schema_provider().require_table_schema("analytics.function_metrics")
     >>> pa_schema = _get_dataset_schemas()["analytics.function_metrics"]
-    >>> ds = build_dataset_schema(contract, pa_schema)
+    >>> ds = build_dataset_schema(
+    ...     table_key="analytics.function_metrics",
+    ...     contract=contract,
+    ...     pandera_schema=pa_schema,
+    ...     table_schema=table_schema,
+    ... )
     >>> ds.name
     'analytics.function_metrics'
     """
@@ -79,14 +99,16 @@ def build_dataset_schema(
     )
 
     row_model = None
-    if contract.row_binding is not None:
+    if table_schema is not None:
+        row_model = row_binding_for_table_schema(table_schema=table_schema).row_model
+    elif contract.row_binding is not None:
         row_model = contract.row_binding.row_model
 
     return DatasetSchema(
-        name=contract.table_key,
+        name=table_key,
         pandera_schema=pandera_schema,
         row_model=row_model,
-        ddl_schema=contract.schema,
+        ddl_schema=table_schema,
         metadata=metadata,
         composition=contract.composition,
     )
@@ -109,6 +131,11 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
     Datasets without a Pandera schema are skipped (views without explicit
     Pandera definitions, for example).
 
+    Raises
+    ------
+    KeyError
+        If a table schema is missing for a non-view contract.
+
     Examples
     --------
     >>> schemas = build_all_schemas()
@@ -118,17 +145,29 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
     True
     """
     dataset_schemas = _get_dataset_schemas()
+    schema_service = get_schema_service()
+    schema_provider = schema_service.table_provider
     schemas: dict[str, DatasetSchema] = {}
 
     for table_key, contract in iter_contracts_by_table_key(
-        settings=ContractResolutionSettings(include_target_metadata=True)
+        settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)
     ):
         pandera_schema = dataset_schemas.get(table_key)
 
         if pandera_schema is None:
             continue
 
-        schemas[table_key] = build_dataset_schema(contract, pandera_schema)
+        table_schema = None if contract.is_view else schema_provider.get_table_schema(table_key)
+        if table_schema is None and not contract.is_view:
+            msg = f"Missing TableSchema for {table_key}"
+            raise KeyError(msg)
+
+        schemas[table_key] = build_dataset_schema(
+            table_key=table_key,
+            contract=contract,
+            pandera_schema=pandera_schema,
+            table_schema=table_schema,
+        )
 
     schemas.update(_build_additional_schemas())
 

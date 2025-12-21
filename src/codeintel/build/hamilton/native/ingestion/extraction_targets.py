@@ -29,7 +29,9 @@ from codeintel.build.hamilton.tagging import tag_materialize, tag_tool
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import DuckDBStorageAdapter, FilesystemDiscoveryAdapter
-from codeintel.ingestion.compute import AstExtractStep, CstExtractStep, DocstringsExtractStep
+from codeintel.ingestion.compute.ast_extract import AstExtractStep
+from codeintel.ingestion.compute.cst_extract import CstExtractStep
+from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 log = logging.getLogger(__name__)

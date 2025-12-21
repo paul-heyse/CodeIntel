@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from cyclopts import App, Parameter
 
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas.contract_registry import get_dag_free_contracts_by_table_key
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import CliResult
@@ -220,7 +220,7 @@ class ScaffoldDatasetCommand(Command[dict[str, object]]):
             Result with dataset name, status, and registry check behavior.
         """
         _ = ctx
-        contracts_by_table_key = dict(iter_contracts_by_table_key())
+        contracts_by_table_key = get_dag_free_contracts_by_table_key()
         known_names = set(contracts_by_table_key)
         known_names.update(key.split(".", 1)[-1] for key in contracts_by_table_key)
         if self.registry_check == "enabled" and self.name in known_names:

@@ -7,11 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion import (
-    DuckDBStorageAdapter,
-    ToolRunnerAdapter,
-)
-from codeintel.ingestion.compute import CoverageIngestStep, TypingIngestStep
+from codeintel.ingestion import DuckDBStorageAdapter
+from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
+from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
+from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from tests._helpers.assertions import expect_equal, expect_rows_equal
 from tests._helpers.ingestion import (
     ScanSetupOptions,

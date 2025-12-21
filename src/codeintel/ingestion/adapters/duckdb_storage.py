@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.ibis_typing import and_predicates, ibis_bool, isin_values
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
 from codeintel.storage.gateway import ibis_facade
 
@@ -40,6 +41,24 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 SNAPSHOT_PARAM_LEN = 2
+
+
+def _schema_columns_for_table(table_key: str) -> list[str] | None:
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return None
+    schema = service.get_table_schema(table_key)
+    if schema is None:
+        return None
+    return list(schema.column_names())
+
+
+def _columns_for_table(table_key: str) -> list[str] | None:
+    schema_columns = _schema_columns_for_table(table_key)
+    if schema_columns is not None:
+        return schema_columns
+    return load_columns_by_table().get(table_key)
 
 
 def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
@@ -115,8 +134,9 @@ class DuckDBStorageAdapter(IngestStoragePort):
         RuntimeError
             If the table key is not registered.
         """
-        if table_key not in load_columns_by_table():
-            message = f"Table {table_key} missing from TABLE_SCHEMAS"
+        columns = _columns_for_table(table_key)
+        if columns is None:
+            message = f"Table {table_key} missing from schema registry"
             raise RuntimeError(message)
 
     def ensure_schema(self, table_key: str) -> None:
@@ -137,12 +157,20 @@ class DuckDBStorageAdapter(IngestStoragePort):
         -------
         BatchResult
             Result including rows written.
+
+        Raises
+        ------
+        RuntimeError
+            If the table key is missing from the schema registry.
         """
         _ = scope
         self._validate_table_exists(table_key)
         if not rows:
             return BatchResult.ok(table_key, 0, duration_s=0.0)
-        columns = load_columns_by_table().get(table_key, [])
+        columns = _columns_for_table(table_key)
+        if columns is None:
+            message = f"Table {table_key} missing from schema registry"
+            raise RuntimeError(message)
         inserted = self._backend.bulk_insert(
             table_key,
             [tuple(row) for row in rows],

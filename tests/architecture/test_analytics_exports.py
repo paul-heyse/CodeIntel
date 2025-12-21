@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     "codeintel.analytics.functions": {
-        "FUNCTION_HISTORY_COLS",
         "FunctionAnalyticsOptions",
         "FunctionAnalyticsResult",
         "build_function_history_rows",
@@ -47,7 +46,6 @@ EXPECTED_EXPORTS: Mapping[str, set[str]] = {
     },
     "codeintel.analytics.history": {
         "FileCommitDelta",
-        "HISTORY_TIMESERIES_COLS",
         "build_history_timeseries_rows",
         "iter_file_history",
     },

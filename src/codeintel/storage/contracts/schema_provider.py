@@ -10,7 +10,8 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
-from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -20,15 +21,28 @@ if TYPE_CHECKING:
 
 
 @lru_cache(maxsize=1)
+def _fallback_provider() -> SchemaProvider:
+    return MappingSchemaProvider(TABLE_SCHEMAS)
+
+
+@lru_cache(maxsize=1)
 def get_schema_provider() -> SchemaProvider:
-    """Return a SchemaProvider backed by declared dataset table schemas.
+    """Return the canonical SchemaProvider for storage.
+
+    When a global SchemaService has been configured (for example by the build
+    layer), its table provider is used to align storage with DAG-first schemas.
+    Otherwise, fall back to declared table schemas.
 
     Returns
     -------
     SchemaProvider
-        Provider for all declared table/view schemas.
+        Provider for table/view schemas.
     """
-    return MappingSchemaProvider(TABLE_SCHEMAS)
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return _fallback_provider()
+    return service.table_provider
 
 
 def require_table_schema(table_key: str) -> TableSchema:

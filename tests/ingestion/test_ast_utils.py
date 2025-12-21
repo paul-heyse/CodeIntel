@@ -16,6 +16,7 @@ from codeintel.build.schemas import get_schema_provider
 from codeintel.core.parsing import AstSpanIndex
 from codeintel.ingestion.compute.ast_extract import AstVisitor
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
+from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -34,7 +35,8 @@ from tests._helpers.ingestion_samples import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-_AST_NODES_SCHEMA = get_schema_provider().get_table_schema("core.ast_nodes")
+AST_NODES_TABLE_KEY = "core.ast_nodes"
+_AST_NODES_SCHEMA = get_schema_provider().get_table_schema(AST_NODES_TABLE_KEY)
 AST_NODES_COLUMNS = _AST_NODES_SCHEMA.column_names() if _AST_NODES_SCHEMA else ()
 
 
@@ -330,7 +332,8 @@ def test_ast_visitor_records_decorator_span() -> None:
     visitor = AstVisitor(rel_path="mod.py", module_name="mod")
     visitor.visit(tree)
 
-    rows = [dict(zip(AST_NODES_COLUMNS, row, strict=True)) for row in visitor.ast_rows]
+    serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
+    rows = [dict(zip(AST_NODES_COLUMNS, serializer(row), strict=True)) for row in visitor.ast_rows]
     func_rows = [row for row in rows if row["node_type"] == "FunctionDef"]
 
     expect_equal(len(func_rows), 1)
