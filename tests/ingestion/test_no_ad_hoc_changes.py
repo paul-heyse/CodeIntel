@@ -12,7 +12,6 @@ import pytest
     [
         Path("src/codeintel/ingestion/compute/ast_extract.py"),
         Path("src/codeintel/ingestion/compute/cst_extract.py"),
-        Path("src/codeintel/ingestion/compute/scip_ingest.py"),
     ],
 )
 def test_no_ad_hoc_change_detection(path: Path) -> None:

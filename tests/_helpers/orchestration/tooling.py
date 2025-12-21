@@ -21,6 +21,7 @@ from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolRunner,
+    ToolRunOptions,
 )
 from codeintel.ingestion.engine.service import ToolService
 from tests._helpers.fakes.tools import write_dummy_scip_files
@@ -178,7 +179,7 @@ def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
             str(context.coverage_file),
             str(context.driver_path),
         ],
-        cwd=context.repo_root,
+        options=ToolRunOptions(cwd=context.repo_root),
     )
     _ensure_ok(coverage_result, action="coverage run")
 
@@ -288,14 +289,18 @@ def init_git_repo_with_history(base_dir: Path) -> GitRepoContext:
     runner = ToolRunner(cache_dir=base_dir / ".tool_cache")
 
     _ensure_ok(
-        runner.run(ToolName.GIT, ["init", "-b", "main"], cwd=repo_root),
+        runner.run(
+            ToolName.GIT,
+            ["init", "-b", "main"],
+            options=ToolRunOptions(cwd=repo_root),
+        ),
         action="git init",
     )
     _ensure_ok(
         runner.run(
             ToolName.GIT,
             ["config", "user.email", "codeintel@example.com"],
-            cwd=repo_root,
+            options=ToolRunOptions(cwd=repo_root),
         ),
         action="git config user.email",
     )
@@ -303,7 +308,7 @@ def init_git_repo_with_history(base_dir: Path) -> GitRepoContext:
         runner.run(
             ToolName.GIT,
             ["config", "user.name", "CodeIntel Tester"],
-            cwd=repo_root,
+            options=ToolRunOptions(cwd=repo_root),
         ),
         action="git config user.name",
     )
@@ -319,12 +324,27 @@ def init_git_repo_with_history(base_dir: Path) -> GitRepoContext:
         ),
         encoding="utf8",
     )
-    _ensure_ok(runner.run(ToolName.GIT, ["add", "."], cwd=repo_root), action="git add initial")
     _ensure_ok(
-        runner.run(ToolName.GIT, ["commit", "-m", "Initial commit"], cwd=repo_root),
+        runner.run(
+            ToolName.GIT,
+            ["add", "."],
+            options=ToolRunOptions(cwd=repo_root),
+        ),
+        action="git add initial",
+    )
+    _ensure_ok(
+        runner.run(
+            ToolName.GIT,
+            ["commit", "-m", "Initial commit"],
+            options=ToolRunOptions(cwd=repo_root),
+        ),
         action="git commit initial",
     )
-    first_commit = runner.run(ToolName.GIT, ["rev-parse", "HEAD"], cwd=repo_root).stdout.strip()
+    first_commit = runner.run(
+        ToolName.GIT,
+        ["rev-parse", "HEAD"],
+        options=ToolRunOptions(cwd=repo_root),
+    ).stdout.strip()
 
     file_path.write_text(
         "\n".join(
@@ -337,14 +357,26 @@ def init_git_repo_with_history(base_dir: Path) -> GitRepoContext:
         encoding="utf8",
     )
     _ensure_ok(
-        runner.run(ToolName.GIT, ["add", "."], cwd=repo_root),
+        runner.run(
+            ToolName.GIT,
+            ["add", "."],
+            options=ToolRunOptions(cwd=repo_root),
+        ),
         action="git add update",
     )
     _ensure_ok(
-        runner.run(ToolName.GIT, ["commit", "-m", "Update foo"], cwd=repo_root),
+        runner.run(
+            ToolName.GIT,
+            ["commit", "-m", "Update foo"],
+            options=ToolRunOptions(cwd=repo_root),
+        ),
         action="git commit update",
     )
-    second_commit = runner.run(ToolName.GIT, ["rev-parse", "HEAD"], cwd=repo_root).stdout.strip()
+    second_commit = runner.run(
+        ToolName.GIT,
+        ["rev-parse", "HEAD"],
+        options=ToolRunOptions(cwd=repo_root),
+    ).stdout.strip()
 
     return GitRepoContext(
         repo_root=repo_root,

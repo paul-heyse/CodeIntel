@@ -8,8 +8,6 @@ List materialized assets for the current snapshot.
 │                       CODEINTEL_BUILD_ASSETS_ASSET] [default: (none)]        │
 │ TARGET --target -t    Filter to assets produced by a specific target. [env   │
 │                       var: CODEINTEL_BUILD_ASSETS_TARGET] [default: (none)]  │
-│ VERSIONS --versions   Include asset versions from the Phase 4 catalog. [env  │
-│                       var: CODEINTEL_BUILD_ASSETS_VERSIONS] [default: false] │
 │ TYPE --type           Filter by asset type: table, view, or artifact. [env   │
 │                       var: CODEINTEL_BUILD_ASSETS_TYPE] [default: (none)]    │
 │ FORMAT --format -f    Output format: table (default), json, or csv. [env     │

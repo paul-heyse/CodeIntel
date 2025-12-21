@@ -49,11 +49,14 @@ class ChangeSet:
         Modules that were modified.
     deleted
         Modules that were deleted.
+    state_hash
+        Stable hash of the current file state for caching.
     """
 
     added: list[ModuleRecord] = field(default_factory=list)
     modified: list[ModuleRecord] = field(default_factory=list)
     deleted: list[ModuleRecord] = field(default_factory=list)
+    state_hash: str | None = None
 
     @property
     def has_changes(self) -> bool:

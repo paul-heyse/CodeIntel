@@ -52,7 +52,10 @@ TARGET_SPECS = (
         name=RISK_FACTORS_TARGET_NAME,
         module="analytics",
         description="Composite risk factors per function.",
-        options=TargetSpecOptions(table_keys=(RISK_FACTORS_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(RISK_FACTORS_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
 )
 

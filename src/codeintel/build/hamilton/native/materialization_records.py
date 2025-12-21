@@ -6,6 +6,7 @@ metadata dict) to the build system's ``TargetRunRecord`` contract.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
@@ -27,6 +28,15 @@ from codeintel.build.hamilton.run_records import (
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget, TargetGraph
+
+
+@dataclass(frozen=True)
+class FileArtifactRecordContext:
+    """Context bundle for file artifact run record creation."""
+
+    env: BuildEnv
+    graph: TargetGraph
+    target_name: str
 
 
 def record_from_duckdb_materialization(
@@ -162,32 +172,33 @@ def record_from_duckdb_materialization(
 
 def record_from_file_artifact_materialization(
     *,
-    env: BuildEnv,
-    graph: TargetGraph,
-    target_name: str,
+    context: FileArtifactRecordContext,
     expected_artifact_name: str,
     materialization: MaterializationMetadata,
+    row_counts: dict[str, int] | None = None,
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from a file artifact saver metadata dict.
 
     Parameters
     ----------
-    env
-        Build environment for manifest persistence and expected output refs.
-    graph
-        Target graph used to resolve the OutputTarget contract.
-    target_name
-        Target name for which the record is being produced.
+    context
+        Context bundle containing env, graph, and target name.
     expected_artifact_name
         Artifact name expected to be written for this target.
     materialization
         Materialization metadata dict returned by the Hamilton saver node.
+    row_counts
+        Optional table row counts for mixed artifact/table targets.
 
     Returns
     -------
     TargetRunRecord
         Record describing succeeded/skipped/failed completion.
     """
+    env = context.env
+    graph = context.graph
+    target_name = context.target_name
+
     parsed = FileArtifactMaterializationMetadata.from_mapping(
         materialization,
         default_artifact_name=expected_artifact_name,
@@ -258,7 +269,7 @@ def record_from_file_artifact_materialization(
         input_hash=parsed.input_hash,
         options_hash=options_hash,
         duration_ms=parsed.duration_ms,
-        row_counts=None,
+        row_counts=row_counts,
     )
 
     if parsed.status == "failed":
@@ -445,6 +456,7 @@ def record_from_file_artifact_materializations(
     graph: TargetGraph,
     target_name: str,
     materializations: dict[str, MaterializationMetadata],
+    row_counts: dict[str, int] | None = None,
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from multiple file artifact saver metadata dicts.
 
@@ -458,6 +470,8 @@ def record_from_file_artifact_materializations(
         Target name for which the record is being produced.
     materializations
         Mapping of artifact_name to materialization metadata dict returned by saver nodes.
+    row_counts
+        Optional table row counts for mixed artifact/table targets.
 
     Returns
     -------
@@ -536,7 +550,7 @@ def record_from_file_artifact_materializations(
         input_hash=input_hash,
         options_hash=options_hash,
         duration_ms=duration_ms,
-        row_counts=None,
+        row_counts=row_counts,
     )
     record = create_run_record(
         target,
@@ -642,6 +656,7 @@ def _apply_file_artifact_results(
 
 
 __all__ = [
+    "FileArtifactRecordContext",
     "MaterializationStatus",
     "record_from_duckdb_materialization",
     "record_from_duckdb_materializations",

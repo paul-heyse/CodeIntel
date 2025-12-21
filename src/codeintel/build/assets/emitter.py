@@ -115,9 +115,7 @@ def _dataset_version_record(
     record: TargetRunRecord,
     dataset: DatasetRefProtocol,
     upstream_versions: Sequence[str],
-) -> tuple[
-    AssetVersionRecord, AssetVersionEventRecord, RunAssetVersionRecord, _AssetVersionKey
-]:
+) -> tuple[AssetVersionRecord, AssetVersionEventRecord, RunAssetVersionRecord, _AssetVersionKey]:
     row_count = dataset.row_count
     if row_count is None:
         row_count = _try_table_row_count_for_snapshot(ctx.env, table_key=dataset.table_key)
@@ -188,9 +186,7 @@ def _artifact_version_record(
     record: TargetRunRecord,
     artifact: ArtifactRefProtocol,
     upstream_versions: Sequence[str],
-) -> tuple[
-    AssetVersionRecord, AssetVersionEventRecord, RunAssetVersionRecord, _AssetVersionKey
-]:
+) -> tuple[AssetVersionRecord, AssetVersionEventRecord, RunAssetVersionRecord, _AssetVersionKey]:
     bytes_value = _try_artifact_size_bytes(artifact)
     version_input = ArtifactVersionInput(
         artifact_name=artifact.name,

@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
@@ -159,7 +159,11 @@ def _iter_git_log_lines(
     ]
 
     active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
-    result = active_runner.run("git", args, cwd=repo_root)
+    result = active_runner.run(
+        "git",
+        args,
+        options=ToolRunOptions(cwd=repo_root),
+    )
     if result.returncode not in {0, 1}:
         log.warning(
             "git log failed for %s: code=%s stdout=%s stderr=%s",

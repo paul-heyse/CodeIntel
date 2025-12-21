@@ -15,6 +15,7 @@ from codeintel.build.schemas.provider_unified import (
     clear_unified_provider_cache,
     unified_schema_provider,
 )
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas import (
     DatasetSchemaLike,
@@ -22,9 +23,13 @@ from codeintel.core.schemas import (
     clear_schema_service,
     set_schema_service,
 )
+from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+
+    from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 
 class _DatasetSchemaRegistry(Protocol):
@@ -93,6 +98,27 @@ class _BuildDatasetSchemaProvider:
         return self._registry().values()
 
 
+_DECLARED_SOURCE_KIND = "declared_source"
+_DECLARED_SOURCE_NAME = "declared"
+
+
+def _row_binding_factory(table_schema: TableSchema) -> GeneratedRowBinding:
+    schema_index = get_target_metadata_service().schema_index
+    table_key = getattr(table_schema, "table_key", None)
+    derivation = schema_index.derivations.get(table_key) if isinstance(table_key, str) else None
+    if derivation is None:
+        return row_binding_for_table_schema(
+            table_schema=table_schema,
+            derivation_kind=_DECLARED_SOURCE_KIND,
+            derivation_source=_DECLARED_SOURCE_NAME,
+        )
+    return row_binding_for_table_schema(
+        table_schema=table_schema,
+        derivation_kind=derivation.kind,
+        derivation_source=derivation.source,
+    )
+
+
 @lru_cache(maxsize=1)
 def get_schema_service() -> SchemaService:
     """Return the canonical SchemaService configured for build.
@@ -105,6 +131,7 @@ def get_schema_service() -> SchemaService:
     service = SchemaService(
         table_provider=unified_schema_provider(),
         dataset_provider=_BuildDatasetSchemaProvider(),
+        row_binding_factory=_row_binding_factory,
     )
     set_schema_service(service)
     return service

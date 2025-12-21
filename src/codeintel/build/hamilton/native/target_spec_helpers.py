@@ -77,6 +77,8 @@ def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
 def _resolve_table_schemas(
     table_keys: Iterable[str],
     override_tables: Iterable[TableSchema],
+    *,
+    allow_declared_overrides: bool,
 ) -> tuple[TableSchema, ...]:
     schemas: list[TableSchema] = []
     seen: set[str] = set()
@@ -100,10 +102,11 @@ def _resolve_table_schemas(
             schemas.append(override_schema)
             continue
 
-        declared_schema = get_declared_schema(table_key)
-        if declared_schema is not None:
-            schemas.append(declared_schema)
-            continue
+        if allow_declared_overrides:
+            declared_schema = get_declared_schema(table_key)
+            if declared_schema is not None:
+                schemas.append(declared_schema)
+                continue
 
         schemas.append(placeholder_table_schema(table_key))
 
@@ -125,6 +128,8 @@ class TargetSpecOptions:
         Fully qualified table keys produced by the target (schema.table).
     override_tables
         Explicit TableSchema overrides for non-inferable outputs.
+    allow_declared_overrides
+        When True, allow declared schemas to serve as explicit overrides.
     artifacts
         Artifact specs produced by the target.
     resources
@@ -137,6 +142,7 @@ class TargetSpecOptions:
 
     table_keys: tuple[str, ...] = ()
     override_tables: tuple[TableSchema, ...] = ()
+    allow_declared_overrides: bool = False
     artifacts: tuple[ArtifactSpec, ...] = ()
     resources: TargetResources = DEFAULT_RESOURCES
     execution: TargetExecution = DEFAULT_EXECUTION
@@ -184,7 +190,11 @@ def make_output_target(
     resolved = TargetSpecOptions() if options is None else options
     _validate_artifact_specs(resolved.artifacts)
     try:
-        tables = _resolve_table_schemas(resolved.table_keys, resolved.override_tables)
+        tables = _resolve_table_schemas(
+            resolved.table_keys,
+            resolved.override_tables,
+            allow_declared_overrides=resolved.allow_declared_overrides,
+        )
     except KeyError as exc:
         msg = f"Unknown table schema key in target spec {name}: {exc}"
         raise ValueError(msg) from exc

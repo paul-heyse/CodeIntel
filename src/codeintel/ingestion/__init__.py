@@ -15,18 +15,10 @@ The ingestion system follows a port-adapter pattern for clean separation of conc
 - `ToolRunnerAdapter`: External tool execution via ToolService
 - `FilesystemDiscoveryAdapter`: File system module discovery
 - `HashChangeDetectionAdapter`: Blake2b hash-based change detection
-- `BuildToolAdapter`: Adapter bridging build system protocols to IngestToolPort
 
 **Compute** (pure domain logic):
-- `AstExtractStep`: Python AST extraction
-- `CstExtractStep`: LibCST concrete syntax tree extraction
-- `DocstringsExtractStep`: Docstring parsing and persistence
-- `TypingIngestStep`: Type annotation analysis
-- `CoverageIngestStep`: Coverage data ingestion
-- `TestsIngestStep`: Test results ingestion
-- `ScipIngestStep`: SCIP symbol indexing
-- `ConfigIngestStep`: Configuration file flattening
-- `RepoScanStep`: Repository scanning and module discovery
+- Ingestion compute steps live under `codeintel.ingestion.compute` and are
+  intended for internal use by Hamilton native targets.
 
 """
 
@@ -44,24 +36,10 @@ from codeintel.core.paths import (
     repo_relpath,
 )
 from codeintel.ingestion.adapters import (
-    BuildToolAdapter,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
     ToolRunnerAdapter,
-)
-from codeintel.ingestion.compute import (
-    AstExtractStep,
-    ConfigIngestStep,
-    CoverageIngestStep,
-    CstExtractStep,
-    DocstringsExtractStep,
-    RepoScanStep,
-    ScipIngestResult,
-    ScipIngestStep,
-    StepResult,
-    TestsIngestStep,
-    TypingIngestStep,
 )
 from codeintel.ingestion.infrastructure import normalize_rel_path
 from codeintel.ingestion.infrastructure.scanning import (
@@ -93,21 +71,15 @@ from codeintel.ingestion.tracker import (
 )
 
 __all__ = [
-    "AstExtractStep",
     "BatchResult",
-    "BuildToolAdapter",
     "ChangeDetectionPort",
     "ChangeRequest",
     "ChangeSet",
     "ChangeTracker",
     "ChangeTrackerDatasetView",
-    "ConfigIngestStep",
     "CoverageFileData",
-    "CoverageIngestStep",
     "CoverageResult",
-    "CstExtractStep",
     "DiagnosticResult",
-    "DocstringsExtractStep",
     "DuckDBStorageAdapter",
     "FileDigest",
     "FilesystemDiscoveryAdapter",
@@ -117,16 +89,10 @@ __all__ = [
     "ModuleDiscoveryPort",
     "ModuleRecord",
     "QueryResult",
-    "RepoScanStep",
     "ScanProfile",
-    "ScipIngestResult",
-    "ScipIngestStep",
     "ScipResult",
-    "StepResult",
     "TestResult",
-    "TestsIngestStep",
     "ToolRunnerAdapter",
-    "TypingIngestStep",
     "WorkerConfig",
     "create_executor",
     "default_code_profile",

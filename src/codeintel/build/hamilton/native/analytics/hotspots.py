@@ -61,7 +61,10 @@ TARGET_SPECS = (
         name=HOTSPOTS_TARGET_NAME,
         module="analytics",
         description="File hotspot analysis based on churn.",
-        options=TargetSpecOptions(table_keys=(HOTSPOTS_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(HOTSPOTS_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
 )
 

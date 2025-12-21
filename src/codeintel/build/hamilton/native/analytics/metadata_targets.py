@@ -22,18 +22,21 @@ from hamilton.function_modifiers import source, value
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import build_data_model_usage_rows
 from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
 from codeintel.analytics.profiles import (
     build_file_profile,
     build_function_profile,
     build_module_profile,
 )
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
+from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.analytics.utilities.datasets import (
     get_function_ast_features_contract,
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -57,8 +60,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import CatalogService
-from codeintel.storage.helpers.module_index import load_module_map
+from codeintel.core.resources import ResourceNotFoundError
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
@@ -95,19 +97,26 @@ TARGET_SPECS = (
         description="Data model extraction (dataclasses, Pydantic, etc.).",
         options=TargetSpecOptions(
             table_keys=DATA_MODELS_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
         name=DATA_MODEL_USAGE_TARGET_NAME,
         module="analytics",
         description="Function-level data model usage tracking.",
-        options=TargetSpecOptions(table_keys=(DATA_MODEL_USAGE_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(DATA_MODEL_USAGE_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=FUNCTION_AST_FEATURES_TARGET_NAME,
         module="analytics",
         description="AST-derived semantic features for functions.",
-        options=TargetSpecOptions(table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=PROFILES_TARGET_NAME,
@@ -115,6 +124,7 @@ TARGET_SPECS = (
         description="Denormalized profile tables for querying.",
         options=TargetSpecOptions(
             table_keys=PROFILES_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
 )
@@ -356,28 +366,24 @@ def t__data_model_usage__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    module_map = load_module_map(
-        env.gateway,
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        logger=LOG,
-    )
-
-    ast_by_goid, missing_goids = load_function_asts(
-        env.gateway,
-        FunctionAstLoadRequest(
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            repo_root=env.snapshot.repo_root,
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=DATA_MODEL_USAGE_TARGET_NAME,
+        include=AnalyticsResourceIncludes(
+            include_graphs=False,
+            include_asts=True,
+            include_module_map=True,
         ),
     )
+    module_map_provider = registry.require(ModuleMapProvider)
+    ast_data = registry.require(AstProvider).get()
 
     return build_data_model_usage_rows(
         env.gateway,
         env.snapshot,
-        module_map=module_map,
-        ast_by_goid=ast_by_goid,
-        missing_goids=missing_goids,
+        module_map=module_map_provider.module_map,
+        ast_by_goid=ast_data.function_ast_map,
+        missing_goids=ast_data.missing_function_goids,
     )
 
 
@@ -435,23 +441,23 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     AstFeaturesResult
         Feature map and optional error message.
     """
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
+        include=AnalyticsResourceIncludes(
+            include_graphs=False,
+            include_features=True,
+        ),
+    )
+
     try:
-        catalog = CatalogService.from_db(
-            env.gateway,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-    except (RuntimeError, ValueError) as exc:
+        _ = registry.require(CatalogProvider).get()
+    except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return AstFeaturesResult(success=False, error=f"CatalogProvider is required: {exc}")
 
     try:
-        provider = FeaturesProvider(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            catalog_provider=catalog,
-        )
-        features_map = provider.get()
+        features_map = registry.require(FeaturesProvider).get()
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to compute function features: %s", exc)
         return AstFeaturesResult(success=True, features_map={})
@@ -554,17 +560,19 @@ def t__profiles__compute(
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
 
-    try:
-        try:
-            catalog = CatalogService.from_db(
-                env.gateway,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
-        except (RuntimeError, ValueError) as exc:
-            log.warning("Failed to load catalog: %s", exc)
-            return ProfilesResult(success=False, error=f"CatalogProvider is required: {exc}")
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=PROFILES_TARGET_NAME,
+        include=AnalyticsResourceIncludes(include_graphs=False),
+    )
 
+    try:
+        catalog = registry.require(CatalogProvider).get()
+    except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
+        log.warning("Failed to load catalog: %s", exc)
+        return ProfilesResult(success=False, error=f"CatalogProvider is required: {exc}")
+
+    try:
         build_function_profile(
             env.gateway,
             env.snapshot,

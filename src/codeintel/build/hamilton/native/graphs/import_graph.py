@@ -57,6 +57,7 @@ TARGET_SPECS = (
         description="Module import graph construction.",
         options=TargetSpecOptions(
             table_keys=IMPORT_GRAPH_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
 )
@@ -76,6 +77,10 @@ class ImportGraphExtractResult:
         Number of import edges extracted.
     table_counts
         Row counts per produced table.
+    skipped
+        Whether extraction was skipped.
+    skip_reason
+        Optional reason for skipping extraction.
     error
         Fatal error message if extraction failed.
     """
@@ -84,6 +89,8 @@ class ImportGraphExtractResult:
     module_count: int = 0
     edge_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 

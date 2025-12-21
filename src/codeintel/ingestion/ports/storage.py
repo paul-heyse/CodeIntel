@@ -46,9 +46,9 @@ class IngestStoragePort(Protocol):
 
     Why This Abstraction Exists
     ---------------------------
-    The ingestion compute steps (``AstExtractStep``, ``ScipIngestStep``, etc.)
-    need to write data to storage. By depending on this protocol rather than
-    concrete implementations, the compute logic can be tested in isolation
+    The ingestion compute steps (``AstExtractStep``, ``DocstringsExtractStep``,
+    etc.) need to write data to storage. By depending on this protocol rather
+    than concrete implementations, the compute logic can be tested in isolation
     using ``FakeIngestStorage`` without spinning up a database.
 
     See Also

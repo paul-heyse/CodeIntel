@@ -32,8 +32,10 @@ from codeintel.analytics.compute.coverage.compute import (
     filter_goids_for_snapshot,
     join_goids_with_coverage_lines,
 )
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
+from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -52,7 +54,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_t
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import CatalogService
+from codeintel.core.resources import ResourceNotFoundError
 from codeintel.storage.queries.safe import count_rows_for_snapshot
 
 log = logging.getLogger(__name__)
@@ -72,19 +74,28 @@ TARGET_SPECS = (
         name=COVERAGE_FUNCTIONS_TARGET_NAME,
         module="analytics",
         description="Per-function coverage aggregation.",
-        options=TargetSpecOptions(table_keys=(COVERAGE_FUNCTIONS_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(COVERAGE_FUNCTIONS_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=COVERAGE_TEST_EDGES_TARGET_NAME,
         module="analytics",
         description="Test-to-function coverage edges.",
-        options=TargetSpecOptions(table_keys=(TEST_COVERAGE_EDGES_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(TEST_COVERAGE_EDGES_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=BEHAVIORAL_COVERAGE_TARGET_NAME,
         module="analytics",
         description="Behavioral coverage tagging from test patterns.",
-        options=TargetSpecOptions(table_keys=(BEHAVIORAL_COVERAGE_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(BEHAVIORAL_COVERAGE_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
 )
 
@@ -309,14 +320,16 @@ def t__coverage_test_edges__compute(
     if t__goids.status != "succeeded":
         return ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
 
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=COVERAGE_TEST_EDGES_TARGET_NAME,
+        include=AnalyticsResourceIncludes(include_graphs=False),
+    )
+
     try:
         try:
-            catalog = CatalogService.from_db(
-                env.gateway,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
-        except (RuntimeError, ValueError) as exc:
+            catalog = registry.require(CatalogProvider).get()
+        except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             catalog = None
 

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsHotspotsRow as HotspotRow,
 )
-from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
@@ -115,7 +115,11 @@ def _run_git_log(
         "--pretty=format:COMMIT\t%H\t%an",
         "--no-renames",
     ]
-    result = active_runner.run("git", args, cwd=resolved_root)
+    result = active_runner.run(
+        "git",
+        args,
+        options=ToolRunOptions(cwd=resolved_root),
+    )
     if result.returncode not in {0, 1}:
         log.warning(
             "git log exited with code %s; stdout=%s stderr=%s",

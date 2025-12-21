@@ -145,6 +145,10 @@ class GeneratedRowBinding:
         Fully qualified table key (schema.table) for provenance.
     schema_hash
         SHA-256 hash of the source TableSchema for cache invalidation.
+    derivation_kind
+        Optional derivation kind for the originating schema.
+    derivation_source
+        Optional derivation source identifier for the originating schema.
 
     Examples
     --------
@@ -165,9 +169,16 @@ class GeneratedRowBinding:
     serializer: RowSerializer
     table_key: str
     schema_hash: str
+    derivation_kind: str | None = None
+    derivation_source: str | None = None
 
 
-def row_binding_for_table_schema(*, table_schema: TableSchema) -> GeneratedRowBinding:
+def row_binding_for_table_schema(
+    *,
+    table_schema: TableSchema,
+    derivation_kind: str | None = None,
+    derivation_source: str | None = None,
+) -> GeneratedRowBinding:
     """Generate a complete row binding from a TableSchema.
 
     This function creates a ``GeneratedRowBinding`` containing both the row
@@ -178,6 +189,10 @@ def row_binding_for_table_schema(*, table_schema: TableSchema) -> GeneratedRowBi
     ----------
     table_schema
         Source TableSchema defining the table structure.
+    derivation_kind
+        Optional derivation kind for the originating schema.
+    derivation_source
+        Optional derivation source identifier for the originating schema.
 
     Returns
     -------
@@ -209,6 +224,8 @@ def row_binding_for_table_schema(*, table_schema: TableSchema) -> GeneratedRowBi
         serializer=serializer,
         table_key=table_schema.table_key,
         schema_hash=schema_hash(table_schema),
+        derivation_kind=derivation_kind,
+        derivation_source=derivation_source,
     )
 
 

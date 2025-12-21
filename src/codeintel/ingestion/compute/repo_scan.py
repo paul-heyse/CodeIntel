@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 if TYPE_CHECKING:
@@ -74,7 +74,7 @@ class RepoScanStep:
         repo_root: Path,
         profile: ScanProfile,
         full_rebuild: bool = False,
-    ) -> tuple[StepResult, Sequence[ModuleRecord], ChangeSet]:
+    ) -> tuple[ExecutionResult, Sequence[ModuleRecord], ChangeSet]:
         """Execute repository scanning.
 
         Parameters
@@ -92,7 +92,7 @@ class RepoScanStep:
 
         Returns
         -------
-        tuple[StepResult, Sequence[ModuleRecord], ChangeSet]
+        tuple[ExecutionResult, Sequence[ModuleRecord], ChangeSet]
             Execution result, discovered modules, and change set.
         """
         modules = self._discovery.discover_modules(repo_root, profile)
@@ -116,14 +116,11 @@ class RepoScanStep:
         ]
 
         table_counts: dict[str, int] = {}
-        total_rows = 0
-
         if module_rows:
             scope = f"{repo}@{commit}"
             self._storage.delete_by_params("core.modules", [repo, commit])
             result = self._storage.write_batch("core.modules", module_rows, scope=scope)
             table_counts["core.modules"] = result.rows_affected
-            total_rows += result.rows_affected
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",
@@ -135,10 +132,7 @@ class RepoScanStep:
             len(change_set.deleted),
         )
 
-        step_result = StepResult(
-            rows_written=total_rows,
-            table_counts=table_counts,
-        )
+        step_result = ExecutionResult.ok(table_counts=table_counts)
 
         return step_result, modules, change_set
 

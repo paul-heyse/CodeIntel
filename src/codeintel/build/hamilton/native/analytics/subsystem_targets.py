@@ -41,7 +41,10 @@ TARGET_SPECS = (
         name=SUBSYSTEMS_TARGET_NAME,
         module="analytics",
         description="Architectural subsystem inference.",
-        options=TargetSpecOptions(table_keys=SUBSYSTEMS_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=SUBSYSTEMS_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
 )
 

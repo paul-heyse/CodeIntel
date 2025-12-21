@@ -16,7 +16,7 @@ from hamilton.function_modifiers import source
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata, RowCounts
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -25,10 +25,17 @@ from codeintel.build.hamilton.native.materialization_records import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 
 # Keep types available for Hamilton's runtime type resolution
-_HAMILTON_TYPE_HINTS = (BuildEnv, ExecutionResult, TargetGraph, TargetRunRecord, ir.Table)
+_HAMILTON_TYPE_HINTS = (
+    BuildEnv,
+    ExecutionResult,
+    TargetGraph,
+    TargetRunRecord,
+    ir.Table,
+)
 
 
 @tag_materialize()
@@ -37,6 +44,8 @@ def executor_materialize(
     graph: TargetGraph,
     target_name: str,
     compute_result: ExecutionResult,
+    *,
+    hash_options: InputHashOptions | None = None,
 ) -> TargetRunRecord:
     """Materialize using the NativeTargetExecutor pattern.
 
@@ -45,17 +54,28 @@ def executor_materialize(
     TargetRunRecord
         Execution record for the target.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, target_name)
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        target_name,
+        hash_options=hash_options,
+    )
 
     if executor.should_skip():
         return executor.skip()
 
-    if not compute_result.success:
-        error_msg = compute_result.error or f"{target_name} computation failed"
+    resolved = to_execution_result(
+        compute_result,
+        default_error=f"{target_name} computation failed",
+    )
+    if resolved.skipped:
+        return executor.skip()
+    if not resolved.success:
+        error_msg = resolved.error or f"{target_name} computation failed"
         return executor.fail(RuntimeError(error_msg))
 
     def compute() -> RowCounts:
-        return dict(compute_result.table_counts)
+        return dict(resolved.table_counts)
 
     return executor.execute(compute)
 
@@ -66,6 +86,8 @@ def executor_record(
     graph: TargetGraph,
     target_name: str,
     compute_result: ExecutionResult,
+    *,
+    hash_options: InputHashOptions | None = None,
 ) -> TargetRunRecord:
     """Short-name wrapper for executor_materialize for subDAG wiring.
 
@@ -74,7 +96,13 @@ def executor_record(
     TargetRunRecord
         Execution record for the target.
     """
-    return executor_materialize(env, graph, target_name, compute_result)
+    return executor_materialize(
+        env,
+        graph,
+        target_name,
+        compute_result,
+        hash_options=hash_options,
+    )
 
 
 @SaveToObjectMetadataDecorator(

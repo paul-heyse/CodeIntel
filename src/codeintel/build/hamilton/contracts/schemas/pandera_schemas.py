@@ -12,12 +12,11 @@ from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.build.schemas import iter_contracts_by_table_key
+from codeintel.build.schemas import ContractResolutionSettings, iter_contracts_by_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
 __all__ = [
@@ -686,18 +685,18 @@ def _build_columns(
     return columns
 
 
-def _build_schema(contract: DatasetContract) -> DataFrameSchema:
-    if contract.schema is None:
-        message = f"Dataset {contract.table_key} is missing a TableSchema"
-        raise ValueError(message)
-    table_key = contract.table_key
+def _build_schema_from_table_schema(
+    *,
+    table_key: str,
+    table_schema: TableSchema,
+) -> DataFrameSchema:
     column_checks = _COLUMN_CHECKS.get(table_key, {})
-    columns = _build_columns(contract.schema, column_checks=column_checks)
+    columns = _build_columns(table_schema, column_checks=column_checks)
     dataframe_checks = list(_DATAFRAME_CHECKS.get(table_key, ()))
-    if contract.schema.primary_key:
+    if table_schema.primary_key:
         dataframe_checks.append(
             Check(
-                lambda df, subset=tuple(contract.schema.primary_key): ~df.duplicated(
+                lambda df, subset=tuple(table_schema.primary_key): ~df.duplicated(
                     subset=subset
                 ).any(),
                 error=f"Duplicate primary key rows in {table_key}",
@@ -715,10 +714,15 @@ def _build_schema(contract: DatasetContract) -> DataFrameSchema:
 def _materialize_schemas() -> dict[str, DataFrameSchema]:
     schemas: dict[str, DataFrameSchema] = {}
 
-    for _, contract in iter_contracts_by_table_key():
+    for _, contract in iter_contracts_by_table_key(
+        settings=ContractResolutionSettings(include_target_metadata=True)
+    ):
         if contract.schema is None or contract.is_view:
             continue
-        schemas[contract.table_key] = _build_schema(contract)
+        schemas[contract.table_key] = _build_schema_from_table_schema(
+            table_key=contract.table_key,
+            table_schema=contract.schema,
+        )
     return schemas
 
 

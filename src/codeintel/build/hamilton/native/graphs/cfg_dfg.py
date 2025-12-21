@@ -67,13 +67,17 @@ TARGET_SPECS = (
         description="Control flow graph construction per function.",
         options=TargetSpecOptions(
             table_keys=CFG_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
         name=DFG_TARGET_NAME,
         module="graphs",
         description="Data flow graph construction per function.",
-        options=TargetSpecOptions(table_keys=DFG_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=DFG_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
 )
 
@@ -119,6 +123,10 @@ class CFGExtractResult:
         List of CFG results for DFG construction.
     table_counts
         Row counts per produced table.
+    skipped
+        Whether extraction was skipped.
+    skip_reason
+        Optional reason for skipping extraction.
     error
         Fatal error message if extraction failed.
     """
@@ -128,6 +136,8 @@ class CFGExtractResult:
     edge_count: int = 0
     cfg_results: list[cfg_compute.CFGResult] = field(default_factory=list)
     table_counts: dict[str, int] = field(default_factory=dict)
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 
@@ -143,6 +153,10 @@ class DFGExtractResult:
         Number of DFG edges extracted.
     table_counts
         Row counts per produced table.
+    skipped
+        Whether extraction was skipped.
+    skip_reason
+        Optional reason for skipping extraction.
     error
         Fatal error message if extraction failed.
     """
@@ -150,6 +164,8 @@ class DFGExtractResult:
     success: bool
     edge_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 

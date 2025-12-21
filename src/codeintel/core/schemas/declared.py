@@ -1,4 +1,10 @@
-"""Declared schema access helpers."""
+"""Declared schema access helpers.
+
+Declared schemas are reserved for source-only inputs and explicit overrides
+for non-inferable outputs. Hamilton DAG inference remains the canonical
+source for inferable outputs, with declared schemas serving as fallback
+overrides when enabled in target specs.
+"""
 
 from __future__ import annotations
 

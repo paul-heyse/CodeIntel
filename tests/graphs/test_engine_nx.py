@@ -79,7 +79,7 @@ def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
         ),
         (
             "symbol_function_graph",
-            lambda: nx_views.load_symbol_function_graph(gateway, repo, commit),
+            lambda: nx_views.load_symbol_function_graph(gateway),
             engine.symbol_function_graph,
         ),
         (
@@ -210,12 +210,11 @@ def test_numeric_normalizers() -> None:
 
 def test_module_attrs_from_row_coerces_values() -> None:
     """_module_attrs_from_row only sets attrs that coerce to int."""
-    name, attrs = nx_views.module_attrs_from_row("mod", "1", Decimal("2"), b"3", "bad")
+    name, attrs = nx_views.module_attrs_from_row("mod", "1", Decimal("2"), b"3")
     expect_equal(name, "mod")
     expect_equal(attrs["scc_id"], 1)
     expect_equal(attrs["component_size"], 2)
     expect_equal(attrs["layer"], 3)
-    expect_true("cycle_group" not in attrs)
 
 
 def test_load_call_graph_weights_and_isolated_nodes(test_ctx: TestContext) -> None:
@@ -406,8 +405,6 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
     test_ctx: TestContext,
 ) -> None:
     """load_symbol_function_graph returns empty on DuckDBError and normalizes decimals."""
-    repo = test_ctx.repo
-    commit = test_ctx.commit
     con = test_ctx.gateway.con
     con.execute("DELETE FROM graph.symbol_use_edges")
 
@@ -426,9 +423,9 @@ def test_load_symbol_function_graph_handles_duckdb_error_and_normalization(
         ],
     )
 
-    graph = nx_views.load_symbol_function_graph(test_ctx.gateway, repo, commit)
+    graph = nx_views.load_symbol_function_graph(test_ctx.gateway)
     expect_true(graph.has_edge(10, 20))
 
     con.execute("DROP TABLE IF EXISTS graph.symbol_use_edges")
-    empty_graph = nx_views.load_symbol_function_graph(test_ctx.gateway, repo, commit)
+    empty_graph = nx_views.load_symbol_function_graph(test_ctx.gateway)
     expect_equal(empty_graph.number_of_nodes(), 0)

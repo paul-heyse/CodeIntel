@@ -1,26 +1,36 @@
-"""Integration test for scip_ingest using real SCIP binaries."""
+"""Integration tests for the Hamilton scip target."""
 
 from __future__ import annotations
 
-import asyncio
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.config import BuildConfig
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.ingestion.scip import t__scip__ingest, t__scip__run
+from codeintel.build.providers import create_default_providers
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config import BuildLayoutOptions, BuildPaths
-from codeintel.ingestion import ScipIngestStep
-from codeintel.ingestion.compute.scip_ingest import ScipIngestConfig, ScipIngestResult
-from tests._helpers.ingestion import (
-    build_scip_ingest_context,
-    closing_gateway,
-)
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import SnapshotRef
+from codeintel.core.hamilton.records import TargetRunRecord
+from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.ingestion import build_scip_ingest_context, closing_gateway
 from tests._helpers.sql import count_table_rows
 
 if TYPE_CHECKING:
-    from tests._helpers.ingestion import (
-        ScipIngestContext,
+    from tests._helpers.ingestion import ScipIngestContext
+
+
+def _succeeded_modules_record() -> TargetRunRecord:
+    return TargetRunRecord(
+        target="modules",
+        plugin_name="ingestion.modules",
+        status="succeeded",
+        input_hash="test",
     )
 
 
@@ -31,16 +41,13 @@ def scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     Returns
     -------
     ScipIngestContext
-        Context bundle with repo_root, gateway, adapters, and build_dir.
+        Context bundle for SCIP target execution.
     """
     return build_scip_ingest_context(tmp_path)
 
 
-def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) -> None:
-    """Ensure scip_ingest generates SCIP artifacts and registers scip_index_view.
-
-    Skip if scip-python or scip binaries are unavailable.
-    """
+def test_scip_target_writes_tables(scip_ingest_context: ScipIngestContext) -> None:
+    """Ensure scip target writes scip tables when SCIP binaries are available."""
     if shutil.which("scip-python") is None or shutil.which("scip") is None:
         pytest.skip("scip-python or scip not available on PATH")
 
@@ -48,64 +55,43 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
     repo_root = context.repo_root
     gateway = context.gateway
     build_dir = context.build_dir
-    document_output_dir = repo_root / "document_output"
-    db_path = gateway.config.db_path
 
-    _ = BuildPaths.from_layout(
+    paths = BuildPaths.from_layout(
         repo_root=repo_root,
         overrides=BuildLayoutOptions(
             build_dir=build_dir,
-            db_path=db_path,
-            document_output_dir=document_output_dir,
+            db_path=gateway.config.db_path,
+            document_output_dir=repo_root / "document_output",
         ),
     )
+    providers = create_default_providers(ToolsConfig.default())
+    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
+    env = BuildEnv(
+        gateway=gateway,
+        snapshot=snapshot,
+        paths=paths,
+        providers=providers,
+        config=BuildConfig.empty(),
+        settings=TEST_BUILD_SETTINGS,
+    )
+    graph = get_target_metadata_service().system.graph
+
+    modules_record = _succeeded_modules_record()
 
     with closing_gateway(gateway):
-        scip_dir = build_dir / "scip"
+        run_result = t__scip__run(env, graph, modules_record)
+        if not run_result.success:
+            pytest.skip(run_result.error or "SCIP execution failed")
 
-        config = ScipIngestConfig(
-            repo="demo/repo",
-            commit="deadbeef",
-            repo_root=repo_root,
-            output_scip=scip_dir / "index.scip",
-        )
+        ingest_result = t__scip__ingest(env, modules_record, run_result)
+        if not ingest_result.success:
+            pytest.fail(ingest_result.error or "SCIP ingestion failed")
 
-        step = ScipIngestStep(storage=context.storage, tools=context.tools)
-        result = asyncio.run(step.execute_async([], config))
-
-        if not result.success:
-            errors = "; ".join(result.errors) if result.errors else "unknown"
-            pytest.skip(f"SCIP ingestion not successful in test environment: {errors}")
-
-        if not (scip_dir / "index.scip").is_file():
+        if run_result.index_path is None or not run_result.index_path.is_file():
             pytest.fail("index.scip was not created under build/scip")
-        if not (scip_dir / "index.json").is_file():
+        if run_result.json_path is None or not run_result.json_path.is_file():
             pytest.fail("index.json was not created under build/scip")
 
         count = count_table_rows(gateway.con, "core.scip_symbols")
         if count == 0:
             pytest.fail("core.scip_symbols is empty; expected rows after ingest")
-
-
-def test_scip_ingest_result_factory() -> None:
-    """Verify ScipIngestResult factory methods work correctly."""
-    success = ScipIngestResult(
-        status="success",
-        index_scip=Path("build/scip/index.scip"),
-        index_json=Path("build/scip/index.json"),
-    )
-    if success.status != "success":
-        pytest.fail(f"Expected status='success', got {success.status}")
-    if success.index_scip is None:
-        pytest.fail("Expected index_scip to be set")
-
-    unavail = ScipIngestResult(
-        status="unavailable",
-        index_scip=None,
-        index_json=None,
-        reason="SCIP binary not found",
-    )
-    if unavail.status != "unavailable":
-        pytest.fail(f"Expected status='unavailable', got {unavail.status}")
-    if unavail.reason != "SCIP binary not found":
-        pytest.fail(f"Unexpected reason: {unavail.reason}")

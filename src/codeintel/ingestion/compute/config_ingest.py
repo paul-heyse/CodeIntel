@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -263,7 +263,7 @@ class ConfigIngestStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute configuration file ingestion.
 
         Parameters
@@ -277,7 +277,7 @@ class ConfigIngestStep(BaseExtractStep):
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         all_rows: list[list[object]] = []
@@ -310,13 +310,11 @@ class ConfigIngestStep(BaseExtractStep):
                 )
 
         table_counts: dict[str, int] = {}
-        total_rows = 0
 
         if all_rows:
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("analytics.config_values", all_rows, scope=scope)
             table_counts["analytics.config_values"] = result.rows_affected
-            total_rows = result.rows_affected
 
         log.info(
             "Config ingest: repo=%s commit=%s files=%d values=%d",
@@ -326,7 +324,10 @@ class ConfigIngestStep(BaseExtractStep):
             len(all_rows),
         )
 
-        return StepResult(rows_written=total_rows, table_counts=table_counts, errors=errors)
+        return ExecutionResult.ok(
+            table_counts=table_counts,
+            warnings=tuple(errors),
+        )
 
 
 __all__ = [

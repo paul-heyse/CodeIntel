@@ -25,6 +25,7 @@ maintenance cost and blur the native-only architecture.
   - Preserve build.run_asset_versions as the run-level resolution map.
   - Remove build.assets and AssetRecord/AssetTracking legacy CRUD. Use derived queries/views
     for "latest asset" lookups if needed.
+  - Do not provide transitional build.assets views; consumers must use versioned tables.
 - CLI asset listing:
   - Build assets CLI returns versioned catalog output only; drop the legacy list path and
     the versions toggle.
@@ -53,9 +54,8 @@ maintenance cost and blur the native-only architecture.
   Mitigation: document migrations, provide clear error messages, and update docs/examples.
 - Asset version history queries now require joins between version and run mapping tables.
   Mitigation: add indexes and helper queries in storage layer; add focused tests.
-- Removing numpy scalar normalization could expose latent DuckDB/Ibis type issues.
-  Mitigation: validate with targeted tests before removal; keep a single normalized path if
-  required by the storage backend.
+- DuckDB/Ibis scalar handling depends on upstream behavior; mitigation: rely on current
+  library versions and existing integration tests.
 
 ## Migration Plan
 1. Update schemas for build.asset_versions, build.run_asset_versions, and

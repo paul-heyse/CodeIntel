@@ -241,9 +241,7 @@ class AssetTracking:
             ),
         )
 
-    def record_asset_version_events_batch(
-        self, records: Sequence[AssetVersionEventRecord]
-    ) -> int:
+    def record_asset_version_events_batch(self, records: Sequence[AssetVersionEventRecord]) -> int:
         """Upsert run-scoped asset version events.
 
         Returns

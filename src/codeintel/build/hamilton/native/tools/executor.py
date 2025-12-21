@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.native.tools import ToolExecutionResult
+from codeintel.ingestion.engine.infrastructure import ToolRunOptions
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -52,30 +52,20 @@ def execute_tool(
     spec.output_path.parent.mkdir(parents=True, exist_ok=True)
 
     tool_runner = env.providers.tool_runner
-    if tool_runner is None:
-        duration_ms = (time.perf_counter() - start_time) * 1000
-        return ToolExecutionResult(
-            success=False,
-            artifact=None,
-            duration_ms=duration_ms,
-            stdout="",
-            stderr="No tool runner configured (env.providers.tool_runner is None)",
-            return_code=-1,
-        )
-
-    tool_result = asyncio.run(
-        tool_runner.run(
-            spec.tool_name,
-            spec.command_args,
+    tool_result = tool_runner.run(
+        spec.tool_name,
+        spec.command_args,
+        options=ToolRunOptions(
             cwd=env.snapshot.repo_root,
-            timeout_ms=int(spec.timeout_seconds * 1000),
+            output_path=spec.output_path,
+            timeout_s=spec.timeout_seconds,
             env=exec_env,
-        )
+        ),
     )
     duration_ms = (time.perf_counter() - start_time) * 1000
 
     artifact: ArtifactRef | None = None
-    if tool_result.success and spec.output_path.exists():
+    if tool_result.ok and spec.output_path.exists():
         artifact = ArtifactRef(
             name=spec.tool_name,
             artifact_type="file",
@@ -85,7 +75,7 @@ def execute_tool(
         )
 
     return ToolExecutionResult(
-        success=tool_result.success,
+        success=tool_result.ok,
         artifact=artifact,
         duration_ms=duration_ms,
         stdout=tool_result.stdout,

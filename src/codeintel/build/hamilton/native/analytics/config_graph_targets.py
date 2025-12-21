@@ -25,7 +25,8 @@ from codeintel.analytics.cfg_dfg.compute import (
 )
 from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow_result
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
@@ -44,8 +45,8 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materi
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import CatalogService
 from codeintel.core.hamilton.records import TargetRunRecord
+from codeintel.core.resources import ResourceNotFoundError
 from codeintel.graphs.runtime import resolve_graph_runtime
 
 if TYPE_CHECKING:
@@ -92,13 +93,19 @@ TARGET_SPECS = (
         name=CONFIG_DATA_FLOW_TARGET_NAME,
         module="analytics",
         description="Config key usage flow through functions.",
-        options=TargetSpecOptions(table_keys=CONFIG_DATA_FLOW_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=CONFIG_DATA_FLOW_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=CFG_DFG_METRICS_TARGET_NAME,
         module="analytics",
         description="Control-flow and data-flow graph metrics per function.",
-        options=TargetSpecOptions(table_keys=CFG_DFG_METRICS_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=CFG_DFG_METRICS_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
 )
 
@@ -186,20 +193,19 @@ def t__config_data_flow__compute(
         # Load function ASTs
         ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
+        registry = env.providers.resources.registry_for(
+            env,
+            target_name=CONFIG_DATA_FLOW_TARGET_NAME,
+            include=AnalyticsResourceIncludes(
+                include_graphs=False,
+                include_asts=True,
+            ),
+        )
         try:
-            catalog = CatalogService.from_db(
-                env.gateway,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
-            request = FunctionAstLoadRequest(
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-                repo_root=env.snapshot.repo_root,
-                catalog_provider=catalog,
-            )
-            ast_by_goid, missing_goids = load_function_asts(env.gateway, request)
-        except (RuntimeError, ValueError, OSError) as exc:
+            ast_data = registry.require(AstProvider).get()
+            ast_by_goid = ast_data.function_ast_map
+            missing_goids = ast_data.missing_function_goids
+        except (ResourceNotFoundError, RuntimeError, ValueError, OSError) as exc:
             log.warning("Failed to load function ASTs: %s", exc)
 
         # Compute config data flow (pure compute, no persistence)

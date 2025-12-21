@@ -775,19 +775,19 @@ def test_coupling_bidirectional_pair_balances_instability() -> None:
 
 def test_abstractness_zero_total_returns_zero() -> None:
     """Zero total classes returns zero abstractness."""
-    result = compute_abstractness("module", abstract_count=0, total_count=0)
+    result = compute_abstractness(abstract_count=0, total_count=0)
     expect_true(result == 0.0)
 
 
 def test_abstractness_computes_ratio() -> None:
     """Computes abstract/total ratio."""
-    result = compute_abstractness("module", abstract_count=2, total_count=4)
+    result = compute_abstractness(abstract_count=2, total_count=4)
     expect_true(result == INSTABILITY_HALF)
 
 
 def test_abstractness_all_abstract_returns_one() -> None:
     """All abstract returns 1.0."""
-    result = compute_abstractness("module", abstract_count=5, total_count=5)
+    result = compute_abstractness(abstract_count=5, total_count=5)
     expect_true(result == INSTABILITY_FULL)
 
 

@@ -7,9 +7,6 @@ with @check_output_custom validators and @schema.output documentation.
 from __future__ import annotations
 
 from codeintel.build.hamilton.native.ingestion.extraction_targets import (
-    AstExtractResult,
-    CstExtractResult,
-    DocstringsExtractResult,
     t__ast,
     t__ast__extract,
     t__cst,
@@ -43,16 +40,14 @@ from codeintel.build.hamilton.native.ingestion.scip import (
     scip__index_artifact,
     scip__json_artifact,
     t__scip,
+    t__scip__ingest,
     t__scip__run,
 )
 
 __all__: list[str] = [
-    "AstExtractResult",
     "ConfigIngestResult",
     "ConfigScanResult",
     "CoverageIngestResult",
-    "CstExtractResult",
-    "DocstringsExtractResult",
     "ModuleScanResult",
     "RepoMapWriteResult",
     "ScipRunResult",
@@ -75,6 +70,7 @@ __all__: list[str] = [
     "t__modules__scan",
     "t__modules__write_repo_map",
     "t__scip",
+    "t__scip__ingest",
     "t__scip__run",
     "t__tests_ingest",
     "t__tests_ingest__ingest",

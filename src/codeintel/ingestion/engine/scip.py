@@ -15,6 +15,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
+    ToolRunOptions,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -336,9 +337,11 @@ class ScipPlugin(ToolPlugin):
         result = await self.runner.run_async(
             ToolName.SCIP_PYTHON,
             args,
-            cwd=repo_root,
-            output_path=output_scip,
-            timeout_s=self.tools_config.default_timeout_s,
+            options=ToolRunOptions(
+                cwd=repo_root,
+                output_path=output_scip,
+                timeout_s=self.tools_config.default_timeout_s,
+            ),
         )
         if not result.ok:
             raise ToolExecutionError(result)
@@ -350,9 +353,11 @@ class ScipPlugin(ToolPlugin):
         result = await self.runner.run_async(
             ToolName.SCIP,
             args,
-            cwd=scip_path.parent,
-            output_path=output_json,
-            timeout_s=self.tools_config.default_timeout_s,
+            options=ToolRunOptions(
+                cwd=scip_path.parent,
+                output_path=output_json,
+                timeout_s=self.tools_config.default_timeout_s,
+            ),
         )
         if not result.ok:
             raise ToolExecutionError(result)

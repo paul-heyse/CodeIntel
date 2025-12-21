@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 
 
 SchemaDerivationKind = Literal["explicit_override", "inferred_ibis"]
+InferenceStatus = Literal["inferred", "override", "disabled", "error", "pending"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +95,12 @@ class SchemaIndex:
                     )
                 except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                     self._record_inference_error(table_key, exc)
+                    if derivation.override_schema is None:
+                        msg = (
+                            "Schema inference failed without explicit override for "
+                            f"{table_key}: {exc}"
+                        )
+                        raise RuntimeError(msg) from exc
                     if not self.fallback_to_override_on_error:
                         raise
                     schema = derivation.override_schema
@@ -150,6 +157,40 @@ class SchemaIndex:
         """
         for table_key in sorted(self._inference_errors):
             yield table_key, self._inference_errors[table_key]
+
+    def inference_status_for(
+        self,
+        table_key: str,
+        *,
+        allow_inference: bool | None = None,
+    ) -> InferenceStatus | None:
+        """Return inference status for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+        allow_inference
+            Whether inference is enabled for this lookup. When None, defaults
+            to True.
+
+        Returns
+        -------
+        InferenceStatus | None
+            Inference status when table_key is known; otherwise None.
+        """
+        derivation = self.derivations.get(table_key)
+        if derivation is None:
+            return None
+        if derivation.kind != "inferred_ibis":
+            return "override"
+        if table_key in self._cache:
+            return "inferred"
+        if self.get_inference_error(table_key) is not None:
+            return "error"
+        if allow_inference is False:
+            return "disabled"
+        return "pending"
 
     def _record_inference_error(self, table_key: str, exc: Exception) -> None:
         detail = str(exc)
@@ -219,6 +260,7 @@ def build_schema_index(
 
 
 __all__ = [
+    "InferenceStatus",
     "SchemaDerivation",
     "SchemaDerivationKind",
     "SchemaIndex",

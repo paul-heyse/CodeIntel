@@ -25,6 +25,7 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.native.materialization_records import (
+    FileArtifactRecordContext,
     record_from_file_artifact_materialization,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -91,10 +92,13 @@ def record(
     TargetRunRecord
         Record describing succeeded/skipped/failed completion.
     """
-    return record_from_file_artifact_materialization(
+    context = FileArtifactRecordContext(
         env=env,
         graph=graph,
         target_name=target_name,
+    )
+    return record_from_file_artifact_materialization(
+        context=context,
         expected_artifact_name=artifact_name,
         materialization=artifact_metadata,
     )

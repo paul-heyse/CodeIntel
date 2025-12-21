@@ -28,6 +28,7 @@ from codeintel.build.hamilton.materializers.artifact_saver import (
 )
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
+    FileArtifactRecordContext,
     record_from_file_artifact_materialization,
 )
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -227,10 +228,13 @@ def t__export_jsonl(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return record_from_file_artifact_materialization(
+    context = FileArtifactRecordContext(
         env=env,
         graph=graph,
         target_name=EXPORT_JSONL_TARGET_NAME,
+    )
+    return record_from_file_artifact_materialization(
+        context=context,
         expected_artifact_name=EXPORT_JSONL_ARTIFACT_NAME,
         materialization=m__artifact__datasets_manifest_jsonl,
     )
@@ -297,10 +301,13 @@ def t__export_parquet(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return record_from_file_artifact_materialization(
+    context = FileArtifactRecordContext(
         env=env,
         graph=graph,
         target_name=EXPORT_PARQUET_TARGET_NAME,
+    )
+    return record_from_file_artifact_materialization(
+        context=context,
         expected_artifact_name=EXPORT_PARQUET_ARTIFACT_NAME,
         materialization=m__artifact__datasets_manifest_parquet,
     )

@@ -157,7 +157,7 @@ class BuildToolAdapter:
         """
         return DiagnosticResult(
             status=ToolStatus.SKIPPED,
-            error=f"Ruff linting not available via build adapter for {repo_root}",
+            error=(f"Ruff linting not available via {type(self).__name__} for {repo_root}"),
         )
 
     async def run_coverage(

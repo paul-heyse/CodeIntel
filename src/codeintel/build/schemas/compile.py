@@ -531,6 +531,10 @@ def _collect_manifest_provenance(
     artifact_provenance: dict[str, ArtifactProvenance] = {}
     known_hashes: dict[str, str] = {}
 
+    allow_inference = True
+    if isinstance(provider, UnifiedSchemaProvider):
+        allow_inference = provider.allow_inference
+
     for table in tables:
         derivation = schema_index.derivations.get(table.table_key)
         if derivation is None:
@@ -539,12 +543,23 @@ def _collect_manifest_provenance(
         else:
             derivation_kind = derivation.kind
             derivation_source = derivation.source
+        inference_status = schema_index.inference_status_for(
+            table.table_key,
+            allow_inference=allow_inference,
+        )
+        inference_error = (
+            schema_index.get_inference_error(table.table_key)
+            if inference_status == "error"
+            else None
+        )
         table_hash = schema_hash(table)
         known_hashes[table.table_key] = table_hash
         table_provenance[table.table_key] = TableProvenance(
             schema_hash=table_hash,
             derivation_kind=derivation_kind,
             derivation_source=derivation_source,
+            inference_status=inference_status,
+            inference_error=inference_error,
         )
 
     for view in views:

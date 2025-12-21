@@ -16,8 +16,10 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
+from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -41,7 +43,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import CatalogService
+from codeintel.core.resources import ResourceNotFoundError
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
@@ -68,13 +70,17 @@ TARGET_SPECS = (
         description="Semantic role classification (handler, utility, etc.).",
         options=TargetSpecOptions(
             table_keys=SEMANTIC_ROLES_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
         name=TEST_PROFILE_TARGET_NAME,
         module="analytics",
         description="Per-test profile with coverage and characteristics.",
-        options=TargetSpecOptions(table_keys=TEST_PROFILE_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=TEST_PROFILE_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
 )
 
@@ -138,16 +144,17 @@ def t__semantic_roles__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=SEMANTIC_ROLES_TARGET_NAME,
+        include=AnalyticsResourceIncludes(include_graphs=False),
+    )
+
     try:
-        # Load catalog for module info
         try:
-            catalog = CatalogService.from_db(
-                env.gateway,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
+            catalog = registry.require(CatalogProvider).get()
             module_by_path = dict(catalog.catalog().module_by_path)
-        except (RuntimeError, ValueError) as exc:
+        except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             module_by_path = {}
 

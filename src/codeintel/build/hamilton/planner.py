@@ -585,11 +585,12 @@ def compute_plan(
     """
     _ = graph_source
     runtime = build_driver()
-    native_names = native_target_names(runtime)
     if graph is None:
         graph = runtime.graph
+        native_names = native_target_names(runtime)
     else:
         graph = target_graph_from_hamilton(runtime, base_graph=graph)
+        native_names = frozenset(target.name for target in graph.all_targets)
 
     closure = graph.topological_order(list(requested))
 

@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from codeintel.ingestion.engine.infrastructure import ToolName
+from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunOptions
 from tests._helpers.assertions import (
     SUBPROCESS_ALLOWLIST,
     assert_no_subprocess_usage,
     expect_equal,
 )
-from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
+from tests._helpers.fakes.tools import (
+    PresetRunner,
+    ToolRunResultOptions,
+    make_tool_run_result,
+)
 
 
 def test_no_direct_subprocess_usage_outside_tooling() -> None:
@@ -22,8 +26,8 @@ def test_no_direct_subprocess_usage_outside_tooling() -> None:
 
 
 def test_preset_runner_respects_tool_run_options(tmp_path: Path) -> None:
-    """PresetRunner should surface ToolRunOptions without subprocesses."""
-    options = ToolRunOptions(
+    """PresetRunner should surface ToolRunResultOptions without subprocesses."""
+    options = ToolRunResultOptions(
         returncode=1,
         stdout="out",
         stderr="err",
@@ -32,7 +36,13 @@ def test_preset_runner_respects_tool_run_options(tmp_path: Path) -> None:
     preset_result = make_tool_run_result(ToolName.RUFF, options=options)
     runner = PresetRunner(preset_result)
 
-    result = asyncio.run(runner.run_async(ToolName.RUFF, [], output_path=tmp_path / "out.json"))
+    result = asyncio.run(
+        runner.run_async(
+            ToolName.RUFF,
+            [],
+            options=ToolRunOptions(output_path=tmp_path / "out.json"),
+        )
+    )
 
     expect_equal(result.returncode, options.returncode)
     expect_equal(result.stdout, options.stdout)

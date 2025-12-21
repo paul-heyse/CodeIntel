@@ -20,6 +20,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunner,
+    ToolRunOptions,
     ToolRunResult,
 )
 from codeintel.ingestion.engine.results import CoverageReport, ScipIndexResult
@@ -60,9 +61,7 @@ class FakeToolRunner(ToolRunner):
         tool: ToolName | str,
         args: Sequence[str],
         *,
-        cwd: Path | None = None,
-        output_path: Path | None = None,
-        timeout_s: float | None = None,
+        options: ToolRunOptions | None = None,
     ) -> ToolRunResult:
         """
         Execute a tool invocation with canned outputs.
@@ -73,48 +72,52 @@ class FakeToolRunner(ToolRunner):
             Tool name or enum.
         args
             Arguments to pass to the tool.
-        cwd
-            Working directory (ignored).
-        output_path
-            Optional output path for results.
-        timeout_s
-            Timeout in seconds (ignored).
+        options
+            Execution options (working directory, output path, timeout, env).
 
         Returns
         -------
         ToolRunResult
             Structured result capturing stdout/stderr and codes.
         """
-        _ = cwd
-        _ = timeout_s
+        run_options = options or ToolRunOptions()
         tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
         args_list = list(args)
         self.calls.record(
             ToolRunCall(
                 tool=tool_enum.value,
                 args=args_list,
-                cwd=cwd or self.cache_dir,
-                timeout_ms=None if timeout_s is None else int(timeout_s * 1000),
-                env=None,
+                cwd=run_options.cwd or self.cache_dir,
+                timeout_ms=(
+                    None if run_options.timeout_s is None else int(run_options.timeout_s * 1000)
+                ),
+                env=None if run_options.env is None else dict(run_options.env),
             )
         )
         if self.on_run is not None:
             self.on_run(tool_enum, args_list)
         payload_stdout = self.payloads.get(tool_enum.value, "")
-        if output_path is not None and tool_enum in {ToolName.COVERAGE, ToolName.PYREFLY}:
+        if run_options.output_path is not None and tool_enum in {
+            ToolName.COVERAGE,
+            ToolName.PYREFLY,
+        }:
             json_payload = self.payloads.get(
                 f"{tool_enum.value}_json",
                 self.payloads.get("json", {}),
             )
-            await to_thread.run_sync(_mkdir_parents, output_path.parent)
-            await to_thread.run_sync(_write_text, output_path, json.dumps(json_payload))
+            await to_thread.run_sync(_mkdir_parents, run_options.output_path.parent)
+            await to_thread.run_sync(
+                _write_text,
+                run_options.output_path,
+                json.dumps(json_payload),
+            )
         return ToolRunResult(
             tool=tool_enum,
             args=tuple(args_list),
             returncode=0,
             stdout=str(payload_stdout),
             stderr="",
-            output_path=output_path,
+            output_path=run_options.output_path,
             duration_s=0.0,
         )
 
@@ -167,9 +170,7 @@ class PresetRunner(ToolRunner):
         tool: ToolName | str,
         args: Sequence[str],
         *,
-        cwd: Path | None = None,
-        output_path: Path | None = None,
-        timeout_s: float | None = None,
+        options: ToolRunOptions | None = None,
     ) -> ToolRunResult:
         """Return a preset ToolRunResult or raise the configured exception.
 
@@ -185,17 +186,18 @@ class PresetRunner(ToolRunner):
         ToolExecutionError
             When initialized with a generic exception.
         """
-        del tool, args, cwd, timeout_s
+        del tool, args
+        run_options = options or ToolRunOptions()
         if isinstance(self._result, ToolNotFoundError):
             raise ToolNotFoundError(self._result.tool, self._result.configured_path)
         if isinstance(self._result, Exception):
             raise ToolExecutionError(
                 make_tool_run_result(
                     ToolName.PYRIGHT,
-                    options=ToolRunOptions(
+                    options=ToolRunResultOptions(
                         returncode=1,
                         stderr="dummy error",
-                        output_path=output_path,
+                        output_path=run_options.output_path,
                         duration_s=0.1,
                     ),
                 )
@@ -204,7 +206,7 @@ class PresetRunner(ToolRunner):
 
 
 @dataclass(frozen=True)
-class ToolRunOptions:
+class ToolRunResultOptions:
     """Configuration for a fake ToolRunResult."""
 
     returncode: int = 0
@@ -218,7 +220,7 @@ def make_tool_run_result(
     tool: ToolName | str,
     *,
     args: Sequence[str] | None = None,
-    options: ToolRunOptions | None = None,
+    options: ToolRunResultOptions | None = None,
 ) -> ToolRunResult:
     """Build a ToolRunResult with sensible defaults for tests.
 
@@ -228,7 +230,7 @@ def make_tool_run_result(
         Structured result populated with the provided options.
     """
     tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
-    opts = options or ToolRunOptions()
+    opts = options or ToolRunResultOptions()
     return ToolRunResult(
         tool=tool_enum,
         args=tuple(args or ()),
@@ -440,8 +442,6 @@ class FakeToolService(ToolService):
         repo_root: Path,
         *,
         output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
     ) -> ScipIndexResult:
         """Run full SCIP indexing and return configured result.
 
@@ -451,67 +451,16 @@ class FakeToolService(ToolService):
             Repository root (logged but not used).
         output_scip
             Output SCIP file path (logged but not used).
-        output_json
-            Output JSON file path (logged but not used).
-        target_dir
-            Target directory (logged but not used).
 
         Returns
         -------
         ScipIndexResult
             Configured SCIP result.
         """
-        args = [str(output_scip), str(output_json)]
-        if target_dir is not None:
-            args.append(str(target_dir))
+        args = [str(output_scip)]
         self.calls.record(
             ToolRunCall(
                 tool="scip_full",
-                args=args,
-                cwd=repo_root,
-                timeout_ms=None,
-                env=None,
-            )
-        )
-        if self.fake_config.raise_on_scip is not None:
-            raise self.fake_config.raise_on_scip
-        return self.fake_config.scip_result or ScipIndexResult.empty()
-
-    async def run_scip_shard(
-        self,
-        repo_root: Path,
-        *,
-        rel_paths: list[str],
-        output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
-    ) -> ScipIndexResult:
-        """Run SCIP indexing for a shard and return configured result.
-
-        Parameters
-        ----------
-        repo_root
-            Repository root (logged but not used).
-        rel_paths
-            Relative paths to index (logged but not used).
-        output_scip
-            Output SCIP file path (logged but not used).
-        output_json
-            Output JSON file path (logged but not used).
-        target_dir
-            Target directory (logged but not used).
-
-        Returns
-        -------
-        ScipIndexResult
-            Configured SCIP result.
-        """
-        args = [str(output_scip), str(output_json), *rel_paths]
-        if target_dir is not None:
-            args.append(str(target_dir))
-        self.calls.record(
-            ToolRunCall(
-                tool="scip_shard",
                 args=args,
                 cwd=repo_root,
                 timeout_ms=None,
@@ -608,7 +557,7 @@ __all__ = [
     "FakeToolService",
     "FakeToolServiceConfig",
     "PresetRunner",
-    "ToolRunOptions",
+    "ToolRunResultOptions",
     "make_failing_tool_service",
     "make_scip_index_result",
     "make_success_tool_service",

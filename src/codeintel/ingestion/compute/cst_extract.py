@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import libcst as cst
 from libcst import metadata
 
-from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
@@ -152,7 +152,7 @@ class CstExtractStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute CST extraction on the provided modules.
 
         Parameters
@@ -166,16 +166,16 @@ class CstExtractStep(BaseExtractStep):
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         all_rows: list[list[object]] = []
-        errors: list[str] = []
+        warnings: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_cst(module, source)
             if result.error is not None:
-                errors.append(f"Failed to parse {module.rel_path}: {result.error}")
+                warnings.append(f"Failed to parse {module.rel_path}: {result.error}")
                 log.warning("Failed to parse %s: %s", module.rel_path, result.error)
                 continue
 
@@ -194,7 +194,6 @@ class CstExtractStep(BaseExtractStep):
                 )
 
         table_counts = self._write_and_count("core.cst_nodes", all_rows, repo=repo, commit=commit)
-        total_rows = table_counts.get("core.cst_nodes", 0)
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
@@ -203,10 +202,9 @@ class CstExtractStep(BaseExtractStep):
             len(all_rows),
         )
 
-        return StepResult(
-            rows_written=total_rows,
+        return ExecutionResult.ok(
             table_counts=table_counts,
-            errors=errors,
+            warnings=tuple(warnings),
         )
 
 

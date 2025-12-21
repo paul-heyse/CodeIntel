@@ -14,6 +14,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
+    ToolRunOptions,
 )
 from codeintel.ingestion.engine.plugins import (
     DiagnosticToolPlugin,
@@ -111,8 +112,10 @@ class RuffPlugin(DiagnosticToolPlugin):
             result = await self.runner.run_async(
                 ToolName.RUFF,
                 ["check", str(repo_root), "--output-format", "json"],
-                cwd=repo_root,
-                timeout_s=self.tools_config.default_timeout_s,
+                options=ToolRunOptions(
+                    cwd=repo_root,
+                    timeout_s=self.tools_config.default_timeout_s,
+                ),
             )
         except ToolNotFoundError:
             log.warning("ruff binary not found; treating all files as 0 errors")

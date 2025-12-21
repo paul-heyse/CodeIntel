@@ -25,6 +25,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunner,
+    ToolRunOptions,
 )
 from codeintel.ingestion.engine.pyright import PyrightPlugin
 from codeintel.ingestion.engine.pytest import PytestPlugin
@@ -67,7 +68,11 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.fakes.tools import PresetRunner, ToolRunOptions, make_tool_run_result
+from tests._helpers.fakes.tools import (
+    PresetRunner,
+    ToolRunResultOptions,
+    make_tool_run_result,
+)
 from tests._helpers.ingestion import write_pytest_report
 from tests._helpers.orchestration.tooling import (
     build_tooling_artifacts,
@@ -126,7 +131,7 @@ def test_tool_runner_missing_binary_raises_not_found_error(tmp_path: Path) -> No
         tools_config=ToolsConfig.with_overrides(pyright_bin="does-not-exist"),
     )
     with pytest.raises(ToolNotFoundError):
-        runner.run(ToolName.PYRIGHT, [], cwd=tmp_path)
+        runner.run(ToolName.PYRIGHT, [], options=ToolRunOptions(cwd=tmp_path))
 
 
 def test_tool_runner_unknown_tool_raises_value_error(tmp_path: Path) -> None:
@@ -161,7 +166,7 @@ def test_pyright_plugin_successful_run_returns_ok_status() -> None:
     run = make_tool_run_result(
         ToolName.PYRIGHT,
         args=("--outputjson", "."),
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout='{"summary": {"files": {}}}',
             stderr="",
@@ -184,7 +189,7 @@ def test_default_registry_contains_expected_plugins() -> None:
     runner = PresetRunner(
         make_tool_run_result(
             ToolName.PYRIGHT,
-            options=ToolRunOptions(
+            options=ToolRunResultOptions(
                 returncode=0,
                 stdout="",
                 stderr="",
@@ -599,7 +604,7 @@ def test_tool_service_get_plugin_returns_registered_plugin() -> None:
     runner = PresetRunner(
         make_tool_run_result(
             ToolName.PYRIGHT,
-            options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.0),
+            options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.0),
         )
     )
     service = ToolService(runner)
@@ -612,7 +617,7 @@ def test_tool_service_run_plugin_raises_key_error_for_unknown() -> None:
     runner = PresetRunner(
         make_tool_run_result(
             ToolName.PYRIGHT,
-            options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.0),
+            options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.0),
         )
     )
     service = ToolService(runner)
@@ -625,7 +630,7 @@ def test_tool_service_run_plugin_success(tmp_path: Path) -> None:
     run = make_tool_run_result(
         ToolName.PYRIGHT,
         args=("--outputjson", "."),
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout='{"summary": {"files": {}}}',
             stderr="",
@@ -654,7 +659,7 @@ def test_tool_service_run_pyright_success(tmp_path: Path) -> None:
     run = make_tool_run_result(
         ToolName.PYRIGHT,
         args=("--outputjson", "."),
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout=pyright_output,
             stderr="",
@@ -714,7 +719,7 @@ def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
     json_path = write_pytest_report(tmp_path, filename="report.json")
     run = make_tool_run_result(
         ToolName.PYTEST,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout="",
             stderr="",
@@ -738,7 +743,6 @@ def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
             service.run_scip_full(
                 tmp_path,
                 output_scip=tmp_path / "index.scip",
-                output_json=tmp_path / "index.json",
             )
         )
 
@@ -1008,7 +1012,7 @@ def test_scip_plugin_type_error_on_missing_output_scip() -> None:
     tools_cfg = ToolsConfig.default()
     run = make_tool_run_result(
         ToolName.SCIP_PYTHON,
-        options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
+        options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
     )
     runner = PresetRunner(run)
     plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
@@ -1022,7 +1026,7 @@ def test_scip_plugin_type_error_on_missing_output_json() -> None:
     tools_cfg = ToolsConfig.default()
     run = make_tool_run_result(
         ToolName.SCIP_PYTHON,
-        options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
+        options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
     )
     runner = PresetRunner(run)
     plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
@@ -1036,7 +1040,7 @@ def test_scip_plugin_type_error_on_invalid_target_dir() -> None:
     tools_cfg = ToolsConfig.default()
     run = make_tool_run_result(
         ToolName.SCIP_PYTHON,
-        options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
+        options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
     )
     runner = PresetRunner(run)
     plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
@@ -1057,7 +1061,7 @@ def test_scip_plugin_type_error_on_invalid_rel_paths() -> None:
     tools_cfg = ToolsConfig.default()
     run = make_tool_run_result(
         ToolName.SCIP_PYTHON,
-        options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
+        options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
     )
     runner = PresetRunner(run)
     plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
@@ -1098,7 +1102,7 @@ def test_pytest_plugin_type_error_on_missing_json_report_path() -> None:
     tools_cfg = ToolsConfig.default()
     run = make_tool_run_result(
         ToolName.PYTEST,
-        options=ToolRunOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
+        options=ToolRunResultOptions(returncode=0, stdout="", stderr="", duration_s=0.1),
     )
     runner = PresetRunner(run)
     plugin = PytestPlugin(runner=runner, tools_config=tools_cfg)
@@ -1141,7 +1145,7 @@ def test_tool_service_run_pyright_returns_errors_from_parsed_report(tmp_path: Pa
     pyright_output = '{"generalDiagnostics": [{"file": "test.py", "severity": 1, "message": "err", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}}}]}'
     run = make_tool_run_result(
         ToolName.PYRIGHT,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout=pyright_output,
             stderr="",
@@ -1170,7 +1174,7 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
     """ToolService.run_pyrefly should degrade to empty mapping on failure."""
     run = make_tool_run_result(
         ToolName.PYREFLY,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=1,
             stdout="",
             stderr="pyrefly failed",
@@ -1192,7 +1196,7 @@ def test_tool_service_run_coverage_report_with_data(
     coverage_path = tooling_artifacts.coverage_file
     run = make_tool_run_result(
         ToolName.COVERAGE,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout="",
             stderr="",
@@ -1219,7 +1223,7 @@ def test_tool_service_run_coverage_report_failure_returns_empty(tmp_path: Path) 
     """ToolService.run_coverage_report should return empty report on failure."""
     run = make_tool_run_result(
         ToolName.COVERAGE,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=1,
             stdout="",
             stderr="coverage failed",
@@ -1239,7 +1243,7 @@ def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
     json_path = write_pytest_report(tmp_path, filename="new_report.json")
     run = make_tool_run_result(
         ToolName.PYTEST,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout='{"tests": []}',
             stderr="",
@@ -1277,7 +1281,6 @@ def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:
             service.run_scip_full(
                 tmp_path,
                 output_scip=tmp_path / "index.scip",
-                output_json=tmp_path / "index.json",
             )
         )
 
@@ -1292,41 +1295,6 @@ def test_tool_service_run_scip_full_execution_error(tmp_path: Path) -> None:
             service.run_scip_full(
                 tmp_path,
                 output_scip=tmp_path / "index.scip",
-                output_json=tmp_path / "index.json",
-            )
-        )
-
-
-def test_tool_service_run_scip_shard_not_found_raises(tmp_path: Path) -> None:
-    """ToolService.run_scip_shard should raise ToolNotFoundError when missing."""
-    tools_cfg = ToolsConfig.default()
-    exc = ToolNotFoundError(ToolName.SCIP_PYTHON, tools_cfg.scip_python_bin)
-    runner = PresetRunner(exc)
-    service = ToolService(runner, tools_cfg)
-
-    with pytest.raises(ToolNotFoundError):
-        asyncio.run(
-            service.run_scip_shard(
-                tmp_path,
-                rel_paths=["src/mod.py"],
-                output_scip=tmp_path / "index.scip",
-                output_json=tmp_path / "index.json",
-            )
-        )
-
-
-def test_tool_service_run_scip_shard_execution_error(tmp_path: Path) -> None:
-    """ToolService.run_scip_shard should raise ToolExecutionError on failure."""
-    runner = PresetRunner(RuntimeError("scip shard failed"))
-    service = ToolService(runner)
-
-    with pytest.raises(ToolExecutionError):
-        asyncio.run(
-            service.run_scip_shard(
-                tmp_path,
-                rel_paths=["module.py"],
-                output_scip=tmp_path / "index.scip",
-                output_json=tmp_path / "index.json",
             )
         )
 
@@ -1336,7 +1304,7 @@ def test_tool_service_run_pyrefly_success(tmp_path: Path) -> None:
     pyrefly_output = '[{"path": "mod.py", "severity": "error", "message": "err"}]'
     run = make_tool_run_result(
         ToolName.PYREFLY,
-        options=ToolRunOptions(
+        options=ToolRunResultOptions(
             returncode=0,
             stdout=pyrefly_output,
             stderr="",

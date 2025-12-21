@@ -72,6 +72,7 @@ TARGET_SPECS = (
         description="Function structural metrics and type annotations.",
         options=TargetSpecOptions(
             table_keys=FUNCTION_METRICS_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
 )

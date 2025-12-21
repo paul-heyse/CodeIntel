@@ -18,7 +18,12 @@ from codeintel.analytics.compute.hotspots.metrics import (
     build_hotspots,
     parse_git_log_lines,
 )
-from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunResult
+from codeintel.ingestion.engine.infrastructure import (
+    ToolName,
+    ToolRunner,
+    ToolRunOptions,
+    ToolRunResult,
+)
 from tests._helpers.assertions import (
     assert_logged,
     expect_equal,
@@ -543,11 +548,9 @@ def test_build_hotspots_logs_git_failure(
             tool: ToolName | str,
             args: Sequence[str],
             *,
-            cwd: Path | None = None,
-            output_path: Path | None = None,
-            timeout_s: float | None = None,
+            options: ToolRunOptions | None = None,
         ) -> ToolRunResult:
-            _ = (cwd, output_path, timeout_s)
+            _ = options
             self.invocations += 1
             resolved_tool = tool if isinstance(tool, ToolName) else ToolName(tool)
             return ToolRunResult(
