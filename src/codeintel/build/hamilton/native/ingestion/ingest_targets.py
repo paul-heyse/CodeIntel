@@ -17,7 +17,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -36,13 +36,14 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     make_output_target,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
+from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
-    BuildToolAdapter,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
@@ -55,8 +56,6 @@ from codeintel.ingestion.compute import (
     TypingIngestStep,
 )
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.engine.infrastructure import ToolRunner
-from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -64,7 +63,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from codeintel.ingestion.ports.change_detection import ChangeSet
+    from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 
 log = logging.getLogger(__name__)
 
@@ -102,25 +101,35 @@ TARGET_SPECS = (
         description="Repository module and file index from scanning.",
         options=TargetSpecOptions(
             table_keys=MODULES_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
         name=CONFIG_INGEST_TARGET_NAME,
         module="ingestion",
         description="Configuration file parsing and reference tracking.",
-        options=TargetSpecOptions(table_keys=(CONFIG_VALUES_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(CONFIG_VALUES_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=COVERAGE_INGEST_TARGET_NAME,
         module="ingestion",
         description="Line-level test coverage ingestion.",
-        options=TargetSpecOptions(table_keys=(COVERAGE_LINES_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(COVERAGE_LINES_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=TESTS_INGEST_TARGET_NAME,
         module="ingestion",
         description="Test catalog ingestion from pytest.",
-        options=TargetSpecOptions(table_keys=(TEST_CATALOG_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(TEST_CATALOG_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=TYPING_TARGET_NAME,
@@ -128,6 +137,7 @@ TARGET_SPECS = (
         description="Type annotation analysis and static diagnostics.",
         options=TargetSpecOptions(
             table_keys=TYPING_TABLE_KEYS,
+            allow_declared_overrides=True,
             resources=TargetResources(
                 tracker=True,
                 modules=True,
@@ -155,6 +165,8 @@ class ModuleScanResult:
         Discovered module records.
     change_set
         Computed change set for incremental processing.
+    file_state_hash
+        Stable hash of the current file state.
     table_counts
         Row counts per produced table.
     error
@@ -164,6 +176,7 @@ class ModuleScanResult:
     success: bool
     modules: Sequence[ModuleRecord] = field(default_factory=tuple)
     change_set: ChangeSet | None = None
+    file_state_hash: str | None = None
     table_counts: dict[str, int] = field(default_factory=dict)
     error: str | None = None
 
@@ -286,6 +299,7 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
             success=True,
             modules=tuple(modules),
             change_set=change_set,
+            file_state_hash=change_set.state_hash if change_set is not None else None,
             table_counts=result.table_counts or {},
         )
 
@@ -398,10 +412,19 @@ def t__modules(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, MODULES_TARGET_NAME)
-
-    if executor.should_skip():
-        return executor.skip()
+    options_hash = options_hash_for_target(env, MODULES_TARGET_NAME)
+    hash_options = InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=t__modules__scan.file_state_hash,
+    )
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        MODULES_TARGET_NAME,
+        options_hash=options_hash,
+        hash_options=hash_options,
+    )
 
     # Check for upstream failures
     if not t__modules__scan.success:
@@ -412,6 +435,9 @@ def t__modules(
             RuntimeError(t__modules__write_repo_map.error or "Repo map write failed")
         )
 
+    if executor.should_skip():
+        return executor.skip()
+
     # Compute final row counts
     def compute() -> dict[str, int]:
         row_counts = normalize_table_counts(
@@ -421,7 +447,25 @@ def t__modules(
         row_counts[REPO_MAP_TABLE_KEY] = t__modules__write_repo_map.row_count
         return row_counts
 
-    return executor.execute(compute)
+    change_set = t__modules__scan.change_set
+    change_delta: dict[str, object] | None = None
+    if change_set is not None:
+        change_delta = cast(
+            "dict[str, object]",
+            {
+                "state_hash": change_set.state_hash,
+                "added": [module.rel_path for module in change_set.added],
+                "modified": [module.rel_path for module in change_set.modified],
+                "deleted": [module.rel_path for module in change_set.deleted],
+                "counts": {
+                    "added": len(change_set.added),
+                    "modified": len(change_set.modified),
+                    "deleted": len(change_set.deleted),
+                },
+            },
+        )
+
+    return executor.execute(compute, change_delta=change_delta)
 
 
 # ---------------------------------------------------------------------------
@@ -439,13 +483,64 @@ class ConfigScanResult:
         Whether discovery completed successfully.
     config_files
         List of discovered config files.
+    file_state_hash
+        Stable hash of the config file state for input hashing.
     error
         Error message if discovery failed.
     """
 
     success: bool
     config_files: list[ModuleRecord] = field(default_factory=list)
+    file_state_hash: str | None = None
     error: str | None = None
+
+
+def _compute_file_state_hash(config_files: Sequence[ModuleRecord]) -> str:
+    state: dict[str, FileDigest] = {}
+    for record in config_files:
+        digest = HashChangeDetectionAdapter.compute_file_digest(record.file_path)
+        if digest is None:
+            continue
+        state[normalize_path(record.rel_path)] = digest
+    return HashChangeDetectionAdapter.compute_state_hash(state)
+
+
+def _config_ingest_execution_result(result: ExecutionResult) -> ExecutionResult:
+    table_counts = normalize_table_counts(
+        (CONFIG_VALUES_TABLE_KEY,),
+        dict(result.table_counts) if result.table_counts else None,
+    )
+    warnings = result.warnings
+
+    if result.skipped:
+        return ExecutionResult.skip(
+            result.skip_reason,
+            table_counts=table_counts,
+            warnings=warnings,
+        )
+
+    if not result.success:
+        return ExecutionResult.failed(
+            result.error or "Config ingest failed",
+            table_counts=table_counts,
+            warnings=warnings,
+        )
+
+    for warning in warnings:
+        log.warning("Config parse warning: %s", warning)
+
+    if warnings and result.rows_written == 0:
+        warning_text = "; ".join(warnings)
+        return ExecutionResult.failed(
+            f"Config ingest failed: {warning_text}",
+            table_counts=table_counts,
+            warnings=warnings,
+        )
+
+    return ExecutionResult.ok(
+        table_counts=table_counts,
+        warnings=warnings,
+    )
 
 
 @tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
@@ -469,7 +564,12 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
         if not config_files:
             log.info("No config files found matching profile")
 
-        return ConfigScanResult(success=True, config_files=config_files)
+        file_state_hash = _compute_file_state_hash(config_files)
+        return ConfigScanResult(
+            success=True,
+            config_files=config_files,
+            file_state_hash=file_state_hash,
+        )
     except Exception:
         log.exception("Config scan failed")
         return ConfigScanResult(success=False, error="Config file discovery failed with exception")
@@ -506,20 +606,7 @@ def t__config_ingest__ingest(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-
-        for error in result.errors or ():
-            log.warning("Config parse warning: %s", error)
-
-        if result.errors and result.rows_written == 0:
-            errors = "; ".join(result.errors)
-            return ExecutionResult.failed(f"Config ingest failed: {errors}")
-
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts(
-                (CONFIG_VALUES_TABLE_KEY,),
-                dict(result.table_counts) if result.table_counts else None,
-            ),
-        )
+        return _config_ingest_execution_result(result)
     except Exception:
         log.exception("Config ingestion failed")
         return ExecutionResult.failed("Config ingestion failed with exception")
@@ -529,6 +616,7 @@ def t__config_ingest__ingest(
 def t__config_ingest(
     env: BuildEnv,
     graph: TargetGraph,
+    t__config_ingest__scan: ConfigScanResult,
     t__config_ingest__ingest: ExecutionResult,
 ) -> TargetRunRecord:
     """Finalize config_ingest execution and persist manifest.
@@ -538,7 +626,14 @@ def t__config_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, CONFIG_INGEST_TARGET_NAME, t__config_ingest__ingest)
+    hash_options = InputHashOptions(file_state_hash=t__config_ingest__scan.file_state_hash)
+    return executor_materialize(
+        env,
+        graph,
+        CONFIG_INGEST_TARGET_NAME,
+        t__config_ingest__ingest,
+        hash_options=hash_options,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -586,11 +681,9 @@ async def t__coverage_ingest__ingest(
 
     try:
         storage = DuckDBStorageAdapter(env.gateway)
-        tool = BuildToolAdapter(
-            coverage_collector=None,  # Coverage collector from resources if available
-        )
+        tools = ToolRunnerAdapter(env.providers.tool_service)
 
-        step = CoverageIngestStep(storage=storage, tools=tool)
+        step = CoverageIngestStep(storage=storage, tools=tools)
         result = await step.execute_async(
             module_records,
             repo=env.snapshot.repo,
@@ -599,9 +692,24 @@ async def t__coverage_ingest__ingest(
             coverage_file=coverage_path,
         )
 
+        if result.skipped:
+            return ExecutionResult.skip(
+                result.skip_reason,
+                table_counts=normalize_table_counts(
+                    (COVERAGE_LINES_TABLE_KEY,),
+                    dict(result.table_counts) if result.table_counts else None,
+                ),
+                warnings=result.warnings,
+            )
         if not result.success:
-            errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            return ExecutionResult.failed(f"Coverage ingest failed: {errors}")
+            return ExecutionResult.failed(
+                result.error or "Coverage ingest failed",
+                table_counts=normalize_table_counts(
+                    (COVERAGE_LINES_TABLE_KEY,),
+                    dict(result.table_counts) if result.table_counts else None,
+                ),
+                warnings=result.warnings,
+            )
 
         return ExecutionResult.ok(
             table_counts=normalize_table_counts(
@@ -690,9 +798,24 @@ def t__tests_ingest__ingest(
             json_report_path=report_path,
         )
 
+        if result.skipped:
+            return ExecutionResult.skip(
+                result.skip_reason,
+                table_counts=normalize_table_counts(
+                    (TEST_CATALOG_TABLE_KEY,),
+                    dict(result.table_counts) if result.table_counts else None,
+                ),
+                warnings=result.warnings,
+            )
         if not result.success:
-            errors = "; ".join(result.errors) if result.errors else "Unknown error"
-            return ExecutionResult.failed(f"Tests ingest failed: {errors}")
+            return ExecutionResult.failed(
+                result.error or "Tests ingest failed",
+                table_counts=normalize_table_counts(
+                    (TEST_CATALOG_TABLE_KEY,),
+                    dict(result.table_counts) if result.table_counts else None,
+                ),
+                warnings=result.warnings,
+            )
 
         return ExecutionResult.ok(
             table_counts=normalize_table_counts(
@@ -753,12 +876,7 @@ def t__typing__ingest(
     storage = DuckDBStorageAdapter(env.gateway)
     discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
 
-    runner = ToolRunner(
-        tools_config=env.providers.tool_runner.tools_config,
-        cache_dir=env.paths.build_dir / ".tool_cache",
-    )
-    service = ToolService(runner)
-    tools = ToolRunnerAdapter(service)
+    tools = ToolRunnerAdapter(env.providers.tool_service)
 
     step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
     result = asyncio.run(
@@ -774,14 +892,17 @@ def t__typing__ingest(
     if result.skipped:
         if result.skip_reason:
             log.info("Typing ingestion skipped: %s", result.skip_reason)
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts))
+        return ExecutionResult.skip(
+            result.skip_reason,
+            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
+            warnings=result.warnings,
         )
 
     if not result.success:
         return ExecutionResult.failed(
-            "; ".join(result.errors) if result.errors else "Typing ingestion failed",
+            result.error or "Typing ingestion failed",
             table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
+            warnings=result.warnings,
         )
 
     return ExecutionResult.ok(

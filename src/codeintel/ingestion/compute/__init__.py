@@ -18,7 +18,6 @@ Modules
 - typing_ingest: Type annotation analysis
 - coverage_ingest: Coverage data processing
 - tests_ingest: Test results processing
-- scip_ingest: SCIP symbol indexing
 - config_ingest: Configuration file flattening
 - repo_scan: Repository scanning and module discovery
 
@@ -42,13 +41,12 @@ print(f"Wrote {result.rows_written} rows")
 from __future__ import annotations
 
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
-from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
 from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
 from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.compute.scip_ingest import ScipIngestResult, ScipIngestStep
 from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 
@@ -59,10 +57,8 @@ __all__ = [
     "CoverageIngestStep",
     "CstExtractStep",
     "DocstringsExtractStep",
+    "ExecutionResult",
     "RepoScanStep",
-    "ScipIngestResult",
-    "ScipIngestStep",
-    "StepResult",
     "TestsIngestStep",
     "TypingIngestStep",
 ]

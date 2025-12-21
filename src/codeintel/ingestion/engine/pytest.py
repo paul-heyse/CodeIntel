@@ -14,6 +14,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
+    ToolRunOptions,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -112,9 +113,11 @@ class PytestPlugin(ToolPlugin):
             result = await self.runner.run_async(
                 ToolName.PYTEST,
                 args,
-                cwd=repo_root,
-                output_path=json_report_path,
-                timeout_s=self.tools_config.default_timeout_s,
+                options=ToolRunOptions(
+                    cwd=repo_root,
+                    output_path=json_report_path,
+                    timeout_s=self.tools_config.default_timeout_s,
+                ),
             )
         except ToolNotFoundError as exc:
             log.warning("pytest binary not found; skipping test ingestion")

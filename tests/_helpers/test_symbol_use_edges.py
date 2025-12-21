@@ -103,7 +103,7 @@ def test_load_symbol_function_graph_smoke(test_ctx: TestContext) -> None:
         ],
     )
 
-    graph = nx_views.load_symbol_function_graph(test_ctx.gateway, test_ctx.repo, test_ctx.commit)
+    graph = nx_views.load_symbol_function_graph(test_ctx.gateway)
 
     expect_true(graph.has_edge(10, 20))
     expect_equal(graph[10][20]["weight"], 2)

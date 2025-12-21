@@ -10,7 +10,7 @@ compatibility surfaces improves clarity, correctness, and extensibility.
 - **BREAKING**: Make the versioned asset catalog canonical
   (build.asset_versions + build.run_asset_versions + build.asset_version_events +
   build.asset_lineage), remove build.assets, and drop AssetRecord/AssetTracking legacy CRUD and
-  build.assets CLI output.
+  build.assets CLI output (no transitional view).
 - **BREAKING**: Separate immutable asset version metadata from run-scoped events and mappings;
   update catalog queries and CLI output to derive version history via event records.
 - **BREAKING**: Remove deprecated schema flags and outputs (`--only-native`, legacy diff output);
@@ -44,3 +44,7 @@ compatibility surfaces improves clarity, correctness, and extensibility.
   src/codeintel/cli/completions/fish_generator.py,
   src/codeintel/cli/completions/zsh_generator.py,
   src/codeintel/cli/observability/_telemetry.py.
+
+## Validation
+- `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
+- `uv run pytest -q` (pending user run)

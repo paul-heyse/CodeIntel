@@ -23,15 +23,13 @@ from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.runtime import GraphMetricsOptions
 from codeintel.ingestion import (
-    CoverageIngestStep,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
-    RepoScanStep,
     ToolRunnerAdapter,
-    TypingIngestStep,
 )
-from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner
+from codeintel.ingestion.compute import CoverageIngestStep, RepoScanStep, TypingIngestStep
+from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunOptions
 from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
@@ -139,7 +137,7 @@ def _generate_coverage_payload(
         result = runner.run(
             ToolName.COVERAGE,
             ["run", "--data-file", str(coverage_file), str(driver_path)],
-            cwd=repo_root,
+            options=ToolRunOptions(cwd=repo_root),
         )
     except ToolNotFoundError as exc:
         log.warning(

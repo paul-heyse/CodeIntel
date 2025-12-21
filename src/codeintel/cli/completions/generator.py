@@ -56,6 +56,7 @@ class ShellBackend(Protocol):
         ----------
         cmd
             Command specification.
+
         Returns
         -------
         list[str]

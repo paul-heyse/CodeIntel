@@ -138,31 +138,44 @@ TARGET_SPECS = (
         description="GOID resolution and crosswalk construction.",
         options=TargetSpecOptions(
             table_keys=GOIDS_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
         name=SYMBOL_USES_TARGET_NAME,
         module="graphs",
         description="Symbol definition-to-use edge extraction.",
-        options=TargetSpecOptions(table_keys=SYMBOL_USES_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=SYMBOL_USES_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=CALL_GRAPH_VIEWS_TARGET_NAME,
         module="graphs",
         description="Derived views over call graph for analytics.",
-        options=TargetSpecOptions(table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=GRAPH_METRICS_TARGET_NAME,
         module="graphs",
         description="Graph topology metrics for functions and modules.",
-        options=TargetSpecOptions(table_keys=GRAPH_METRICS_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=GRAPH_METRICS_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=GRAPH_VALIDATION_TARGET_NAME,
         module="graphs",
         description="Graph integrity validation checks.",
-        options=TargetSpecOptions(table_keys=GRAPH_VALIDATION_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=GRAPH_VALIDATION_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
 )
 
@@ -215,6 +228,10 @@ class GoidExtractResult:
         Number of crosswalk entries extracted.
     table_counts
         Row counts per produced table.
+    skipped
+        Whether extraction was skipped.
+    skip_reason
+        Optional reason for skipping extraction.
     error
         Fatal error message if extraction failed.
     """
@@ -223,6 +240,8 @@ class GoidExtractResult:
     goid_count: int = 0
     crosswalk_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 
@@ -243,6 +262,10 @@ class SymbolUsesExtractResult:
         Number of symbol use edges extracted.
     table_counts
         Row counts per produced table.
+    skipped
+        Whether extraction was skipped.
+    skip_reason
+        Optional reason for skipping extraction.
     error
         Fatal error message if extraction failed.
     """
@@ -250,6 +273,8 @@ class SymbolUsesExtractResult:
     success: bool
     edge_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 

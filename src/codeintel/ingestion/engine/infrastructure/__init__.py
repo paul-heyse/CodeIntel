@@ -22,6 +22,7 @@ from codeintel.ingestion.engine.infrastructure.runner import (
     ToolName,
     ToolNotFoundError,
     ToolRunner,
+    ToolRunOptions,
     ToolRunResult,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "ToolExecutionError",
     "ToolName",
     "ToolNotFoundError",
+    "ToolRunOptions",
     "ToolRunResult",
     "ToolRunner",
 ]

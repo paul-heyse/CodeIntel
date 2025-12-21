@@ -501,6 +501,8 @@ def create_run_record(
 def save_manifest(
     env: BuildEnv,
     record: TargetRunRecord,
+    *,
+    change_delta: Mapping[str, object] | None = None,
 ) -> None:
     """Persist an OutputManifest for a completed native target execution.
 
@@ -510,6 +512,8 @@ def save_manifest(
         Build environment with gateway access.
     record
         Target run record to persist as manifest.
+    change_delta
+        Optional change-detection delta payload for auditability.
     """
     manifest = OutputManifest(
         target=record.target,
@@ -521,6 +525,7 @@ def save_manifest(
         input_hash=record.input_hash or "",
         row_count=sum(record.row_counts.values()) if record.row_counts else None,
         options_hash=record.options_hash,
+        change_delta=dict(change_delta) if change_delta is not None else None,
     )
 
     env.gateway.build.save_manifest(manifest)

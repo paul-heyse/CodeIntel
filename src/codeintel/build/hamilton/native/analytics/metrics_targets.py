@@ -104,19 +104,28 @@ TARGET_SPECS = (
         name=FUNCTION_HISTORY_TARGET_NAME,
         module="analytics",
         description="Function git history and churn metrics.",
-        options=TargetSpecOptions(table_keys=(FUNCTION_HISTORY_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(FUNCTION_HISTORY_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=HISTORY_TIMESERIES_TARGET_NAME,
         module="analytics",
         description="Historical metrics timeseries for trending.",
-        options=TargetSpecOptions(table_keys=(HISTORY_TIMESERIES_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(HISTORY_TIMESERIES_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
         module="analytics",
         description="Graph metrics for subsystems.",
-        options=TargetSpecOptions(table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
@@ -124,19 +133,26 @@ TARGET_SPECS = (
         description="Graph metrics from symbol usage patterns.",
         options=TargetSpecOptions(
             table_keys=SYMBOL_GRAPH_METRICS_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
         name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
         module="analytics",
         description="Subsystem vs import community agreement.",
-        options=TargetSpecOptions(table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=TEST_GRAPH_METRICS_TARGET_NAME,
         module="analytics",
         description="Graph metrics from test-function bipartite graph.",
-        options=TargetSpecOptions(table_keys=TEST_GRAPH_METRICS_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=TEST_GRAPH_METRICS_TABLE_KEYS,
+            allow_declared_overrides=True,
+        ),
     ),
 )
 

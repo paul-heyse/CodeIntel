@@ -15,9 +15,9 @@ The targets share a common pattern:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -57,6 +57,7 @@ TARGET_SPECS = (
         description="Python AST extraction and metrics.",
         options=TargetSpecOptions(
             table_keys=AST_TABLE_KEYS,
+            allow_declared_overrides=True,
             resources=TargetResources(tracker=True, modules=True),
             execution=CPU_INTENSIVE_EXECUTION,
         ),
@@ -65,81 +66,15 @@ TARGET_SPECS = (
         name=CST_TARGET_NAME,
         module="ingestion",
         description="Concrete syntax tree extraction.",
-        options=TargetSpecOptions(table_keys=CST_TABLE_KEYS),
+        options=TargetSpecOptions(table_keys=CST_TABLE_KEYS, allow_declared_overrides=True),
     ),
     make_output_target(
         name=DOCSTRINGS_TARGET_NAME,
         module="ingestion",
         description="Docstring extraction and parsing.",
-        options=TargetSpecOptions(table_keys=DOCSTRINGS_TABLE_KEYS),
+        options=TargetSpecOptions(table_keys=DOCSTRINGS_TABLE_KEYS, allow_declared_overrides=True),
     ),
 )
-
-
-@dataclass(frozen=True)
-class AstExtractResult:
-    """Result from AST extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    table_counts
-        Row counts per produced table.
-    errors
-        List of extraction errors (non-fatal).
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class CstExtractResult:
-    """Result from CST extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    table_counts
-        Row counts per produced table.
-    errors
-        List of extraction errors (non-fatal).
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class DocstringsExtractResult:
-    """Result from docstring extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    table_counts
-        Row counts per produced table.
-    errors
-        List of extraction errors (non-fatal).
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    table_counts: dict[str, int] = field(default_factory=dict)
-    errors: list[str] = field(default_factory=list)
-    error: str | None = None
 
 
 @tag_tool(domain="ingestion", target=AST_TARGET_NAME)
@@ -147,25 +82,21 @@ def t__ast__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> AstExtractResult:
+) -> ExecutionResult:
     """Execute AST extraction on repository modules.
 
     Returns
     -------
-    AstExtractResult
+    ExecutionResult
         Extraction status and per-table row counts.
     """
     if t__modules.status != "succeeded":
-        return AstExtractResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     try:
         if not module_records:
             log.info("No modules found for AST extraction")
-            return AstExtractResult(
-                success=True,
+            return ExecutionResult.ok(
                 table_counts=normalize_table_counts(AST_TABLE_KEYS, None),
             )
 
@@ -177,24 +108,36 @@ def t__ast__extract(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        return AstExtractResult(
-            success=True,
-            table_counts=normalize_table_counts(
-                AST_TABLE_KEYS,
-                dict(result.table_counts) if result.table_counts else None,
-            ),
-            errors=list(result.errors) if result.errors else [],
+        normalized_counts = normalize_table_counts(
+            AST_TABLE_KEYS,
+            dict(result.table_counts) if result.table_counts else None,
+        )
+        if result.skipped:
+            return ExecutionResult.skip(
+                result.skip_reason,
+                table_counts=normalized_counts,
+                warnings=result.warnings,
+            )
+        if not result.success:
+            return ExecutionResult.failed(
+                result.error or "AST extraction failed",
+                table_counts=normalized_counts,
+                warnings=result.warnings,
+            )
+        return ExecutionResult.ok(
+            table_counts=normalized_counts,
+            warnings=result.warnings,
         )
     except Exception as exc:
         log.exception("AST extraction failed")
-        return AstExtractResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @tag_materialize(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast(
     env: BuildEnv,
     graph: TargetGraph,
-    t__ast__extract: AstExtractResult,
+    t__ast__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize AST target with validation.
 
@@ -206,10 +149,12 @@ def t__ast(
     executor = NativeTargetExecutor.for_target(env, graph, AST_TARGET_NAME)
     if executor.should_skip():
         return executor.skip()
+    if t__ast__extract.skipped:
+        return executor.skip()
     if not t__ast__extract.success:
         return executor.fail(RuntimeError(t__ast__extract.error or "AST extraction failed"))
 
-    for warning in t__ast__extract.errors:
+    for warning in t__ast__extract.warnings:
         log.warning("AST extraction warning: %s", warning)
 
     return executor.execute(
@@ -225,25 +170,21 @@ def t__cst__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> CstExtractResult:
+) -> ExecutionResult:
     """Execute CST extraction on repository modules.
 
     Returns
     -------
-    CstExtractResult
+    ExecutionResult
         Extraction status and per-table row counts.
     """
     if t__modules.status != "succeeded":
-        return CstExtractResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     try:
         if not module_records:
             log.info("No modules found for CST extraction")
-            return CstExtractResult(
-                success=True,
+            return ExecutionResult.ok(
                 table_counts=normalize_table_counts(CST_TABLE_KEYS, None),
             )
 
@@ -255,24 +196,36 @@ def t__cst__extract(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        return CstExtractResult(
-            success=True,
-            table_counts=normalize_table_counts(
-                CST_TABLE_KEYS,
-                dict(result.table_counts) if result.table_counts else None,
-            ),
-            errors=list(result.errors) if result.errors else [],
+        normalized_counts = normalize_table_counts(
+            CST_TABLE_KEYS,
+            dict(result.table_counts) if result.table_counts else None,
+        )
+        if result.skipped:
+            return ExecutionResult.skip(
+                result.skip_reason,
+                table_counts=normalized_counts,
+                warnings=result.warnings,
+            )
+        if not result.success:
+            return ExecutionResult.failed(
+                result.error or "CST extraction failed",
+                table_counts=normalized_counts,
+                warnings=result.warnings,
+            )
+        return ExecutionResult.ok(
+            table_counts=normalized_counts,
+            warnings=result.warnings,
         )
     except Exception as exc:
         log.exception("CST extraction failed")
-        return CstExtractResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @tag_materialize(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst(
     env: BuildEnv,
     graph: TargetGraph,
-    t__cst__extract: CstExtractResult,
+    t__cst__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize CST target with validation.
 
@@ -284,10 +237,12 @@ def t__cst(
     executor = NativeTargetExecutor.for_target(env, graph, CST_TARGET_NAME)
     if executor.should_skip():
         return executor.skip()
+    if t__cst__extract.skipped:
+        return executor.skip()
     if not t__cst__extract.success:
         return executor.fail(RuntimeError(t__cst__extract.error or "CST extraction failed"))
 
-    for warning in t__cst__extract.errors:
+    for warning in t__cst__extract.warnings:
         log.warning("CST extraction warning: %s", warning)
 
     return executor.execute(
@@ -303,25 +258,21 @@ def t__docstrings__extract(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> DocstringsExtractResult:
+) -> ExecutionResult:
     """Execute docstring extraction on repository modules.
 
     Returns
     -------
-    DocstringsExtractResult
+    ExecutionResult
         Extraction status and per-table row counts.
     """
     if t__modules.status != "succeeded":
-        return DocstringsExtractResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     try:
         if not module_records:
             log.info("No modules found for docstring extraction")
-            return DocstringsExtractResult(
-                success=True,
+            return ExecutionResult.ok(
                 table_counts=normalize_table_counts(DOCSTRINGS_TABLE_KEYS, None),
             )
 
@@ -333,24 +284,36 @@ def t__docstrings__extract(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        return DocstringsExtractResult(
-            success=True,
-            table_counts=normalize_table_counts(
-                DOCSTRINGS_TABLE_KEYS,
-                dict(result.table_counts) if result.table_counts else None,
-            ),
-            errors=list(result.errors) if result.errors else [],
+        normalized_counts = normalize_table_counts(
+            DOCSTRINGS_TABLE_KEYS,
+            dict(result.table_counts) if result.table_counts else None,
+        )
+        if result.skipped:
+            return ExecutionResult.skip(
+                result.skip_reason,
+                table_counts=normalized_counts,
+                warnings=result.warnings,
+            )
+        if not result.success:
+            return ExecutionResult.failed(
+                result.error or "Docstring extraction failed",
+                table_counts=normalized_counts,
+                warnings=result.warnings,
+            )
+        return ExecutionResult.ok(
+            table_counts=normalized_counts,
+            warnings=result.warnings,
         )
     except Exception as exc:
         log.exception("Docstring extraction failed")
-        return DocstringsExtractResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @tag_materialize(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings(
     env: BuildEnv,
     graph: TargetGraph,
-    t__docstrings__extract: DocstringsExtractResult,
+    t__docstrings__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Materialize docstrings target with validation.
 
@@ -362,12 +325,14 @@ def t__docstrings(
     executor = NativeTargetExecutor.for_target(env, graph, DOCSTRINGS_TARGET_NAME)
     if executor.should_skip():
         return executor.skip()
+    if t__docstrings__extract.skipped:
+        return executor.skip()
     if not t__docstrings__extract.success:
         return executor.fail(
             RuntimeError(t__docstrings__extract.error or "Docstring extraction failed")
         )
 
-    for warning in t__docstrings__extract.errors:
+    for warning in t__docstrings__extract.warnings:
         log.warning("Docstring extraction warning: %s", warning)
 
     return executor.execute(
@@ -379,9 +344,6 @@ def t__docstrings(
 
 
 __all__ = [
-    "AstExtractResult",
-    "CstExtractResult",
-    "DocstringsExtractResult",
     "t__ast",
     "t__ast__extract",
     "t__cst",

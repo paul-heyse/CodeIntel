@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -356,7 +356,7 @@ class AstExtractStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute AST extraction on the provided modules.
 
         Parameters
@@ -370,17 +370,17 @@ class AstExtractStep(BaseExtractStep):
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         ast_rows: list[list[object]] = []
         metric_rows: list[list[object]] = []
-        errors: list[str] = []
+        warnings: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_ast(module, source)
             if result is None:
-                errors.append(f"Failed to extract AST from {module.rel_path}")
+                warnings.append(f"Failed to extract AST from {module.rel_path}")
                 continue
 
             ast_rows.extend(result.ast_rows)
@@ -388,12 +388,9 @@ class AstExtractStep(BaseExtractStep):
                 metric_rows.append(result.metric_row)
 
         table_counts = self._write_and_count("core.ast_nodes", ast_rows, repo=repo, commit=commit)
-        total_rows = table_counts.get("core.ast_nodes", 0)
-
         if metric_rows:
             result = self._storage.write_batch("core.ast_metrics", metric_rows)
             table_counts["core.ast_metrics"] = result.rows_affected
-            total_rows += result.rows_affected
 
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",
@@ -403,10 +400,9 @@ class AstExtractStep(BaseExtractStep):
             len(metric_rows),
         )
 
-        return StepResult(
-            rows_written=total_rows,
+        return ExecutionResult.ok(
             table_counts=table_counts,
-            errors=errors,
+            warnings=tuple(warnings),
         )
 
 

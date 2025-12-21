@@ -32,6 +32,7 @@ class InputHashOptions:
 
     options_hash: str | None = None
     manifests: Mapping[str, OutputManifest] | None = None
+    file_state_hash: str | None = None
 
 
 def compute_input_hash(
@@ -132,6 +133,7 @@ def compute_input_hash_with_deps(
     resolved_options = options or InputHashOptions()
     options_hash = resolved_options.options_hash
     manifests = resolved_options.manifests
+    file_state_hash = resolved_options.file_state_hash
 
     hasher.update(get_build_engine_version(settings).encode("utf-8"))
     hasher.update(b"|")
@@ -165,6 +167,11 @@ def compute_input_hash_with_deps(
 
     hasher.update(",".join(dep_hash_list).encode("utf-8"))
     hasher.update(b"|")
+
+    if file_state_hash is not None:
+        hasher.update(b"file_state:")
+        hasher.update(file_state_hash.encode("utf-8"))
+        hasher.update(b"|")
 
     if options_hash is not None:
         hasher.update(options_hash.encode("utf-8"))

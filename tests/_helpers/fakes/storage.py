@@ -29,9 +29,10 @@ class FakeIngestStorage:
     Why This Exists
     ---------------
     The ``IngestStoragePort`` protocol exists specifically to enable this kind
-    of test isolation. Ingestion compute steps (``AstExtractStep``, ``ScipIngestStep``,
-    etc.) depend on the protocol rather than ``DuckDBStorageAdapter`` directly,
-    allowing tests to inject this fake for fast, isolated unit testing.
+    of test isolation. Ingestion compute steps (``AstExtractStep``,
+    ``DocstringsExtractStep``, etc.) depend on the protocol rather than
+    ``DuckDBStorageAdapter`` directly, allowing tests to inject this fake for
+    fast, isolated unit testing.
 
     Attributes
     ----------

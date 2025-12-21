@@ -25,6 +25,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.runtime_typing import Callable, Mapping, Sequence
 from codeintel.build.hamilton.tagging import tag_materialize
@@ -134,6 +135,8 @@ def record(
 
 def create_row_extractor(
     result_attr: str,
+    *,
+    table_key: str | None = None,
     columns: tuple[str, ...] | None = None,
     row_converter: Callable[[Any], tuple[object, ...]] | None = None,
 ) -> Callable[[object], tuple[tuple[object, ...], ...] | None]:
@@ -146,6 +149,8 @@ def create_row_extractor(
     ----------
     result_attr
         Name of the attribute on the Result dataclass containing the rows.
+    table_key
+        Table key used to resolve schema-based column order.
     columns
         Column names in the desired order for tuple conversion. If provided
         and row_converter is None, rows are assumed to be mappings and will
@@ -163,10 +168,12 @@ def create_row_extractor(
 
     Examples
     --------
-    Create an extractor for metrics rows using column order:
+    Create an extractor for metrics rows using schema order:
 
-    >>> COLS = ("id", "name", "value")
-    >>> extract_metrics = create_row_extractor("metrics_rows", columns=COLS)
+    >>> extract_metrics = create_row_extractor(
+    ...     "metrics_rows",
+    ...     table_key="analytics.metrics",
+    ... )
     >>> # Assuming result.metrics_rows = [{"id": 1, "name": "a", "value": 10}]
     >>> rows = extract_metrics(result)  # Returns ((1, "a", 10),)
 
@@ -192,25 +199,23 @@ def create_row_extractor(
             Extracted rows as tuples, or None if compute_result is None
             or the attribute is empty/None.
         """
-        if compute_result is None:
-            return None
-
-        rows = getattr(compute_result, result_attr, None)
+        rows = getattr(compute_result, result_attr, None) if compute_result is not None else None
         if rows is None:
             return None
 
-        # Handle empty sequences
         if isinstance(rows, Sequence) and len(rows) == 0:
             return None
 
         if row_converter is not None:
             return tuple(row_converter(row) for row in rows)
 
+        if table_key is not None:
+            serializer = row_serializer_for_table_key(table_key)
+            return tuple(serializer(row) for row in rows)
+
         if columns is not None:
-            # Assume rows are mappings (dict or TypedDict)
             return tuple(_row_to_tuple(row, columns) for row in rows)
 
-        # Assume rows are already tuples
         return tuple(rows)
 
     return extractor

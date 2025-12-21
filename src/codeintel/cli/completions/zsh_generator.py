@@ -141,6 +141,7 @@ def _generate_zsh_command(
         Command specification.
     indent
         Base indentation string.
+
     Returns
     -------
     list[str]

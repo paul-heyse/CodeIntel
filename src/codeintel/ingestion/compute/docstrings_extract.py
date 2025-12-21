@@ -16,7 +16,7 @@ from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
-from codeintel.ingestion.compute.base import BaseExtractStep, StepResult
+from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -266,7 +266,7 @@ class DocstringsExtractStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute docstring extraction on the provided modules.
 
         Parameters
@@ -280,7 +280,7 @@ class DocstringsExtractStep(BaseExtractStep):
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         ctx = DocstringContext(
@@ -291,9 +291,8 @@ class DocstringsExtractStep(BaseExtractStep):
 
         columns = load_columns_by_table().get("core.docstrings", [])
         if not columns:
-            return StepResult.fail("core.docstrings missing from schema provider")
+            return ExecutionResult.failed("core.docstrings missing from schema provider")
         all_rows: list[tuple[object, ...]] = []
-        errors: list[str] = []
         processed_paths: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
@@ -311,7 +310,6 @@ class DocstringsExtractStep(BaseExtractStep):
             )
 
         table_counts = self._write_and_count("core.docstrings", all_rows, repo=repo, commit=commit)
-        total_rows = table_counts.get("core.docstrings", 0)
 
         log.info(
             "Docstring extraction: repo=%s commit=%s rows=%d",
@@ -320,11 +318,7 @@ class DocstringsExtractStep(BaseExtractStep):
             len(all_rows),
         )
 
-        return StepResult(
-            rows_written=total_rows,
-            table_counts=table_counts,
-            errors=errors,
-        )
+        return ExecutionResult.ok(table_counts=table_counts)
 
 
 __all__ = [

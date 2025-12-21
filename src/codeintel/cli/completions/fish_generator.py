@@ -113,6 +113,7 @@ def _generate_fish_command(
         Program name.
     cmd
         Command specification.
+
     Returns
     -------
     list[str]

@@ -6,6 +6,10 @@ This module contains:
 
 All schema definitions have been migrated from the legacy dataset_contract.py.
 
+Declared schemas are used for source-only inputs and explicit overrides
+for non-inferable outputs. DAG inference is canonical for inferable
+targets; declared schemas act as fallback when enabled in target specs.
+
 This module lives under ``codeintel.config.datasets`` so it can be imported by storage without
 creating a storage→build dependency.
 """
@@ -2004,6 +2008,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("output_hash", "VARCHAR", description="Hash of output data for integrity"),
             Column("row_count", "INTEGER", description="Number of rows written"),
             Column("options_hash", "VARCHAR", description="Hash of plugin configuration options"),
+            Column(
+                "change_delta",
+                "JSON",
+                description="JSON change delta from ingestion change detection",
+            ),
         ],
         primary_key=("target", "repo", "commit"),
         indexes=(

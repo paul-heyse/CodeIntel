@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "c982723aebcb922f48364cbc1b14a9e50a4ecd0dc3ccb1c98cd35d11d291bd40",
+  "buildspec_hash": "97923211030bd9ccb33df9c06d0124eafda1ca3867f94dc0734766f1e7d6c639",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -264,6 +264,14 @@
     {
       "schema_hash": "df2e4cbe6a408cf0577ae6d04277c097553559f730b0eac25ffdead624c9a1d6",
       "table_key": "core.repo_map"
+    },
+    {
+      "schema_hash": "84a88848c63c72d43aea83a224b5e02e4acd27f9f0200d3b00f3a53ecb974740",
+      "table_key": "core.scip_occurrences"
+    },
+    {
+      "schema_hash": "fec4c4ac83a25a249e4a750685e5d59dda2982a969723d1ec55c06528e1bc617",
+      "table_key": "core.scip_symbols"
     },
     {
       "schema_hash": "5d9b68bf47d32387da25edfd1e372d6937ff2d465ee7d9a930c73d769856a8a9",
@@ -763,7 +771,10 @@
       "domain": "ingestion",
       "impl_kind": "native",
       "name": "scip",
-      "outputs": []
+      "outputs": [
+        "core.scip_occurrences",
+        "core.scip_symbols"
+      ]
     },
     {
       "artifacts": [],

@@ -22,7 +22,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTypednessRow as TypednessRow,
 )
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.tools import ToolStatus
 
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
@@ -240,7 +240,7 @@ class TypingIngestStep:
         commit: str,
         repo_root: str,
         run_diagnostics: bool = True,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute typing analysis on the provided modules.
 
         Parameters
@@ -258,7 +258,7 @@ class TypingIngestStep:
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         diag_counts = DiagnosticCounts(pyright={}, pyrefly={}, ruff={})
@@ -362,7 +362,7 @@ class TypingIngestStep:
         diagnostic_rows: list[list[object]],
         repo: str,
         commit: str,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Persist rows to storage.
 
         Deletes existing rows for the same paths before inserting to ensure
@@ -382,11 +382,10 @@ class TypingIngestStep:
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Result with row counts.
         """
         table_counts: dict[str, int] = {}
-        total_rows = 0
 
         if typedness_rows:
             typedness_paths = [str(row[2]) for row in typedness_rows]
@@ -402,7 +401,6 @@ class TypingIngestStep:
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("analytics.typedness", typedness_rows, scope=scope)
             table_counts["analytics.typedness"] = result.rows_affected
-            total_rows += result.rows_affected
 
         if diagnostic_rows:
             diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
@@ -417,7 +415,6 @@ class TypingIngestStep:
 
             result = self._storage.write_batch("analytics.static_diagnostics", diagnostic_rows)
             table_counts["analytics.static_diagnostics"] = result.rows_affected
-            total_rows += result.rows_affected
 
         log.info(
             "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",
@@ -427,7 +424,7 @@ class TypingIngestStep:
             len(diagnostic_rows),
         )
 
-        return StepResult(rows_written=total_rows, table_counts=table_counts)
+        return ExecutionResult.ok(table_counts=table_counts)
 
     def execute(
         self,
@@ -436,7 +433,7 @@ class TypingIngestStep:
         repo: str,
         commit: str,
         repo_root: str,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute typing analysis synchronously (without diagnostics).
 
         Parameters
@@ -452,7 +449,7 @@ class TypingIngestStep:
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         return asyncio.run(

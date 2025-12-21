@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.storage.helpers.json import (
+    decode_json_dict,
     decode_json_list,
     deserialize_str_tuple,
     encode_json_compact,
@@ -39,7 +40,8 @@ def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
     row
         DuckDB row tuple from output_manifests table.
         Expected column order: target, repo, commit, plugin, computed_at,
-        duration_ms, input_hash, output_hash, row_count, options_hash
+        duration_ms, input_hash, output_hash, row_count, options_hash,
+        change_delta
 
     Returns
     -------
@@ -57,6 +59,7 @@ def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
         output_hash=str(row[7]) if row[7] is not None else None,
         row_count=int(row[8]) if row[8] is not None else None,
         options_hash=str(row[9]) if row[9] is not None else None,
+        change_delta=decode_json_dict(row[10]) if row[10] is not None else None,
     )
 
 
@@ -137,6 +140,11 @@ class BuildTracking:
         manifest
             The manifest to save.
         """
+        change_delta = (
+            encode_json_compact(manifest.change_delta)
+            if manifest.change_delta is not None
+            else None
+        )
         self._backend.upsert(
             "build.output_manifests",
             [
@@ -151,6 +159,7 @@ class BuildTracking:
                     manifest.output_hash,
                     manifest.row_count,
                     manifest.options_hash,
+                    change_delta,
                 )
             ],
             columns=(
@@ -164,6 +173,7 @@ class BuildTracking:
                 "output_hash",
                 "row_count",
                 "options_hash",
+                "change_delta",
             ),
             conflict_columns=("target", "repo", "commit"),
             update_columns=(
@@ -174,6 +184,7 @@ class BuildTracking:
                 "output_hash",
                 "row_count",
                 "options_hash",
+                "change_delta",
             ),
         )
 
@@ -198,6 +209,7 @@ class BuildTracking:
             """
             SELECT target, repo, commit, plugin, computed_at, duration_ms,
                    input_hash, output_hash, row_count, options_hash
+                   , change_delta
             FROM build.output_manifests
             WHERE target = ? AND repo = ? AND commit = ?
             """,
@@ -228,6 +240,7 @@ class BuildTracking:
             """
             SELECT target, repo, commit, plugin, computed_at, duration_ms,
                    input_hash, output_hash, row_count, options_hash
+                   , change_delta
             FROM build.output_manifests
             WHERE repo = ? AND commit = ?
             ORDER BY target

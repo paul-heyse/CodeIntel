@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 import pandas as pd
 
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
-from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.schemas.pandera_gen import pandera_schema_from_table_schema
 from codeintel.storage.gateway import ibis_facade
 
@@ -100,7 +100,7 @@ def get_pandera_schema(
     if dataset_schema is not None:
         return dataset_schema.pandera_schema
 
-    provider = schema_provider or declared_schema_provider()
+    provider = schema_provider or get_schema_service().table_provider
     table_schema = provider.get_table_schema(table_key)
     if table_schema is None:
         return None

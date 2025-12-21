@@ -112,6 +112,7 @@ class NativeTargetExecutor:
         target_name: str,
         *,
         options_hash: str | None = None,
+        hash_options: InputHashOptions | None = None,
     ) -> NativeTargetExecutor:
         """Create an executor for a named target.
 
@@ -125,6 +126,8 @@ class NativeTargetExecutor:
             Name of the target to execute.
         options_hash
             Optional configuration options hash.
+        hash_options
+            Optional hash inputs override (for example, file-state hash).
 
         Returns
         -------
@@ -150,16 +153,31 @@ class NativeTargetExecutor:
         if resolved_options_hash is None:
             resolved_options_hash = options_hash_for_target(env, target_name)
 
-        hash_options = InputHashOptions(
-            options_hash=resolved_options_hash,
-            manifests=env.manifest_index,
-        )
+        resolved_hash_options = hash_options
+        if resolved_hash_options is None:
+            resolved_hash_options = InputHashOptions(
+                options_hash=resolved_options_hash,
+                manifests=env.manifest_index,
+            )
+        else:
+            if resolved_hash_options.options_hash is None:
+                resolved_hash_options = InputHashOptions(
+                    options_hash=resolved_options_hash,
+                    manifests=resolved_hash_options.manifests,
+                    file_state_hash=resolved_hash_options.file_state_hash,
+                )
+            if resolved_hash_options.manifests is None:
+                resolved_hash_options = InputHashOptions(
+                    options_hash=resolved_hash_options.options_hash,
+                    manifests=env.manifest_index,
+                    file_state_hash=resolved_hash_options.file_state_hash,
+                )
         input_hash = compute_target_input_hash(
             target=target,
             snapshot=env.snapshot,
             gateway=env.gateway,
             settings=env.settings,
-            options=hash_options,
+            options=resolved_hash_options,
         )
 
         return cls(
@@ -219,6 +237,8 @@ class NativeTargetExecutor:
     def execute(
         self,
         compute_fn: Callable[[], dict[str, int]],
+        *,
+        change_delta: dict[str, object] | None = None,
     ) -> TargetRunRecord:
         """Execute with timing, error handling, and manifest persistence.
 
@@ -234,6 +254,8 @@ class NativeTargetExecutor:
         compute_fn
             Function that performs the computation and returns row counts.
             Should return a dict mapping table keys to row counts.
+        change_delta
+            Optional change-detection delta payload to persist with the manifest.
 
         Returns
         -------
@@ -264,11 +286,13 @@ class NativeTargetExecutor:
         except (KeyboardInterrupt, SystemExit, GeneratorExit):
             raise
 
-        return self._create_success_record(start, row_counts)
+        return self._create_success_record(start, row_counts, change_delta=change_delta)
 
     async def execute_async(
         self,
         compute_fn: Callable[[], Awaitable[dict[str, int]]],
+        *,
+        change_delta: dict[str, object] | None = None,
     ) -> TargetRunRecord:
         """Execute async compute function with timing and error handling.
 
@@ -285,6 +309,8 @@ class NativeTargetExecutor:
         compute_fn
             Async function that performs the computation and returns row counts.
             Should return a dict mapping table keys to row counts.
+        change_delta
+            Optional change-detection delta payload to persist with the manifest.
 
         Returns
         -------
@@ -316,7 +342,7 @@ class NativeTargetExecutor:
         except (KeyboardInterrupt, SystemExit, GeneratorExit):
             raise
 
-        return self._create_success_record(start, row_counts)
+        return self._create_success_record(start, row_counts, change_delta=change_delta)
 
     def fail(self, error: Exception) -> TargetRunRecord:
         """Create a failed record for an error that occurred before execution.
@@ -389,6 +415,8 @@ class NativeTargetExecutor:
         self,
         start: float,
         row_counts: dict[str, int],
+        *,
+        change_delta: dict[str, object] | None = None,
     ) -> TargetRunRecord:
         """Create a success record and persist manifest.
 
@@ -398,6 +426,8 @@ class NativeTargetExecutor:
             Start time from time.perf_counter().
         row_counts
             Dict mapping table keys to row counts.
+        change_delta
+            Optional change-detection delta payload to persist with the manifest.
 
         Returns
         -------
@@ -443,7 +473,7 @@ class NativeTargetExecutor:
             inputs=RunRecordInputs(env=self.env, run=run),
         )
 
-        save_manifest(self.env, record)
+        save_manifest(self.env, record, change_delta=change_delta)
         return record
 
 

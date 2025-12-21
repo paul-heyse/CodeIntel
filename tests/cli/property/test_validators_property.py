@@ -9,8 +9,9 @@ import pytest
 
 from codeintel.cli.config import validate_with_json_schema
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors import INTERNAL_ERROR, ProblemDetail
+from codeintel.cli.errors import ProblemDetail
 from codeintel.cli.introspection import IntValidator, StringValidator
+from codeintel.core.errors.taxonomy import INTERNAL_ERROR
 from tests._helpers.assertions import (
     expect_false,
     expect_true,

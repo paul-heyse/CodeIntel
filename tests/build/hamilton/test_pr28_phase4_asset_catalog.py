@@ -11,6 +11,7 @@ from codeintel.storage.tracking.asset_tracking import (
     AssetAliasRecord,
     AssetDiffRecord,
     AssetLineageEdgeRecord,
+    AssetVersionEventRecord,
     AssetVersionRecord,
     RunAssetVersionRecord,
 )
@@ -27,6 +28,7 @@ def test_pr28_phase4_asset_catalog_tables_exist() -> None:
     try:
         expected = {
             ("build", "asset_versions"),
+            ("build", "asset_version_events"),
             ("build", "run_asset_versions"),
             ("build", "asset_lineage"),
             ("build", "asset_aliases"),
@@ -57,15 +59,6 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
             asset_kind="table",
             asset_key="analytics.function_metrics",
             version_hash="0123456789abcdef",
-            repo="test/repo",
-            commit="abc123",
-            status="materialized",
-            run_id="run-1",
-            target="function_metrics",
-            impl_kind="native",
-            location="analytics.function_metrics",
-            input_hash="inputhash01234567",
-            options_hash=None,
             schema_hash="schemahash",
             row_count=10,
             bytes=None,
@@ -74,6 +67,25 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
         )
         written = gateway.assets.record_asset_versions_batch([version])
         expect_true(written >= 1)
+
+        event = AssetVersionEventRecord(
+            run_id="run-1",
+            repo="test/repo",
+            commit="abc123",
+            asset_kind="table",
+            asset_key="analytics.function_metrics",
+            version_hash="0123456789abcdef",
+            status="materialized",
+            target="function_metrics",
+            impl_kind="native",
+            location="analytics.function_metrics",
+            input_hash="inputhash01234567",
+            options_hash=None,
+            recorded_at=now,
+            meta={"fingerprint": "fast"},
+        )
+        events_written = gateway.assets.record_asset_version_events_batch([event])
+        expect_true(events_written >= 1)
 
         run_map = RunAssetVersionRecord(
             run_id="run-1",
@@ -91,6 +103,16 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
         mappings = gateway.assets.get_run_asset_versions(run_id="run-1")
         expect_length(mappings, 1)
         expect_equal(mappings[0].version_hash, "0123456789abcdef")
+
+        history = gateway.assets.get_asset_versions(
+            repo="test/repo",
+            commit="abc123",
+            asset_kind="table",
+            asset_key="analytics.function_metrics",
+            limit=1,
+        )
+        expect_length(history, 1)
+        expect_equal(history[0].location, "analytics.function_metrics")
 
         gateway.assets.set_alias(
             AssetAliasRecord(

@@ -17,7 +17,6 @@ from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
 from codeintel.ingestion import (
-    BuildToolAdapter,
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
@@ -131,7 +130,7 @@ class IngestionContextBundle:
     storage: DuckDBStorageAdapter
     discovery: FilesystemDiscoveryAdapter
     change_detection: HashChangeDetectionAdapter
-    tools: BuildToolAdapter
+    tools: ToolRunnerAdapter
     module_paths: tuple[str, ...]
 
 
@@ -259,7 +258,7 @@ def build_ingestion_adapters(
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
-    BuildToolAdapter,
+    ToolRunnerAdapter,
 ]:
     """Create ingestion adapters aligned with a target context.
 
@@ -271,11 +270,7 @@ def build_ingestion_adapters(
     storage = DuckDBStorageAdapter(ctx.gateway)
     discovery = FilesystemDiscoveryAdapter(ctx.snapshot.repo_root)
     change_detection = HashChangeDetectionAdapter(storage)
-    tools = BuildToolAdapter(
-        type_checker=ctx.providers.type_checker,
-        coverage_collector=ctx.providers.coverage_collector,
-        scip_indexer=ctx.providers.scip_indexer,
-    )
+    tools = ToolRunnerAdapter(ctx.providers.tool_service)
     return storage, discovery, change_detection, tools
 
 

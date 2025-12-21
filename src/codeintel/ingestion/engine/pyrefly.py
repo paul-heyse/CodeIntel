@@ -16,6 +16,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
+    ToolRunOptions,
 )
 from codeintel.ingestion.engine.plugins import (
     DiagnosticToolPlugin,
@@ -146,9 +147,11 @@ class PyreflyPlugin(DiagnosticToolPlugin):
             result = await self.runner.run_async(
                 ToolName.PYREFLY,
                 args,
-                cwd=repo_root,
-                output_path=output_path,
-                timeout_s=self.tools_config.default_timeout_s,
+                options=ToolRunOptions(
+                    cwd=repo_root,
+                    output_path=output_path,
+                    timeout_s=self.tools_config.default_timeout_s,
+                ),
             )
         except ToolNotFoundError:
             return self._not_found_result()

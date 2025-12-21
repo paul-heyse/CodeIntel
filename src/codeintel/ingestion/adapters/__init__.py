@@ -28,10 +28,6 @@ FilesystemDiscoveryAdapter
     ``SourceScanner``. Discovers Python modules by scanning directories
     with configurable scan profiles.
 
-BuildToolAdapter
-    Bridge from build protocols to ingestion ports. Connects Hamilton build
-    context to ingestion storage and tool operations.
-
 HashChangeDetectionAdapter
     Implements ``ChangeDetectionPort`` using Blake2b hash-based change
     detection. Computes file digests to detect modified sources.
@@ -62,7 +58,6 @@ See Also
 
 from __future__ import annotations
 
-from codeintel.ingestion.adapters.build_tool_adapter import BuildToolAdapter
 from codeintel.ingestion.adapters.duckdb_storage import (
     DuckDBStorageAdapter,
 )
@@ -71,7 +66,6 @@ from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetecti
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 
 __all__ = [
-    "BuildToolAdapter",
     "DuckDBStorageAdapter",
     "FilesystemDiscoveryAdapter",
     "HashChangeDetectionAdapter",

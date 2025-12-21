@@ -28,7 +28,9 @@ from codeintel.analytics.functions.function_effects import (
     FunctionEffectsOptions,
     build_function_effects_rows,
 )
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
+from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
@@ -53,7 +55,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import CatalogService
+from codeintel.core.resources import ResourceNotFoundError
 from codeintel.graphs.runtime import resolve_graph_runtime
 
 log = logging.getLogger(__name__)
@@ -70,13 +72,19 @@ TARGET_SPECS = (
         name=FUNCTION_EFFECTS_TARGET_NAME,
         module="analytics",
         description="Function purity and side-effect analysis.",
-        options=TargetSpecOptions(table_keys=(FUNCTION_EFFECTS_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(FUNCTION_EFFECTS_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
     make_output_target(
         name=FUNCTION_CONTRACTS_TARGET_NAME,
         module="analytics",
         description="Inferred function pre/postconditions.",
-        options=TargetSpecOptions(table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,)),
+        options=TargetSpecOptions(
+            table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,),
+            allow_declared_overrides=True,
+        ),
     ),
 )
 
@@ -161,14 +169,19 @@ def t__function_contracts__compute(
             return FunctionContractsResult(rows=None)
 
     try:
+        registry = env.providers.resources.registry_for(
+            env,
+            target_name=FUNCTION_CONTRACTS_TARGET_NAME,
+            include=AnalyticsResourceIncludes(
+                include_graphs=False,
+                include_asts=True,
+            ),
+        )
+
         # Load catalog
         try:
-            catalog = CatalogService.from_db(
-                env.gateway,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
-        except (RuntimeError, ValueError) as exc:
+            catalog = registry.require(CatalogProvider).get()
+        except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             return FunctionContractsResult(
                 rows=None,
@@ -177,15 +190,8 @@ def t__function_contracts__compute(
 
         # Load function ASTs
         try:
-            function_ast_map, _missing = load_function_asts(
-                env.gateway,
-                FunctionAstLoadRequest(
-                    repo=env.snapshot.repo,
-                    commit=env.snapshot.commit,
-                    repo_root=env.snapshot.repo_root,
-                    catalog_provider=catalog,
-                ),
-            )
+            ast_data = registry.require(AstProvider).get()
+            function_ast_map = ast_data.function_ast_map
         except (RuntimeError, ValueError, OSError) as exc:
             log.warning("Failed to load function ASTs: %s", exc)
             function_ast_map = {}
@@ -339,14 +345,16 @@ def t__function_effects__compute(
         if should_skip_native_target(env, target, input_hash):
             return FunctionEffectsResult(rows=None)
 
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=FUNCTION_EFFECTS_TARGET_NAME,
+        include=AnalyticsResourceIncludes(include_graphs=False),
+    )
+
     try:
         try:
-            catalog = CatalogService.from_db(
-                env.gateway,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
-        except (RuntimeError, ValueError) as exc:
+            catalog = registry.require(CatalogProvider).get()
+        except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             catalog = None
 

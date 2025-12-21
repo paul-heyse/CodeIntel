@@ -80,6 +80,7 @@ class HashChangeDetectionAdapter:
             Detected changes (added, modified, deleted).
         """
         current_state = self._build_current_state(current_modules)
+        state_hash = self.compute_state_hash(current_state)
 
         previous_state = self.load_previous_state(request.repo, request.language)
 
@@ -125,7 +126,12 @@ class HashChangeDetectionAdapter:
             len(deleted),
         )
 
-        return ChangeSet(added=added, modified=modified, deleted=deleted)
+        return ChangeSet(
+            added=added,
+            modified=modified,
+            deleted=deleted,
+            state_hash=state_hash,
+        )
 
     def load_previous_state(
         self,
@@ -283,6 +289,28 @@ class HashChangeDetectionAdapter:
         except OSError as exc:
             log.warning("Failed to stat %s: %s", path, exc)
             return None
+
+    @staticmethod
+    def compute_state_hash(state: Mapping[str, FileDigest]) -> str:
+        """Compute a stable hash for the current file state.
+
+        Parameters
+        ----------
+        state
+            Mapping from relative path to file digest.
+
+        Returns
+        -------
+        str
+            Stable hash derived from path + content hashes.
+        """
+        hasher = hashlib.sha256()
+        for rel_path, digest in sorted(state.items()):
+            hasher.update(rel_path.encode("utf-8"))
+            hasher.update(b":")
+            hasher.update(digest.content_hash.encode("utf-8"))
+            hasher.update(b"|")
+        return hasher.hexdigest()[:16]
 
     def _build_current_state(
         self,

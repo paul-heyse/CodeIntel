@@ -31,8 +31,11 @@ from codeintel.analytics.dependencies.compute import (
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.analytics.entrypoints.compute import EntrypointsResult, compute_entrypoints_pure
 from codeintel.analytics.entrypoints.core import EntrypointBuildInputs
-from codeintel.analytics.parsing.ast_cache import FunctionAstLoadRequest, load_function_asts
+from codeintel.analytics.resources.asts import AstProvider
+from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
+from codeintel.analytics.resources.module_map import ModuleMapProvider
+from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -56,8 +59,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materi
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import CatalogService
-from codeintel.storage.helpers.module_index import load_module_map
+from codeintel.core.resources import ResourceNotFoundError
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
@@ -93,6 +95,7 @@ TARGET_SPECS = (
         description="External library dependency analysis.",
         options=TargetSpecOptions(
             table_keys=EXTERNAL_DEPS_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -101,6 +104,7 @@ TARGET_SPECS = (
         description="External entrypoint detection (HTTP, CLI, etc.).",
         options=TargetSpecOptions(
             table_keys=ENTRYPOINTS_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
 )
@@ -122,35 +126,32 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
     ExternalDependencyInputs | None
         Inputs for dependency analysis, or None if unavailable.
     """
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=EXTERNAL_DEPS_TARGET_NAME,
+        include=AnalyticsResourceIncludes(
+            include_graphs=False,
+            include_asts=True,
+            include_module_map=True,
+        ),
+    )
+
     try:
-        catalog = CatalogService.from_db(
-            env.gateway,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-    except (RuntimeError, ValueError) as exc:
+        catalog = registry.require(CatalogProvider).get()
+    except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return None
 
-    module_map: dict[str, str] = dict(catalog.catalog().module_by_path)
-    missing_goids: set[int] = set()
+    module_map = dict(registry.require(ModuleMapProvider).module_map)
     features_map: dict[int, FunctionAstFeatures] = {}
 
     try:
-        ast_by_goid, missing_goids = load_function_asts(
-            env.gateway,
-            FunctionAstLoadRequest(
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-                repo_root=env.snapshot.repo_root,
-                catalog_provider=catalog,
-            ),
-        )
+        ast_data = registry.require(AstProvider).get()
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to load function ASTs: %s", exc)
         return None
 
-    for func_ast in ast_by_goid.values():
+    for func_ast in ast_data.function_ast_map.values():
         module = catalog.module_for_path(func_ast.rel_path)
         if module is None:
             module = func_ast.rel_path.replace("/", ".").removesuffix(".py")
@@ -159,9 +160,9 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
     return ExternalDependencyInputs(
         catalog_provider=catalog,
         module_map=module_map,
-        ast_by_goid=ast_by_goid,
+        ast_by_goid=ast_data.function_ast_map,
         features_map=features_map,
-        missing_goids=missing_goids,
+        missing_goids=ast_data.missing_function_goids,
     )
 
 
@@ -381,37 +382,33 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
     EntrypointBuildInputs | None
         Prepared inputs, or None when required data is unavailable.
     """
+    registry = env.providers.resources.registry_for(
+        env,
+        target_name=ENTRYPOINTS_TARGET_NAME,
+        include=AnalyticsResourceIncludes(
+            include_graphs=False,
+            include_features=True,
+            include_module_map=True,
+        ),
+    )
+
     try:
-        catalog = CatalogService.from_db(
-            env.gateway,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-    except (RuntimeError, ValueError) as exc:
+        catalog = registry.require(CatalogProvider).get()
+    except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return None
 
-    module_map = load_module_map(
-        env.gateway,
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        logger=log,
-    )
+    module_map = registry.require(ModuleMapProvider).module_map
 
-    features_map: dict[int, FunctionAstFeatures] = {}
     try:
-        provider = FeaturesProvider(
-            gateway=env.gateway,
-            snapshot=env.snapshot,
-            catalog_provider=catalog,
-        )
-        features_map = provider.get()
+        features_map = registry.require(FeaturesProvider).get()
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to compute function features: %s", exc)
+        features_map = {}
 
     return EntrypointBuildInputs(
         catalog_provider=catalog,
-        module_map=module_map,
+        module_map=dict(module_map),
         features_map=features_map,
     )
 

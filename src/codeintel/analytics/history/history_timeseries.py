@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 import ibis
 
-from codeintel.ingestion.engine.infrastructure import ToolRunner
+from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import (
     DuckDBConnection,
 )
@@ -514,7 +514,11 @@ def _fetch_commit_timestamp(
 ) -> datetime | None:
     args = ["git", "show", "-s", "--format=%cI", commit]
     active_runner = runner or ToolRunner(cache_dir=repo_root / "build" / ".tool_cache")
-    result = active_runner.run("git", args, cwd=repo_root)
+    result = active_runner.run(
+        "git",
+        args,
+        options=ToolRunOptions(cwd=repo_root),
+    )
     if result.returncode != 0:
         log.warning(
             "git show failed for %s: code=%s stderr=%s",

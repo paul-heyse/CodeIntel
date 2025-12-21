@@ -11,7 +11,7 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.compute.base import StepResult
+from codeintel.ingestion.compute.base import ExecutionResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -55,7 +55,7 @@ class TestsIngestStep:
         repo: str,
         commit: str,
         json_report_path: Path,
-    ) -> StepResult:
+    ) -> ExecutionResult:
         """Execute test results ingestion.
 
         Parameters
@@ -71,20 +71,20 @@ class TestsIngestStep:
 
         Returns
         -------
-        StepResult
+        ExecutionResult
             Execution result with row counts.
         """
         created_at = datetime.now(UTC)
 
         if not json_report_path.exists():
             log.warning("Test report not found: %s", json_report_path)
-            return StepResult.skip("Test report not found")
+            return ExecutionResult.skip("Test report not found")
 
         try:
             data = json.loads(json_report_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
             log.warning("Failed to read test report: %s", exc)
-            return StepResult.fail(f"Failed to read test report: {exc}")
+            return ExecutionResult.failed(f"Failed to read test report: {exc}")
 
         all_rows: list[list[object]] = []
         tests = data.get("tests", [])
@@ -111,13 +111,11 @@ class TestsIngestStep:
             )
 
         table_counts: dict[str, int] = {}
-        total_rows = 0
 
         if all_rows:
             scope = f"{repo}@{commit}"
             result = self._storage.write_batch("core.test_results", all_rows, scope=scope)
             table_counts["core.test_results"] = result.rows_affected
-            total_rows = result.rows_affected
 
         summary = data.get("summary", {})
         summary_rows: list[list[object]] = [
@@ -136,7 +134,6 @@ class TestsIngestStep:
         if summary_rows:
             result = self._storage.write_batch("core.test_summary", summary_rows)
             table_counts["core.test_summary"] = result.rows_affected
-            total_rows += result.rows_affected
 
         log.info(
             "Tests ingest: repo=%s commit=%s tests=%d",
@@ -145,10 +142,7 @@ class TestsIngestStep:
             len(tests),
         )
 
-        return StepResult(
-            rows_written=total_rows,
-            table_counts=table_counts,
-        )
+        return ExecutionResult.ok(table_counts=table_counts)
 
 
 __all__ = ["TestsIngestStep"]

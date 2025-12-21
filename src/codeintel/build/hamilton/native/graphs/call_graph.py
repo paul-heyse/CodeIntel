@@ -76,6 +76,7 @@ TARGET_SPECS = (
         description="Function call graph construction.",
         options=TargetSpecOptions(
             table_keys=CALL_GRAPH_TABLE_KEYS,
+            allow_declared_overrides=True,
         ),
     ),
 )
@@ -95,6 +96,10 @@ class CallGraphExtractResult:
         Number of call graph edges extracted.
     table_counts
         Row counts per produced table.
+    skipped
+        Whether extraction was skipped.
+    skip_reason
+        Optional reason for skipping extraction.
     error
         Fatal error message if extraction failed.
     """
@@ -103,6 +108,8 @@ class CallGraphExtractResult:
     node_count: int = 0
     edge_count: int = 0
     table_counts: dict[str, int] = field(default_factory=dict)
+    skipped: bool = False
+    skip_reason: str | None = None
     error: str | None = None
 
 

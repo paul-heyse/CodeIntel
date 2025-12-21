@@ -8,11 +8,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.ingestion import (
-    CoverageIngestStep,
     DuckDBStorageAdapter,
     ToolRunnerAdapter,
-    TypingIngestStep,
 )
+from codeintel.ingestion.compute import CoverageIngestStep, TypingIngestStep
 from tests._helpers.assertions import expect_equal, expect_rows_equal
 from tests._helpers.ingestion import (
     ScanSetupOptions,
@@ -82,8 +81,8 @@ def test_coverage_ingest_uses_runner(
     )
 
     if not result.success:
-        errors = "; ".join(result.errors) if result.errors else "unknown"
-        pytest.fail(f"Coverage ingest failed: {errors}")
+        error_message = result.error or "; ".join(result.warnings) or "unknown"
+        pytest.fail(f"Coverage ingest failed: {error_message}")
 
     row = gateway.con.table("analytics.coverage_lines").aggregate("count(*)").fetchone()
     count = row[0] if row is not None else 0
@@ -118,8 +117,8 @@ def test_typing_ingest_uses_shared_runner(
     )
 
     if not result.success:
-        errors = "; ".join(result.errors) if result.errors else "unknown"
-        pytest.fail(f"Typing ingest failed: {errors}")
+        error_message = result.error or "; ".join(result.warnings) or "unknown"
+        pytest.fail(f"Typing ingest failed: {error_message}")
 
     row = ingestion_gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
     if (row[0] if row else 0) < 1:

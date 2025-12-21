@@ -45,6 +45,16 @@ class ToolRunResult:
         return self.returncode == 0
 
 
+@dataclass(frozen=True)
+class ToolRunOptions:
+    """Execution options for a tool invocation."""
+
+    cwd: Path | None = None
+    output_path: Path | None = None
+    timeout_s: float | None = None
+    env: Mapping[str, str] | None = None
+
+
 class ToolNotFoundError(RuntimeError):
     """Raised when a configured tool cannot be resolved on the host."""
 
@@ -122,9 +132,7 @@ class ToolRunner:
         tool: ToolName | str,
         args: Sequence[str],
         *,
-        cwd: Path | None = None,
-        output_path: Path | None = None,
-        timeout_s: float | None = None,
+        options: ToolRunOptions | None = None,
     ) -> ToolRunResult:
         """
         Execute a tool asynchronously and capture stdout/stderr.
@@ -135,12 +143,8 @@ class ToolRunner:
             Tool identifier to invoke.
         args
             Argument vector (with or without the executable name).
-        cwd
-            Optional working directory.
-        output_path
-            Optional path expected to be written by the tool.
-        timeout_s
-            Optional timeout in seconds.
+        options
+            Execution options such as working directory, output path, timeout, and env overrides.
 
         Returns
         -------
@@ -154,24 +158,32 @@ class ToolRunner:
         ToolExecutionError
             When the subprocess fails unexpectedly (for example, due to timeout).
         """
+        run_options = options or ToolRunOptions()
         tool_enum = self._coerce_tool(tool)
         try:
             executable = self._resolve_executable(tool_enum)
         except ToolNotFoundError as exc:
             raise ToolNotFoundError(exc.tool, exc.configured_path) from exc
         cmd = self._build_command(tool_enum, args, executable=executable)
-        env = self.tools_config.build_env(tool_enum, base_env=self.base_env)
+        tool_env = self.tools_config.build_env(tool_enum, base_env=self.base_env)
+        if run_options.env:
+            merged = dict(tool_env or {})
+            merged.update(run_options.env)
+            tool_env = merged
         start_ts = time.perf_counter()
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=str(cwd) if cwd is not None else None,
+            cwd=str(run_options.cwd) if run_options.cwd is not None else None,
             stdout=PIPE,
             stderr=PIPE,
-            env=env if env else None,
+            env=tool_env if tool_env else None,
         )
         try:
-            stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_s)
+            stdout_b, stderr_b = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=run_options.timeout_s,
+            )
         except TimeoutError as exc:
             proc.kill()
             await proc.communicate()
@@ -183,7 +195,7 @@ class ToolRunner:
                 stdout="",
                 stderr="timed out",
                 duration_s=duration,
-                output_path=output_path,
+                output_path=run_options.output_path,
             )
             raise ToolExecutionError(result) from exc
 
@@ -197,7 +209,7 @@ class ToolRunner:
             stdout=stdout,
             stderr=stderr,
             duration_s=duration,
-            output_path=output_path,
+            output_path=run_options.output_path,
         )
 
     def run(
@@ -205,9 +217,7 @@ class ToolRunner:
         tool: ToolName | str,
         args: Sequence[str],
         *,
-        cwd: Path | None = None,
-        output_path: Path | None = None,
-        timeout_s: float | None = None,
+        options: ToolRunOptions | None = None,
     ) -> ToolRunResult:
         """
         Execute a tool synchronously.
@@ -217,6 +227,7 @@ class ToolRunner:
         ToolRunResult
             Structured result from :meth:`run_async`.
         """
+        run_options = options or ToolRunOptions()
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -229,9 +240,7 @@ class ToolRunner:
                     self.run_async(
                         tool,
                         args,
-                        cwd=cwd,
-                        output_path=output_path,
-                        timeout_s=timeout_s,
+                        options=run_options,
                     ),
                 )
                 return future.result()
@@ -240,8 +249,6 @@ class ToolRunner:
                 self.run_async(
                     tool,
                     args,
-                    cwd=cwd,
-                    output_path=output_path,
-                    timeout_s=timeout_s,
+                    options=run_options,
                 )
             )

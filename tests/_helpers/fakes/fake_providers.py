@@ -15,14 +15,13 @@ Example
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.types import (
-    ScipIndexResult,
-    ScipParseResult,
-    ToolRunResult,
-    TypeCheckResult,
-)
+from codeintel.build.analytics_resources import AnalyticsResourceRegistryProvider
+from codeintel.build.types import ScipIndexResult, ScipParseResult, TypeCheckResult
+from codeintel.ingestion.engine.service import ToolService
+from tests._helpers.fakes.tools import FakeToolRunner as IngestionFakeToolRunner
 from tests._helpers.records import (
     CallRecorder,
     CollectCall,
@@ -30,13 +29,11 @@ from tests._helpers.records import (
     GitLogCall,
     ScipIndexCall,
     ScipParseCall,
-    ToolRunCall,
     TypeCheckCall,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from pathlib import Path
 
     from codeintel.build.types import (
         CoverageData,
@@ -59,83 +56,11 @@ __all__ = [
 
 
 @dataclass
-class FakeToolRunner:
-    """Fake tool runner that returns pre-configured results.
+class FakeToolRunner(IngestionFakeToolRunner):
+    """Compatibility alias for the ingestion FakeToolRunner."""
 
-    Attributes
-    ----------
-    available_tools
-        Set of tools considered "available".
-    results
-        Pre-configured results by tool name.
-    default_result
-        Default result for tools not in results dict.
-    calls
-        Recorder of all calls made (for verification).
-    """
-
-    available_tools: set[str] = field(default_factory=lambda: {"git", "python"})
-    results: dict[str, ToolRunResult] = field(default_factory=dict)
-    default_result: ToolRunResult = field(
-        default_factory=lambda: ToolRunResult(tool="unknown", returncode=0)
-    )
-    calls: CallRecorder[ToolRunCall] = field(default_factory=CallRecorder)
-
-    async def run(
-        self,
-        tool: str,
-        args: Sequence[str],
-        cwd: Path,
-        *,
-        timeout_ms: int | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> ToolRunResult:
-        """Return pre-configured result for tool.
-
-        Parameters
-        ----------
-        tool
-            Tool name.
-        args
-            Command-line arguments.
-        cwd
-            Working directory.
-        timeout_ms
-            Timeout for tool execution.
-        env
-            Environment variables to pass.
-
-        Returns
-        -------
-        ToolRunResult
-            Pre-configured or default result.
-        """
-        env_snapshot = dict(env) if env is not None else None
-        self.calls.record(
-            ToolRunCall(
-                tool=tool,
-                args=list(args),
-                cwd=cwd,
-                timeout_ms=timeout_ms,
-                env=env_snapshot,
-            )
-        )
-        return self.results.get(tool, self.default_result)
-
-    def is_available(self, tool: str) -> bool:
-        """Check if tool is in available set.
-
-        Parameters
-        ----------
-        tool
-            Tool name.
-
-        Returns
-        -------
-        bool
-            True if in available_tools.
-        """
-        return tool in self.available_tools
+    def __init__(self, cache_dir: Path | None = None) -> None:
+        super().__init__(cache_dir=cache_dir or Path("build") / ".tool_cache")
 
 
 @dataclass
@@ -458,32 +383,16 @@ class FakeGitHistoryProvider:
 
 @dataclass
 class FakeProviders:
-    """Container for all fake providers.
-
-    Use this in tests to provide a complete set of fakes.
-
-    Attributes
-    ----------
-    tool_runner
-        Fake tool runner.
-    scip_indexer
-        Fake SCIP indexer.
-    type_checker
-        Fake type checker.
-    coverage_collector
-        Fake coverage collector.
-    test_reporter
-        Fake test reporter.
-    git_history
-        Fake git history provider.
-    """
+    """Container for fake tool providers aligned with BuildEnv."""
 
     tool_runner: FakeToolRunner = field(default_factory=FakeToolRunner)
-    scip_indexer: FakeScipIndexer = field(default_factory=FakeScipIndexer)
-    type_checker: FakeTypeChecker = field(default_factory=FakeTypeChecker)
-    coverage_collector: FakeCoverageCollector = field(default_factory=FakeCoverageCollector)
-    test_reporter: FakeTestReporter = field(default_factory=FakeTestReporter)
-    git_history: FakeGitHistoryProvider = field(default_factory=FakeGitHistoryProvider)
+    resources: AnalyticsResourceRegistryProvider = field(
+        default_factory=AnalyticsResourceRegistryProvider
+    )
+    tool_service: ToolService = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.tool_service = ToolService(self.tool_runner)
 
     @classmethod
     def defaults(cls) -> FakeProviders:

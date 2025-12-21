@@ -22,6 +22,7 @@ ManifestDerivationKind = Literal[
     "declared_source",
     "view_inferred",
 ]
+InferenceStatus = Literal["inferred", "override", "disabled", "error", "pending"]
 
 
 @dataclass(frozen=True)
@@ -90,11 +91,17 @@ class TableProvenance(ManifestBase):
         Label describing how the schema was derived.
     derivation_source
         Source identifier for the derivation.
+    inference_status
+        Optional inference status when the table is inferable.
+    inference_error
+        Optional inference error message when inference failed.
     """
 
     schema_hash: str
     derivation_kind: ManifestDerivationKind
     derivation_source: str
+    inference_status: InferenceStatus | None = None
+    inference_error: str | None = None
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable representation.
@@ -104,11 +111,16 @@ class TableProvenance(ManifestBase):
         dict[str, object]
             JSON-serializable provenance payload.
         """
-        return {
+        result: dict[str, object] = {
             "schema_hash": self.schema_hash,
             "derivation_kind": self.derivation_kind,
             "derivation_source": self.derivation_source,
         }
+        if self.inference_status is not None:
+            result["inference_status"] = self.inference_status
+        if self.inference_error is not None:
+            result["inference_error"] = self.inference_error
+        return result
 
 
 @dataclass(frozen=True)
@@ -238,6 +250,7 @@ __all__ = [
     "ArtifactProvenance",
     "ExportArtifact",
     "ExportArtifactKind",
+    "InferenceStatus",
     "ManifestDerivationKind",
     "SchemaManifest",
     "TableProvenance",

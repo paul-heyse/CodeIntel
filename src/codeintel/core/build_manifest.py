@@ -32,6 +32,7 @@ class OutputManifest:
     row_count: int | None = None
     options_hash: str | None = None
     dep_hashes: dict[str, str] | None = None
+    change_delta: dict[str, object] | None = None
 
 
 @dataclass(frozen=True)
