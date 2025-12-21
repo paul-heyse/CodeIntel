@@ -5,19 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from codeintel.core.errors.problem_details import ProblemDetail
+from codeintel.core.errors.taxonomy import INTERNAL_ERROR, ErrorCode
 from codeintel.serving.errors.catalog import ERROR_CODE_CATALOG
 from codeintel.serving.errors.models import ErrorResponse
 
 
-def _problem_type_for_code(code: str) -> str:
-    return "/problems/" + code.lower().replace("_", "-")
-
-
-def _status_for_code(code: str) -> int:
+def _error_code_for_code(code: str) -> ErrorCode:
     tmpl = ERROR_CODE_CATALOG.get(code)
-    if tmpl is None or tmpl.http_status is None:
-        return 500
-    return tmpl.http_status
+    if tmpl is None:
+        return INTERNAL_ERROR
+    return tmpl.error_code
 
 
 def _clean_extensions(values: dict[str, object]) -> dict[str, object]:
@@ -67,11 +64,12 @@ def problem_detail_from_error_response(
             "errors": errors,
         }
     )
+    error_code = _error_code_for_code(error.error.code)
     return ProblemDetail(
-        type=_problem_type_for_code(error.error.code),
-        title=error.error.message,
-        status=_status_for_code(error.error.code),
-        detail=error.error.hint or error.error.message,
+        type=error_code.type_uri,
+        title=error_code.title,
+        status=error_code.status,
+        detail=error.error.message,
         instance=instance,
         extensions=extensions,
     )

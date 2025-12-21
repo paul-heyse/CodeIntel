@@ -10,9 +10,9 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.change_detection import ChangeRequest
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

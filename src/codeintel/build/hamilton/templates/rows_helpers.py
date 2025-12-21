@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

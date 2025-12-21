@@ -13,7 +13,7 @@ from codeintel.core.hashing import content_hash
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.query_results import records_from_dataframe
-from codeintel.storage.schema.json_schema import json_schema_from_typeddict
+from codeintel.storage.schema.json_schema import export_json_schema_for_contract
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -188,16 +188,14 @@ def _schema_digest(dataset: DatasetContract) -> str | None:
     """
     if dataset.json_schema_id is None:
         return None
-    row_binding = dataset.row_binding
-    if row_binding is None or row_binding.row_model is None:
-        return None
     schema_id = f"https://schemas.codeintel.dev/export/{dataset.json_schema_id}.json"
-    schema = json_schema_from_typeddict(
-        row_binding.row_model,
-        additional_properties=True,
+    schema = export_json_schema_for_contract(
+        dataset,
         schema_id=schema_id,
         title=f"{dataset.name} export",
     )
+    if schema is None:
+        return None
     payload = json.dumps(schema, indent=2, sort_keys=True).encode("utf-8")
     return content_hash(payload, algorithm="sha256")
 

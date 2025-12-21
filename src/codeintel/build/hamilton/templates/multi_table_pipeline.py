@@ -25,11 +25,11 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.runtime_typing import Callable, Mapping, Sequence
 from codeintel.build.hamilton.tagging import tag_materialize
 from codeintel.build.targets import TargetGraph
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 

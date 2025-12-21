@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from codeintel.core.errors.taxonomy import ErrorCode
 from codeintel.serving.errors.models import ErrorKind
 
 if TYPE_CHECKING:
@@ -34,11 +35,11 @@ class ErrorInfoTemplate:
     """Template for an error code in the catalog."""
 
     code: str
+    error_code: ErrorCode
     kind: ErrorKind
     message: str
     hint: str | None = None
     retryable: bool = False
-    http_status: int | None = None
 
     def render_message(self, params: Mapping[str, Any] | None = None) -> str:
         """Render the message template with parameter substitution.

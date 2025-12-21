@@ -29,8 +29,10 @@ error messages for missing resources.
 Example
 -------
 >>> from codeintel.analytics.resources import ProviderFactory
+>>> from codeintel.core.resources import ResourceRegistry
 >>> factory = ProviderFactory(gateway, snapshot)
->>> registry = factory.create_registry(include_graphs=True, include_catalog=True)
+>>> options = ProviderRegistryOptions(include_graphs=True, include_catalog=True)
+>>> registry = factory.create_registry(ResourceRegistry(), options=options)
 >>> from codeintel.graphs.resources.graph_provider import GraphProvider
 >>> graphs = registry.require(GraphProvider)
 >>> call_graph = graphs.call_graph
@@ -40,7 +42,11 @@ from __future__ import annotations
 
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
-from codeintel.analytics.resources.factory import ProviderFactory, ProviderFactoryOptions
+from codeintel.analytics.resources.factory import (
+    ProviderFactory,
+    ProviderFactoryOptions,
+    ProviderRegistryOptions,
+)
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.core.resources import (
@@ -58,6 +64,7 @@ __all__ = [
     "ModuleMapProvider",
     "ProviderFactory",
     "ProviderFactoryOptions",
+    "ProviderRegistryOptions",
     "ResourceError",
     "ResourceNotFoundError",
     "ResourceNotLoadedError",

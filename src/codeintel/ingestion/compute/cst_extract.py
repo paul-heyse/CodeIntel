@@ -13,12 +13,12 @@ from typing import TYPE_CHECKING
 import libcst as cst
 from libcst import metadata
 
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
 )
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

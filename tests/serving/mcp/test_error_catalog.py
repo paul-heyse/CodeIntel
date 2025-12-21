@@ -90,10 +90,10 @@ def test_error_catalog_all_have_messages() -> None:
         expect_true(len(tmpl.message) > 0, message=f"{code} should have a message")
 
 
-def test_error_catalog_all_have_http_status() -> None:
-    """Verify all error codes have HTTP status for surface parity."""
+def test_error_catalog_all_have_error_codes() -> None:
+    """Verify all error codes map to the canonical taxonomy."""
     for code, tmpl in ERROR_CODE_CATALOG.items():
-        expect_is_not_none(tmpl.http_status, message=f"{code} should have http_status")
+        expect_is_not_none(tmpl.error_code, message=f"{code} should have error_code")
 
 
 # =============================================================================

@@ -8,7 +8,13 @@ from typing import TYPE_CHECKING
 import duckdb
 
 from codeintel.core.errors.storage import StorageConnectionError
+from codeintel.core.schemas import MappingSchemaProvider, SchemaService
+from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.contracts.provider import (
+    contract_catalog_table_schemas,
+    load_contract_catalog_from_connection,
+)
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
@@ -24,6 +30,16 @@ __all__ = [
     "open_gateway",
     "open_memory_gateway",
 ]
+
+
+def _maybe_set_schema_service_from_catalog() -> None:
+    try:
+        get_schema_service()
+    except RuntimeError:
+        schemas = contract_catalog_table_schemas()
+        if schemas:
+            service = SchemaService(table_provider=MappingSchemaProvider(schemas))
+            set_schema_service(service)
 
 
 def open_gateway(config: StorageConfig) -> StorageGateway:
@@ -54,6 +70,8 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
                 include_views=include_views,
                 validate_schema_registry=config.validate_schema,
             )
+        load_contract_catalog_from_connection(con)
+        _maybe_set_schema_service_from_catalog()
         datasets = load_dataset_registry(con)
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
         if config.ensure_views and not config.read_only:

@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, TypedDict
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

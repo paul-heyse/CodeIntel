@@ -280,12 +280,12 @@ def _check_error_parity() -> list[str]:
                 f"expected={expected_code} got={problem_code} exc={type(exc).__name__}"
             )
         tmpl = ERROR_CODE_CATALOG.get(expected_code)
-        if tmpl is None or tmpl.http_status is None:
-            issues.append(f"Missing http_status for {expected_code} in canonical catalog")
-        elif problem.status != tmpl.http_status:
+        if tmpl is None:
+            issues.append(f"Missing error code entry for {expected_code} in canonical catalog")
+        elif problem.status != tmpl.error_code.status:
             issues.append(
                 "HTTP problem status mismatch: "
-                f"code={expected_code} expected={tmpl.http_status} got={problem.status}"
+                f"code={expected_code} expected={tmpl.error_code.status} got={problem.status}"
             )
 
     return issues

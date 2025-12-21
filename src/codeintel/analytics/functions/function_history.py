@@ -14,8 +14,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.history.git_history import iter_file_history
-from codeintel.build.hamilton.row_serialization import row_to_tuple
 from codeintel.core.ibis_typing import and_predicates
+from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:

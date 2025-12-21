@@ -21,9 +21,9 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTypednessRow as TypednessRow,
 )
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.tools import ToolStatus
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
 TYPEDNESS_TABLE_KEY = "analytics.typedness"

@@ -6,6 +6,8 @@ storage layer. It is intentionally independent of `codeintel.build.*`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -15,15 +17,32 @@ from codeintel.core.schemas.contract_factory import (
     is_docs_view,
 )
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.contract_serde import contract_from_json_obj
+from codeintel.core.schemas.row_models import row_binding_for_table_schema
 from codeintel.core.schemas.service import SchemaService, get_schema_service
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from duckdb import DuckDBPyConnection
+
     from codeintel.config.datasets.primitives import CompositeSchema
+    from codeintel.core.schemas.primitives import TableSchema
+
+
+_CONTRACT_CATALOG_KIND = "dataset_contracts"
+
+
+@dataclass(slots=True)
+class _ContractCatalogState:
+    catalog: dict[str, DatasetContract] | None = None
+
+
+_CONTRACT_CATALOG_STATE = _ContractCatalogState()
 
 
 def is_view(table_key: str) -> bool:
@@ -41,6 +60,72 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
     return get_composite_schemas().get(table_key)
 
 
+def _attach_row_binding(contract: DatasetContract) -> DatasetContract:
+    if contract.schema is None:
+        return contract
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        binding = row_binding_for_table_schema(table_schema=contract.schema)
+    else:
+        binding = service.get_row_binding(contract.table_key)
+        if binding is None:
+            binding = row_binding_for_table_schema(table_schema=contract.schema)
+    return replace(contract, row_binding=binding)
+
+
+def _contracts_from_payload(payload: Mapping[str, object]) -> dict[str, DatasetContract]:
+    contracts_raw = payload.get("contracts")
+    if not isinstance(contracts_raw, Mapping):
+        return {}
+    contracts: dict[str, DatasetContract] = {}
+    for table_key, contract_obj in contracts_raw.items():
+        if not isinstance(table_key, str) or not isinstance(contract_obj, Mapping):
+            continue
+        contracts[table_key] = _attach_row_binding(contract_from_json_obj(contract_obj))
+    return contracts
+
+
+def set_contract_catalog(contracts: Mapping[str, DatasetContract] | None) -> None:
+    """Set the canonical contract catalog mapping."""
+    _CONTRACT_CATALOG_STATE.catalog = dict(contracts) if contracts is not None else None
+    get_contract_for_table_key.cache_clear()
+
+
+def load_contract_catalog_from_connection(con: DuckDBPyConnection) -> None:
+    """Load canonical contracts from metadata and store in-memory."""
+    entry = load_latest_canonical_catalog_from_connection(
+        con,
+        catalog_kind=_CONTRACT_CATALOG_KIND,
+    )
+    if entry is None:
+        set_contract_catalog(None)
+        return
+    contracts = _contracts_from_payload(entry.payload)
+    if contracts:
+        set_contract_catalog(contracts)
+    else:
+        set_contract_catalog(None)
+
+
+def contract_catalog_table_schemas() -> dict[str, TableSchema]:
+    """Return table schemas from the loaded contract catalog.
+
+    Returns
+    -------
+    dict[str, TableSchema]
+        Mapping of table keys to their table schemas.
+    """
+    catalog = _CONTRACT_CATALOG_STATE.catalog
+    if catalog is None:
+        return {}
+    return {
+        table_key: contract.schema
+        for table_key, contract in catalog.items()
+        if contract.schema is not None
+    }
+
+
 @lru_cache(maxsize=1)
 def _schema_service() -> SchemaService:
     try:
@@ -49,7 +134,7 @@ def _schema_service() -> SchemaService:
         return SchemaService(table_provider=get_schema_provider())
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=512)
 def get_contract_for_table_key(table_key: str) -> DatasetContract:
     """Return the DatasetContract for a table or view.
 
@@ -68,6 +153,13 @@ def get_contract_for_table_key(table_key: str) -> DatasetContract:
     KeyError
         Raised when the key is unknown to the schema provider and is not treated as a view.
     """
+    catalog = _CONTRACT_CATALOG_STATE.catalog
+    if catalog is not None:
+        contract = catalog.get(table_key)
+        if contract is None:
+            msg = f"Unknown table key: {table_key}"
+            raise KeyError(msg)
+        return contract
     is_view = is_docs_view(table_key)
     schema = get_schema_provider().get_table_schema(table_key)
     if schema is None and not is_view:
@@ -91,6 +183,10 @@ def iter_contracts() -> Iterable[DatasetContract]:
     DatasetContract
         Each known dataset contract.
     """
+    catalog = _CONTRACT_CATALOG_STATE.catalog
+    if catalog is not None:
+        yield from catalog.values()
+        return
     provider = get_schema_provider()
     seen: set[str] = set()
 
@@ -122,7 +218,7 @@ def iter_contracts_by_table_key() -> Iterable[tuple[str, DatasetContract]]:
 
 def clear_contract_cache() -> None:
     """Clear the contract cache (for testing)."""
-    get_contract_for_table_key.cache_clear()
+    set_contract_catalog(None)
 
 
 class ContractProvider:
@@ -183,4 +279,6 @@ __all__ = [
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
+    "load_contract_catalog_from_connection",
+    "set_contract_catalog",
 ]

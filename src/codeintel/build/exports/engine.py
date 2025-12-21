@@ -52,6 +52,7 @@ from codeintel.build.exports.writers import (
     write_parquet_relation,
 )
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.errors.schema import SCHEMA_VALIDATION_FAILED
 from codeintel.core.exports.formats import normalize_export_format, suffix_for_export_format
 from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.queries.safe import safe_count
@@ -227,9 +228,8 @@ def _validate_written_exports(
         exit_code = validate_export_files(table_key, matching, dataset_name=dataset_name)
         if exit_code != 0 and profile == "lenient":
             log_export_error(
-                code="export.validation_failed",
-                title="Export validation failed",
-                detail=f"Validation failed for schema {table_key}",
+                SCHEMA_VALIDATION_FAILED,
+                f"Validation failed for schema {table_key}",
                 table_key=table_key,
                 files=[str(p) for p in matching],
             )
@@ -237,19 +237,18 @@ def _validate_written_exports(
         if exit_code != 0:
             msg = f"Validation failed for schema {table_key}"
             log_export_error(
-                code="export.validation_failed",
-                title="Export validation failed",
+                SCHEMA_VALIDATION_FAILED,
+                msg,
+                table_key=table_key,
+                files=[str(p) for p in matching],
+            )
+            error = BuildProblemError.from_error_code(
+                error_code=SCHEMA_VALIDATION_FAILED,
                 detail=msg,
                 table_key=table_key,
                 files=[str(p) for p in matching],
             )
-            raise BuildProblemError.from_detail(
-                code="export.validation_failed",
-                title="Export validation failed",
-                detail=msg,
-                table_key=table_key,
-                files=[str(p) for p in matching],
-            )
+            raise error
 
 
 def _export_dataset(

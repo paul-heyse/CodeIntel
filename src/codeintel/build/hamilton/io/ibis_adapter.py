@@ -1,24 +1,37 @@
-"""Ibis-native IO adapters for Hamilton materialization.
-
-These adapters integrate Hamilton's @dataloader/@datasaver pattern with
-the existing IbisGateway infrastructure for DuckDB access.
-
-Design Principles
------------------
-1. All DuckDB operations go through IbisGateway (not DuckDBPolicyBackend directly).
-2. IbisGateway internally delegates writes to DuckDBPolicyBackend for SQLGlot-based SQL.
-3. Reads: IbisGateway.table() / read() / view()
-4. Writes: IbisGateway.write() / insert() / upsert()
-"""
+"""Ibis-native IO adapters for Hamilton materialization."""
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from codeintel.storage.gateway import ibis_facade
-from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
+from codeintel.storage.io.ibis_io import (
+    IbisIOConfig,
+)
+from codeintel.storage.io.ibis_io import (
+    load_dataset_df as _load_dataset_df,
+)
+from codeintel.storage.io.ibis_io import (
+    load_dataset_ibis as _load_dataset_ibis,
+)
+from codeintel.storage.io.ibis_io import (
+    load_ibis_table as _load_ibis_table,
+)
+from codeintel.storage.io.ibis_io import (
+    load_table_as_dataframe as _load_table_as_dataframe,
+)
+from codeintel.storage.io.ibis_io import (
+    save_dataframe as _save_dataframe,
+)
+from codeintel.storage.io.ibis_io import (
+    save_ibis_expression as _save_ibis_expression,
+)
+from codeintel.storage.io.ibis_io import (
+    save_rows as _save_rows,
+)
+from codeintel.storage.io.ibis_io import (
+    upsert_dataframe as _upsert_dataframe,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -26,7 +39,6 @@ if TYPE_CHECKING:
     import ibis.expr.types as ir
     import pandas as pd
 
-    from codeintel.build.hamilton.io.dataset_ref import DatasetRef
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
@@ -41,33 +53,6 @@ __all__ = [
     "upsert_dataframe",
 ]
 
-log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class IbisIOConfig:
-    """Configuration for Ibis IO operations.
-
-    This config is passed to Hamilton dataloader/datasaver functions
-    to provide access to the storage gateway.
-
-    Attributes
-    ----------
-    gateway
-        Storage gateway for database access (use gateway.ibis for operations).
-    validate_schema
-        Whether to validate against Pandera schema on load/save.
-
-    Examples
-    --------
-    >>> from codeintel.storage.gateway import StorageGateway
-    >>> gateway = StorageGateway(...)
-    >>> config = IbisIOConfig(gateway=gateway, validate_schema=True)
-    """
-
-    gateway: StorageGateway
-    validate_schema: bool = True
-
 
 def load_ibis_table(
     dataset_ref: DatasetRef,
@@ -75,38 +60,12 @@ def load_ibis_table(
 ) -> tuple[ir.Table, dict[str, Any]]:
     """Load a table as an Ibis expression.
 
-    Uses IbisGateway.table() which handles qualified name splitting
-    correctly for Ibis 11.
-
-    Parameters
-    ----------
-    dataset_ref
-        Reference to the table to load.
-    io_config
-        IO configuration with gateway access.
-
     Returns
     -------
     tuple[ir.Table, dict[str, Any]]
-        Ibis table expression and metadata dict.
-
-    Examples
-    --------
-    >>> ref = DatasetRef(table_key="analytics.function_metrics")
-    >>> table, metadata = load_ibis_table(ref, io_config)
-    >>> metadata["table_key"]
-    'analytics.function_metrics'
+        Ibis table expression and metadata.
     """
-    table = ibis_facade.table(io_config.gateway, dataset_ref.table_key)
-
-    metadata: dict[str, Any] = {
-        "source": "duckdb",
-        "table_key": dataset_ref.table_key,
-        "schema": dataset_ref.schema_name,
-        "table": dataset_ref.table_name,
-    }
-
-    return table, metadata
+    return _load_ibis_table(dataset_ref.table_key, io_config)
 
 
 def load_table_as_dataframe(
@@ -115,32 +74,12 @@ def load_table_as_dataframe(
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Load a table as a pandas DataFrame.
 
-    Convenience wrapper that executes the Ibis expression.
-
-    Parameters
-    ----------
-    dataset_ref
-        Reference to the table to load.
-    io_config
-        IO configuration with gateway access.
-
     Returns
     -------
-    tuple[DataFrame, dict[str, Any]]
-        Pandas DataFrame and metadata.
-
-    Examples
-    --------
-    >>> ref = DatasetRef(table_key="analytics.function_metrics")
-    >>> df, metadata = load_table_as_dataframe(ref, io_config)
-    >>> metadata["format"]
-    'pandas'
+    tuple[pd.DataFrame, dict[str, Any]]
+        DataFrame and metadata for the dataset.
     """
-    table, metadata = load_ibis_table(dataset_ref, io_config)
-
-    df = cast("pd.DataFrame", table.execute())
-    metadata["format"] = "pandas"
-    return df, metadata
+    return _load_table_as_dataframe(dataset_ref.table_key, io_config)
 
 
 def save_ibis_expression(
@@ -150,40 +89,12 @@ def save_ibis_expression(
 ) -> dict[str, Any]:
     """Save an Ibis expression to DuckDB.
 
-    Uses IbisGateway.write() which generates INSERT...SELECT via SQLGlot.
-
-    Parameters
-    ----------
-    output
-        Ibis table expression to save.
-    dataset_ref
-        Reference specifying where to save.
-    io_config
-        IO configuration with gateway access.
-
     Returns
     -------
     dict[str, Any]
-        Metadata about the save operation.
-
-    Examples
-    --------
-    >>> result = save_ibis_expression(ibis_table, ref, io_config)
-    >>> result["saved_to"]
-    'duckdb'
+        Write metadata.
     """
-    result = Warehouse(io_config.gateway).materialize_table(
-        dataset_ref.table_key,
-        output,
-        options=MaterializeOptions(mode="append"),
-    )
-
-    return {
-        "saved_to": "duckdb",
-        "table_key": dataset_ref.table_key,
-        "row_count": result.rows_written,
-        "method": "warehouse_materialize_table",
-    }
+    return _save_ibis_expression(output, dataset_ref.table_key, io_config)
 
 
 def save_dataframe(
@@ -193,41 +104,12 @@ def save_dataframe(
 ) -> dict[str, Any]:
     """Save a pandas DataFrame to DuckDB.
 
-    Uses IbisGateway.write() which internally uses DuckDBPolicyBackend
-    for efficient INSERT...VALUES via SQLGlot.
-
-    Parameters
-    ----------
-    df
-        DataFrame to save.
-    dataset_ref
-        Target table reference.
-    io_config
-        IO configuration.
-
     Returns
     -------
     dict[str, Any]
-        Write operation metadata.
-
-    Examples
-    --------
-    >>> result = save_dataframe(df, ref, io_config)
-    >>> result["operation"]
-    'insert_values'
+        Write metadata.
     """
-    result = Warehouse(io_config.gateway).materialize_dataframe(
-        dataset_ref.table_key,
-        df,
-        options=MaterializeOptions(mode="append"),
-    )
-
-    return {
-        "operation": "insert_values",
-        "table_key": dataset_ref.table_key,
-        "row_count": result.rows_written,
-        "method": "warehouse_materialize_dataframe",
-    }
+    return _save_dataframe(df, dataset_ref.table_key, io_config)
 
 
 def save_rows(
@@ -238,46 +120,12 @@ def save_rows(
 ) -> dict[str, Any]:
     """Save row tuples to DuckDB.
 
-    Uses IbisGateway.write() which internally uses DuckDBPolicyBackend
-    for efficient INSERT...VALUES via SQLGlot.
-
-    Parameters
-    ----------
-    rows
-        Sequence of row tuples.
-    columns
-        Column names matching row tuple positions.
-    dataset_ref
-        Target table reference.
-    io_config
-        IO configuration.
-
     Returns
     -------
     dict[str, Any]
-        Write operation metadata.
-
-    Examples
-    --------
-    >>> rows = [("goid1", 100), ("goid2", 200)]
-    >>> columns = ["goid", "loc"]
-    >>> result = save_rows(rows, columns, ref, io_config)
-    >>> result["operation"]
-    'insert_values'
+        Write metadata.
     """
-    result = Warehouse(io_config.gateway).materialize_rows(
-        dataset_ref.table_key,
-        rows,
-        columns=columns,
-        options=MaterializeOptions(mode="append"),
-    )
-
-    return {
-        "operation": "insert_values",
-        "table_key": dataset_ref.table_key,
-        "row_count": result.rows_written,
-        "method": "warehouse_materialize_rows",
-    }
+    return _save_rows(rows, columns, dataset_ref.table_key, io_config)
 
 
 def upsert_dataframe(
@@ -289,57 +137,18 @@ def upsert_dataframe(
 ) -> dict[str, Any]:
     """Upsert a DataFrame using INSERT...ON CONFLICT.
 
-    Uses IbisGateway.upsert() which internally uses DuckDBPolicyBackend
-    for SQLGlot-based UPSERT generation.
-
-    Parameters
-    ----------
-    df
-        DataFrame to upsert.
-    dataset_ref
-        Target table reference.
-    conflict_columns
-        Columns defining uniqueness constraint.
-    update_columns
-        Columns to update on conflict.
-    io_config
-        IO configuration.
-
     Returns
     -------
     dict[str, Any]
-        Upsert operation metadata.
-
-    Examples
-    --------
-    >>> result = upsert_dataframe(
-    ...     df,
-    ...     ref,
-    ...     conflict_columns=["goid"],
-    ...     update_columns=["loc"],
-    ...     io_config=io_config,
-    ... )
-    >>> result["operation"]
-    'upsert'
+        Write metadata.
     """
-    result = Warehouse(io_config.gateway).materialize_dataframe(
-        dataset_ref.table_key,
+    return _upsert_dataframe(
         df,
-        options=MaterializeOptions(
-            mode="upsert",
-            upsert=UpsertConfig(
-                conflict_columns=tuple(conflict_columns),
-                update_columns=tuple(update_columns),
-            ),
-        ),
+        dataset_ref.table_key,
+        conflict_columns,
+        update_columns,
+        io_config,
     )
-
-    return {
-        "operation": "upsert",
-        "table_key": dataset_ref.table_key,
-        "row_count": result.rows_written,
-        "method": "warehouse_materialize_dataframe",
-    }
 
 
 def load_dataset_ibis(
@@ -349,38 +158,17 @@ def load_dataset_ibis(
 ) -> ir.Table:
     """Load a dataset as an Ibis expression with repo/commit filtering.
 
-    This function loads a table via IbisGateway and applies repo/commit
-    filtering if those columns exist and ref contains valid values.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    ref
-        DatasetRef v2 with table_key, repo, and commit.
-
     Returns
     -------
     ir.Table
-        Ibis table expression, potentially filtered by repo/commit.
-
-    Examples
-    --------
-    >>> ref = DatasetRef(
-    ...     table_key="analytics.function_metrics",
-    ...     repo="org/repo",
-    ...     commit="abc123",
-    ... )
-    >>> table = load_dataset_ibis(gateway=gateway, ref=ref)
+        Ibis table expression for the dataset.
     """
-    t = ibis_facade.table(gateway, ref.table_key)
-    cols = set(t.columns)
-
-    if ref.repo and ref.commit and "repo" in cols and "commit" in cols:
-        predicate = cast("ir.BooleanValue", (t.repo == ref.repo) & (t.commit == ref.commit))
-        t = t.filter(predicate)
-
-    return t
+    return _load_dataset_ibis(
+        gateway=gateway,
+        table_key=ref.table_key,
+        repo=ref.repo,
+        commit=ref.commit,
+    )
 
 
 def load_dataset_df(
@@ -390,28 +178,14 @@ def load_dataset_df(
 ) -> pd.DataFrame:
     """Load a dataset as a pandas DataFrame with repo/commit filtering.
 
-    Convenience wrapper that executes the Ibis expression from load_dataset_ibis.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for database access.
-    ref
-        DatasetRef v2 with table_key, repo, and commit.
-
     Returns
     -------
     pd.DataFrame
-        Pandas DataFrame with the dataset contents.
-
-    Examples
-    --------
-    >>> ref = DatasetRef(
-    ...     table_key="analytics.function_metrics",
-    ...     repo="org/repo",
-    ...     commit="abc123",
-    ... )
-    >>> df = load_dataset_df(gateway=gateway, ref=ref)
+        DataFrame for the dataset.
     """
-    table = load_dataset_ibis(gateway=gateway, ref=ref)
-    return cast("pd.DataFrame", table.execute())
+    return _load_dataset_df(
+        gateway=gateway,
+        table_key=ref.table_key,
+        repo=ref.repo,
+        commit=ref.commit,
+    )

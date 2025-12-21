@@ -24,23 +24,22 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypeVar, cast
 
-from codeintel.config.datasets.columns import serialize_row
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFunctionValidationRow as FunctionValidationRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphValidationRow as GraphValidationRow,
 )
-from codeintel.core.schemas.service import get_schema_service
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from codeintel.core.schemas.row_models import RowSerializer
+    from collections.abc import Mapping
 
 RowT = TypeVar("RowT")
 
-FUNCTION_VALIDATION_COLS: list[str] = [
+FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
+GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
+FUNCTION_VALIDATION_COLS: tuple[str, ...] = (
     "repo",
     "commit",
     "function_goid_h128",
@@ -49,8 +48,8 @@ FUNCTION_VALIDATION_COLS: list[str] = [
     "issue",
     "detail",
     "created_at",
-]
-GRAPH_VALIDATION_COLS: list[str] = [
+)
+GRAPH_VALIDATION_COLS: tuple[str, ...] = (
     "repo",
     "commit",
     "graph_name",
@@ -61,21 +60,7 @@ GRAPH_VALIDATION_COLS: list[str] = [
     "detail",
     "metadata",
     "created_at",
-]
-FUNCTION_VALIDATION_TABLE_KEY = "analytics.function_validation"
-GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
-
-
-def _row_serializer(table_key: str, fallback_columns: Sequence[str]) -> RowSerializer:
-    try:
-        service = get_schema_service()
-    except RuntimeError:
-        return lambda row: serialize_row(row, fallback_columns)
-
-    binding = service.get_row_binding(table_key)
-    if binding is None:
-        return lambda row: serialize_row(row, fallback_columns)
-    return binding.serializer
+)
 
 
 @dataclass
@@ -194,7 +179,7 @@ class FunctionValidationReporter(BaseValidationReporter[FunctionValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        serializer = _row_serializer(FUNCTION_VALIDATION_TABLE_KEY, FUNCTION_VALIDATION_COLS)
+        serializer = row_serializer_for_table_key(FUNCTION_VALIDATION_TABLE_KEY)
         return tuple(serializer(r) for r in self.rows)
 
 
@@ -274,7 +259,7 @@ class GraphValidationReporter(BaseValidationReporter[GraphValidationRow]):
         tuple[tuple[object, ...], ...]
             Accumulated validation rows ready for materialization.
         """
-        serializer = _row_serializer(GRAPH_VALIDATION_TABLE_KEY, GRAPH_VALIDATION_COLS)
+        serializer = row_serializer_for_table_key(GRAPH_VALIDATION_TABLE_KEY)
         return tuple(serializer(r) for r in self.rows)
 
 

@@ -18,8 +18,8 @@ from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
 from codeintel.build.table_keys import split_table_key
 from codeintel.core.config.settings import ExportAuditSettings
-from codeintel.core.errors.problem_details import ProblemDetailBuilder
 from codeintel.core.errors.schema import SchemaError
+from codeintel.core.errors.taxonomy import SCHEMA_MISMATCH, ErrorCode
 from codeintel.storage.exports import ExportAuditRecord as AuditRecord
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.validation import validate_contract_or_raise
@@ -41,25 +41,18 @@ MAX_EXPORT_LIMIT = 9_223_372_036_854_775_807
 
 
 def export_problem(
-    code: str,
-    title: str,
+    error_code: ErrorCode,
     detail: str,
-    *,
-    status: int = 500,
     **extras: object,
 ) -> BuildProblemError:
     """Create an export error with structured problem details.
 
     Parameters
     ----------
-    code
-        Problem code (e.g., "export.validation_failed").
-    title
-        Short problem title.
+    error_code
+        Canonical error taxonomy entry.
     detail
         Detailed error message.
-    status
-        HTTP-style status code.
     **extras
         Additional context fields.
 
@@ -68,36 +61,26 @@ def export_problem(
     BuildProblemError
         BuildProblemError with structured details.
     """
-    builder = ProblemDetailBuilder(code=code, title=title, status=status)
-    problem = builder.build(detail).with_extensions(**extras)
-    return BuildProblemError(problem)
+    return BuildProblemError.from_error_code(error_code=error_code, detail=detail, **extras)
 
 
 def log_export_error(
-    code: str,
-    title: str,
+    error_code: ErrorCode,
     detail: str,
-    *,
-    status: int = 500,
     **extras: object,
 ) -> None:
     """Log an export error with structured problem details.
 
     Parameters
     ----------
-    code
-        Problem code.
-    title
-        Short problem title.
+    error_code
+        Canonical error taxonomy entry.
     detail
         Detailed error message.
-    status
-        HTTP-style status code.
     **extras
         Additional context fields.
     """
-    builder = ProblemDetailBuilder(code=code, title=title, status=status)
-    error = BuildProblemError(builder.build(detail).with_extensions(**extras))
+    error = BuildProblemError.from_error_code(error_code=error_code, detail=detail, **extras)
     log.error(json.dumps(error.problem_detail.to_dict()))
 
 
@@ -152,7 +135,7 @@ def validate_registry_or_raise(gateway: StorageGateway) -> None:
     ------
     ValueError
         If required tables or views are missing from the registry.
-    from_detail
+    BuildProblemError
         If tables exist but their schemas do not match expectations.
     """
     missing_tables: list[str] = []
@@ -179,16 +162,15 @@ def validate_registry_or_raise(gateway: StorageGateway) -> None:
     except ValueError as exc:
         detail = str(exc)
         log_export_error(
-            code="export.validation_failed",
-            title="Export validation failed",
-            detail=detail,
+            SCHEMA_MISMATCH,
+            detail,
             stage="dataset_registry",
         )
-        raise BuildProblemError.from_detail(
-            code="export.validation_failed",
-            title="Export validation failed",
+        problem = BuildProblemError.from_error_code(
+            error_code=SCHEMA_MISMATCH,
             detail=detail,
-        ) from exc
+        ).problem_detail
+        raise BuildProblemError(problem) from exc
 
 
 # ---------------------------------------------------------------------------

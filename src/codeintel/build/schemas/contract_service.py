@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol
 
+from codeintel.build.catalogs.canonical import load_contract_catalog
 from codeintel.build.schemas.provider_declared import declared_schema_provider_for_inventory
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.target_inventory import get_output_inventory
@@ -453,6 +455,26 @@ class ContractService:
         return self.iter_dataset_contracts_by_table_key()
 
 
+@dataclass(frozen=True, slots=True)
+class CatalogContractProvider:
+    """Contract provider backed by the canonical catalog."""
+
+    contracts: Mapping[str, DatasetContract]
+
+    def get_contract_for_table_key(self, table_key: str) -> DatasetContract:
+        contract = self.contracts.get(table_key)
+        if contract is None:
+            msg = f"Unknown table key: {table_key}"
+            raise KeyError(msg)
+        return contract
+
+    def iter_contracts(self) -> Iterable[DatasetContract]:
+        return self.contracts.values()
+
+    def iter_contracts_by_table_key(self) -> Iterable[tuple[str, DatasetContract]]:
+        return self.contracts.items()
+
+
 @lru_cache(maxsize=1)
 def get_contract_service() -> SchemaContractService:
     """Return the declared-only contract service instance.
@@ -496,7 +518,7 @@ def get_contract_provider(
         Raised when the resolution mode is unsupported.
     """
     if settings is None:
-        return get_enriched_contract_service()
+        return CatalogContractProvider(contracts=_get_catalog_contracts())
     mode = settings.mode
     if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:
@@ -504,7 +526,7 @@ def get_contract_provider(
                 schema_service=get_schema_service(),
                 target_metadata=settings.target_metadata_provider,
             )
-        return get_enriched_contract_service()
+        return CatalogContractProvider(contracts=_get_catalog_contracts())
     if mode is ContractResolutionMode.DECLARED_ONLY:
         if settings.output_inventory is not None:
             return SchemaContractService(
@@ -525,6 +547,11 @@ def _get_enriched_contract_for_table_key(table_key: str) -> DatasetContract:
     return get_enriched_contract_service().get_contract_for_table_key(table_key)
 
 
+@lru_cache(maxsize=1)
+def _get_catalog_contracts() -> Mapping[str, DatasetContract]:
+    return load_contract_catalog()
+
+
 def get_contract_for_table_key(
     table_key: str,
     *,
@@ -543,7 +570,8 @@ def get_contract_for_table_key(
         Raised when the resolution mode is unsupported.
     """
     if settings is None:
-        return _get_enriched_contract_for_table_key(table_key)
+        provider = CatalogContractProvider(contracts=_get_catalog_contracts())
+        return provider.get_contract_for_table_key(table_key)
     mode = settings.mode
     if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:
@@ -552,7 +580,8 @@ def get_contract_for_table_key(
                 target_metadata=settings.target_metadata_provider,
             )
             return service.get_contract_for_table_key(table_key)
-        return _get_enriched_contract_for_table_key(table_key)
+        provider = CatalogContractProvider(contracts=_get_catalog_contracts())
+        return provider.get_contract_for_table_key(table_key)
     if mode is ContractResolutionMode.DECLARED_ONLY:
         if settings.output_inventory is not None:
             service = SchemaContractService(
@@ -594,6 +623,7 @@ def iter_contracts_by_table_key(
 
 def clear_contract_cache() -> None:
     """Clear cached dataset contracts."""
+    _get_catalog_contracts.cache_clear()
     _get_enriched_contract_for_table_key.cache_clear()
     _get_schema_contract_for_table_key.cache_clear()
     get_enriched_contract_service.cache_clear()

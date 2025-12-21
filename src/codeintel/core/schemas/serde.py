@@ -8,6 +8,60 @@ from typing import cast, get_args
 from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
 
 
+def column_to_json_obj(column: Column) -> dict[str, object]:
+    """Serialize a Column into a JSON object.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable representation of the column.
+    """
+    payload: dict[str, object] = {
+        "name": column.name,
+        "type": column.type,
+        "nullable": column.nullable,
+    }
+    if column.description is not None:
+        payload["description"] = column.description
+    return payload
+
+
+def index_to_json_obj(index: Index) -> dict[str, object]:
+    """Serialize an Index into a JSON object.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable representation of the index.
+    """
+    payload: dict[str, object] = {
+        "name": index.name,
+        "columns": list(index.columns),
+        "unique": index.unique,
+    }
+    return payload
+
+
+def table_schema_to_json_obj(schema: TableSchema) -> dict[str, object]:
+    """Serialize a TableSchema into a JSON object.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable representation of the table schema.
+    """
+    payload: dict[str, object] = {
+        "schema": schema.schema,
+        "name": schema.name,
+        "columns": [column_to_json_obj(col) for col in schema.columns],
+        "primary_key": list(schema.primary_key),
+        "indexes": [index_to_json_obj(idx) for idx in schema.indexes],
+    }
+    if schema.description is not None:
+        payload["description"] = schema.description
+    return payload
+
+
 def _require_str(value: object, *, field: str) -> str:
     if isinstance(value, str) and value:
         return value
@@ -142,6 +196,9 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
 
 __all__ = [
     "column_from_json_obj",
+    "column_to_json_obj",
     "index_from_json_obj",
+    "index_to_json_obj",
     "table_schema_from_json_obj",
+    "table_schema_to_json_obj",
 ]

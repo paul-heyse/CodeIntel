@@ -32,7 +32,7 @@ from codeintel.config.primitives import (
     GraphFeatureFlags,
     SnapshotRef,
 )
-from codeintel.core.runtime import RuntimePrimitives
+from codeintel.core.runtime.loader import RuntimeInputs, build_runtime_primitives
 from codeintel.serving.config import ServingConfig
 
 if TYPE_CHECKING:
@@ -213,13 +213,15 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
     return ResolvedRuntime(
         root=resolved_root,
         project=project,
-        primitives=RuntimePrimitives(
-            snapshot=snapshot,
-            paths=paths,
-            tools=cfg.tools.to_binaries(),
-            graph_backend=cfg.graph_backend,
-            graph_features=cfg.graph_features,
-            profiles=None,
+        primitives=build_runtime_primitives(
+            RuntimeInputs(
+                snapshot=snapshot,
+                paths=paths,
+                tools=cfg.tools.to_binaries(),
+                graph_backend=cfg.graph_backend,
+                graph_features=cfg.graph_features,
+                profiles=None,
+            )
         ),
         config=cfg,
         serving=serving,
@@ -273,13 +275,15 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
             repo=repo,
             storage=StorageProjectConfig(db_path=config.build_paths.db_path),
         ),
-        primitives=RuntimePrimitives(
-            snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=repo_root),
-            paths=config.build_paths,
-            tools=config.tools.to_binaries(),
-            graph_backend=config.graph_backend,
-            graph_features=config.graph_features,
-            profiles=None,
+        primitives=build_runtime_primitives(
+            RuntimeInputs(
+                snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=repo_root),
+                paths=config.build_paths,
+                tools=config.tools.to_binaries(),
+                graph_backend=config.graph_backend,
+                graph_features=config.graph_features,
+                profiles=None,
+            )
         ),
         config=config,
         serving=ServingConfig(

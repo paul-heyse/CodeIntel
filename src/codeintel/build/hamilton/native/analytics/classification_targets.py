@@ -32,7 +32,6 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.row_serialization import row_to_tuple
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
@@ -44,6 +43,7 @@ from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
+from codeintel.core.schemas.row_serialization import row_to_tuple
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures

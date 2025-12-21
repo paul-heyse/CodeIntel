@@ -25,6 +25,7 @@ from difflib import get_close_matches
 from typing import TYPE_CHECKING
 
 from codeintel.core.errors.problem_details import ProblemDetail, ProblemDetailBuilder
+from codeintel.core.errors.taxonomy import ErrorCode
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -145,6 +146,39 @@ class BuildProblemError(BuildError):
             BuildProblemError with structured problem detail.
         """
         builder = ProblemDetailBuilder(code=code, title=title, status=status)
+        problem = builder.build(detail).with_extensions(**extras)
+        return cls(problem)
+
+    @classmethod
+    def from_error_code(
+        cls,
+        *,
+        error_code: ErrorCode,
+        detail: str,
+        **extras: object,
+    ) -> BuildProblemError:
+        """Create a BuildProblemError from a structured ErrorCode.
+
+        Parameters
+        ----------
+        error_code
+            Canonical error taxonomy entry.
+        detail
+            Detailed error message.
+        **extras
+            Additional context fields.
+
+        Returns
+        -------
+        BuildProblemError
+            BuildProblemError with structured problem detail.
+        """
+        builder = ProblemDetailBuilder(
+            code=error_code.code,
+            title=error_code.title,
+            status=error_code.status,
+            type_uri=error_code.type_uri,
+        )
         problem = builder.build(detail).with_extensions(**extras)
         return cls(problem)
 

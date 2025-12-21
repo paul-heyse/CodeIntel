@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from codeintel.build.manifest_base import ManifestBase
-from codeintel.build.manifest_utils import read_manifest_json, write_manifest_json
 from codeintel.core.hashing import file_hash
+from codeintel.core.manifests import (
+    ExportManifestData,
+    IncrementalMarker,
+    SkipCriteria,
+    read_manifest_json,
+    write_manifest_json,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -63,98 +68,6 @@ def write_dataset_manifest(
     return path
 
 
-@dataclass(frozen=True)
-class ExportManifestData(ManifestBase):
-    """Structured manifest metadata for a single dataset export."""
-
-    dataset: str
-    artifact: str | None
-    schema_id: str | None
-    schema_version: str | None
-    schema_digest: str | None
-    validation_profile: str
-    row_count: int
-    data_hash: str
-    started_at: str
-    completed_at: str
-    extras: Mapping[str, Any] | None = None
-
-    def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable export manifest payload.
-
-        Returns
-        -------
-        dict[str, object]
-            JSON-serializable export manifest payload.
-        """
-        payload: dict[str, object] = {
-            "dataset": self.dataset,
-            "schema_id": self.schema_id,
-            "schema_version": self.schema_version,
-            "schema_digest": self.schema_digest,
-            "validation_profile": self.validation_profile,
-            "row_count": self.row_count,
-            "data_hash": self.data_hash,
-            "started_at": self.started_at,
-            "completed_at": self.completed_at,
-        }
-        if self.artifact is not None:
-            payload["artifact"] = self.artifact
-        if self.extras:
-            payload["extras"] = dict(self.extras)
-        return payload
-
-
-@dataclass(frozen=True)
-class IncrementalMarker(ManifestBase):
-    """Metadata persisted to decide if an export can be reused."""
-
-    dataset: str
-    row_count: int
-    schema_version: str | None
-    validation_profile: str
-    schema_digest: str | None = None
-    extras: Mapping[str, Any] | None = None
-    exported_at: str | None = None
-
-    def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable marker payload.
-
-        Returns
-        -------
-        dict[str, object]
-            JSON-serializable marker payload.
-
-        Raises
-        ------
-        ValueError
-            If ``exported_at`` is not set before serialization.
-        """
-        if self.exported_at is None:
-            msg = "IncrementalMarker.exported_at must be set before serialization"
-            raise ValueError(msg)
-        payload: dict[str, object] = {
-            "dataset": self.dataset,
-            "row_count": self.row_count,
-            "schema_version": self.schema_version,
-            "validation_profile": self.validation_profile,
-            "schema_digest": self.schema_digest,
-            "exported_at": self.exported_at,
-        }
-        if self.extras:
-            payload["extras"] = dict(self.extras)
-        return payload
-
-
-@dataclass(frozen=True)
-class SkipCriteria:
-    """Inputs used to decide whether an export can be reused."""
-
-    row_count: int | None
-    schema_version: str | None
-    validation_profile: str
-    schema_digest: str | None
-    force_full_export: bool
 
 
 def write_per_dataset_manifest(

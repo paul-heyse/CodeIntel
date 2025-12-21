@@ -15,9 +15,9 @@ from codeintel.analytics.compute.graphs import (
 )
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES
 from codeintel.analytics.utilities.datasets import validate_contract_rows
-from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
 from codeintel.build.schemas import get_contract_for_table_key
 from codeintel.config.primitives import SnapshotRef
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
