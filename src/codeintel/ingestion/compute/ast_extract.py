@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

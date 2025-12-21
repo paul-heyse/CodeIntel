@@ -10,6 +10,7 @@ from __future__ import annotations
 from codeintel.core.schemas.primitives import Column, Index, TableSchema
 
 __all__ = [
+    "CANONICAL_CATALOGS_TABLE",
     "EXPORT_AUDIT_TABLE",
     "METADATA_TABLES",
 ]
@@ -29,8 +30,22 @@ EXPORT_AUDIT_TABLE = TableSchema(
     ],
 )
 
+CANONICAL_CATALOGS_TABLE = TableSchema(
+    schema="metadata",
+    name="canonical_catalogs",
+    columns=[
+        Column("catalog_kind", "VARCHAR", nullable=False),
+        Column("catalog_hash", "VARCHAR", nullable=False),
+        Column("payload", "JSON", nullable=False),
+        Column("inputs", "JSON"),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("catalog_kind", "catalog_hash"),
+)
+
 METADATA_TABLES: tuple[TableSchema, ...] = (
     EXPORT_AUDIT_TABLE,
+    CANONICAL_CATALOGS_TABLE,
     TableSchema(
         schema="metadata",
         name="dataset_schema_registry",

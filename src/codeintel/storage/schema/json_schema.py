@@ -10,6 +10,8 @@ from typing import get_args, get_origin
 
 import jsonschema
 
+from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.contracts.provider import iter_contracts
 
 if typing.TYPE_CHECKING:
@@ -17,6 +19,7 @@ if typing.TYPE_CHECKING:
 
     from jsonschema.protocols import Validator
 
+    from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.datasets.registry import DatasetRegistry
 
 TYPE_MAP: dict[type[object], dict[str, object]] = {
@@ -29,6 +32,7 @@ TYPE_MAP: dict[type[object], dict[str, object]] = {
 
 __all__ = [
     "build_validator",
+    "export_json_schema_for_contract",
     "generate_export_schemas",
     "json_schema_from_typeddict",
     "validate_row_with_schema",
@@ -168,6 +172,45 @@ def build_validator(schema: Mapping[str, object]) -> Validator:
     return jsonschema.Draft202012Validator(dict(schema))
 
 
+def export_json_schema_for_contract(
+    contract: DatasetContract,
+    *,
+    schema_id: str,
+    title: str,
+) -> dict[str, object] | None:
+    """Generate JSON Schema for an export contract, preferring schema registry output.
+
+    Parameters
+    ----------
+    contract
+        Dataset contract providing schema metadata.
+    schema_id
+        Schema $id identifier to attach.
+    title
+        Schema title to attach.
+
+    Returns
+    -------
+    dict[str, object] | None
+        JSON Schema payload, or None when the contract has no schema.
+    """
+    if contract.schema is None:
+        return None
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        json_schema = json_schema_from_table_schema(contract.schema, schema_id=schema_id)
+    else:
+        resolved = service.get_json_schema(contract.table_key)
+        if resolved is None:
+            json_schema = json_schema_from_table_schema(contract.schema, schema_id=schema_id)
+        else:
+            json_schema = dict(resolved)
+            json_schema["$id"] = schema_id
+    json_schema["title"] = title
+    return json_schema
+
+
 def generate_export_schemas(
     registry: DatasetRegistry,
     *,
@@ -193,25 +236,24 @@ def generate_export_schemas(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    datasets = getattr(registry, "by_name", {})
-    # Build name-to-contract mapping from new contract provider
     contracts_by_name = {c.name: c for c in iter_contracts()}
+    datasets = getattr(registry, "by_name", None)
+    registry_names = set(datasets) if isinstance(datasets, Mapping) else None
     target_names = include_datasets or set(contracts_by_name.keys())
+    if registry_names is not None:
+        target_names &= registry_names
     for name in sorted(target_names):
         contract = contracts_by_name.get(name)
         if contract is None or contract.json_schema_id is None:
             continue
-        ds = datasets.get(name) if isinstance(datasets, Mapping) else None
-        row_binding = contract.row_binding or getattr(ds, "row_binding", None)
-        if row_binding is None or row_binding.row_model is None:
-            continue
         schema_id = f"https://schemas.codeintel.dev/export/{contract.json_schema_id}.json"
-        schema = json_schema_from_typeddict(
-            row_binding.row_model,
-            additional_properties=True,
+        schema = export_json_schema_for_contract(
+            contract,
             schema_id=schema_id,
             title=f"{name} export",
         )
+        if schema is None:
+            continue
         path = output_dir / f"{contract.json_schema_id}.json"
         path.write_text(json.dumps(schema, indent=2, sort_keys=True), encoding="utf-8")
         written.append(path)

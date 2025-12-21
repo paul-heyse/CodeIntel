@@ -50,6 +50,31 @@ class ProviderFactoryOptions:
     language: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderRegistryOptions:
+    """Options for selecting providers to register.
+
+    Parameters
+    ----------
+    include_graphs
+        Include GraphProvider in the registry.
+    include_catalog
+        Include CatalogProvider in the registry.
+    include_asts
+        Include AstProvider in the registry.
+    include_features
+        Include FeaturesProvider in the registry.
+    include_module_map
+        Include ModuleMapProvider in the registry.
+    """
+
+    include_graphs: bool = True
+    include_catalog: bool = True
+    include_asts: bool = False
+    include_features: bool = False
+    include_module_map: bool = False
+
+
 class ProviderFactory:
     """Factory for creating and registering resource providers.
 
@@ -59,10 +84,9 @@ class ProviderFactory:
     Example
     -------
     >>> factory = ProviderFactory(gateway, snapshot)
-    >>> registry = factory.create_registry(
-    ...     include_graphs=True,
-    ...     include_asts=True,
-    ... )
+    >>> registry = ResourceRegistry()
+    >>> options = ProviderRegistryOptions(include_graphs=True, include_asts=True)
+    >>> registry = factory.create_registry(registry, options=options)
     >>> provider = registry.require(GraphProvider)
 
     Notes
@@ -112,27 +136,18 @@ class ProviderFactory:
 
     def create_registry(
         self,
+        registry: ResourceRegistry,
         *,
-        include_graphs: bool = True,
-        include_catalog: bool = True,
-        include_asts: bool = False,
-        include_features: bool = False,
-        include_module_map: bool = False,
+        options: ProviderRegistryOptions | None = None,
     ) -> ResourceRegistry:
         """Create a registry with the requested providers.
 
         Parameters
         ----------
-        include_graphs
-            Include GraphProvider in the registry.
-        include_catalog
-            Include CatalogProvider in the registry.
-        include_asts
-            Include AstProvider in the registry.
-        include_features
-            Include FeaturesProvider in the registry.
-        include_module_map
-            Include ModuleMapProvider in the registry.
+        registry
+            Registry instance to populate.
+        options
+            Provider selection options.
 
         Returns
         -------
@@ -141,26 +156,24 @@ class ProviderFactory:
 
         Example
         -------
-        >>> registry = factory.create_registry(
-        ...     include_graphs=True,
-        ...     include_asts=True,
-        ... )
+        >>> registry = ResourceRegistry()
+        >>> options = ProviderRegistryOptions(include_graphs=True, include_asts=True)
+        >>> registry = factory.create_registry(registry, options=options)
         """
-        registry = ResourceRegistry()
-
-        if include_catalog:
+        resolved = options or ProviderRegistryOptions()
+        if resolved.include_catalog:
             registry.register(CatalogProvider, self.make_catalog_provider())
 
-        if include_graphs:
+        if resolved.include_graphs:
             registry.register(GraphProvider, self.make_graph_provider())
 
-        if include_asts:
+        if resolved.include_asts:
             registry.register(AstProvider, self.make_ast_provider())
 
-        if include_features:
+        if resolved.include_features:
             registry.register(FeaturesProvider, self.make_features_provider())
 
-        if include_module_map:
+        if resolved.include_module_map:
             registry.register(ModuleMapProvider, self.make_module_map_provider())
 
         return registry

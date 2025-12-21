@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.assets.fingerprinting import DEFAULT_FINGERPRINT_POLICY
+from codeintel.build.catalogs.canonical import load_contract_catalog, load_target_catalog
 from codeintel.build.config import BuildConfig, BuildConfigStack
 from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
@@ -93,6 +94,8 @@ class BuildRunContext:
         if output_inventory is None:
             output_inventory = get_output_inventory()
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
+        load_contract_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
+        load_target_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
         return BuildEnv(
             gateway=self.gateway,
             snapshot=self.snapshot,

@@ -1,7 +1,7 @@
 """Validate exported JSONL/Parquet datasets against JSON Schemas.
 
 This module provides validation utilities for exported dataset files.
-Validation uses generated JSON Schemas from TableSchema definitions.
+Validation uses generated JSON Schemas from the schema registry.
 """
 
 from __future__ import annotations
@@ -17,7 +17,8 @@ from referencing import Registry
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import log_export_error
 from codeintel.build.schemas.json_schema_registry import get_json_schema
-from codeintel.core.errors.schema import SchemaError
+from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED, SchemaError
+from codeintel.core.errors.taxonomy import NOT_FOUND
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -143,7 +144,7 @@ def validate_export_files(
 
     Raises
     ------
-    from_detail
+    BuildProblemError
         If no schema is available for the table.
     """
     schema = _get_generated_schema(table_key)
@@ -151,19 +152,18 @@ def validate_export_files(
         label = dataset_name or table_key
         message = f"No JSON Schema available for table: {table_key}"
         log_export_error(
-            code="export.schema_missing",
-            title="Schema missing",
-            detail=message,
+            SCHEMA_NOT_FOUND,
+            message,
             dataset=label,
             table_key=table_key,
         )
-        raise BuildProblemError.from_detail(
-            code="export.schema_missing",
-            title="Schema missing",
+        problem = BuildProblemError.from_error_code(
+            error_code=SCHEMA_NOT_FOUND,
             detail=message,
             dataset=label,
             table_key=table_key,
-        )
+        ).problem_detail
+        raise BuildProblemError(problem)
 
     validator = jsonschema.Draft202012Validator(schema, registry=Registry())
     all_errors: list[str] = []
@@ -171,9 +171,8 @@ def validate_export_files(
         if not path.exists():
             message = f"File not found: {path}"
             log_export_error(
-                code="export.file_missing",
-                title="Export file missing",
-                detail=message,
+                NOT_FOUND,
+                message,
             )
             all_errors.append(message)
             continue
@@ -185,9 +184,8 @@ def validate_export_files(
 
     if all_errors:
         log_export_error(
-            code="export.validation_failed",
-            title="Export validation failed",
-            detail="; ".join(all_errors),
+            SCHEMA_VALIDATION_FAILED,
+            "; ".join(all_errors),
             errors=all_errors,
         )
         return 1

@@ -14,12 +14,12 @@ import ibis
 
 from codeintel.core.ibis_typing import filter_by, ibis_bool, window_over
 from codeintel.core.paths import normalize_path
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.ports.change_detection import (
     ChangeSet,
     FileDigest,
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.gateway import ibis_facade
 

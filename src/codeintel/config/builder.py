@@ -17,7 +17,7 @@ from codeintel.config.primitives import (
     ScanProfiles,
     ToolBinaries,
 )
-from codeintel.core.runtime import RuntimePrimitives
+from codeintel.core.runtime.loader import RuntimeInputs, build_runtime_primitives
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         SnapshotInit,
         SnapshotRef,
     )
+    from codeintel.core.runtime import RuntimePrimitives
 
 
 @dataclass(frozen=True)
@@ -201,13 +202,15 @@ class ConfigBuilder:
         RuntimePrimitives
             Snapshot/paths/tools/graph configuration bundle.
         """
-        return RuntimePrimitives(
-            snapshot=self.snapshot,
-            paths=self.paths,
-            tools=self.binaries,
-            graph_backend=self.graph_backend,
-            graph_features=self.graph_features,
-            profiles=self.profiles,
+        return build_runtime_primitives(
+            RuntimeInputs(
+                snapshot=self.snapshot,
+                paths=self.paths,
+                tools=self.binaries,
+                graph_backend=self.graph_backend,
+                graph_features=self.graph_features,
+                profiles=self.profiles,
+            )
         )
 
     def prepare_filesystem(self, *, create_missing_only: bool = True) -> tuple[Path, ...]:

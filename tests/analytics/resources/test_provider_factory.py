@@ -19,6 +19,7 @@ from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.factory import (
     ProviderFactory,
     ProviderFactoryOptions,
+    ProviderRegistryOptions,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
@@ -182,7 +183,7 @@ def test_create_registry_default(test_gateway: StorageGateway, test_snapshot: Sn
     """Create registry with default providers (graphs and catalog)."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    registry = factory.create_registry()
+    registry = factory.create_registry(ResourceRegistry())
 
     expect_is_instance(registry, ResourceRegistry)
     expect_true(registry.has(GraphProvider))
@@ -266,7 +267,10 @@ def test_create_registry_no_graphs(
     """Create registry without graphs."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    registry = factory.create_registry(include_graphs=False)
+    registry = factory.create_registry(
+        ResourceRegistry(),
+        options=ProviderRegistryOptions(include_graphs=False),
+    )
 
     expect_true(not registry.has(GraphProvider))
     expect_true(registry.has(CatalogProvider))
@@ -278,7 +282,10 @@ def test_create_registry_no_catalog(
     """Create registry without catalog."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    registry = factory.create_registry(include_catalog=False)
+    registry = factory.create_registry(
+        ResourceRegistry(),
+        options=ProviderRegistryOptions(include_catalog=False),
+    )
 
     expect_true(registry.has(GraphProvider))
     expect_true(not registry.has(CatalogProvider))
@@ -290,7 +297,10 @@ def test_create_registry_with_asts(
     """Create registry including AST provider."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    registry = factory.create_registry(include_asts=True)
+    registry = factory.create_registry(
+        ResourceRegistry(),
+        options=ProviderRegistryOptions(include_asts=True),
+    )
 
     expect_true(registry.has(AstProvider))
 
@@ -301,7 +311,10 @@ def test_create_registry_with_features(
     """Create registry including features provider."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    registry = factory.create_registry(include_features=True)
+    registry = factory.create_registry(
+        ResourceRegistry(),
+        options=ProviderRegistryOptions(include_features=True),
+    )
 
     expect_true(registry.has(FeaturesProvider))
 
@@ -312,7 +325,10 @@ def test_create_registry_with_module_map(
     """Create registry including module map provider."""
     factory = ProviderFactory(test_gateway, test_snapshot)
 
-    registry = factory.create_registry(include_module_map=True)
+    registry = factory.create_registry(
+        ResourceRegistry(),
+        options=ProviderRegistryOptions(include_module_map=True),
+    )
 
     expect_true(registry.has(ModuleMapProvider))
 
@@ -324,11 +340,14 @@ def test_create_registry_all_providers(
     factory = ProviderFactory(test_gateway, test_snapshot)
 
     registry = factory.create_registry(
-        include_graphs=True,
-        include_catalog=True,
-        include_asts=True,
-        include_features=True,
-        include_module_map=True,
+        ResourceRegistry(),
+        options=ProviderRegistryOptions(
+            include_graphs=True,
+            include_catalog=True,
+            include_asts=True,
+            include_features=True,
+            include_module_map=True,
+        ),
     )
 
     expect_true(registry.has(GraphProvider))

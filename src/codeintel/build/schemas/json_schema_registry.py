@@ -1,6 +1,6 @@
 """JSON Schema registry for generated schemas.
 
-Provide cached access to JSON Schemas generated from TableSchema definitions.
+Provide cached access to JSON Schemas generated from the schema registry.
 This replaces the hand-maintained JSON schema files in config/schemas/export/.
 """
 

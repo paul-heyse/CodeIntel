@@ -15,7 +15,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
+from codeintel.core.schemas.json_schema_gen import (
+    json_schema_from_table_schema,
+    pandera_to_json_schema,
+)
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
@@ -244,12 +247,20 @@ class SchemaService:
         """
         if table_key in self._json_cache:
             return self._json_cache[table_key]
+        schema_id = f"urn:codeintel:schema:{table_key}"
+        dataset_schema = self.get_dataset_schema(table_key)
+        if dataset_schema is not None:
+            json_schema = pandera_to_json_schema(dataset_schema.pandera_schema)
+            json_schema["$id"] = schema_id
+            self._json_cache[table_key] = json_schema
+            return json_schema
+
         schema = self.get_table_schema(table_key)
         if schema is None:
             self._json_cache[table_key] = None
             return None
         factory = self.json_schema_factory or _default_json_schema_factory
-        json_schema = factory(schema, f"urn:codeintel:schema:{table_key}")
+        json_schema = factory(schema, schema_id)
         self._json_cache[table_key] = json_schema
         return json_schema
 

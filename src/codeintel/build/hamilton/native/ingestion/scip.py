@@ -34,12 +34,12 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
 )
-from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.scip import (
     build_occurrence_rows,

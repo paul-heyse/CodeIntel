@@ -27,7 +27,7 @@ from codeintel.build.hamilton.nodes.support_factory import (
     get_support_module,
 )
 from codeintel.build.hamilton.runtime import HamiltonRuntime
-from codeintel.build.target_catalog import load_target_specs
+from codeintel.build.target_specs import load_native_target_specs
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
 
 
 def _all_target_names() -> frozenset[str]:
-    return frozenset(target.name for target in load_target_specs())
+    return frozenset(target.name for target in load_native_target_specs())
 
 
 def build_driver(
@@ -93,7 +93,7 @@ def build_driver(
     >>> len(runtime.target_to_node) > 0
     True
     """
-    targets = load_target_specs()
+    targets = load_native_target_specs()
     base_graph = TargetGraph()
     for target in targets:
         base_graph.register(target)

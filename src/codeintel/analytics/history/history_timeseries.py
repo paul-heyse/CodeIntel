@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 import ibis
 
-from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import (
     DuckDBConnection,
