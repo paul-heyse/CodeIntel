@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.core.results import CliResult
 from codeintel.cli.errors.builder import ProblemBuilder
-from codeintel.cli.errors.taxonomy import (
+from codeintel.core.errors.taxonomy import (
     ConfigErrorCode,
     JobErrorCode,
     OperationErrorCode,

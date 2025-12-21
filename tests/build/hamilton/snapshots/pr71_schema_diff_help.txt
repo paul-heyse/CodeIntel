@@ -19,10 +19,6 @@ Diff a compiled schema manifest against an expected file.
 │                                 modules. [env var:                           │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_ALL] [default:   │
 │                                 false]                                       │
-│    ONLY-NATIVE --only-native    Restrict compilation to targets with native  │
-│                                 Hamilton implementations. [env var:          │
-│                                 CODEINTEL_BUILD_SCHEMA_DIFF_ONLY_NATIVE]     │
-│                                 [default: false]                             │
 │    INFER-NATIVE --infer-native  Infer schemas for inferable native targets   │
 │      --infer                    (fallback to declared on errors). [env var:  │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INFER_NATIVE]    │
@@ -31,10 +27,6 @@ Diff a compiled schema manifest against an expected file.
 │                                 canonicalized output. [env var:              │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_STABLE]          │
 │                                 [default: true]                              │
-│    DETAILED --detailed -d       Show structured diff with breaking change    │
-│                                 detection. [env var:                         │
-│                                 CODEINTEL_BUILD_SCHEMA_DIFF_DETAILED]        │
-│                                 [default: false]                             │
 │    FAIL-ON-BREAKING             Exit with error if breaking changes detected │
 │      --fail-on-breaking         (default: true). [env var:                   │
 │      --no-fail-on-breaking      CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_BREAKING │

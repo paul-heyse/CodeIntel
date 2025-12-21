@@ -16,7 +16,8 @@ import traceback
 from typing import TYPE_CHECKING, Any
 
 from codeintel.cli.errors._cli_errors import ProblemDetail
-from codeintel.cli.errors.taxonomy import (
+from codeintel.cli.errors.taxonomy import make_error_type
+from codeintel.core.errors.taxonomy import (
     INTERNAL_ERROR,
     NOT_FOUND,
     ConfigErrorCode,
@@ -26,13 +27,10 @@ from codeintel.cli.errors.taxonomy import (
     ServiceErrorCode,
     StorageErrorCode,
     ValidationErrorCode,
-    make_error_type,
 )
 
 if TYPE_CHECKING:
-    from codeintel.cli.errors.taxonomy import (
-        ErrorCode,
-    )
+    from codeintel.core.errors.taxonomy import ErrorCode
 
 
 _STATUS_CODES: dict[str, int] = {

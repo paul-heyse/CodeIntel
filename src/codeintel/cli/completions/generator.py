@@ -49,16 +49,13 @@ class ShellBackend(Protocol):
         """
         ...
 
-    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+    def command(self, cmd: CommandSpec) -> list[str]:
         """Generate completion lines for a command.
 
         Parameters
         ----------
         cmd
             Command specification.
-        depth
-            Nesting depth (0 for top-level commands).
-
         Returns
         -------
         list[str]
@@ -101,7 +98,7 @@ def generate_with_backend(model: CompletionModel, backend: ShellBackend) -> str:
     lines.extend(backend.header(model))
     lines.extend(backend.global_flags(model))
     for cmd in model.root_command.subcommands:
-        lines.extend(backend.command(cmd, depth=0))
+        lines.extend(backend.command(cmd))
     lines.extend(backend.footer(model))
     return "\n".join(lines)
 

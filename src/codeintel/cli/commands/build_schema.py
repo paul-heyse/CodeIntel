@@ -56,14 +56,6 @@ class BuildSchemaCompileCommand:
             negative=(),
         ),
     ] = False
-    only_native: Annotated[
-        bool,
-        Parameter(
-            name=["--only-native"],
-            help="Restrict compilation to targets with native Hamilton implementations.",
-            negative=(),
-        ),
-    ] = False
     infer_native: Annotated[
         bool,
         Parameter(
@@ -157,14 +149,6 @@ class BuildSchemaDiffCommand:
             negative=(),
         ),
     ] = False
-    only_native: Annotated[
-        bool,
-        Parameter(
-            name=["--only-native"],
-            help="Restrict compilation to targets with native Hamilton implementations.",
-            negative=(),
-        ),
-    ] = False
     infer_native: Annotated[
         bool,
         Parameter(
@@ -181,14 +165,6 @@ class BuildSchemaDiffCommand:
             negative=(),
         ),
     ] = True
-    detailed: Annotated[
-        bool,
-        Parameter(
-            name=["--detailed", "-d"],
-            help="Show structured diff with breaking change detection.",
-            negative=(),
-        ),
-    ] = False
     fail_on_breaking: Annotated[
         bool,
         Parameter(
@@ -265,14 +241,6 @@ class BuildSchemaMigrateCommand:
         Parameter(
             name=["--all", "-a"],
             help="Compile schemas for all targets across all modules.",
-            negative=(),
-        ),
-    ] = False
-    only_native: Annotated[
-        bool,
-        Parameter(
-            name=["--only-native"],
-            help="Restrict compilation to targets with native Hamilton implementations.",
             negative=(),
         ),
     ] = False

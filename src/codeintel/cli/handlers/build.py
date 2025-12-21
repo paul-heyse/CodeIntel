@@ -12,7 +12,7 @@ import shutil
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from hamilton.caching.adapter import (
     CachingBehavior,
@@ -82,35 +82,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-class BuildResultLike(Protocol):
-    """Protocol for build result objects."""
-
-    @property
-    def run_id(self) -> str:
-        """Return the build run ID."""
-        ...
-
-    @property
-    def completed_targets(self) -> tuple[str, ...]:
-        """Return targets that completed successfully."""
-        ...
-
-    @property
-    def skipped_targets(self) -> tuple[str, ...]:
-        """Return targets that were skipped."""
-        ...
-
-    @property
-    def failed_targets(self) -> tuple[str, ...]:
-        """Return targets that failed."""
-        ...
-
-    @property
-    def duration_ms(self) -> float:
-        """Return total duration in milliseconds."""
-        ...
-
-
 class RunMode(Enum):
     """Build execution mode."""
 
@@ -150,6 +121,14 @@ class BuildExecutionArgs:
     def is_dry_run(self) -> bool:
         """Return True when run_mode is DRY_RUN."""
         return self.run_mode is RunMode.DRY_RUN
+
+
+@dataclass(frozen=True)
+class _BuildExecutionOutcome:
+    """Result bundle for an executed build."""
+
+    result: HamiltonBuildResult
+    cache_report: dict[str, object] | None
 
 
 @dataclass(frozen=True)
@@ -309,7 +288,7 @@ def _execute_build_hamilton(
     runtime: ResolvedRuntime,
     gateway: StorageGateway,
     execution: BuildExecutionArgs,
-) -> BuildResultLike | None:
+) -> _BuildExecutionOutcome | None:
     """Execute build using Hamilton executor.
 
     Parameters
@@ -400,7 +379,7 @@ def _execute_build_hamilton(
             enable_cache=execution.enable_cache,
         )
 
-    return _HamiltonResultAdapter(hamilton_result, cache_report=cache_report)
+    return _BuildExecutionOutcome(result=hamilton_result, cache_report=cache_report)
 
 
 def _build_cache_report(
@@ -569,67 +548,6 @@ def _collect_cache_node_rows(
 
     node_rows.sort(key=lambda r: (str(r.get("node", "")), str(r.get("task_id", ""))))
     return node_rows, hit_count, executed_count
-
-
-class _HamiltonResultAdapter:
-    """Adapter to make HamiltonBuildResult compatible with BuildResult interface."""
-
-    def __init__(
-        self,
-        hamilton_result: HamiltonBuildResult,
-        *,
-        cache_report: dict[str, object] | None = None,
-    ) -> None:
-        """Initialize adapter with Hamilton result.
-
-        Parameters
-        ----------
-        hamilton_result
-            Result from HamiltonBuildExecutor.
-        cache_report
-            Optional cache report for this run.
-        """
-        self._result = hamilton_result
-        self._cache_report = cache_report
-
-    @property
-    def cache_report(self) -> dict[str, object] | None:
-        """Return an optional cache report for the run."""
-        return self._cache_report
-
-    @property
-    def run_id(self) -> str:
-        """Return the build run ID."""
-        return self._result.run_id
-
-    @property
-    def completed_targets(self) -> tuple[str, ...]:
-        """Return targets that completed successfully.
-
-        Uses the new computed_targets field from HamiltonBuildResult.
-        """
-        return self._result.computed_targets
-
-    @property
-    def skipped_targets(self) -> tuple[str, ...]:
-        """Return targets that were skipped.
-
-        Uses the new skipped_targets field from HamiltonBuildResult.
-        """
-        return self._result.skipped_targets
-
-    @property
-    def failed_targets(self) -> tuple[str, ...]:
-        """Return targets that failed."""
-        return self._result.failed_targets
-
-    @property
-    def duration_ms(self) -> float:
-        """Return total duration in milliseconds.
-
-        Uses the duration_ms field from HamiltonBuildResult.
-        """
-        return self._result.duration_ms
 
 
 def _lookup_run_by_id(
@@ -960,19 +878,23 @@ def _execute_and_format_result(
     """
     try:
         with runtime_gateway(runtime, read_only=False) as gateway:
-            result = _execute_build_hamilton(runtime, gateway, execution)
+            outcome = _execute_build_hamilton(runtime, gateway, execution)
             if (
                 execution.publish_serving_snapshot
                 and execution.run_mode is RunMode.EXECUTE
-                and result is not None
-                and not result.failed_targets
+                and outcome is not None
+                and not outcome.result.failed_targets
             ):
-                _publish_serving_snapshot_from_build(runtime, gateway, run_id=result.run_id)
+                _publish_serving_snapshot_from_build(
+                    runtime,
+                    gateway,
+                    run_id=outcome.result.run_id,
+                )
     except Exception as exc:
         LOG.exception("build.run.error")
         return fail_execution_failed("build", str(exc))
 
-    if execution.run_mode is RunMode.DRY_RUN or result is None:
+    if execution.run_mode is RunMode.DRY_RUN or outcome is None:
         return CliResult.ok(
             BuildRunResult(
                 executed=[],
@@ -982,15 +904,14 @@ def _execute_and_format_result(
             )
         )
 
-    cache_report_raw = getattr(result, "cache_report", None)
-    cache_report = cache_report_raw if isinstance(cache_report_raw, dict) else None
+    cache_report = outcome.cache_report
 
     return CliResult.ok(
         BuildRunResult(
-            executed=list(result.completed_targets),
-            skipped=list(result.skipped_targets),
-            failed=list(result.failed_targets),
-            duration_seconds=result.duration_ms / 1000.0,
+            executed=list(outcome.result.computed_targets),
+            skipped=list(outcome.result.skipped_targets),
+            failed=list(outcome.result.failed_targets),
+            duration_seconds=outcome.result.duration_ms / 1000.0,
             cache=cache_report,
         )
     )
@@ -1439,12 +1360,7 @@ def build_assets_handler(ctx: CommandContext) -> CliResult[BuildAssetsResult]:
     runtime = ctx.runtime
     output_format = ctx.params.get_str("output_format") or "table"
 
-    if bool(ctx.params.get_bool("versions")):
-        return _build_assets_versions_result(
-            gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx
-        )
-
-    return _build_assets_legacy_result(
+    return _build_assets_result(
         gateway=gateway, runtime=runtime, output_format=output_format, ctx=ctx
     )
 
@@ -1459,48 +1375,7 @@ def _looks_like_hash(value: str) -> bool:
     return all(c in "0123456789abcdef" for c in value.lower())
 
 
-def _build_assets_legacy_result(
-    *,
-    gateway: StorageGateway,
-    runtime: ResolvedRuntime,
-    output_format: str,
-    ctx: CommandContext,
-) -> CliResult[BuildAssetsResult]:
-    asset = ctx.params.get_str("asset")
-    target = ctx.params.get_str("target")
-    asset_type = ctx.params.get_str("asset_type")
-
-    assets = gateway.assets.list_assets(
-        repo=runtime.snapshot.repo,
-        commit=runtime.snapshot.commit,
-        asset_type=asset_type,
-        owner_target=target,
-    )
-    if asset is not None:
-        assets = [a for a in assets if a.asset_key == asset]
-
-    asset_dicts = [
-        {
-            "asset_key": a.asset_key,
-            "asset_type": a.asset_type,
-            "repo": a.repo,
-            "commit": a.commit,
-            "owner_target": a.owner_target,
-            "schema_version": a.schema_version,
-            "row_count": a.row_count,
-            "file_size_bytes": a.file_size_bytes,
-            "materialized_at": a.materialized_at.isoformat() if a.materialized_at else None,
-            "input_hash": a.input_hash,
-            "metadata": a.metadata,
-        }
-        for a in assets
-    ]
-    return CliResult.ok(
-        BuildAssetsResult(assets=asset_dicts, count=len(asset_dicts), format=output_format)
-    )
-
-
-def _build_assets_versions_result(
+def _build_assets_result(
     *,
     gateway: StorageGateway,
     runtime: ResolvedRuntime,
@@ -1518,7 +1393,7 @@ def _build_assets_versions_result(
         rows = gateway.execute(
             """
             SELECT DISTINCT asset_kind, asset_key
-            FROM build.asset_versions
+            FROM build.asset_version_events
             WHERE repo = ? AND commit = ?
             ORDER BY asset_kind, asset_key
             """,
@@ -1532,7 +1407,7 @@ def _build_assets_versions_result(
         rows = gateway.execute(
             """
             SELECT DISTINCT asset_kind, asset_key
-            FROM build.asset_versions
+            FROM build.asset_version_events
             WHERE repo = ? AND commit = ? AND target = ?
             ORDER BY asset_kind, asset_key
             """,
@@ -1892,9 +1767,9 @@ def _load_asset_version_row(
         """
         SELECT schema_hash, row_count, bytes
         FROM build.asset_versions
-        WHERE repo = ? AND commit = ? AND asset_kind = ? AND asset_key = ? AND version_hash = ?
+        WHERE asset_kind = ? AND asset_key = ? AND version_hash = ?
         """,
-        [ctx.repo, ctx.commit, ctx.asset_kind, ctx.asset_key, version_hash],
+        [ctx.asset_kind, ctx.asset_key, version_hash],
     ).fetchone()
     if row is None:
         return None

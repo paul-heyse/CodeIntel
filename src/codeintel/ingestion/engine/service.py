@@ -370,8 +370,6 @@ class ToolService:
         repo_root: Path,
         *,
         output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
     ) -> ScipIndexResult:
         """
         Run scip-python for a full index and export to JSON.
@@ -390,69 +388,14 @@ class ToolService:
         RuntimeError
             Raised when plugin results are missing required metadata.
         """
+        output_json = output_scip.with_suffix(".json")
         plugin_result = await self.run_plugin(
             "scip",
             repo_root=repo_root,
             output_scip=output_scip,
             output_json=output_json,
-            target_dir=target_dir,
+            target_dir=None,
             rel_paths=None,
-        )
-
-        if plugin_result.status is ToolStatus.NOT_FOUND:
-            error = plugin_result.error
-            if isinstance(error, ToolNotFoundError):
-                raise error
-            configured_path = self.tools_config.resolve_path(plugin_result.tool)
-            raise ToolNotFoundError(plugin_result.tool, configured_path)
-
-        if plugin_result.status is not ToolStatus.OK:
-            if isinstance(plugin_result.error, ToolExecutionError):
-                raise plugin_result.error
-            if plugin_result.run is not None:
-                raise ToolExecutionError(plugin_result.run)
-            message = "SCIP plugin failed without ToolRunResult"
-            raise RuntimeError(message)
-
-        parsed = plugin_result.parsed
-        if isinstance(parsed, ScipIndexResult):
-            return parsed
-
-        return ScipIndexResult.empty()
-
-    async def run_scip_shard(
-        self,
-        repo_root: Path,
-        *,
-        rel_paths: list[str],
-        output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
-    ) -> ScipIndexResult:
-        """
-        Run scip-python for a subset of files and export to JSON.
-
-        Returns
-        -------
-        ScipIndexResult
-            Parsed SCIP index result for the shard.
-
-        Raises
-        ------
-        ToolExecutionError
-            Raised when SCIP tooling exits with an error.
-        ToolNotFoundError
-            Raised when SCIP tooling binaries cannot be resolved.
-        RuntimeError
-            Raised when plugin results are missing required metadata.
-        """
-        plugin_result = await self.run_plugin(
-            "scip",
-            repo_root=repo_root,
-            output_scip=output_scip,
-            output_json=output_json,
-            target_dir=target_dir,
-            rel_paths=rel_paths,
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:

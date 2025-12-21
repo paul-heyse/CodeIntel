@@ -22,13 +22,13 @@ from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
 from codeintel.cli.errors.builder import ProblemBuilder
-from codeintel.cli.errors.taxonomy import OperationErrorCode
 from codeintel.cli.handlers.datasets import (
     datasets_diff_handler,
     datasets_lint_handler,
     datasets_list_handler,
     datasets_snapshot_handler,
 )
+from codeintel.core.errors.taxonomy import OperationErrorCode
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext

@@ -1,6 +1,6 @@
 """Asset catalog tracking for build observability.
 
-This module provides persistence and querying for the asset catalog,
+This module provides persistence and querying for the versioned asset catalog,
 enabling "what exists?" visibility into the build state.
 """
 
@@ -20,51 +20,58 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class AssetRecord:
-    """Record of a materialized asset.
+class AssetVersionRecord:
+    """Record of a content-addressed asset version."""
 
-    Attributes
-    ----------
-    asset_key
-        Unique asset identifier (e.g., "analytics.function_metrics").
-    asset_type
-        Asset type: "table", "view", or "artifact".
-    repo
-        Repository slug.
-    commit
-        Commit SHA.
-    owner_target
-        Target that produced this asset.
-    schema_version
-        Schema version if applicable.
-    row_count
-        Row count for tables.
-    file_size_bytes
-        File size for artifacts.
-    materialized_at
-        When asset was created.
-    input_hash
-        Input hash from manifest.
-    metadata
-        Additional metadata as JSON-serializable dict.
-    """
-
+    asset_kind: str
     asset_key: str
-    asset_type: str
-    repo: str
-    commit: str
-    owner_target: str
-    schema_version: str | None = None
+    version_hash: str
+    schema_hash: str | None = None
     row_count: int | None = None
-    file_size_bytes: int | None = None
-    materialized_at: datetime | None = None
-    input_hash: str | None = None
-    metadata: dict[str, Any] | None = None
+    bytes: int | None = None
+    created_at: datetime | None = None
+    meta: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
-class AssetVersionRecord:
-    """Record of a content-addressed asset version."""
+class AssetVersionEventRecord:
+    """Run-scoped event for an asset version."""
+
+    run_id: str
+    repo: str
+    commit: str
+    asset_kind: str
+    asset_key: str
+    version_hash: str
+    status: str
+    target: str | None = None
+    impl_kind: str | None = None
+    location: str | None = None
+    input_hash: str | None = None
+    options_hash: str | None = None
+    recorded_at: datetime | None = None
+    meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class RunAssetVersionRecord:
+    """Record linking a run_id to a resolved asset version."""
+
+    run_id: str
+    repo: str
+    commit: str
+    asset_kind: str
+    asset_key: str
+    version_hash: str
+    resolution_kind: str
+    recorded_at: datetime | None = None
+    target: str | None = None
+    meta: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class AssetVersionHistoryRecord:
+    """Versioned asset record joined with run event context."""
 
     asset_kind: str
     asset_key: str
@@ -82,22 +89,7 @@ class AssetVersionRecord:
     row_count: int | None = None
     bytes: int | None = None
     created_at: datetime | None = None
-    meta: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class RunAssetVersionRecord:
-    """Record linking a run_id to a resolved asset version."""
-
-    run_id: str
-    repo: str
-    commit: str
-    asset_kind: str
-    asset_key: str
-    version_hash: str
-    resolution_kind: str
     recorded_at: datetime | None = None
-    target: str | None = None
     meta: dict[str, Any] | None = None
 
 
@@ -180,19 +172,12 @@ class RunEnvironmentRecord:
 class AssetTracking:
     """Accessor for build asset catalog.
 
-    Provides CRUD operations for the build.assets table,
-    enabling observability into what has been materialized.
+    Provides persistence and querying for the versioned asset catalog tables.
 
     Parameters
     ----------
     gateway
         Storage gateway providing database access.
-
-    Examples
-    --------
-    >>> tracking = AssetTracking(gateway)
-    >>> tracking.record_asset(AssetRecord(...))
-    >>> assets = tracking.list_assets("org/repo", "abc123")
     """
 
     def __init__(self, gateway: StorageGateway) -> None:
@@ -206,128 +191,6 @@ class AssetTracking:
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
-
-    def record_asset(self, record: AssetRecord) -> None:
-        """Record or update an asset in the catalog.
-
-        Uses upsert to insert or update the asset record.
-
-        Parameters
-        ----------
-        record
-            Asset record to save.
-        """
-        materialized_at = record.materialized_at or utc_now()
-        metadata_json = encode_json_compact(record.metadata or {})
-
-        self._backend.upsert(
-            "build.assets",
-            [
-                (
-                    record.asset_key,
-                    record.asset_type,
-                    record.repo,
-                    record.commit,
-                    record.owner_target,
-                    record.schema_version,
-                    record.row_count,
-                    record.file_size_bytes,
-                    materialized_at,
-                    record.input_hash,
-                    metadata_json,
-                )
-            ],
-            columns=(
-                "asset_key",
-                "asset_type",
-                "repo",
-                "commit",
-                "owner_target",
-                "schema_version",
-                "row_count",
-                "file_size_bytes",
-                "materialized_at",
-                "input_hash",
-                "metadata",
-            ),
-            conflict_columns=("asset_key", "repo", "commit"),
-            update_columns=(
-                "asset_type",
-                "owner_target",
-                "schema_version",
-                "row_count",
-                "file_size_bytes",
-                "materialized_at",
-                "input_hash",
-                "metadata",
-            ),
-        )
-
-    def record_assets_batch(
-        self,
-        records: Sequence[AssetRecord],
-    ) -> int:
-        """Record multiple assets in a single batch.
-
-        Parameters
-        ----------
-        records
-            Sequence of AssetRecord objects to save.
-
-        Returns
-        -------
-        int
-            Number of records persisted.
-        """
-        if not records:
-            return 0
-
-        now = utc_now()
-        rows = [
-            (
-                r.asset_key,
-                r.asset_type,
-                r.repo,
-                r.commit,
-                r.owner_target,
-                r.schema_version,
-                r.row_count,
-                r.file_size_bytes,
-                r.materialized_at or now,
-                r.input_hash,
-                encode_json_compact(r.metadata or {}),
-            )
-            for r in records
-        ]
-
-        return self._backend.upsert(
-            "build.assets",
-            rows,
-            columns=(
-                "asset_key",
-                "asset_type",
-                "repo",
-                "commit",
-                "owner_target",
-                "schema_version",
-                "row_count",
-                "file_size_bytes",
-                "materialized_at",
-                "input_hash",
-                "metadata",
-            ),
-            conflict_columns=("asset_key", "repo", "commit"),
-            update_columns=(
-                "asset_type",
-                "owner_target",
-                "schema_version",
-                "row_count",
-                "file_size_bytes",
-                "materialized_at",
-                "input_hash",
-                "metadata",
-            ),
-        )
 
     def record_asset_versions_batch(self, records: Sequence[AssetVersionRecord]) -> int:
         """Upsert multiple asset version records.
@@ -346,15 +209,6 @@ class AssetTracking:
                 r.asset_kind,
                 r.asset_key,
                 r.version_hash,
-                r.repo,
-                r.commit,
-                r.run_id,
-                r.target,
-                r.impl_kind,
-                r.status,
-                r.location,
-                r.input_hash,
-                r.options_hash,
                 r.schema_hash,
                 r.row_count,
                 r.bytes,
@@ -371,15 +225,6 @@ class AssetTracking:
                 "asset_kind",
                 "asset_key",
                 "version_hash",
-                "repo",
-                "commit",
-                "run_id",
-                "target",
-                "impl_kind",
-                "status",
-                "location",
-                "input_hash",
-                "options_hash",
                 "schema_hash",
                 "row_count",
                 "bytes",
@@ -388,19 +233,79 @@ class AssetTracking:
             ),
             conflict_columns=("asset_kind", "asset_key", "version_hash"),
             update_columns=(
+                "schema_hash",
+                "row_count",
+                "bytes",
+                "created_at",
+                "meta",
+            ),
+        )
+
+    def record_asset_version_events_batch(
+        self, records: Sequence[AssetVersionEventRecord]
+    ) -> int:
+        """Upsert run-scoped asset version events.
+
+        Returns
+        -------
+        int
+            Number of rows written to the asset_version_events table.
+        """
+        if not records:
+            return 0
+
+        now = utc_now()
+        rows = [
+            (
+                r.run_id,
+                r.repo,
+                r.commit,
+                r.asset_kind,
+                r.asset_key,
+                r.version_hash,
+                r.target,
+                r.impl_kind,
+                r.status,
+                r.location,
+                r.input_hash,
+                r.options_hash,
+                r.recorded_at or now,
+                encode_json_compact(r.meta or {}),
+            )
+            for r in records
+        ]
+
+        return self._backend.upsert(
+            "build.asset_version_events",
+            rows,
+            columns=(
+                "run_id",
                 "repo",
                 "commit",
-                "run_id",
+                "asset_kind",
+                "asset_key",
+                "version_hash",
                 "target",
                 "impl_kind",
                 "status",
                 "location",
                 "input_hash",
                 "options_hash",
-                "schema_hash",
-                "row_count",
-                "bytes",
-                "created_at",
+                "recorded_at",
+                "meta",
+            ),
+            conflict_columns=("run_id", "asset_kind", "asset_key"),
+            update_columns=(
+                "repo",
+                "commit",
+                "version_hash",
+                "target",
+                "impl_kind",
+                "status",
+                "location",
+                "input_hash",
+                "options_hash",
+                "recorded_at",
                 "meta",
             ),
         )
@@ -562,27 +467,32 @@ class AssetTracking:
         asset_kind: str,
         asset_key: str,
         limit: int = 50,
-    ) -> list[AssetVersionRecord]:
+    ) -> list[AssetVersionHistoryRecord]:
         """List versions for an asset within a repo/commit scope.
 
         Returns
         -------
-        list[AssetVersionRecord]
+        list[AssetVersionHistoryRecord]
             Parsed asset version records ordered by recency.
         """
         rows = self._con.execute(
             """
-            SELECT asset_kind, asset_key, version_hash, repo, commit,
-                   status, run_id, target, impl_kind, location, input_hash,
-                   options_hash, schema_hash, row_count, bytes, created_at, meta
-            FROM build.asset_versions
-            WHERE repo = ? AND commit = ? AND asset_kind = ? AND asset_key = ?
-            ORDER BY created_at DESC, version_hash DESC
+            SELECT v.asset_kind, v.asset_key, v.version_hash, e.repo, e.commit,
+                   e.status, e.run_id, e.target, e.impl_kind, e.location, e.input_hash,
+                   e.options_hash, v.schema_hash, v.row_count, v.bytes, v.created_at,
+                   e.recorded_at, v.meta
+            FROM build.asset_version_events e
+            JOIN build.asset_versions v
+              ON v.asset_kind = e.asset_kind
+             AND v.asset_key = e.asset_key
+             AND v.version_hash = e.version_hash
+            WHERE e.repo = ? AND e.commit = ? AND e.asset_kind = ? AND e.asset_key = ?
+            ORDER BY e.recorded_at DESC, v.version_hash DESC
             LIMIT ?
             """,
             [repo, commit, asset_kind, asset_key, limit],
         ).fetchall()
-        return [self._parse_asset_version_row(row) for row in rows]
+        return [self._parse_asset_version_history_row(row) for row in rows]
 
     def get_latest_version_hash(
         self,
@@ -602,9 +512,9 @@ class AssetTracking:
         row = self._con.execute(
             """
             SELECT version_hash
-            FROM build.asset_versions
+            FROM build.asset_version_events
             WHERE repo = ? AND commit = ? AND asset_kind = ? AND asset_key = ?
-            ORDER BY created_at DESC, version_hash DESC
+            ORDER BY recorded_at DESC, version_hash DESC
             LIMIT 1
             """,
             [repo, commit, asset_kind, asset_key],
@@ -724,85 +634,11 @@ class AssetTracking:
             update_columns=("summary", "computed_at", "computed_by_run_id"),
         )
 
-    def list_assets(
-        self,
-        repo: str,
-        commit: str,
-        *,
-        asset_type: str | None = None,
-        owner_target: str | None = None,
-    ) -> list[AssetRecord]:
-        """List assets for a repo/commit with optional filters.
-
-        Parameters
-        ----------
-        repo
-            Repository slug.
-        commit
-            Commit SHA.
-        asset_type
-            Optional filter by asset type (table, view, artifact).
-        owner_target
-            Optional filter by owner target name.
-
-        Returns
-        -------
-        list[AssetRecord]
-            List of asset records matching the filters.
-        """
-        query = """
-            SELECT asset_key, asset_type, repo, commit, owner_target,
-                   schema_version, row_count, file_size_bytes,
-                   materialized_at, input_hash, metadata
-            FROM build.assets
-            WHERE repo = ? AND commit = ?
-        """
-        params: list[Any] = [repo, commit]
-
-        if asset_type:
-            query += " AND asset_type = ?"
-            params.append(asset_type)
-
-        if owner_target:
-            query += " AND owner_target = ?"
-            params.append(owner_target)
-
-        query += " ORDER BY asset_key"
-
-        results = self._con.execute(query, params).fetchall()
-        return [self._parse_asset_row(row) for row in results]
-
     @staticmethod
-    def _parse_asset_row(row: tuple[Any, ...]) -> AssetRecord:
-        """Parse a DuckDB row into AssetRecord.
-
-        Parameters
-        ----------
-        row
-            DuckDB row tuple from build.assets table.
-
-        Returns
-        -------
-        AssetRecord
-            Parsed asset record.
-        """
-        return AssetRecord(
-            asset_key=str(row[0]),
-            asset_type=str(row[1]),
-            repo=str(row[2]),
-            commit=str(row[3]),
-            owner_target=str(row[4]),
-            schema_version=str(row[5]) if row[5] else None,
-            row_count=int(row[6]) if row[6] is not None else None,
-            file_size_bytes=int(row[7]) if row[7] is not None else None,
-            materialized_at=row[8],
-            input_hash=str(row[9]) if row[9] else None,
-            metadata=decode_json_dict(row[10]) if row[10] else None,
-        )
-
-    @staticmethod
-    def _parse_asset_version_row(row: tuple[Any, ...]) -> AssetVersionRecord:
-        return AssetVersionRecord(
+    def _parse_asset_version_history_row(
+        row: tuple[Any, ...],
+    ) -> AssetVersionHistoryRecord:
+        return AssetVersionHistoryRecord(
             asset_kind=str(row[0]),
             asset_key=str(row[1]),
             version_hash=str(row[2]),
@@ -819,7 +655,8 @@ class AssetTracking:
             row_count=int(row[13]) if row[13] is not None else None,
             bytes=int(row[14]) if row[14] is not None else None,
             created_at=row[15],
-            meta=decode_json_dict(row[16]) if row[16] else None,
+            recorded_at=row[16],
+            meta=decode_json_dict(row[17]) if row[17] else None,
         )
 
     def get_downstream_edges(
@@ -902,9 +739,9 @@ class AssetTracking:
         row = self._con.execute(
             """
             SELECT target
-            FROM build.asset_versions
+            FROM build.asset_version_events
             WHERE asset_kind = ? AND asset_key = ?
-            ORDER BY created_at DESC
+            ORDER BY recorded_at DESC
             LIMIT 1
             """,
             [asset_kind, asset_key],
@@ -1009,8 +846,9 @@ __all__ = [
     "AssetAliasRecord",
     "AssetDiffRecord",
     "AssetLineageEdgeRecord",
-    "AssetRecord",
     "AssetTracking",
+    "AssetVersionEventRecord",
+    "AssetVersionHistoryRecord",
     "AssetVersionRecord",
     "RunAssetVersionRecord",
     "RunEnvironmentRecord",

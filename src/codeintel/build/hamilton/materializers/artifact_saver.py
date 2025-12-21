@@ -30,7 +30,6 @@ from codeintel.build.hamilton.materializers.base import (
 from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
 from codeintel.build.hamilton.native.outputs import expected_artifacts
 from codeintel.build.targets import TargetGraph
-from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 SaveStatus = Literal["succeeded", "skipped", "failed"]
 
@@ -71,7 +70,6 @@ class FileArtifactSaver(DataSaver):
     - Computes the target input hash (manifest key) from the graph + env.
     - Applies manifest-based skip (authoritative for artifact writes).
     - Writes bytes to a contract-resolved output path using atomic rename.
-    - Records the artifact in the asset catalog for observability.
     - Returns a metadata dict (as required by Hamilton's DataSaver API).
     """
 
@@ -203,22 +201,6 @@ class FileArtifactSaver(DataSaver):
 
                     if isinstance(data, ArtifactWritePlan):
                         size_bytes = _atomic_write_via_plan(output_path, data)
-                        _record_asset(
-                            env=self.env,
-                            record=AssetRecord(
-                                asset_key=self.artifact_name,
-                                asset_type="artifact",
-                                repo=self.env.snapshot.repo,
-                                commit=self.env.snapshot.commit,
-                                owner_target=self.target_name,
-                                file_size_bytes=size_bytes,
-                                input_hash=input_hash,
-                                metadata={
-                                    "path": str(output_path),
-                                    "size_bytes": size_bytes,
-                                },
-                            ),
-                        )
                         result = _succeeded(
                             artifact_name=self.artifact_name,
                             duration_ms=duration_ms(start),
@@ -228,22 +210,6 @@ class FileArtifactSaver(DataSaver):
                         )
                     elif isinstance(data, Path) and _same_path(data, output_path):
                         size_bytes = output_path.stat().st_size
-                        _record_asset(
-                            env=self.env,
-                            record=AssetRecord(
-                                asset_key=self.artifact_name,
-                                asset_type="artifact",
-                                repo=self.env.snapshot.repo,
-                                commit=self.env.snapshot.commit,
-                                owner_target=self.target_name,
-                                file_size_bytes=size_bytes,
-                                input_hash=input_hash,
-                                metadata={
-                                    "path": str(output_path),
-                                    "size_bytes": size_bytes,
-                                },
-                            ),
-                        )
                         result = _succeeded(
                             artifact_name=self.artifact_name,
                             duration_ms=duration_ms(start),
@@ -254,23 +220,6 @@ class FileArtifactSaver(DataSaver):
                     else:
                         content_bytes = _coerce_bytes(data)
                         _atomic_write(output_path, content_bytes)
-                        _record_asset(
-                            env=self.env,
-                            record=AssetRecord(
-                                asset_key=self.artifact_name,
-                                asset_type="artifact",
-                                repo=self.env.snapshot.repo,
-                                commit=self.env.snapshot.commit,
-                                owner_target=self.target_name,
-                                file_size_bytes=len(content_bytes),
-                                input_hash=input_hash,
-                                metadata={
-                                    "path": str(output_path),
-                                    "size_bytes": len(content_bytes),
-                                },
-                            ),
-                        )
-
                         result = _succeeded(
                             artifact_name=self.artifact_name,
                             duration_ms=duration_ms(start),
@@ -464,14 +413,6 @@ def _atomic_write(output_path: Path, content: bytes) -> None:
         if temp_path.exists():
             temp_path.unlink()
         raise
-
-
-def _record_asset(
-    *,
-    env: BuildEnv,
-    record: AssetRecord,
-) -> None:
-    env.gateway.assets.record_asset(record)
 
 
 __all__ = [

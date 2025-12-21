@@ -68,7 +68,6 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
             commit="deadbeef",
             repo_root=repo_root,
             output_scip=scip_dir / "index.scip",
-            output_json=scip_dir / "index.scip.json",
         )
 
         step = ScipIngestStep(storage=context.storage, tools=context.tools)
@@ -80,8 +79,8 @@ def test_ingest_scip_produces_artifacts(scip_ingest_context: ScipIngestContext) 
 
         if not (scip_dir / "index.scip").is_file():
             pytest.fail("index.scip was not created under build/scip")
-        if not (scip_dir / "index.scip.json").is_file():
-            pytest.fail("index.scip.json was not created under build/scip")
+        if not (scip_dir / "index.json").is_file():
+            pytest.fail("index.json was not created under build/scip")
 
         count = count_table_rows(gateway.con, "core.scip_symbols")
         if count == 0:
@@ -93,7 +92,7 @@ def test_scip_ingest_result_factory() -> None:
     success = ScipIngestResult(
         status="success",
         index_scip=Path("build/scip/index.scip"),
-        index_json=Path("build/scip/index.scip.json"),
+        index_json=Path("build/scip/index.json"),
     )
     if success.status != "success":
         pytest.fail(f"Expected status='success', got {success.status}")

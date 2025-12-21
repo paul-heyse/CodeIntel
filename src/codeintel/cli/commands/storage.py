@@ -1,4 +1,4 @@
-"""Storage commands for macro validation, generation, and profiling.
+"""Storage commands for macro validation and profiling.
 
 Note: Storage commands require runtime/gateway access via handler pattern.
 """
@@ -15,7 +15,6 @@ from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.storage import (
     export_database_handler,
-    generate_macros_handler,
     import_database_handler,
     profile_storage_handler,
     validate_macros_handler,
@@ -41,22 +40,6 @@ class ValidateMacrosCommand:
         Parameter(
             name="--db-path",
             help="Path to DuckDB database.",
-        ),
-    ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
-
-
-@cli_command("storage.generate_macros", handler=generate_macros_handler, config=_STORAGE_CONFIG)
-@storage_app.command(name="generate-macros")
-@dataclass
-class GenerateMacrosCommand:
-    """Generate macros for tables."""
-
-    tables: Annotated[
-        list[str] | None,
-        Parameter(
-            name="--table",
-            help="Tables to generate macros for (repeatable).",
         ),
     ] = None
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)

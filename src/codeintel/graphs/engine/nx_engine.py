@@ -160,8 +160,6 @@ class NxGraphEngine:
             GraphKind.SYMBOL_FUNCTION_GRAPH,
             lambda: views.load_symbol_function_graph(
                 self.gateway,
-                self.repo,
-                self.commit,
                 use_gpu=self.effective_use_gpu,
             ),
         )

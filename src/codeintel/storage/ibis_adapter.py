@@ -49,61 +49,6 @@ log = logging.getLogger(__name__)
 _DATAFRAME_FAST_LANE_MIN_ROWS = 10_000
 
 
-def _convert_numpy_types(value: object) -> object:
-    """Convert numpy types to native Python types for DuckDB compatibility.
-
-    Returns
-    -------
-    object
-        Native Python type or original value if not a numpy type.
-    """
-    item = getattr(value, "item", None)
-    dtype = getattr(value, "dtype", None)
-    if callable(item) and dtype is not None:
-        return item()
-    return value
-
-
-def _normalize_row(row: tuple[object, ...]) -> tuple[object, ...]:
-    """Normalize a row by converting numpy types to native Python types.
-
-    Returns
-    -------
-    tuple[object, ...]
-        Row with all numpy types converted to native Python types.
-    """
-    return tuple(_convert_numpy_types(v) for v in row)
-
-
-def _extract_scalar(value: object) -> object:
-    """
-    Extract a single scalar value from common ibis execute() results.
-
-    Returns
-    -------
-    object
-        Native Python scalar extracted from the result.
-
-    Raises
-    ------
-    ValueError
-        If the result cannot be reduced to a single scalar.
-    """
-    if isinstance(value, pd.DataFrame):
-        if value.empty or value.shape[1] != 1:
-            msg = "Expected single-column DataFrame result for scalar execution"
-            raise ValueError(msg)
-        return _convert_numpy_types(value.iloc[0, 0])
-
-    if isinstance(value, pd.Series):
-        if value.empty:
-            msg = "Expected non-empty Series result for scalar execution"
-            raise ValueError(msg)
-        return _convert_numpy_types(value.iloc[0])
-
-    return _convert_numpy_types(value)
-
-
 @dataclass(frozen=True)
 class OnConflict:
     """Specification for UPSERT behavior on conflict.
@@ -323,10 +268,19 @@ class IbisGateway:
             If the execution result cannot be reduced to a single scalar.
         """
         result = expr.execute()
-        try:
-            return _extract_scalar(result)
-        except ValueError as exc:
-            raise ValueError(str(exc)) from exc
+        if isinstance(result, pd.DataFrame):
+            if result.empty or result.shape[1] != 1:
+                msg = "Expected single-column DataFrame result for scalar execution"
+                raise ValueError(msg)
+            return result.iloc[0, 0]
+
+        if isinstance(result, pd.Series):
+            if result.empty:
+                msg = "Expected non-empty Series result for scalar execution"
+                raise ValueError(msg)
+            return result.iloc[0]
+
+        return result
 
     def write(
         self,
@@ -523,11 +477,9 @@ class IbisGateway:
                 on_conflict=on_conflict,
             )
 
-        normalized_rows = [_normalize_row(row) for row in df.itertuples(index=False, name=None)]
+        rows = list(df.itertuples(index=False, name=None))
         if on_conflict is None:
-            count = backend.bulk_insert(
-                write_ctx.table_key, normalized_rows, columns=resolved_columns
-            )
+            count = backend.bulk_insert(write_ctx.table_key, rows, columns=resolved_columns)
             return WriteResult(
                 table_key=write_ctx.table_key,
                 rows_affected=count,
@@ -536,7 +488,7 @@ class IbisGateway:
 
         count = backend.upsert(
             write_ctx.table_key,
-            normalized_rows,
+            rows,
             columns=resolved_columns,
             conflict_columns=on_conflict.conflict_columns,
             update_columns=on_conflict.update_columns,
@@ -613,13 +565,11 @@ class IbisGateway:
             raise ValueError(msg)
 
         resolved_columns = list(columns)
-        normalized_rows = [_normalize_row(row) for row in rows]
+        rows_list = list(rows)
         backend = self._policy
 
         if on_conflict is None:
-            count = backend.bulk_insert(
-                write_ctx.table_key, normalized_rows, columns=resolved_columns
-            )
+            count = backend.bulk_insert(write_ctx.table_key, rows_list, columns=resolved_columns)
             return WriteResult(
                 table_key=write_ctx.table_key,
                 rows_affected=count,
@@ -628,7 +578,7 @@ class IbisGateway:
 
         count = backend.upsert(
             write_ctx.table_key,
-            normalized_rows,
+            rows_list,
             columns=resolved_columns,
             conflict_columns=on_conflict.conflict_columns,
             update_columns=on_conflict.update_columns,

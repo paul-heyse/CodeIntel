@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import difflib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,7 +46,6 @@ class _SchemaSelection:
     targets: tuple[str, ...] | None
     module: TargetModule | None
     all_targets: bool
-    only_native: bool
     infer_native: bool
     stable: bool
     include_views: bool
@@ -176,7 +174,6 @@ def _parse_selection(ctx: CommandContext) -> _SchemaSelection:
         targets=targets,
         module=module,
         all_targets=ctx.params.get_bool("all_targets"),
-        only_native=ctx.params.get_bool("only_native"),
         infer_native=ctx.params.get_bool("infer_native"),
         stable=ctx.params.get_bool("stable"),
         include_views=ctx.params.get_bool("include_views"),
@@ -213,7 +210,6 @@ def _compile_manifest(
         targets=selection.targets,
         module=selection.module,
         all_targets=selection.all_targets,
-        only_native=selection.only_native,
         infer_native=selection.infer_native,
         stable=selection.stable,
         include_views=selection.include_views,
@@ -702,44 +698,6 @@ def _format_detailed_diff_result(
     return CliResult.ok(summary)
 
 
-def _format_legacy_diff(
-    expected_json: str,
-    actual_json: str,
-    expected_path: Path,
-) -> CliResult[str]:
-    """Format a legacy string-based diff result.
-
-    Parameters
-    ----------
-    expected_json
-        Expected manifest JSON string.
-    actual_json
-        Actual manifest JSON string.
-    expected_path
-        Path to the expected manifest file.
-
-    Returns
-    -------
-    CliResult[str]
-        Failure result with diff details.
-    """
-    diff = "".join(
-        difflib.unified_diff(
-            expected_json.splitlines(keepends=True),
-            actual_json.splitlines(keepends=True),
-            fromfile=f"expected:{expected_path}",
-            tofile="actual",
-        )
-    )
-    message = (
-        "Schema drift detected (expected vs actual).\n\n"
-        f"{diff}\n"
-        "Update the expected manifest by re-running:\n"
-        f"  codeintel build schema compile --output {expected_path}\n"
-    )
-    return fail_execution_failed("build", message, status=409)
-
-
 def _try_compile_manifest(
     ctx: CommandContext,
     *,
@@ -780,7 +738,6 @@ def _try_compile_manifest(
 class _DiffOptions:
     """Options for schema diff comparison."""
 
-    detailed: bool
     fail_on_breaking: bool
     fail_on_any: bool
 
@@ -813,17 +770,14 @@ def _compare_and_format_diff(
     if expected_json == compiled.payload:
         return CliResult.ok("Schema manifest matches expected.\n")
 
-    if options.detailed:
-        expected_manifest = _parse_manifest_from_json(expected_obj)
-        diff_result = compute_manifest_diffs(expected_manifest, compiled.manifest)
-        return _format_detailed_diff_result(
-            diff_result,
-            expected_path,
-            fail_on_breaking=options.fail_on_breaking,
-            fail_on_any=options.fail_on_any,
-        )
-
-    return _format_legacy_diff(expected_json, compiled.payload, expected_path)
+    expected_manifest = _parse_manifest_from_json(expected_obj)
+    diff_result = compute_manifest_diffs(expected_manifest, compiled.manifest)
+    return _format_detailed_diff_result(
+        diff_result,
+        expected_path,
+        fail_on_breaking=options.fail_on_breaking,
+        fail_on_any=options.fail_on_any,
+    )
 
 
 def build_schema_diff_handler(ctx: CommandContext) -> CliResult[str]:
@@ -848,7 +802,6 @@ def build_schema_diff_handler(ctx: CommandContext) -> CliResult[str]:
         return fail_file_not_found(str(expected_path), domain="build")
 
     # Parse flags
-    detailed = ctx.params.get_bool("detailed")
     fail_on_breaking = ctx.params.get_bool("fail_on_breaking") or True
     fail_on_any = ctx.params.get_bool("fail_on_any")
 
@@ -865,11 +818,7 @@ def build_schema_diff_handler(ctx: CommandContext) -> CliResult[str]:
     if isinstance(compile_result, CliResult):
         return cast("CliResult[str]", compile_result)
 
-    options = _DiffOptions(
-        detailed=detailed,
-        fail_on_breaking=fail_on_breaking,
-        fail_on_any=fail_on_any,
-    )
+    options = _DiffOptions(fail_on_breaking=fail_on_breaking, fail_on_any=fail_on_any)
     return _compare_and_format_diff(load_result, compile_result, expected_path, options)
 
 

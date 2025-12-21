@@ -98,17 +98,11 @@ def compute_coupling(graph: nx.DiGraph) -> dict[Any, CouplingMetrics]:
     return result
 
 
-def compute_abstractness(
-    _node: object,
-    abstract_count: int,
-    total_count: int,
-) -> float:
+def compute_abstractness(abstract_count: int, total_count: int) -> float:
     """Compute abstractness for a module.
 
     Parameters
     ----------
-    _node
-        Module identifier (unused, kept for signature compatibility).
     abstract_count
         Number of abstract classes/interfaces.
     total_count

@@ -28,9 +28,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import (
-        StorageGateway,
-    )
 
 
 @dataclass(frozen=True)
@@ -143,7 +140,6 @@ def _safe_number(value: NumericLike | None) -> float | None:
 
 
 def build_history_timeseries_rows(
-    history_gateway: StorageGateway,
     snapshot: SnapshotRef,
     db_resolver: DBResolver,
     *,
@@ -157,8 +153,6 @@ def build_history_timeseries_rows(
 
     Parameters
     ----------
-    history_gateway
-        Gateway to the database (used for entity selection queries).
     snapshot
         Snapshot reference with repo, commit, and repo_root.
     db_resolver
@@ -173,10 +167,6 @@ def build_history_timeseries_rows(
     tuple[tuple[object, ...], ...]
         Row tuples matching HISTORY_TIMESERIES_COLS schema, ready for bulk insert.
     """
-    # history_gateway is kept for API consistency but not used directly;
-    # entity selection uses db_resolver to resolve per-commit connections
-    _ = history_gateway
-
     if not options.commits:
         log.info("No commits provided for history_timeseries; skipping.")
         return ()
@@ -197,7 +187,6 @@ def build_history_timeseries_rows(
             rows.extend(
                 _collect_function_rows_for_commit(
                     snapshot,
-                    options,
                     con_ci,
                     commit_ctx=commit_ctx,
                     selection=selection.functions,
@@ -207,7 +196,6 @@ def build_history_timeseries_rows(
             rows.extend(
                 _collect_module_rows_for_commit(
                     snapshot,
-                    options,
                     con_ci,
                     commit_ctx=commit_ctx,
                     selection=selection.modules,
@@ -344,7 +332,6 @@ def _select_top_modules(
 
 def _collect_function_rows_for_commit(
     snapshot: SnapshotRef,
-    options: HistoryTimeseriesOptions,
     con_ci: DuckDBConnection,
     *,
     commit_ctx: CommitContext,
@@ -356,8 +343,6 @@ def _collect_function_rows_for_commit(
     ----------
     snapshot
         Snapshot reference.
-    options
-        Timeseries options (unused but kept for API consistency).
     con_ci
         DuckDB connection for the commit.
     commit_ctx
@@ -370,7 +355,6 @@ def _collect_function_rows_for_commit(
     tuple[object, ...]
         Row tuples for analytics.history_timeseries.
     """
-    _ = options  # Unused, kept for signature consistency
     conn = ibis.duckdb.from_connection(con_ci)
     table = conn.table("function_profile", database="analytics")
     rows_df = (
@@ -441,7 +425,6 @@ def _collect_function_rows_for_commit(
 
 def _collect_module_rows_for_commit(
     snapshot: SnapshotRef,
-    options: HistoryTimeseriesOptions,
     con_ci: DuckDBConnection,
     *,
     commit_ctx: CommitContext,
@@ -453,8 +436,6 @@ def _collect_module_rows_for_commit(
     ----------
     snapshot
         Snapshot reference.
-    options
-        Timeseries options (unused but kept for API consistency).
     con_ci
         DuckDB connection for the commit.
     commit_ctx
@@ -467,7 +448,6 @@ def _collect_module_rows_for_commit(
     tuple[object, ...]
         Row tuples for analytics.history_timeseries.
     """
-    _ = options  # Unused, kept for signature consistency
     conn = ibis.duckdb.from_connection(con_ci)
     table = conn.table("module_profile", database="analytics")
     rows_df = (

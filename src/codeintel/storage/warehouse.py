@@ -28,7 +28,6 @@ from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.ibis_adapter import OnConflict
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.snapshot_scoping import RepoCommitScope, maybe_scope_by_snapshot
-from codeintel.storage.tracking.asset_tracking import AssetRecord
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -739,16 +738,6 @@ def _materialize_with_writer(
                 )
 
             rows_written = writer()
-
-            record = _asset_record_from_options(
-                table_key=ctx.table_key,
-                schema_version=ctx.schema_version,
-                rows_written=rows_written,
-                options=options,
-                profiling_path=profiling_path,
-            )
-            if record is not None:
-                ctx.gateway.assets.record_asset(record)
     finally:
         _disable_profiling_if_enabled(ctx.gateway.con, profiling_path)
 
@@ -764,35 +753,6 @@ def _materialize_with_writer(
         schema_hash=ctx.schema_hash,
         schema_version=ctx.schema_version,
         profiling_artifact=str(profiling_path) if profiling_path is not None else None,
-    )
-
-
-def _asset_record_from_options(
-    *,
-    table_key: str,
-    schema_version: str | None,
-    rows_written: int | None,
-    options: MaterializeOptions,
-    profiling_path: Path | None,
-) -> AssetRecord | None:
-    snapshot = options.snapshot
-    if snapshot is None or options.owner_target is None:
-        return None
-
-    metadata: dict[str, object] = {}
-    if profiling_path is not None:
-        metadata["profiling_artifact"] = str(profiling_path)
-
-    return AssetRecord(
-        asset_key=table_key,
-        asset_type=options.asset_type,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        owner_target=options.owner_target,
-        schema_version=schema_version,
-        row_count=rows_written,
-        input_hash=options.input_hash,
-        metadata=metadata or None,
     )
 
 

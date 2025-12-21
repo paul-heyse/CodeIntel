@@ -15,10 +15,6 @@ Compile a deterministic schema manifest for selected targets.
 │                              modules. [env var:                              │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_ALL] [default:   │
 │                              false]                                          │
-│ ONLY-NATIVE --only-native    Restrict compilation to targets with native     │
-│                              Hamilton implementations. [env var:             │
-│                              CODEINTEL_BUILD_SCHEMA_COMPILE_ONLY_NATIVE]     │
-│                              [default: false]                                │
 │ INFER-NATIVE --infer-native  Infer schemas for inferable native targets      │
 │   --infer                    (fallback to declared on errors). [env var:     │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_INFER_NATIVE]    │

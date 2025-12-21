@@ -25,10 +25,8 @@ echo "Expected manifest: ${MANIFEST_PATH}"
 DIFF_ARGS=(
     build schema diff
     --expected "${MANIFEST_PATH}"
-    --only-native
     --infer-native
     --stable
-    --detailed
     --fail-on-breaking
 )
 
@@ -56,8 +54,7 @@ else
     echo "=== Schema drift check FAILED ==="
     echo ""
     echo "To update the expected manifest, run:"
-    echo "  codeintel build schema migrate --expected ${MANIFEST_PATH} --only-native --infer-native --stable --no-dry-run"
+    echo "  codeintel build schema migrate --expected ${MANIFEST_PATH} --infer-native --stable --no-dry-run"
     echo ""
     exit "${EXIT_CODE}"
 fi
-

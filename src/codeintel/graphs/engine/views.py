@@ -60,7 +60,6 @@ def module_attrs_from_row(
     scc_id: int | Decimal | str | bytes | bytearray | None,
     component_size: int | Decimal | str | bytes | bytearray | None,
     layer: int | Decimal | str | bytes | bytearray | None,
-    cycle_group: int | Decimal | str | bytes | bytearray | None,
 ) -> tuple[str, dict[str, int]]:
     """
     Build a normalized node attribute mapping for an import module row.
@@ -75,8 +74,6 @@ def module_attrs_from_row(
         Size of the SCC.
     layer :
         Condensation DAG layer.
-    cycle_group :
-        Cycle grouping id retained for backwards compatibility.
 
     Returns
     -------
@@ -94,9 +91,6 @@ def module_attrs_from_row(
     layer_value = as_int(layer)
     if layer_value is not None:
         attrs["layer"] = layer_value
-    cycle_group_value = as_int(cycle_group)
-    if cycle_group_value is not None:
-        attrs["cycle_group"] = cycle_group_value
     return module_name, attrs
 
 
@@ -224,7 +218,7 @@ def load_import_graph(
     try:
         module_rows = con.execute(
             """
-            SELECT module, scc_id, component_size, layer, cycle_group
+            SELECT module, scc_id, component_size, layer
             FROM graph.import_modules
             WHERE repo = ? AND commit = ?
             """,
@@ -481,8 +475,6 @@ def load_symbol_module_graph(
 
 def load_symbol_function_graph(
     gateway: StorageGateway,
-    _repo: str,
-    _commit: str,
     *,
     use_gpu: bool = False,
 ) -> nx.Graph:
@@ -495,10 +487,6 @@ def load_symbol_function_graph(
     ----------
     gateway :
         Gateway providing the DuckDB connection scoped to the target repository.
-    _repo : str
-        Repository identifier (unused but required for protocol consistency).
-    _commit : str
-        Commit hash (unused but required for protocol consistency).
     use_gpu : bool, optional
         Whether to prefer a GPU-backed graph when supported.
 

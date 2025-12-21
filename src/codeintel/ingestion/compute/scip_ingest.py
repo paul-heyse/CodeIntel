@@ -26,9 +26,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
-INCREMENTAL_INDEX_THRESHOLD = 100
-
-
 @dataclass(frozen=True)
 class ScipIngestResult:
     """Outcome of SCIP ingestion.
@@ -65,18 +62,12 @@ class ScipIngestConfig:
         Repository root path.
     output_scip
         Path for SCIP index output.
-    output_json
-        Path for JSON export output.
-    target_dir
-        Optional target directory to index.
     """
 
     repo: str
     commit: str
     repo_root: Path
     output_scip: Path
-    output_json: Path
-    target_dir: Path | None = None
 
 
 class ScipIngestStep:
@@ -120,7 +111,7 @@ class ScipIngestStep:
         Parameters
         ----------
         modules
-            Modules to index (can be subset for incremental).
+        Modules to index.
         config
             SCIP indexing configuration.
 
@@ -131,16 +122,9 @@ class ScipIngestStep:
         """
         created_at = datetime.now(UTC)
 
-        rel_paths = None
-        if len(modules) < INCREMENTAL_INDEX_THRESHOLD:
-            rel_paths = [m.rel_path for m in modules if m.rel_path.endswith(".py")]
-
         result = await self._tools.run_scip(
             config.repo_root,
             output_scip=config.output_scip,
-            output_json=config.output_json,
-            target_dir=config.target_dir,
-            rel_paths=rel_paths,
         )
 
         if result.status != ToolStatus.OK:
@@ -149,7 +133,7 @@ class ScipIngestStep:
 
         documents = result.documents
         if not documents:
-            documents = _parse_scip_json_file(config.output_json, config.output_scip)
+            documents = _parse_scip_json_file(result.index_json_path, config.output_scip)
             if documents:
                 log.info("SCIP documents loaded from JSON file: %d", len(documents))
 
@@ -193,7 +177,7 @@ class ScipIngestStep:
 _SCIP_RANGE_END_CHAR_IDX = 3
 
 
-def _find_scip_json(output_json: Path, output_scip: Path) -> Path | None:
+def _find_scip_json(index_json_path: Path | None, output_scip: Path) -> Path | None:
     """Find the SCIP JSON file from multiple candidate locations.
 
     Returns
@@ -201,12 +185,16 @@ def _find_scip_json(output_json: Path, output_scip: Path) -> Path | None:
     Path | None
         Path to existing JSON file or None if not found.
     """
-    candidates = [
-        output_json,
-        output_scip.with_suffix(".scip.json"),
-        output_scip.parent / "index.scip.json",
-        output_scip.parent / "index.json",
-    ]
+    candidates: list[Path] = []
+    if index_json_path is not None:
+        candidates.append(index_json_path)
+    candidates.extend(
+        [
+            output_scip.with_suffix(".scip.json"),
+            output_scip.parent / "index.scip.json",
+            output_scip.parent / "index.json",
+        ]
+    )
     for candidate in candidates:
         if candidate.exists():
             return candidate
@@ -289,15 +277,18 @@ def _parse_scip_document(doc: Mapping[str, Any]) -> ScipDocument | None:
     )
 
 
-def _parse_scip_json_file(output_json: Path, output_scip: Path) -> list[ScipDocument]:
+def _parse_scip_json_file(
+    index_json_path: Path | None,
+    output_scip: Path,
+) -> list[ScipDocument]:
     """Parse SCIP documents from JSON file.
 
     Try multiple JSON file locations and parse documents with symbols/occurrences.
 
     Parameters
     ----------
-    output_json
-        Primary JSON file path.
+    index_json_path
+        Optional JSON file path to check first.
     output_scip
         SCIP binary file path (used to find alternate JSON locations).
 
@@ -306,7 +297,7 @@ def _parse_scip_json_file(output_json: Path, output_scip: Path) -> list[ScipDocu
     list[ScipDocument]
         Parsed SCIP documents.
     """
-    json_path = _find_scip_json(output_json, output_scip)
+    json_path = _find_scip_json(index_json_path, output_scip)
     if json_path is None:
         log.debug("No SCIP JSON file found")
         return []

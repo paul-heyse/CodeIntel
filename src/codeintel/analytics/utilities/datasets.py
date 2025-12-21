@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from functools import lru_cache
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 from sqlglot import exp
@@ -191,30 +191,6 @@ __all__ = [
 ]
 
 
-class _SupportsItem(Protocol):
-    def item(self) -> object: ...
-
-
-def _to_python_type(value: object) -> object:
-    """Convert numpy types to Python native types for DuckDB compatibility.
-
-    Parameters
-    ----------
-    value
-        Value to convert, possibly a numpy scalar.
-
-    Returns
-    -------
-    object
-        Python native type equivalent.
-    """
-    if value is None:
-        return None
-    if hasattr(value, "item"):
-        return cast("_SupportsItem", value).item()
-    return value
-
-
 def validate_tuple_rows(
     table_key: str,
     rows: Sequence[Mapping[str, object] | Sequence[object]],
@@ -269,7 +245,4 @@ def validate_tuple_rows(
     validated = validate_df(table_key, df)
     normalized = validated.where(pd.notna(validated), None)
     ordered = normalized.loc[:, columns_index]
-    return [
-        tuple(_to_python_type(val) for val in row)
-        for row in ordered.itertuples(index=False, name=None)
-    ]
+    return [tuple(row) for row in ordered.itertuples(index=False, name=None)]

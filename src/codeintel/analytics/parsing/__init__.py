@@ -14,12 +14,12 @@ from codeintel.analytics.parsing.span_resolver import (
     build_span_index,
     resolve_span,
 )
-from codeintel.analytics.parsing.validation import (
+from codeintel.core.parsing import ParsedFunction, ParsedModule, SourceSpan
+from codeintel.core.validation.reporters import (
     BaseValidationReporter,
     FunctionValidationReporter,
     GraphValidationReporter,
 )
-from codeintel.core.parsing import ParsedFunction, ParsedModule, SourceSpan
 
 __all__ = [
     "BaseValidationReporter",

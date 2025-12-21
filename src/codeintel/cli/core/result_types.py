@@ -1568,35 +1568,6 @@ class ValidateMacrosResult:
 
 
 @dataclass(frozen=True)
-class GenerateMacrosResult:
-    """Result from macro generation command.
-
-    Parameters
-    ----------
-    macros
-        List of rendered macro definitions with macro_name and ddl.
-    count
-        Number of macros generated.
-    """
-
-    macros: list[dict[str, str]]
-    count: int
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "macros": self.macros,
-            "count": self.count,
-        }
-
-
-@dataclass(frozen=True)
 class ProfileStorageResult:
     """Result from storage profiling command.
 
@@ -1769,7 +1740,6 @@ __all__ = [
     "DryRunResult",
     "DryRunStep",
     "ExportResult",
-    "GenerateMacrosResult",
     "GraphQueryResult",
     "GraphStatsResult",
     "HealthCheckResult",

@@ -5,10 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.cli.handlers.storage import (
-    GenerateMacrosResult,
     ProfileStorageResult,
     ValidateMacrosResult,
-    generate_macros_handler,
     profile_storage_handler,
     validate_macros_handler,
 )
@@ -39,36 +37,6 @@ def test_validate_macros_handler_returns_ok_when_valid(
     expect_is_instance(result.data, ValidateMacrosResult)
     if result.data is not None:
         expect_equal(result.data.status, "valid")
-
-
-def test_generate_macros_handler_fails_when_no_tables(
-    storage_macro_harness_fixture: StorageHandlerHarness,
-) -> None:
-    """Deprecated handler returns empty result when no tables provided."""
-    with storage_macro_harness_fixture.command_context({}) as ctx:
-        result = generate_macros_handler(ctx)
-
-    expect_true(result.success)
-    expect_is_not_none(result.data)
-    expect_is_instance(result.data, GenerateMacrosResult)
-    if result.data is not None:
-        expect_equal(result.data.count, 0)
-        expect_equal(result.data.macros, [])
-
-
-def test_generate_macros_handler_returns_ok_with_tables(
-    storage_macro_harness_fixture: StorageHandlerHarness,
-) -> None:
-    """Deprecated handler succeeds but emits no macros."""
-    with storage_macro_harness_fixture.command_context({"tables": ["core.modules"]}) as ctx:
-        result = generate_macros_handler(ctx)
-
-    expect_true(result.success)
-    expect_is_not_none(result.data)
-    expect_is_instance(result.data, GenerateMacrosResult)
-    if result.data is not None:
-        expect_equal(result.data.count, 0)
-        expect_equal(result.data.macros, [])
 
 
 def test_profile_storage_handler_fails_when_no_output_dir(
@@ -120,19 +88,6 @@ def test_validate_macros_result_to_dict() -> None:
     expect_equal(data["status"], "valid")
     expect_equal(data["missing_ingest"], [])
     expect_equal(data["present_ingest"], ["test"])
-
-
-def test_generate_macros_result_to_dict() -> None:
-    """GenerateMacrosResult.to_dict returns expected structure."""
-    result = GenerateMacrosResult(
-        macros=[{"macro_name": "test", "ddl": "CREATE"}],
-        count=1,
-    )
-
-    data = result.to_dict()
-
-    expect_equal(data["count"], 1)
-    expect_equal(len(result.macros), 1)
 
 
 def test_profile_storage_result_to_dict() -> None:

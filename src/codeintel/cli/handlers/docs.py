@@ -17,8 +17,9 @@ from codeintel.build.settings import get_build_settings
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors._cli_errors import ValidationError
 from codeintel.cli.errors.results import fail_project_error
-from codeintel.cli.errors.taxonomy import INVALID_FORMAT, validation_error
+from codeintel.cli.errors.taxonomy import validation_error
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.core.errors.taxonomy import INVALID_FORMAT
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:

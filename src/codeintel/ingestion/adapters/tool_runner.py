@@ -225,7 +225,6 @@ class ToolRunnerAdapter:
         repo_root: Path,
         *,
         coverage_file: Path | None = None,
-        output_path: Path | None = None,
     ) -> CoverageResult:
         """Run coverage tool to export coverage data.
 
@@ -235,8 +234,6 @@ class ToolRunnerAdapter:
             Repository root directory.
         coverage_file
             Optional explicit coverage data file path.
-        output_path
-            Optional path for JSON output.
 
         Returns
         -------
@@ -248,7 +245,6 @@ class ToolRunnerAdapter:
             report = await self._service.run_coverage_report(
                 repo_root,
                 coverage_file=coverage_file,
-                output_path=output_path,
             )
             duration = time.perf_counter() - start
 
@@ -280,9 +276,6 @@ class ToolRunnerAdapter:
         repo_root: Path,
         *,
         output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
-        rel_paths: list[str] | None = None,
     ) -> ScipResult:
         """Run SCIP indexing.
 
@@ -292,12 +285,6 @@ class ToolRunnerAdapter:
             Repository root directory.
         output_scip
             Path for SCIP index output.
-        output_json
-            Path for JSON export output.
-        target_dir
-            Optional target directory to index.
-        rel_paths
-            Optional list of specific files to index.
 
         Returns
         -------
@@ -306,34 +293,25 @@ class ToolRunnerAdapter:
         """
         start = time.perf_counter()
         try:
-            if rel_paths is not None:
-                scip_result = await self._service.run_scip_shard(
-                    repo_root,
-                    rel_paths=rel_paths,
-                    output_scip=output_scip,
-                    output_json=output_json,
-                    target_dir=target_dir,
-                )
-            else:
-                scip_result = await self._service.run_scip_full(
-                    repo_root,
-                    output_scip=output_scip,
-                    output_json=output_json,
-                    target_dir=target_dir,
-                )
+            scip_result = await self._service.run_scip_full(
+                repo_root,
+                output_scip=output_scip,
+            )
 
             duration = time.perf_counter() - start
 
             documents = _convert_scip_documents(scip_result.documents or [])
 
-            scip_exists = _check_file_exists(output_scip)
-            json_exists = _check_file_exists(output_json)
+            scip_path = scip_result.index_scip_path or output_scip
+            json_path = scip_result.index_json_path
+            scip_exists = _check_file_exists(scip_path)
+            json_exists = _check_file_exists(json_path) if json_path is not None else False
 
             return ScipResult(
                 status=ToolStatus.OK,
                 documents=documents,
-                index_scip_path=output_scip if scip_exists else None,
-                index_json_path=output_json if json_exists else None,
+                index_scip_path=scip_path if scip_exists else None,
+                index_json_path=json_path if json_exists else None,
                 duration_s=duration,
             )
         except (OSError, RuntimeError, ValueError) as exc:
