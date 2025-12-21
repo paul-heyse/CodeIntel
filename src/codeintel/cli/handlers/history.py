@@ -302,7 +302,6 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
 
         try:
             rows = build_history_timeseries_rows(
-                gateway,
                 snapshot,
                 db_resolver,
                 options=options,

@@ -137,7 +137,6 @@ def t__scip__run(
             service.run_scip_full(
                 env.snapshot.repo_root,
                 output_scip=output_scip,
-                output_json=output_json,
             )
         )
         return ScipRunResult(

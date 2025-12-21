@@ -28,6 +28,7 @@ class BashBackend(ShellBackend):
         """Initialize bash backend with default configuration."""
         self._program = "codeintel"
         self._indent = "    "
+        self._case_started = False
 
     def header(self, model: CompletionModel) -> list[str]:
         """Generate bash header.
@@ -64,7 +65,7 @@ class BashBackend(ShellBackend):
         )
         return [f'{self._indent}local global_flags="{flags}"', ""]
 
-    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+    def command(self, cmd: CommandSpec) -> list[str]:
         """Generate bash command completion.
 
         Returns
@@ -73,8 +74,9 @@ class BashBackend(ShellBackend):
             Command completion lines.
         """
         lines: list[str] = []
-        if depth == 0:
+        if not self._case_started:
             lines.append(f"{self._indent}case ${{words[1]}} in")
+            self._case_started = True
 
         lines.extend(_generate_command_case(cmd, depth=2, indent=self._indent))
         return lines

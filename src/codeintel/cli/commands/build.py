@@ -367,14 +367,6 @@ class BuildAssetsCommand:
             help="Filter to assets produced by a specific target.",
         ),
     ] = None
-    versions: Annotated[
-        bool,
-        Parameter(
-            name=["--versions"],
-            help="Include asset versions from the Phase 4 catalog.",
-            negative=(),
-        ),
-    ] = False
     asset_type: Annotated[
         str | None,
         Parameter(

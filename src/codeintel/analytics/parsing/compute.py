@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from codeintel.analytics.parsing.validation import (
+    from codeintel.core.validation.reporters import (
         FunctionValidationReporter,
         GraphValidationReporter,
     )

@@ -17,7 +17,6 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
-    GenerateMacrosResult,
     ProfileStorageResult,
     StorageDatabaseExportResult,
     StorageDatabaseImportResult,
@@ -164,35 +163,6 @@ def _validate_macros(
             missing_ingest=missing_ingest,
             present_ingest=present_ingest,
             dataset_rows_only=dataset_rows_list,
-        )
-    )
-
-
-def generate_macros_handler(
-    ctx: CommandContext,
-) -> CliResult[GenerateMacrosResult]:
-    """Render normalized macro DDL for the requested tables.
-
-    Parameters
-    ----------
-    ctx
-        Command context with params:
-        - tables: List of table names to generate macros for
-
-    Returns
-    -------
-    CliResult[GenerateMacrosResult]
-        Generated macro definitions.
-    """
-    tables = ctx.params.get_list("tables")
-
-    _ = tables
-    LOG.warning("storage.generate_macros is deprecated; macros are retired.")
-
-    return CliResult.ok(
-        GenerateMacrosResult(
-            macros=[],
-            count=0,
         )
     )
 
@@ -363,13 +333,11 @@ def _select_profile_gateway(ctx: CommandContext, db_path: Path) -> StorageGatewa
 
 
 __all__ = [
-    "GenerateMacrosResult",
     "ProfileStorageResult",
     "StorageDatabaseExportResult",
     "StorageDatabaseImportResult",
     "ValidateMacrosResult",
     "export_database_handler",
-    "generate_macros_handler",
     "import_database_handler",
     "profile_storage_handler",
     "validate_macros_handler",

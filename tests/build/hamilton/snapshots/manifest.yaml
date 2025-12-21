@@ -223,27 +223,6 @@ cases:
     kind: "text"
 
   # ========================================================================
-  # PR-63: Schema manifest drift gate (native-only)
-  # ========================================================================
-
-  - name: "pr63_schema_manifest_native"
-    tags: ["pr63", "schema", "native", "json", "integration"]
-    args:
-      [
-        "build",
-        "schema",
-        "compile",
-        "--only-native",
-        "--infer-native",
-        "--format",
-        "json",
-        "--stable",
-      ]
-    exit_code: 0
-    snapshot: "pr63_schema_manifest_native.json"
-    kind: "json"
-
-  # ========================================================================
   # PR-71: Schema drift detection CI gate (help-only)
   # ========================================================================
 

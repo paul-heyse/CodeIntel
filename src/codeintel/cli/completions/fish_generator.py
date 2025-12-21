@@ -77,7 +77,7 @@ class FishBackend(ShellBackend):
         lines.append("")
         return lines
 
-    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+    def command(self, cmd: CommandSpec) -> list[str]:
         """Generate fish command completion.
 
         Returns
@@ -85,7 +85,7 @@ class FishBackend(ShellBackend):
         list[str]
             Command completion lines.
         """
-        return _generate_fish_command(self._program, cmd, depth=depth)
+        return _generate_fish_command(self._program, cmd)
 
     def footer(self, model: CompletionModel) -> list[str]:
         """Generate fish footer (empty for fish).
@@ -104,8 +104,6 @@ class FishBackend(ShellBackend):
 def _generate_fish_command(
     program: str,
     cmd: CommandSpec,
-    *,
-    depth: int = 0,
 ) -> list[str]:
     """Generate fish completion for command.
 
@@ -115,15 +113,11 @@ def _generate_fish_command(
         Program name.
     cmd
         Command specification.
-    depth
-        Nesting depth (unused but kept for protocol consistency).
-
     Returns
     -------
     list[str]
         Fish completion lines.
     """
-    _ = depth  # Protocol consistency
     lines: list[str] = [f"# {cmd.name} subcommands"]
 
     condition = f"__fish_seen_subcommand_from {cmd.name}"

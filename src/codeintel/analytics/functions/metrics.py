@@ -38,10 +38,6 @@ from codeintel.analytics.functions.config import (
 )
 from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.analytics.parsing.validation import (
-    FUNCTION_VALIDATION_COLS,
-    FunctionValidationReporter,
-)
 from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
     get_analytics_dataset_contract,
@@ -49,6 +45,10 @@ from codeintel.analytics.utilities.datasets import (
 from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.core.ibis_typing import and_predicates, isin_values
 from codeintel.core.parsing import SourceSpan
+from codeintel.core.validation.reporters import (
+    FUNCTION_VALIDATION_COLS,
+    FunctionValidationReporter,
+)
 from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:

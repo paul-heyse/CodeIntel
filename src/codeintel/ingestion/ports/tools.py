@@ -343,7 +343,6 @@ class IngestToolPort(Protocol):
         repo_root: Path,
         *,
         coverage_file: Path | None = None,
-        output_path: Path | None = None,
     ) -> CoverageResult:
         """Run coverage tool to export coverage data.
 
@@ -353,8 +352,6 @@ class IngestToolPort(Protocol):
             Repository root directory.
         coverage_file
             Optional explicit coverage data file path.
-        output_path
-            Optional path for JSON output.
 
         Returns
         -------
@@ -368,9 +365,6 @@ class IngestToolPort(Protocol):
         repo_root: Path,
         *,
         output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
-        rel_paths: list[str] | None = None,
     ) -> ScipResult:
         """Run SCIP indexing.
 
@@ -380,12 +374,6 @@ class IngestToolPort(Protocol):
             Repository root directory.
         output_scip
             Path for SCIP index output.
-        output_json
-            Path for JSON export output.
-        target_dir
-            Optional target directory to index.
-        rel_paths
-            Optional list of specific files to index.
 
         Returns
         -------

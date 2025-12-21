@@ -155,11 +155,9 @@ class BuildToolAdapter:
         DiagnosticResult
             Linting results - always returns SKIPPED.
         """
-        _ = self, repo_root
-
         return DiagnosticResult(
             status=ToolStatus.SKIPPED,
-            error="Ruff linting not available via build adapter",
+            error=f"Ruff linting not available via build adapter for {repo_root}",
         )
 
     async def run_coverage(
@@ -167,25 +165,21 @@ class BuildToolAdapter:
         repo_root: Path,
         *,
         coverage_file: Path | None = None,
-        output_path: Path | None = None,
     ) -> CoverageResult:
         """Run coverage tool to export coverage data.
 
         Parameters
         ----------
         repo_root
-            Repository root directory (unused, included for interface compatibility).
+            Repository root directory used to resolve relative paths.
         coverage_file
             Optional explicit coverage data file path.
-        output_path
-            Optional path for JSON output (unused, included for interface compatibility).
 
         Returns
         -------
         CoverageResult
             Coverage data for all files.
         """
-        _ = repo_root, output_path
         if self._coverage_collector is None:
             return CoverageResult(
                 status=ToolStatus.SKIPPED,
@@ -197,7 +191,10 @@ class BuildToolAdapter:
                 error="Coverage file path not provided",
             )
         try:
-            result = await self._coverage_collector.collect(coverage_file)
+            resolved_file = coverage_file
+            if not resolved_file.is_absolute():
+                resolved_file = repo_root / resolved_file
+            result = await self._coverage_collector.collect(resolved_file)
             files = [
                 CoverageFileData(
                     rel_path=path,
@@ -221,9 +218,6 @@ class BuildToolAdapter:
         repo_root: Path,
         *,
         output_scip: Path,
-        output_json: Path,
-        target_dir: Path | None = None,
-        rel_paths: list[str] | None = None,
     ) -> ScipResult:
         """Run SCIP indexing.
 
@@ -233,19 +227,12 @@ class BuildToolAdapter:
             Repository root directory.
         output_scip
             Path for SCIP index output.
-        output_json
-            Path for JSON export output (unused, SCIP outputs single file).
-        target_dir
-            Optional target directory to index (unused, included for interface compatibility).
-        rel_paths
-            Optional list of specific files to index (unused, included for interface compatibility).
 
         Returns
         -------
         ScipResult
             SCIP indexing results.
         """
-        _ = output_json, target_dir, rel_paths
         if self._scip_indexer is None:
             return ScipResult(
                 status=ToolStatus.SKIPPED,

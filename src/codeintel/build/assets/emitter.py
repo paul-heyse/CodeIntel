@@ -18,6 +18,7 @@ from codeintel.core.schemas.hashing import compute_table_schema_hash
 from codeintel.storage.gateway import DuckDBError, ibis_facade
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,
+    AssetVersionEventRecord,
     AssetVersionRecord,
     RunAssetVersionRecord,
 )
@@ -114,7 +115,9 @@ def _dataset_version_record(
     record: TargetRunRecord,
     dataset: DatasetRefProtocol,
     upstream_versions: Sequence[str],
-) -> tuple[AssetVersionRecord, RunAssetVersionRecord, _AssetVersionKey]:
+) -> tuple[
+    AssetVersionRecord, AssetVersionEventRecord, RunAssetVersionRecord, _AssetVersionKey
+]:
     row_count = dataset.row_count
     if row_count is None:
         row_count = _try_table_row_count_for_snapshot(ctx.env, table_key=dataset.table_key)
@@ -140,19 +143,26 @@ def _dataset_version_record(
         asset_kind="table",
         asset_key=dataset.table_key,
         version_hash=version_hash,
-        repo=ctx.env.snapshot.repo,
-        commit=ctx.env.snapshot.commit,
-        run_id=ctx.run_id,
-        target=record.target,
-        impl_kind=_impl_kind(record.plugin_name),
-        status=status,
-        location=dataset.table_key,
-        input_hash=record.input_hash,
-        options_hash=record.options_hash,
         schema_hash=schema_hash,
         row_count=row_count,
         bytes=None,
         created_at=created_at,
+        meta=meta,
+    )
+    event = AssetVersionEventRecord(
+        run_id=ctx.run_id,
+        repo=ctx.env.snapshot.repo,
+        commit=ctx.env.snapshot.commit,
+        asset_kind="table",
+        asset_key=dataset.table_key,
+        version_hash=version_hash,
+        status=status,
+        target=record.target,
+        impl_kind=_impl_kind(record.plugin_name),
+        location=dataset.table_key,
+        input_hash=record.input_hash,
+        options_hash=record.options_hash,
+        recorded_at=created_at,
         meta=meta,
     )
     run_map = RunAssetVersionRecord(
@@ -170,7 +180,7 @@ def _dataset_version_record(
     key = _AssetVersionKey(
         asset_kind="table", asset_key=dataset.table_key, version_hash=version_hash
     )
-    return version, run_map, key
+    return version, event, run_map, key
 
 
 def _artifact_version_record(
@@ -178,7 +188,9 @@ def _artifact_version_record(
     record: TargetRunRecord,
     artifact: ArtifactRefProtocol,
     upstream_versions: Sequence[str],
-) -> tuple[AssetVersionRecord, RunAssetVersionRecord, _AssetVersionKey]:
+) -> tuple[
+    AssetVersionRecord, AssetVersionEventRecord, RunAssetVersionRecord, _AssetVersionKey
+]:
     bytes_value = _try_artifact_size_bytes(artifact)
     version_input = ArtifactVersionInput(
         artifact_name=artifact.name,
@@ -199,19 +211,26 @@ def _artifact_version_record(
         asset_kind="artifact",
         asset_key=artifact.name,
         version_hash=version_hash,
-        repo=ctx.env.snapshot.repo,
-        commit=ctx.env.snapshot.commit,
-        run_id=ctx.run_id,
-        target=record.target,
-        impl_kind=_impl_kind(record.plugin_name),
-        status=status,
-        location=artifact.path,
-        input_hash=record.input_hash,
-        options_hash=record.options_hash,
         schema_hash=None,
         row_count=None,
         bytes=bytes_value,
         created_at=created_at,
+        meta=meta,
+    )
+    event = AssetVersionEventRecord(
+        run_id=ctx.run_id,
+        repo=ctx.env.snapshot.repo,
+        commit=ctx.env.snapshot.commit,
+        asset_kind="artifact",
+        asset_key=artifact.name,
+        version_hash=version_hash,
+        status=status,
+        target=record.target,
+        impl_kind=_impl_kind(record.plugin_name),
+        location=artifact.path,
+        input_hash=record.input_hash,
+        options_hash=record.options_hash,
+        recorded_at=created_at,
         meta=meta,
     )
     run_map = RunAssetVersionRecord(
@@ -229,7 +248,7 @@ def _artifact_version_record(
     key = _AssetVersionKey(
         asset_kind="artifact", asset_key=artifact.name, version_hash=version_hash
     )
-    return version, run_map, key
+    return version, event, run_map, key
 
 
 def _compute_upstream_versions(
@@ -259,31 +278,46 @@ def _process_target_record(
     ctx: _VersionState,
     rec: TargetRunRecord,
     upstream_versions: Sequence[str],
-) -> tuple[list[AssetVersionRecord], list[RunAssetVersionRecord], list[_AssetVersionKey]]:
+) -> tuple[
+    list[AssetVersionRecord],
+    list[AssetVersionEventRecord],
+    list[RunAssetVersionRecord],
+    list[_AssetVersionKey],
+]:
     """Process a single target record and return version records.
 
     Returns
     -------
-    tuple[list[AssetVersionRecord], list[RunAssetVersionRecord], list[_AssetVersionKey]]
-        Version records, run mappings, and output keys for the target.
+    tuple[
+        list[AssetVersionRecord],
+        list[AssetVersionEventRecord],
+        list[RunAssetVersionRecord],
+        list[_AssetVersionKey],
+    ]
+        Version records, event records, run mappings, and output keys for the target.
     """
     versions: list[AssetVersionRecord] = []
+    events: list[AssetVersionEventRecord] = []
     run_maps: list[RunAssetVersionRecord] = []
     outputs: list[_AssetVersionKey] = []
 
     for ds in rec.datasets:
-        version, run_map, key = _dataset_version_record(ctx, rec, ds, upstream_versions)
+        version, event, run_map, key = _dataset_version_record(ctx, rec, ds, upstream_versions)
         versions.append(version)
+        events.append(event)
         run_maps.append(run_map)
         outputs.append(key)
 
     for artifact in rec.artifacts:
-        version, run_map, key = _artifact_version_record(ctx, rec, artifact, upstream_versions)
+        version, event, run_map, key = _artifact_version_record(
+            ctx, rec, artifact, upstream_versions
+        )
         versions.append(version)
+        events.append(event)
         run_maps.append(run_map)
         outputs.append(key)
 
-    return versions, run_maps, outputs
+    return versions, events, run_maps, outputs
 
 
 def _collect_versions_for_run(
@@ -291,16 +325,25 @@ def _collect_versions_for_run(
     graph: TargetGraph,
     records: Sequence[TargetRunRecord],
 ) -> tuple[
-    list[AssetVersionRecord], list[RunAssetVersionRecord], dict[str, list[_AssetVersionKey]]
+    list[AssetVersionRecord],
+    list[AssetVersionEventRecord],
+    list[RunAssetVersionRecord],
+    dict[str, list[_AssetVersionKey]],
 ]:
     """Collect asset version records for all targets in a run.
 
     Returns
     -------
-    tuple[list[AssetVersionRecord], list[RunAssetVersionRecord], dict[str, list[_AssetVersionKey]]]
-        Version records, run mappings, and target output key mapping.
+    tuple[
+        list[AssetVersionRecord],
+        list[AssetVersionEventRecord],
+        list[RunAssetVersionRecord],
+        dict[str, list[_AssetVersionKey]],
+    ]
+        Version records, event records, run mappings, and target output key mapping.
     """
     versions: list[AssetVersionRecord] = []
+    events: list[AssetVersionEventRecord] = []
     run_maps: list[RunAssetVersionRecord] = []
     target_outputs: dict[str, list[_AssetVersionKey]] = {}
 
@@ -320,14 +363,17 @@ def _collect_versions_for_run(
             continue
 
         upstream_versions = _compute_upstream_versions(graph, target_name, target_outputs)
-        rec_versions, rec_run_maps, outputs = _process_target_record(ctx, rec, upstream_versions)
+        rec_versions, rec_events, rec_run_maps, outputs = _process_target_record(
+            ctx, rec, upstream_versions
+        )
 
         versions.extend(rec_versions)
+        events.extend(rec_events)
         run_maps.extend(rec_run_maps)
         if outputs:
             target_outputs[rec.target] = outputs
 
-    return versions, run_maps, target_outputs
+    return versions, events, run_maps, target_outputs
 
 
 def _collect_lineage_edges(
@@ -388,11 +434,12 @@ def persist_asset_catalog_for_run(
 ) -> None:
     """Persist asset versions, run mappings, and lineage edges for a build run."""
     ctx = _VersionState(env=env, run_id=run_id, policy=env.fingerprint_policy)
-    versions, run_maps, target_outputs = _collect_versions_for_run(ctx, graph, records)
+    versions, events, run_maps, target_outputs = _collect_versions_for_run(ctx, graph, records)
     edges = _collect_lineage_edges(graph=graph, target_outputs=target_outputs)
 
     try:
         env.gateway.assets.record_asset_versions_batch(versions)
+        env.gateway.assets.record_asset_version_events_batch(events)
         env.gateway.assets.record_run_asset_versions_batch(run_maps)
         env.gateway.assets.record_lineage_edges_batch(edges)
     except StorageError as exc:

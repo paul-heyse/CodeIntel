@@ -46,7 +46,6 @@ def test_pr80_schema_compile_uses_batch_inference() -> None:
 
     request = SchemaManifestRequest(
         targets=("risk_factors", "hotspots"),
-        only_native=True,
         infer_native=True,
         batch_infer_native=True,
         stable=True,

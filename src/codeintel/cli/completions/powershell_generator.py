@@ -65,7 +65,7 @@ class PowerShellBackend(ShellBackend):
         lines.append(")")
         return lines
 
-    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+    def command(self, cmd: CommandSpec) -> list[str]:
         """Generate PowerShell command entry.
 
         Returns
@@ -73,7 +73,7 @@ class PowerShellBackend(ShellBackend):
         list[str]
             Command entry line for the hashtable.
         """
-        base_indent = self._indent * (depth + 1)
+        base_indent = self._indent
         if cmd.subcommands:
             subcommands = ", ".join(f"'{sub.name}'" for sub in cmd.subcommands)
             return [f"{base_indent}'{cmd.name}' = @({subcommands})"]

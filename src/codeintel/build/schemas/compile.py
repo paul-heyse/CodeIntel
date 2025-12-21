@@ -69,8 +69,6 @@ class SchemaManifestRequest:
         Optional target module to include.
     all_targets
         When True, include all targets across all modules.
-    only_native
-        Deprecated compatibility flag; selection is native-only regardless.
     infer_native
         When True, infer schemas for inferable native outputs (fallback to declared on error).
     batch_infer_native
@@ -90,7 +88,6 @@ class SchemaManifestRequest:
     targets: tuple[str, ...] | None = None
     module: TargetModule | None = None
     all_targets: bool = False
-    only_native: bool = False
     infer_native: bool = True
     batch_infer_native: bool = True
     stable: bool = True
@@ -112,8 +109,6 @@ class TableKeySelection:
         Optional target module to include.
     all_targets
         When True, include all targets across all modules.
-    only_native
-        Deprecated compatibility flag; selection is native-only regardless.
     stable
         When True, preserve deterministic ordering.
     """
@@ -121,7 +116,6 @@ class TableKeySelection:
     targets: tuple[str, ...] | None
     module: TargetModule | None
     all_targets: bool
-    only_native: bool
     stable: bool
 
     @classmethod
@@ -142,7 +136,6 @@ class TableKeySelection:
             targets=request.targets,
             module=request.module,
             all_targets=request.all_targets,
-            only_native=request.only_native,
             stable=request.stable,
         )
 

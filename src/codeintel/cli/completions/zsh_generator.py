@@ -69,7 +69,7 @@ class ZshBackend(ShellBackend):
             lines.append(f"{double_indent}'--{flag.name}[{desc}]' \\")
         return lines
 
-    def command(self, cmd: CommandSpec, depth: int) -> list[str]:
+    def command(self, cmd: CommandSpec) -> list[str]:
         """Generate zsh command completion.
 
         Returns
@@ -77,7 +77,7 @@ class ZshBackend(ShellBackend):
         list[str]
             Command completion lines.
         """
-        return _generate_zsh_command(cmd, indent=self._indent, depth=depth)
+        return _generate_zsh_command(cmd, indent=self._indent)
 
     def footer(self, model: CompletionModel) -> list[str]:
         """Generate zsh footer.
@@ -132,7 +132,6 @@ def _generate_zsh_command(
     cmd: CommandSpec,
     *,
     indent: str = "    ",
-    depth: int = 0,
 ) -> list[str]:
     """Generate zsh completion for command.
 
@@ -142,15 +141,11 @@ def _generate_zsh_command(
         Command specification.
     indent
         Base indentation string.
-    depth
-        Nesting depth (unused but kept for protocol consistency).
-
     Returns
     -------
     list[str]
         Zsh completion lines.
     """
-    _ = depth  # Protocol consistency
     quad_indent = indent * 4
     five_indent = indent * 5
     six_indent = indent * 6
@@ -213,7 +208,7 @@ def generate_zsh_completion(model: CompletionModel) -> str:
 
     lines.extend(pre_footer)
     for cmd in model.root_command.subcommands:
-        lines.extend(backend.command(cmd, depth=0))
+        lines.extend(backend.command(cmd))
     lines.extend(post_footer)
 
     return "\n".join(lines)

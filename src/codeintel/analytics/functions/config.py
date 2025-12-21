@@ -9,9 +9,9 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
-    from codeintel.analytics.parsing.validation import FunctionValidationReporter
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.parsing import ParsedModule, SourceSpan
+    from codeintel.core.validation.reporters import FunctionValidationReporter
 
 
 @dataclass(frozen=True)

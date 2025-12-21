@@ -1,7 +1,7 @@
 """Standardized error types and codes for CLI operations.
 
-This module re-exports error codes from `codeintel.core.errors.taxonomy`, but emits
-CLI-scoped RFC 9457 Problem `type` URNs using the `urn:codeintel:cli:` namespace.
+This module emits CLI-scoped RFC 9457 Problem `type` URNs using the
+`urn:codeintel:cli:` namespace.
 
 The CLI taxonomy follows this hierarchy:
 
@@ -49,53 +49,17 @@ from typing import Any
 
 # Use CLI-specific ProblemDetail for rendering
 from codeintel.cli.errors._cli_errors import ProblemDetail
-
-# Re-export taxonomy from core for backward compatibility
 from codeintel.core.errors.taxonomy import (
-    # Operation codes
-    ALREADY_EXISTS,
-    # Service codes
-    AUTH_FAILED,
-    CANCELLED,
-    # Config codes
     CONFIG_FILE_NOT_FOUND,
-    CONFIG_INVALID_VALUE,
-    CONFIG_PARSE_ERROR,
     CONFIG_SCHEMA_VIOLATION,
-    # Storage codes
-    CONNECTION_FAILED,
-    # Validation codes
-    CONSTRAINT_VIOLATION,
-    CORRUPTION_DETECTED,
-    DEPENDENCY_FAILED,
     INTERNAL_ERROR,
-    INVALID_FORMAT,
-    INVALID_TYPE,
-    # Job codes
-    JOB_ALREADY_RUNNING,
-    JOB_EXPIRED,
-    JOB_FAILED,
     JOB_NOT_FOUND,
     MISSING_REQUIRED,
     NOT_FOUND,
-    OUT_OF_RANGE,
-    PERMISSION_DENIED,
-    QUERY_FAILED,
-    RATE_LIMITED,
-    SCHEMA_MISMATCH,
-    SERVICE_UNAVAILABLE,
     TIMEOUT,
-    # Code enums
-    ConfigErrorCode,
-    # Categories
     ErrorCategory,
-    # ErrorCode class
     ErrorCode,
-    JobErrorCode,
     OperationErrorCode,
-    ServiceErrorCode,
-    StorageErrorCode,
-    ValidationErrorCode,
 )
 
 
@@ -725,45 +689,10 @@ def config_validation_error(
 
 
 __all__ = [
-    "ALREADY_EXISTS",
-    "AUTH_FAILED",
-    "CANCELLED",
-    "CONFIG_FILE_NOT_FOUND",
-    "CONFIG_INVALID_VALUE",
-    "CONFIG_PARSE_ERROR",
-    "CONFIG_SCHEMA_VIOLATION",
-    "CONNECTION_FAILED",
-    "CONSTRAINT_VIOLATION",
-    "CORRUPTION_DETECTED",
-    "DEPENDENCY_FAILED",
-    "INTERNAL_ERROR",
-    "INVALID_FORMAT",
-    "INVALID_TYPE",
-    "JOB_ALREADY_RUNNING",
-    "JOB_EXPIRED",
-    "JOB_FAILED",
-    "JOB_NOT_FOUND",
-    "MISSING_REQUIRED",
-    "NOT_FOUND",
-    "OUT_OF_RANGE",
-    "PERMISSION_DENIED",
-    "QUERY_FAILED",
-    "RATE_LIMITED",
-    "SCHEMA_MISMATCH",
-    "SERVICE_UNAVAILABLE",
-    "TIMEOUT",
-    "ConfigErrorCode",
-    "ErrorCategory",
-    "ErrorCode",
     "ErrorContext",
-    "JobErrorCode",
-    "OperationErrorCode",
-    "ServiceErrorCode",
-    "StorageErrorCode",
     "StructuredCliError",
     "StructuredOperationError",
     "StructuredValidationError",
-    "ValidationErrorCode",
     "config_error",
     "config_not_found_error",
     "config_validation_error",
