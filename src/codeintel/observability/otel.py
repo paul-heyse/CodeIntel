@@ -156,8 +156,21 @@ class ObservabilityConfig:
     console_export: bool = False
     prometheus_enabled: bool = False
     duckdb_tracing_enabled: bool = True
+    duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"
     duckdb_statement_hash_len: int = 16
+    duckdb_query_summary_max_len: int = 255
+    duckdb_query_summary_max_targets: int = 6
+    duckdb_emit_legacy_db_attributes: bool = False
+    duckdb_query_text_policy: str = "never"
+    duckdb_query_text_max_len: int = 4096
+    duckdb_query_text_strip_comments: bool = True
+    duckdb_query_text_collapse_in_lists: bool = True
+    duckdb_query_parameter_enabled: bool = False
+    duckdb_query_parameter_keys: tuple[str, ...] = ()
+    duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
+    duckdb_query_parameter_require_in_sql: bool = True
+    duckdb_query_parameter_max_str_len: int = 80
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,8 +183,21 @@ class ObservabilityRuntime:
     shutdown: Callable[[], None] | None
     prometheus_enabled: bool = False
     duckdb_tracing_enabled: bool = True
+    duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"
     duckdb_statement_hash_len: int = 16
+    duckdb_query_summary_max_len: int = 255
+    duckdb_query_summary_max_targets: int = 6
+    duckdb_emit_legacy_db_attributes: bool = False
+    duckdb_query_text_policy: str = "never"
+    duckdb_query_text_max_len: int = 4096
+    duckdb_query_text_strip_comments: bool = True
+    duckdb_query_text_collapse_in_lists: bool = True
+    duckdb_query_parameter_enabled: bool = False
+    duckdb_query_parameter_keys: tuple[str, ...] = ()
+    duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
+    duckdb_query_parameter_require_in_sql: bool = True
+    duckdb_query_parameter_max_str_len: int = 80
 
 
 class _ObservabilityHolder(SingletonHolder[ObservabilityRuntime]):
@@ -230,6 +256,22 @@ def _disabled_runtime() -> ObservabilityRuntime:
         meter=None,
         shutdown=None,
         prometheus_enabled=False,
+        duckdb_tracing_enabled=False,
+        duckdb_require_parent_span=True,
+        duckdb_statement_mode="hash",
+        duckdb_statement_hash_len=16,
+        duckdb_query_summary_max_len=255,
+        duckdb_query_summary_max_targets=6,
+        duckdb_emit_legacy_db_attributes=False,
+        duckdb_query_text_policy="never",
+        duckdb_query_text_max_len=4096,
+        duckdb_query_text_strip_comments=True,
+        duckdb_query_text_collapse_in_lists=True,
+        duckdb_query_parameter_enabled=False,
+        duckdb_query_parameter_keys=(),
+        duckdb_query_parameter_hash_keys=(),
+        duckdb_query_parameter_require_in_sql=True,
+        duckdb_query_parameter_max_str_len=80,
     )
 
 
@@ -393,8 +435,21 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
         shutdown=shutdown,
         prometheus_enabled=prometheus_enabled,
         duckdb_tracing_enabled=config.duckdb_tracing_enabled,
+        duckdb_require_parent_span=config.duckdb_require_parent_span,
         duckdb_statement_mode=config.duckdb_statement_mode,
         duckdb_statement_hash_len=config.duckdb_statement_hash_len,
+        duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
+        duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
+        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
+        duckdb_query_text_policy=config.duckdb_query_text_policy,
+        duckdb_query_text_max_len=config.duckdb_query_text_max_len,
+        duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
+        duckdb_query_text_collapse_in_lists=config.duckdb_query_text_collapse_in_lists,
+        duckdb_query_parameter_enabled=config.duckdb_query_parameter_enabled,
+        duckdb_query_parameter_keys=config.duckdb_query_parameter_keys,
+        duckdb_query_parameter_hash_keys=config.duckdb_query_parameter_hash_keys,
+        duckdb_query_parameter_require_in_sql=config.duckdb_query_parameter_require_in_sql,
+        duckdb_query_parameter_max_str_len=config.duckdb_query_parameter_max_str_len,
     )
 
 
@@ -427,8 +482,21 @@ def get_observability() -> ObservabilityRuntime:
         shutdown=None,
         prometheus_enabled=False,
         duckdb_tracing_enabled=False,
+        duckdb_require_parent_span=True,
         duckdb_statement_mode="hash",
         duckdb_statement_hash_len=16,
+        duckdb_query_summary_max_len=255,
+        duckdb_query_summary_max_targets=6,
+        duckdb_emit_legacy_db_attributes=False,
+        duckdb_query_text_policy="never",
+        duckdb_query_text_max_len=4096,
+        duckdb_query_text_strip_comments=True,
+        duckdb_query_text_collapse_in_lists=True,
+        duckdb_query_parameter_enabled=False,
+        duckdb_query_parameter_keys=(),
+        duckdb_query_parameter_hash_keys=(),
+        duckdb_query_parameter_require_in_sql=True,
+        duckdb_query_parameter_max_str_len=80,
     )
 
 
@@ -473,6 +541,19 @@ def observability_config_from_settings(
         console_export=settings.console_export,
         prometheus_enabled=settings.prometheus_enabled,
         duckdb_tracing_enabled=settings.duckdb_tracing_enabled,
+        duckdb_require_parent_span=settings.duckdb_require_parent_span,
         duckdb_statement_mode=settings.duckdb_statement_mode,
         duckdb_statement_hash_len=settings.duckdb_statement_hash_len,
+        duckdb_query_summary_max_len=settings.duckdb_query_summary_max_len,
+        duckdb_query_summary_max_targets=settings.duckdb_query_summary_max_targets,
+        duckdb_emit_legacy_db_attributes=settings.duckdb_emit_legacy_db_attributes,
+        duckdb_query_text_policy=settings.duckdb_query_text_policy,
+        duckdb_query_text_max_len=settings.duckdb_query_text_max_len,
+        duckdb_query_text_strip_comments=settings.duckdb_query_text_strip_comments,
+        duckdb_query_text_collapse_in_lists=settings.duckdb_query_text_collapse_in_lists,
+        duckdb_query_parameter_enabled=settings.duckdb_query_parameter_enabled,
+        duckdb_query_parameter_keys=settings.duckdb_query_parameter_keys,
+        duckdb_query_parameter_hash_keys=settings.duckdb_query_parameter_hash_keys,
+        duckdb_query_parameter_require_in_sql=settings.duckdb_query_parameter_require_in_sql,
+        duckdb_query_parameter_max_str_len=settings.duckdb_query_parameter_max_str_len,
     )

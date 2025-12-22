@@ -51,8 +51,21 @@ class ObservabilitySettings:
     console_export: bool = False
     prometheus_enabled: bool = False
     duckdb_tracing_enabled: bool = True
+    duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"
     duckdb_statement_hash_len: int = 16
+    duckdb_query_summary_max_len: int = 255
+    duckdb_query_summary_max_targets: int = 6
+    duckdb_emit_legacy_db_attributes: bool = False
+    duckdb_query_text_policy: str = "never"
+    duckdb_query_text_max_len: int = 4096
+    duckdb_query_text_strip_comments: bool = True
+    duckdb_query_text_collapse_in_lists: bool = True
+    duckdb_query_parameter_enabled: bool = False
+    duckdb_query_parameter_keys: tuple[str, ...] = ()
+    duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
+    duckdb_query_parameter_require_in_sql: bool = True
+    duckdb_query_parameter_max_str_len: int = 80
 
 
 @dataclass(frozen=True, slots=True)

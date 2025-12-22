@@ -69,6 +69,7 @@ def _span_attributes(span: object) -> Mapping[str, object]:
 def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure traced statements are redacted."""
     monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_TRACING", "true")
+    monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", "false")
     monkeypatch.setenv("OTEL_SDK_DISABLED", "false")
 
     exporter = _configure_tracing()
@@ -78,11 +79,17 @@ def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> No
     con.close()
 
     spans = exporter.get_finished_spans()
-    db_spans = [span for span in spans if _span_attributes(span).get("db.system") == "duckdb"]
+    db_spans = [
+        span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"
+    ]
     expect_true(bool(db_spans), message="Expected DuckDB spans")
 
     span = db_spans[-1]
     attrs = _span_attributes(span)
+    summary = attrs.get("db.query.summary")
+    expect_is_instance(summary, str)
+    expect_equal(cast("str", summary), span.name)
+
     statement = attrs.get("db.statement")
     expect_is_instance(statement, str)
     statement_text = cast("str", statement)
@@ -98,6 +105,7 @@ def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> No
 def test_duckdb_tracing_operation_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure operation-only redaction emits the SQL operation."""
     monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_TRACING", "true")
+    monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", "false")
     monkeypatch.setenv("CODEINTEL_OTEL_DB_STATEMENT_MODE", "operation")
     monkeypatch.setenv("OTEL_SDK_DISABLED", "false")
 
@@ -108,10 +116,15 @@ def test_duckdb_tracing_operation_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     con.close()
 
     spans = exporter.get_finished_spans()
-    db_spans = [span for span in spans if _span_attributes(span).get("db.system") == "duckdb"]
+    db_spans = [
+        span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"
+    ]
     expect_true(bool(db_spans), message="Expected DuckDB spans")
 
     attrs = _span_attributes(db_spans[-1])
+    summary = attrs.get("db.query.summary")
+    expect_is_instance(summary, str)
+
     statement = attrs.get("db.statement")
     expect_is_instance(statement, str)
     expect_equal(cast("str", statement), "SELECT")

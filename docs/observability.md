@@ -5,6 +5,11 @@ OpenTelemetry is the canonical pipeline for traces and metrics across CLI, HTTP,
 ## Defaults
 
 - DuckDB tracing is enabled by default when OpenTelemetry is enabled.
+- DuckDB spans emit `db.query.summary` with SQLGlot-backed summaries and a stable
+  `codeintel.db.statement.sha256` hash for grouping.
+- DuckDB span names use `db.query.summary` when available.
+- DuckDB spans are emitted only when a parent span exists unless explicitly
+  configured otherwise.
 - Prometheus scraping is opt-in and exposed only when enabled.
 - Outbound HTTP client instrumentation is enabled when httpx/requests are installed.
 
@@ -30,7 +35,38 @@ OpenTelemetry is the canonical pipeline for traces and metrics across CLI, HTTP,
 
 - `CODEINTEL_OTEL_DUCKDB_TRACING` (default: true)
   - When true and OpenTelemetry is enabled, DuckDB spans are emitted.
+- `CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT` (default: true)
+  - When true, DuckDB spans are emitted only when a parent span exists.
 - `CODEINTEL_OTEL_DB_STATEMENT_MODE` (default: `hash`)
   - Options: `full`, `hash`, `operation`, `none`.
 - `CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN` (default: 16)
   - Controls the display prefix length when statement mode is `hash`.
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_LEN` (default: 255)
+  - Token-safe truncation limit for `db.query.summary`.
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS` (default: 6)
+  - Maximum number of table targets included per operation.
+- `CODEINTEL_OTEL_DB_LEGACY_ATTRIBUTES` (default: false)
+  - When true, emit legacy `db.system`/`db.name` attributes in addition to new keys.
+- `CODEINTEL_OTEL_DB_QUERY_TEXT_POLICY` (default: `never`)
+  - Options: `never`, `parameterized`, `redacted`, `parameterized_or_redacted`, `full`.
+- `CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN` (default: 4096)
+  - Length cap for sanitized `db.query.text`.
+- `CODEINTEL_OTEL_DB_QUERY_TEXT_STRIP_COMMENTS` (default: true)
+  - Remove SQL comments before sanitization.
+- `CODEINTEL_OTEL_DB_QUERY_TEXT_COLLAPSE_IN_LISTS` (default: true)
+  - Collapse repeated `IN (?, ?, ?)` placeholder lists to `IN (?)`.
+- `CODEINTEL_OTEL_DB_QUERY_PARAMETER_ENABLED` (default: false)
+  - When true, emit `db.query.parameter.<key>` attributes for allowlisted keys.
+- `CODEINTEL_OTEL_DB_QUERY_PARAMETER_KEYS` (default: empty)
+  - Comma-separated allowlist of parameter keys to emit.
+- `CODEINTEL_OTEL_DB_QUERY_PARAMETER_HASH_KEYS` (default: empty)
+  - Comma-separated keys whose string values should be hashed.
+- `CODEINTEL_OTEL_DB_QUERY_PARAMETER_REQUIRE_IN_SQL` (default: true)
+  - When true, only emit allowlisted keys that appear as placeholders in the SQL.
+- `CODEINTEL_OTEL_DB_QUERY_PARAMETER_MAX_STRLEN` (default: 80)
+  - Maximum length for emitted string parameter values.
+
+## Operational guidance
+
+- Prefer dashboards keyed by `db.query.summary` plus `codeintel.db.statement.sha256`
+  for stable grouping without raw SQL text.

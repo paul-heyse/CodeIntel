@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass
 from typing import Literal, overload
+
+from codeintel.storage.sqlglot_tools import fingerprint_sql_duckdb_safe
 
 SQLStatementMode = Literal["full", "hash", "operation", "none"]
 
@@ -13,15 +14,6 @@ SQLStatementMode = Literal["full", "hash", "operation", "none"]
 _LEADING_WS_RE = re.compile(r"^\s+")
 _SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _SQL_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
-_SQL_SINGLE_QUOTED_STRING_RE = re.compile(r"'(?:''|[^'])*'")
-_SQL_HEX_LITERAL_RE = re.compile(r"\b0x[0-9a-fA-F]+\b")
-_SQL_UUID_RE = re.compile(
-    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
-    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
-)
-_SQL_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
-_WS_RE = re.compile(r"\s+")
-
 
 @dataclass(frozen=True, slots=True)
 class RedactedSQL:
@@ -48,19 +40,6 @@ def _extract_operation(sql: str) -> str:
     sql = _LEADING_WS_RE.sub("", sql)
     head = sql.split(maxsplit=1)
     return head[0] if head else ""
-
-
-def _normalize_for_hash(sql: str) -> str:
-    sql = _strip_comments(sql)
-    sql = _SQL_SINGLE_QUOTED_STRING_RE.sub("?", sql)
-    sql = _SQL_HEX_LITERAL_RE.sub("?", sql)
-    sql = _SQL_UUID_RE.sub("?", sql)
-    sql = _SQL_NUMBER_RE.sub("?", sql)
-    return _WS_RE.sub(" ", sql).strip()
-
-
-def _sha256_hex(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @overload
@@ -100,8 +79,7 @@ def redact_sql(
     if mode == "full":
         return RedactedSQL(mode=mode, operation=operation, statement_hash=None, display=text)
 
-    normalized = _normalize_for_hash(text)
-    digest = _sha256_hex(normalized) if normalized else None
+    digest = fingerprint_sql_duckdb_safe(text) if text else None
 
     if mode == "none":
         return RedactedSQL(mode=mode, operation=operation, statement_hash=digest, display="")
