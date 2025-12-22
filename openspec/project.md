@@ -39,6 +39,8 @@ exports, search, and snapshot metadata from published serving snapshots via an a
 - Contracts and schemas: Pandera `DataFrameSchema` is the source of truth; JSON Schema 2020-12 and
   OpenAPI 3.2 govern external boundaries. `buildspec.json`, `schema_manifest.json`, and
   `semantic_registry.json` are compiled artifacts used for validation and serving.
+- Serving snapshot publishing copies the build DuckDB plus serving artifacts into `serve_dir`,
+  writes `current.json` atomically, and retains a configurable number of prior snapshots.
 - Storage access: reads via `StorageGateway`/`IbisGateway` and qualified name helpers; writes via
   `DuckDBPolicyBackend` (bulk insert/upsert, snapshot-scoped deletes).
 - Ports/adapters: ingestion, graphs, and analytics keep pure compute logic in `*/compute` with I/O
@@ -73,6 +75,46 @@ exports, search, and snapshot metadata from published serving snapshots via an a
   signals, data model usage, and test/coverage analytics.
 - `docs.*` views provide denormalized summaries for serving and LLM exports, including
   `docs.search_documents` for search.
+
+### Build Targets (Hamilton)
+- Ingestion targets: modules, ast, cst, docstrings, scip, config_ingest, coverage_ingest,
+  tests_ingest, typing.
+- Graph targets: goids, call_graph, import_graph, cfg, dfg, symbol_uses, call_graph_views,
+  graph_metrics, graph_validation.
+- Analytics targets: function_metrics, function_history, history_timeseries, function_contracts,
+  function_effects, function_ast_features, entrypoints, data_models, data_model_usage, profiles,
+  semantic_roles, risk_factors, hotspots, subsystems, subsystem_graph_metrics, subsystem_agreement,
+  symbol_graph_metrics, test_graph_metrics, test_profile, coverage_functions, coverage_test_edges,
+  behavioral_coverage, config_data_flow, cfg_dfg_metrics, external_deps.
+- Export targets: export_jsonl, export_parquet, serving_artifacts.
+
+### Table Families and Producers
+- core.*: ingestion targets populate snapshot-scoped source, symbol, test, coverage, and config
+  tables (modules/ast/cst/docstrings/scip/config_ingest/coverage_ingest/tests_ingest/typing).
+- graph.*: graph targets emit edges/nodes and derived views (call_graph/import_graph/cfg/dfg/
+  symbol_uses, plus `graph.v_*` from call_graph_views).
+- analytics.*: analytics targets compute metrics, profiles, entrypoints, subsystems, risk/hotspots,
+  data model usage, and testing analytics from core/graph inputs.
+- docs.*: Ibis view builders in `codeintel.storage.views.ibis_views` define denormalized views for
+  exports/serving; `docs.search_documents` is populated during serving snapshot publish and
+  indexed with DuckDB FTS.
+
+### Serving Tools and Resources
+- MCP tools: semantic_catalog, semantic_describe, semantic_query, semantic_explain, semantic_export,
+  code_search, serving_meta.
+- HTTP surface mirrors the semantic tools and exposes health/meta endpoints; errors use RFC 9457.
+
+### CLI Command Surface (Build-Tied)
+- `codeintel build run` executes targets by name/module with dependency resolution; `build spec`
+  compiles buildspecs; `build schema` compiles schema manifests; other build subcommands inspect
+  plans/lineage/impact and build status.
+- `codeintel graph` lists graph-module targets and their execution plans.
+- `codeintel dataset` inspects schemas/constraints/flows and verifies data against Pandera;
+  `codeintel datasets` lints, snapshots, diffs, and scaffolds dataset specs.
+- `codeintel docs export` writes Document Output artifacts (JSONL/Parquet + manifests).
+- `codeintel serve http|mcp` runs the FastAPI and MCP surfaces over published snapshots.
+- `codeintel storage`, `codeintel history`, `codeintel jobs`, `codeintel plugins` provide
+  operational utilities for storage, history, job runner, and plugin management.
 
 ## Important Constraints
 - Python 3.13 only; strict linting and type gates (ruff, pyright, pyrefly) are zero-error.

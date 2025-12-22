@@ -31,7 +31,7 @@ from codeintel.analytics.dependencies.compute import (
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.analytics.entrypoints.compute import EntrypointsResult, compute_entrypoints_pure
 from codeintel.analytics.entrypoints.core import EntrypointBuildInputs
-from codeintel.analytics.resources import ProviderRegistryOptions
+from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
@@ -45,9 +45,14 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    ENTRYPOINTS_OVERRIDE_TABLES,
+    EXTERNAL_DEPS_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -88,13 +93,14 @@ ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
 ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=EXTERNAL_DEPS_TARGET_NAME,
         module="analytics",
         description="External library dependency analysis.",
         options=TargetSpecOptions(
             table_keys=EXTERNAL_DEPS_TABLE_KEYS,
+            override_tables=EXTERNAL_DEPS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -103,6 +109,7 @@ TARGET_SPECS = (
         description="External entrypoint detection (HTTP, CLI, etc.).",
         options=TargetSpecOptions(
             table_keys=ENTRYPOINTS_TABLE_KEYS,
+            override_tables=ENTRYPOINTS_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -124,10 +131,10 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
     ExternalDependencyInputs | None
         Inputs for dependency analysis, or None if unavailable.
     """
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=EXTERNAL_DEPS_TARGET_NAME,
-        options=ProviderRegistryOptions(
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(
             include_graphs=False,
             include_asts=True,
             include_module_map=True,
@@ -380,10 +387,10 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
     EntrypointBuildInputs | None
         Prepared inputs, or None when required data is unavailable.
     """
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=ENTRYPOINTS_TARGET_NAME,
-        options=ProviderRegistryOptions(
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(
             include_graphs=False,
             include_features=True,
             include_module_map=True,

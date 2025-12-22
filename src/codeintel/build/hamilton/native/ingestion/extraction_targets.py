@@ -20,9 +20,15 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
+from codeintel.build.hamilton.native.target_override_tables import (
+    AST_OVERRIDE_TABLES,
+    CST_OVERRIDE_TABLES,
+    DOCSTRINGS_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_materialize, tag_tool
@@ -52,13 +58,14 @@ CST_TABLE_KEYS = (CST_NODES_TABLE_KEY,)
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
 DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=AST_TARGET_NAME,
         module="ingestion",
         description="Python AST extraction and metrics.",
         options=TargetSpecOptions(
             table_keys=AST_TABLE_KEYS,
+            override_tables=AST_OVERRIDE_TABLES,
             resources=TargetResources(tracker=True, modules=True),
             execution=CPU_INTENSIVE_EXECUTION,
         ),
@@ -67,13 +74,19 @@ TARGET_SPECS = (
         name=CST_TARGET_NAME,
         module="ingestion",
         description="Concrete syntax tree extraction.",
-        options=TargetSpecOptions(table_keys=CST_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=CST_TABLE_KEYS,
+            override_tables=CST_OVERRIDE_TABLES,
+        ),
     ),
     make_output_target(
         name=DOCSTRINGS_TARGET_NAME,
         module="ingestion",
         description="Docstring extraction and parsing.",
-        options=TargetSpecOptions(table_keys=DOCSTRINGS_TABLE_KEYS),
+        options=TargetSpecOptions(
+            table_keys=DOCSTRINGS_TABLE_KEYS,
+            override_tables=DOCSTRINGS_OVERRIDE_TABLES,
+        ),
     ),
 )
 

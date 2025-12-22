@@ -1,6 +1,6 @@
 """BuildSpec compiler.
 
-Compiles a deterministic BuildSpec from the Hamilton FunctionGraph in auto mode.
+Compiles a deterministic BuildSpec from the canonical target catalog.
 The BuildSpec is the DAG-first compiled contract used for CI gating and (later)
 serving metadata.
 """
@@ -10,17 +10,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
-from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
+from codeintel.build.target_catalog import target_graph_from_catalog
+from codeintel.build.target_inventory import get_output_inventory
+from codeintel.build.target_metadata import OutputInventory
 from codeintel.core.schemas.hashing import schema_hash
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
@@ -68,7 +68,6 @@ def _artifact_specs_for_target(
 
 def _compile_target_specs(
     *,
-    runtime: HamiltonRuntime,
     graph: TargetGraph,
     derived_outputs: OutputInventory,
 ) -> tuple[tuple[TargetSpec, ...], frozenset[str]]:
@@ -76,8 +75,6 @@ def _compile_target_specs(
 
     Parameters
     ----------
-    runtime
-        Hamilton runtime containing the TargetGraph.
     graph
         Target graph describing target dependencies.
     derived_outputs
@@ -88,20 +85,11 @@ def _compile_target_specs(
     tuple[tuple[TargetSpec, ...], frozenset[str]]
         Compiled TargetSpecs and the set of produced dataset table keys.
 
-    Raises
-    ------
-    RuntimeError
-        If any target does not resolve to a native implementation.
     """
     all_table_keys: set[str] = set()
     target_specs: list[TargetSpec] = []
-    native_names = native_target_names(runtime)
-
     for target_name in sorted(graph):
         target = graph.get(target_name)
-        if target_name not in native_names:
-            msg = f"Target '{target_name}' lacks a native implementation"
-            raise RuntimeError(msg)
         impl_kind = "native"
 
         outputs = derived_outputs.datasets_for(target_name)
@@ -160,7 +148,7 @@ def _compile_dataset_specs(
 
 
 def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> BuildSpec:
-    """Compile a BuildSpec from the Hamilton graph in auto mode.
+    """Compile a BuildSpec from the canonical target catalog.
 
     Parameters
     ----------
@@ -174,14 +162,11 @@ def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> Buil
     """
     opts = options or BuildSpecCompileOptions()
 
-    service = get_target_metadata_service()
-    runtime = service.system.runtime
-    graph = service.system.graph
-    derived_outputs = service.outputs
+    graph = target_graph_from_catalog()
+    derived_outputs = get_output_inventory()
 
     provider = get_schema_provider()
     target_specs, all_table_keys = _compile_target_specs(
-        runtime=runtime,
         graph=graph,
         derived_outputs=derived_outputs,
     )

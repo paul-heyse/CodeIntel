@@ -7,42 +7,55 @@ schema hashing, and validation, but must not import `codeintel.build.*`.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
+from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
+from codeintel.storage.contracts.catalog_state import contract_catalog_table_schemas
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Callable, Iterable
 
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.core.schemas.provider import SchemaProvider
-
-
-@lru_cache(maxsize=1)
-def _fallback_provider() -> SchemaProvider:
-    return MappingSchemaProvider(TABLE_SCHEMAS)
+    from codeintel.core.schemas.service import SchemaService
 
 
 @lru_cache(maxsize=1)
 def get_schema_provider() -> SchemaProvider:
     """Return the canonical SchemaProvider for storage.
 
-    When a global SchemaService has been configured (for example by the build
-    layer), its table provider is used to align storage with DAG-first schemas.
-    Otherwise, fall back to declared table schemas.
-
     Returns
     -------
     SchemaProvider
         Provider for table/view schemas.
     """
+    catalog_schemas = contract_catalog_table_schemas()
+    if catalog_schemas:
+        return MappingSchemaProvider(catalog_schemas)
+    return _fallback_schema_provider()
+
+
+def _fallback_schema_provider() -> SchemaProvider:
+    """Resolve a schema provider when the contract catalog is unavailable.
+
+    Returns
+    -------
+    SchemaProvider
+        Best-effort schema provider for storage bootstrap.
+    """
     try:
-        service = get_schema_service()
+        return get_schema_service().table_provider
     except RuntimeError:
-        return _fallback_provider()
-    return service.table_provider
+        service_factory = cast(
+            "Callable[[], SchemaService]",
+            lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
+        )
+        try:
+            return service_factory().table_provider
+        except RuntimeError:
+            return MappingSchemaProvider(TABLE_SCHEMAS)
 
 
 def require_table_schema(table_key: str) -> TableSchema:
@@ -56,7 +69,7 @@ def require_table_schema(table_key: str) -> TableSchema:
     Returns
     -------
     TableSchema
-        Declared schema for the requested key.
+        Schema for the requested key.
 
     Raises
     ------
@@ -76,7 +89,7 @@ def iter_table_schemas() -> Iterable[TableSchema]:
     Returns
     -------
     Iterable[TableSchema]
-        Iterable of all declared schemas.
+        Iterable of all schemas.
     """
     return get_schema_provider().iter_table_schemas()
 

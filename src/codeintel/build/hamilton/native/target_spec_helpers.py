@@ -18,7 +18,6 @@ from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import DEFAULT_EXECUTION, DEFAULT_RESOURCES
 from codeintel.build.table_keys import validate_table_key
 from codeintel.build.targets import OutputTarget
-from codeintel.core.schemas.declared import get_declared_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -38,6 +37,8 @@ _ALLOWED_ARTIFACT_TEMPLATE_KEYS: frozenset[str] = frozenset(
         "scip_dir",
     }
 )
+
+_TARGET_REGISTRY: dict[str, OutputTarget] = {}
 
 
 def _validate_table_key(table_key: str) -> None:
@@ -77,8 +78,6 @@ def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
 def _resolve_table_schemas(
     table_keys: Iterable[str],
     override_tables: Iterable[TableSchema],
-    *,
-    allow_declared_overrides: bool,
 ) -> tuple[TableSchema, ...]:
     schemas: list[TableSchema] = []
     seen: set[str] = set()
@@ -102,12 +101,6 @@ def _resolve_table_schemas(
             schemas.append(override_schema)
             continue
 
-        if allow_declared_overrides:
-            declared_schema = get_declared_schema(table_key)
-            if declared_schema is not None:
-                schemas.append(declared_schema)
-                continue
-
         schemas.append(placeholder_table_schema(table_key))
 
     extra_overrides = sorted(set(overrides) - seen)
@@ -128,8 +121,6 @@ class TargetSpecOptions:
         Fully qualified table keys produced by the target (schema.table).
     override_tables
         Explicit TableSchema overrides for non-inferable outputs.
-    allow_declared_overrides
-        When True, allow declared schemas to serve as explicit overrides.
     artifacts
         Artifact specs produced by the target.
     resources
@@ -142,7 +133,6 @@ class TargetSpecOptions:
 
     table_keys: tuple[str, ...] = ()
     override_tables: tuple[TableSchema, ...] = ()
-    allow_declared_overrides: bool = False
     artifacts: tuple[ArtifactSpec, ...] = ()
     resources: TargetResources = DEFAULT_RESOURCES
     execution: TargetExecution = DEFAULT_EXECUTION
@@ -193,7 +183,6 @@ def make_output_target(
         tables = _resolve_table_schemas(
             resolved.table_keys,
             resolved.override_tables,
-            allow_declared_overrides=resolved.allow_declared_overrides,
         )
     except KeyError as exc:
         msg = f"Unknown table schema key in target spec {name}: {exc}"
@@ -210,7 +199,85 @@ def make_output_target(
     )
 
 
+def register_output_target(target: OutputTarget) -> None:
+    """Register OutputTarget metadata for Hamilton target discovery.
+
+    Parameters
+    ----------
+    target
+        OutputTarget metadata to register.
+
+    Raises
+    ------
+    ValueError
+        If a target name is already registered.
+    """
+    existing = _TARGET_REGISTRY.get(target.name)
+    if existing is not None:
+        msg = f"Duplicate OutputTarget registration: {target.name}"
+        raise ValueError(msg)
+    _TARGET_REGISTRY[target.name] = target
+
+
+def register_output_targets(*targets: OutputTarget) -> None:
+    """Register multiple OutputTarget metadata entries."""
+    for target in targets:
+        register_output_target(target)
+
+
+def get_registered_target(name: str) -> OutputTarget | None:
+    """Return a registered OutputTarget by name.
+
+    Returns
+    -------
+    OutputTarget | None
+        Registered target, or None when not present.
+    """
+    return _TARGET_REGISTRY.get(name)
+
+
+def resolve_registered_targets(target_names: Iterable[str]) -> tuple[OutputTarget, ...]:
+    """Resolve registered OutputTargets for a set of target names.
+
+    Returns
+    -------
+    tuple[OutputTarget, ...]
+        Registered targets aligned with the supplied names.
+
+    Raises
+    ------
+    RuntimeError
+        If registered targets are missing or extra relative to the Hamilton DAG.
+    """
+    resolved: list[OutputTarget] = []
+    missing: list[str] = []
+    for name in sorted(target_names):
+        target = _TARGET_REGISTRY.get(name)
+        if target is None:
+            missing.append(name)
+            continue
+        resolved.append(target)
+    if missing:
+        msg = f"Missing OutputTarget metadata for targets: {', '.join(missing)}"
+        raise RuntimeError(msg)
+    extra = sorted(set(_TARGET_REGISTRY) - set(target_names))
+    if extra:
+        msg = f"Registered OutputTarget metadata not present in Hamilton DAG: {', '.join(extra)}"
+        raise RuntimeError(msg)
+    return tuple(resolved)
+
+
+def clear_target_registry() -> None:
+    """Clear the registered OutputTarget metadata."""
+    _TARGET_REGISTRY.clear()
+
+
 __all__ = [
     "TargetSpecOptions",
+    "clear_target_registry",
+    "get_registered_target",
     "make_output_target",
+    "register_output_target",
+    "register_output_targets",
+    "resolve_registered_targets",
 ]

@@ -12,8 +12,9 @@
 ## 3. Contract Resolution Consolidation
 - [x] 3.1 Update contract resolution to use cached canonical catalogs by default
 - [ ] 3.2 Restrict declared schemas to source-only datasets and explicit overrides
-      (remaining: remove declared overrides for DAG outputs in target specs and
-      prune declared fallbacks outside source-only providers)
+      (remaining: complete Pandera/DatasetSchema registry coverage for non-inferable outputs,
+      remove DAG output entries from declared_schemas, and allow explicit overrides only via
+      Hamilton registry metadata or temporary TargetSpecOptions bridges)
 - [x] 3.3 Consolidate JSON Schema generation on contract/Pandera-derived schemas
 - [x] 3.4 Introduce a shared contract validation service used by build, storage, and serving
 
@@ -24,14 +25,16 @@
 
 ## 5. Target Catalog Consolidation
 - [ ] 5.1 Remove DAG-free TargetSpec catalog enumeration paths
-      (remaining: remove fallback to native TargetSpec enumeration in build catalog load paths)
+      (remaining: delete TARGET_SPECS/load_native_target_specs usage in driver/support and derive
+      OutputTarget metadata + graph from Hamilton introspection and canonical catalogs)
 - [ ] 5.2 Update CLI/spec serialization to read OutputTarget metadata from the canonical catalog
-      (remaining: CLI/spec inventory should rely on canonical catalog only)
+      (remaining: verify remaining call sites, docs, and examples use canonical catalog only)
 
 ## 6. Runtime and Resource Registry Consolidation
 - [x] 6.1 Implement a unified runtime configuration loader returning RuntimePrimitives + settings
 - [ ] 6.2 Standardize resource registry interfaces across core/analytics/graphs and BuildEnv
-      (remaining: unify BuildEnv registry factory with core ResourceRegistry interface)
+      (remaining: remove build-only registry wrapper and use core ResourceRegistry +
+      ProviderFactory consistently)
 
 ## 7. IO, Errors, and Manifests
 - [x] 7.1 Re-export storage Ibis IO for Hamilton and remove duplicate adapters
@@ -40,8 +43,8 @@
 
 ## 8. Cleanup and Validation
 - [ ] 8.1 Remove deprecated registry helpers and declared_schemas usage for DAG outputs
-      (remaining: remove DAG-free registry shims from public APIs as CLI moves to canonical
-      catalog access)
+      (remaining: remove DAG-free registry shims such as target_specs and declared DAG outputs,
+      and ensure schema resolution has no declared fallback for DAG tables)
 - [ ] 8.2 Update tests and documentation to reflect canonical registries
       (remaining: full doc/test sweep beyond touched files)
 - [ ] 8.3 Run quality_report and pytest gates
@@ -49,5 +52,6 @@
 
 ## 9. Ingestion and Interface Hygiene
 - [ ] 9.1 Migrate remaining non-Hamilton ingestion/analytics orchestration into Hamilton nodes
-      (remaining: direct tool-runner usage in analytics modules)
+      (remaining: migrate hotspots compute and any remaining tool-runner orchestration in
+      analytics modules into Hamilton)
 - [ ] 9.2 Ensure ingestion public APIs expose tool execution only (confirm __all__ and docs)

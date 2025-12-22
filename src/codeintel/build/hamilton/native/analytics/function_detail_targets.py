@@ -28,7 +28,7 @@ from codeintel.analytics.functions.function_effects import (
     FunctionEffectsOptions,
     build_function_effects_rows,
 )
-from codeintel.analytics.resources import ProviderRegistryOptions
+from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
@@ -39,9 +39,14 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    FUNCTION_CONTRACTS_OVERRIDE_TABLES,
+    FUNCTION_EFFECTS_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
@@ -67,13 +72,14 @@ FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=FUNCTION_EFFECTS_TARGET_NAME,
         module="analytics",
         description="Function purity and side-effect analysis.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_EFFECTS_TABLE_KEY,),
+            override_tables=FUNCTION_EFFECTS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -82,6 +88,7 @@ TARGET_SPECS = (
         description="Inferred function pre/postconditions.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,),
+            override_tables=FUNCTION_CONTRACTS_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -167,10 +174,10 @@ def t__function_contracts__compute(
             return FunctionContractsResult(rows=None)
 
     try:
-        registry = env.providers.resources.registry_for(
-            env,
-            target_name=FUNCTION_CONTRACTS_TARGET_NAME,
-            options=ProviderRegistryOptions(
+        registry = build_registry(
+            gateway=env.gateway,
+            snapshot=env.snapshot,
+            registry_options=ProviderRegistryOptions(
                 include_graphs=False,
                 include_asts=True,
             ),
@@ -343,10 +350,10 @@ def t__function_effects__compute(
         if should_skip_native_target(env, target, input_hash):
             return FunctionEffectsResult(rows=None)
 
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=FUNCTION_EFFECTS_TARGET_NAME,
-        options=ProviderRegistryOptions(include_graphs=False),
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

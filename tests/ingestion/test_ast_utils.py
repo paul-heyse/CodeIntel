@@ -14,9 +14,9 @@ import pytest
 
 from codeintel.build.schemas import get_schema_provider
 from codeintel.core.parsing import AstSpanIndex
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.ast_extract import AstVisitor
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,

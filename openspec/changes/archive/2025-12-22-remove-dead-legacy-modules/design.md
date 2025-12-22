@@ -1,3 +1,7 @@
+## Status
+Archived on 2025-12-22 after implementation. Guardrails/pytest validation is deferred to
+the parallel guardrails workstream (schema override checks).
+
 ## Context
 The codebase still ships unreferenced modules, compatibility shims, and legacy helpers that
 are not part of the canonical architecture. Removing them reduces maintenance burden and
@@ -41,6 +45,4 @@ clarifies the supported interfaces across build, ingestion, storage, and serving
 5. Publish release notes for breaking removals.
 
 ## Open Questions
-- Are any external consumers still using the legacy CLI entrypoints or compatibility shims?
-- Should shell completion support be replaced with a new generator before removal?
-- Do architecture boundary checks need a replacement in tests once _architecture is removed?
+None. Legacy surfaces were removed as planned; validation follows the guardrails workstream.

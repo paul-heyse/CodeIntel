@@ -55,6 +55,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.factory import (
         build_snapshot_gateway_resolver,
         open_gateway,
+        open_inference_gateway,
         open_memory_gateway,
     )
     from codeintel.storage.gateway.minimal import MinimalStorageGateway
@@ -114,6 +115,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "build_snapshot_gateway_resolver",
     ),
     "open_gateway": ("codeintel.storage.gateway.factory", "open_gateway"),
+    "open_inference_gateway": ("codeintel.storage.gateway.factory", "open_inference_gateway"),
     "open_memory_gateway": ("codeintel.storage.gateway.factory", "open_memory_gateway"),
     "table_has_rows_for_snapshot": (
         "codeintel.storage.validation",
@@ -166,6 +168,7 @@ __all__ = [
     "StorageSchemaError",
     "build_snapshot_gateway_resolver",
     "open_gateway",
+    "open_inference_gateway",
     "open_memory_gateway",
     "table_has_rows_for_snapshot",
 ]

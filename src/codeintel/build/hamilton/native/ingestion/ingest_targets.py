@@ -31,9 +31,17 @@ from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
+from codeintel.build.hamilton.native.target_override_tables import (
+    CONFIG_INGEST_OVERRIDE_TABLES,
+    COVERAGE_INGEST_OVERRIDE_TABLES,
+    MODULES_OVERRIDE_TABLES,
+    TESTS_INGEST_OVERRIDE_TABLES,
+    TYPING_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
@@ -92,13 +100,14 @@ STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
 
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=MODULES_TARGET_NAME,
         module="ingestion",
         description="Repository module and file index from scanning.",
         options=TargetSpecOptions(
             table_keys=MODULES_TABLE_KEYS,
+            override_tables=MODULES_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -107,6 +116,7 @@ TARGET_SPECS = (
         description="Configuration file parsing and reference tracking.",
         options=TargetSpecOptions(
             table_keys=(CONFIG_VALUES_TABLE_KEY,),
+            override_tables=CONFIG_INGEST_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -115,6 +125,7 @@ TARGET_SPECS = (
         description="Line-level test coverage ingestion.",
         options=TargetSpecOptions(
             table_keys=(COVERAGE_LINES_TABLE_KEY,),
+            override_tables=COVERAGE_INGEST_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -123,6 +134,7 @@ TARGET_SPECS = (
         description="Test catalog ingestion from pytest.",
         options=TargetSpecOptions(
             table_keys=(TEST_CATALOG_TABLE_KEY,),
+            override_tables=TESTS_INGEST_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -131,6 +143,7 @@ TARGET_SPECS = (
         description="Type annotation analysis and static diagnostics.",
         options=TargetSpecOptions(
             table_keys=TYPING_TABLE_KEYS,
+            override_tables=TYPING_OVERRIDE_TABLES,
             resources=TargetResources(
                 tracker=True,
                 modules=True,

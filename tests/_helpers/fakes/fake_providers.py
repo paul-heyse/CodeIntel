@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics_resources import AnalyticsResourceRegistryProvider
 from codeintel.build.types import ScipIndexResult, ScipParseResult, TypeCheckResult
 from codeintel.ingestion.engine.service import ToolService
 from tests._helpers.fakes.tools import FakeToolRunner as IngestionFakeToolRunner
@@ -386,9 +385,6 @@ class FakeProviders:
     """Container for fake tool providers aligned with BuildEnv."""
 
     tool_runner: FakeToolRunner = field(default_factory=FakeToolRunner)
-    resources: AnalyticsResourceRegistryProvider = field(
-        default_factory=AnalyticsResourceRegistryProvider
-    )
     tool_service: ToolService = field(init=False)
 
     def __post_init__(self) -> None:

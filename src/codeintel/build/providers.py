@@ -16,7 +16,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.analytics_resources import AnalyticsResourceRegistryProvider
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 
@@ -36,13 +35,10 @@ class Providers:
         Canonical tool runner for external tooling.
     tool_service
         Canonical tool service for tool plugin execution.
-    resources
-        Analytics resource registry factory for BuildEnv usage.
     """
 
     tool_runner: ToolRunner
     tool_service: ToolService
-    resources: AnalyticsResourceRegistryProvider
 
 
 def create_default_providers(tools_config: ToolsConfig) -> Providers:
@@ -60,10 +56,7 @@ def create_default_providers(tools_config: ToolsConfig) -> Providers:
     """
     tool_runner = ToolRunner(tools_config=tools_config)
     tool_service = ToolService(tool_runner, tools_config=tools_config)
-    resources = AnalyticsResourceRegistryProvider()
-
     return Providers(
         tool_runner=tool_runner,
         tool_service=tool_service,
-        resources=resources,
     )

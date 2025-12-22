@@ -60,7 +60,7 @@ class BuildSchemaCompileCommand:
         bool,
         Parameter(
             name=["--infer-native", "--infer"],
-            help="Infer schemas for inferable native targets (fallback to declared on errors).",
+            help="Infer schemas for inferable native targets.",
             negative=(),
         ),
     ] = True
@@ -153,7 +153,7 @@ class BuildSchemaDiffCommand:
         bool,
         Parameter(
             name=["--infer-native", "--infer"],
-            help="Infer schemas for inferable native targets (fallback to declared on errors).",
+            help="Infer schemas for inferable native targets.",
             negative=(),
         ),
     ] = True
@@ -248,7 +248,7 @@ class BuildSchemaMigrateCommand:
         bool,
         Parameter(
             name=["--infer-native", "--infer"],
-            help="Infer schemas for inferable native targets (fallback to declared on errors).",
+            help="Infer schemas for inferable native targets.",
             negative=(),
         ),
     ] = True

@@ -46,6 +46,7 @@ from codeintel.analytics.resources.factory import (
     ProviderFactory,
     ProviderFactoryOptions,
     ProviderRegistryOptions,
+    build_registry,
 )
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
@@ -70,4 +71,5 @@ __all__ = [
     "ResourceNotLoadedError",
     "ResourceProvider",
     "ResourceRegistry",
+    "build_registry",
 ]

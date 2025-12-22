@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import hamilton.driver as h_driver
@@ -19,16 +20,16 @@ import hamilton.driver as h_driver
 from codeintel.build.hamilton.introspect import (
     derive_target_dependencies,
     target_graph_from_hamilton,
+    target_names_from_nodes,
 )
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.discovery import load_native_modules
+from codeintel.build.hamilton.native.target_spec_helpers import resolve_registered_targets
 from codeintel.build.hamilton.nodes.support_factory import (
     SupportGenerationOptions,
-    get_support_module,
+    build_support_module,
 )
 from codeintel.build.hamilton.runtime import HamiltonRuntime
-from codeintel.build.target_catalog import load_target_specs
-from codeintel.build.target_specs import load_native_target_specs
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -42,7 +43,48 @@ _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
 
 
 def _all_target_names() -> frozenset[str]:
-    return frozenset(target.name for target in load_target_specs())
+    native_mods = load_native_modules()
+    driver = h_driver.Builder().with_modules(*native_mods).build()
+    return target_names_from_nodes(driver.graph.nodes)
+
+
+def _build_base_graph(
+    *,
+    config: dict[str, Any] | None,
+) -> tuple[TargetGraph, h_driver.Driver]:
+    native_mods = load_native_modules()
+    driver = h_driver.Builder().with_config(config or {}).with_modules(*native_mods).build()
+    target_names = target_names_from_nodes(driver.graph.nodes)
+    targets = resolve_registered_targets(target_names)
+    base_graph = TargetGraph()
+    for target in targets:
+        base_graph.register(target)
+    return base_graph, driver
+
+
+def _build_support_graph_and_module(
+    *,
+    config: dict[str, Any] | None,
+) -> tuple[TargetGraph, ModuleType]:
+    base_graph, native_driver = _build_base_graph(config=config)
+    native_runtime = HamiltonRuntime(dr=native_driver, graph=base_graph)
+    native_deps = derive_target_dependencies(native_runtime)
+    native_graph = target_graph_from_hamilton(
+        native_runtime,
+        base_graph=base_graph,
+        derived_deps=native_deps,
+        strict=True,
+    )
+    support_module = build_support_module(
+        options=SupportGenerationOptions(
+            include_target_stubs=False,
+            include_dataset_nodes=True,
+            include_loader_nodes=True,
+            include_artifact_nodes=True,
+        ),
+        graph=native_graph,
+    )
+    return base_graph, support_module
 
 
 def build_driver(
@@ -94,27 +136,20 @@ def build_driver(
     >>> len(runtime.target_to_node) > 0
     True
     """
-    targets = load_native_target_specs()
-    base_graph = TargetGraph()
-    for target in targets:
-        base_graph.register(target)
-
-    native_mods = load_native_modules()
-    support_module = get_support_module(
-        options=SupportGenerationOptions(
-            include_target_stubs=False,
-            include_dataset_nodes=True,
-            include_loader_nodes=True,
-            include_artifact_nodes=True,
-        )
-    )
+    base_graph, support_module = _build_support_graph_and_module(config=config)
 
     adapter_list = list(adapters) if adapters else []
     if adapter_factory is not None:
         adapter_list.extend(adapter_factory(base_graph))
 
+    native_mods = load_native_modules()
     builder = (
-        h_driver.Builder().with_config(config or {}).with_modules(*native_mods, support_module)
+        h_driver.Builder()
+        .with_config(config or {})
+        .with_modules(
+            *native_mods,
+            support_module,
+        )
     )
     if enable_cache:
         cache_path = _DEFAULT_HAMILTON_CACHE_DIR if cache_dir is None else Path(cache_dir)

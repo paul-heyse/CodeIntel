@@ -21,12 +21,8 @@ from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset impo
 )
 from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
-from codeintel.build.schemas import (
-    ContractResolutionMode,
-    ContractResolutionSettings,
-    get_schema_service,
-    iter_contracts_by_table_key,
-)
+from codeintel.build.schemas import get_schema_service
+from codeintel.build.schemas.contract_service import get_enriched_contract_service
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
@@ -149,9 +145,8 @@ def build_all_schemas() -> dict[str, DatasetSchema]:
     schema_provider = schema_service.table_provider
     schemas: dict[str, DatasetSchema] = {}
 
-    for table_key, contract in iter_contracts_by_table_key(
-        settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL)
-    ):
+    service = get_enriched_contract_service()
+    for table_key, contract in service.iter_contracts_by_table_key():
         pandera_schema = dataset_schemas.get(table_key)
 
         if pandera_schema is None:

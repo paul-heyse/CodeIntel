@@ -19,8 +19,8 @@ Update expected manifest to match current schemas.
 │                                 modules. [env var:                           │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_ALL]          │
 │                                 [default: false]                             │
-│    INFER-NATIVE --infer-native  Infer schemas for inferable native targets   │
-│      --infer                    (fallback to declared on errors). [env var:  │
+│    INFER-NATIVE --infer-native  Infer schemas for inferable native targets.  │
+│      --infer                    [env var:                                   │
 │                                 CODEINTEL_BUILD_SCHEMA_MIGRATE_INFER_NATIVE] │
 │                                 [default: true]                              │
 │    STABLE --stable              Force deterministic ordering and             │

@@ -1,5 +1,9 @@
 # Change: Remove dead legacy modules and compatibility shims
 
+## Status
+Archived on 2025-12-22 after implementation. Validation for guardrails/pytest is deferred to
+the parallel guardrails workstream (schema override checks).
+
 ## Why
 Dead and compatibility modules remain in the public package surface, creating confusion,
 unused maintenance burden, and drift from the canonical architecture. We need a single,

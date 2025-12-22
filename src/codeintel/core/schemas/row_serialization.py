@@ -5,8 +5,6 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.declared import get_declared_schema
-from codeintel.core.schemas.row_models import row_serializer_for_table_schema
 from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
@@ -34,15 +32,7 @@ def row_serializer_for_table_key(table_key: str) -> RowSerializer:
     RuntimeError
         If the schema provider cannot resolve the requested table key.
     """
-    try:
-        service = get_schema_service()
-    except RuntimeError as exc:
-        schema = get_declared_schema(table_key)
-        if schema is None:
-            msg = f"{table_key} missing from schema provider"
-            raise RuntimeError(msg) from exc
-        return row_serializer_for_table_schema(table_schema=schema)
-
+    service = get_schema_service()
     binding = service.get_row_binding(table_key)
     if binding is None:
         msg = f"{table_key} missing from schema provider"

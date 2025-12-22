@@ -8,8 +8,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.target_inventory import get_output_inventory
-from codeintel.build.target_metadata import OutputInventory
+from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
 from codeintel.core.schemas.declared import (
     source_declared_schema_provider,
 )
@@ -27,7 +26,8 @@ def declared_schema_provider() -> SchemaProvider:
     SchemaProvider
         Provider exposing only source table schemas (excluding DAG outputs).
     """
-    return declared_schema_provider_for_inventory(get_output_inventory())
+    inventory = get_target_metadata_service().outputs
+    return declared_schema_provider_for_inventory(inventory)
 
 
 def declared_schema_provider_for_inventory(inventory: OutputInventory) -> SchemaProvider:

@@ -25,7 +25,7 @@ from codeintel.analytics.cfg_dfg.compute import (
 )
 from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow_result
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
-from codeintel.analytics.resources import ProviderRegistryOptions
+from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
@@ -35,9 +35,14 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    CFG_DFG_METRICS_OVERRIDE_TABLES,
+    CONFIG_DATA_FLOW_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -88,13 +93,14 @@ CFG_DFG_METRICS_TABLE_KEYS = (
     DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=CONFIG_DATA_FLOW_TARGET_NAME,
         module="analytics",
         description="Config key usage flow through functions.",
         options=TargetSpecOptions(
             table_keys=CONFIG_DATA_FLOW_TABLE_KEYS,
+            override_tables=CONFIG_DATA_FLOW_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -103,6 +109,7 @@ TARGET_SPECS = (
         description="Control-flow and data-flow graph metrics per function.",
         options=TargetSpecOptions(
             table_keys=CFG_DFG_METRICS_TABLE_KEYS,
+            override_tables=CFG_DFG_METRICS_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -191,10 +198,10 @@ def t__config_data_flow__compute(
         # Load function ASTs
         ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
-        registry = env.providers.resources.registry_for(
-            env,
-            target_name=CONFIG_DATA_FLOW_TARGET_NAME,
-            options=ProviderRegistryOptions(
+        registry = build_registry(
+            gateway=env.gateway,
+            snapshot=env.snapshot,
+            registry_options=ProviderRegistryOptions(
                 include_graphs=False,
                 include_asts=True,
             ),

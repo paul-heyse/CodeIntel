@@ -30,9 +30,11 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
+from codeintel.build.hamilton.native.target_override_tables import SCIP_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -67,13 +69,14 @@ SCIP_ARTIFACT_SPECS = (
     ArtifactSpec(SCIP_ARTIFACT_JSON, "{scip_dir}/index.json", "SCIP JSON export"),
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=SCIP_TARGET_NAME,
         module="ingestion",
         description="SCIP index ingestion and GOID generation.",
         options=TargetSpecOptions(
             table_keys=SCIP_TABLE_KEYS,
+            override_tables=SCIP_OVERRIDE_TABLES,
             artifacts=SCIP_ARTIFACT_SPECS,
             resources=TargetResources(
                 tracker=True,

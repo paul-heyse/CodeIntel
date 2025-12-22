@@ -2,7 +2,7 @@
 
 This module tests:
 - FileChurn dataclass for aggregating per-file churn
-- build_hotspots function for computing hotspot scores
+- compute_hotspot_rows for computing hotspot scores
 """
 
 from __future__ import annotations
@@ -13,11 +13,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.compute.hotspots.metrics import (
-    FileChurn,
-    build_hotspots,
-    parse_git_log_lines,
-)
+from codeintel.analytics.hotspots import FileChurn, compute_hotspot_rows, parse_git_log_lines
+from codeintel.build.hamilton.native.analytics.hotspots import collect_git_file_stats
 from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolRunner,
@@ -47,7 +44,7 @@ from tests._helpers.repo import (
     MOD_C_PATH,
     MOD_UTIL_PATH,
 )
-from tests._helpers.rows import AstMetricSeed, ast_metric_row
+from tests._helpers.rows import AstMetricSeed
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.ast_metrics import MEDIUM_COMPLEXITY
 
@@ -81,6 +78,15 @@ EXPECTED_SUMMARY_KEYS = 4
 FUNC_A_LINES = (1, 3)
 FUNC_B_LINES = (1, 6)
 FUNC_C_LINES = (1, 2)
+
+
+def _as_float(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    message = f"Expected numeric value, got {value!r}"
+    raise AssertionError(message)
+
+
 HELPER_LINES = (1, 2)
 
 
@@ -164,25 +170,29 @@ AST_EXPECTATIONS = [
 ]
 
 
-def _insert_ast_metrics(gateway: StorageGateway, seeds: list[AstMetricSeed]) -> None:
-    """Insert AST metric rows using builder tuples."""
-    rows = [ast_metric_row(seed) for seed in seeds]
-    gateway.con.executemany(
-        """
-        INSERT INTO core.ast_metrics (
-            rel_path,
-            node_count,
-            function_count,
-            class_count,
-            avg_depth,
-            max_depth,
-            complexity,
-            generated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
-    )
+def _ast_metrics_from_seeds(seeds: list[AstMetricSeed]) -> list[tuple[str, float]]:
+    """Build (rel_path, complexity) tuples from AST metric seeds.
+
+    Returns
+    -------
+    list[tuple[str, float]]
+        Relative path and complexity tuples for assertions.
+    """
+    return [(seed.rel_path, seed.complexity) for seed in seeds]
+
+
+def _ast_metrics_from_gateway(gateway: StorageGateway) -> list[tuple[str, float]]:
+    """Load (rel_path, complexity) tuples from core.ast_metrics.
+
+    Returns
+    -------
+    list[tuple[str, float]]
+        Relative path and complexity tuples from the database.
+    """
+    rows = gateway.con.execute(
+        "SELECT rel_path, complexity FROM core.ast_metrics",
+    ).fetchall()
+    return [(str(rel_path), float(complexity or 0.0)) for rel_path, complexity in rows]
 
 
 def test_file_churn_creation() -> None:
@@ -257,153 +267,68 @@ def test_file_churn_to_summary_keys() -> None:
     expect_equal(len(summary), EXPECTED_SUMMARY_KEYS)
 
 
-def test_build_hotspots_empty_ast_metrics(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots with empty AST metrics produces no rows."""
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=100)
-
-    result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
-    expect_is_not_none(result)
-    if result is None:
-        pytest.fail("Expected hotspot count row")
-    expect_equal(result[0], 0)
+def test_compute_hotspots_empty_ast_metrics() -> None:
+    """Empty AST metrics produce no hotspot rows."""
+    rows = compute_hotspot_rows([], churn_stats={})
+    expect_equal(len(rows), 0)
 
 
-def test_build_hotspots_with_ast_data(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots with AST metrics data."""
-    _insert_ast_metrics(memory_gateway, [AstMetricSeed(rel_path="test_file.py", complexity=5.0)])
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        "SELECT rel_path, score FROM analytics.hotspots WHERE rel_path = ?",
-        ["test_file.py"],
-    ).fetchone()
-
-    if result is None:
-        pytest.fail("Expected hotspot row for test_file.py")
-
-    rel_path, score = result
-    expect_equal(rel_path, "test_file.py")
-    expect_true(score > HOTSPOT_SCORE_THRESHOLD)
+def test_compute_hotspots_with_ast_data() -> None:
+    """Compute hotspots with AST metrics data."""
+    ast_metrics = _ast_metrics_from_seeds([AstMetricSeed(rel_path="test_file.py", complexity=5.0)])
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    expect_equal(len(rows), 1)
+    row = rows[0]
+    expect_equal(row["rel_path"], "test_file.py")
+    expect_true(_as_float(row["score"]) > HOTSPOT_SCORE_THRESHOLD)
 
 
-def test_build_hotspots_multiple_files(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots with multiple files."""
-    _insert_ast_metrics(
-        memory_gateway,
+def test_compute_hotspots_multiple_files() -> None:
+    """Compute hotspots with multiple files."""
+    ast_metrics = _ast_metrics_from_seeds(
         [
             AstMetricSeed(rel_path="file1.py", complexity=3.0),
             AstMetricSeed(rel_path="file2.py", complexity=7.0),
             AstMetricSeed(rel_path="file3.py", complexity=12.0),
         ],
     )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute("SELECT COUNT(*) FROM analytics.hotspots").fetchone()
-
-    expect_is_not_none(result)
-    if result is None:
-        pytest.fail("Expected hotspot count row")
-    expect_equal(result[0], EXPECTED_FILE_COUNT_MULTI)
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    expect_equal(len(rows), EXPECTED_FILE_COUNT_MULTI)
 
 
-def test_build_hotspots_score_calculation(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
+def test_compute_hotspots_score_calculation() -> None:
     """Verify hotspot score calculation components."""
-    _insert_ast_metrics(
-        memory_gateway,
-        [AstMetricSeed(rel_path="scored.py", complexity=EXPECTED_COMPLEXITY)],
+    ast_metrics = _ast_metrics_from_seeds(
+        [AstMetricSeed(rel_path="scored.py", complexity=EXPECTED_COMPLEXITY)]
     )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        """
-        SELECT complexity, score, commit_count, author_count
-        FROM analytics.hotspots WHERE rel_path = ?
-        """,
-        ["scored.py"],
-    ).fetchone()
-
-    if result is None:
-        pytest.fail("Expected hotspot row for scored.py")
-
-    complexity, score, commit_count, author_count = result
-    expect_equal(complexity, EXPECTED_COMPLEXITY)
-
-    expect_equal(commit_count, 0)
-    expect_equal(author_count, 0)
-
-    expect_true(score > HOTSPOT_SCORE_THRESHOLD)
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    expect_equal(len(rows), 1)
+    row = rows[0]
+    expect_equal(_as_float(row["complexity"]), EXPECTED_COMPLEXITY)
+    expect_equal(row["commit_count"], 0)
+    expect_equal(row["author_count"], 0)
+    expect_true(_as_float(row["score"]) > HOTSPOT_SCORE_THRESHOLD)
 
 
-def test_build_hotspots_high_complexity(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots handles high complexity values."""
+def test_compute_hotspots_high_complexity() -> None:
+    """Compute hotspots handles high complexity values."""
     high_complexity = 100.0
-    _insert_ast_metrics(
-        memory_gateway,
-        [AstMetricSeed(rel_path="high_complexity.py", complexity=high_complexity)],
+    ast_metrics = _ast_metrics_from_seeds(
+        [AstMetricSeed(rel_path="high_complexity.py", complexity=high_complexity)]
     )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        "SELECT complexity, score FROM analytics.hotspots WHERE rel_path = ?",
-        ["high_complexity.py"],
-    ).fetchone()
-
-    if result is None:
-        pytest.fail("Expected hotspot row for high_complexity.py")
-
-    complexity, score = result
-    expect_equal(complexity, high_complexity)
-
-    expect_true(score > HOTSPOT_SCORE_THRESHOLD)
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    expect_equal(len(rows), 1)
+    row = rows[0]
+    expect_equal(_as_float(row["complexity"]), high_complexity)
+    expect_true(_as_float(row["score"]) > HOTSPOT_SCORE_THRESHOLD)
 
 
-def test_build_hotspots_idempotent(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots is idempotent (DELETE before INSERT)."""
-    _insert_ast_metrics(
-        memory_gateway,
-        [AstMetricSeed(rel_path="idempotent.py", complexity=5.0)],
-    )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        "SELECT COUNT(*) FROM analytics.hotspots WHERE rel_path = ?",
-        ["idempotent.py"],
-    ).fetchone()
-
-    expect_is_not_none(result)
-    if result is None:
-        pytest.fail("Expected hotspot count row")
-    expect_equal(result[0], 1)
+def test_compute_hotspots_idempotent() -> None:
+    """Compute hotspots is deterministic across repeated runs."""
+    ast_metrics = _ast_metrics_from_seeds([AstMetricSeed(rel_path="idempotent.py", complexity=5.0)])
+    first = compute_hotspot_rows(ast_metrics, churn_stats={})
+    second = compute_hotspot_rows(ast_metrics, churn_stats={})
+    expect_equal(first, second)
 
 
 @pytest.mark.parametrize(
@@ -428,115 +353,57 @@ def test_file_churn_line_counts(lines_added: int, lines_deleted: int) -> None:
     expect_equal(summary["lines_deleted"], lines_deleted)
 
 
-def test_build_hotspots_windows_path_handling(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots normalizes Windows-style paths."""
-    _insert_ast_metrics(
-        memory_gateway,
-        [AstMetricSeed(rel_path="path\\to\\file.py", complexity=5.0)],
+def test_compute_hotspots_windows_path_handling() -> None:
+    """Compute hotspots normalizes Windows-style paths."""
+    ast_metrics = _ast_metrics_from_seeds(
+        [AstMetricSeed(rel_path="path\\to\\file.py", complexity=5.0)]
     )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        "SELECT rel_path FROM analytics.hotspots WHERE rel_path LIKE '%file.py'"
-    ).fetchone()
-
-    expect_is_not_none(result)
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    expect_equal(rows[0]["rel_path"], "path/to/file.py")
 
 
-def test_build_hotspots_zero_complexity(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots handles zero complexity."""
-    _insert_ast_metrics(
-        memory_gateway,
-        [AstMetricSeed(rel_path="zero_complexity.py", complexity=0.0)],
+def test_compute_hotspots_zero_complexity() -> None:
+    """Compute hotspots handles zero complexity."""
+    ast_metrics = _ast_metrics_from_seeds(
+        [AstMetricSeed(rel_path="zero_complexity.py", complexity=0.0)]
     )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        "SELECT complexity, score FROM analytics.hotspots WHERE rel_path = ?",
-        ["zero_complexity.py"],
-    ).fetchone()
-
-    if result is None:
-        pytest.fail("Expected hotspot row for zero_complexity")
-
-    complexity, score_obj = result
-    score = float(score_obj)
-    expect_equal(complexity, 0.0)
-
-    expect_true(score >= HOTSPOT_SCORE_THRESHOLD)
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    row = rows[0]
+    expect_equal(_as_float(row["complexity"]), 0.0)
+    expect_true(_as_float(row["score"]) >= HOTSPOT_SCORE_THRESHOLD)
 
 
-def test_build_hotspots_negative_complexity(
-    memory_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
-    """Build hotspots handles negative complexity (clamps to zero)."""
-    _insert_ast_metrics(
-        memory_gateway,
-        [AstMetricSeed(rel_path="negative.py", complexity=-5.0)],
-    )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    build_hotspots(memory_gateway, snapshot, max_commits=0)
-
-    result = memory_gateway.con.execute(
-        "SELECT complexity, score FROM analytics.hotspots WHERE rel_path = ?",
-        ["negative.py"],
-    ).fetchone()
-
-    if result is None:
-        pytest.fail("Expected hotspot row for negative complexity")
-
-    _, score_obj = result
-    score = float(score_obj)
-
-    expect_true(score >= HOTSPOT_SCORE_THRESHOLD)
+def test_compute_hotspots_negative_complexity() -> None:
+    """Compute hotspots clamps negative complexity to zero."""
+    ast_metrics = _ast_metrics_from_seeds([AstMetricSeed(rel_path="negative.py", complexity=-5.0)])
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
+    row = rows[0]
+    expect_equal(_as_float(row["complexity"]), 0.0)
+    expect_true(_as_float(row["score"]) >= HOTSPOT_SCORE_THRESHOLD)
 
 
-def test_build_hotspots_from_seeded_ast_metrics(ast_metrics_ctx: TestContext) -> None:
-    """Build hotspots using seeded AST metrics pack data."""
-    snapshot = ast_metrics_ctx.to_snapshot_ref()
-    con = ast_metrics_ctx.con
-    con.execute("DELETE FROM analytics.hotspots")
+def test_compute_hotspots_from_seeded_ast_metrics(ast_metrics_ctx: TestContext) -> None:
+    """Compute hotspots using seeded AST metrics pack data."""
+    ast_metrics = _ast_metrics_from_gateway(ast_metrics_ctx.gateway)
+    rows = compute_hotspot_rows(ast_metrics, churn_stats={})
 
-    build_hotspots(ast_metrics_ctx.gateway, snapshot, max_commits=0)
-
-    result = con.execute(
-        """
-        SELECT rel_path, commit_count, author_count, complexity, score
-        FROM analytics.hotspots
-        WHERE rel_path = ?
-        """,
-        [MOD_A_PATH],
-    ).fetchone()
-
-    expect_is_not_none(result)
-    if result is None:
+    row = next((r for r in rows if r["rel_path"] == MOD_A_PATH), None)
+    expect_is_not_none(row)
+    if row is None:
         pytest.fail("Expected hotspot row for seeded AST metrics")
 
-    rel_path, commit_count, author_count, complexity, score = result
-    expect_equal(rel_path, MOD_A_PATH)
-    expect_equal(commit_count, 0)
-    expect_equal(author_count, 0)
-    expect_equal(float(complexity), MEDIUM_COMPLEXITY)
-    expect_true(float(score) > HOTSPOT_SCORE_THRESHOLD)
+    expect_equal(row["rel_path"], MOD_A_PATH)
+    expect_equal(row["commit_count"], 0)
+    expect_equal(row["author_count"], 0)
+    expect_equal(_as_float(row["complexity"]), MEDIUM_COMPLEXITY)
+    expect_true(_as_float(row["score"]) > HOTSPOT_SCORE_THRESHOLD)
 
 
-def test_build_hotspots_logs_git_failure(
-    ast_metrics_ctx: TestContext,
+def test_collect_git_file_stats_logs_git_failure(
+    tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Git failures warn but do not abort hotspot computation."""
+    """Git failures warn but return empty churn stats."""
 
     class _FailingRunner(ToolRunner):
         def __init__(self) -> None:
@@ -562,21 +429,20 @@ def test_build_hotspots_logs_git_failure(
                 duration_s=0.0,
             )
 
-    snapshot = ast_metrics_ctx.to_snapshot_ref()
-    caplog.set_level("WARNING", logger="codeintel.analytics.compute.hotspots.metrics")
+    snapshot = make_snapshot(repo_root=tmp_path)
+    caplog.set_level("WARNING", logger="codeintel.build.hamilton.native.analytics.hotspots")
 
-    build_hotspots(ast_metrics_ctx.gateway, snapshot, max_commits=5, runner=_FailingRunner())
-
-    row = ast_metrics_ctx.con.execute(
-        "SELECT commit_count, author_count FROM analytics.hotspots LIMIT 1"
-    ).fetchone()
-    expect_is_not_none(row)
-    if row is None:
-        pytest.fail("Expected hotspot row after git failure")
-
-    commit_count, author_count = row
-    expect_equal(commit_count, 0)
-    expect_equal(author_count, 0)
+    stats = collect_git_file_stats(
+        snapshot.repo_root,
+        max_commits=5,
+        runner=_FailingRunner(),
+    )
+    rows = compute_hotspot_rows(
+        _ast_metrics_from_seeds([AstMetricSeed(rel_path="sample.py", complexity=2.0)]),
+        stats,
+    )
+    expect_equal(rows[0]["commit_count"], 0)
+    expect_equal(rows[0]["author_count"], 0)
     assert_logged(
         caplog.records,
         level="WARNING",

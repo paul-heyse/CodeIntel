@@ -1,7 +1,9 @@
 ## MODIFIED Requirements
 ### Requirement: Non-DAG ingestion APIs are not public
 Public APIs SHALL expose ingestion.engine only for tool execution (ToolService/ToolRunner) and
-SHALL NOT expose non-Hamilton ingestion compute orchestration or standalone step classes.
+SHALL NOT expose non-Hamilton ingestion compute orchestration or standalone step classes. Any
+analytics compute modules that orchestrate tool execution outside Hamilton SHOULD be kept
+internal or migrated into Hamilton nodes.
 
 #### Scenario: Standalone ingestion APIs are absent
 - **WHEN** public ingestion APIs are listed
@@ -19,5 +21,5 @@ SHALL NOT be part of public APIs.
 ## Implementation Status
 - Done: ingestion compute steps remain internal to Hamilton pipelines; public ingestion APIs
   expose tool execution interfaces.
-- Remaining: migrate remaining non-Hamilton orchestration usage and remove legacy discovery
-  registry surfaces (native TargetSpec fallbacks and DAG-free registries).
+- Remaining: migrate remaining non-Hamilton orchestration usage (e.g., hotspots compute) and
+  remove legacy discovery registry surfaces (native TargetSpec fallbacks and DAG-free registries).

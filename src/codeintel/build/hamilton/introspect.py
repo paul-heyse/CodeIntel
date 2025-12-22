@@ -77,6 +77,40 @@ def _is_materialize_node(node: Node) -> bool:
     )
 
 
+def target_names_from_nodes(nodes: Mapping[str, Node]) -> frozenset[str]:
+    """Return target names discovered from Hamilton nodes.
+
+    Parameters
+    ----------
+    nodes
+        Hamilton node mapping, keyed by node name.
+
+    Returns
+    -------
+    frozenset[str]
+        Target names derived from materialize node tags.
+    """
+    targets: set[str] = set()
+    for node in nodes.values():
+        if not _is_materialize_node(node):
+            continue
+        target_name = node.tags.get(TAG_TARGET)
+        if isinstance(target_name, str) and target_name:
+            targets.add(target_name)
+    return frozenset(targets)
+
+
+def target_names_from_runtime(runtime: HamiltonRuntime) -> frozenset[str]:
+    """Return target names discovered from a Hamilton runtime.
+
+    Returns
+    -------
+    frozenset[str]
+        Target names derived from Hamilton runtime nodes.
+    """
+    return target_names_from_nodes(runtime.dr.graph.nodes)
+
+
 def _target_node_index(nodes: Mapping[str, Node]) -> dict[str, str]:
     """Build an index of Hamilton node name -> target name for materialize nodes.
 
@@ -337,4 +371,6 @@ __all__ = [
     "derive_target_outputs",
     "parse_graph_source",
     "target_graph_from_hamilton",
+    "target_names_from_nodes",
+    "target_names_from_runtime",
 ]

@@ -53,5 +53,5 @@ catalog entries.
 ## Implementation Status
 - Done: catalog hash computation, cached catalog enumeration, and contract resolution via the
   canonical catalog are in place.
-- Remaining: fully remove declared overrides for DAG outputs and retire legacy DAG-free registry
-  shims as CLI/spec paths move to canonical catalogs.
+- Remaining: remove declared overrides for DAG outputs (after Pandera coverage for non-inferable
+  outputs) and retire legacy registry shims as CLI/spec paths move to canonical catalogs.

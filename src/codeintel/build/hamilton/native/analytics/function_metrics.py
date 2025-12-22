@@ -34,9 +34,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_override_tables import FUNCTION_METRICS_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
@@ -65,13 +67,14 @@ FUNCTION_METRICS_TABLE_KEYS = (
     FUNCTION_VALIDATION_TABLE_KEY,
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=FUNCTION_METRICS_TARGET_NAME,
         module="analytics",
         description="Function structural metrics and type annotations.",
         options=TargetSpecOptions(
             table_keys=FUNCTION_METRICS_TABLE_KEYS,
+            override_tables=FUNCTION_METRICS_OVERRIDE_TABLES,
         ),
     ),
 )

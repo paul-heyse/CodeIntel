@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.build.hamilton.tag_index import TagIndex
+from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.views import ibis_views

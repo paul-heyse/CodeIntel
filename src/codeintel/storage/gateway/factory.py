@@ -11,23 +11,24 @@ from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.contracts.provider import (
-    contract_catalog_table_schemas,
-    load_contract_catalog_from_connection,
-)
+from codeintel.storage.contracts.catalog_state import contract_catalog_table_schemas
+from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.gateway.inference import InferenceGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.schema import assert_schema_alignment
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
+    from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import SnapshotGatewayResolver, StorageGateway
 
 __all__ = [
     "build_snapshot_gateway_resolver",
     "open_gateway",
+    "open_inference_gateway",
     "open_memory_gateway",
 ]
 
@@ -89,6 +90,27 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc), cause=exc) from exc
     return gateway
+
+
+def open_inference_gateway(*, schema_provider: SchemaProvider) -> InferenceGateway:
+    """Create a minimal in-memory gateway for schema inference.
+
+    This bypasses metadata bootstrap and contract catalog loading, providing a
+    lightweight DuckDB connection with a policy backend seeded by the supplied
+    schema provider.
+
+    Parameters
+    ----------
+    schema_provider
+        Schema provider used for DDL and column-order enforcement.
+
+    Returns
+    -------
+    MinimalStorageGateway
+        Minimal gateway backed by an in-memory DuckDB connection.
+    """
+    con = duckdb.connect(":memory:")
+    return InferenceGateway(con=con, schema_provider=schema_provider)
 
 
 def build_snapshot_gateway_resolver(
