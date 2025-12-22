@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -42,6 +43,12 @@ DEFAULT_CONFIG_PATHS = [
     Path(".codeintel.yaml"),
     Path(".codeintel.json"),
 ]
+
+_ENV_OVERRIDE_KEYS: dict[str, str] = {
+    "CODEINTEL_COLOR": "color",
+    "CODEINTEL_LOG_LEVEL": "log_level",
+    "CODEINTEL_OUTPUT_FORMAT": "output_format",
+}
 
 
 VALID_OUTPUT_FORMATS = {"text", "json"}
@@ -82,6 +89,11 @@ def load_config(
     if file_config:
         merged = _deep_merge(merged, file_config)
         sources.append(file_source)
+
+    env_overrides = _load_env_overrides()
+    if env_overrides:
+        merged = _deep_merge(merged, env_overrides)
+        sources.append("env")
 
     if cli_overrides:
         flat_overrides = {k: v for k, v in cli_overrides.items() if v is not None}
@@ -330,6 +342,19 @@ def _get_optional_string(data: dict[str, object], key: str) -> str | None:
     """
     value = data.get(key)
     return str(value) if value is not None else None
+
+
+def _load_env_overrides() -> dict[str, object]:
+    overrides: dict[str, object] = {}
+    for env_key, config_key in _ENV_OVERRIDE_KEYS.items():
+        value = os.environ.get(env_key)
+        if value is None:
+            continue
+        stripped = value.strip()
+        if not stripped:
+            continue
+        overrides[config_key] = stripped
+    return overrides
 
 
 def _get_bool(data: dict[str, object], key: str, *, default: bool) -> bool:

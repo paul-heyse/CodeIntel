@@ -16,6 +16,7 @@ from tests._helpers.assertions.expectation_assertions import (
 
 def test_ndjson_stream_utf8_and_stringifies_types() -> None:
     """Ensure ndjson_stream emits UTF-8 with stringified values."""
+    expected_ts = "2024-01-01T00:00:00Z"
     row: dict[str, object] = {
         "text": "naïve 🧪",
         "ts": datetime(2024, 1, 1, tzinfo=UTC),
@@ -31,6 +32,6 @@ def test_ndjson_stream_utf8_and_stringifies_types() -> None:
 
     payload = json.loads(decoded)
     expect_equal(payload["text"], row["text"])
-    expect_equal(payload["ts"], str(row["ts"]))
+    expect_equal(payload["ts"], expected_ts)
     expect_equal(payload["uuid"], str(row["uuid"]))
     expect_equal(payload["bytes"], str(row["bytes"]))

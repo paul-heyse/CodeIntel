@@ -245,6 +245,7 @@ def test_resource_store_ndjson_encoding_is_utf8(tmp_path: Path) -> None:
     """Verify NDJSON encoding preserves UTF-8 and stringifies unknown types."""
     store = ResourceStore(tmp_path / "exports")
 
+    expected_ts = "2024-01-01T00:00:00Z"
     row: dict[str, object] = {
         "text": "naïve 🧪",
         "ts": datetime(2024, 1, 1, tzinfo=UTC),
@@ -265,7 +266,7 @@ def test_resource_store_ndjson_encoding_is_utf8(tmp_path: Path) -> None:
 
     payload = json.loads(raw)
     expect_equal(payload["text"], row["text"])
-    expect_equal(payload["ts"], str(row["ts"]))
+    expect_equal(payload["ts"], expected_ts)
     expect_equal(payload["uuid"], str(row["uuid"]))
     expect_equal(payload["bytes"], str(row["bytes"]))
 
@@ -274,6 +275,7 @@ def test_resource_store_ndjson_stream_encoding_is_utf8(tmp_path: Path) -> None:
     """Verify streaming NDJSON encoding preserves UTF-8 and stringifies types."""
     store = ResourceStore(tmp_path / "exports")
 
+    expected_ts = "2024-01-01T00:00:00Z"
     row: dict[str, object] = {
         "text": "naïve 🧪",
         "ts": datetime(2024, 1, 1, tzinfo=UTC),
@@ -295,7 +297,7 @@ def test_resource_store_ndjson_stream_encoding_is_utf8(tmp_path: Path) -> None:
 
     payload = json.loads(raw)
     expect_equal(payload["text"], row["text"])
-    expect_equal(payload["ts"], str(row["ts"]))
+    expect_equal(payload["ts"], expected_ts)
     expect_equal(payload["uuid"], str(row["uuid"]))
     expect_equal(payload["bytes"], str(row["bytes"]))
 

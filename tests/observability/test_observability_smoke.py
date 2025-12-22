@@ -7,14 +7,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi import BackgroundTasks
 from fastmcp.server.middleware.middleware import MiddlewareContext
 from starlette.requests import Request
 
-from codeintel.cli.config.model import CliConfig
+from codeintel.cli.config.model import CliConfig, TelemetryConfig
 from codeintel.cli.execution.bootstrap import bootstrap_cli, reset_bootstrap
 from codeintel.observability.operations import observe_operation, record_query_metrics
 from codeintel.observability.otel import (
@@ -113,12 +112,14 @@ def test_cli_bootstrap_emits_span() -> None:
     shutdown_observability()
     reset_bootstrap()
 
-    config = MagicMock(spec=CliConfig)
-    config.log_level = "WARNING"
-    config.telemetry = MagicMock()
-    config.telemetry.enabled = True
-    config.telemetry.service_name = "codeintel-cli-test"
-    config.telemetry.endpoint = None
+    config = CliConfig(
+        log_level="WARNING",
+        telemetry=TelemetryConfig(
+            enabled=True,
+            service_name="codeintel-cli-test",
+            endpoint=None,
+        ),
+    )
 
     bootstrap_cli(config=cast("CliConfig", config))
 

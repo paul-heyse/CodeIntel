@@ -47,6 +47,7 @@ def test_env_overrides_file(tmp_path: Path) -> None:
         service = ConfigService.load(config_path=config_file, validate=False)
 
         expect_true(not service.config.color)
+        expect_in("env", service.sources)
     finally:
         if original_value is None:
             os.environ.pop("CODEINTEL_COLOR", None)
