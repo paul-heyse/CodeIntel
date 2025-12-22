@@ -212,7 +212,7 @@ index 7777777..8888888 100644
 +from starlette.responses import Response
  
 @@ -120,6 +121,26 @@ def create_serving_app(
-     app.include_router(build_http_router(features, state=state))
+    app.include_router(build_http_router(features))
  
 +    # --- Prometheus metrics endpoint (optional; dependency already present) ---
 +    try:
@@ -240,8 +240,8 @@ index 9999999..aaaaaaa 100644
 --- a/src/codeintel/serving/mcp/app.py
 +++ b/src/codeintel/serving/mcp/app.py
 @@ -106,6 +106,7 @@ def build_mcp_app(
-     register_prompts(mcp, ops, settings=settings)
-     register_resources(mcp, store, settings=settings)
+    register_prompts(mcp, settings=settings, kernel=ops)
+    register_resources(mcp, ops, store, settings=settings)
      _register_health_routes(mcp, ops)
 +    _register_metrics_routes(mcp)
  

@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
 from pydantic import ValidationError
 
+from codeintel.core.execution.ids import new_uuid_hex, new_uuid_str
 from codeintel.serving.errors.catalog import ERROR_CODE_CATALOG
 from codeintel.serving.errors.models import ErrorContext, ErrorInfo, ErrorResponse
 from codeintel.serving.uris import EXPORT_RESOURCE_PREFIX, META_VIEWS_SQL_URI
@@ -46,7 +46,7 @@ def _context_to_details(context: ErrorContext | None) -> dict[str, Any]:
         "commit": context.commit,
         "run_id": context.run_id,
         "request_id": context.request_id,
-        "debug_id": context.debug_id or str(uuid4()),
+        "debug_id": context.debug_id or new_uuid_str(),
         "ts": datetime.now(UTC).isoformat(),
     }
     return {k: v for k, v in details.items() if v is not None}
@@ -189,6 +189,9 @@ def build_error_context_from_mcp_context(context: MiddlewareContext[object]) -> 
                 commit = str(commit_obj)
             if run_id_obj is not None:
                 run_id = str(run_id_obj)
+
+    if request_id is None:
+        request_id = new_uuid_hex()
 
     return ErrorContext(
         operation=parsed.operation,

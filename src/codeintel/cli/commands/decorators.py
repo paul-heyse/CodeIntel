@@ -29,6 +29,7 @@ from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.execution.registry import OperationSpec, register_operation
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.observability import observe_operation, shutdown_observability
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -403,7 +404,21 @@ def _execute_new_command[T](
         builder = builder.with_storage(db_path=infra.database_path)
 
     with builder.build() as ctx:
-        result = command.execute(ctx)
+        try:
+            with observe_operation(
+                component="cli",
+                operation=getattr(command, "__operation_id__", "unknown"),
+                attributes={"codeintel.output_format": str(infra.output_format)},
+            ):
+                result = command.execute(ctx)
+        except Exception:
+            LOG.exception(
+                "Command %s raised exception",
+                getattr(command, "__operation_id__", "unknown"),
+            )
+            raise
+        finally:
+            shutdown_observability()
 
     renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)
@@ -452,10 +467,17 @@ def _execute_handler_command[R](
 
     with builder.build() as ctx:
         try:
-            result = handler(ctx)
+            with observe_operation(
+                component="cli",
+                operation=operation_id,
+                attributes={"codeintel.output_format": str(infra.output_format)},
+            ):
+                result = handler(ctx)
         except Exception:
             LOG.exception("Handler %s raised exception", operation_id)
             raise
+        finally:
+            shutdown_observability()
 
     renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)

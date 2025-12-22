@@ -14,7 +14,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from typing import Any
-from uuid import uuid4
+
+from codeintel.core.execution.ids import new_uuid_str
 
 
 def generate_instance_id() -> str:
@@ -25,7 +26,7 @@ def generate_instance_id() -> str:
     str
         UUID4 string for error instance identification.
     """
-    return str(uuid4())
+    return new_uuid_str()
 
 
 @dataclass(frozen=True)

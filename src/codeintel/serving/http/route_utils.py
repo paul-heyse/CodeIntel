@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, TypeVar
 from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 
+from codeintel.observability import observe_operation
 from codeintel.serving.http.middleware import get_correlation_id
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 
@@ -53,7 +54,8 @@ async def run_in_threadpool_with_metrics(
     fn
         Blocking callable to execute in a threadpool.
     success_metrics
-        Callback that builds a metrics payload on success; receives `(result, duration_ms, correlation_id)`.
+        Callback that builds a metrics payload on success; receives
+        `(result, duration_ms, correlation_id)`.
     error_metrics
         Callback that builds a metrics payload on error; receives `(duration_ms, correlation_id)`.
     *args
@@ -67,9 +69,19 @@ async def run_in_threadpool_with_metrics(
         The return value of `fn`.
     """
     correlation_id = get_correlation_id(request)
+    operation = _route_label(request)
     start = time.perf_counter()
     try:
-        result = await run_in_threadpool(fn, *args, **kwargs)
+        with observe_operation(
+            component="http",
+            operation=operation,
+            attributes={
+                "http.method": request.method,
+                "http.route": operation,
+                "codeintel.correlation_id": correlation_id,
+            },
+        ):
+            result = await run_in_threadpool(fn, *args, **kwargs)
     except Exception:
         duration_ms = (time.perf_counter() - start) * 1000
         schedule_query_metrics(background, error_metrics(duration_ms, correlation_id))
@@ -78,6 +90,14 @@ async def run_in_threadpool_with_metrics(
     duration_ms = (time.perf_counter() - start) * 1000
     schedule_query_metrics(background, success_metrics(result, duration_ms, correlation_id))
     return result
+
+
+def _route_label(request: Request) -> str:
+    route = request.scope.get("route")
+    path = getattr(route, "path", None)
+    if isinstance(path, str) and path:
+        return path
+    return request.url.path
 
 
 __all__ = ["run_in_threadpool_with_metrics", "schedule_query_metrics"]

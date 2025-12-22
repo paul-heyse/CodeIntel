@@ -13,7 +13,8 @@ from sqlglot import parse_one
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.schema_roundtrip import create_table_ast
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from codeintel.storage.sqlglot_tools import semantic_diff_sql_duckdb
+from tests._helpers.assertions.expectation_assertions import expect_true
 
 _MIN_EXPECTED_COLUMNS = 2
 
@@ -61,7 +62,10 @@ def test_compiler_upgrade_gate_create_table_sql_is_stable() -> None:
         '"payload" JSON, "ts" TIMESTAMP, "ts_tz" TIMESTAMPTZ, "amount" DECIMAL(38, 0), '
         "PRIMARY KEY (id))"
     )
-    expect_equal(canonical, expected)
+    if canonical != expected:
+        diff = semantic_diff_sql_duckdb(expected, canonical)
+        message = f"Canonical SQL mismatch. Semantic diff: {diff}"
+        expect_true(condition=False, message=message)
 
 
 def test_compiler_upgrade_gate_create_table_executes() -> None:

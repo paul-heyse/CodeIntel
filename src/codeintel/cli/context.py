@@ -14,7 +14,6 @@ The CommandContext provides:
 from __future__ import annotations
 
 import logging
-import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
@@ -25,6 +24,7 @@ from codeintel.cli.services.jobs import JobService
 from codeintel.cli.services.params import ParamService
 from codeintel.cli.services.runtime import RuntimeService
 from codeintel.cli.services.storage import StorageService
+from codeintel.core.execution.ids import new_uuid_hex
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -354,7 +354,7 @@ class CommandContextBuilder:
 
         job_service = JobService()
 
-        operation_id = self._operation_id or str(uuid.uuid4())[:8]
+        operation_id = self._operation_id or new_uuid_hex()[:8]
 
         runtime_service: RuntimeService | None = None
         storage_service: StorageService | None = None

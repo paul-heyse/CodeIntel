@@ -16,19 +16,16 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
-import ibis
-
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
-from codeintel.storage.gateway import (
-    DuckDBConnection,
-)
+from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -57,7 +54,7 @@ HISTORY_TIMESERIES_TABLE_KEY = "analytics.history_timeseries"
 
 log = logging.getLogger(__name__)
 
-DBResolver = Callable[[str], DuckDBConnection]
+GatewayResolver = Callable[[str], "StorageGateway"]
 type NumericLike = SupportsFloat | SupportsIndex | str | bytes | bytearray | int | float | Decimal
 
 
@@ -122,7 +119,7 @@ def _safe_number(value: NumericLike | None) -> float | None:
 
 def build_history_timeseries_rows(
     snapshot: SnapshotRef,
-    db_resolver: DBResolver,
+    gateway_resolver: GatewayResolver,
     *,
     options: HistoryTimeseriesOptions,
     runner: ToolRunner | None = None,
@@ -153,7 +150,7 @@ def build_history_timeseries_rows(
         log.info("No commits provided for history_timeseries; skipping.")
         return ()
 
-    selection = _select_entities(snapshot, options, db_resolver)
+    selection = _select_entities(snapshot, options, gateway_resolver)
     if not selection.functions and not selection.modules:
         log.info("No entities selected for history_timeseries; skipping.")
         return ()
@@ -162,7 +159,7 @@ def build_history_timeseries_rows(
     serializer = row_serializer_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)
     rows: list[tuple[object, ...]] = []
     for commit in options.commits:
-        con_ci = db_resolver(commit)
+        snapshot_gateway = gateway_resolver(commit)
         commit_ts = _fetch_commit_timestamp(snapshot.repo_root, commit, runner) or now
         commit_ctx = CommitContext(commit=commit, commit_ts=commit_ts, created_at=now)
 
@@ -171,7 +168,7 @@ def build_history_timeseries_rows(
                 serializer(row)
                 for row in _collect_function_rows_for_commit(
                     snapshot,
-                    con_ci,
+                    snapshot_gateway,
                     commit_ctx=commit_ctx,
                     selection=selection.functions,
                 )
@@ -181,7 +178,7 @@ def build_history_timeseries_rows(
                 serializer(row)
                 for row in _collect_module_rows_for_commit(
                     snapshot,
-                    con_ci,
+                    snapshot_gateway,
                     commit_ctx=commit_ctx,
                     selection=selection.modules,
                 )
@@ -198,7 +195,7 @@ def build_history_timeseries_rows(
 def _select_entities(
     snapshot: SnapshotRef,
     options: HistoryTimeseriesOptions,
-    db_resolver: DBResolver,
+    gateway_resolver: GatewayResolver,
 ) -> EntitySelection:
     """Select top entities from the first commit for tracking.
 
@@ -217,14 +214,14 @@ def _select_entities(
         Selected function and module stable IDs.
     """
     base_commit = options.commits[0]
-    con = db_resolver(base_commit)
-    functions = _select_top_functions(con, snapshot, options, base_commit)
-    modules = _select_top_modules(con, snapshot, options, base_commit)
+    gateway = gateway_resolver(base_commit)
+    functions = _select_top_functions(gateway, snapshot, options, base_commit)
+    modules = _select_top_modules(gateway, snapshot, options, base_commit)
     return EntitySelection(functions=functions, modules=modules)
 
 
 def _select_top_functions(
-    con: DuckDBConnection,
+    gateway: StorageGateway,
     snapshot: SnapshotRef,
     options: HistoryTimeseriesOptions,
     commit: str,
@@ -233,8 +230,8 @@ def _select_top_functions(
 
     Parameters
     ----------
-    con
-        DuckDB connection.
+    gateway
+        Storage gateway.
     snapshot
         Snapshot reference.
     options
@@ -247,8 +244,7 @@ def _select_top_functions(
     set[str]
         Set of stable entity IDs.
     """
-    conn = ibis.duckdb.from_connection(con)
-    table = conn.table("function_profile", database="analytics")
+    table = ibis_facade.table(gateway, "analytics.function_profile")
     rows_df = (
         table.filter((table.repo == snapshot.repo) & (table.commit == commit))
         .order_by(ibis.desc(table.risk_score))
@@ -270,7 +266,7 @@ def _select_top_functions(
 
 
 def _select_top_modules(
-    con: DuckDBConnection,
+    gateway: StorageGateway,
     snapshot: SnapshotRef,
     options: HistoryTimeseriesOptions,
     commit: str,
@@ -279,8 +275,8 @@ def _select_top_modules(
 
     Parameters
     ----------
-    con
-        DuckDB connection.
+    gateway
+        Storage gateway.
     snapshot
         Snapshot reference.
     options
@@ -293,8 +289,7 @@ def _select_top_modules(
     set[str]
         Set of stable entity IDs.
     """
-    conn = ibis.duckdb.from_connection(con)
-    table = conn.table("module_profile", database="analytics")
+    table = ibis_facade.table(gateway, "analytics.module_profile")
     rows_df = (
         table.filter((table.repo == snapshot.repo) & (table.commit == commit))
         .order_by(ibis.desc(table.max_risk_score))
@@ -317,7 +312,7 @@ def _select_top_modules(
 
 def _collect_function_rows_for_commit(
     snapshot: SnapshotRef,
-    con_ci: DuckDBConnection,
+    gateway: StorageGateway,
     *,
     commit_ctx: CommitContext,
     selection: set[str],
@@ -328,8 +323,8 @@ def _collect_function_rows_for_commit(
     ----------
     snapshot
         Snapshot reference.
-    con_ci
-        DuckDB connection for the commit.
+    gateway
+        Storage gateway for the commit.
     commit_ctx
         Commit context with timestamps.
     selection
@@ -340,8 +335,7 @@ def _collect_function_rows_for_commit(
     dict[str, object]
         Row mappings for analytics.history_timeseries.
     """
-    conn = ibis.duckdb.from_connection(con_ci)
-    table = conn.table("function_profile", database="analytics")
+    table = ibis_facade.table(gateway, "analytics.function_profile")
     rows_df = (
         table.filter((table.repo == snapshot.repo) & (table.commit == commit_ctx.commit))
         .select(
@@ -410,7 +404,7 @@ def _collect_function_rows_for_commit(
 
 def _collect_module_rows_for_commit(
     snapshot: SnapshotRef,
-    con_ci: DuckDBConnection,
+    gateway: StorageGateway,
     *,
     commit_ctx: CommitContext,
     selection: set[str],
@@ -421,8 +415,8 @@ def _collect_module_rows_for_commit(
     ----------
     snapshot
         Snapshot reference.
-    con_ci
-        DuckDB connection for the commit.
+    gateway
+        Storage gateway for the commit.
     commit_ctx
         Commit context with timestamps.
     selection
@@ -433,8 +427,7 @@ def _collect_module_rows_for_commit(
     dict[str, object]
         Row mappings for analytics.history_timeseries.
     """
-    conn = ibis.duckdb.from_connection(con_ci)
-    table = conn.table("module_profile", database="analytics")
+    table = ibis_facade.table(gateway, "analytics.module_profile")
     rows_df = (
         table.filter((table.repo == snapshot.repo) & (table.commit == commit_ctx.commit))
         .select(

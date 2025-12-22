@@ -7,34 +7,20 @@ correlation and context propagation.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from codeintel.core.singleton import SingletonHolder
+from codeintel.core.config.settings import ObservabilitySettings
+from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.otel import ObservabilityConfig, bootstrap_observability
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from opentelemetry.trace import Span, Tracer
-
-
-try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import (
-        BatchSpanProcessor,
-        ConsoleSpanExporter,
-        SimpleSpanProcessor,
-    )
-
-    OTEL_AVAILABLE = True
-except ImportError:
-    OTEL_AVAILABLE = False
 
 LOG = logging.getLogger(__name__)
 
@@ -57,6 +43,12 @@ class TelemetryConfig:
         Export to console (for debugging).
     otlp_endpoint
         OTLP collector endpoint.
+    duckdb_tracing_enabled
+        Whether DuckDB tracing spans are enabled.
+    duckdb_statement_mode
+        Redaction mode for SQL statement spans.
+    duckdb_statement_hash_len
+        Hash length for redacted statements.
     """
 
     enabled: bool = True
@@ -65,23 +57,34 @@ class TelemetryConfig:
     export_metrics: bool = True
     console_export: bool = False
     otlp_endpoint: str | None = None
+    duckdb_tracing_enabled: bool = True
+    duckdb_statement_mode: str = "hash"
+    duckdb_statement_hash_len: int = 16
 
     @classmethod
-    def from_env(cls) -> TelemetryConfig:
-        """Create config from environment variables.
+    def from_settings(
+        cls,
+        settings: ObservabilitySettings,
+        *,
+        default_service_name: str,
+    ) -> TelemetryConfig:
+        """Create config from runtime settings.
 
         Returns
         -------
         TelemetryConfig
-            Configuration from environment.
+            Configuration derived from runtime settings.
         """
         return cls(
-            enabled=os.environ.get("OTEL_SDK_DISABLED", "").lower() != "true",
-            service_name=os.environ.get("OTEL_SERVICE_NAME", "codeintel-cli"),
-            export_traces=os.environ.get("CODEINTEL_EXPORT_TRACES", "true").lower() == "true",
-            export_metrics=os.environ.get("CODEINTEL_EXPORT_METRICS", "true").lower() == "true",
-            console_export=os.environ.get("CODEINTEL_CONSOLE_TELEMETRY", "false").lower() == "true",
-            otlp_endpoint=os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT"),
+            enabled=settings.enabled,
+            service_name=settings.service_name or default_service_name,
+            export_traces=settings.export_traces,
+            export_metrics=settings.export_metrics,
+            console_export=settings.console_export,
+            otlp_endpoint=settings.otlp_endpoint,
+            duckdb_tracing_enabled=settings.duckdb_tracing_enabled,
+            duckdb_statement_mode=settings.duckdb_statement_mode,
+            duckdb_statement_hash_len=settings.duckdb_statement_hash_len,
         )
 
 
@@ -208,64 +211,39 @@ class TelemetryProvider:
         metrics
             Optional metrics collector (defaults to singleton).
         """
-        self._config = config or TelemetryConfig.from_env()
+        runtime_settings = load_runtime_settings().observability
+        self._config = config or TelemetryConfig.from_settings(
+            runtime_settings,
+            default_service_name="codeintel-cli",
+        )
         self._tracer: Tracer | None = None
         self._initialized = False
         self._metrics = metrics
 
     def _initialize(self) -> None:
-        """Initialize OpenTelemetry if available."""
+        """Initialize OpenTelemetry via shared bootstrap."""
         if self._initialized or not self._config.enabled:
             return
 
-        if not OTEL_AVAILABLE:
-            LOG.debug("OpenTelemetry not available, telemetry disabled")
+        runtime = bootstrap_observability(
+            ObservabilityConfig(
+                enabled=self._config.enabled,
+                service_name=self._config.service_name,
+                otlp_endpoint=self._config.otlp_endpoint,
+                export_traces=self._config.export_traces,
+                export_metrics=self._config.export_metrics,
+                console_export=self._config.console_export,
+                prometheus_enabled=False,
+                duckdb_tracing_enabled=self._config.duckdb_tracing_enabled,
+                duckdb_statement_mode=self._config.duckdb_statement_mode,
+                duckdb_statement_hash_len=self._config.duckdb_statement_hash_len,
+            )
+        )
+        self._tracer = runtime.tracer
+        if not runtime.enabled:
             self._config = _dataclass_replace(self._config, enabled=False)
-            return
-
-        self._setup_tracing()
         self._initialized = True
-        LOG.debug("OpenTelemetry initialized")
-
-    def _setup_tracing(self) -> None:
-        """Set up tracing with configured exporters."""
-        if not OTEL_AVAILABLE:
-            return
-
-        resource = Resource.create({"service.name": self._config.service_name})
-        provider = TracerProvider(resource=resource)
-
-        if self._config.console_export:
-            self._add_console_exporter(provider)
-
-        if self._config.otlp_endpoint:
-            self._add_otlp_exporter(provider)
-
-        otel_trace.set_tracer_provider(provider)
-        self._tracer = otel_trace.get_tracer(__name__)
-
-    def _add_console_exporter(self, provider: TracerProvider) -> None:
-        """Add console exporter to provider.
-
-        Parameters
-        ----------
-        provider
-            TracerProvider instance.
-        """
-        _ = self
-        provider.add_span_processor(SimpleSpanProcessor(ConsoleSpanExporter()))
-
-    def _add_otlp_exporter(self, provider: TracerProvider) -> None:
-        """Add OTLP exporter to provider.
-
-        Parameters
-        ----------
-        provider
-            TracerProvider instance.
-        """
-        if self._config.otlp_endpoint:
-            exporter = OTLPSpanExporter(endpoint=self._config.otlp_endpoint)
-            provider.add_span_processor(BatchSpanProcessor(exporter))
+        LOG.debug("OpenTelemetry bootstrap complete")
 
     @property
     def tracer(self) -> Tracer | None:

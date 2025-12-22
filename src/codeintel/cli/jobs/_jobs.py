@@ -12,7 +12,6 @@ import json
 import os
 import signal
 import sys
-import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -20,6 +19,7 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
+from codeintel.core.execution.ids import new_uuid_hex
 from codeintel.core.singleton import SingletonHolder
 
 if TYPE_CHECKING:
@@ -329,7 +329,7 @@ class JobManager:
         str
             Job ID.
         """
-        job_id = str(uuid.uuid4())[:8]
+        job_id = new_uuid_hex()[:8]
 
         job = JobInfo(
             job_id=job_id,

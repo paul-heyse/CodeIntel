@@ -20,8 +20,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from sqlglot import parse_one
-from sqlglot.errors import ParseError
+from codeintel.storage.sqlglot_tools import fingerprint_sql_duckdb_safe
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -81,12 +80,7 @@ def sqlglot_canonical_sha256(sql: str) -> str:
     str
         SHA256 hex digest of the canonical SQL form.
     """
-    canonical = sql
-    try:
-        canonical = parse_one(sql, read="duckdb").sql(dialect="duckdb")
-    except (ParseError, ValueError):
-        canonical = sql
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return fingerprint_sql_duckdb_safe(sql)
 
 
 def fingerprint(payload: Mapping[str, object], *, prefix: str = "q_") -> str:

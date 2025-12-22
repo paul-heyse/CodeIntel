@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import time
-import uuid
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
@@ -31,6 +30,7 @@ from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.run_writer import BuildRunWriter
+from codeintel.core.execution.ids import new_uuid_hex
 
 if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
@@ -69,7 +69,7 @@ def _generate_run_id() -> str:
         Unique run identifier for this Hamilton execution.
     """
     timestamp = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
-    suffix = uuid.uuid4().hex[:8]
+    suffix = new_uuid_hex()[:8]
     return f"hamilton-{timestamp}-{suffix}"
 
 

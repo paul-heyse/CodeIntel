@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class BuildRunContext:
     output_inventory: OutputInventory | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
-    history_db_resolver: Callable[[str], DuckDBConnection] | None = None
+    history_db_resolver: Callable[[str], StorageGateway] | None = None
 
     @staticmethod
     def build_config_stack(
