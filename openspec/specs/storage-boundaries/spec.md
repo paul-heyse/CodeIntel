@@ -87,3 +87,40 @@ warehouse APIs, and duplicate Ibis adapter implementations SHALL NOT be used.
 - **WHEN** Hamilton reads or writes a dataset via Ibis
 - **THEN** the operation routes through storage gateway/warehouse APIs
 
+### Requirement: Storage-owned Ibis connections only
+Non-storage modules SHALL obtain Ibis connections and table expressions via storage-owned
+Ibis gateways or facades, and SHALL NOT call ibis.duckdb.from_connection or construct Ibis
+backends directly.
+
+#### Scenario: Analytics uses storage Ibis gateway
+- **WHEN** analytics modules query DuckDB via Ibis
+- **THEN** they use the storage Ibis gateway/facade and do not call ibis.duckdb.from_connection
+
+### Requirement: Contract-backed analytics writer is canonical
+Analytics persistence outside Hamilton materializers SHALL use a shared, contract-backed
+writer that validates rows via the schema registry and performs snapshot-scoped deletes,
+and ad-hoc Pandera validation or direct SQL writes SHALL NOT be used.
+
+#### Scenario: Analytics writes use the contract writer
+- **WHEN** analytics rows are persisted outside Hamilton materializers
+- **THEN** the shared contract-backed writer is used and no module-specific validation or
+  direct SQL insert helpers are invoked
+
+### Requirement: Canonical SQL fingerprinting toolkit
+The system SHALL centralize DuckDB SQL canonicalization and fingerprinting in storage
+SQLGlot tools, and serving SHALL use the same pipeline for sql_fingerprint computation with
+safe fallback hashing on parse failures.
+
+#### Scenario: Serving uses canonical fingerprinting
+- **WHEN** compiled SQL is fingerprinted for a semantic query
+- **THEN** storage SQLGlot canonicalization is used and raw SQL hashing is used on parse
+  failures
+
+### Requirement: Semantic SQL diff is available for upgrade gates
+Storage SQL tooling SHALL provide semantic diff output for canonicalized DuckDB SQL strings
+to aid upgrade diagnostics and test failure analysis.
+
+#### Scenario: Upgrade gate reports semantic diff
+- **WHEN** canonical SQL output changes in an upgrade gate test
+- **THEN** a semantic diff action list is available for diagnostics
+

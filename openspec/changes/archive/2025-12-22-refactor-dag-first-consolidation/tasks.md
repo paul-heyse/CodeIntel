@@ -22,6 +22,5 @@
       runtime loading.
       Status: Complete. Tests now rely on DAG targets/row builders and public exports are
       DAG-first.
-- [ ] 1.7 Run the quality report and targeted test suites for analytics and CLI surfaces.
-      Status: Partially complete. Quality report passed; pytest -q failed due to a circular
-      import in ingestion engine/ports (ToolStatus).
+- [x] 1.7 Run the quality report and targeted test suites for analytics and CLI surfaces.
+      Status: Complete. Quality report and pytest -q are green.
