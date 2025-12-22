@@ -8,8 +8,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from codeintel.build.schemas import get_schema_provider
 from codeintel.build.target_system import load_target_system
+
+from codeintel.build.schemas import get_schema_provider
 
 DIVIDER = "=" * 70
 SECTION_DIVIDER = "-" * 70

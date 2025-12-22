@@ -10,7 +10,6 @@ Modules
 - cfg: Control flow graph metrics (dominator tree, dominance frontier)
 - community: Community detection (greedy modularity, Louvain, label propagation)
 - components: SCC, connected components, bridges, articulation points
-- coupling: Coupling metrics
 - dfg: Data flow graph metrics (path lengths, def-use chains)
 - paths: Path-related metrics (simple path counting, reachability)
 - structural: Structural metrics (clustering, triangles, core number, structural holes)
@@ -43,7 +42,6 @@ from codeintel.graphs.compute.metrics import (
     cfg,
     community,
     components,
-    coupling,
     dfg,
     paths,
     statistics,
@@ -55,7 +53,6 @@ __all__ = [
     "cfg",
     "community",
     "components",
-    "coupling",
     "dfg",
     "paths",
     "statistics",

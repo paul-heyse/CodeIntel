@@ -62,6 +62,14 @@ class ServingDBManagerProtocol(Protocol):
         """Return the current serving snapshot pointer."""
         ...
 
+    def current_summary(self) -> dict[str, object]:
+        """Return cached snapshot summary metadata."""
+        ...
+
+    async def wait_ready(self, *, timeout_s: float | None = None) -> bool:
+        """Wait for a snapshot pointer to become available."""
+        ...
+
 
 class ServingKernelProtocol(Protocol):
     """Protocol for the serving kernel interface consumed by operations."""

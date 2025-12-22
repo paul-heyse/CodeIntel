@@ -37,6 +37,7 @@ from tests._helpers.seeds.core import (
     MOD_UTIL_FQN,
     MOD_UTIL_PATH,
 )
+from tests._helpers.seeds.function_types import FunctionTypesPack
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -87,7 +88,7 @@ class MetricsPack:
         tuple[SeedPack, ...]
             CorePack is required for GOID data.
         """
-        return (CORE_PACK,)
+        return (CORE_PACK, FunctionTypesPack())
 
     def apply(self, ctx: TestContext) -> None:
         """Apply metrics seeds to the test context.

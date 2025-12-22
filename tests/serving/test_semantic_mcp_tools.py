@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
@@ -24,6 +24,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.mcp_payloads import extract_payload
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -112,48 +113,6 @@ def _write_pointer(
     path.write_text(json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
-    """Extract the payload from a gofastmcp tool result.
-
-    Parameters
-    ----------
-    tool_result
-        The result from calling a tool via the fastmcp client.
-        Can be a CallToolResult object with content attribute,
-        or a list of content items, or a plain dict.
-
-    Returns
-    -------
-    dict[str, object]
-        The extracted payload dictionary (full envelope).
-
-    Raises
-    ------
-    TypeError
-        If the result type is unexpected.
-    """
-    # gofastmcp client.call_tool returns a CallToolResult with content attribute
-    if hasattr(tool_result, "content"):
-        content_list = tool_result.content
-        if content_list and len(content_list) > 0:
-            first_content = content_list[0]
-            # TextContent has a .text attribute containing JSON
-            if hasattr(first_content, "text"):
-                return json.loads(first_content.text)
-
-    # Fallback: handle list of content items directly
-    if isinstance(tool_result, list) and len(tool_result) > 0:
-        first_content = tool_result[0]
-        if hasattr(first_content, "text"):
-            return json.loads(first_content.text)
-
-    if isinstance(tool_result, dict):
-        return tool_result
-
-    msg = f"Unexpected tool result type: {type(tool_result)}"
-    raise TypeError(msg)
-
-
 def _setup_test_snapshot(tmp_path: Path) -> Path:
     """Set up test snapshot files and return pointer path.
 
@@ -220,7 +179,7 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
         # Use gofastmcp client pattern for testing
         async with Client(mcp) as client:
             # Test semantic_catalog - returns SemanticCatalogResponse
-            catalog_result = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            catalog_result = extract_payload(await client.call_tool("semantic_catalog", {}))
             # SemanticCatalogResponse has 'views' list directly
             views_raw = catalog_result.get("views")
             if not isinstance(views_raw, list):
@@ -228,19 +187,21 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
             expect_true(any(isinstance(v, dict) and v.get("id") == "demo.view" for v in views_raw))
 
             # Test semantic_describe - returns SemanticViewDescriptionResponse
-            desc_result = _extract_payload(
+            desc_result = extract_payload(
                 await client.call_tool("semantic_describe", {"view_id": "demo.view"})
             )
             # SemanticViewDescriptionResponse has 'table_key' directly
             expect_equal(desc_result.get("table_key"), "docs.v_demo")
 
             # Test semantic_query - returns SemanticQueryToolResponse
-            query_result = _extract_payload(
+            query_result = extract_payload(
                 await client.call_tool(
                     "semantic_query",
                     {
-                        "view_id": "demo.view",
-                        "filters": [{"column": "id", "op": "gte", "value": 2}],
+                        "request": {
+                            "view_id": "demo.view",
+                            "filters": [{"column": "id", "op": "gte", "value": 2}],
+                        },
                     },
                 )
             )
@@ -368,7 +329,7 @@ async def test_mcp_typed_response_structure(tmp_path: Path) -> None:
 
         async with Client(mcp) as client:
             # Test SemanticCatalogResponse structure
-            catalog = _extract_payload(await client.call_tool("semantic_catalog", {}))
+            catalog = extract_payload(await client.call_tool("semantic_catalog", {}))
             expect_true("version" in catalog, message="Should have version key")
             expect_true("snapshot" in catalog, message="Should have snapshot key")
             expect_true("views" in catalog, message="Should have views key")
@@ -381,8 +342,11 @@ async def test_mcp_typed_response_structure(tmp_path: Path) -> None:
                 expect_true("commit" in snapshot, message="snapshot should have commit")
 
             # Test SemanticQueryToolResponse structure
-            query = _extract_payload(
-                await client.call_tool("semantic_query", {"view_id": "demo.view"})
+            query = extract_payload(
+                await client.call_tool(
+                    "semantic_query",
+                    {"request": {"view_id": "demo.view"}},
+                )
             )
             expect_true("result" in query, message="Should have result key")
             # preview and note are optional
@@ -425,10 +389,10 @@ async def test_mcp_query_response_has_result_data(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            response = _extract_payload(
+            response = extract_payload(
                 await client.call_tool(
                     "semantic_query",
-                    {"view_id": "demo.view"},
+                    {"request": {"view_id": "demo.view"}},
                 )
             )
 
@@ -482,7 +446,7 @@ async def test_mcp_serving_meta_typed_response(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            result = _extract_payload(await client.call_tool("serving_meta", {}))
+            result = extract_payload(await client.call_tool("serving_meta", {}))
 
             # ServingMetaResponse has 'snapshot' directly at top level
             snapshot = result.get("snapshot")

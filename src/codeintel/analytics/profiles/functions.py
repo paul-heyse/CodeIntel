@@ -214,61 +214,8 @@ def load_function_base_info(
                 (tables.metrics.commit, tables.types.commit),
             ],
         )
-        .left_join(
-            tables.modules,
-            predicates=[
-                and_predicates(
-                    tables.modules.path == tables.metrics.rel_path,
-                    (tables.modules.repo.isnull()) | (tables.modules.repo == tables.metrics.repo),
-                    (tables.modules.commit.isnull())
-                    | (tables.modules.commit == tables.metrics.commit),
-                )
-            ],
-        )
-        .left_join(
-            tables.typedness,
-            predicates=[
-                (tables.typedness.path, tables.metrics.rel_path),
-                (tables.typedness.repo, tables.metrics.repo),
-                (tables.typedness.commit, tables.metrics.commit),
-            ],
-        )
-        .left_join(
-            tables.diagnostics,
-            predicates=[
-                (tables.diagnostics.rel_path, tables.metrics.rel_path),
-                (tables.diagnostics.repo, tables.metrics.repo),
-                (tables.diagnostics.commit, tables.metrics.commit),
-            ],
-        )
-    )
-
-    try:
-        df = joined.select(
-            tables.metrics.function_goid_h128,
-            tables.metrics.urn,
-            tables.metrics.repo,
-            tables.metrics.commit,
-            tables.metrics.rel_path,
-            tables.modules.module,
-            tables.metrics.language,
-            tables.metrics.kind,
-            tables.metrics.qualname,
-            tables.metrics.start_line,
-            tables.metrics.end_line,
-            tables.metrics.loc,
-            tables.metrics.logical_loc,
-            tables.metrics.cyclomatic_complexity,
-            tables.metrics.complexity_bucket,
-            tables.metrics.param_count,
-            tables.metrics.positional_params,
-            tables.metrics.keyword_only_params.name("keyword_params"),
-            tables.metrics.has_varargs.name("vararg"),
-            tables.metrics.has_varkw.name("kwarg"),
-            tables.metrics.max_nesting_depth,
-            tables.metrics.stmt_count,
-            tables.metrics.decorator_count,
-            tables.metrics.has_docstring,
+        .select(
+            tables.metrics,
             tables.types.total_params,
             tables.types.annotated_params,
             tables.types.return_type,
@@ -278,9 +225,96 @@ def load_function_base_info(
             tables.types.untyped,
             tables.types.typedness_bucket,
             tables.types.typedness_source,
+        )
+        .view()
+    )
+    joined = (
+        joined.left_join(
+            tables.modules,
+            predicates=[
+                and_predicates(
+                    tables.modules.path == joined.rel_path,
+                    (tables.modules.repo.isnull()) | (tables.modules.repo == joined.repo),
+                    (tables.modules.commit.isnull()) | (tables.modules.commit == joined.commit),
+                )
+            ],
+        )
+        .select(
+            joined,
+            tables.modules.module,
+        )
+        .view()
+    )
+    joined = (
+        joined.left_join(
+            tables.typedness,
+            predicates=[
+                (joined.rel_path, tables.typedness.path),
+                (joined.repo, tables.typedness.repo),
+                (joined.commit, tables.typedness.commit),
+            ],
+        )
+        .select(
+            joined,
             tables.typedness.annotation_ratio.name("file_typed_ratio"),
+        )
+        .view()
+    )
+    joined = (
+        joined.left_join(
+            tables.diagnostics,
+            predicates=[
+                (joined.rel_path, tables.diagnostics.rel_path),
+                (joined.repo, tables.diagnostics.repo),
+                (joined.commit, tables.diagnostics.commit),
+            ],
+        )
+        .select(
+            joined,
             tables.diagnostics.total_errors.name("static_error_count"),
             tables.diagnostics.has_errors.name("has_static_errors"),
+        )
+        .view()
+    )
+
+    try:
+        df = joined.select(
+            joined.function_goid_h128,
+            joined.urn,
+            joined.repo,
+            joined.commit,
+            joined.rel_path,
+            joined.module,
+            joined.language,
+            joined.kind,
+            joined.qualname,
+            joined.start_line,
+            joined.end_line,
+            joined.loc,
+            joined.logical_loc,
+            joined.cyclomatic_complexity,
+            joined.complexity_bucket,
+            joined.param_count,
+            joined.positional_params,
+            joined.keyword_only_params.name("keyword_params"),
+            joined.has_varargs.name("vararg"),
+            joined.has_varkw.name("kwarg"),
+            joined.max_nesting_depth,
+            joined.stmt_count,
+            joined.decorator_count,
+            joined.has_docstring,
+            joined.total_params,
+            joined.annotated_params,
+            joined.return_type,
+            joined.param_types,
+            joined.fully_typed,
+            joined.partial_typed,
+            joined.untyped,
+            joined.typedness_bucket,
+            joined.typedness_source,
+            joined.file_typed_ratio,
+            joined.static_error_count,
+            joined.has_static_errors,
         ).execute()
     except DuckDBError as exc:
         log.warning("function_profile: failed to load base info: %s", exc)
@@ -386,7 +420,7 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
         rf = filter_by(rf_table, rf_table.repo == inputs.repo, rf_table.commit == inputs.commit)
         modules = ibis_facade.table(inputs.gateway, DEFAULT_MODULE_TABLE)
         hotspots = ibis_facade.table(inputs.gateway, "analytics.hotspots")
-        df = (
+        joined = (
             fm.left_join(
                 rf,
                 predicates=[
@@ -395,30 +429,49 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
                     (fm.commit, rf.commit),
                 ],
             )
-            .left_join(
+            .select(
+                fm.function_goid_h128,
+                fm.repo,
+                fm.commit,
+                fm.rel_path,
+                rf.risk_score,
+                rf.risk_level,
+            )
+            .view()
+        )
+        joined = (
+            joined.left_join(
                 modules,
                 predicates=[
                     and_predicates(
-                        modules.path == fm.rel_path,
-                        (modules.repo.isnull()) | (modules.repo == fm.repo),
-                        (modules.commit.isnull()) | (modules.commit == fm.commit),
+                        modules.path == joined.rel_path,
+                        (modules.repo.isnull()) | (modules.repo == joined.repo),
+                        (modules.commit.isnull()) | (modules.commit == joined.commit),
                     )
                 ],
             )
-            .left_join(
-                hotspots,
-                predicates=[(hotspots.rel_path, fm.rel_path)],
-            )
             .select(
-                fm.function_goid_h128,
-                rf.risk_score,
-                rf.risk_level,
-                hotspots.score.name("hotspot_score"),
+                joined,
                 modules.tags,
                 modules.owners,
             )
-            .execute()
+            .view()
         )
+        joined = joined.left_join(
+            hotspots,
+            predicates=[(joined.rel_path, hotspots.rel_path)],
+        ).select(
+            joined,
+            hotspots.score.name("hotspot_score"),
+        )
+        df = joined.select(
+            joined.function_goid_h128,
+            joined.risk_score,
+            joined.risk_level,
+            joined.hotspot_score,
+            joined.tags,
+            joined.owners,
+        ).execute()
     except DuckDBError as exc:
         log.warning("function_profile: failed to load risk factors: %s", exc)
         return {}

@@ -1,7 +1,7 @@
 """Tests for pure graph metric computation functions.
 
 This module tests the stateless computation functions for centrality,
-component analysis, and coupling metrics without any database I/O.
+component analysis, and structural metrics without any database I/O.
 """
 
 from __future__ import annotations
@@ -35,21 +35,6 @@ from codeintel.graphs.compute.metrics.components import (
     find_weakly_connected,
     topological_layers,
 )
-from codeintel.graphs.compute.metrics.coupling import (
-    Community,
-    CouplingMetrics,
-    compute_abstractness,
-    compute_average_clustering,
-    compute_clustering_coefficient,
-    compute_coupling,
-    compute_distance_from_main_sequence,
-    compute_modularity,
-    coupling_to_rows,
-    detect_communities_label_propagation,
-    detect_communities_louvain,
-    find_boundary_nodes,
-    find_hub_nodes,
-)
 from codeintel.graphs.compute.metrics.structural import (
     StructuralMetrics,
     compute_all_structural,
@@ -64,11 +49,9 @@ from codeintel.graphs.compute.metrics.structural import (
 from tests._helpers.assertions import (
     assert_cannot_setattr,
     expect_equal,
-    expect_is_not_none,
     expect_true,
 )
 from tests._helpers.fakes.networkx_graphs import (
-    bidirectional_deps_graph,
     bridge_chain_graph,
     chain_graph,
     complete_digraph,
@@ -80,10 +63,6 @@ from tests._helpers.fakes.networkx_graphs import (
     empty_digraph,
     empty_graph,
     fan_in_fan_out_graph,
-    god_module_graph,
-    hub_dependencies_graph,
-    independent_modules_graph,
-    linear_dependency_graph,
     star_graph,
     two_cycle_graph,
     two_sccs_graph,
@@ -94,30 +73,18 @@ EXPECTED_CYCLE_NODES: Final[int] = 3
 EXPECTED_MIN_COMPONENTS: Final[int] = 2
 EXPECTED_SINGLE_COMPONENT: Final[int] = 1
 PAGERANK_TOLERANCE: Final[float] = 0.01
-INSTABILITY_HALF: Final[float] = 0.5
 INSTABILITY_ZERO: Final[float] = 0.0
 INSTABILITY_FULL: Final[float] = 1.0
-MODULARITY_MIN: Final[float] = -0.5
-MODULARITY_MAX: Final[float] = 1.0
-MIN_HUB_DEGREE: Final[int] = 5
-HUB_THRESHOLD_RATIO: Final[float] = 0.1
 EXPECTED_NODE_COUNT_TWO: Final[int] = 2
 EXPECTED_NODE_COUNT_FOUR: Final[int] = 4
 EXPECTED_NODE_COUNT_FIVE: Final[int] = 5
 EXPECTED_NODE_COUNT_SIX: Final[int] = 6
 EXPECTED_LAYER_TWO: Final[int] = 2
-EXPECTED_EFFERENT_TWO: Final[int] = 2
-EXPECTED_INSTABILITY_TWO_THIRDS: Final[float] = 2 / 3
 MEAN_SIZE_THREE: Final[float] = 3.0
 LARGEST_SIZE_FIVE: Final[int] = 5
-AFFERENT_THREE: Final[int] = 3
-EFFERENT_TWO: Final[int] = 2
 INSTABILITY_POINT_FOUR: Final[float] = 0.4
 PAGERANK_POINT_FIVE: Final[float] = 0.5
 BETWEENNESS_POINT_THREE: Final[float] = 0.3
-STAR_GRAPH_SIZE_TEN: Final[int] = 10
-COMMUNITY_SIZE_THREE: Final[int] = 3
-HUB_DEPENDENT_COUNT: Final[int] = 4
 TRIANGLES_PER_NODE_K4: Final[int] = 3
 CORE_NUMBER_K4: Final[int] = 3
 
@@ -671,330 +638,6 @@ def test_condensation_layers_respects_component_order() -> None:
     expect_true(layers["C"] > layers["A"])
 
 
-def test_coupling_empty_graph_returns_empty() -> None:
-    """Empty graph returns empty dict."""
-    graph = empty_digraph()
-    result = compute_coupling(graph)
-    expect_true(result == {})
-
-
-def test_coupling_computes_afferent_efferent() -> None:
-    """Computes afferent and efferent coupling."""
-    graph = nx.DiGraph([(1, 2), (1, 3), (4, 1)])
-    result = compute_coupling(graph)
-
-    expect_true(result[1].efferent == EXPECTED_EFFERENT_TWO)
-    expect_true(result[1].afferent == 1)
-
-
-def test_coupling_instability_calculation() -> None:
-    """Instability is efferent / total."""
-    graph = nx.DiGraph([(1, 2), (1, 3), (4, 1)])
-    result = compute_coupling(graph)
-
-    expect_true(abs(result[1].instability - EXPECTED_INSTABILITY_TWO_THIRDS) < PAGERANK_TOLERANCE)
-
-
-def test_coupling_isolated_node_zero_instability() -> None:
-    """Isolated node has zero instability."""
-    graph = empty_digraph()
-    graph.add_node(1)
-    result = compute_coupling(graph)
-
-    expect_true(result[1].instability == INSTABILITY_ZERO)
-
-
-def test_coupling_sink_node_zero_instability() -> None:
-    """Sink node (only incoming) has zero instability."""
-    graph = nx.DiGraph([(1, 2), (3, 2)])
-    result = compute_coupling(graph)
-
-    expect_true(result[2].instability == INSTABILITY_ZERO)
-
-
-def test_coupling_source_node_full_instability() -> None:
-    """Source node (only outgoing) has instability 1.0."""
-    graph = nx.DiGraph([(1, 2), (1, 3)])
-    result = compute_coupling(graph)
-
-    expect_true(result[1].instability == INSTABILITY_FULL)
-
-
-def test_coupling_independent_modules_zero_coupling() -> None:
-    """Independent modules have zero afferent/efferent."""
-    graph = independent_modules_graph()
-    result = compute_coupling(graph)
-
-    expect_true(all(metrics.afferent == 0 for metrics in result.values()))
-    expect_true(all(metrics.efferent == 0 for metrics in result.values()))
-    expect_true(all(metrics.instability == INSTABILITY_ZERO for metrics in result.values()))
-
-
-def test_coupling_linear_dependencies_match_directions() -> None:
-    """Linear dependency chain yields graded instability."""
-    graph = linear_dependency_graph()
-    result = compute_coupling(graph)
-
-    expect_equal(result["module_a"].instability, INSTABILITY_FULL)
-    expect_true(abs(result["module_b"].instability - INSTABILITY_HALF) < PAGERANK_TOLERANCE)
-    expect_equal(result["module_c"].instability, INSTABILITY_ZERO)
-
-
-def test_coupling_hub_dependencies_concentrate_afferent() -> None:
-    """Hub dependencies concentrate afferent coupling on core."""
-    graph = hub_dependencies_graph()
-    result = compute_coupling(graph)
-
-    expect_equal(result["core"].afferent, HUB_DEPENDENT_COUNT)
-    expect_equal(result["core"].instability, INSTABILITY_ZERO)
-    expect_equal(result["module_a"].efferent, EXPECTED_SINGLE_COMPONENT)
-    expect_equal(result["module_b"].efferent, EXPECTED_SINGLE_COMPONENT)
-
-
-def test_coupling_god_module_concentrates_efferent() -> None:
-    """God module pushes instability outward."""
-    graph = god_module_graph()
-    result = compute_coupling(graph)
-
-    expect_equal(result["god"].efferent, HUB_DEPENDENT_COUNT)
-    expect_equal(result["god"].afferent, 0)
-    expect_equal(result["god"].instability, INSTABILITY_FULL)
-    expect_equal(result["module_a"].instability, INSTABILITY_ZERO)
-
-
-def test_coupling_bidirectional_pair_balances_instability() -> None:
-    """Bidirectional dependencies share balanced instability."""
-    graph = bidirectional_deps_graph()
-    result = compute_coupling(graph)
-
-    expect_equal(result["module_a"].afferent, EXPECTED_SINGLE_COMPONENT)
-    expect_equal(result["module_a"].efferent, EXPECTED_SINGLE_COMPONENT)
-    expect_true(abs(result["module_a"].instability - INSTABILITY_HALF) < PAGERANK_TOLERANCE)
-    expect_true(abs(result["module_b"].instability - INSTABILITY_HALF) < PAGERANK_TOLERANCE)
-
-
-def test_abstractness_zero_total_returns_zero() -> None:
-    """Zero total classes returns zero abstractness."""
-    result = compute_abstractness(abstract_count=0, total_count=0)
-    expect_true(result == 0.0)
-
-
-def test_abstractness_computes_ratio() -> None:
-    """Computes abstract/total ratio."""
-    result = compute_abstractness(abstract_count=2, total_count=4)
-    expect_true(result == INSTABILITY_HALF)
-
-
-def test_abstractness_all_abstract_returns_one() -> None:
-    """All abstract returns 1.0."""
-    result = compute_abstractness(abstract_count=5, total_count=5)
-    expect_true(result == INSTABILITY_FULL)
-
-
-def test_distance_main_sequence_on_main_returns_zero() -> None:
-    """Point on main sequence returns zero distance."""
-    coupling = CouplingMetrics(afferent=1, efferent=1, instability=INSTABILITY_HALF)
-    result = compute_distance_from_main_sequence(coupling, abstractness=INSTABILITY_HALF)
-
-    expect_true(result == INSTABILITY_ZERO)
-
-
-def test_distance_main_sequence_off_main_returns_distance() -> None:
-    """Point off main sequence returns positive distance."""
-    coupling = CouplingMetrics(afferent=0, efferent=1, instability=INSTABILITY_FULL)
-    result = compute_distance_from_main_sequence(coupling, abstractness=INSTABILITY_HALF)
-
-    expect_true(result == INSTABILITY_HALF)
-
-
-@pytest.mark.parametrize(
-    ("coupling", "abstractness", "expected"),
-    [
-        (CouplingMetrics(afferent=5, efferent=0, instability=INSTABILITY_ZERO), 1.0, 0.0),
-        (CouplingMetrics(afferent=0, efferent=5, instability=INSTABILITY_FULL), 0.0, 0.0),
-        (CouplingMetrics(afferent=5, efferent=0, instability=INSTABILITY_ZERO), 0.0, 1.0),
-        (CouplingMetrics(afferent=0, efferent=5, instability=INSTABILITY_FULL), 1.0, 1.0),
-        (CouplingMetrics(afferent=3, efferent=3, instability=INSTABILITY_HALF), 0.5, 0.0),
-    ],
-)
-def test_distance_main_sequence_key_scenarios(
-    coupling: CouplingMetrics, abstractness: float, expected: float
-) -> None:
-    """Distance from main sequence handles canonical stability quadrants."""
-    result = compute_distance_from_main_sequence(coupling, abstractness=abstractness)
-
-    expect_true(abs(result - expected) < PAGERANK_TOLERANCE)
-
-
-def test_louvain_empty_graph_returns_empty() -> None:
-    """Empty graph returns empty list."""
-    graph = empty_graph()
-    result = detect_communities_louvain(graph)
-    expect_true(result == [])
-
-
-def test_louvain_disconnected_separate_communities() -> None:
-    """Disconnected components are separate communities."""
-    graph = empty_graph()
-    graph.add_edges_from([(1, 2), (2, 3)])
-    graph.add_edges_from([(10, 11), (11, 12)])
-    result = detect_communities_louvain(graph)
-
-    expect_true(len(result) >= EXPECTED_MIN_COMPONENTS)
-
-
-def test_louvain_returns_community_dataclass() -> None:
-    """Returns Community dataclass."""
-    graph = complete_graph(5)
-    result = detect_communities_louvain(graph)
-
-    expect_true(len(result) >= 1)
-    comm = result[0]
-    expect_true(isinstance(comm, Community))
-    expect_true(hasattr(comm, "community_id"))
-    expect_true(hasattr(comm, "nodes"))
-    expect_true(hasattr(comm, "size"))
-
-
-def test_label_propagation_empty_graph_returns_empty() -> None:
-    """Empty graph returns empty list."""
-    graph = empty_graph()
-    result = detect_communities_label_propagation(graph)
-    expect_true(result == [])
-
-
-def test_label_propagation_returns_communities() -> None:
-    """Returns communities for connected graph."""
-    graph = complete_graph(5)
-    result = detect_communities_label_propagation(graph)
-
-    expect_true(len(result) >= 1)
-    total_nodes = sum(c.size for c in result)
-    expect_true(total_nodes == EXPECTED_NODE_COUNT_FIVE)
-
-
-def test_modularity_empty_graph_returns_zero() -> None:
-    """Empty graph returns zero modularity."""
-    graph = empty_graph()
-    result = compute_modularity(graph, [])
-    expect_true(result == 0.0)
-
-
-def test_modularity_empty_communities_returns_zero() -> None:
-    """Empty communities returns zero modularity."""
-    graph = complete_graph(5)
-    result = compute_modularity(graph, [])
-    expect_true(result == 0.0)
-
-
-def test_modularity_in_valid_range() -> None:
-    """Modularity is in valid range."""
-    graph = empty_graph()
-    graph.add_edges_from([(1, 2), (2, 3), (10, 11), (11, 12)])
-    communities = [
-        Community(community_id=0, nodes=frozenset([1, 2, 3]), size=COMMUNITY_SIZE_THREE),
-        Community(community_id=1, nodes=frozenset([10, 11, 12]), size=COMMUNITY_SIZE_THREE),
-    ]
-    result = compute_modularity(graph, communities)
-
-    expect_true(MODULARITY_MIN <= result <= MODULARITY_MAX)
-
-
-def test_clustering_empty_graph_returns_empty() -> None:
-    """Empty graph returns empty dict."""
-    graph = empty_graph()
-    result = compute_clustering_coefficient(graph)
-    expect_true(result == {})
-
-
-def test_clustering_complete_graph_full() -> None:
-    """Complete graph has full clustering."""
-    graph = complete_graph(5)
-    result = compute_clustering_coefficient(graph)
-
-    for coeff in result.values():
-        expect_true(abs(coeff - 1.0) < PAGERANK_TOLERANCE)
-
-
-def test_average_clustering() -> None:
-    """Average clustering coefficient computation."""
-    graph = complete_graph(5)
-    result = compute_average_clustering(graph)
-
-    expect_true(abs(result - 1.0) < PAGERANK_TOLERANCE)
-
-
-def test_average_clustering_empty_graph() -> None:
-    """Empty graph returns zero average clustering."""
-    graph = empty_graph()
-    result = compute_average_clustering(graph)
-    expect_true(result == 0.0)
-
-
-def test_hub_nodes_empty_graph_returns_empty() -> None:
-    """Empty graph returns empty list."""
-    graph = empty_graph()
-    result = find_hub_nodes(graph)
-    expect_true(result == [])
-
-
-def test_hub_nodes_star_graph_center_is_hub() -> None:
-    """Star graph center is a hub."""
-    graph = nx.star_graph(STAR_GRAPH_SIZE_TEN)
-    result = find_hub_nodes(graph, min_degree=MIN_HUB_DEGREE)
-
-    expect_true(0 in result)
-
-
-def test_hub_nodes_threshold_ratio_parameter() -> None:
-    """Threshold ratio parameter works."""
-    graph = nx.star_graph(STAR_GRAPH_SIZE_TEN)
-    result_strict = find_hub_nodes(graph, threshold_ratio=0.9, min_degree=1)
-    result_loose = find_hub_nodes(graph, threshold_ratio=HUB_THRESHOLD_RATIO, min_degree=1)
-
-    expect_true(len(result_strict) <= len(result_loose))
-
-
-def test_boundary_nodes_empty_communities_returns_empty() -> None:
-    """Empty communities returns empty list."""
-    graph = empty_graph()
-    result = find_boundary_nodes(graph, [])
-    expect_true(result == [])
-
-
-def test_boundary_nodes_finds_boundary() -> None:
-    """Finds nodes at community boundaries."""
-    graph = empty_graph()
-
-    graph.add_edges_from([(1, 2), (2, 3), (3, 10), (10, 11), (11, 12)])
-    communities = [
-        Community(community_id=0, nodes=frozenset([1, 2, 3]), size=COMMUNITY_SIZE_THREE),
-        Community(community_id=1, nodes=frozenset([10, 11, 12]), size=COMMUNITY_SIZE_THREE),
-    ]
-    result = find_boundary_nodes(graph, communities)
-
-    expect_true(EXPECTED_CYCLE_NODES in result or STAR_GRAPH_SIZE_TEN in result)
-
-
-def test_coupling_to_rows_converts_metrics() -> None:
-    """Converts CouplingMetrics to row dicts."""
-    metrics = {
-        "module_a": CouplingMetrics(
-            afferent=AFFERENT_THREE, efferent=EFFERENT_TWO, instability=INSTABILITY_POINT_FOUR
-        ),
-    }
-    rows = coupling_to_rows(metrics, repo="test-repo", commit="abc123")
-
-    expect_true(len(rows) == 1)
-    row = rows[0]
-    expect_true(row["module"] == "module_a")
-    expect_true(row["repo"] == "test-repo")
-    expect_true(row["commit"] == "abc123")
-    expect_true(row["afferent_coupling"] == AFFERENT_THREE)
-    expect_true(row["efferent_coupling"] == EFFERENT_TWO)
-    expect_true(row["instability"] == INSTABILITY_POINT_FOUR)
-
-
 def test_structural_clustering_handles_directed_graphs() -> None:
     """Structural clustering converts directed graphs."""
     graph = complete_digraph(EXPECTED_NODE_COUNT_FOUR)
@@ -1078,20 +721,6 @@ def test_component_info_frozen() -> None:
     assert_cannot_setattr(info, "size", 10)
 
 
-def test_coupling_metrics_frozen() -> None:
-    """CouplingMetrics is frozen."""
-    metrics = CouplingMetrics(
-        afferent=AFFERENT_THREE, efferent=EFFERENT_TWO, instability=INSTABILITY_POINT_FOUR
-    )
-    assert_cannot_setattr(metrics, "afferent", 5)
-
-
-def test_community_frozen() -> None:
-    """Community is frozen."""
-    comm = Community(community_id=0, nodes=frozenset([1, 2, 3]), size=COMMUNITY_SIZE_THREE)
-    assert_cannot_setattr(comm, "size", 5)
-
-
 def test_scc_result_frozen() -> None:
     """SCCResult is frozen."""
     result = SCCResult(components=(), node_to_component={})
@@ -1099,8 +728,6 @@ def test_scc_result_frozen() -> None:
 
 
 GOLDEN_MIN_NODES: Final[int] = 13
-GOLDEN_MIN_EDGES: Final[int] = 30
-GOLDEN_EXPECTED_COMMUNITIES: Final[int] = 2
 GOLDEN_EXPECTED_SCC: Final[int] = 1
 
 
@@ -1247,48 +874,3 @@ def test_realistic_component_stats() -> None:
     expect_true(stats["count"] >= GOLDEN_EXPECTED_SCC)
     expect_true(stats["mean_size"] > 0)
     expect_true(stats["largest_size"] >= 1)
-
-
-def test_realistic_community_detection() -> None:
-    """Community detection finds meaningful communities in realistic graphs."""
-    graph = _build_realistic_import_graph().to_undirected()
-
-    communities = detect_communities_louvain(graph)
-
-    expect_true(len(communities) >= GOLDEN_EXPECTED_COMMUNITIES)
-
-    all_nodes = set(graph.nodes())
-    community_nodes = set()
-    for comm in communities:
-        community_nodes.update(comm.nodes)
-    expect_true(all_nodes == community_nodes)
-
-
-def test_realistic_hub_detection() -> None:
-    """Hub detection finds high-connectivity nodes in realistic graphs."""
-    graph = _build_realistic_import_graph()
-
-    hubs = find_hub_nodes(graph, min_degree=3, threshold_ratio=0.05)
-
-    expect_true(len(hubs) >= 1)
-
-    expect_true(all(isinstance(h, str) for h in hubs))
-
-
-def test_realistic_coupling_metrics() -> None:
-    """Coupling metrics work on realistic import graphs."""
-    graph = _build_realistic_import_graph()
-
-    all_metrics = compute_coupling(graph)
-
-    expect_true(len(all_metrics) >= GOLDEN_MIN_NODES)
-
-    metrics = all_metrics.get("handlers.user")
-    expect_is_not_none(metrics)
-    if metrics is None:
-        return
-
-    expect_true(metrics.afferent >= 1)
-    expect_true(metrics.efferent >= 1)
-    expect_true(metrics.instability >= 0)
-    expect_true(metrics.instability <= 1)

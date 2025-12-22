@@ -6,7 +6,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import anyio
 import duckdb
@@ -19,6 +19,7 @@ from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.mcp_payloads import extract_payload
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -145,21 +146,6 @@ def _setup_test_snapshot(tmp_path: Path, *, row_count: int) -> Path:
     return pointer_path
 
 
-def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
-    if hasattr(tool_result, "content"):
-        content_list = tool_result.content
-        if content_list:
-            first_content = content_list[0]
-            if hasattr(first_content, "text"):
-                return json.loads(first_content.text)
-
-    if isinstance(tool_result, dict):
-        return tool_result
-
-    msg = f"Unexpected tool result type: {type(tool_result)}"
-    raise TypeError(msg)
-
-
 @dataclass(frozen=True, slots=True)
 class _SlowExportKernel:
     inner: SemanticKernel
@@ -237,7 +223,7 @@ async def test_mcp_export_task_mode_completes(tmp_path: Path) -> None:
         async with Client(mcp) as client:
             task_or_result = await client.call_tool(
                 "semantic_export",
-                {"view_id": "demo.view", "export_format": "ndjson", "limit": 10},
+                {"request": {"view_id": "demo.view", "export_format": "ndjson", "limit": 10}},
                 task=True,
             )
 
@@ -245,7 +231,7 @@ async def test_mcp_export_task_mode_completes(tmp_path: Path) -> None:
             if hasattr(task_or_result, "result"):
                 result_obj = await task_or_result.result()
 
-            payload = _extract_payload(result_obj)
+            payload = extract_payload(result_obj)
             export_id = payload.get("export_id")
             if not isinstance(export_id, str) or not export_id:
                 pytest.fail("Expected semantic_export task result to include export_id")
@@ -282,7 +268,7 @@ async def test_mcp_export_task_cancellation_cleans_up_artifacts(tmp_path: Path) 
         async with Client(mcp) as client:
             tool_task = await client.call_tool(
                 "semantic_export",
-                {"view_id": "demo.view", "export_format": "ndjson", "limit": 2500},
+                {"request": {"view_id": "demo.view", "export_format": "ndjson", "limit": 2500}},
                 task=True,
             )
             if not hasattr(tool_task, "cancel"):

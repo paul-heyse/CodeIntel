@@ -7,8 +7,9 @@ LLM clients can request them to get guided workflows for common tasks.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import cast
+from weakref import WeakKeyDictionary
 
 from fastmcp import Context, FastMCP
 from fastmcp.prompts import Message
@@ -29,6 +30,38 @@ class _FilterDraft:
     column: str
     op: str
     value: object
+
+
+@dataclass(slots=True)
+class PromptRegistry:
+    """Registry of prompt names registered on a FastMCP instance."""
+
+    names: set[str] = field(default_factory=set)
+
+    def register(self, name: str) -> None:
+        self.names.add(name)
+
+
+_PROMPT_REGISTRY: WeakKeyDictionary[FastMCP, PromptRegistry] = WeakKeyDictionary()
+
+
+def _prompt_registry(mcp: FastMCP) -> PromptRegistry:
+    registry = _PROMPT_REGISTRY.get(mcp)
+    if registry is None:
+        registry = PromptRegistry()
+        _PROMPT_REGISTRY[mcp] = registry
+    return registry
+
+
+def list_prompt_names(mcp: FastMCP) -> set[str]:
+    """Return registered prompt names for the given MCP server.
+
+    Returns
+    -------
+    set[str]
+        Prompt names registered on the server.
+    """
+    return set(_prompt_registry(mcp).names)
 
 
 def register_prompts(
@@ -63,6 +96,8 @@ def _tool_invocation_json(tool: str, /, **arguments: object) -> str:
 
 
 def _register_explore_prompt(mcp: FastMCP) -> None:
+    _prompt_registry(mcp).register("explore_codebase")
+
     @mcp.prompt(
         name="explore_codebase",
         description="Workflow: discover views, schemas, and query examples.",
@@ -78,9 +113,9 @@ def _register_explore_prompt(mcp: FastMCP) -> None:
             ),
             Message(
                 (
-                    "Use `semantic_query(view_id=..., filters=..., pagination=...)` "
+                    "Use `semantic_query(request=...)` "
                     "for a small preview. "
-                    "If the result is truncated, use `semantic_export(...)`."
+                    "If the result is truncated, use `semantic_export(request=...)`."
                 ),
                 role="assistant",
             ),
@@ -95,6 +130,8 @@ def _register_explore_prompt(mcp: FastMCP) -> None:
 
 
 def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
+    _prompt_registry(mcp).register("wizard_export_data")
+
     @mcp.prompt(
         name="wizard_export_data",
         description="Interactive export wizard (uses elicitation when supported).",
@@ -147,9 +184,11 @@ def _register_export_wizard(mcp: FastMCP, *, settings: ServingSettings) -> None:
                                 Message(
                                     _tool_invocation_json(
                                         "semantic_export",
-                                        view_id=view_id,
-                                        export_format=export_format,
-                                        limit=100_000,
+                                        request={
+                                            "view_id": view_id,
+                                            "export_format": export_format,
+                                            "limit": 100_000,
+                                        },
                                     ),
                                     role="assistant",
                                 ),
@@ -170,6 +209,7 @@ def _register_query_wizard(
     mcp: FastMCP, *, settings: ServingSettings, kernel: ServingOperations | None
 ) -> None:
     feature_set = ServingFeatureSet.from_settings(settings)
+    _prompt_registry(mcp).register("wizard_query_view")
 
     @mcp.prompt(
         name="wizard_query_view",
@@ -224,10 +264,12 @@ def _register_query_wizard(
             Message(
                 _tool_invocation_json(
                     "semantic_query",
-                    view_id=view_id,
-                    filters=filters,
-                    select=select,
-                    pagination={"limit": 10, "offset": 0},
+                    request={
+                        "view_id": view_id,
+                        "filters": filters,
+                        "select": select,
+                        "pagination": {"limit": 10, "offset": 0},
+                    },
                 ),
                 role="assistant",
             ),
@@ -243,6 +285,8 @@ def _register_query_wizard(
 
 
 def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
+    _prompt_registry(mcp).register("what_changed_between_snapshots")
+
     @mcp.prompt(
         name="what_changed_between_snapshots",
         description="Workflow: review semantic view SQL diffs between snapshots.",
@@ -303,7 +347,7 @@ def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[Prompt
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
         Message(
-            "Use `semantic_catalog` to choose a view_id, then call `semantic_export`.",
+            "Use `semantic_catalog` to choose a view_id, then call `semantic_export(request=...)`.",
             role="assistant",
         ),
         Message(
@@ -321,10 +365,7 @@ def _wizard_query_view_no_elicitation(settings: ServingSettings) -> list[PromptM
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
         Message(
-            (
-                "Call `semantic_describe(view_id=...)` then "
-                "`semantic_query(view_id=..., pagination=...)`."
-            ),
+            ("Call `semantic_describe(view_id=...)` then `semantic_query(request=...)`."),
             role="assistant",
         ),
         Message(f"sampling_enabled={feature_set.enable_mcp_sampling}", role="assistant"),
@@ -418,4 +459,4 @@ def _maybe_get_column_types(
     return {str(k): str(v) for k, v in desc.column_types.items()}
 
 
-__all__ = ["register_prompts"]
+__all__ = ["list_prompt_names", "register_prompts"]

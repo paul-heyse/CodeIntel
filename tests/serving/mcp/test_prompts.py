@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastmcp import FastMCP
 
-from codeintel.serving.mcp.prompts import register_prompts
+from codeintel.serving.mcp.prompts import list_prompt_names, register_prompts
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import (
     expect_in,
@@ -30,11 +30,8 @@ def _get_prompt_names(mcp: FastMCP) -> set[str]:
     set[str]
         Set of registered prompt names.
 
-    Notes
-    -----
-    Accesses internal FastMCP state for testing purposes only.
     """
-    return set(mcp._prompt_manager._prompts.keys())  # noqa: SLF001
+    return list_prompt_names(mcp)
 
 
 def test_register_prompts_adds_prompts() -> None:

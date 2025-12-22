@@ -37,6 +37,10 @@ CONTRACT_CATALOG_KIND = "dataset_contracts"
 TARGET_CATALOG_KIND = "output_targets"
 
 
+def _should_persist_catalog(gateway: StorageGateway) -> bool:
+    return not gateway.config.read_only
+
+
 def _get_schema_service() -> SchemaService:
     module = importlib.import_module("codeintel.build.schemas.service")
     service_factory = cast("Callable[[], SchemaService]", module.get_schema_service)
@@ -113,7 +117,7 @@ def load_contract_catalog(
     if entry is None:
         contracts = _build_contract_catalog()
         payload = _contracts_payload(contracts)
-        if gateway is not None:
+        if gateway is not None and _should_persist_catalog(gateway):
             upsert_canonical_catalog(
                 gateway,
                 build_catalog_entry(
@@ -161,7 +165,7 @@ def load_target_catalog(
     if entry is None:
         targets = _build_target_catalog()
         payload = _targets_payload(targets)
-        if gateway is not None:
+        if gateway is not None and _should_persist_catalog(gateway):
             upsert_canonical_catalog(
                 gateway,
                 build_catalog_entry(

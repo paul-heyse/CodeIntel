@@ -141,12 +141,6 @@ src = ["src"]
 extend-exclude = []
 
 [tool.ruff.lint.per-file-ignores]
-# Legacy config/datasets modules intentionally use legacy APIs until deletion
-"src/codeintel/config/datasets/schemas.py" = ["TID251"]
-"src/codeintel/config/datasets/schema_provider.py" = ["TID251"]
-"src/codeintel/config/datasets/contracts.py" = ["TID251"]
-"src/codeintel/config/datasets/rows/*.py" = ["TID251"]
-"src/codeintel/config/datasets/generated_rows/*.py" = ["TID251"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -235,10 +229,7 @@ strict = true
 ban-relative-imports = "all"
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
-# PR-70: Block legacy config/datasets imports
-"codeintel.config.datasets.schemas.TABLE_SCHEMAS".msg = "Use codeintel.build.schemas.get_schema_provider() instead"
-"codeintel.config.datasets.contracts.DATASET_CONTRACTS".msg = "Use codeintel.build.schemas.iter_contracts() instead"
-"codeintel.config.datasets.contracts.DATASET_CONTRACTS_BY_TABLE_KEY".msg = "Use codeintel.build.schemas.iter_contracts_by_table_key() instead"
+
 
 [tool.vulture]
 # Strict, but still manageable threshold.

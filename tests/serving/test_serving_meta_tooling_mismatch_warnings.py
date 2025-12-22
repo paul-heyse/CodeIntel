@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
@@ -18,6 +18,7 @@ from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_true
+from tests._helpers.mcp_payloads import extract_payload
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -106,21 +107,6 @@ def _write_pointer(
     path.write_text(json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
-    if hasattr(tool_result, "content"):
-        content_list = tool_result.content
-        if content_list:
-            first_content = content_list[0]
-            if hasattr(first_content, "text"):
-                return json.loads(first_content.text)
-
-    if isinstance(tool_result, dict):
-        return tool_result
-
-    msg = f"Unexpected tool result type: {type(tool_result)}"
-    raise TypeError(msg)
-
-
 @pytest.mark.anyio
 async def test_serving_meta_includes_tool_version_mismatch_warning(tmp_path: Path) -> None:
     """Return mismatch warnings when snapshot tool versions differ from runtime."""
@@ -169,7 +155,7 @@ async def test_serving_meta_includes_tool_version_mismatch_warning(tmp_path: Pat
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            payload = _extract_payload(await client.call_tool("serving_meta", {}))
+            payload = extract_payload(await client.call_tool("serving_meta", {}))
             warnings = payload.get("warnings")
             expected = f"tool-version-mismatch: sqlglot snapshot=0.0.0 runtime={runtime_sqlglot}"
             if not isinstance(warnings, list):

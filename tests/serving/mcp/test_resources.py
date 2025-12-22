@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import duckdb
 import pytest
@@ -24,6 +24,7 @@ from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.mcp_payloads import extract_payload
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -153,38 +154,6 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
         buildspec_path=buildspec_path,
     )
     return pointer_path
-
-
-def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
-    """Extract the payload from a gofastmcp tool result.
-
-    Returns
-    -------
-    dict[str, object]
-        The extracted payload dictionary.
-
-    Raises
-    ------
-    TypeError
-        If the result type is unexpected.
-    """
-    if hasattr(tool_result, "content"):
-        content_list = tool_result.content
-        if content_list and len(content_list) > 0:
-            first_content = content_list[0]
-            if hasattr(first_content, "text"):
-                return json.loads(first_content.text)
-
-    if isinstance(tool_result, list) and len(tool_result) > 0:
-        first_content = tool_result[0]
-        if hasattr(first_content, "text"):
-            return json.loads(first_content.text)
-
-    if isinstance(tool_result, dict):
-        return tool_result
-
-    msg = f"Unexpected tool result type: {type(tool_result)}"
-    raise TypeError(msg)
 
 
 def _extract_data(envelope: dict[str, object]) -> dict[str, object]:
@@ -446,10 +415,10 @@ async def test_mcp_semantic_export_returns_uri(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            result = _extract_payload(
+            result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "limit": 10},
+                    {"request": {"view_id": "demo.view", "limit": 10}},
                 )
             )
 
@@ -506,10 +475,10 @@ async def test_mcp_semantic_export_json_format(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            result = _extract_payload(
+            result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "export_format": "json", "limit": 10},
+                    {"request": {"view_id": "demo.view", "export_format": "json", "limit": 10}},
                 )
             )
 
@@ -544,12 +513,14 @@ async def test_mcp_semantic_export_with_filters(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            result = _extract_payload(
+            result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
                     {
-                        "view_id": "demo.view",
-                        "filters": [{"column": "id", "op": "eq", "value": 2}],
+                        "request": {
+                            "view_id": "demo.view",
+                            "filters": [{"column": "id", "op": "eq", "value": 2}],
+                        },
                     },
                 )
             )
@@ -588,7 +559,7 @@ async def test_mcp_semantic_export_error_invalid_view(tmp_path: Path) -> None:
         async with Client(mcp) as client:
             result = await client.call_tool(
                 "semantic_export",
-                {"view_id": "nonexistent.view"},
+                {"request": {"view_id": "nonexistent.view"}},
                 raise_on_error=False,
             )
             expect_true(result.is_error, message="Expected error for nonexistent view")
@@ -885,10 +856,10 @@ async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
 
         async with Client(mcp) as client:
             # First create an export
-            export_result = _extract_payload(
+            export_result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "limit": 10},
+                    {"request": {"view_id": "demo.view", "limit": 10}},
                 )
             )
             export_id = export_result.get("export_id")
@@ -949,10 +920,10 @@ async def test_mcp_resource_export_preview(tmp_path: Path) -> None:
 
         async with Client(mcp) as client:
             # First create an export
-            export_result = _extract_payload(
+            export_result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "limit": 10},
+                    {"request": {"view_id": "demo.view", "limit": 10}},
                 )
             )
             export_id = export_result.get("export_id")
@@ -1009,8 +980,11 @@ async def test_mcp_resource_export_lines_chunk(tmp_path: Path) -> None:
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            export_result = _extract_payload(
-                await client.call_tool("semantic_export", {"view_id": "demo.view", "limit": 10})
+            export_result = extract_payload(
+                await client.call_tool(
+                    "semantic_export",
+                    {"request": {"view_id": "demo.view", "limit": 10}},
+                )
             )
             export_id = export_result["export_id"]
 
@@ -1051,10 +1025,16 @@ async def test_mcp_resource_export_meta_row_count_for_parquet(tmp_path: Path) ->
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            export_result = _extract_payload(
+            export_result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "export_format": "parquet", "limit": 10},
+                    {
+                        "request": {
+                            "view_id": "demo.view",
+                            "export_format": "parquet",
+                            "limit": 10,
+                        }
+                    },
                 )
             )
             export_id = export_result["export_id"]
@@ -1099,10 +1079,10 @@ async def test_mcp_resource_export_bytes_chunk_for_arrow(tmp_path: Path) -> None
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            export_result = _extract_payload(
+            export_result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "export_format": "arrow", "limit": 10},
+                    {"request": {"view_id": "demo.view", "export_format": "arrow", "limit": 10}},
                 )
             )
             export_id = export_result["export_id"]
@@ -1143,10 +1123,10 @@ async def test_mcp_resource_export_sql(tmp_path: Path) -> None:
 
         async with Client(mcp) as client:
             # First create an export
-            export_result = _extract_payload(
+            export_result = extract_payload(
                 await client.call_tool(
                     "semantic_export",
-                    {"view_id": "demo.view", "limit": 10},
+                    {"request": {"view_id": "demo.view", "limit": 10}},
                 )
             )
             export_id = export_result.get("export_id")

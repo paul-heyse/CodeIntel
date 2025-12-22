@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,7 +43,7 @@ from codeintel.serving.settings import ServingSettings
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Iterable, Iterator
 
     from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.search.models import SearchQueryRequest
@@ -310,6 +311,36 @@ def _get_tool_input_schema(tool: object) -> Mapping[str, object] | None:
     return None
 
 
+def _resolve_schema_ref(
+    schema: Mapping[str, object],
+    *,
+    root: Mapping[str, object],
+) -> Mapping[str, object] | None:
+    ref = schema.get("$ref")
+    if not isinstance(ref, str):
+        return schema
+    if not ref.startswith("#/$defs/"):
+        return None
+    defs = root.get("$defs")
+    if not isinstance(defs, Mapping):
+        return None
+    target = defs.get(ref.removeprefix("#/$defs/"))
+    if isinstance(target, Mapping):
+        return target
+    return None
+
+
+def _request_schema(schema: Mapping[str, object]) -> Mapping[str, object] | None:
+    props = _tool_properties(schema)
+    if props is None:
+        return None
+    request_schema = props.get("request")
+    if not isinstance(request_schema, Mapping):
+        return None
+    resolved = _resolve_schema_ref(request_schema, root=schema)
+    return resolved if resolved is not None else request_schema
+
+
 _MCP_TOOLS_REQUIRE_VIEW_ID: frozenset[str] = frozenset(
     {"semantic_describe", "semantic_explain", "semantic_export", "semantic_query"}
 )
@@ -350,7 +381,8 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
         issues.append(f"MCP tool {name} has no JSON schema for parameters")
         return issues
 
-    required = _get_required_fields(schema)
+    schema_to_check = _request_schema(schema) or schema
+    required = _get_required_fields(schema_to_check)
     if name in _MCP_TOOLS_REQUIRE_VIEW_ID and "view_id" not in required:
         issues.append(f"MCP tool {name} must require view_id")
     if name in _MCP_TOOLS_NO_REQUIRED_ARGS and required:
@@ -361,7 +393,9 @@ def _check_mcp_tool_schema(tool: object, *, name: str) -> list[str]:
 
     expected_props = _MCP_TOOL_EXPECTED_PROPERTIES.get(name)
     if expected_props is not None:
-        issues.extend(_check_mcp_tool_properties(schema, name=name, expected=expected_props))
+        issues.extend(
+            _check_mcp_tool_properties(schema_to_check, name=name, expected=expected_props)
+        )
 
     return issues
 

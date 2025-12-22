@@ -130,12 +130,12 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         schema="docs",
         name="v_validation_summary",
         columns=[
-            Column("domain", "VARCHAR"),
-            Column("repo", "VARCHAR"),
-            Column("commit", "VARCHAR"),
-            Column("entity_id", "VARCHAR"),
-            Column("issue", "VARCHAR"),
-            Column("detail", "VARCHAR"),
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("validation_type", "VARCHAR", nullable=False),
+            Column("issue_count", "INTEGER"),
+            Column("affected_files", "INTEGER"),
+            Column("affected_functions", "INTEGER"),
         ],
     ),
     "build.output_manifests": TableSchema(

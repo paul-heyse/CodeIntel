@@ -12,7 +12,15 @@ import ibis
 import ibis.expr.types as it
 
 from codeintel.core.hamilton.semantic_tags import semantic_view
-from codeintel.core.ibis_typing import cast_dtype, ibis_bool, ne, or_predicates, sub, truediv
+from codeintel.core.ibis_typing import (
+    cast_dtype,
+    col_nunique,
+    ibis_bool,
+    ne,
+    or_predicates,
+    sub,
+    truediv,
+)
 from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view
@@ -209,21 +217,18 @@ def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     fm: it.Table = ibis_gw.table("analytics.function_metrics")
     hotspots: it.Table = ibis_gw.table("analytics.hotspots")
 
-    joined = (
-        fp.left_join(
-            fm,
-            [
-                fp.function_goid_h128 == fm.function_goid_h128,
-                fp.repo == fm.repo,
-                fp.commit == fm.commit,
-            ],
-        )
-        .left_join(
-            hotspots,
-            [
-                fp.rel_path == hotspots.rel_path,
-            ],
-        )
+    joined = fp.left_join(
+        fm,
+        [
+            fp.function_goid_h128 == fm.function_goid_h128,
+            fp.repo == fm.repo,
+            fp.commit == fm.commit,
+        ],
+    ).left_join(
+        hotspots,
+        [
+            fp.rel_path == hotspots.rel_path,
+        ],
     )
     complexity_bucket = ibis.coalesce(fp.complexity_bucket, ibis.literal("unknown")).name(
         "complexity_bucket"
@@ -477,10 +482,14 @@ def build_function_hotspots(ibis_gw: IbisViewGateway) -> it.Table:
         "risk_score",
         "risk_level",
     )
-    hotspots_table: it.Table = ibis_gw.table("analytics.hotspots").select(
-        "rel_path",
-        "score",
-    ).rename({"hotspot_rel_path": "rel_path"})
+    hotspots_table: it.Table = (
+        ibis_gw.table("analytics.hotspots")
+        .select(
+            "rel_path",
+            "score",
+        )
+        .rename({"hotspot_rel_path": "rel_path"})
+    )
 
     joined = fm.left_join(
         ft,
@@ -2399,7 +2408,7 @@ def build_docs_symbol_module_graph(ibis_gw: IbisViewGateway) -> it.Table:
 
 @ibis_view("docs.v_validation_summary")
 def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
-    """Build docs.v_validation_summary as union of function and graph validation.
+    """Build docs.v_validation_summary as aggregated function and graph validation.
 
     Parameters
     ----------
@@ -2414,25 +2423,41 @@ def build_docs_validation_summary(ibis_gw: IbisViewGateway) -> it.Table:
     fv: it.Table = ibis_gw.table("analytics.function_validation")
     gv: it.Table = ibis_gw.table("analytics.graph_validation")
 
-    func_part = fv.select(
-        ibis.literal("function").name("domain"),
-        fv.repo,
-        fv.commit,
-        fv.function_goid_h128.cast("string").name("entity_id"),
-        fv.issue,
-        fv.detail,
+    func_summary = fv.group_by([fv.repo, fv.commit]).aggregate(
+        issue_count=fv.issue.count(),
+        affected_files=col_nunique(fv.rel_path),
+        affected_functions=col_nunique(fv.function_goid_h128),
+    )
+    func_with_type = func_summary.mutate(
+        validation_type=ibis.literal("function"),
+    )
+    func_summary = func_with_type.select(
+        func_with_type.repo,
+        func_with_type.commit,
+        func_with_type.validation_type,
+        func_with_type.issue_count,
+        func_with_type.affected_files,
+        func_with_type.affected_functions,
     )
 
-    graph_part = gv.select(
-        ibis.literal("graph").name("domain"),
-        gv.repo,
-        gv.commit,
-        gv.entity_id.cast("string").name("entity_id"),
-        gv.issue,
-        gv.detail,
+    graph_summary = gv.group_by([gv.repo, gv.commit]).aggregate(
+        issue_count=gv.issue.count(),
+        affected_files=col_nunique(gv.rel_path),
+        affected_functions=col_nunique(gv.entity_id),
+    )
+    graph_with_type = graph_summary.mutate(
+        validation_type=ibis.literal("graph"),
+    )
+    graph_summary = graph_with_type.select(
+        graph_with_type.repo,
+        graph_with_type.commit,
+        graph_with_type.validation_type,
+        graph_with_type.issue_count,
+        graph_with_type.affected_files,
+        graph_with_type.affected_functions,
     )
 
-    return func_part.union(graph_part)
+    return func_summary.union(graph_summary)
 
 
 @semantic_view(

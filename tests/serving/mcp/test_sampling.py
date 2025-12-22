@@ -6,7 +6,7 @@ import json
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_package_version
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
@@ -17,6 +17,7 @@ from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.mcp_payloads import extract_payload
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -128,21 +129,6 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
     return pointer_path
 
 
-def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
-    if hasattr(tool_result, "content"):
-        content_list = tool_result.content
-        if content_list:
-            first_content = content_list[0]
-            if hasattr(first_content, "text"):
-                return json.loads(first_content.text)
-
-    if isinstance(tool_result, dict):
-        return tool_result
-
-    msg = f"Unexpected tool result type: {type(tool_result)}"
-    raise TypeError(msg)
-
-
 def _runtime_version(name: str) -> str:
     try:
         return get_package_version(name)
@@ -184,8 +170,11 @@ async def test_mcp_sampling_opt_in_adds_summary(tmp_path: Path) -> None:
             return f"summary(runtime_sqlglot={_runtime_version('sqlglot')})"
 
         async with Client(mcp, sampling_handler=sampling_handler) as client:
-            payload = _extract_payload(
-                await client.call_tool("semantic_query", {"view_id": "demo.view"})
+            payload = extract_payload(
+                await client.call_tool(
+                    "semantic_query",
+                    {"request": {"view_id": "demo.view"}},
+                )
             )
             summary = payload.get("summary")
             if not isinstance(summary, str) or "summary(" not in summary:
@@ -227,8 +216,11 @@ async def test_mcp_sampling_disabled_does_not_sample(tmp_path: Path) -> None:
             return "summary(should_not_be_used)"
 
         async with Client(mcp, sampling_handler=sampling_handler) as client:
-            payload = _extract_payload(
-                await client.call_tool("semantic_query", {"view_id": "demo.view"})
+            payload = extract_payload(
+                await client.call_tool(
+                    "semantic_query",
+                    {"request": {"view_id": "demo.view"}},
+                )
             )
             if payload.get("summary") is not None:
                 pytest.fail("Expected semantic_query to omit summary when sampling is disabled")
