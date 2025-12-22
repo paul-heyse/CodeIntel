@@ -82,7 +82,7 @@ def dataset_handler_harness(tmp_path: Path) -> Iterator[DatasetHandlerHarness]:
 
     deps = DatasetDependencies(
         runtime_builder=_build_runtime,
-        contracts_provider=lambda: {contract.name: contract},
+        contracts_provider=lambda _ctx: {contract.name: contract},
         issue_collector=collect_contract_issues,
     )
     harness = DatasetHandlerHarness(ctx=ctx, deps=deps)

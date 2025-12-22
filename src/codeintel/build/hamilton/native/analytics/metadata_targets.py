@@ -27,6 +27,7 @@ from codeintel.analytics.profiles import (
     build_function_profile,
     build_module_profile,
 )
+from codeintel.analytics.resources import ProviderRegistryOptions
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
@@ -36,7 +37,6 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
-from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -97,7 +97,6 @@ TARGET_SPECS = (
         description="Data model extraction (dataclasses, Pydantic, etc.).",
         options=TargetSpecOptions(
             table_keys=DATA_MODELS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -106,7 +105,6 @@ TARGET_SPECS = (
         description="Function-level data model usage tracking.",
         options=TargetSpecOptions(
             table_keys=(DATA_MODEL_USAGE_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -115,7 +113,6 @@ TARGET_SPECS = (
         description="AST-derived semantic features for functions.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -124,7 +121,6 @@ TARGET_SPECS = (
         description="Denormalized profile tables for querying.",
         options=TargetSpecOptions(
             table_keys=PROFILES_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )
@@ -369,7 +365,7 @@ def t__data_model_usage__compute(
     registry = env.providers.resources.registry_for(
         env,
         target_name=DATA_MODEL_USAGE_TARGET_NAME,
-        include=AnalyticsResourceIncludes(
+        options=ProviderRegistryOptions(
             include_graphs=False,
             include_asts=True,
             include_module_map=True,
@@ -444,7 +440,7 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     registry = env.providers.resources.registry_for(
         env,
         target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
-        include=AnalyticsResourceIncludes(
+        options=ProviderRegistryOptions(
             include_graphs=False,
             include_features=True,
         ),
@@ -563,7 +559,7 @@ def t__profiles__compute(
     registry = env.providers.resources.registry_for(
         env,
         target_name=PROFILES_TARGET_NAME,
-        include=AnalyticsResourceIncludes(include_graphs=False),
+        options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

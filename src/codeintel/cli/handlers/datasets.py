@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.build.schemas.contract_registry import get_dag_free_contracts_by_table_key
+from codeintel.build.catalogs.canonical import load_contract_catalog
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
@@ -52,11 +52,11 @@ class DatasetDependencies:
     """Injectable dependencies for dataset handlers."""
 
     runtime_builder: Callable[[CommandContext], object]
-    contracts_provider: Callable[[], Mapping[str, DatasetContract]]
+    contracts_provider: Callable[[CommandContext], Mapping[str, DatasetContract]]
     issue_collector: Callable[[Any], list[str]]
 
 
-def _contracts_by_table_key_provider() -> Mapping[str, DatasetContract]:
+def _contracts_by_table_key_provider(ctx: CommandContext) -> Mapping[str, DatasetContract]:
     """Build contracts mapping for dependency injection.
 
     Returns
@@ -64,7 +64,8 @@ def _contracts_by_table_key_provider() -> Mapping[str, DatasetContract]:
     Mapping[str, DatasetContract]
         Mapping from table_key to contract.
     """
-    return get_dag_free_contracts_by_table_key()
+    root = ctx.runtime.root if ctx.has_runtime else None
+    return load_contract_catalog(gateway=ctx.gateway, root=root)
 
 
 DEFAULT_DATASET_DEPS = DatasetDependencies(
@@ -109,7 +110,7 @@ def datasets_list_handler(
 
     LOG.info("Listing datasets (category=%s, include_internal=%s)", category, include_internal)
 
-    contracts = deps.contracts_provider()
+    contracts = deps.contracts_provider(ctx)
 
     dataset_dicts: list[dict[str, str | None]] = [
         {
@@ -204,7 +205,7 @@ def datasets_snapshot_handler(
 
     LOG.info("Writing dataset snapshot to %s", output_path)
 
-    contracts = deps.contracts_provider()
+    contracts = deps.contracts_provider(ctx)
     specs = [
         {
             "name": c.name,
@@ -264,7 +265,7 @@ def datasets_diff_handler(
 
     LOG.info("Diffing datasets against %s", baseline_path)
 
-    contracts = deps.contracts_provider()
+    contracts = deps.contracts_provider(ctx)
     current_names = {c.name for c in contracts.values()}
 
     baseline_specs = json.loads(baseline_path.read_text(encoding="utf-8"))

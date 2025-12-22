@@ -28,9 +28,9 @@ from codeintel.analytics.functions.function_effects import (
     FunctionEffectsOptions,
     build_function_effects_rows,
 )
+from codeintel.analytics.resources import ProviderRegistryOptions
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
-from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
@@ -74,7 +74,6 @@ TARGET_SPECS = (
         description="Function purity and side-effect analysis.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_EFFECTS_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -83,7 +82,6 @@ TARGET_SPECS = (
         description="Inferred function pre/postconditions.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
 )
@@ -172,7 +170,7 @@ def t__function_contracts__compute(
         registry = env.providers.resources.registry_for(
             env,
             target_name=FUNCTION_CONTRACTS_TARGET_NAME,
-            include=AnalyticsResourceIncludes(
+            options=ProviderRegistryOptions(
                 include_graphs=False,
                 include_asts=True,
             ),
@@ -348,7 +346,7 @@ def t__function_effects__compute(
     registry = env.providers.resources.registry_for(
         env,
         target_name=FUNCTION_EFFECTS_TARGET_NAME,
-        include=AnalyticsResourceIncludes(include_graphs=False),
+        options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

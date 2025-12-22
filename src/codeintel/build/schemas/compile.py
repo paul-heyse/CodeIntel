@@ -284,7 +284,7 @@ def _apply_native_inference(
         declared=provider,
         inferer=_infer,
         inferable_table_keys=selected_inferable,
-        fallback_to_declared_on_error=True,
+        fallback_to_declared_on_error=False,
     )
 
     if request.batch_infer_native:

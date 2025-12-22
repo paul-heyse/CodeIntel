@@ -86,32 +86,6 @@ class ExecutionResult:
         )
 
     @classmethod
-    def fail(
-        cls,
-        error: str,
-        *,
-        table_counts: dict[str, int] | None = None,
-        warnings: tuple[str, ...] | None = None,
-    ) -> ExecutionResult:
-        """Alias for ``failed`` to ease migrations from older result types.
-
-        Parameters
-        ----------
-        error
-            Error message describing the failure.
-        table_counts
-            Optional partial table row counts keyed by table key.
-        warnings
-            Optional warning messages encountered before failure.
-
-        Returns
-        -------
-        ExecutionResult
-            Failed result with error message and optional row counts.
-        """
-        return cls.failed(error, table_counts=table_counts, warnings=warnings)
-
-    @classmethod
     def skip(
         cls,
         reason: str | None = None,

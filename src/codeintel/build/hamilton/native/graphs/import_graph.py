@@ -57,7 +57,6 @@ TARGET_SPECS = (
         description="Module import graph construction.",
         options=TargetSpecOptions(
             table_keys=IMPORT_GRAPH_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )

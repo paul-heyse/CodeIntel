@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.config.datasets.declared_schemas import TABLE_SCHEMAS
-from codeintel.ingestion.row_serialization import row_serializer_for_table_key
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 

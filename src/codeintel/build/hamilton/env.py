@@ -24,8 +24,9 @@ from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSetti
 from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
+    from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
     from codeintel.build.assets.fingerprinting import (
         FingerprintPolicy,
     )
@@ -34,7 +35,7 @@ if TYPE_CHECKING:
     from codeintel.build.target_metadata import OutputInventory
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,11 @@ class BuildEnv:
         When True, validate produced datasets against their Pandera schemas
         after write. Validation failures will mark the target as failed and
         block downstream targets.
+    history_options
+        Optional options for multi-commit history aggregation targets.
+    history_db_resolver
+        Optional resolver for fetching DuckDB connections by commit for
+        history aggregation targets.
     fingerprint_policy
         Policy for computing asset version fingerprints. Defaults to STABLE_V1
         for cross-commit reuse capability.
@@ -109,6 +115,8 @@ class BuildEnv:
     output_inventory: OutputInventory | None = None
     validate_outputs: bool = False
     strict_contracts: bool = False
+    history_options: HistoryTimeseriesOptions | None = None
+    history_db_resolver: Callable[[str], DuckDBConnection] | None = None
     fingerprint_policy: FingerprintPolicy = field(
         default_factory=lambda: DEFAULT_FINGERPRINT_POLICY
     )

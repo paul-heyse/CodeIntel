@@ -76,7 +76,6 @@ TARGET_SPECS = (
         description="Function call graph construction.",
         options=TargetSpecOptions(
             table_keys=CALL_GRAPH_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )

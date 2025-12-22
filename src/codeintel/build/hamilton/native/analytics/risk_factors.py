@@ -54,7 +54,6 @@ TARGET_SPECS = (
         description="Composite risk factors per function.",
         options=TargetSpecOptions(
             table_keys=(RISK_FACTORS_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
 )

@@ -17,14 +17,11 @@ from typing import TYPE_CHECKING
 
 from ibis.common.exceptions import IbisError
 
-from codeintel.analytics.history.history_timeseries import (
-    HistoryTimeseriesOptions,
-    build_history_timeseries_rows,
-)
+from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
 from codeintel.build.config import load_build_config
+from codeintel.build.hamilton import HamiltonBuildExecutor
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
-from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.settings import get_build_settings, get_hamilton_execution_settings
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
@@ -94,6 +91,9 @@ def _build_history_env(
     ctx: CommandContext,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
+    *,
+    options: HistoryTimeseriesOptions,
+    db_resolver: Callable[[str], DuckDBConnection],
 ) -> BuildEnv:
     tools = ctx.runtime.tools if ctx.has_runtime else ToolsConfig.default()
     providers = create_default_providers(tools)
@@ -109,6 +109,8 @@ def _build_history_env(
         config=config,
         settings=build_settings,
         execution_settings=execution_settings,
+        history_options=options,
+        history_db_resolver=db_resolver,
     )
     return context.build_env()
 
@@ -230,52 +232,6 @@ def _build_db_resolver(
     return _db_resolver
 
 
-def _persist_history_timeseries_rows(
-    gateway: StorageGateway,
-    rows: tuple[tuple[object, ...], ...],
-    repo: str,
-    commits: list[str],
-) -> None:
-    """Persist history timeseries rows via policy backend.
-
-    Parameters
-    ----------
-    gateway
-        Output gateway for writing results.
-    rows
-        Row tuples to insert.
-    repo
-        Repository slug.
-    commits
-        List of commits to delete before inserting.
-
-    Raises
-    ------
-    RuntimeError
-        If the history_timeseries schema is unavailable.
-    """
-    if not rows:
-        return
-
-    backend = gateway.policy
-    backend.ensure_table("analytics.history_timeseries")
-    for commit in commits:
-        backend.delete_for_snapshot(
-            "analytics.history_timeseries",
-            repo=repo,
-            commit=commit,
-        )
-    schema = get_schema_service().get_table_schema("analytics.history_timeseries")
-    if schema is None:
-        msg = "Missing schema for analytics.history_timeseries"
-        raise RuntimeError(msg)
-    backend.bulk_insert(
-        "analytics.history_timeseries",
-        list(rows),
-        columns=tuple(schema.column_names()),
-    )
-
-
 def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseriesResult]:
     """Aggregate analytics.history_timeseries across multiple commits.
 
@@ -338,14 +294,18 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         db_resolver = _build_db_resolver(gateway, snapshot_resolver, snapshot_gateways)
 
         try:
-            env = _build_history_env(ctx, snapshot, gateway)
-            rows = build_history_timeseries_rows(
+            env = _build_history_env(
+                ctx,
                 snapshot,
-                db_resolver,
+                gateway,
                 options=options,
-                runner=env.providers.tool_runner,
+                db_resolver=db_resolver,
             )
-            _persist_history_timeseries_rows(gateway, rows, repo, commits)
+            executor = HamiltonBuildExecutor(
+                parallel_backend=env.execution_settings.parallel_backend,
+                max_workers=env.execution_settings.max_workers,
+            )
+            result = executor.run(env=env, targets=["history_timeseries"])
         except DuckDBInvalidInputException as exc:
             LOG.warning("No history rows to aggregate: %s", exc)
             _write_synthetic_history_rows(
@@ -362,6 +322,18 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         except DuckDBError as exc:
             LOG.exception("Failed to compute history_timeseries")
             return fail_history_error("Query Error", f"Failed to compute history_timeseries: {exc}")
+        else:
+            if not result.success:
+                error_msg = result.error or "History timeseries execution failed"
+                if "Invalid Input" in error_msg or "invalid input" in error_msg:
+                    _write_synthetic_history_rows(
+                        repo=repo,
+                        commits=commits,
+                        gateway=gateway,
+                        snapshot_resolver=snapshot_resolver,
+                    )
+                else:
+                    return fail_history_error("Execution Error", error_msg)
         finally:
             for gw in snapshot_gateways.values():
                 if gw is not gateway:

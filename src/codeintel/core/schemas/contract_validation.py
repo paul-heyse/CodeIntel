@@ -197,9 +197,7 @@ def _validate_missing_json_schemas(
     if not missing_json_schema:
         return []
     missing_list = ", ".join(sorted(missing_json_schema))
-    return [
-        f"Datasets with configured schemas missing from registry: {missing_list}"
-    ]
+    return [f"Datasets with configured schemas missing from registry: {missing_list}"]
 
 
 def collect_contract_issues(

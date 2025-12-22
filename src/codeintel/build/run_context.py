@@ -13,6 +13,7 @@ from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.run_config import BuildRunConfig
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.target_inventory import get_output_inventory
 from codeintel.build.target_metadata import OutputInventory
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
@@ -20,12 +21,13 @@ from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSetti
 if TYPE_CHECKING:
     from collections.abc import Mapping as MappingABC
 
+    from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
     from codeintel.build.assets.fingerprinting import FingerprintPolicy
     from codeintel.build.providers import Providers
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,8 @@ class BuildRunContext:
     manifest_index: MappingABC[str, OutputManifest] | None = None
     output_inventory: OutputInventory | None = None
     fingerprint_policy: FingerprintPolicy | None = None
+    history_options: HistoryTimeseriesOptions | None = None
+    history_db_resolver: Callable[[str], DuckDBConnection] | None = None
 
     @staticmethod
     def build_config_stack(
@@ -96,6 +100,7 @@ class BuildRunContext:
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
         load_contract_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
         load_target_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
+        get_schema_service()
         return BuildEnv(
             gateway=self.gateway,
             snapshot=self.snapshot,
@@ -110,6 +115,8 @@ class BuildRunContext:
             output_inventory=output_inventory,
             validate_outputs=self.validate_outputs,
             strict_contracts=self.strict_contracts,
+            history_options=self.history_options,
+            history_db_resolver=self.history_db_resolver,
             fingerprint_policy=fingerprint_policy,
         )
 

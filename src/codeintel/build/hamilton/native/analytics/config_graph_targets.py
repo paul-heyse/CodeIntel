@@ -25,8 +25,8 @@ from codeintel.analytics.cfg_dfg.compute import (
 )
 from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow_result
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
+from codeintel.analytics.resources import ProviderRegistryOptions
 from codeintel.analytics.resources.asts import AstProvider
-from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
@@ -95,7 +95,6 @@ TARGET_SPECS = (
         description="Config key usage flow through functions.",
         options=TargetSpecOptions(
             table_keys=CONFIG_DATA_FLOW_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -104,7 +103,6 @@ TARGET_SPECS = (
         description="Control-flow and data-flow graph metrics per function.",
         options=TargetSpecOptions(
             table_keys=CFG_DFG_METRICS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )
@@ -196,7 +194,7 @@ def t__config_data_flow__compute(
         registry = env.providers.resources.registry_for(
             env,
             target_name=CONFIG_DATA_FLOW_TARGET_NAME,
-            include=AnalyticsResourceIncludes(
+            options=ProviderRegistryOptions(
                 include_graphs=False,
                 include_asts=True,
             ),
