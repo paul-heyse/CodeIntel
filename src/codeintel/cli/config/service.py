@@ -195,7 +195,7 @@ class ConfigService:
         Examples
         --------
         >>> chain = ConfigService.get_cyclopts_config_chain()
-        >>> len(chain) == 2
+        >>> len(chain) == 1
         True
         """
         return [
