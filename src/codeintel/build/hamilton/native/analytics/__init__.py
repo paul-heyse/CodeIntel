@@ -92,7 +92,7 @@ from codeintel.build.hamilton.native.analytics.function_metrics import (
     t__function_metrics__compute,
 )
 from codeintel.build.hamilton.native.analytics.hotspots import (
-    hotspots__modules_complexity,
+    hotspots__rows,
     t__hotspots,
     t__hotspots__compute,
 )
@@ -148,7 +148,7 @@ __all__ = [
     "function_metrics__metrics_rows",
     "function_metrics__types_rows",
     "function_metrics__validation_rows",
-    "hotspots__modules_complexity",
+    "hotspots__rows",
     "risk_factors__fan_in",
     "risk_factors__fan_out",
     "semantic_roles__functions_rows",

@@ -27,7 +27,7 @@ from codeintel.analytics.profiles import (
     build_function_profile,
     build_module_profile,
 )
-from codeintel.analytics.resources import ProviderRegistryOptions
+from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
@@ -46,9 +46,16 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    DATA_MODEL_USAGE_OVERRIDE_TABLES,
+    DATA_MODELS_OVERRIDE_TABLES,
+    FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
+    PROFILES_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -90,13 +97,14 @@ PROFILES_TABLE_KEYS = (
     MODULE_PROFILE_TABLE_KEY,
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=DATA_MODELS_TARGET_NAME,
         module="analytics",
         description="Data model extraction (dataclasses, Pydantic, etc.).",
         options=TargetSpecOptions(
             table_keys=DATA_MODELS_TABLE_KEYS,
+            override_tables=DATA_MODELS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -105,6 +113,7 @@ TARGET_SPECS = (
         description="Function-level data model usage tracking.",
         options=TargetSpecOptions(
             table_keys=(DATA_MODEL_USAGE_TABLE_KEY,),
+            override_tables=DATA_MODEL_USAGE_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -113,6 +122,7 @@ TARGET_SPECS = (
         description="AST-derived semantic features for functions.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,),
+            override_tables=FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -121,6 +131,7 @@ TARGET_SPECS = (
         description="Denormalized profile tables for querying.",
         options=TargetSpecOptions(
             table_keys=PROFILES_TABLE_KEYS,
+            override_tables=PROFILES_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -362,10 +373,10 @@ def t__data_model_usage__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=DATA_MODEL_USAGE_TARGET_NAME,
-        options=ProviderRegistryOptions(
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(
             include_graphs=False,
             include_asts=True,
             include_module_map=True,
@@ -437,10 +448,10 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     AstFeaturesResult
         Feature map and optional error message.
     """
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
-        options=ProviderRegistryOptions(
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(
             include_graphs=False,
             include_features=True,
         ),
@@ -556,10 +567,10 @@ def t__profiles__compute(
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
 
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=PROFILES_TARGET_NAME,
-        options=ProviderRegistryOptions(include_graphs=False),
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

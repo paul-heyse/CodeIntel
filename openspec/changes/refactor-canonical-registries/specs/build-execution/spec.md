@@ -2,7 +2,8 @@
 ### Requirement: Canonical OutputTarget catalog is Hamilton-derived and cached
 The system SHALL derive OutputTarget metadata via Hamilton introspection, store it in the
 canonical catalog table keyed by the global catalog hash, and use the cached catalog for
-CLI/spec serialization when available.
+CLI/spec serialization when available. Native TargetSpec lists (TARGET_SPECS) SHALL NOT be used
+as a source of truth for OutputTarget metadata or graph construction.
 
 #### Scenario: CLI reads cached target catalog
 - **WHEN** a CLI command requests target metadata and the catalog hash matches a cached entry
@@ -23,5 +24,5 @@ metadata, and SHALL NOT define divergent manifest shapes.
 ## Implementation Status
 - Done: Hamilton-derived OutputTarget catalog generation/caching and manifest consolidation are
   implemented.
-- Remaining: remove native TargetSpec fallbacks and ensure CLI/spec serialization uses the
-  canonical target catalog exclusively.
+- Remaining: remove native TargetSpec/TARGET_SPECS usage in driver and support graph
+  construction, and ensure CLI/spec serialization uses the canonical target catalog exclusively.

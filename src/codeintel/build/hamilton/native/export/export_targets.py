@@ -34,6 +34,7 @@ from codeintel.build.hamilton.native.materialization_records import (
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
@@ -73,7 +74,7 @@ EXPORT_PARQUET_ARTIFACT_SPECS = (
     ),
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=EXPORT_JSONL_TARGET_NAME,
         module="export",

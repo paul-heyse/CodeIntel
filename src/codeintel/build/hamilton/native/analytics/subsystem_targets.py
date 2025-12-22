@@ -16,9 +16,11 @@ from codeintel.analytics.subsystems.materialize import build_subsystems
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.target_override_tables import SUBSYSTEMS_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
@@ -36,13 +38,14 @@ SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
 SUBSYSTEMS_TABLE_KEYS = (SUBSYSTEMS_TABLE_KEY, SUBSYSTEM_MODULES_TABLE_KEY)
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=SUBSYSTEMS_TARGET_NAME,
         module="analytics",
         description="Architectural subsystem inference.",
         options=TargetSpecOptions(
             table_keys=SUBSYSTEMS_TABLE_KEYS,
+            override_tables=SUBSYSTEMS_OVERRIDE_TABLES,
         ),
     ),
 )

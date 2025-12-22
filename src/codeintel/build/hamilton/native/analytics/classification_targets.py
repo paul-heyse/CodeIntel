@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
-from codeintel.analytics.resources import ProviderRegistryOptions
+from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
@@ -28,9 +28,14 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    SEMANTIC_ROLES_OVERRIDE_TABLES,
+    TEST_PROFILE_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -63,13 +68,14 @@ SEMANTIC_ROLES_TABLE_KEYS = (SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY, SEMANTIC_ROLES_
 TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
 TEST_PROFILE_TABLE_KEYS = (TEST_PROFILE_TABLE_KEY,)
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=SEMANTIC_ROLES_TARGET_NAME,
         module="analytics",
         description="Semantic role classification (handler, utility, etc.).",
         options=TargetSpecOptions(
             table_keys=SEMANTIC_ROLES_TABLE_KEYS,
+            override_tables=SEMANTIC_ROLES_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -78,6 +84,7 @@ TARGET_SPECS = (
         description="Per-test profile with coverage and characteristics.",
         options=TargetSpecOptions(
             table_keys=TEST_PROFILE_TABLE_KEYS,
+            override_tables=TEST_PROFILE_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -142,10 +149,10 @@ def t__semantic_roles__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=SEMANTIC_ROLES_TARGET_NAME,
-        options=ProviderRegistryOptions(include_graphs=False),
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

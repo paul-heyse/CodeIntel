@@ -32,7 +32,7 @@ from codeintel.core.config.settings import (
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.singleton import SingletonHolder
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
@@ -82,8 +82,11 @@ def _runtime_auto() -> HamiltonRuntime:
 
 
 @contextmanager
-def _schema_inference_gateway() -> Iterator[StorageGateway]:
-    gateway = open_memory_gateway(apply_schema=True, ensure_views=False, validate_schema=False)
+def _schema_inference_gateway(
+    *,
+    schema_provider: SchemaProvider,
+) -> Iterator[StorageGateway]:
+    gateway = open_inference_gateway(schema_provider=schema_provider)
     try:
         yield gateway
     finally:
@@ -243,7 +246,7 @@ def _infer_table_schema_for_compute(
     declared_provider: SchemaProvider,
     job: _ComputeInferenceJob,
 ) -> TableSchema:
-    with _schema_inference_gateway() as gateway:
+    with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         inputs: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         if job.requires_env:
@@ -552,7 +555,7 @@ def infer_table_schemas(
     jobs = _build_inference_jobs(runtime=runtime, table_keys=unique_keys)
     union_qparams = _union_qparams(jobs)
 
-    with _schema_inference_gateway() as gateway:
+    with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
         env = _inference_env(

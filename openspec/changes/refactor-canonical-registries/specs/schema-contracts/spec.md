@@ -1,8 +1,10 @@
 ## MODIFIED Requirements
 ### Requirement: Declared schemas are source-only
-Declared schema registries SHALL be limited to non-DAG source tables and explicit overrides, and
-canonical contract enumeration SHALL ignore declared_schemas for DAG outputs whenever a
-canonical catalog entry is available.
+Declared schema registries SHALL be limited to non-DAG source tables and explicit overrides,
+and canonical contract enumeration SHALL ignore declared_schemas for DAG outputs whenever a
+canonical catalog entry is available. Explicit overrides SHOULD be sourced from Hamilton
+registry metadata (or temporary TargetSpecOptions bridges) and removed once Pandera coverage
+is complete.
 
 #### Scenario: Source-only provider excludes DAG outputs
 - **WHEN** the declared source-only provider enumerates table schemas
@@ -45,5 +47,6 @@ registry and SHALL use it in build, storage, and serving validation flows.
 ## Implementation Status
 - Done: centralized row serialization, contract-derived JSON Schema generation, and shared
   contract validation are implemented.
-- Remaining: enforce source-only declared schemas by removing declared overrides for DAG outputs
-  in target metadata and schema resolution paths.
+- Remaining: enforce source-only declared schemas by completing Pandera/DatasetSchema coverage
+  for non-inferable outputs, removing DAG output entries from declared_schemas, and eliminating
+  declared overrides for DAG outputs in target metadata and schema resolution paths.

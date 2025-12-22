@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from codeintel.config.datasets.declared_schemas import COMPOSITE_SCHEMAS as _COMPOSITE_SCHEMAS
+from codeintel.core.schemas.table_registry import COMPOSITE_SCHEMAS as _COMPOSITE_SCHEMAS
 
 if TYPE_CHECKING:
     from codeintel.config.datasets.primitives import CompositeSchema

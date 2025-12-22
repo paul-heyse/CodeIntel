@@ -1,7 +1,9 @@
 ## MODIFIED Requirements
 ### Requirement: Analytics resources use injected registry access
 Analytics and graph resource loading SHALL use a single registry interface supplied by
-BuildEnv/Providers, and modules SHALL NOT construct standalone registry implementations.
+BuildEnv/Providers, and modules SHALL NOT construct standalone registry implementations. Build
+SHALL use the core ResourceRegistry and shared ProviderFactory interface without a build-only
+wrapper.
 
 #### Scenario: Analytics registry comes from providers
 - **WHEN** analytics or graph code requires access to the resource registry
@@ -20,4 +22,4 @@ to that loader.
 ## Implementation Status
 - Done: a unified runtime loader now returns RuntimePrimitives plus settings for build/serving/CLI.
 - Remaining: standardize the BuildEnv resource registry interface with core ResourceRegistry and
-  remove standalone registry construction in analytics/graphs.
+  remove standalone registry construction in analytics/graphs, including build-only wrappers.

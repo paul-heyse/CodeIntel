@@ -34,6 +34,10 @@ manifest concerns are duplicated across layers.
 - Consolidate contract validation into a shared validator invoked by build, storage, and serving.
 - Restrict declared_schemas to source-only datasets and explicit overrides; remove usage for
   DAG outputs in target metadata and schema resolution paths.
+- Eliminate TARGET_SPECS/native target enumeration; derive OutputTarget metadata directly from
+  Hamilton node metadata and canonical catalogs.
+- Complete Pandera/DatasetSchema coverage for non-inferable outputs and remove DAG outputs from
+  declared_schemas; allow TargetSpecOptions overrides only as a temporary bridge.
 - Provide a single runtime configuration loader that returns RuntimePrimitives and settings
   for build/serving/CLI.
 - Re-export storage Ibis IO for Hamilton to enforce consistent Ibis 11 patterns.
@@ -53,6 +57,8 @@ manifest concerns are duplicated across layers.
   introspection on cache misses.
 - Transitioning off declared_schemas requires complete Pandera registry coverage; early removal
   could break source-only datasets.
+- Removing TARGET_SPECS requires consistent Hamilton node metadata to preserve OutputTarget
+  descriptions; missing metadata will degrade catalog fidelity.
 
 ## Migration Plan
 1. Add metadata table for canonical catalogs and implement storage APIs for load/store. (Done)
@@ -61,7 +67,8 @@ manifest concerns are duplicated across layers.
    mismatch, and restrict declared_schemas to source-only datasets. (Partial)
 4. Replace row serialization helpers with a centralized schema registry serializer and caching.
    (Done)
-5. Replace DAG-free target catalog generation with canonical OutputTarget catalog consumption.
+5. Replace DAG-free target catalog generation with canonical OutputTarget catalog consumption,
+   remove TARGET_SPECS usage, and derive OutputTarget metadata from Hamilton node tags.
    (Remaining)
 6. Introduce unified runtime configuration loader and consolidate resource registry interfaces.
    (Partial)
@@ -80,6 +87,8 @@ taxonomy alignment.
 Remaining scope includes removing native TargetSpec fallbacks, finishing declared_schemas
 restrictions for DAG outputs, unifying resource registry interfaces in BuildEnv, cleaning legacy
 registry shims, migrating non-Hamilton orchestration usage, and completing quality gates/tests.
+Remaining scope also includes completing Pandera/DatasetSchema coverage for non-inferable
+outputs and removing DAG output entries from declared_schemas.
 
 ## Open Questions
 - None.

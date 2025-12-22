@@ -82,11 +82,17 @@ and DAG outputs SHALL NOT require static declarations in declared_schemas.
 
 ### Requirement: Canonical row serialization from schema registry
 Row serialization SHALL use schema registry row models and column ordering, and ad-hoc
-row serialization helpers SHALL NOT be the authoritative source of column order.
+row serialization helpers, re-export shims, or static column list modules SHALL NOT be the
+authoritative source of column order.
 
 #### Scenario: Row serialization uses schema registry ordering
 - **WHEN** rows are serialized for a dataset write
 - **THEN** the column order is derived from the schema registry row model
+
+#### Scenario: Compatibility row serialization helpers are absent
+- **WHEN** schema serialization helpers are enumerated
+- **THEN** build.hamilton.row_serialization, ingestion.row_serialization, and analytics
+  cfg/dfg column list modules are not present
 
 ### Requirement: Constraint enforcement order
 Schema constraints SHALL be enforced in order: Hamilton checks first, then Pandera checks, and
@@ -103,4 +109,13 @@ outputs so the DAG remains the primary source of truth.
 #### Scenario: Backup dataset has DAG refresh tooling
 - **WHEN** a dataset is designated as a backup or seed
 - **THEN** a DAG-driven refresh path is available for that dataset
+
+### Requirement: Legacy schema export and migration utilities are removed
+Schema contract APIs SHALL NOT expose legacy export, lineage, schema-doc, or migration
+utilities, and callers MUST rely on the canonical schema registry and storage metadata.
+
+#### Scenario: Legacy schema utilities are absent
+- **WHEN** schema tooling is enumerated
+- **THEN** contracts.schemas.export, contracts.schemas.lineage, schema_docs, and
+  validators.migration helpers are not present
 

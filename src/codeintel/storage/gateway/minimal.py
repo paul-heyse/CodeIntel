@@ -20,7 +20,7 @@ you need accessor functionality.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING
 
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
@@ -33,6 +33,17 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
     from codeintel.core.schemas.provider import SchemaProvider
+    from codeintel.storage.datasets import DatasetRegistry
+    from codeintel.storage.gateway.accessors import (
+        AnalyticsTables,
+        CoreTables,
+        DocsViews,
+        GraphTables,
+    )
+    from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.tracking import PipelineRunTracking
+    from codeintel.storage.tracking.asset_tracking import AssetTracking
+    from codeintel.storage.tracking.build_tracking import BuildTracking
 
 __all__ = ["MinimalStorageGateway"]
 
@@ -50,7 +61,10 @@ def _unsupported_accessor_msg(name: str) -> str:
     str
         Error message for NotImplementedError.
     """
-    return f"MinimalStorageGateway.{name} is not available. Use open_gateway() for full accessor support."
+    return (
+        f"MinimalStorageGateway.{name} is not available. "
+        "Use open_gateway() for full accessor support."
+    )
 
 
 class MinimalStorageGateway:
@@ -167,47 +181,47 @@ class MinimalStorageGateway:
     # -------------------------------------------------------------------------
 
     @property
-    def analytics(self) -> NoReturn:
+    def analytics(self) -> AnalyticsTables:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("analytics"))
 
     @property
-    def assets(self) -> NoReturn:
+    def assets(self) -> AssetTracking:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("assets"))
 
     @property
-    def build(self) -> NoReturn:
+    def build(self) -> BuildTracking:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("build"))
 
     @property
-    def config(self) -> NoReturn:
+    def config(self) -> StorageConfig:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("config"))
 
     @property
-    def core(self) -> NoReturn:
+    def core(self) -> CoreTables:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("core"))
 
     @property
-    def datasets(self) -> NoReturn:
+    def datasets(self) -> DatasetRegistry:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("datasets"))
 
     @property
-    def docs(self) -> NoReturn:
+    def docs(self) -> DocsViews:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("docs"))
 
     @property
-    def graph(self) -> NoReturn:
+    def graph(self) -> GraphTables:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("graph"))
 
     @property
-    def runs(self) -> NoReturn:
+    def runs(self) -> PipelineRunTracking:
         """Raise NotImplementedError - use full gateway for accessor access."""
         raise NotImplementedError(_unsupported_accessor_msg("runs"))
 

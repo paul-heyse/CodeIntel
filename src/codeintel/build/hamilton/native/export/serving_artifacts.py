@@ -37,6 +37,7 @@ from codeintel.build.hamilton.native.materialization_records import (
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -110,7 +111,7 @@ SERVING_ARTIFACT_SPECS = (
     ),
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=SERVING_ARTIFACTS_TARGET_NAME,
         module="export",

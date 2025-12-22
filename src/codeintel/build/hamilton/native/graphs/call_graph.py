@@ -23,9 +23,11 @@ from codeintel.build.hamilton.execution_result import ExecutionResult, to_execut
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
+from codeintel.build.hamilton.native.target_override_tables import CALL_GRAPH_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -69,13 +71,14 @@ CALL_GRAPH_TABLE_KEYS = (
     CALL_GRAPH_EDGES_TABLE_KEY,
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=CALL_GRAPH_TARGET_NAME,
         module="graphs",
         description="Function call graph construction.",
         options=TargetSpecOptions(
             table_keys=CALL_GRAPH_TABLE_KEYS,
+            override_tables=CALL_GRAPH_OVERRIDE_TABLES,
         ),
     ),
 )

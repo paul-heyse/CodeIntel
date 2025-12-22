@@ -28,9 +28,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.native.target_override_tables import RISK_FACTORS_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -47,13 +49,14 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=RISK_FACTORS_TARGET_NAME,
         module="analytics",
         description="Composite risk factors per function.",
         options=TargetSpecOptions(
             table_keys=(RISK_FACTORS_TABLE_KEY,),
+            override_tables=RISK_FACTORS_OVERRIDE_TABLES,
         ),
     ),
 )

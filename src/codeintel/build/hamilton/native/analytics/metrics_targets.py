@@ -48,9 +48,18 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    FUNCTION_HISTORY_OVERRIDE_TABLES,
+    HISTORY_TIMESERIES_OVERRIDE_TABLES,
+    SUBSYSTEM_AGREEMENT_OVERRIDE_TABLES,
+    SUBSYSTEM_GRAPH_METRICS_OVERRIDE_TABLES,
+    SYMBOL_GRAPH_METRICS_OVERRIDE_TABLES,
+    TEST_GRAPH_METRICS_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -100,13 +109,14 @@ TEST_GRAPH_METRICS_TABLE_KEYS = (
     TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
 )
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=FUNCTION_HISTORY_TARGET_NAME,
         module="analytics",
         description="Function git history and churn metrics.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_HISTORY_TABLE_KEY,),
+            override_tables=FUNCTION_HISTORY_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -115,6 +125,7 @@ TARGET_SPECS = (
         description="Historical metrics timeseries for trending.",
         options=TargetSpecOptions(
             table_keys=(HISTORY_TIMESERIES_TABLE_KEY,),
+            override_tables=HISTORY_TIMESERIES_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -123,6 +134,7 @@ TARGET_SPECS = (
         description="Graph metrics for subsystems.",
         options=TargetSpecOptions(
             table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,),
+            override_tables=SUBSYSTEM_GRAPH_METRICS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -131,6 +143,7 @@ TARGET_SPECS = (
         description="Graph metrics from symbol usage patterns.",
         options=TargetSpecOptions(
             table_keys=SYMBOL_GRAPH_METRICS_TABLE_KEYS,
+            override_tables=SYMBOL_GRAPH_METRICS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -139,6 +152,7 @@ TARGET_SPECS = (
         description="Subsystem vs import community agreement.",
         options=TargetSpecOptions(
             table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,),
+            override_tables=SUBSYSTEM_AGREEMENT_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -147,6 +161,7 @@ TARGET_SPECS = (
         description="Graph metrics from test-function bipartite graph.",
         options=TargetSpecOptions(
             table_keys=TEST_GRAPH_METRICS_TABLE_KEYS,
+            override_tables=TEST_GRAPH_METRICS_OVERRIDE_TABLES,
         ),
     ),
 )

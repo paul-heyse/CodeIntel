@@ -32,7 +32,7 @@ from codeintel.analytics.compute.coverage.compute import (
     filter_goids_for_snapshot,
     join_goids_with_coverage_lines,
 )
-from codeintel.analytics.resources import ProviderRegistryOptions
+from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.testing import compute_test_coverage_edges
 from codeintel.analytics.testing.profiles.builder import build_behavioral_coverage
@@ -44,9 +44,15 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.native.target_override_tables import (
+    BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
+    COVERAGE_FUNCTIONS_OVERRIDE_TABLES,
+    COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -69,13 +75,14 @@ COVERAGE_FUNCTIONS_TABLE_KEY = "analytics.coverage_functions"
 TEST_COVERAGE_EDGES_TABLE_KEY = "analytics.test_coverage_edges"
 BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=COVERAGE_FUNCTIONS_TARGET_NAME,
         module="analytics",
         description="Per-function coverage aggregation.",
         options=TargetSpecOptions(
             table_keys=(COVERAGE_FUNCTIONS_TABLE_KEY,),
+            override_tables=COVERAGE_FUNCTIONS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -84,6 +91,7 @@ TARGET_SPECS = (
         description="Test-to-function coverage edges.",
         options=TargetSpecOptions(
             table_keys=(TEST_COVERAGE_EDGES_TABLE_KEY,),
+            override_tables=COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -92,6 +100,7 @@ TARGET_SPECS = (
         description="Behavioral coverage tagging from test patterns.",
         options=TargetSpecOptions(
             table_keys=(BEHAVIORAL_COVERAGE_TABLE_KEY,),
+            override_tables=BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -317,10 +326,10 @@ def t__coverage_test_edges__compute(
     if t__goids.status != "succeeded":
         return ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
 
-    registry = env.providers.resources.registry_for(
-        env,
-        target_name=COVERAGE_TEST_EDGES_TARGET_NAME,
-        options=ProviderRegistryOptions(include_graphs=False),
+    registry = build_registry(
+        gateway=env.gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

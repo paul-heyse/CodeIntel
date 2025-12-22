@@ -59,9 +59,17 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions, SymbolUsesOptions
+from codeintel.build.hamilton.native.target_override_tables import (
+    CALL_GRAPH_VIEWS_OVERRIDE_TABLES,
+    GOIDS_OVERRIDE_TABLES,
+    GRAPH_METRICS_OVERRIDE_TABLES,
+    GRAPH_VALIDATION_OVERRIDE_TABLES,
+    SYMBOL_USES_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -131,13 +139,14 @@ GRAPH_METRICS_TABLE_KEYS = (
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
 GRAPH_VALIDATION_TABLE_KEYS = (GRAPH_VALIDATION_TABLE_KEY,)
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=GOIDS_TARGET_NAME,
         module="graphs",
         description="GOID resolution and crosswalk construction.",
         options=TargetSpecOptions(
             table_keys=GOIDS_TABLE_KEYS,
+            override_tables=GOIDS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -146,6 +155,7 @@ TARGET_SPECS = (
         description="Symbol definition-to-use edge extraction.",
         options=TargetSpecOptions(
             table_keys=SYMBOL_USES_TABLE_KEYS,
+            override_tables=SYMBOL_USES_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -154,6 +164,7 @@ TARGET_SPECS = (
         description="Derived views over call graph for analytics.",
         options=TargetSpecOptions(
             table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS,
+            override_tables=CALL_GRAPH_VIEWS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -162,6 +173,7 @@ TARGET_SPECS = (
         description="Graph topology metrics for functions and modules.",
         options=TargetSpecOptions(
             table_keys=GRAPH_METRICS_TABLE_KEYS,
+            override_tables=GRAPH_METRICS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -170,6 +182,7 @@ TARGET_SPECS = (
         description="Graph integrity validation checks.",
         options=TargetSpecOptions(
             table_keys=GRAPH_VALIDATION_TABLE_KEYS,
+            override_tables=GRAPH_VALIDATION_OVERRIDE_TABLES,
         ),
     ),
 )

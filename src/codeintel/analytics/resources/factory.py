@@ -334,7 +334,27 @@ class ProviderFactory:
         self._cached_graphs = None
 
 
+def build_registry(
+    *,
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    registry_options: ProviderRegistryOptions | None = None,
+    factory_options: ProviderFactoryOptions | None = None,
+) -> ResourceRegistry:
+    """Build a ResourceRegistry for analytics providers.
+
+    Returns
+    -------
+    ResourceRegistry
+        Registry populated with analytics provider instances.
+    """
+    factory = ProviderFactory(gateway, snapshot, options=factory_options)
+    return factory.create_registry(ResourceRegistry(), options=registry_options)
+
+
 __all__ = [
     "ProviderFactory",
     "ProviderFactoryOptions",
+    "ProviderRegistryOptions",
+    "build_registry",
 ]

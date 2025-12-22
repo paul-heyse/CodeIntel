@@ -29,6 +29,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.introspect import (
     derive_target_dependencies,
     target_graph_from_hamilton,
+    target_names_from_nodes,
 )
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
@@ -41,6 +42,7 @@ from codeintel.build.hamilton.naming import (
     target_node,
 )
 from codeintel.build.hamilton.native.discovery import load_native_modules
+from codeintel.build.hamilton.native.target_spec_helpers import resolve_registered_targets
 from codeintel.build.hamilton.nodes.mappings import SupportNodeMappings
 from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
@@ -54,7 +56,6 @@ from codeintel.build.hamilton.tagging import (
     tag_materialize,
 )
 from codeintel.build.table_keys import split_table_key
-from codeintel.build.target_specs import load_native_target_specs
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -361,14 +362,15 @@ def _build_contract_graph() -> TargetGraph:
     TargetGraph
         Graph containing all registered build targets.
     """
-    # Use native specs to avoid catalog recursion during driver construction.
-    targets = load_native_target_specs()
+    native_mods = load_native_modules()
+    dr = h_driver.Builder().with_modules(*native_mods).build()
+    target_names = target_names_from_nodes(dr.graph.nodes)
+    targets = resolve_registered_targets(target_names)
+
     base_graph = TargetGraph()
     for target in targets:
         base_graph.register(target)
 
-    native_mods = load_native_modules()
-    dr = h_driver.Builder().with_modules(*native_mods).allow_module_overrides().build()
     runtime = HamiltonRuntime(dr=dr, graph=base_graph)
     derived = derive_target_dependencies(runtime)
     return target_graph_from_hamilton(
@@ -475,13 +477,19 @@ def _populate_for_target(
             )
 
 
-def build_support_module(*, options: SupportGenerationOptions | None = None) -> ModuleType:
+def build_support_module(
+    *,
+    options: SupportGenerationOptions | None = None,
+    graph: TargetGraph | None = None,
+) -> ModuleType:
     """Build a Python module containing Hamilton support nodes.
 
     Parameters
     ----------
     options
         Optional generation options.
+    graph
+        Optional target graph to use instead of building from contracts.
 
     Returns
     -------
@@ -490,14 +498,14 @@ def build_support_module(*, options: SupportGenerationOptions | None = None) -> 
     """
     resolved = options or SupportGenerationOptions()
 
-    graph = _build_contract_graph()
-    include = resolved.include_targets or frozenset(t.name for t in graph.all_targets)
+    resolved_graph = graph or _build_contract_graph()
+    include = resolved.include_targets or frozenset(t.name for t in resolved_graph.all_targets)
     exclude = resolved.exclude_targets or frozenset()
 
     module = _new_support_module()
     mappings = SupportNodeMappings()
 
-    for target in graph.all_targets:
+    for target in resolved_graph.all_targets:
         if not _include_target(target_name=target.name, include=include, exclude=exclude):
             continue
         _populate_for_target(module, target=target, options=resolved, mappings=mappings)
@@ -520,7 +528,11 @@ def _cache_key(
     )
 
 
-def get_support_module(*, options: SupportGenerationOptions | None = None) -> ModuleType:
+def get_support_module(
+    *,
+    options: SupportGenerationOptions | None = None,
+    graph: TargetGraph | None = None,
+) -> ModuleType:
     """Return a cached support-node module, creating it on first call.
 
     Returns
@@ -528,6 +540,9 @@ def get_support_module(*, options: SupportGenerationOptions | None = None) -> Mo
     ModuleType
         Cached module containing generated support nodes.
     """
+    if graph is not None:
+        return build_support_module(options=options, graph=graph)
+
     resolved = options or SupportGenerationOptions()
     key = _cache_key(resolved)
     if _MODULE_CACHE.module is None or _MODULE_CACHE.config_key != key:

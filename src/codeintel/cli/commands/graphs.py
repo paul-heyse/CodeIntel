@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App, Parameter
 
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.target_catalog import target_graph_from_catalog
 from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.core import CliResult
@@ -40,7 +40,7 @@ def _get_graph_targets() -> list[tuple[str, str, tuple[str, ...]]]:
     list[tuple[str, str, tuple[str, ...]]]
         List of (name, description, dependencies) for each graph target.
     """
-    graph = get_target_metadata_service().system.graph
+    graph = target_graph_from_catalog()
     return [
         (t.name, t.description or f"Graph target: {t.name}", t.dependencies)
         for t in graph.all_targets
@@ -171,7 +171,7 @@ class GraphTargetsList(Command[GraphTargetsResult]):
 
         LOG.info("Listing graph targets (names=%s)", names_set)
 
-        graph = get_target_metadata_service().system.graph
+        graph = target_graph_from_catalog()
         targets = [t for t in graph.all_targets if t.module == "graphs"]
 
         if names_set:
@@ -229,7 +229,7 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
 
         LOG.info("Planning graph targets (names=%s)", self.names)
 
-        graph = get_target_metadata_service().system.graph
+        graph = target_graph_from_catalog()
         graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
 
         if self.names:
@@ -316,7 +316,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
         _ = ctx
         names_set = set(self.names) if self.names else None
 
-        graph = get_target_metadata_service().system.graph
+        graph = target_graph_from_catalog()
         graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
 
         available_names = {t.name for t in graph_targets}
@@ -406,7 +406,7 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
         _ = ctx
         names_set = set(self.names) if self.names else None
 
-        graph = get_target_metadata_service().system.graph
+        graph = target_graph_from_catalog()
         graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
 
         if names_set:

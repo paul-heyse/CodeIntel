@@ -22,9 +22,14 @@ from codeintel.build.hamilton.execution_result import ExecutionResult, to_execut
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
+from codeintel.build.hamilton.native.target_override_tables import (
+    CFG_OVERRIDE_TABLES,
+    DFG_OVERRIDE_TABLES,
+)
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
+    register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -60,13 +65,14 @@ CFG_TABLE_KEYS = (
 )
 DFG_TABLE_KEYS = (DFG_EDGES_TABLE_KEY,)
 
-TARGET_SPECS = (
+register_output_targets(
     make_output_target(
         name=CFG_TARGET_NAME,
         module="graphs",
         description="Control flow graph construction per function.",
         options=TargetSpecOptions(
             table_keys=CFG_TABLE_KEYS,
+            override_tables=CFG_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(
@@ -75,6 +81,7 @@ TARGET_SPECS = (
         description="Data flow graph construction per function.",
         options=TargetSpecOptions(
             table_keys=DFG_TABLE_KEYS,
+            override_tables=DFG_OVERRIDE_TABLES,
         ),
     ),
 )

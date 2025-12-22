@@ -71,7 +71,7 @@ class SchemaManifestRequest:
     all_targets
         When True, include all targets across all modules.
     infer_native
-        When True, infer schemas for inferable native outputs (fallback to declared on error).
+        When True, infer schemas for inferable native outputs.
     batch_infer_native
         When True, pre-infer all selected inferable native schemas in a single ephemeral session.
     stable
