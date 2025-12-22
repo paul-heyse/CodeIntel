@@ -258,6 +258,12 @@ def _load_observability_settings() -> ObservabilitySettings:
         value = get_str(name, default=None)
         return value.strip() if value else None
 
+    def _parse_csv(value: str | None) -> tuple[str, ...]:
+        if not value:
+            return ()
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return tuple(items)
+
     sdk_disabled = get_bool("OTEL_SDK_DISABLED", default=False)
     enabled = not bool(sdk_disabled)
 
@@ -265,6 +271,17 @@ def _load_observability_settings() -> ObservabilitySettings:
     statement_mode_value = statement_mode.strip().lower() if statement_mode else "hash"
     if statement_mode_value not in {"full", "hash", "operation", "none"}:
         statement_mode_value = "hash"
+
+    query_text_policy = get_str("CODEINTEL_OTEL_DB_QUERY_TEXT_POLICY", default="never")
+    query_text_policy_value = query_text_policy.strip().lower() if query_text_policy else "never"
+    if query_text_policy_value not in {
+        "never",
+        "parameterized",
+        "redacted",
+        "parameterized_or_redacted",
+        "full",
+    }:
+        query_text_policy_value = "never"
 
     return ObservabilitySettings(
         enabled=enabled,
@@ -275,9 +292,46 @@ def _load_observability_settings() -> ObservabilitySettings:
         console_export=bool(get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
         prometheus_enabled=bool(get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
         duckdb_tracing_enabled=bool(get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)),
+        duckdb_require_parent_span=bool(
+            get_bool("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", default=True)
+        ),
         duckdb_statement_mode=statement_mode_value,
         duckdb_statement_hash_len=int(
             get_int("CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN", default=16) or 16
+        ),
+        duckdb_query_summary_max_len=int(
+            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_LEN", default=255) or 255
+        ),
+        duckdb_query_summary_max_targets=int(
+            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS", default=6) or 6
+        ),
+        duckdb_emit_legacy_db_attributes=bool(
+            get_bool("CODEINTEL_OTEL_DB_LEGACY_ATTRIBUTES", default=False)
+        ),
+        duckdb_query_text_policy=query_text_policy_value,
+        duckdb_query_text_max_len=int(
+            get_int("CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN", default=4096) or 4096
+        ),
+        duckdb_query_text_strip_comments=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_TEXT_STRIP_COMMENTS", default=True)
+        ),
+        duckdb_query_text_collapse_in_lists=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_TEXT_COLLAPSE_IN_LISTS", default=True)
+        ),
+        duckdb_query_parameter_enabled=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_PARAMETER_ENABLED", default=False)
+        ),
+        duckdb_query_parameter_keys=_parse_csv(
+            get_str("CODEINTEL_OTEL_DB_QUERY_PARAMETER_KEYS", default=None)
+        ),
+        duckdb_query_parameter_hash_keys=_parse_csv(
+            get_str("CODEINTEL_OTEL_DB_QUERY_PARAMETER_HASH_KEYS", default=None)
+        ),
+        duckdb_query_parameter_require_in_sql=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_PARAMETER_REQUIRE_IN_SQL", default=True)
+        ),
+        duckdb_query_parameter_max_str_len=int(
+            get_int("CODEINTEL_OTEL_DB_QUERY_PARAMETER_MAX_STRLEN", default=80) or 80
         ),
     )
 

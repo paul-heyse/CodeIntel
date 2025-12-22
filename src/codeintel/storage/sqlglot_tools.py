@@ -5,6 +5,7 @@ This module centralizes SQLGlot-based utilities used across the storage layer:
 - parsing and canonicalization
 - scope-aware physical table reference extraction (CTE-safe)
 - stable SQL fingerprinting
+- low-cardinality query summaries for observability
 
 Keeping these primitives in one place prevents semantic drift between modules
 that need to reason about compiled SQL (view dependencies, diffs, perimeters).
@@ -13,6 +14,7 @@ that need to reason about compiled SQL (view dependencies, diffs, perimeters).
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
@@ -40,14 +42,29 @@ __all__ = [
     "fingerprint_canonical_sql",
     "fingerprint_sql_duckdb",
     "fingerprint_sql_duckdb_safe",
+    "normalize_sql_for_hash",
     "parse_one_duckdb",
     "render_sql_duckdb",
     "semantic_diff_sql_duckdb",
+    "summarize_sql_duckdb",
 ]
 
 SchemaMapping = Mapping[str, Mapping[str, str]]
 _MIN_LINEAGE_PARTS = 2
 _SCHEMA_QUALIFIED_PARTS = 3
+_MAX_QUERY_SUMMARY_CHARS = 255
+_FALLBACK_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+
+_SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+_SQL_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+_SQL_SINGLE_QUOTED_STRING_RE = re.compile(r"'(?:''|[^'])*'")
+_SQL_HEX_LITERAL_RE = re.compile(r"\b0x[0-9a-fA-F]+\b")
+_SQL_UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+_SQL_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
+_WS_RE = re.compile(r"\s+")
 
 
 def parse_one_duckdb(sql: str) -> exp.Expression:
@@ -154,6 +171,9 @@ def fingerprint_sql_duckdb_safe(sql: str, *, schema: SchemaMapping | None = None
     try:
         return fingerprint_sql_duckdb(sql, schema=schema)
     except (ParseError, SqlglotError, TypeError, ValueError):
+        normalized = normalize_sql_for_hash(sql)
+        if normalized:
+            return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
         return hashlib.sha256(sql.encode("utf-8")).hexdigest()
 
 
@@ -171,6 +191,289 @@ def fingerprint_canonical_sql(canon: str) -> str:
         Stable fingerprint of the text.
     """
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def normalize_sql_for_hash(sql: str) -> str:
+    """Normalize SQL text for stable hashing when parsing fails.
+
+    This removes comments, replaces common literal forms with ``?``, and collapses
+    whitespace to keep hashes stable across different inputs.
+
+    Parameters
+    ----------
+    sql
+        SQL statement text to normalize.
+
+    Returns
+    -------
+    str
+        Normalized SQL text suitable for hashing.
+
+    Examples
+    --------
+    >>> normalize_sql_for_hash("SELECT 1")
+    'SELECT ?'
+
+    Notes
+    -----
+    The normalization is heuristic and intentionally lossy.
+    """
+    sql = _SQL_BLOCK_COMMENT_RE.sub(" ", sql)
+    sql = _SQL_LINE_COMMENT_RE.sub(" ", sql)
+    sql = _SQL_SINGLE_QUOTED_STRING_RE.sub("?", sql)
+    sql = _SQL_HEX_LITERAL_RE.sub("?", sql)
+    sql = _SQL_UUID_RE.sub("?", sql)
+    sql = _SQL_NUMBER_RE.sub("?", sql)
+    return _WS_RE.sub(" ", sql).strip()
+
+
+def summarize_sql_duckdb(
+    sql: str,
+    *,
+    max_len: int = _MAX_QUERY_SUMMARY_CHARS,
+    max_targets: int = 6,
+) -> str | None:
+    """Generate a low-cardinality summary for a DuckDB SQL string.
+
+    The summary is intended for observability grouping (``db.query.summary``) and
+    keeps cardinality low by excluding literals and aliases.
+
+    Parameters
+    ----------
+    sql
+        SQL statement text.
+    max_len
+        Maximum length of the returned summary.
+    max_targets
+        Maximum number of target tokens to include.
+
+    Returns
+    -------
+    str | None
+        Summary text, or None when the input is empty.
+
+    Examples
+    --------
+    >>> summarize_sql_duckdb("SELECT 1") is not None
+    True
+
+    Notes
+    -----
+    When parsing fails, a token-based fallback summary is used.
+    """
+    stripped = sql.strip()
+    if not stripped:
+        return None
+
+    try:
+        root = parse_one_duckdb(stripped)
+    except (ParseError, SqlglotError, TypeError, ValueError):
+        return _fallback_query_summary(stripped, max_len=max_len)
+
+    parts = _query_summary_parts_from_root(
+        root,
+        raw_sql=stripped,
+        max_targets=max_targets,
+    )
+    return _truncate_query_summary_parts(parts, max_len=max_len)
+
+
+def _fallback_query_summary(sql: str, *, max_len: int) -> str | None:
+    tokens = _FALLBACK_TOKEN_RE.findall(sql)
+    if not tokens:
+        return None
+    parts = [tokens[0]]
+    if len(tokens) > 1:
+        parts.append(tokens[1])
+    return _truncate_query_summary_parts(parts, max_len=max_len)
+
+
+def _query_summary_parts_from_root(
+    root: exp.Expression,
+    *,
+    raw_sql: str,
+    max_targets: int,
+) -> list[str]:
+    if isinstance(root, exp.With) and isinstance(root.this, exp.Expression):
+        return _query_summary_parts_from_root(
+            root.this,
+            raw_sql=raw_sql,
+            max_targets=max_targets,
+        )
+
+    if isinstance(root, exp.Insert):
+        return _query_summary_parts_for_insert(
+            root,
+            raw_sql=raw_sql,
+            max_targets=max_targets,
+        )
+
+    if isinstance(root, exp.Create):
+        return _query_summary_parts_for_create(
+            root,
+            raw_sql=raw_sql,
+            max_targets=max_targets,
+        )
+
+    operation = _operation_name_for_root(root)
+    parts: list[str] = [operation] if operation else []
+    parts.extend(
+        _query_summary_targets_for_expression(
+            root,
+            raw_sql=raw_sql,
+            max_targets=max_targets,
+        )
+    )
+    return parts
+
+
+def _query_summary_parts_for_insert(
+    root: exp.Insert,
+    *,
+    raw_sql: str,
+    max_targets: int,
+) -> list[str]:
+    parts: list[str] = ["INSERT"]
+    target = _format_table_for_summary(getattr(root, "this", None))
+    if target:
+        parts.append(target)
+
+    nested = getattr(root, "expression", None)
+    if isinstance(nested, exp.Expression):
+        nested_op = _operation_name_for_root(nested) or "SELECT"
+        parts.append(nested_op)
+        exclude = {target.lower()} if target else set()
+        parts.extend(
+            _query_summary_targets_for_expression(
+                nested,
+                raw_sql=raw_sql,
+                max_targets=max_targets,
+                exclude=exclude,
+            )
+        )
+    return parts
+
+
+def _query_summary_parts_for_create(
+    root: exp.Create,
+    *,
+    raw_sql: str,
+    max_targets: int,
+) -> list[str]:
+    parts: list[str] = ["CREATE"]
+    target = _format_table_for_summary(getattr(root, "this", None))
+    if target:
+        parts.append(target)
+
+    nested = getattr(root, "expression", None)
+    if isinstance(nested, exp.Expression):
+        nested_op = _operation_name_for_root(nested) or "SELECT"
+        parts.append(nested_op)
+        exclude = {target.lower()} if target else set()
+        parts.extend(
+            _query_summary_targets_for_expression(
+                nested,
+                raw_sql=raw_sql,
+                max_targets=max_targets,
+                exclude=exclude,
+            )
+        )
+    return parts
+
+
+def _operation_name_for_root(root: exp.Expression) -> str | None:
+    if isinstance(root, exp.Select):
+        return "SELECT"
+    if isinstance(root, exp.Update):
+        return "UPDATE"
+    if isinstance(root, exp.Delete):
+        return "DELETE"
+    if isinstance(root, exp.Insert):
+        return "INSERT"
+    if isinstance(root, exp.Create):
+        return "CREATE"
+    if isinstance(root, exp.Drop):
+        return "DROP"
+    key = getattr(root, "key", None)
+    if isinstance(key, str) and key:
+        return key.replace("_", " ").upper()
+    return None
+
+
+def _query_summary_targets_for_expression(
+    root: exp.Expression,
+    *,
+    raw_sql: str,
+    max_targets: int,
+    exclude: set[str] | None = None,
+) -> list[str]:
+    exclude = exclude or set()
+    sql_lower = raw_sql.lower()
+
+    tables = extract_table_refs(root)
+    formatted: list[tuple[int, str]] = []
+    for table in tables:
+        key = _format_table_for_summary(table)
+        if not key:
+            continue
+        key_lower = key.lower()
+        if key_lower in exclude:
+            continue
+        pos = _best_effort_table_position(sql_lower, key_lower)
+        formatted.append((pos, key))
+
+    formatted.sort(key=lambda item: item[0])
+
+    out: list[str] = []
+    seen: set[str] = set()
+    for _, key in formatted:
+        key_lower = key.lower()
+        if key_lower in seen:
+            continue
+        out.append(key)
+        seen.add(key_lower)
+        if max_targets > 0 and len(out) >= max_targets:
+            break
+    return out
+
+
+def _best_effort_table_position(sql_lower: str, table_key_lower: str) -> int:
+    pos = sql_lower.find(table_key_lower)
+    if pos != -1:
+        return pos
+    if "." in table_key_lower:
+        _, table = table_key_lower.split(".", 1)
+        pos = sql_lower.find(table)
+        if pos != -1:
+            return pos
+    return 10**9
+
+
+def _format_table_for_summary(node: object) -> str | None:
+    if not isinstance(node, exp.Table):
+        return None
+    schema = node.db
+    name = node.name
+    if not name:
+        return None
+    if schema:
+        return f"{schema}.{name}"
+    return name
+
+
+def _truncate_query_summary_parts(parts: list[str], *, max_len: int) -> str:
+    kept: list[str] = []
+    length = 0
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        add_len = len(part) + (1 if kept else 0)
+        if length + add_len > max_len:
+            break
+        kept.append(part)
+        length += add_len
+    return " ".join(kept)
 
 
 def semantic_diff_sql_duckdb(

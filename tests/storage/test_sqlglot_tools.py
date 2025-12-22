@@ -11,6 +11,7 @@ from codeintel.storage.sqlglot_tools import (
     extract_table_keys_duckdb,
     fingerprint_sql_duckdb,
     parse_one_duckdb,
+    summarize_sql_duckdb,
 )
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
@@ -77,3 +78,38 @@ def test_extract_column_lineage_maps_output_columns() -> None:
         lineage["repo_commit"],
         frozenset({"core.modules.repo", "core.modules.commit"}),
     )
+
+
+def test_summarize_sql_duckdb_emits_low_cardinality_select() -> None:
+    """summarize_sql_duckdb summarizes SELECT queries with table targets."""
+    summary = summarize_sql_duckdb("SELECT * FROM core.symbols WHERE name = 'foo'")
+    expect_equal(summary, "SELECT core.symbols")
+
+
+def test_summarize_sql_duckdb_ignores_cte_aliases() -> None:
+    """summarize_sql_duckdb ignores CTE aliases in summaries."""
+    sql = """
+    WITH t AS (
+        SELECT * FROM core.modules
+    )
+    SELECT *
+    FROM t
+    JOIN analytics.function_metrics fm ON 1 = 1
+    """
+    summary = summarize_sql_duckdb(sql)
+    expect_true(summary is not None, message="summary produced")
+    assert summary is not None
+    expect_true(" t" not in summary.lower(), message="cte alias not included")
+    expect_true("core.modules" in summary, message="physical table included")
+    expect_true("analytics.function_metrics" in summary, message="physical table included")
+
+
+def test_summarize_sql_duckdb_handles_insert_select() -> None:
+    """summarize_sql_duckdb includes INSERT target + SELECT sources."""
+    sql = """
+    INSERT INTO analytics.rollups
+    SELECT *
+    FROM core.symbols
+    """
+    summary = summarize_sql_duckdb(sql)
+    expect_equal(summary, "INSERT analytics.rollups SELECT core.symbols")
