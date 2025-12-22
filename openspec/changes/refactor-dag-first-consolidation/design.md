@@ -1,10 +1,9 @@
 ## Context
-Analytics and history workflows still include non-DAG orchestration and persistence paths.
-Runtime configuration parsing is duplicated across CLI/build/serving, and observability
-bootstrap pulls configuration directly from the environment in multiple places. Ibis
-connections and row writes also vary by module, which weakens the storage boundary and makes
-drift more likely. The project direction is DAG-first with canonical outputs derived from
-Hamilton.
+Analytics and history workflows are now DAG-first, with Hamilton targets materializing
+canonical outputs. Runtime configuration parsing is centralized via the core runtime loader,
+and observability settings are injected rather than parsed at call sites. Ibis connections
+and row writes flow through storage-owned interfaces to reduce drift. The project direction
+remains DAG-first with canonical outputs derived from Hamilton.
 
 ## Goals / Non-Goals
 - Goals:
@@ -58,26 +57,15 @@ Hamilton.
 - None.
 
 ## Implementation Status (current)
-- Complete: storage-owned Ibis gateway usage, contract-backed writer introduced and adopted
-  across most analytics persistence, and ID normalization consolidation.
-- Partial: runtime loader adoption (serving/CLI observability is centralized, but CLI config
-  env parsing and serving_factory still read env directly).
-- Remaining: DAG-only execution and public API cleanup, subsystem cache refreshes still
-  bypass contract writer, docs/tests updates, and quality gate completion.
+- Complete: DAG-only execution for analytics/graph/history targets, storage-owned Ibis
+  gateway usage, contract-backed writer adoption, runtime loader adoption across CLI/build/
+  serving, subsystem cache refresh removal, and ID normalization consolidation.
+- Remaining: docs/tests updates and quality gate completion.
 
 ## Remaining Design Detail
-### DAG-only execution and public API cleanup
-- Hamilton targets should consume row-producing functions only and materialize via
-  DataSavers; remove compute_* orchestration wrappers and any non-DAG module-level
-  orchestration entrypoints.
-- Remove non-DAG exports from analytics public APIs (`analytics.graphs`, `analytics.testing`,
-  `analytics.subsystems`, `analytics.semantic_roles`) so only pure compute utilities remain.
-- CLI/debug flows should read DAG-produced tables or cached artifacts, triggering DAG targets
-  when required rather than invoking compute_* helpers directly.
-
-### Canonical runtime loader for CLI/serving
-- Replace serving_factory env parsing with runtime loader settings, and collapse CLI config
-  env parsing into the canonical loader to avoid per-surface defaults.
+### Docs/tests and validation
+- Update docs and tests to reflect DAG-only execution and canonical runtime loading.
+- Run quality report and targeted test suites for analytics and CLI surfaces.
 
 ### Contract-backed persistence for caches
 - Materialize subsystem cache tables via Hamilton targets or route refresh through the

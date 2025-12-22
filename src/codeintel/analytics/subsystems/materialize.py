@@ -6,7 +6,6 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
 from codeintel.analytics.subsystems.affinity import (
@@ -216,106 +215,6 @@ def _build_rows(
     return subsystem_rows, membership_rows
 
 
-@dataclass(frozen=True)
-class SubsystemCacheBenchmark:
-    """Timing results comparing docs views and cache tables."""
-
-    profile_view_ms: float
-    profile_cache_ms: float
-    coverage_view_ms: float
-    coverage_cache_ms: float
-
-    @staticmethod
-    def _speedup(view_ms: float, cache_ms: float) -> float | None:
-        if cache_ms <= 0:
-            return None
-        return view_ms / cache_ms
-
-    def as_dict(self) -> dict[str, float | None]:
-        """
-        Return a JSON-serializable representation.
-
-        Returns
-        -------
-        dict[str, float | None]
-            Timing and speedup metrics for profile and coverage queries.
-        """
-        return {
-            "profile_view_ms": self.profile_view_ms,
-            "profile_cache_ms": self.profile_cache_ms,
-            "coverage_view_ms": self.coverage_view_ms,
-            "coverage_cache_ms": self.coverage_cache_ms,
-            "profile_speedup": self.profile_speedup,
-            "coverage_speedup": self.coverage_speedup,
-        }
-
-    @property
-    def profile_speedup(self) -> float | None:
-        """Speedup factor for subsystem profile queries."""
-        return self._speedup(self.profile_view_ms, self.profile_cache_ms)
-
-    @property
-    def coverage_speedup(self) -> float | None:
-        """Speedup factor for subsystem coverage queries."""
-        return self._speedup(self.coverage_view_ms, self.coverage_cache_ms)
-
-
-def benchmark_subsystem_cache_reads(
-    gateway: StorageGateway, *, repo: str, commit: str, limit: int = 100
-) -> SubsystemCacheBenchmark:
-    """
-    Measure timings for docs views versus cache tables.
-
-    Returns
-    -------
-    SubsystemCacheBenchmark
-        Timing data in milliseconds for view and cache selects.
-    """
-    con = gateway.con
-
-    def _time(sql: str, params: list[object]) -> float:
-        start = perf_counter()
-        con.execute(sql, params).fetchall()
-        return (perf_counter() - start) * 1000
-
-    profile_view_ms = _time(
-        """
-        SELECT * FROM docs.v_subsystem_profile
-        WHERE repo = ? AND commit = ?
-        LIMIT ?
-        """,
-        [repo, commit, limit],
-    )
-    profile_cache_ms = _time(
-        """
-        SELECT * FROM analytics.subsystem_profile_cache
-        WHERE repo = ? AND commit = ?
-        LIMIT ?
-        """,
-        [repo, commit, limit],
-    )
-    coverage_view_ms = _time(
-        """
-        SELECT * FROM docs.v_subsystem_coverage
-        WHERE repo = ? AND commit = ?
-        LIMIT ?
-        """,
-        [repo, commit, limit],
-    )
-    coverage_cache_ms = _time(
-        """
-        SELECT * FROM analytics.subsystem_coverage_cache
-        WHERE repo = ? AND commit = ?
-        LIMIT ?
-        """,
-        [repo, commit, limit],
-    )
-    return SubsystemCacheBenchmark(
-        profile_view_ms=profile_view_ms,
-        profile_cache_ms=profile_cache_ms,
-        coverage_view_ms=coverage_view_ms,
-        coverage_cache_ms=coverage_cache_ms,
-    )
 
 
 def _subsystem_id(repo: str, modules: list[str]) -> str:
