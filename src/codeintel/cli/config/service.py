@@ -105,6 +105,17 @@ def _make_optional_toml_config() -> Callable[[object, tuple[str, ...], object], 
     return _apply_toml
 
 
+def _make_env_config() -> object:
+    """Create an environment config loader for Cyclopts.
+
+    Returns
+    -------
+    object
+        Cyclopts config loader that reads CODEINTEL_* environment variables.
+    """
+    return cyclopts_config.Env(prefix="CODEINTEL_", command=False)
+
+
 @dataclass(frozen=True)
 class ConfigService:
     """Unified configuration service.
@@ -183,21 +194,23 @@ class ConfigService:
         our unified precedence. The returned chain:
 
         1. Applies TOML config if present (codeintel.toml)
+        2. Applies CODEINTEL_* environment overrides
 
         Returns
         -------
         list[object]
             Config callables for Cyclopts App.config parameter.
-            Contains a TOML config loader.
+            Contains TOML and environment config loaders.
 
         Examples
         --------
         >>> chain = ConfigService.get_cyclopts_config_chain()
-        >>> len(chain) == 1
+        >>> len(chain) == 2
         True
         """
         return [
             _make_optional_toml_config(),
+            _make_env_config(),
         ]
 
     @staticmethod

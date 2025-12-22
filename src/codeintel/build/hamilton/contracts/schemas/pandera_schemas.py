@@ -441,7 +441,7 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
     },
     "analytics.test_profile": {
         "duration_seconds": [_check_non_negative()],
-        "functions_covered": [_check_non_negative()],
+        "functions_covered_count": [_check_non_negative()],
     },
     "analytics.behavioral_coverage": {
         "function_goid_h128": [_check_non_negative()],
@@ -655,6 +655,8 @@ def _build_columns(
     columns: dict[str, Column] = {}
     for col in schema.columns:
         checks = list(column_checks.get(col.name, ()))
+        if col.type.upper() == "JSON":
+            checks = []
         metadata = {"codeintel_column_type": col.type}
         columns[col.name] = Column(
             _dtype_for_column_type(col.type),

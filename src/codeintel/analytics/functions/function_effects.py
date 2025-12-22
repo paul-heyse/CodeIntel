@@ -248,7 +248,14 @@ def build_function_effects_rows(
         ast_map=input_opts.ast_map,
         missing_goids=input_opts.missing_goids,
     )
-    return _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
+    rows = _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
+    log.info(
+        "function_effects populated: %d rows for %s@%s",
+        len(rows),
+        snapshot.repo,
+        snapshot.commit,
+    )
+    return rows
 
 
 def _build_effect_rows(

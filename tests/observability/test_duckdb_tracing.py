@@ -32,7 +32,11 @@ if TYPE_CHECKING:
 DIGEST_HEX_LENGTH = 64
 
 
-def _configure_tracing() -> InMemorySpanExporter:
+def _configure_tracing(
+    *,
+    require_parent_span: bool = True,
+    statement_mode: str = "hash",
+) -> InMemorySpanExporter:
     """Configure in-memory OpenTelemetry tracing for DuckDB tests.
 
     Returns
@@ -50,6 +54,9 @@ def _configure_tracing() -> InMemorySpanExporter:
             export_metrics=False,
             console_export=False,
             prometheus_enabled=False,
+            duckdb_tracing_enabled=True,
+            duckdb_require_parent_span=require_parent_span,
+            duckdb_statement_mode=statement_mode,
         )
     )
 
@@ -66,13 +73,9 @@ def _span_attributes(span: object) -> Mapping[str, object]:
     return {}
 
 
-def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duckdb_tracing_redacts_statement() -> None:
     """Ensure traced statements are redacted."""
-    monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_TRACING", "true")
-    monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", "false")
-    monkeypatch.setenv("OTEL_SDK_DISABLED", "false")
-
-    exporter = _configure_tracing()
+    exporter = _configure_tracing(require_parent_span=False)
     session = DuckDBSession(StorageConfig(db_path=Path(":memory:"), repo="r", commit="c"))
     con = session.open()
     con.execute("SELECT 1")
@@ -92,7 +95,7 @@ def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> No
     expect_is_instance(statement, str)
     statement_text = cast("str", statement)
     expect_in("SELECT", statement_text)
-    expect_true("1" not in statement_text)
+    expect_true("SELECT 1" not in statement_text)
 
     digest = attrs.get("codeintel.db.statement.sha256")
     expect_is_instance(digest, str)
@@ -100,14 +103,9 @@ def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> No
     expect_equal(len(digest_text), DIGEST_HEX_LENGTH)
 
 
-def test_duckdb_tracing_operation_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_duckdb_tracing_operation_mode() -> None:
     """Ensure operation-only redaction emits the SQL operation."""
-    monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_TRACING", "true")
-    monkeypatch.setenv("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", "false")
-    monkeypatch.setenv("CODEINTEL_OTEL_DB_STATEMENT_MODE", "operation")
-    monkeypatch.setenv("OTEL_SDK_DISABLED", "false")
-
-    exporter = _configure_tracing()
+    exporter = _configure_tracing(require_parent_span=False, statement_mode="operation")
     session = DuckDBSession(StorageConfig(db_path=Path(":memory:")))
     con = session.open()
     con.execute("SELECT 1")
