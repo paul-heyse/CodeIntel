@@ -280,17 +280,16 @@ def test_datasets_diff_handler_no_differences(
 ) -> None:
     """Verify datasets_diff_handler reports no differences when same."""
     deps = dataset_handler_harness_fixture.deps
-
-    contract = deps.contracts_provider()["test_dataset"]
     baseline_path = tmp_path / "baseline.json"
-    baseline_path.write_text(
-        json.dumps([{"name": contract.name, "table_key": contract.table_key}]),
-        encoding="utf-8",
-    )
 
     with dataset_handler_harness_fixture.command_context(
         {"baseline_path": str(baseline_path)}
     ) as ctx:
+        contract = deps.contracts_provider(ctx)["test_dataset"]
+        baseline_path.write_text(
+            json.dumps([{"name": contract.name, "table_key": contract.table_key}]),
+            encoding="utf-8",
+        )
         result = datasets_diff_handler(ctx, deps=deps)
 
     expect_true(result.success)

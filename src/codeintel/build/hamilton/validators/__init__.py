@@ -38,13 +38,6 @@ Using contract builders for common patterns:
 >>> def my_table(...) -> pd.DataFrame:
 ...     ...
 
-Migrating from SCHEMA_REGISTRY:
-
->>> from codeintel.build.hamilton.validators import validators_from_schema_registry
->>> validators = validators_from_schema_registry("analytics.function_metrics")
->>> @check_output_custom(*validators)
->>> def my_migrated_node(...) -> pd.DataFrame:
-...     ...
 """
 
 from __future__ import annotations
@@ -64,19 +57,11 @@ from codeintel.build.hamilton.validators.dataframe import (
     RowCountValidator,
     UniqueColumnsValidator,
 )
-from codeintel.build.hamilton.validators.migration import (
-    MigrationReport,
-    generate_migration_code,
-    schema_output_from_registry,
-    validators_from_pandera_schema,
-    validators_from_schema_registry,
-)
 
 __all__ = [
     "ColumnTypesValidator",
     "ColumnValuesInSetValidator",
     "ColumnsExistValidator",
-    "MigrationReport",
     "NoNullsInColumnsValidator",
     "RowCountRangeValidator",
     "RowCountValidator",
@@ -85,8 +70,4 @@ __all__ = [
     "build_key_column_contract",
     "build_metrics_contract",
     "build_table_contract",
-    "generate_migration_code",
-    "schema_output_from_registry",
-    "validators_from_pandera_schema",
-    "validators_from_schema_registry",
 ]

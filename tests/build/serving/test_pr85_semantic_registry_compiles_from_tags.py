@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
-from codeintel.build.serving.semantic_compile_hamilton import (
-    collect_semantic_view_tags_from_hamilton,
-)
+from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.views import ibis_views
@@ -14,7 +12,7 @@ from tests._helpers.assertions.expectation_assertions import expect_true
 
 def test_semantic_registry_compiles_from_hamilton_tags() -> None:
     """Discover semantic tags via Hamilton and compile a deterministic registry."""
-    tags = collect_semantic_view_tags_from_hamilton(modules=(ibis_views,))
+    tags = TagIndex.from_modules(modules=(ibis_views,)).semantic_view_tags()
     expect_true("docs.v_function_summary" in tags)
 
     provider = MappingSchemaProvider(

@@ -59,7 +59,6 @@ TARGET_SPECS = (
         description="Python AST extraction and metrics.",
         options=TargetSpecOptions(
             table_keys=AST_TABLE_KEYS,
-            allow_declared_overrides=True,
             resources=TargetResources(tracker=True, modules=True),
             execution=CPU_INTENSIVE_EXECUTION,
         ),
@@ -68,13 +67,13 @@ TARGET_SPECS = (
         name=CST_TARGET_NAME,
         module="ingestion",
         description="Concrete syntax tree extraction.",
-        options=TargetSpecOptions(table_keys=CST_TABLE_KEYS, allow_declared_overrides=True),
+        options=TargetSpecOptions(table_keys=CST_TABLE_KEYS),
     ),
     make_output_target(
         name=DOCSTRINGS_TARGET_NAME,
         module="ingestion",
         description="Docstring extraction and parsing.",
-        options=TargetSpecOptions(table_keys=DOCSTRINGS_TABLE_KEYS, allow_declared_overrides=True),
+        options=TargetSpecOptions(table_keys=DOCSTRINGS_TABLE_KEYS),
     ),
 )
 

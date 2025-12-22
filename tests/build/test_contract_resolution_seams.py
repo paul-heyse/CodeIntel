@@ -1,4 +1,4 @@
-"""Contract resolution seams for DAG-free enumeration and overrides."""
+"""Contract resolution seams for declared-only enumeration and overrides."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class _StubTargetMetadataProvider(TargetMetadataProvider):
 
 
 def test_schema_only_contracts_do_not_load_target_metadata() -> None:
-    """Verify schema-only contract enumeration stays DAG-free."""
+    """Verify declared-only contract enumeration avoids target metadata."""
     clear_target_metadata_cache()
     clear_contract_cache()
     expect_false(is_target_metadata_loaded())

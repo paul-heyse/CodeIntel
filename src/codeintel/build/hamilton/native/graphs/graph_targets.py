@@ -138,7 +138,6 @@ TARGET_SPECS = (
         description="GOID resolution and crosswalk construction.",
         options=TargetSpecOptions(
             table_keys=GOIDS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -147,7 +146,6 @@ TARGET_SPECS = (
         description="Symbol definition-to-use edge extraction.",
         options=TargetSpecOptions(
             table_keys=SYMBOL_USES_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -156,7 +154,6 @@ TARGET_SPECS = (
         description="Derived views over call graph for analytics.",
         options=TargetSpecOptions(
             table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -165,7 +162,6 @@ TARGET_SPECS = (
         description="Graph topology metrics for functions and modules.",
         options=TargetSpecOptions(
             table_keys=GRAPH_METRICS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -174,7 +170,6 @@ TARGET_SPECS = (
         description="Graph integrity validation checks.",
         options=TargetSpecOptions(
             table_keys=GRAPH_VALIDATION_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )

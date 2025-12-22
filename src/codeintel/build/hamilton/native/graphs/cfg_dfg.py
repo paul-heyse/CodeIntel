@@ -67,7 +67,6 @@ TARGET_SPECS = (
         description="Control flow graph construction per function.",
         options=TargetSpecOptions(
             table_keys=CFG_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -76,7 +75,6 @@ TARGET_SPECS = (
         description="Data flow graph construction per function.",
         options=TargetSpecOptions(
             table_keys=DFG_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )

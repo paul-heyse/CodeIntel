@@ -74,7 +74,6 @@ TARGET_SPECS = (
         description="SCIP index ingestion and GOID generation.",
         options=TargetSpecOptions(
             table_keys=SCIP_TABLE_KEYS,
-            allow_declared_overrides=True,
             artifacts=SCIP_ARTIFACT_SPECS,
             resources=TargetResources(
                 tracker=True,

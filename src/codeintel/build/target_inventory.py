@@ -1,4 +1,4 @@
-"""DAG-free output inventory derived from target specs."""
+"""Output inventory derived from the canonical target catalog."""
 
 from __future__ import annotations
 
@@ -34,8 +34,8 @@ def get_output_inventory() -> OutputInventory:
 
     Returns
     -------
-    OutputInventory
-        DAG-free output inventory derived from native target specs.
+        OutputInventory
+        Output inventory derived from the canonical target catalog.
     """
     return _inventory_from_targets(load_target_specs())
 
@@ -45,8 +45,8 @@ def build_output_inventory_snapshot() -> OutputInventory:
 
     Returns
     -------
-    OutputInventory
-        Output inventory derived from current target specs.
+        OutputInventory
+        Output inventory derived from the canonical target catalog.
     """
     return _inventory_from_targets(load_target_specs())
 

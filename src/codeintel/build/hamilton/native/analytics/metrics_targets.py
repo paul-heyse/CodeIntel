@@ -33,6 +33,7 @@ from codeintel.analytics.graphs.symbol_graph_metrics import (
     compute_symbol_graph_metrics_functions,
     compute_symbol_graph_metrics_modules,
 )
+from codeintel.analytics.history.history_timeseries import build_history_timeseries_rows
 from codeintel.analytics.testing.compute import (
     TestGraphMetricsResult,
     compute_test_graph_metrics_pure,
@@ -106,7 +107,6 @@ TARGET_SPECS = (
         description="Function git history and churn metrics.",
         options=TargetSpecOptions(
             table_keys=(FUNCTION_HISTORY_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -115,7 +115,6 @@ TARGET_SPECS = (
         description="Historical metrics timeseries for trending.",
         options=TargetSpecOptions(
             table_keys=(HISTORY_TIMESERIES_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -124,7 +123,6 @@ TARGET_SPECS = (
         description="Graph metrics for subsystems.",
         options=TargetSpecOptions(
             table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -133,7 +131,6 @@ TARGET_SPECS = (
         description="Graph metrics from symbol usage patterns.",
         options=TargetSpecOptions(
             table_keys=SYMBOL_GRAPH_METRICS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -142,7 +139,6 @@ TARGET_SPECS = (
         description="Subsystem vs import community agreement.",
         options=TargetSpecOptions(
             table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -151,7 +147,6 @@ TARGET_SPECS = (
         description="Graph metrics from test-function bipartite graph.",
         options=TargetSpecOptions(
             table_keys=TEST_GRAPH_METRICS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )
@@ -306,9 +301,6 @@ def t__function_history(
 def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
     """Compute history timeseries metrics across commits.
 
-    Full multi-commit functionality is not yet wired into ``BuildEnv``, so this
-    node currently returns an empty result set and succeeds.
-
     Parameters
     ----------
     env
@@ -317,14 +309,22 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
     Returns
     -------
     tuple[tuple[object, ...], ...]
-        Empty row set until multi-commit configuration is available.
+        Row tuples matching the history_timeseries schema.
     """
-    _ = env
-    log.info(
-        "history_timeseries: Multi-commit configuration not available via BuildEnv; "
-        "returning empty result set."
+    options = env.history_options
+    db_resolver = env.history_db_resolver
+    if options is None or db_resolver is None:
+        log.info(
+            "history_timeseries: missing history options or DB resolver; "
+            "returning empty result set."
+        )
+        return ()
+    return build_history_timeseries_rows(
+        env.snapshot,
+        db_resolver,
+        options=options,
+        runner=env.providers.tool_runner,
     )
-    return ()
 
 
 @tag_materialize(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)

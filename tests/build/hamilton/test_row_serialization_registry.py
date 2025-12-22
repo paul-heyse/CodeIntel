@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.row_serialization import row_serializer_for_table_key
+from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.build.schemas import get_schema_provider
 
 

@@ -31,11 +31,11 @@ from codeintel.analytics.dependencies.compute import (
 from codeintel.analytics.dependencies.core import ExternalDependencyInputs
 from codeintel.analytics.entrypoints.compute import EntrypointsResult, compute_entrypoints_pure
 from codeintel.analytics.entrypoints.core import EntrypointBuildInputs
+from codeintel.analytics.resources import ProviderRegistryOptions
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -95,7 +95,6 @@ TARGET_SPECS = (
         description="External library dependency analysis.",
         options=TargetSpecOptions(
             table_keys=EXTERNAL_DEPS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -104,7 +103,6 @@ TARGET_SPECS = (
         description="External entrypoint detection (HTTP, CLI, etc.).",
         options=TargetSpecOptions(
             table_keys=ENTRYPOINTS_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )
@@ -129,7 +127,7 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
     registry = env.providers.resources.registry_for(
         env,
         target_name=EXTERNAL_DEPS_TARGET_NAME,
-        include=AnalyticsResourceIncludes(
+        options=ProviderRegistryOptions(
             include_graphs=False,
             include_asts=True,
             include_module_map=True,
@@ -385,7 +383,7 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
     registry = env.providers.resources.registry_for(
         env,
         target_name=ENTRYPOINTS_TARGET_NAME,
-        include=AnalyticsResourceIncludes(
+        options=ProviderRegistryOptions(
             include_graphs=False,
             include_features=True,
             include_module_map=True,

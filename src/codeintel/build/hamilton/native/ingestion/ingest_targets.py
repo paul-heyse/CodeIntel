@@ -99,7 +99,6 @@ TARGET_SPECS = (
         description="Repository module and file index from scanning.",
         options=TargetSpecOptions(
             table_keys=MODULES_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -108,7 +107,6 @@ TARGET_SPECS = (
         description="Configuration file parsing and reference tracking.",
         options=TargetSpecOptions(
             table_keys=(CONFIG_VALUES_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -117,7 +115,6 @@ TARGET_SPECS = (
         description="Line-level test coverage ingestion.",
         options=TargetSpecOptions(
             table_keys=(COVERAGE_LINES_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -126,7 +123,6 @@ TARGET_SPECS = (
         description="Test catalog ingestion from pytest.",
         options=TargetSpecOptions(
             table_keys=(TEST_CATALOG_TABLE_KEY,),
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -135,7 +131,6 @@ TARGET_SPECS = (
         description="Type annotation analysis and static diagnostics.",
         options=TargetSpecOptions(
             table_keys=TYPING_TABLE_KEYS,
-            allow_declared_overrides=True,
             resources=TargetResources(
                 tracker=True,
                 modules=True,

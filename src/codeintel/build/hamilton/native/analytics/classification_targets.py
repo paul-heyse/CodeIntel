@@ -16,10 +16,10 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
+from codeintel.analytics.resources import ProviderRegistryOptions
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
-from codeintel.build.analytics_resources import AnalyticsResourceIncludes
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
@@ -70,7 +70,6 @@ TARGET_SPECS = (
         description="Semantic role classification (handler, utility, etc.).",
         options=TargetSpecOptions(
             table_keys=SEMANTIC_ROLES_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
     make_output_target(
@@ -79,7 +78,6 @@ TARGET_SPECS = (
         description="Per-test profile with coverage and characteristics.",
         options=TargetSpecOptions(
             table_keys=TEST_PROFILE_TABLE_KEYS,
-            allow_declared_overrides=True,
         ),
     ),
 )
@@ -147,7 +145,7 @@ def t__semantic_roles__compute(
     registry = env.providers.resources.registry_for(
         env,
         target_name=SEMANTIC_ROLES_TARGET_NAME,
-        include=AnalyticsResourceIncludes(include_graphs=False),
+        options=ProviderRegistryOptions(include_graphs=False),
     )
 
     try:

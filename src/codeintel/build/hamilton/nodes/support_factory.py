@@ -54,7 +54,7 @@ from codeintel.build.hamilton.tagging import (
     tag_materialize,
 )
 from codeintel.build.table_keys import split_table_key
-from codeintel.build.target_catalog import load_target_specs
+from codeintel.build.target_specs import load_native_target_specs
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -361,7 +361,8 @@ def _build_contract_graph() -> TargetGraph:
     TargetGraph
         Graph containing all registered build targets.
     """
-    targets = load_target_specs()
+    # Use native specs to avoid catalog recursion during driver construction.
+    targets = load_native_target_specs()
     base_graph = TargetGraph()
     for target in targets:
         base_graph.register(target)

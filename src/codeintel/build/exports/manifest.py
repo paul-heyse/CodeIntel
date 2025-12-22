@@ -68,8 +68,6 @@ def write_dataset_manifest(
     return path
 
 
-
-
 def write_per_dataset_manifest(
     output_path: Path,
     manifest: ExportManifestData,
