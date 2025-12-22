@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.compute.graphs import to_decimal_id
+from codeintel.core.data_models.ids import as_int
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -80,7 +80,7 @@ def build_symbol_function_rows(inputs: SymbolFunctionMetricInputs) -> list[Symbo
         (
             inputs.repo,
             inputs.commit,
-            to_decimal_id(node),
+            as_int(node),
             inputs.centrality["betweenness"].get(node, 0.0),
             inputs.centrality["closeness"].get(node, 0.0),
             inputs.centrality["eigenvector"].get(node, 0.0),

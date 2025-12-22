@@ -35,13 +35,10 @@ from hamilton.function_modifiers import (
     value,
 )
 
-from codeintel.analytics.graphs import (
-    compute_graph_metrics,
-    compute_graph_metrics_functions_ext,
-    compute_graph_metrics_modules_ext,
-    compute_graph_stats,
-)
-from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
+from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_functions_ext
+from codeintel.analytics.graphs.graph_stats import compute_graph_stats
+from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result

@@ -20,8 +20,8 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
-from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.errors.storage import StorageConnectionError
+from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:

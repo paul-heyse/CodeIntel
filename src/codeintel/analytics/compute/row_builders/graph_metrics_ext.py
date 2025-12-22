@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from codeintel.analytics.compute.graphs import to_decimal_id
 from codeintel.analytics.utilities.type_coercion import optional_int
+from codeintel.core.data_models.ids import as_int
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
 )
@@ -63,14 +63,14 @@ def build_function_metric_ext_rows(
     created_at = inputs.ctx.resolved_now()
     rows: list[GraphMetricsFunctionsExtRow] = []
     for node in inputs.centralities["betweenness"]:
-        goid_decimal = to_decimal_id(node)
-        if goid_decimal is None:
+        goid_value = as_int(node)
+        if goid_value is None:
             continue
         rows.append(
             GraphMetricsFunctionsExtRow(
                 repo=inputs.repo,
                 commit=inputs.commit,
-                function_goid_h128=int(goid_decimal),
+                function_goid_h128=goid_value,
                 call_betweenness=float(inputs.centralities["betweenness"].get(node, 0.0)),
                 call_closeness=float(inputs.centralities["closeness"].get(node, 0.0)),
                 call_eigenvector=float(inputs.centralities["eigenvector"].get(node, 0.0)),

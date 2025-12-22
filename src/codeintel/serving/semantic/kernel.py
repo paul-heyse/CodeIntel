@@ -28,6 +28,7 @@ from codeintel.serving.semantic.fingerprints import (
     SemanticQueryFingerprintInput,
     fingerprint_search,
     fingerprint_semantic_query,
+    sqlglot_canonical_sha256,
 )
 from codeintel.serving.semantic.models import (
     ColumnLineageRef,
@@ -187,19 +188,20 @@ class SemanticQueryKernel:
         warehouse: Warehouse,
         plan: SemanticQueryPlan,
         column_types: dict[str, ColumnType] | None,
-    ) -> list[dict[str, object]]:
+    ) -> tuple[list[dict[str, object]], str]:
         ibis_con = warehouse.gateway.ibis.con
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
         return self._execute_bound_query(warehouse=warehouse, query=built)
 
     def _execute_bound_query(
         self, *, warehouse: Warehouse, query: BoundQuery
-    ) -> list[dict[str, object]]:
+    ) -> tuple[list[dict[str, object]], str]:
         ibis_con = warehouse.gateway.ibis.con
         try:
             sql = query.compile_sql(ibis_con)
             assert_select_perimeter(sql, policy=SqlIngressPolicy())
-            return self._execute_sql(warehouse=warehouse, sql=sql)
+            rows = self._execute_sql(warehouse=warehouse, sql=sql)
+            return rows, sql
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
         finally:
@@ -345,7 +347,7 @@ class SemanticQueryKernel:
                 ctx=resolved, request=request
             )
             plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
-            rows = self._execute_semantic_plan(
+            rows, compiled_sql = self._execute_semantic_plan(
                 warehouse=warehouse,
                 plan=plan,
                 column_types=resolved.column_types,
@@ -365,6 +367,8 @@ class SemanticQueryKernel:
             inventory=resolved.inventory,
         )
 
+        sql_fingerprint = sqlglot_canonical_sha256(compiled_sql) if compiled_sql else None
+
         return SemanticQueryResponse(
             view_id=request.view_id,
             columns=inputs.columns,
@@ -373,6 +377,7 @@ class SemanticQueryKernel:
             snapshot=self._snapshot_dict(resolved.pointer),
             query_hash=query_hash,
             schema_hash=schema_hash_value,
+            sql_fingerprint=sql_fingerprint,
         )
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:

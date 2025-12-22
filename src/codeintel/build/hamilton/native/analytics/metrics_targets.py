@@ -327,16 +327,16 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
         Row tuples matching the history_timeseries schema.
     """
     options = env.history_options
-    db_resolver = env.history_db_resolver
-    if options is None or db_resolver is None:
+    gateway_resolver = env.history_db_resolver
+    if options is None or gateway_resolver is None:
         log.info(
-            "history_timeseries: missing history options or DB resolver; "
+            "history_timeseries: missing history options or gateway resolver; "
             "returning empty result set."
         )
         return ()
     return build_history_timeseries_rows(
         env.snapshot,
-        db_resolver,
+        gateway_resolver,
         options=options,
         runner=env.providers.tool_runner,
     )

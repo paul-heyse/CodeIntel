@@ -445,9 +445,9 @@ def shutdown_observability() -> None:
 __all__ = [
     "ObservabilityConfig",
     "ObservabilityRuntime",
-    "observability_config_from_settings",
     "bootstrap_observability",
     "get_observability",
+    "observability_config_from_settings",
     "shutdown_observability",
 ]
 

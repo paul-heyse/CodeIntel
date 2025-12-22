@@ -171,6 +171,66 @@ def insert_analytics_rows(
     return backend.bulk_insert_mappings(contract.table_key, rows) if rows else 0
 
 
+def write_analytics_rows(
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    delete_scope: DeleteScope | None = None,
+    scope: str | None = None,
+) -> int:
+    """Validate and write analytics rows using the canonical contract registry."""
+    contract = get_analytics_dataset_contract(gateway, table_key)
+    validated_rows = validate_contract_rows(contract.table_key, rows)
+    return insert_analytics_rows(
+        gateway,
+        contract,
+        validated_rows,
+        delete_scope=delete_scope,
+        scope=scope,
+    )
+
+
+def write_analytics_tuple_rows(
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[Mapping[str, object] | Sequence[object]],
+    *,
+    delete_scope: DeleteScope | None = None,
+    scope: str | None = None,
+    columns: Sequence[str] | None = None,
+) -> int:
+    """Validate and write tuple rows using the canonical contract registry."""
+    _ = scope
+    contract = get_analytics_dataset_contract(gateway, table_key)
+    resolved_columns = tuple(columns) if columns is not None else contract.column_names()
+    if not resolved_columns:
+        message = f"Missing column metadata for tuple rows in {table_key}"
+        raise ValueError(message)
+    validated_rows = validate_tuple_rows(
+        table_key,
+        rows,
+        columns=resolved_columns,
+        schema=contract.schema,
+    )
+    backend = gateway.policy
+    backend.ensure_table(contract.table_key)
+    if delete_scope is not None:
+        if not _table_supports_snapshot_delete(contract.table_key):
+            message = f"Unsupported delete target: {contract.table_key}"
+            raise ValueError(message)
+        backend.delete_for_snapshot(
+            contract.table_key,
+            repo=delete_scope.repo,
+            commit=delete_scope.commit,
+        )
+    return (
+        backend.bulk_insert(contract.table_key, list(validated_rows), columns=list(resolved_columns))
+        if validated_rows
+        else 0
+    )
+
+
 def validate_contract_rows(
     table_key: str, rows: Sequence[Mapping[str, object]]
 ) -> list[dict[str, object]]:
@@ -201,6 +261,8 @@ __all__ = [
     "insert_analytics_rows",
     "validate_contract_rows",
     "validate_tuple_rows",
+    "write_analytics_rows",
+    "write_analytics_tuple_rows",
 ]
 
 
