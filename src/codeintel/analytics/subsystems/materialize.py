@@ -23,6 +23,8 @@ from codeintel.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
+from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
 if TYPE_CHECKING:
@@ -105,17 +107,23 @@ def build_subsystems(
         Subsystem inference options.
     """
     opts = options or SubsystemOptions()
-    backend = gateway.policy
-    backend.ensure_table("analytics.subsystems")
-    backend.ensure_table("analytics.subsystem_modules")
-    backend.delete_for_snapshot("analytics.subsystems", repo=snapshot.repo, commit=snapshot.commit)
-    backend.delete_for_snapshot(
-        "analytics.subsystem_modules", repo=snapshot.repo, commit=snapshot.commit
-    )
+    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
 
     modules, tags_by_module = load_modules(gateway, snapshot)
     if not modules:
         log.info("No modules available for subsystem inference; skipping.")
+        write_analytics_tuple_rows(
+            gateway,
+            "analytics.subsystems",
+            [],
+            delete_scope=delete_scope,
+        )
+        write_analytics_tuple_rows(
+            gateway,
+            "analytics.subsystem_modules",
+            [],
+            delete_scope=delete_scope,
+        )
         return
 
     affinity_graph = build_weighted_graph(gateway, snapshot, modules, weights=opts.weights)
@@ -145,18 +153,25 @@ def build_subsystems(
     )
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
 
-    if membership_rows:
-        backend.bulk_insert("analytics.subsystem_modules", membership_rows)
-
-    if subsystem_rows:
-        backend.bulk_insert("analytics.subsystems", subsystem_rows)
-        log.info(
-            "subsystems populated: %d subsystems, %d memberships for %s@%s",
-            len(subsystem_rows),
-            len(membership_rows),
-            snapshot.repo,
-            snapshot.commit,
-        )
+    membership_count = write_analytics_tuple_rows(
+        gateway,
+        "analytics.subsystem_modules",
+        membership_rows,
+        delete_scope=delete_scope,
+    )
+    subsystem_count = write_analytics_tuple_rows(
+        gateway,
+        "analytics.subsystems",
+        subsystem_rows,
+        delete_scope=delete_scope,
+    )
+    log.info(
+        "subsystems populated: %d subsystems, %d memberships for %s@%s",
+        subsystem_count,
+        membership_count,
+        snapshot.repo,
+        snapshot.commit,
+    )
 
 
 def _build_rows(

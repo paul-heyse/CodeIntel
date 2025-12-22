@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
+from codeintel.core.ibis_typing import and_predicates, eq, sort_desc
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import ibis_facade
@@ -133,8 +134,8 @@ def build_history_timeseries_rows(
     ----------
     snapshot
         Snapshot reference with repo, commit, and repo_root.
-    db_resolver
-        Callable returning a DuckDB connection for a given commit.
+    gateway_resolver
+        Callable returning a storage gateway for a given commit.
     options
         History timeseries configuration options.
     runner
@@ -205,8 +206,8 @@ def _select_entities(
         Snapshot reference.
     options
         Timeseries options.
-    db_resolver
-        Callable to resolve DuckDB connection by commit.
+    gateway_resolver
+        Callable returning a storage gateway for a given commit.
 
     Returns
     -------
@@ -246,8 +247,8 @@ def _select_top_functions(
     """
     table = ibis_facade.table(gateway, "analytics.function_profile")
     rows_df = (
-        table.filter((table.repo == snapshot.repo) & (table.commit == commit))
-        .order_by(ibis.desc(table.risk_score))
+        table.filter(and_predicates(eq(table.repo, snapshot.repo), eq(table.commit, commit)))
+        .order_by(sort_desc(table.risk_score))
         .select("rel_path", "language", "qualname")
         .limit(options.max_entities)
         .execute()
@@ -291,8 +292,8 @@ def _select_top_modules(
     """
     table = ibis_facade.table(gateway, "analytics.module_profile")
     rows_df = (
-        table.filter((table.repo == snapshot.repo) & (table.commit == commit))
-        .order_by(ibis.desc(table.max_risk_score))
+        table.filter(and_predicates(eq(table.repo, snapshot.repo), eq(table.commit, commit)))
+        .order_by(sort_desc(table.max_risk_score))
         .select("path", "language", "module")
         .limit(options.max_entities)
         .execute()
@@ -337,7 +338,12 @@ def _collect_function_rows_for_commit(
     """
     table = ibis_facade.table(gateway, "analytics.function_profile")
     rows_df = (
-        table.filter((table.repo == snapshot.repo) & (table.commit == commit_ctx.commit))
+        table.filter(
+            and_predicates(
+                eq(table.repo, snapshot.repo),
+                eq(table.commit, commit_ctx.commit),
+            )
+        )
         .select(
             "function_goid_h128",
             "rel_path",
@@ -429,7 +435,12 @@ def _collect_module_rows_for_commit(
     """
     table = ibis_facade.table(gateway, "analytics.module_profile")
     rows_df = (
-        table.filter((table.repo == snapshot.repo) & (table.commit == commit_ctx.commit))
+        table.filter(
+            and_predicates(
+                eq(table.repo, snapshot.repo),
+                eq(table.commit, commit_ctx.commit),
+            )
+        )
         .select(
             "module",
             "path",

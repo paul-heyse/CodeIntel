@@ -225,9 +225,6 @@ def compute_graph_metrics(
     )
     use_gpu = resolved_runtime.backend.use_gpu
 
-    backend = gateway.policy
-    backend.ensure_table("analytics.graph_metrics_functions")
-    backend.ensure_table("analytics.graph_metrics_modules")
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=snapshot.repo,

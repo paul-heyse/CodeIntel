@@ -195,9 +195,6 @@ def build_test_profile(
     options
         Optional test profile configuration options.
     """
-    backend = gateway.policy
-    backend.ensure_table("analytics.test_profile")
-
     result = build_test_profile_result(gateway, snapshot, options=options)
 
     if result.rows:

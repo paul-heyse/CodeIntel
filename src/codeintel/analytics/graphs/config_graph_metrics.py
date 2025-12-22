@@ -28,7 +28,6 @@ if TYPE_CHECKING:
         ProjectionMetrics,
     )
     from codeintel.graphs.runtime.context import GraphContext
-    from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -93,15 +92,6 @@ class ProjectionTargets:
 
     node_table_key: str
     edge_table_key: str
-
-
-def _clear_config_tables(backend: DuckDBPolicyBackend, repo: str, commit: str) -> None:
-    backend.delete_for_snapshot("analytics.config_graph_metrics_keys", repo=repo, commit=commit)
-    backend.delete_for_snapshot("analytics.config_graph_metrics_modules", repo=repo, commit=commit)
-    backend.delete_for_snapshot("analytics.config_projection_key_edges", repo=repo, commit=commit)
-    backend.delete_for_snapshot(
-        "analytics.config_projection_module_edges", repo=repo, commit=commit
-    )
 
 
 def _projection_rows(

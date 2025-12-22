@@ -223,7 +223,6 @@ def _instrument_runtime() -> None:
         instrumentor.instrument()
 
 
-
 def _disabled_runtime() -> ObservabilityRuntime:
     return ObservabilityRuntime(
         enabled=False,
@@ -457,6 +456,13 @@ def observability_config_from_settings(
     *,
     default_service_name: str,
 ) -> ObservabilityConfig:
+    """Build observability configuration from settings.
+
+    Returns
+    -------
+    ObservabilityConfig
+        Configuration derived from runtime settings.
+    """
     service_name = settings.service_name or default_service_name
     return ObservabilityConfig(
         enabled=settings.enabled,

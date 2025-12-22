@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
+from codeintel.analytics.utilities.datasets import write_analytics_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.gateway import ibis_facade
@@ -204,13 +206,18 @@ def _persist_contract_rows(
     gateway: StorageGateway, snapshot: SnapshotRef, rows: list[dict[str, object]]
 ) -> None:
     """Persist contract rows using the policy backend."""
-    table_key = "analytics.function_contracts"
-    backend = gateway.policy
-    backend.ensure_table(table_key)
-    backend.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
-    backend.bulk_insert_mappings(table_key, rows)
+    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
+    inserted = write_analytics_rows(
+        gateway,
+        "analytics.function_contracts",
+        rows,
+        delete_scope=delete_scope,
+    )
     log.info(
-        "function_contracts populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit
+        "function_contracts populated: %d rows for %s@%s",
+        inserted,
+        snapshot.repo,
+        snapshot.commit,
     )
 
 

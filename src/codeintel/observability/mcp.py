@@ -65,13 +65,16 @@ class McpOpenTelemetryMiddleware(Middleware):
 
         correlation_id = session_id or new_uuid_hex()
 
-        with correlation_context(correlation_id), operations.observe_operation(
-            component="mcp",
-            operation=operation,
-            attributes={
-                "mcp.method": method,
-                "mcp.tool_name": tool_name or "",
-            },
+        with (
+            correlation_context(correlation_id),
+            operations.observe_operation(
+                component="mcp",
+                operation=operation,
+                attributes={
+                    "mcp.method": method,
+                    "mcp.tool_name": tool_name or "",
+                },
+            ),
         ):
             return await call_next(context)
 

@@ -27,14 +27,7 @@ except ImportError:
     _SPAN_KIND_CLIENT = None
 
 SpanAttributeValue = (
-    str
-    | bool
-    | int
-    | float
-    | Sequence[str]
-    | Sequence[bool]
-    | Sequence[int]
-    | Sequence[float]
+    str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
 )
 
 

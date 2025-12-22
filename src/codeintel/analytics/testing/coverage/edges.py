@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Final, TypedDict
 from coverage import Coverage
 from coverage.exceptions import CoverageException
 
+from codeintel.analytics.utilities.datasets import write_analytics_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -522,17 +524,17 @@ def compute_test_coverage_edges(
             )
         )
 
-    backend = gateway.policy
-    backend.ensure_table("analytics.test_coverage_edges")
-    backend.delete_for_snapshot(
-        "analytics.test_coverage_edges", repo=snapshot.repo, commit=snapshot.commit
+    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
+    inserted = write_analytics_rows(
+        gateway,
+        "analytics.test_coverage_edges",
+        insert_rows,
+        delete_scope=delete_scope,
     )
-    if insert_rows:
-        backend.bulk_insert_mappings("analytics.test_coverage_edges", insert_rows)
 
     log.info(
         "test_coverage_edges populated: %d rows for %s@%s",
-        len(insert_rows),
+        inserted,
         snapshot.repo,
         snapshot.commit,
     )

@@ -196,6 +196,22 @@ def ilike(column: ir.Value, pattern: str) -> ir.BooleanValue:
     return cast("ir.BooleanValue", cast("Any", column).ilike(pattern))
 
 
+def sort_desc(expr: ir.Value) -> ir.Column:
+    """Return a descending sort key for an Ibis expression.
+
+    Parameters
+    ----------
+    expr
+        Ibis expression to sort.
+
+    Returns
+    -------
+    ir.Column
+        Sort key for descending order.
+    """
+    return cast("ir.Column", cast("Any", expr).desc())
+
+
 def and_predicates(*predicates: object) -> ir.BooleanValue:
     """Combine multiple predicates with AND.
 
@@ -647,6 +663,7 @@ __all__ = [
     "not_null",
     "or_predicates",
     "select_columns",
+    "sort_desc",
     "sub",
     "table_has_column",
     "truediv",
