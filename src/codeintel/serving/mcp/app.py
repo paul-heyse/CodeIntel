@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 _SERVER_STARTED_AT = datetime.now(UTC)
+_HEALTH_READY_TIMEOUT_S = 0.25
 
 
 def build_mcp_app(
@@ -133,30 +134,35 @@ def _register_health_routes(mcp: FastMCP, ops: ServingOperations) -> None:
     """Register health check routes for load balancers and orchestrators."""
 
     @mcp.custom_route("/health", methods=["GET"])
-    async def mcp_health(_request: Request) -> Response:  # noqa: RUF029
-        try:
-            pointer = ops.db.current_pointer()
+    async def mcp_health(_request: Request) -> Response:
+        ready = await ops.db.wait_ready(timeout_s=_HEALTH_READY_TIMEOUT_S)
+        if not ready:
             return JSONResponse(
-                {
-                    "status": "ok",
-                    "repo": pointer.repo,
-                    "commit": pointer.commit[:12],
-                    "run_id": pointer.run_id,
-                }
+                {"status": "error", "detail": "No active snapshot"},
+                status_code=503,
             )
+        try:
+            summary = ops.db.current_summary()
         except RuntimeError:
             return JSONResponse(
                 {"status": "error", "detail": "No active snapshot"},
                 status_code=503,
             )
+        return JSONResponse(
+            {
+                "status": "ok",
+                "repo": summary.get("repo"),
+                "commit": str(summary.get("commit", ""))[:12],
+                "run_id": summary.get("run_id"),
+            }
+        )
 
     @mcp.custom_route("/ready", methods=["GET"])
-    async def mcp_ready(_request: Request) -> Response:  # noqa: RUF029
-        try:
-            ops.db.current_pointer()
-            return PlainTextResponse("ready")
-        except RuntimeError:
+    async def mcp_ready(_request: Request) -> Response:
+        ready = await ops.db.wait_ready(timeout_s=_HEALTH_READY_TIMEOUT_S)
+        if not ready:
             return PlainTextResponse("not ready", status_code=503)
+        return PlainTextResponse("ready")
 
 
 __all__ = ["build_mcp_app"]

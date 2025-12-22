@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import jsonschema
@@ -17,6 +18,7 @@ from referencing import Registry
 from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.common import log_export_error
 from codeintel.build.schemas.json_schema_registry import get_json_schema
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.errors.schema import SCHEMA_NOT_FOUND, SCHEMA_VALIDATION_FAILED, SchemaError
 from codeintel.core.errors.taxonomy import NOT_FOUND
 
@@ -46,6 +48,21 @@ def _get_generated_schema(table_key: str) -> dict[str, Any] | None:
         return None
 
 
+def _normalize_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        normalized = normalize_decimal_id(value)
+        return normalized if normalized is not None else value
+    if isinstance(value, list):
+        return [_normalize_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_value(val) for key, val in value.items()}
+    return value
+
+
+def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {key: _normalize_value(value) for key, value in record.items()}
+
+
 def _validate_records(
     records: list[dict[str, Any]], validator: jsonschema.Draft202012Validator
 ) -> list[str]:
@@ -63,9 +80,10 @@ def _validate_records(
     list[str]
         List of validation error messages.
     """
+    normalized = [_normalize_record(record) for record in records]
     return [
         f"row={idx}: {error.message}"
-        for idx, record in enumerate(records)
+        for idx, record in enumerate(normalized)
         for error in validator.iter_errors(record)
     ]
 

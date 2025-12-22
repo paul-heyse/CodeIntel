@@ -28,7 +28,7 @@
 
 ## Guardrails (non-negotiable)
 
-* **Zero suppressions.** Fix root causes; do not add `# noqa`, `# type: ignore`, or per-file ignores. 
+* **Zero suppressions.** Fix root causes; do not add suppression comments, `# type: ignore`, or per-file ignores. 
 * **Doctests must run fast & offline.** No network/filesystem. Use tiny inputs, fixed seeds, and stdlib only.
 * **Public APIs only** require full NumPy sections; private helpers can be brief but must still be accurate and consistent.
 * **Keep code behavior unchanged** unless a docstring fix reveals a real bug — then add a minimal fix with a regression test.

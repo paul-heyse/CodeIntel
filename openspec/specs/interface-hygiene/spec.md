@@ -27,14 +27,14 @@ runners, skip-arg helper modules, or module-level MCP entrypoints).
   module-level MCP entrypoints are not shipped
 
 ### Requirement: Non-DAG ingestion APIs are not public
-Public APIs SHALL NOT expose standalone ingestion step classes or helper services such as
-BuildToolAdapter or ChangeTracker, and ingestion SHALL be invoked only through Hamilton
-targets.
+Public APIs SHALL expose ingestion.engine only for tool execution (ToolService/ToolRunner) and
+SHALL NOT expose non-Hamilton ingestion compute orchestration or standalone step classes. Any
+analytics compute modules that orchestrate tool execution outside Hamilton SHALL be migrated
+into Hamilton nodes or removed.
 
 #### Scenario: Standalone ingestion APIs are absent
 - **WHEN** public ingestion APIs are listed
-- **THEN** non-DAG ingestion step classes and helper services (BuildToolAdapter,
-  ChangeTracker) are not exposed
+- **THEN** only tool execution interfaces are exposed and non-DAG workflows are absent
 
 ### Requirement: Single tool execution surface
 Public interfaces SHALL expose ToolService-based execution only, and legacy build provider
@@ -45,12 +45,13 @@ helpers for tool execution SHALL NOT be part of public APIs.
 - **THEN** only ToolService-based interfaces are available
 
 ### Requirement: Single registry surface for discovery
-Public interfaces SHALL expose Hamilton tag and TargetSpec metadata as the single registry
-surface for discovery, and legacy registry implementations SHALL NOT be part of public APIs.
+Public interfaces SHALL expose Hamilton-derived OutputTarget metadata from the canonical catalog
+as the single registry surface for discovery, and legacy DAG-free registries or TargetSpec lists
+SHALL NOT be part of public APIs.
 
 #### Scenario: Legacy registries are not exposed
 - **WHEN** discovery registries are listed from public modules
-- **THEN** only Hamilton tag/TargetSpec-based discovery APIs are available
+- **THEN** only canonical catalog-backed discovery APIs are available
 
 ### Requirement: No long-term compatibility facades
 Public interfaces SHALL NOT expose long-term compatibility facades for analytics resource

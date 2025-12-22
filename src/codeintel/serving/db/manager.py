@@ -63,6 +63,8 @@ class ServingDBManager:
     _snapshot_cache: dict[Path, ServingSnapshotContext] = field(default_factory=dict, init=False)
     _watch_task: asyncio.Task[None] | None = field(default=None, init=False)
     _last_mtime_ns: int | None = field(default=None, init=False)
+    _ready_event: asyncio.Event = field(default_factory=asyncio.Event, init=False)
+    _summary: dict[str, object] | None = field(default=None, init=False)
 
     async def start(self) -> None:
         """Initialize manager and start watch loop."""
@@ -98,6 +100,48 @@ class ServingDBManager:
             msg = "ServingDBManager has no active snapshot pointer"
             raise RuntimeError(msg)
         return self._pointer
+
+    def current_summary(self) -> dict[str, object]:
+        """Return cached snapshot summary for health/ready routes.
+
+        Returns
+        -------
+        dict[str, object]
+            Cached summary for the active snapshot.
+
+        Raises
+        ------
+        RuntimeError
+            If manager not started or summary not yet available.
+        """
+        if self._summary is None:
+            msg = "ServingDBManager has no cached snapshot summary"
+            raise RuntimeError(msg)
+        return dict(self._summary)
+
+    async def wait_ready(self, *, timeout_s: float | None = None) -> bool:
+        """Wait for a snapshot pointer to be available.
+
+        Parameters
+        ----------
+        timeout_s
+            Optional timeout (seconds). When provided, returns False if not ready.
+
+        Returns
+        -------
+        bool
+            True when ready, False on timeout.
+        """
+        if self._pointer is not None:
+            return True
+        if timeout_s is None:
+            await self._ready_event.wait()
+            return self._pointer is not None
+        try:
+            await asyncio.wait_for(self._ready_event.wait(), timeout=timeout_s)
+        except TimeoutError:
+            return False
+        return self._pointer is not None
 
     @contextmanager
     def connect(self) -> Iterator[tuple[Warehouse, ServingSnapshotPointer]]:
@@ -213,17 +257,23 @@ class ServingDBManager:
         # Skip if same DB path (metadata-only update)
         if self._pointer is not None and new_ptr.db_path == self._pointer.db_path:
             self._pointer = new_ptr
-            self._snapshot_cache[new_ptr.db_path] = _load_snapshot_context(new_ptr)
+            context = _load_snapshot_context(new_ptr)
+            self._snapshot_cache[new_ptr.db_path] = context
+            self._summary = dict(context.summary)
+            self._ready_event.set()
             return
 
         new_pool = ReadPoolWarehouse(new_ptr.db_path, self.pool_cfg)
         new_export_pool = ReadPoolWarehouse(new_ptr.db_path, self.export_pool_cfg)
         old_pool = self._pool
         old_export_pool = self._export_pool
+        context = _load_snapshot_context(new_ptr)
         self._pool = new_pool
         self._export_pool = new_export_pool
         self._pointer = new_ptr
-        self._snapshot_cache[new_ptr.db_path] = _load_snapshot_context(new_ptr)
+        self._snapshot_cache[new_ptr.db_path] = context
+        self._summary = dict(context.summary)
+        self._ready_event.set()
 
         if old_pool is not None:
             old_pool.close_gracefully()
@@ -257,6 +307,7 @@ class ServingSnapshotContext:
     inventory: SchemaInventory
     buildspec: BuildSpec
     environment: dict[str, object] | None = None
+    summary: dict[str, object] = field(default_factory=dict)
 
     def to_summary(self) -> Mapping[str, object]:
         """Return a compact summary for observability endpoints.
@@ -266,23 +317,7 @@ class ServingSnapshotContext:
         Mapping[str, object]
             Stable snapshot metadata for health/observability surfaces.
         """
-        summary: dict[str, object] = {
-            "repo": self.pointer.repo,
-            "commit": self.pointer.commit,
-            "run_id": self.pointer.run_id,
-            "semantic_layer_version": self.pointer.semantic_layer_version,
-            "semantic_registry_version": self.registry.version,
-            "schema_inventory": self.inventory.summary(),
-            "buildspec_version": self.buildspec.spec_version,
-        }
-        tools = None
-        if isinstance(self.environment, dict):
-            tools_obj = self.environment.get("tools")
-            if isinstance(tools_obj, dict):
-                tools = {str(k): str(v) for k, v in tools_obj.items()}
-        if tools is not None:
-            summary["tools"] = tools
-        return summary
+        return self.summary
 
 
 def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
@@ -299,10 +334,27 @@ def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotCo
             raw = None
         if isinstance(raw, dict):
             environment = raw
+    summary: dict[str, object] = {
+        "repo": pointer.repo,
+        "commit": pointer.commit,
+        "run_id": pointer.run_id,
+        "semantic_layer_version": pointer.semantic_layer_version,
+        "semantic_registry_version": registry.version,
+        "schema_inventory": inventory.summary(),
+        "buildspec_version": buildspec.spec_version,
+    }
+    tools = None
+    if isinstance(environment, dict):
+        tools_obj = environment.get("tools")
+        if isinstance(tools_obj, dict):
+            tools = {str(k): str(v) for k, v in tools_obj.items()}
+    if tools is not None:
+        summary["tools"] = tools
     return ServingSnapshotContext(
         pointer=pointer,
         registry=registry,
         inventory=inventory,
         buildspec=buildspec,
         environment=environment,
+        summary=summary,
     )

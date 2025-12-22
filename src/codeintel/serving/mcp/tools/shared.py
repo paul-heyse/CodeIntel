@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from fastmcp import Context
@@ -11,7 +12,12 @@ from mcp import McpError
 from codeintel.serving.export.formats import normalize_export_format
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.models import QueryPreview
-from codeintel.serving.semantic.models import FilterSpec, SemanticQueryRequest
+from codeintel.serving.mcp.models.requests import (
+    SemanticExportToolRequest,
+    SemanticQueryToolRequest,
+)
+from codeintel.serving.metrics import QueryMetrics, log_query_metrics
+from codeintel.serving.semantic.models import SemanticExportRequest, SemanticQueryRequest
 
 if TYPE_CHECKING:
     from codeintel.serving.export.formats import ExportFormat
@@ -47,6 +53,41 @@ def mcp_correlation_id(ctx: Context | None) -> str:
     if isinstance(session_id_obj, str) and session_id_obj:
         return session_id_obj
     return "mcp-unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class McpMetricsInput:
+    """Inputs for MCP query metrics logging."""
+
+    endpoint: str
+    view_id: str | None
+    query: str | None
+    row_count: int
+    truncated: bool
+    duration_ms: float
+    query_hash: str | None = None
+    schema_hash: str | None = None
+
+
+def log_mcp_query_metrics(
+    metrics: McpMetricsInput,
+    *,
+    ctx: Context | None,
+) -> None:
+    """Record structured query metrics for MCP tools."""
+    log_query_metrics(
+        QueryMetrics(
+            endpoint=metrics.endpoint,
+            view_id=metrics.view_id,
+            query=metrics.query,
+            row_count=metrics.row_count,
+            truncated=metrics.truncated,
+            duration_ms=metrics.duration_ms,
+            correlation_id=mcp_correlation_id(ctx),
+            query_hash=metrics.query_hash,
+            schema_hash=metrics.schema_hash,
+        )
+    )
 
 
 async def maybe_report_progress(
@@ -132,29 +173,40 @@ def normalize_export_format_for_tool(export_format: str) -> ExportFormat:
         raise InvalidExportFormatError(export_format) from exc
 
 
-def build_semantic_request(
-    view_id: str,
-    filters: list[dict[str, object]] | None,
-    select: list[str] | None,
-    order_by: list[str] | None,
-    pagination: dict[str, int] | None,
+def validate_semantic_query_request(
+    request: SemanticQueryRequest | SemanticQueryToolRequest | dict[str, object],
 ) -> SemanticQueryRequest:
-    """Build a SemanticQueryRequest from tool parameters.
+    """Validate and normalize a semantic query request payload.
 
     Returns
     -------
     SemanticQueryRequest
-        Validated query request model built from tool parameters.
+        Validated semantic query request model.
+
     """
-    page = pagination or {}
-    return SemanticQueryRequest(
-        view_id=view_id,
-        select=select,
-        filters=[FilterSpec.model_validate(f) for f in (filters or [])],
-        order_by=order_by or [],
-        limit=page.get("limit", 200),
-        offset=page.get("offset", 0),
-    )
+    if isinstance(request, SemanticQueryRequest):
+        return request
+    if isinstance(request, SemanticQueryToolRequest):
+        return request.to_semantic_request()
+    return SemanticQueryToolRequest.model_validate(request).to_semantic_request()
+
+
+def validate_semantic_export_request(
+    request: SemanticExportRequest | SemanticExportToolRequest | dict[str, object],
+) -> SemanticExportRequest:
+    """Validate and normalize a semantic export request payload.
+
+    Returns
+    -------
+    SemanticExportRequest
+        Validated semantic export request model.
+
+    """
+    if isinstance(request, SemanticExportRequest):
+        return request
+    if isinstance(request, SemanticExportToolRequest):
+        return request.to_semantic_request()
+    return SemanticExportToolRequest.model_validate(request).to_semantic_request()
 
 
 __all__ = [
@@ -166,9 +218,12 @@ __all__ = [
     "TAG_SEARCH",
     "TAG_SEMANTIC",
     "InvalidExportFormatError",
-    "build_semantic_request",
+    "McpMetricsInput",
+    "log_mcp_query_metrics",
     "maybe_report_progress",
     "mcp_correlation_id",
     "normalize_export_format_for_tool",
     "try_sample_summary",
+    "validate_semantic_export_request",
+    "validate_semantic_query_request",
 ]

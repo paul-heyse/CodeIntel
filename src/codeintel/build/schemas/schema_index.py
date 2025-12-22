@@ -211,10 +211,7 @@ class SchemaIndex:
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             self._record_inference_error(table_key, exc)
             if derivation.override_schema is None:
-                msg = (
-                    "Schema inference failed without explicit override for "
-                    f"{table_key}: {exc}"
-                )
+                msg = f"Schema inference failed without explicit override for {table_key}: {exc}"
                 raise RuntimeError(msg) from exc
             if not self.fallback_to_override_on_error:
                 raise

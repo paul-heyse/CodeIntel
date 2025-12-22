@@ -143,6 +143,9 @@ def test_export_logs_problem_detail_on_validation_failure(
                 ),
             )
         error_logs = [
-            rec for rec in caplog.records if "export.validation_failed" in rec.getMessage()
+            rec
+            for rec in caplog.records
+            if "export.validation_failed" in rec.getMessage()
+            or "schema-mismatch" in rec.getMessage()
         ]
         expect_true(error_logs, message="Expected ProblemDetail log entry for validation failure")

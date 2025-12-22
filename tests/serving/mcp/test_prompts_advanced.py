@@ -238,7 +238,10 @@ async def test_mcp_get_prompt_wizard_query_view_uses_elicitation(tmp_path: Path)
             args = parsed.get("arguments")
             if not isinstance(args, dict):
                 pytest.fail("Expected tool invocation to contain arguments dict")
-            if args.get("view_id") != "demo.view":
+            request = args.get("request")
+            if not isinstance(request, dict):
+                pytest.fail("Expected tool invocation to contain request dict")
+            if request.get("view_id") != "demo.view":
                 pytest.fail("Expected wizard semantic_query invocation to target demo.view")
     finally:
         await manager.stop()

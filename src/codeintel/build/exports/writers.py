@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
+from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol, SupportsInt, TextIO, cast, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
@@ -51,6 +53,10 @@ def default_json_serializer(obj: object) -> object:
     """
     if isinstance(obj, SupportsIsoformat):
         return obj.isoformat()
+    if isinstance(obj, Decimal):
+        normalized = normalize_decimal_id(obj)
+        if normalized is not None:
+            return normalized
     msg = f"Type {type(obj)} is not JSON serializable"
     raise TypeError(msg)
 

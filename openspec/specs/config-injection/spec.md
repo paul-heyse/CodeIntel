@@ -50,11 +50,21 @@ or services directly.
 - **THEN** it uses the injected ToolService/ToolRunner from BuildEnv providers
 
 ### Requirement: Analytics resources use injected registry access
-Analytics resource loading SHALL be exposed through injected BuildEnv/Providers interfaces
-or a unified registry facade, and analytics modules SHALL NOT construct standalone
-registries without injection.
+Analytics and graph resource loading SHALL use a single registry interface supplied by
+BuildEnv/Providers, and modules SHALL NOT construct standalone registry implementations. Build
+SHALL use the core ResourceRegistry and shared ProviderFactory interface without a build-only
+wrapper.
 
 #### Scenario: Analytics registry comes from providers
-- **WHEN** analytics code requires access to the resource registry
-- **THEN** it uses an injected registry or provider facade rather than constructing its own
+- **WHEN** analytics or graph code requires access to the resource registry
+- **THEN** it uses the injected registry interface from providers rather than constructing one
+
+### Requirement: Canonical runtime configuration loader
+The system SHALL provide a single runtime configuration loader that returns RuntimePrimitives
+and settings for build, serving, and CLI entrypoints, and environment parsing SHALL be confined
+to that loader.
+
+#### Scenario: Runtime loader centralizes environment parsing
+- **WHEN** a CLI entrypoint constructs runtime primitives
+- **THEN** it uses the canonical loader and no library modules read environment variables
 

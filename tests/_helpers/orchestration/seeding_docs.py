@@ -7,9 +7,11 @@ SeedPack system for cases where direct function calls are needed.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from codeintel.storage.schema import apply_all_schemas
+from codeintel.storage.warehouse import Warehouse
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,
@@ -35,6 +37,7 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.fakes import utcnow
+from tests._helpers.rows import function_profile_row
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -307,6 +310,21 @@ def seed_docs_export_minimal(
                 tested=True,
                 untested_reason=None,
                 created_at=now,
+            )
+        ],
+    )
+    warehouse = Warehouse(gateway)
+    warehouse.materialize_mappings(
+        "analytics.function_profile",
+        [
+            function_profile_row(
+                goid=Decimal(goid),
+                repo=repo,
+                commit=commit,
+                rel_path="foo.py",
+                qualname="pkg.foo:func",
+                urn="urn:foo",
+                module="pkg.foo",
             )
         ],
     )

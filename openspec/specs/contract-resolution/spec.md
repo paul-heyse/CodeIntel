@@ -3,14 +3,6 @@
 ## Purpose
 TBD - created by archiving change refactor-contracts-storage-boundaries. Update Purpose after archive.
 ## Requirements
-### Requirement: Schema-only contract enumeration is DAG-free
-Schema-only contract enumeration SHALL use the declared-only provider and SHALL NOT initialize
-the Hamilton DAG. DAG-first providers MAY initialize the DAG only when explicitly requested.
-
-#### Scenario: Schema-only enumeration avoids DAG initialization
-- **WHEN** schema-only contracts are enumerated or default validation schemas are requested
-- **THEN** the Hamilton DAG is not constructed
-
 ### Requirement: Lazy metadata enrichment
 Metadata enrichment SHALL be lazy and only initialize the Hamilton DAG when explicitly
 requested via injected metadata providers.
@@ -26,15 +18,6 @@ support testability and alternative runtime implementations.
 #### Scenario: Tests inject a stub metadata provider
 - **WHEN** a test supplies a stub metadata provider and output inventory
 - **THEN** contract enumeration succeeds without DAG initialization
-
-### Requirement: Build contract resolution uses source-only providers
-Build-layer contract resolution SHALL expose a declared-only provider for schema-only
-enumeration and a DAG-first provider for execution, and SHALL NOT expose a full declared
-schema provider from build APIs.
-
-#### Scenario: Schema-only enumeration excludes DAG outputs
-- **WHEN** build contract enumeration runs in schema-only mode
-- **THEN** DAG-produced table keys are excluded and no full provider is available from build
 
 ### Requirement: DAG-first schema provider with production inference
 The system SHALL expose a DAG-first schema provider that resolves DAG outputs via SchemaIndex,
@@ -58,14 +41,47 @@ alternative schema is available for the dataset.
 - **THEN** schema resolution fails with a hard error
 
 ### Requirement: Contract resolution defaults to DAG-first outputs
-Contract resolution SHALL default to the DAG-first provider with target metadata and output
-overrides, and SHALL provide an explicit declared-only mode for DAG-free enumeration.
+Contract resolution SHALL default to canonical catalog entries that include DAG outputs with
+metadata overrides applied. A declared-only mode MAY be provided for source-only enumeration and
+SHALL exclude DAG outputs.
 
-#### Scenario: Default contract resolution includes DAG outputs
+#### Scenario: Default resolution includes DAG outputs
 - **WHEN** a caller resolves contracts without specifying a resolution mode
-- **THEN** DAG-produced table keys are included with target metadata overrides applied
+- **THEN** DAG-produced table keys are included via the canonical catalog
 
-#### Scenario: Declared-only mode is DAG-free
+#### Scenario: Declared-only mode excludes DAG outputs
 - **WHEN** a caller requests declared-only contract resolution
-- **THEN** DAG-produced table keys are excluded and the Hamilton DAG is not initialized
+- **THEN** DAG-produced table keys are excluded from the results
+
+### Requirement: Schema-only contract enumeration is catalog-backed
+Schema-only contract enumeration SHALL be served from the canonical contract catalog stored in
+metadata and keyed by the global catalog hash. Enumeration MAY initialize the Hamilton DAG for
+introspection-only regeneration on cache miss, and SHALL NOT execute targets.
+
+#### Scenario: Cached catalog served without execution
+- **WHEN** the canonical catalog hash matches a stored catalog entry
+- **THEN** enumeration uses the cached catalog without executing targets
+
+#### Scenario: Cache miss regenerates via introspection
+- **WHEN** no cached catalog matches the current catalog hash
+- **THEN** Hamilton introspection regenerates the catalog and persists it for reuse
+
+### Requirement: Build contract resolution uses canonical catalog
+Build-layer contract resolution SHALL resolve contracts from the canonical catalog (cached or
+regenerated) and SHALL NOT use declared_schemas for DAG outputs. Declared schemas SHALL be used
+only for source-only datasets, and explicit overrides SHALL be sourced from Hamilton registry
+metadata.
+
+#### Scenario: DAG outputs ignore declared schemas
+- **WHEN** a DAG-produced table key is resolved in build
+- **THEN** its contract is sourced from the canonical catalog rather than declared schemas
+
+### Requirement: Canonical contract catalog hash policy
+The system SHALL compute a global catalog hash from Hamilton module digests, schema registry
+hashes, and build configuration inputs, and SHALL use that hash to validate cached contract
+catalog entries.
+
+#### Scenario: Identical inputs yield identical catalog hashes
+- **WHEN** the Hamilton modules, schema registry, and build config inputs are unchanged
+- **THEN** the computed catalog hash is stable across runs
 

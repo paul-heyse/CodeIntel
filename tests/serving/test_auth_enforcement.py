@@ -13,6 +13,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_false,
     expect_true,
 )
+from tests._helpers.security_fixtures import PUBLIC_BIND_HOST, api_key, auth_token
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -47,7 +48,7 @@ def _set_env(env: dict[str, str]) -> Iterator[None]:
 
 def test_fails_without_auth_on_0000(tmp_path: Path) -> None:
     """Verify startup fails without auth when bound to 0.0.0.0."""
-    settings = ServingSettings(serve_dir=tmp_path, host="0.0.0.0")  # noqa: S104
+    settings = ServingSettings(serve_dir=tmp_path, host=PUBLIC_BIND_HOST)
     with pytest.raises(ValueError, match="Security error"):
         settings.validate_auth_for_host()
 
@@ -68,21 +69,21 @@ def test_fails_without_auth_on_empty_host(tmp_path: Path) -> None:
 
 def test_error_message_mentions_env_vars(tmp_path: Path) -> None:
     """Verify error message includes helpful env var references."""
-    settings = ServingSettings(serve_dir=tmp_path, host="0.0.0.0")  # noqa: S104
+    settings = ServingSettings(serve_dir=tmp_path, host=PUBLIC_BIND_HOST)
     with pytest.raises(ValueError, match="CODEINTEL_AUTH_TOKEN"):
         settings.validate_auth_for_host()
 
 
 def test_error_message_mentions_api_key(tmp_path: Path) -> None:
     """Verify error message mentions api_key option."""
-    settings = ServingSettings(serve_dir=tmp_path, host="0.0.0.0")  # noqa: S104
+    settings = ServingSettings(serve_dir=tmp_path, host=PUBLIC_BIND_HOST)
     with pytest.raises(ValueError, match="CODEINTEL_SERVE_API_KEY"):
         settings.validate_auth_for_host()
 
 
 def test_error_message_mentions_disable_option(tmp_path: Path) -> None:
     """Verify error message mentions how to disable check."""
-    settings = ServingSettings(serve_dir=tmp_path, host="0.0.0.0")  # noqa: S104
+    settings = ServingSettings(serve_dir=tmp_path, host=PUBLIC_BIND_HOST)
     with pytest.raises(ValueError, match="CODEINTEL_AUTH_REQUIRED_FOR_REMOTE=0"):
         settings.validate_auth_for_host()
 
@@ -91,8 +92,8 @@ def test_succeeds_with_auth_token_on_0000(tmp_path: Path) -> None:
     """Verify startup succeeds with auth_token when bound to 0.0.0.0."""
     settings = ServingSettings(
         serve_dir=tmp_path,
-        host="0.0.0.0",  # noqa: S104
-        auth_token="test-token-12345",  # noqa: S106
+        host=PUBLIC_BIND_HOST,
+        auth_token=auth_token(),
     )
     # Should not raise
     settings.validate_auth_for_host()
@@ -102,8 +103,8 @@ def test_succeeds_with_api_key_on_0000(tmp_path: Path) -> None:
     """Verify startup succeeds with api_key when bound to 0.0.0.0."""
     settings = ServingSettings(
         serve_dir=tmp_path,
-        host="0.0.0.0",  # noqa: S104
-        api_key="test-api-key-12345",
+        host=PUBLIC_BIND_HOST,
+        api_key=api_key(),
     )
     # Should not raise
     settings.validate_auth_for_host()
@@ -113,9 +114,9 @@ def test_succeeds_with_both_auth_methods(tmp_path: Path) -> None:
     """Verify startup succeeds when both auth methods are set."""
     settings = ServingSettings(
         serve_dir=tmp_path,
-        host="0.0.0.0",  # noqa: S104
-        auth_token="test-token",  # noqa: S106
-        api_key="test-key",
+        host=PUBLIC_BIND_HOST,
+        auth_token=auth_token(),
+        api_key=api_key(),
     )
     # Should not raise
     settings.validate_auth_for_host()
@@ -146,7 +147,7 @@ def test_disabled_allows_public_bind_without_auth(tmp_path: Path) -> None:
     """Verify disabled check allows public bind without auth."""
     settings = ServingSettings(
         serve_dir=tmp_path,
-        host="0.0.0.0",  # noqa: S104
+        host=PUBLIC_BIND_HOST,
         auth_required_for_remote=False,
     )
     # Should not raise
@@ -158,7 +159,7 @@ def test_disabled_via_env_var(tmp_path: Path) -> None:
     with _set_env(
         {
             "CODEINTEL_AUTH_REQUIRED_FOR_REMOTE": "0",
-            "CODEINTEL_HOST": "0.0.0.0",  # noqa: S104
+            "CODEINTEL_HOST": PUBLIC_BIND_HOST,
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
     ):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import duckdb
 import pytest
@@ -15,6 +15,7 @@ from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.mcp_payloads import extract_payload
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -127,21 +128,6 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
     return pointer_path
 
 
-def _extract_payload(tool_result: Any) -> dict[str, object]:  # noqa: ANN401
-    if hasattr(tool_result, "content"):
-        content_list = tool_result.content
-        if content_list:
-            first_content = content_list[0]
-            if hasattr(first_content, "text"):
-                return json.loads(first_content.text)
-
-    if isinstance(tool_result, dict):
-        return tool_result
-
-    msg = f"Unexpected tool result type: {type(tool_result)}"
-    raise TypeError(msg)
-
-
 def _is_sha256_hex(value: object) -> bool:
     if not isinstance(value, str):
         return False
@@ -175,9 +161,9 @@ async def test_mcp_sql_fingerprint_is_stable_for_same_request(tmp_path: Path) ->
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            args = {"view_id": "demo.view", "pagination": {"limit": 2, "offset": 0}}
-            first = _extract_payload(await client.call_tool("semantic_query", args))
-            second = _extract_payload(await client.call_tool("semantic_query", args))
+            args = {"request": {"view_id": "demo.view", "pagination": {"limit": 2, "offset": 0}}}
+            first = extract_payload(await client.call_tool("semantic_query", args))
+            second = extract_payload(await client.call_tool("semantic_query", args))
 
             fp1 = first.get("sql_fingerprint")
             fp2 = second.get("sql_fingerprint")
@@ -214,16 +200,26 @@ async def test_mcp_sql_fingerprint_changes_when_limit_changes(tmp_path: Path) ->
         mcp = build_mcp_app(kernel=kernel, settings=settings)
 
         async with Client(mcp) as client:
-            first = _extract_payload(
+            first = extract_payload(
                 await client.call_tool(
                     "semantic_query",
-                    {"view_id": "demo.view", "pagination": {"limit": 2, "offset": 0}},
+                    {
+                        "request": {
+                            "view_id": "demo.view",
+                            "pagination": {"limit": 2, "offset": 0},
+                        }
+                    },
                 )
             )
-            second = _extract_payload(
+            second = extract_payload(
                 await client.call_tool(
                     "semantic_query",
-                    {"view_id": "demo.view", "pagination": {"limit": 3, "offset": 0}},
+                    {
+                        "request": {
+                            "view_id": "demo.view",
+                            "pagination": {"limit": 3, "offset": 0},
+                        }
+                    },
                 )
             )
 

@@ -18,6 +18,11 @@ from codeintel.serving.mcp.models.primitives import (
     SnapshotRef,
     ViewId,
 )
+from codeintel.serving.mcp.models.requests import (
+    SemanticExplainToolRequest,
+    SemanticExportToolRequest,
+    SemanticQueryToolRequest,
+)
 from codeintel.serving.mcp.models.semantic import QueryPreview, SemanticQueryToolResponse
 from codeintel.serving.meta.models import (
     DEFAULT_RESOURCE_TEMPLATES,
@@ -45,7 +50,10 @@ __all__ = [
     "RFC6570TemplateURI",
     "ResourceTemplate",
     "ResourceTemplatesResponse",
+    "SemanticExplainToolRequest",
+    "SemanticExportToolRequest",
     "SemanticLayerInfo",
+    "SemanticQueryToolRequest",
     "SemanticQueryToolResponse",
     "ServingMetaResponse",
     "Sha256Hex",
