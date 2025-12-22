@@ -12,7 +12,7 @@ import ibis
 import ibis.expr.types as it
 
 from codeintel.core.hamilton.semantic_tags import semantic_view
-from codeintel.core.ibis_typing import ibis_bool, ne, or_predicates
+from codeintel.core.ibis_typing import cast_dtype, ibis_bool, ne, or_predicates, sub, truediv
 from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.views.protocol import IbisViewGateway
 from codeintel.storage.views.view_tags import ibis_view
@@ -193,7 +193,7 @@ def build_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     ],
 )
 def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
-    """Build docs.v_function_summary from risk factors and metrics.
+    """Build docs.v_function_summary from profiles and metrics.
 
     Parameters
     ----------
@@ -205,41 +205,51 @@ def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    rf: it.Table = ibis_gw.table("analytics.goid_risk_factors")
+    fp: it.Table = ibis_gw.table("analytics.function_profile")
     fm: it.Table = ibis_gw.table("analytics.function_metrics")
+    hotspots: it.Table = ibis_gw.table("analytics.hotspots")
 
-    joined = rf.left_join(
-        fm,
-        [
-            rf.function_goid_h128 == fm.function_goid_h128,
-            rf.repo == fm.repo,
-            rf.commit == fm.commit,
-        ],
+    joined = (
+        fp.left_join(
+            fm,
+            [
+                fp.function_goid_h128 == fm.function_goid_h128,
+                fp.repo == fm.repo,
+                fp.commit == fm.commit,
+            ],
+        )
+        .left_join(
+            hotspots,
+            [
+                fp.rel_path == hotspots.rel_path,
+            ],
+        )
     )
-    complexity_bucket = ibis.coalesce(rf.complexity_bucket, ibis.literal("unknown")).name(
+    complexity_bucket = ibis.coalesce(fp.complexity_bucket, ibis.literal("unknown")).name(
         "complexity_bucket"
     )
-    typedness_bucket = ibis.coalesce(rf.typedness_bucket, ibis.literal("unknown")).name(
+    typedness_bucket = ibis.coalesce(fp.typedness_bucket, ibis.literal("unknown")).name(
         "typedness_bucket"
     )
-    typedness_source = ibis.coalesce(rf.typedness_source, ibis.literal("unknown")).name(
+    typedness_source = ibis.coalesce(fp.typedness_source, ibis.literal("unknown")).name(
         "typedness_source"
     )
-    last_test_status = ibis.coalesce(rf.last_test_status, ibis.literal("untested")).name(
+    last_test_status = ibis.coalesce(fp.last_test_status, ibis.literal("untested")).name(
         "last_test_status"
     )
+    risk_level = ibis.coalesce(fp.risk_level, ibis.literal("unknown")).name("risk_level")
     return joined.select(
-        rf.function_goid_h128,
-        rf.urn,
-        rf.repo,
-        rf.commit,
-        rf.rel_path,
-        rf.language,
-        rf.kind,
-        rf.qualname,
-        rf.loc,
-        rf.logical_loc,
-        rf.cyclomatic_complexity,
+        fp.function_goid_h128,
+        fp.urn,
+        fp.repo,
+        fp.commit,
+        fp.rel_path,
+        fp.language,
+        fp.kind,
+        fp.qualname,
+        fp.loc,
+        fp.logical_loc,
+        fp.cyclomatic_complexity,
         complexity_bucket,
         fm.param_count,
         fm.positional_params,
@@ -253,22 +263,22 @@ def build_docs_function_summary(ibis_gw: IbisViewGateway) -> it.Table:
         fm.raise_count,
         typedness_bucket,
         typedness_source,
-        rf.hotspot_score,
-        rf.file_typed_ratio,
-        rf.static_error_count,
-        rf.has_static_errors,
-        rf.executable_lines,
-        rf.covered_lines,
-        rf.coverage_ratio,
-        rf.tested,
-        rf.test_count,
-        rf.failing_test_count,
+        hotspots.score.name("hotspot_score"),
+        fp.file_typed_ratio,
+        fp.static_error_count,
+        fp.has_static_errors,
+        fp.executable_lines,
+        fp.covered_lines,
+        fp.coverage_ratio,
+        fp.tested,
+        fp.tests_touching.name("test_count"),
+        fp.failing_tests.name("failing_test_count"),
         last_test_status,
-        rf.risk_score,
-        rf.risk_level,
-        rf.tags,
-        rf.owners,
-        rf.created_at,
+        fp.risk_score,
+        risk_level,
+        fp.tags,
+        fp.owners,
+        fp.created_at,
     )
 
 
@@ -447,34 +457,105 @@ def build_function_hotspots(ibis_gw: IbisViewGateway) -> it.Table:
     it.Table
         Ibis table expression for the view.
     """
-    rf: it.Table = ibis_gw.table("analytics.goid_risk_factors")
-    min_score = rf.hotspot_score.min()
-    max_score = rf.hotspot_score.max()
-    score_range = max_score.cast("float64") - min_score.cast("float64")
-    normalized_score = ibis.cases(
-        (score_range == 0, 0.0),
-        else_=(rf.hotspot_score.cast("float64") - min_score.cast("float64")) / score_range,
+    fm: it.Table = ibis_gw.table("analytics.function_metrics")
+    ft: it.Table = ibis_gw.table("analytics.function_types").select(
+        "function_goid_h128",
+        "repo",
+        "commit",
+        "typedness_bucket",
     )
-    hotspots = rf.mutate(
+    cf: it.Table = ibis_gw.table("analytics.coverage_functions").select(
+        "function_goid_h128",
+        "repo",
+        "commit",
+        "coverage_ratio",
+    )
+    rf: it.Table = ibis_gw.table("analytics.goid_risk_factors").select(
+        "function_goid_h128",
+        "repo",
+        "commit",
+        "risk_score",
+        "risk_level",
+    )
+    hotspots_table: it.Table = ibis_gw.table("analytics.hotspots").select(
+        "rel_path",
+        "score",
+    ).rename({"hotspot_rel_path": "rel_path"})
+
+    joined = fm.left_join(
+        ft,
+        [
+            fm.function_goid_h128 == ft.function_goid_h128,
+            fm.repo == ft.repo,
+            fm.commit == ft.commit,
+        ],
+    ).select(
+        fm,
+        ft.typedness_bucket,
+    )
+    joined = joined.left_join(
+        cf,
+        [
+            joined.function_goid_h128 == cf.function_goid_h128,
+            joined.repo == cf.repo,
+            joined.commit == cf.commit,
+        ],
+    ).select(
+        joined,
+        cf.coverage_ratio,
+    )
+    joined = joined.left_join(
+        rf,
+        [
+            joined.function_goid_h128 == rf.function_goid_h128,
+            joined.repo == rf.repo,
+            joined.commit == rf.commit,
+        ],
+    ).select(
+        joined,
+        rf.risk_score,
+        rf.risk_level,
+    )
+    joined = joined.left_join(
+        hotspots_table,
+        [
+            joined.rel_path == hotspots_table.hotspot_rel_path,
+        ],
+    ).select(
+        joined,
+        hotspots_table.score.name("hotspot_score"),
+    )
+
+    hotspot_score = joined.hotspot_score
+    min_score = cast_dtype(ibis.coalesce(hotspot_score.min(), ibis.literal(0.0)), "float64")
+    max_score = cast_dtype(ibis.coalesce(hotspot_score.max(), ibis.literal(0.0)), "float64")
+    score_range = sub(max_score, min_score)
+    hotspot_score_float = cast_dtype(hotspot_score, "float64")
+    normalized_score = ibis.cases(
+        (hotspot_score.isnull(), ibis.null()),
+        (score_range == 0, 0.0),
+        else_=truediv(sub(hotspot_score_float, min_score), score_range),
+    )
+    hotspots = joined.mutate(
         hotspot_normalized=normalized_score,
     )
     return hotspots.select(
-        rf.function_goid_h128,
-        rf.repo,
-        rf.commit,
-        rf.rel_path,
-        rf.language,
-        rf.kind,
-        rf.qualname,
-        rf.hotspot_score,
-        normalized_score.name("hotspot_normalized"),
-        rf.cyclomatic_complexity,
-        rf.coverage_ratio,
-        rf.risk_score,
-        rf.risk_level,
-        rf.complexity_bucket,
-        rf.typedness_bucket,
-        rf.created_at,
+        hotspots.function_goid_h128,
+        hotspots.repo,
+        hotspots.commit,
+        hotspots.rel_path,
+        hotspots.language,
+        hotspots.kind,
+        hotspots.qualname,
+        hotspots.hotspot_score,
+        hotspots.hotspot_normalized,
+        hotspots.cyclomatic_complexity,
+        hotspots.coverage_ratio,
+        cast_dtype(hotspots.risk_score, "float64").name("risk_score"),
+        hotspots.risk_level,
+        hotspots.complexity_bucket,
+        hotspots.typedness_bucket,
+        hotspots.created_at,
     )
 
 
@@ -683,16 +764,20 @@ def build_docs_file_summary(ibis_gw: IbisViewGateway) -> it.Table:
           ON sd.rel_path = m.path
         LEFT JOIN (
             SELECT
-                repo,
-                commit,
-                rel_path,
+                fm.repo,
+                fm.commit,
+                fm.rel_path,
                 COUNT(*) AS function_count,
-                SUM(CASE WHEN risk_level = 'high' THEN 1 ELSE 0 END) AS high_risk_functions,
-                SUM(CASE WHEN risk_level = 'medium' THEN 1 ELSE 0 END) AS medium_risk_functions,
-                SUM(CASE WHEN risk_level = 'low' THEN 1 ELSE 0 END) AS low_risk_functions,
-                MAX(risk_score) AS max_risk_score
-            FROM analytics.goid_risk_factors
-            GROUP BY repo, commit, rel_path
+                SUM(CASE WHEN rf.risk_level = 'high' THEN 1 ELSE 0 END) AS high_risk_functions,
+                SUM(CASE WHEN rf.risk_level = 'medium' THEN 1 ELSE 0 END) AS medium_risk_functions,
+                SUM(CASE WHEN rf.risk_level = 'low' THEN 1 ELSE 0 END) AS low_risk_functions,
+                MAX(rf.risk_score) AS max_risk_score
+            FROM analytics.function_metrics fm
+            LEFT JOIN analytics.goid_risk_factors rf
+              ON rf.function_goid_h128 = fm.function_goid_h128
+             AND rf.repo = fm.repo
+             AND rf.commit = fm.commit
+            GROUP BY fm.repo, fm.commit, fm.rel_path
         ) AS r
           ON r.rel_path = m.path
          AND r.repo = m.repo
@@ -2109,22 +2194,34 @@ def build_docs_test_to_function(ibis_gw: IbisViewGateway) -> it.Table:
     """
     e: it.Table = ibis_gw.table("analytics.test_coverage_edges")
     tc: it.Table = ibis_gw.table("analytics.test_catalog")
+    fm: it.Table = ibis_gw.table("analytics.function_metrics")
     rf: it.Table = ibis_gw.table("analytics.goid_risk_factors")
 
-    joined = e.left_join(
-        tc,
-        [
-            e.test_id == tc.test_id,
-            e.repo == tc.repo,
-            e.commit == tc.commit,
-        ],
-    ).left_join(
-        rf,
-        [
-            rf.function_goid_h128 == e.function_goid_h128,
-            rf.repo == e.repo,
-            rf.commit == e.commit,
-        ],
+    joined = (
+        e.left_join(
+            tc,
+            [
+                e.test_id == tc.test_id,
+                e.repo == tc.repo,
+                e.commit == tc.commit,
+            ],
+        )
+        .left_join(
+            fm,
+            [
+                fm.function_goid_h128 == e.function_goid_h128,
+                fm.repo == e.repo,
+                fm.commit == e.commit,
+            ],
+        )
+        .left_join(
+            rf,
+            [
+                rf.function_goid_h128 == e.function_goid_h128,
+                rf.repo == e.repo,
+                rf.commit == e.commit,
+            ],
+        )
     )
 
     return joined.select(
@@ -2142,11 +2239,11 @@ def build_docs_test_to_function(ibis_gw: IbisViewGateway) -> it.Table:
         tc.parametrized,
         tc.flaky,
         e.function_goid_h128,
-        rf.urn.name("function_urn"),
-        rf.rel_path.name("function_rel_path"),
-        rf.qualname.name("function_qualname"),
-        rf.language.name("function_language"),
-        rf.kind.name("function_kind"),
+        e.urn.name("function_urn"),
+        e.rel_path.name("function_rel_path"),
+        e.qualname.name("function_qualname"),
+        fm.language.name("function_language"),
+        fm.kind.name("function_kind"),
         e.covered_lines,
         e.executable_lines,
         e.coverage_ratio,

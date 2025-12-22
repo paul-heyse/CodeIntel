@@ -122,7 +122,7 @@ class ProfilePack:
         self._seed_typedness(ctx)
         self._seed_static_diagnostics(ctx)
         self._seed_docstrings(ctx, now)
-        self._seed_risk_factors(ctx, now)
+        self._seed_risk_factors(ctx)
         self._seed_function_metrics(ctx, now)
         self._seed_function_types(ctx, now)
         self._seed_coverage_functions(ctx, now)
@@ -250,40 +250,19 @@ class ProfilePack:
         ]
         insert_rows(ctx.gateway, rows)
 
-    def _seed_risk_factors(self, ctx: TestContext, now: datetime) -> None:
+    def _seed_risk_factors(self, ctx: TestContext) -> None:
         """Seed the analytics.goid_risk_factors table."""
         rows = [
             RiskFactorRow(
                 function_goid_h128=DEFAULT_GOID,
-                urn=f"{DEFAULT_URN_PREFIX}{DEFAULT_QUALNAME}",
                 repo=self.repo,
                 commit=self.commit,
-                rel_path=self.rel_path,
-                language="python",
-                kind="function",
-                qualname=DEFAULT_QUALNAME,
-                loc=4,
-                logical_loc=3,
-                cyclomatic_complexity=2,
-                complexity_bucket="medium",
-                typedness_bucket="typed",
-                typedness_source="analysis",
-                hotspot_score=0.5,
-                file_typed_ratio=0.5,
-                static_error_count=1,
-                has_static_errors=True,
-                executable_lines=4,
-                covered_lines=2,
-                coverage_ratio=0.5,
-                tested=True,
-                test_count=1,
-                failing_test_count=1,
-                last_test_status="some_failing",
-                risk_score=0.9,
+                risk_score=9,
                 risk_level="high",
-                tags='["server"]',
-                owners='["team@example.com"]',
-                created_at=now,
+                cyclomatic_complexity=2,
+                fan_in_count=1,
+                fan_out_count=1,
+                has_tests=True,
             )
         ]
         insert_rows(ctx.gateway, rows)

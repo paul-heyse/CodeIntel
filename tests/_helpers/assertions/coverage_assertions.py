@@ -123,7 +123,7 @@ def assert_typedness_bucket(
     goid: int,
     bucket: str,
 ) -> None:
-    """Assert typedness bucket for a given GOID from risk factors.
+    """Assert typedness bucket for a given GOID from function types.
 
     Raises
     ------
@@ -133,7 +133,7 @@ def assert_typedness_bucket(
     row = con.execute(
         """
         SELECT typedness_bucket
-        FROM analytics.goid_risk_factors
+        FROM analytics.function_types
         WHERE function_goid_h128 = ?
         """,
         [goid],

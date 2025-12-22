@@ -131,7 +131,7 @@ class SubsystemAnalyticsPack:
             self._seed_function_metrics(ctx, now)
 
         if self.include_risk_factors:
-            self._seed_risk_factors(ctx, now)
+            self._seed_risk_factors(ctx)
 
         # Seed subsystem structure
         self._seed_subsystem_modules(ctx)
@@ -322,80 +322,36 @@ class SubsystemAnalyticsPack:
         insert_rows(ctx.gateway, rows)
 
     @staticmethod
-    def _seed_risk_factors(ctx: TestContext, now: datetime) -> None:
+    def _seed_risk_factors(ctx: TestContext) -> None:
         """Seed risk factors for subsystem functions.
 
         Parameters
         ----------
         ctx
             Test context with gateway.
-        now
-            Timestamp for created_at fields.
         """
         rows = [
             RiskFactorRow(
                 function_goid_h128=GOID_API_HANDLER,
-                urn=f"goid:{ctx.repo}#python:function:{MOD_API_FQN}.handler",
                 repo=ctx.repo,
                 commit=ctx.commit,
-                rel_path=MOD_API_PATH,
-                language="python",
-                kind="function",
-                qualname=f"{MOD_API_FQN}.handler",
-                loc=4,
-                logical_loc=3,
-                cyclomatic_complexity=1,
-                complexity_bucket="low",
-                typedness_bucket="fully_typed",
-                typedness_source="annotation",
-                hotspot_score=0.1,
-                file_typed_ratio=0.9,
-                static_error_count=0,
-                has_static_errors=False,
-                executable_lines=4,
-                covered_lines=4,
-                coverage_ratio=1.0,
-                tested=True,
-                test_count=1,
-                failing_test_count=0,
-                last_test_status="passed",
-                risk_score=0.1,
+                risk_score=1,
                 risk_level="low",
-                tags="[]",
-                owners="[]",
-                created_at=now,
+                cyclomatic_complexity=1,
+                fan_in_count=0,
+                fan_out_count=1,
+                has_tests=True,
             ),
             RiskFactorRow(
                 function_goid_h128=GOID_CORE_SERVICE,
-                urn=f"goid:{ctx.repo}#python:function:{MOD_CORE_FQN}.service",
                 repo=ctx.repo,
                 commit=ctx.commit,
-                rel_path=MOD_CORE_PATH,
-                language="python",
-                kind="function",
-                qualname=f"{MOD_CORE_FQN}.service",
-                loc=8,
-                logical_loc=6,
-                cyclomatic_complexity=3,
-                complexity_bucket="low",
-                typedness_bucket="partial_typed",
-                typedness_source="annotation",
-                hotspot_score=0.6,
-                file_typed_ratio=0.7,
-                static_error_count=1,
-                has_static_errors=True,
-                executable_lines=8,
-                covered_lines=6,
-                coverage_ratio=0.75,
-                tested=True,
-                test_count=1,
-                failing_test_count=0,
-                last_test_status="passed",
-                risk_score=0.7,
+                risk_score=7,
                 risk_level="high",
-                tags="[]",
-                owners="[]",
-                created_at=now,
+                cyclomatic_complexity=3,
+                fan_in_count=2,
+                fan_out_count=2,
+                has_tests=True,
             ),
         ]
         insert_rows(ctx.gateway, rows)

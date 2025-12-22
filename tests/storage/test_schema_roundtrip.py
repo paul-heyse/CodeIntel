@@ -79,6 +79,26 @@ CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
         "evidence_json": None,
     },
 ]
+SYMBOL_USE_SAMPLES: list[SymbolUseRow] = [
+    SymbolUseRow(
+        symbol="alpha",
+        def_path="src/app.py",
+        use_path="src/utils.py",
+        same_file=False,
+        same_module=False,
+        def_goid_h128=1,
+        use_goid_h128=2,
+    ),
+    SymbolUseRow(
+        symbol="beta",
+        def_path="src/app.py",
+        use_path="src/app.py",
+        same_file=True,
+        same_module=True,
+        def_goid_h128=None,
+        use_goid_h128=None,
+    ),
+]
 TEST_COVERAGE_EDGE_SAMPLES: list[TestCoverageEdgeRow] = [
     {
         "test_id": "test_demo",
@@ -109,6 +129,36 @@ TEST_COVERAGE_EDGE_SAMPLES: list[TestCoverageEdgeRow] = [
         "coverage_ratio": None,
         "last_status": None,
         "created_at": None,
+    },
+]
+BEHAVIORAL_COVERAGE_SAMPLES: list[BehavioralCoverageRowModel] = [
+    {
+        "repo": "alpha",
+        "commit": "bravo",
+        "test_id": "test_one",
+        "test_goid_h128": 101,
+        "rel_path": "tests/test_alpha.py",
+        "qualname": "TestAlpha.test_one",
+        "behavior_tags": {"tag": "value"},
+        "tag_source": "heuristic",
+        "heuristic_version": "v1",
+        "llm_model": None,
+        "llm_run_id": None,
+        "created_at": datetime(2024, 1, 1, tzinfo=UTC),
+    },
+    {
+        "repo": "charlie",
+        "commit": "delta",
+        "test_id": "test_two",
+        "test_goid_h128": None,
+        "rel_path": "tests/test_beta.py",
+        "qualname": None,
+        "behavior_tags": {"tag": "other"},
+        "tag_source": "llm",
+        "heuristic_version": None,
+        "llm_model": "model-x",
+        "llm_run_id": "run-1",
+        "created_at": datetime(2023, 6, 15, tzinfo=UTC),
     },
 ]
 
@@ -146,34 +196,11 @@ def _test_coverage_edge_strategy() -> SearchStrategy[TestCoverageEdgeRow]:
 
 
 def _symbol_use_row_strategy() -> SearchStrategy[SymbolUseRow]:
-    return st.builds(
-        SymbolUseRow,
-        symbol=_short_text(),
-        def_path=_short_text(),
-        use_path=_short_text(),
-        same_file=st.booleans(),
-        same_module=st.booleans(),
-        def_goid_h128=_optional_int(),
-        use_goid_h128=_optional_int(),
-    )
+    return st.sampled_from(SYMBOL_USE_SAMPLES)
 
 
 def _behavioral_coverage_strategy() -> SearchStrategy[BehavioralCoverageRowModel]:
-    mapping: dict[str, SearchStrategy[object]] = {
-        "repo": _short_text(),
-        "commit": _short_text(),
-        "test_id": _short_text(),
-        "test_goid_h128": _optional_int(),
-        "rel_path": _short_text(),
-        "qualname": _optional_text(),
-        "behavior_tags": st.just({"tag": "value"}),
-        "tag_source": _short_text(),
-        "heuristic_version": _optional_text(),
-        "llm_model": _optional_text(),
-        "llm_run_id": _optional_text(),
-        "created_at": st.sampled_from(DATETIME_SAMPLES),
-    }
-    return cast("SearchStrategy[BehavioralCoverageRowModel]", st.fixed_dictionaries(mapping))
+    return st.sampled_from(BEHAVIORAL_COVERAGE_SAMPLES)
 
 
 @lru_cache(maxsize=1)

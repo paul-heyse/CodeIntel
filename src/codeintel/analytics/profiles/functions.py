@@ -86,6 +86,64 @@ class FunctionProfileViews:
     history_by_func: Mapping[int, FunctionHistoryView]
 
 
+@dataclass(frozen=True)
+class _FunctionBaseTables:
+    """Filtered tables needed to assemble function base info."""
+
+    metrics: it.Table
+    types: it.Table
+    modules: it.Table
+    typedness: it.Table
+    diagnostics: it.Table
+
+
+def _load_function_base_tables(
+    inputs: FunctionProfileInputs,
+    module_table: str,
+) -> _FunctionBaseTables | None:
+    gw = inputs.gateway
+    repo = inputs.repo
+    commit = inputs.commit
+
+    try:
+        metrics_table = ibis_facade.table(gw, "analytics.function_metrics")
+        metrics = filter_by(
+            metrics_table,
+            metrics_table.repo == repo,
+            metrics_table.commit == commit,
+        )
+        types_table = ibis_facade.table(gw, "analytics.function_types")
+        types = filter_by(
+            types_table,
+            types_table.repo == repo,
+            types_table.commit == commit,
+        )
+        modules = ibis_facade.table(gw, module_table)
+        typedness_table = ibis_facade.table(gw, "analytics.typedness")
+        typedness = filter_by(
+            typedness_table,
+            typedness_table.repo == repo,
+            typedness_table.commit == commit,
+        )
+        diagnostics_table = ibis_facade.table(gw, "analytics.static_diagnostics")
+        diagnostics = filter_by(
+            diagnostics_table,
+            diagnostics_table.repo == repo,
+            diagnostics_table.commit == commit,
+        )
+    except DuckDBError as exc:
+        log.warning("function_profile: failed to access base tables: %s", exc)
+        return None
+
+    return _FunctionBaseTables(
+        metrics=metrics,
+        types=types,
+        modules=modules,
+        typedness=typedness,
+        diagnostics=diagnostics,
+    )
+
+
 def compute_function_profile_inputs(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -143,87 +201,86 @@ def load_function_base_info(
         msg = f"Unexpected module table: {module_table}"
         raise ValueError(msg)
 
-    gw = inputs.gateway
-    repo = inputs.repo
-    commit = inputs.commit
-
-    try:
-        risk_table = ibis_facade.table(gw, "analytics.goid_risk_factors")
-        rf = filter_by(risk_table, risk_table.repo == repo, risk_table.commit == commit)
-        fm = ibis_facade.table(gw, "analytics.function_metrics")
-        ft = ibis_facade.table(gw, "analytics.function_types")
-        modules = ibis_facade.table(gw, module_table)
-    except DuckDBError as exc:
-        log.warning("function_profile: failed to access base tables: %s", exc)
+    tables = _load_function_base_tables(inputs, module_table)
+    if tables is None:
         return {}
 
     joined = (
-        rf.left_join(
-            fm,
+        tables.metrics.left_join(
+            tables.types,
             predicates=[
-                (rf.function_goid_h128, fm.function_goid_h128),
-                (rf.repo, fm.repo),
-                (rf.commit, fm.commit),
+                (tables.metrics.function_goid_h128, tables.types.function_goid_h128),
+                (tables.metrics.repo, tables.types.repo),
+                (tables.metrics.commit, tables.types.commit),
             ],
         )
         .left_join(
-            ft,
-            predicates=[
-                (rf.function_goid_h128, ft.function_goid_h128),
-                (rf.repo, ft.repo),
-                (rf.commit, ft.commit),
-            ],
-        )
-        .left_join(
-            modules,
+            tables.modules,
             predicates=[
                 and_predicates(
-                    modules.path == rf.rel_path,
-                    (modules.repo.isnull()) | (modules.repo == rf.repo),
-                    (modules.commit.isnull()) | (modules.commit == rf.commit),
+                    tables.modules.path == tables.metrics.rel_path,
+                    (tables.modules.repo.isnull()) | (tables.modules.repo == tables.metrics.repo),
+                    (tables.modules.commit.isnull())
+                    | (tables.modules.commit == tables.metrics.commit),
                 )
+            ],
+        )
+        .left_join(
+            tables.typedness,
+            predicates=[
+                (tables.typedness.path, tables.metrics.rel_path),
+                (tables.typedness.repo, tables.metrics.repo),
+                (tables.typedness.commit, tables.metrics.commit),
+            ],
+        )
+        .left_join(
+            tables.diagnostics,
+            predicates=[
+                (tables.diagnostics.rel_path, tables.metrics.rel_path),
+                (tables.diagnostics.repo, tables.metrics.repo),
+                (tables.diagnostics.commit, tables.metrics.commit),
             ],
         )
     )
 
     try:
         df = joined.select(
-            rf.function_goid_h128,
-            rf.urn,
-            rf.repo,
-            rf.commit,
-            rf.rel_path,
-            modules.module,
-            rf.language,
-            rf.kind,
-            rf.qualname,
-            fm.start_line,
-            fm.end_line,
-            rf.loc,
-            rf.logical_loc,
-            rf.cyclomatic_complexity,
-            rf.complexity_bucket,
-            fm.param_count,
-            fm.positional_params,
-            fm.keyword_only_params.name("keyword_params"),
-            fm.has_varargs.name("vararg"),
-            fm.has_varkw.name("kwarg"),
-            fm.max_nesting_depth,
-            fm.stmt_count,
-            fm.decorator_count,
-            fm.has_docstring,
-            ft.total_params,
-            ft.annotated_params,
-            ft.return_type,
-            ft.param_types,
-            ft.fully_typed,
-            ft.partial_typed,
-            ft.untyped,
-            rf.typedness_bucket,
-            rf.typedness_source,
-            rf.file_typed_ratio,
-            rf.static_error_count,
-            rf.has_static_errors,
+            tables.metrics.function_goid_h128,
+            tables.metrics.urn,
+            tables.metrics.repo,
+            tables.metrics.commit,
+            tables.metrics.rel_path,
+            tables.modules.module,
+            tables.metrics.language,
+            tables.metrics.kind,
+            tables.metrics.qualname,
+            tables.metrics.start_line,
+            tables.metrics.end_line,
+            tables.metrics.loc,
+            tables.metrics.logical_loc,
+            tables.metrics.cyclomatic_complexity,
+            tables.metrics.complexity_bucket,
+            tables.metrics.param_count,
+            tables.metrics.positional_params,
+            tables.metrics.keyword_only_params.name("keyword_params"),
+            tables.metrics.has_varargs.name("vararg"),
+            tables.metrics.has_varkw.name("kwarg"),
+            tables.metrics.max_nesting_depth,
+            tables.metrics.stmt_count,
+            tables.metrics.decorator_count,
+            tables.metrics.has_docstring,
+            tables.types.total_params,
+            tables.types.annotated_params,
+            tables.types.return_type,
+            tables.types.param_types,
+            tables.types.fully_typed,
+            tables.types.partial_typed,
+            tables.types.untyped,
+            tables.types.typedness_bucket,
+            tables.types.typedness_source,
+            tables.typedness.annotation_ratio.name("file_typed_ratio"),
+            tables.diagnostics.total_errors.name("static_error_count"),
+            tables.diagnostics.has_errors.name("has_static_errors"),
         ).execute()
     except DuckDBError as exc:
         log.warning("function_profile: failed to load base info: %s", exc)
@@ -323,20 +380,45 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
         Mapping keyed by function GOID.
     """
     try:
-        risk_table = ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors")
-        rf = filter_by(
-            risk_table,
-            risk_table.repo == inputs.repo,
-            risk_table.commit == inputs.commit,
+        fm_table = ibis_facade.table(inputs.gateway, "analytics.function_metrics")
+        fm = filter_by(fm_table, fm_table.repo == inputs.repo, fm_table.commit == inputs.commit)
+        rf_table = ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors")
+        rf = filter_by(rf_table, rf_table.repo == inputs.repo, rf_table.commit == inputs.commit)
+        modules = ibis_facade.table(inputs.gateway, DEFAULT_MODULE_TABLE)
+        hotspots = ibis_facade.table(inputs.gateway, "analytics.hotspots")
+        df = (
+            fm.left_join(
+                rf,
+                predicates=[
+                    (fm.function_goid_h128, rf.function_goid_h128),
+                    (fm.repo, rf.repo),
+                    (fm.commit, rf.commit),
+                ],
+            )
+            .left_join(
+                modules,
+                predicates=[
+                    and_predicates(
+                        modules.path == fm.rel_path,
+                        (modules.repo.isnull()) | (modules.repo == fm.repo),
+                        (modules.commit.isnull()) | (modules.commit == fm.commit),
+                    )
+                ],
+            )
+            .left_join(
+                hotspots,
+                predicates=[(hotspots.rel_path, fm.rel_path)],
+            )
+            .select(
+                fm.function_goid_h128,
+                rf.risk_score,
+                rf.risk_level,
+                hotspots.score.name("hotspot_score"),
+                modules.tags,
+                modules.owners,
+            )
+            .execute()
         )
-        df = rf.select(
-            rf.function_goid_h128,
-            rf.risk_score,
-            rf.risk_level,
-            rf.hotspot_score,
-            rf.tags,
-            rf.owners,
-        ).execute()
     except DuckDBError as exc:
         log.warning("function_profile: failed to load risk factors: %s", exc)
         return {}
@@ -374,11 +456,6 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
             edges, catalog, slow_threshold_ms=inputs.slow_test_threshold_ms
         )
 
-        rf = filter_by(
-            ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors"),
-            ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors").repo == repo,
-            ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors").commit == commit,
-        )
         cf = filter_by(
             ibis_facade.table(inputs.gateway, "analytics.coverage_functions"),
             ibis_facade.table(inputs.gateway, "analytics.coverage_functions").repo == repo,
@@ -386,37 +463,30 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
         )
 
         df = (
-            rf.left_join(
-                cf,
-                predicates=[
-                    (rf.function_goid_h128, cf.function_goid_h128),
-                    (rf.repo, cf.repo),
-                    (rf.commit, cf.commit),
-                ],
-            )
-            .left_join(
+            cf.left_join(
                 t_stats,
-                predicates=[(rf.function_goid_h128, t_stats.function_goid_h128)],
+                predicates=[(cf.function_goid_h128, t_stats.function_goid_h128)],
             )
             .left_join(
                 status_top,
-                predicates=[(rf.function_goid_h128, status_top.function_goid_h128)],
+                predicates=[(cf.function_goid_h128, status_top.function_goid_h128)],
             )
             .select(
-                rf.function_goid_h128,
-                rf.executable_lines,
-                rf.covered_lines,
-                rf.coverage_ratio,
-                rf.tested,
+                cf.function_goid_h128,
+                cf.executable_lines,
+                cf.covered_lines,
+                cf.coverage_ratio,
+                cf.tested,
                 cf.untested_reason,
                 zero_if_null(t_stats.tests_touching).name("tests_touching"),
                 zero_if_null(t_stats.failing_tests).name("failing_tests"),
                 zero_if_null(t_stats.slow_tests).name("slow_tests"),
                 zero_if_null(t_stats.flaky_tests).name("flaky_tests"),
-                rf.last_test_status,
-                ibis.coalesce(status_top.dominant_test_status, rf.last_test_status).name(
-                    "dominant_test_status"
-                ),
+                ibis.coalesce(
+                    status_top.dominant_test_status,
+                    ibis.literal("untested"),
+                ).name("last_test_status"),
+                status_top.dominant_test_status.name("dominant_test_status"),
             )
             .execute()
         )
@@ -695,26 +765,26 @@ def join_function_docs(inputs: FunctionProfileInputs) -> Mapping[int, FunctionDo
         Mapping keyed by function GOID.
     """
     try:
-        rf_table = ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors")
-        rf = filter_by(rf_table, rf_table.repo == inputs.repo, rf_table.commit == inputs.commit)
+        fm_table = ibis_facade.table(inputs.gateway, "analytics.function_metrics")
+        fm = filter_by(fm_table, fm_table.repo == inputs.repo, fm_table.commit == inputs.commit)
         docs = ibis_facade.table(inputs.gateway, "core.docstrings")
         df = (
             (
-                rf.left_join(
+                fm.left_join(
                     docs,
                     predicates=[
                         and_predicates(
-                            docs.repo == rf.repo,
-                            docs.commit == rf.commit,
-                            docs.rel_path == rf.rel_path,
-                            docs.qualname == rf.qualname,
-                            docs.kind == rf.kind,
+                            docs.repo == fm.repo,
+                            docs.commit == fm.commit,
+                            docs.rel_path == fm.rel_path,
+                            docs.qualname == fm.qualname,
+                            docs.kind == fm.kind,
                         )
                     ],
                 )
             )
             .select(
-                rf.function_goid_h128,
+                fm.function_goid_h128,
                 docs.short_desc.name("doc_short"),
                 docs.long_desc.name("doc_long"),
                 docs.params.name("doc_params"),
