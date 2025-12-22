@@ -53,7 +53,6 @@ from codeintel.core.validation.reporters import (
 from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.analytics.compute.functions import (

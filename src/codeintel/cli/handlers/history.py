@@ -110,6 +110,7 @@ def _build_history_env(
     )
     return context.build_env()
 
+
 def _build_gateway_resolver(
     gateway: StorageGateway,
     snapshot_resolver: Callable[[str], StorageGateway],

@@ -14,8 +14,8 @@ from codeintel.analytics.compute.row_builders import (
     build_subsystem_graph_rows,
 )
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
-from codeintel.analytics.utilities.datasets import validate_tuple_rows
-from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -113,8 +113,7 @@ def compute_subsystem_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    backend = gateway.policy
-    backend.ensure_table("analytics.subsystem_graph_metrics")
+    delete_scope = DeleteScope(repo=repo, commit=commit)
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -132,7 +131,12 @@ def compute_subsystem_graph_metrics(
     ]
     membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
     if not membership_rows:
-        backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
+        write_analytics_tuple_rows(
+            gateway,
+            "analytics.subsystem_graph_metrics",
+            [],
+            delete_scope=delete_scope,
+        )
         return
 
     subsystem_graph = _build_subsystem_graph(
@@ -143,7 +147,12 @@ def compute_subsystem_graph_metrics(
     subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
 
     if subsystem_graph.number_of_nodes() == 0:
-        backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
+        write_analytics_tuple_rows(
+            gateway,
+            "analytics.subsystem_graph_metrics",
+            [],
+            delete_scope=delete_scope,
+        )
         return
 
     centralities = _subsystem_centralities(subsystem_graph, graph_ctx)
@@ -164,13 +173,9 @@ def compute_subsystem_graph_metrics(
         )
     )
 
-    contract = get_contract_for_table_key("analytics.subsystem_graph_metrics")
-    validated_rows = validate_tuple_rows(
-        contract.table_key,
+    write_analytics_tuple_rows(
+        gateway,
+        "analytics.subsystem_graph_metrics",
         rows,
-        schema=contract.schema,
+        delete_scope=delete_scope,
     )
-
-    backend.delete_for_snapshot("analytics.subsystem_graph_metrics", repo=repo, commit=commit)
-    if validated_rows:
-        backend.bulk_insert("analytics.subsystem_graph_metrics", validated_rows)

@@ -274,11 +274,11 @@ def _load_observability_settings() -> ObservabilitySettings:
         export_metrics=bool(get_bool("CODEINTEL_EXPORT_METRICS", default=True)),
         console_export=bool(get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
         prometheus_enabled=bool(get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
-        duckdb_tracing_enabled=bool(
-            get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)
-        ),
+        duckdb_tracing_enabled=bool(get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)),
         duckdb_statement_mode=statement_mode_value,
-        duckdb_statement_hash_len=int(get_int("CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN", default=16) or 16),
+        duckdb_statement_hash_len=int(
+            get_int("CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN", default=16) or 16
+        ),
     )
 
 

@@ -20,8 +20,8 @@ from codeintel.analytics.compute.graphs import (
 )
 from codeintel.analytics.compute.row_builders import SymbolMetricInputs
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
-from codeintel.analytics.utilities.datasets import validate_tuple_rows
-from codeintel.build.schemas import get_contract_for_table_key
+from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -103,8 +103,7 @@ def compute_undirected_symbol_metrics[TNode](
         snapshot,
         runtime_opts,
     )
-    backend = gateway.policy
-    backend.ensure_table(config.table_key)
+    delete_scope = DeleteScope(repo=repo, commit=commit)
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -126,7 +125,12 @@ def compute_undirected_symbol_metrics[TNode](
         ).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph(config.graph_name, graph)
-        backend.delete_for_snapshot(config.table_key, repo=repo, commit=commit)
+        write_analytics_tuple_rows(
+            gateway,
+            config.table_key,
+            [],
+            delete_scope=delete_scope,
+        )
         return
 
     centrality = centrality_undirected(graph, ctx)
@@ -158,16 +162,13 @@ def compute_undirected_symbol_metrics[TNode](
         comp_size=comp_size,
         created_at=ctx.resolved_now(),
     )
-    rows = config.build_rows(inputs)
-    contract = get_contract_for_table_key(config.table_key)
-    validated_rows = validate_tuple_rows(
-        contract.table_key,
-        list(rows),
-        schema=contract.schema,
+    rows = list(config.build_rows(inputs))
+    write_analytics_tuple_rows(
+        gateway,
+        config.table_key,
+        rows,
+        delete_scope=delete_scope,
     )
-    backend.delete_for_snapshot(config.table_key, repo=repo, commit=commit)
-    if validated_rows:
-        backend.bulk_insert(config.table_key, validated_rows)
 
 
 __all__ = [

@@ -22,14 +22,7 @@ except ImportError:
     otel_trace = None
 
 SpanAttributeValue = (
-    str
-    | bool
-    | int
-    | float
-    | Sequence[str]
-    | Sequence[bool]
-    | Sequence[int]
-    | Sequence[float]
+    str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
 )
 
 

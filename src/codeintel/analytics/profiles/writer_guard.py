@@ -12,6 +12,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.analytics.utilities.datasets import write_analytics_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
@@ -33,10 +36,7 @@ def write_rows_via_policy_backend(
     rows: Iterable[Mapping[str, object]],
     config: PolicyWriterConfig,
 ) -> int:
-    """Write rows using DuckDBPolicyBackend for bulk insert.
-
-    This function provides a cleaner API that uses the centralized policy
-    backend for SQL generation, replacing direct executemany calls.
+    """Write rows via the canonical analytics contract writer.
 
     Parameters
     ----------
@@ -56,8 +56,10 @@ def write_rows_via_policy_backend(
     if not rows_list:
         return 0
 
-    backend = gateway.policy
-
-    backend.delete_for_snapshot(config.table_key, repo=config.repo, commit=config.commit)
-
-    return backend.bulk_insert_mappings(config.table_key, rows_list)
+    delete_scope = DeleteScope(repo=config.repo, commit=config.commit)
+    return write_analytics_rows(
+        gateway,
+        config.table_key,
+        rows_list,
+        delete_scope=delete_scope,
+    )

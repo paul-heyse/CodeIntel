@@ -1,12 +1,7 @@
-"""Global graph statistics for core graphs.
-
-This module computes and persists global graph statistics using
-DuckDBPolicyBackend for bulk insert operations.
-"""
+"""Global graph statistics for core graphs."""
 
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,17 +10,16 @@ from codeintel.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
+from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     import networkx as nx
 
     from codeintel.storage.gateway import StorageGateway
-
-log = logging.getLogger(__name__)
 
 
 _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
@@ -130,7 +124,11 @@ def compute_graph_stats(
             )
         )
 
-    backend = DuckDBPolicyBackend(gateway)
-    backend.delete_for_snapshot("analytics.graph_stats", repo=repo, commit=commit)
-    if rows:
-        backend.bulk_insert("analytics.graph_stats", rows, columns=list(_GRAPH_STATS_COLUMNS))
+    delete_scope = DeleteScope(repo=repo, commit=commit)
+    write_analytics_tuple_rows(
+        gateway,
+        "analytics.graph_stats",
+        rows,
+        delete_scope=delete_scope,
+        columns=_GRAPH_STATS_COLUMNS,
+    )

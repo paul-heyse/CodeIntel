@@ -18,6 +18,8 @@ from codeintel.analytics.parsing.ast_cache import (
     load_function_asts,
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.analytics.utilities.datasets import write_analytics_rows
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates, eq, is_null, or_predicates
@@ -274,13 +276,15 @@ def compute_function_effects(
     """
     rows = build_function_effects_rows(gateway, snapshot, options=options, inputs=inputs)
 
-    table_key = "analytics.function_effects"
-    backend = gateway.policy
-    backend.ensure_table(table_key)
-    backend.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
-    backend.bulk_insert_mappings(table_key, rows)
+    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
+    inserted = write_analytics_rows(
+        gateway,
+        "analytics.function_effects",
+        rows,
+        delete_scope=delete_scope,
+    )
     log.info(
-        "function_effects populated: %d rows for %s@%s", len(rows), snapshot.repo, snapshot.commit
+        "function_effects populated: %d rows for %s@%s", inserted, snapshot.repo, snapshot.commit
     )
 
 

@@ -6,7 +6,8 @@ providers, plus convenience helpers for validating and inserting rows.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
@@ -14,8 +15,6 @@ import pandas as pd
 from sqlglot import exp
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.analytics.utilities.persistence import DeleteScope
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.primitives import TableSchema
@@ -179,7 +178,13 @@ def write_analytics_rows(
     delete_scope: DeleteScope | None = None,
     scope: str | None = None,
 ) -> int:
-    """Validate and write analytics rows using the canonical contract registry."""
+    """Validate and write analytics rows using the canonical contract registry.
+
+    Returns
+    -------
+    int
+        Number of rows inserted.
+    """
     contract = get_analytics_dataset_contract(gateway, table_key)
     validated_rows = validate_contract_rows(contract.table_key, rows)
     return insert_analytics_rows(
@@ -191,19 +196,60 @@ def write_analytics_rows(
     )
 
 
+@dataclass(frozen=True)
+class AnalyticsTupleWriteOptions:
+    """Options for writing tuple-based analytics rows."""
+
+    delete_scope: DeleteScope | None = None
+    scope: str | None = None
+    columns: Sequence[str] | None = None
+
+
 def write_analytics_tuple_rows(
     gateway: StorageGateway,
     table_key: str,
     rows: Sequence[Mapping[str, object] | Sequence[object]],
     *,
-    delete_scope: DeleteScope | None = None,
-    scope: str | None = None,
-    columns: Sequence[str] | None = None,
+    options: AnalyticsTupleWriteOptions | None = None,
+    **legacy: object,
 ) -> int:
-    """Validate and write tuple rows using the canonical contract registry."""
-    _ = scope
+    """Validate and write tuple rows using the canonical contract registry.
+
+    Returns
+    -------
+    int
+        Number of rows inserted.
+
+    Raises
+    ------
+    ValueError
+        If column metadata is missing, delete scopes are unsupported, or legacy
+        options are invalid.
+    """
+    if legacy:
+        if options is not None:
+            message = "Legacy arguments are incompatible with options."
+            raise ValueError(message)
+        legacy_options = {
+            "delete_scope": legacy.pop("delete_scope", None),
+            "scope": legacy.pop("scope", None),
+            "columns": legacy.pop("columns", None),
+        }
+        if legacy:
+            unsupported = ", ".join(sorted(legacy))
+            message = f"Unsupported arguments: {unsupported}"
+            raise ValueError(message)
+        resolved = AnalyticsTupleWriteOptions(
+            delete_scope=cast("DeleteScope | None", legacy_options["delete_scope"]),
+            scope=cast("str | None", legacy_options["scope"]),
+            columns=cast("Sequence[str] | None", legacy_options["columns"]),
+        )
+    else:
+        resolved = options or AnalyticsTupleWriteOptions()
     contract = get_analytics_dataset_contract(gateway, table_key)
-    resolved_columns = tuple(columns) if columns is not None else contract.column_names()
+    resolved_columns = (
+        tuple(resolved.columns) if resolved.columns is not None else contract.column_names()
+    )
     if not resolved_columns:
         message = f"Missing column metadata for tuple rows in {table_key}"
         raise ValueError(message)
@@ -215,17 +261,19 @@ def write_analytics_tuple_rows(
     )
     backend = gateway.policy
     backend.ensure_table(contract.table_key)
-    if delete_scope is not None:
+    if resolved.delete_scope is not None:
         if not _table_supports_snapshot_delete(contract.table_key):
             message = f"Unsupported delete target: {contract.table_key}"
             raise ValueError(message)
         backend.delete_for_snapshot(
             contract.table_key,
-            repo=delete_scope.repo,
-            commit=delete_scope.commit,
+            repo=resolved.delete_scope.repo,
+            commit=resolved.delete_scope.commit,
         )
     return (
-        backend.bulk_insert(contract.table_key, list(validated_rows), columns=list(resolved_columns))
+        backend.bulk_insert(
+            contract.table_key, list(validated_rows), columns=list(resolved_columns)
+        )
         if validated_rows
         else 0
     )
