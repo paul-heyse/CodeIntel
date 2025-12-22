@@ -10,8 +10,6 @@ from codeintel.analytics.compute.graphs import (
     build_projection_graph,
     global_graph_stats,
 )
-from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -38,15 +36,15 @@ _GRAPH_STATS_COLUMNS: tuple[str, ...] = (
 )
 
 
-def compute_graph_stats(
+def build_graph_stats_rows(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-) -> None:
+) -> list[tuple[object, ...]]:
     """
-    Populate analytics.graph_stats for call/import and related graphs.
+    Build analytics.graph_stats rows for call/import and related graphs.
 
     Parameters
     ----------
@@ -58,6 +56,11 @@ def compute_graph_stats(
         Commit hash anchoring the metrics snapshot.
     runtime : GraphRuntime | GraphRuntimeOptions | None
         Optional runtime supplying cached graphs and backend selection.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Rows ready for insertion into analytics.graph_stats.
     """
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
@@ -124,11 +127,4 @@ def compute_graph_stats(
             )
         )
 
-    delete_scope = DeleteScope(repo=repo, commit=commit)
-    write_analytics_tuple_rows(
-        gateway,
-        "analytics.graph_stats",
-        rows,
-        delete_scope=delete_scope,
-        columns=_GRAPH_STATS_COLUMNS,
-    )
+    return rows

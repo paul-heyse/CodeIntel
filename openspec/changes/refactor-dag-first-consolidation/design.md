@@ -56,3 +56,33 @@ Hamilton.
 
 ## Open Questions
 - None.
+
+## Implementation Status (current)
+- Complete: storage-owned Ibis gateway usage, contract-backed writer introduced and adopted
+  across most analytics persistence, and ID normalization consolidation.
+- Partial: runtime loader adoption (serving/CLI observability is centralized, but CLI config
+  env parsing and serving_factory still read env directly).
+- Remaining: DAG-only execution and public API cleanup, subsystem cache refreshes still
+  bypass contract writer, docs/tests updates, and quality gate completion.
+
+## Remaining Design Detail
+### DAG-only execution and public API cleanup
+- Hamilton targets should consume row-producing functions only and materialize via
+  DataSavers; remove compute_* orchestration wrappers and any non-DAG module-level
+  orchestration entrypoints.
+- Remove non-DAG exports from analytics public APIs (`analytics.graphs`, `analytics.testing`,
+  `analytics.subsystems`, `analytics.semantic_roles`) so only pure compute utilities remain.
+- CLI/debug flows should read DAG-produced tables or cached artifacts, triggering DAG targets
+  when required rather than invoking compute_* helpers directly.
+
+### Canonical runtime loader for CLI/serving
+- Replace serving_factory env parsing with runtime loader settings, and collapse CLI config
+  env parsing into the canonical loader to avoid per-surface defaults.
+
+### Contract-backed persistence for caches
+- Materialize subsystem cache tables via Hamilton targets or route refresh through the
+  shared contract-backed writer rather than direct SQL.
+
+### Docs/tests/quality gates
+- Update documentation and tests to reflect DAG-only execution and canonical runtime
+  loading; run the quality report and targeted suites once the above refactors land.

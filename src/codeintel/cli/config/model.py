@@ -5,7 +5,6 @@ The model:
 1. Defines all configuration with typed defaults
 2. Generates JSON Schema 2020-12 via to_json_schema()
 3. Validates at load time via from_dict()
-4. Supports nested env var mapping (CODEINTEL_TELEMETRY_ENABLED)
 
 Note: To avoid circular imports, configuration loading, schema generation,
 and validation are provided as standalone functions in the config package.
@@ -147,7 +146,6 @@ class CliConfig:
     1. Defines all configuration with typed defaults
     2. Generates JSON Schema 2020-12 via to_json_schema()
     3. Validates at load time via from_dict()
-    4. Supports nested env var mapping (CODEINTEL_TELEMETRY_ENABLED)
 
     Parameters
     ----------

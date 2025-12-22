@@ -12,7 +12,7 @@ Metrics targets (from metrics_targets.py):
 - ``graph_metrics``: Computes graph-derived analytics tables.
 - ``graph_validation``: Runs integrity checks on graph tables.
 
-Phase 3 consolidation uses executor_materialize template for Pattern D targets.
+Graph metrics target materializes DAG-visible rows via DuckDBRowsSaver.
 """
 
 from __future__ import annotations
@@ -35,10 +35,19 @@ from hamilton.function_modifiers import (
     value,
 )
 
-from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, compute_graph_metrics
-from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_functions_ext
-from codeintel.analytics.graphs.graph_stats import compute_graph_stats
-from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
+from codeintel.analytics.graphs.graph_metrics import (
+    GraphMetricsDeps,
+    GraphMetricsRows,
+    build_graph_metric_filters,
+    build_graph_metrics_rows,
+)
+from codeintel.analytics.graphs.graph_metrics_ext import (
+    build_graph_metrics_functions_ext_rows,
+)
+from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.analytics.graphs.module_graph_metrics_ext import (
+    build_graph_metrics_modules_ext_rows,
+)
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
@@ -49,7 +58,7 @@ from codeintel.build.hamilton.helpers import (
     is_test_path,
 )
 from codeintel.build.hamilton.materialize_options import materialize_options
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
+from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -69,11 +78,17 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hamilton.validators import build_table_contract
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.ibis_typing import (
@@ -85,6 +100,7 @@ from codeintel.core.ibis_typing import (
     not_null,
 )
 from codeintel.core.paths import normalize_path
+from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.graphs.runtime import (
@@ -94,6 +110,12 @@ from codeintel.graphs.runtime import (
 from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
+    )
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
     from codeintel.storage.gateway import StorageGateway
 
@@ -125,12 +147,17 @@ CALL_GRAPH_VIEWS_TABLE_KEYS = (
     CALL_GRAPH_VIEWS_CALL_DEPTH_STATS,
 )
 
+GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
+GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY = "analytics.graph_metrics_functions_ext"
+GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.graph_metrics_modules"
+GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
+GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
 GRAPH_METRICS_TABLE_KEYS = (
-    "analytics.graph_metrics_functions",
-    "analytics.graph_metrics_functions_ext",
-    "analytics.graph_metrics_modules",
-    "analytics.graph_metrics_modules_ext",
-    "analytics.graph_stats",
+    GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+    GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
+    GRAPH_METRICS_MODULES_TABLE_KEY,
+    GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
+    GRAPH_STATS_TABLE_KEY,
 )
 
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
@@ -183,8 +210,6 @@ register_output_targets(
         ),
     ),
 )
-
-_GRAPH_METRICS_OUTPUT_TABLES = GRAPH_METRICS_TABLE_KEYS
 
 # ---------------------------------------------------------------------------
 # Result dataclasses for goids target
@@ -708,42 +733,19 @@ def _filter_symbol_occurrences(
 
 
 # ---------------------------------------------------------------------------
-# Helper functions for graph_metrics target
+# graph_metrics compute container
 # ---------------------------------------------------------------------------
 
 
-@tag_helper()
-def _count_rows(
-    gateway: StorageGateway,
-    table: str,
-    repo: str,
-    commit: str,
-) -> int:
-    """Count rows in a table for the given snapshot.
+@dataclass(frozen=True)
+class GraphMetricsComputeResult:
+    """Rows produced for graph_metrics tables plus optional error."""
 
-    Parameters
-    ----------
-    gateway
-        Storage gateway.
-    table
-        Table name.
-    repo
-        Repository identifier.
-    commit
-        Commit SHA.
-
-    Returns
-    -------
-    int
-        Row count.
-    """
-    try:
-        tbl = ibis_facade.table(gateway, table)
-        filtered = filter_by(tbl, tbl.repo == repo, tbl.commit == commit)
-        result_df = filtered.aggregate(row_count=tbl.repo.count()).execute()
-        return int(result_df.iloc[0]["row_count"]) if not result_df.empty else 0
-    except (RuntimeError, ValueError, OSError, KeyError):
-        return 0
+    metrics: GraphMetricsRows | None
+    functions_ext_rows: list[GraphMetricsFunctionsExtRow] | None
+    modules_ext_rows: list[GraphMetricsModulesExtRow] | None
+    graph_stats_rows: list[tuple[object, ...]] | None
+    error: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1458,27 +1460,50 @@ def t__call_graph_views(
 # ---------------------------------------------------------------------------
 
 
-@tag_tool(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+@tag_compute(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics__compute(
     env: BuildEnv,
+    graph: TargetGraph,
     t__call_graph: TargetRunRecord,
-) -> ExecutionResult:
-    """Compute graph metrics from call graph data.
+) -> GraphMetricsComputeResult | None:
+    """Compute graph metrics rows from call graph data.
 
     Parameters
     ----------
     env
         Build environment with gateway and snapshot.
+    graph
+        Target graph used for skip detection.
     t__call_graph
         Upstream call_graph target result (for dependency).
 
     Returns
     -------
-    ExecutionResult
-        Result containing table row counts.
+    GraphMetricsComputeResult | None
+        Row bundles for graph metrics tables or None if skipped.
     """
     if t__call_graph.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream call_graph target failed: {t__call_graph.error}")
+        return GraphMetricsComputeResult(
+            metrics=None,
+            functions_ext_rows=None,
+            modules_ext_rows=None,
+            graph_stats_rows=None,
+            error=f"Upstream call_graph target failed: {t__call_graph.error}",
+        )
+
+    target = graph.get(GRAPH_METRICS_TARGET_NAME)
+    if target is not None:
+        options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            settings=env.settings,
+            options=hash_options,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
 
     try:
         gateway = env.gateway
@@ -1501,6 +1526,7 @@ def t__graph_metrics__compute(
             backend=backend_config,
         )
         runtime = build_graph_runtime(gateway, runtime_options)
+        filters = build_graph_metric_filters(gateway, snapshot)
 
         options = load_target_options(
             env,
@@ -1510,57 +1536,278 @@ def t__graph_metrics__compute(
         deps = GraphMetricsDeps(
             catalog_provider=None,
             runtime=runtime,
+            filters=filters,
         )
-        compute_graph_metrics(gateway, snapshot, options=options, deps=deps)
-
-        compute_graph_metrics_functions_ext(
+        metrics_rows = build_graph_metrics_rows(gateway, snapshot, options=options, deps=deps)
+        functions_ext_rows = build_graph_metrics_functions_ext_rows(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+            filters=filters,
+        )
+        modules_ext_rows = build_graph_metrics_modules_ext_rows(
+            gateway,
+            repo=repo,
+            commit=commit,
+            runtime=runtime,
+            filters=filters,
+        )
+        graph_stats_rows = build_graph_stats_rows(
             gateway,
             repo=repo,
             commit=commit,
             runtime=runtime,
         )
 
-        compute_graph_metrics_modules_ext(
-            gateway,
-            repo=repo,
-            commit=commit,
-            runtime=runtime,
+        log.info(
+            "graph_metrics: rows built functions=%d modules=%d functions_ext=%d modules_ext=%d stats=%d",
+            len(metrics_rows.function_rows),
+            len(metrics_rows.module_rows),
+            len(functions_ext_rows),
+            len(modules_ext_rows),
+            len(graph_stats_rows),
         )
-
-        compute_graph_stats(
-            gateway,
-            repo=repo,
-            commit=commit,
-            runtime=runtime,
+        return GraphMetricsComputeResult(
+            metrics=metrics_rows,
+            functions_ext_rows=functions_ext_rows,
+            modules_ext_rows=modules_ext_rows,
+            graph_stats_rows=graph_stats_rows,
         )
-
-        row_counts: dict[str, int] = {}
-        for table in _GRAPH_METRICS_OUTPUT_TABLES:
-            row_counts[table] = _count_rows(gateway, table, repo, commit)
-
-        log.info("graph_metrics: Computed metrics row_counts=%s", row_counts)
-
-        return ExecutionResult.ok(table_counts=row_counts)
 
     except (RuntimeError, ValueError, OSError) as exc:
         log.exception("Graph metrics computation failed")
-        return ExecutionResult.failed(str(exc))
+        return GraphMetricsComputeResult(
+            metrics=None,
+            functions_ext_rows=None,
+            modules_ext_rows=None,
+            graph_stats_rows=None,
+            error=str(exc),
+        )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GRAPH_METRICS_TARGET_NAME),
+    table_key=value(GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    target_="graph_metrics__functions_rows",
+)
+def graph_metrics__functions_rows(
+    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract function graph metrics rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if (
+        t__graph_metrics__compute is None
+        or t__graph_metrics__compute.error
+        or t__graph_metrics__compute.metrics is None
+    ):
+        return None
+    return tuple(
+        row_to_tuple(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, row)
+        for row in t__graph_metrics__compute.metrics.function_rows
+    )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GRAPH_METRICS_MODULES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GRAPH_METRICS_TARGET_NAME),
+    table_key=value(GRAPH_METRICS_MODULES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_MODULES_TABLE_KEY)),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    target_="graph_metrics__modules_rows",
+)
+def graph_metrics__modules_rows(
+    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract module graph metrics rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if (
+        t__graph_metrics__compute is None
+        or t__graph_metrics__compute.error
+        or t__graph_metrics__compute.metrics is None
+    ):
+        return None
+    return tuple(
+        row_to_tuple(GRAPH_METRICS_MODULES_TABLE_KEY, row)
+        for row in t__graph_metrics__compute.metrics.module_rows
+    )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GRAPH_METRICS_TARGET_NAME),
+    table_key=value(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    target_="graph_metrics__functions_ext_rows",
+)
+def graph_metrics__functions_ext_rows(
+    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract function extended graph metric rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if (
+        t__graph_metrics__compute is None
+        or t__graph_metrics__compute.error
+        or t__graph_metrics__compute.functions_ext_rows is None
+    ):
+        return None
+    return tuple(
+        row_to_tuple(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, row)
+        for row in t__graph_metrics__compute.functions_ext_rows
+    )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GRAPH_METRICS_TARGET_NAME),
+    table_key=value(GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    target_="graph_metrics__modules_ext_rows",
+)
+def graph_metrics__modules_ext_rows(
+    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract module extended graph metric rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if (
+        t__graph_metrics__compute is None
+        or t__graph_metrics__compute.error
+        or t__graph_metrics__compute.modules_ext_rows is None
+    ):
+        return None
+    return tuple(
+        row_to_tuple(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, row)
+        for row in t__graph_metrics__compute.modules_ext_rows
+    )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GRAPH_STATS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GRAPH_METRICS_TARGET_NAME),
+    table_key=value(GRAPH_STATS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GRAPH_STATS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    target_="graph_metrics__stats_rows",
+)
+def graph_metrics__stats_rows(
+    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract graph stats rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if (
+        t__graph_metrics__compute is None
+        or t__graph_metrics__compute.error
+        or t__graph_metrics__compute.graph_stats_rows is None
+    ):
+        return None
+    return tuple(t__graph_metrics__compute.graph_stats_rows)
 
 
 @tag_materialize(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__graph_metrics__compute: ExecutionResult,
+    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+    m__analytics__graph_metrics_functions: MaterializationMetadata,
+    m__analytics__graph_metrics_functions_ext: MaterializationMetadata,
+    m__analytics__graph_metrics_modules: MaterializationMetadata,
+    m__analytics__graph_metrics_modules_ext: MaterializationMetadata,
+    m__analytics__graph_stats: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize graph metrics target with validation.
+    """Materialize graph metrics target from row materializations.
 
     Returns
     -------
     TargetRunRecord
-        Record describing the materialization outcome.
+        Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, GRAPH_METRICS_TARGET_NAME, t__graph_metrics__compute)
+    if t__graph_metrics__compute is not None and t__graph_metrics__compute.error:
+        options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
+        return TargetRunRecord(
+            target=GRAPH_METRICS_TARGET_NAME,
+            plugin_name=f"native:{GRAPH_METRICS_TARGET_NAME}",
+            status="failed",
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__graph_metrics__compute.error,
+            datasets=(),
+            artifacts=(),
+        )
+
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=GRAPH_METRICS_TARGET_NAME,
+        materializations={
+            GRAPH_METRICS_FUNCTIONS_TABLE_KEY: m__analytics__graph_metrics_functions,
+            GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: m__analytics__graph_metrics_functions_ext,
+            GRAPH_METRICS_MODULES_TABLE_KEY: m__analytics__graph_metrics_modules,
+            GRAPH_METRICS_MODULES_EXT_TABLE_KEY: m__analytics__graph_metrics_modules_ext,
+            GRAPH_STATS_TABLE_KEY: m__analytics__graph_stats,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1668,10 +1915,16 @@ def t__graph_validation(
 __all__ = [
     "GoidExtractResult",
     "GoidExtractionInputs",
+    "GraphMetricsComputeResult",
     "GraphValidationResult",
     "SymbolUsesExtractResult",
     "call_graph_depth_stats",
     "call_graph_function_call_counts",
+    "graph_metrics__functions_ext_rows",
+    "graph_metrics__functions_rows",
+    "graph_metrics__modules_ext_rows",
+    "graph_metrics__modules_rows",
+    "graph_metrics__stats_rows",
     "t__call_graph_views",
     "t__goids",
     "t__goids__extract",

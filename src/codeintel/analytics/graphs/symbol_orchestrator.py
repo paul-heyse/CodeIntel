@@ -20,8 +20,6 @@ from codeintel.analytics.compute.graphs import (
 )
 from codeintel.analytics.compute.row_builders import SymbolMetricInputs
 from codeintel.analytics.graphs.constants import MAX_BETWEENNESS_NODES, MAX_COMMUNITY_NODES
-from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -67,15 +65,15 @@ class UndirectedMetricsConfig[TNode]:
     build_rows: Callable[[SymbolMetricInputs[TNode]], Sequence[tuple[object, ...]]]
 
 
-def compute_undirected_symbol_metrics[TNode](
+def build_undirected_symbol_metric_rows[TNode](
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     config: UndirectedMetricsConfig[TNode],
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-) -> None:
-    """Compute and persist undirected symbol graph metrics.
+) -> list[tuple[object, ...]]:
+    """Compute undirected symbol graph metrics rows.
 
     This orchestrator handles the common pattern for computing symbol coupling
     metrics on undirected graphs, including centrality, structural metrics,
@@ -93,6 +91,11 @@ def compute_undirected_symbol_metrics[TNode](
         Configuration specifying table, graph extraction, and row building.
     runtime
         Optional graph runtime or options.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Row tuples for the configured analytics table.
     """
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
@@ -103,7 +106,6 @@ def compute_undirected_symbol_metrics[TNode](
         snapshot,
         runtime_opts,
     )
-    delete_scope = DeleteScope(repo=repo, commit=commit)
     ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -125,13 +127,7 @@ def compute_undirected_symbol_metrics[TNode](
         ).copy()
     if graph.number_of_nodes() == 0:
         log_empty_graph(config.graph_name, graph)
-        write_analytics_tuple_rows(
-            gateway,
-            config.table_key,
-            [],
-            delete_scope=delete_scope,
-        )
-        return
+        return []
 
     centrality = centrality_undirected(graph, ctx)
     structure = structural_metrics(
@@ -162,16 +158,10 @@ def compute_undirected_symbol_metrics[TNode](
         comp_size=comp_size,
         created_at=ctx.resolved_now(),
     )
-    rows = list(config.build_rows(inputs))
-    write_analytics_tuple_rows(
-        gateway,
-        config.table_key,
-        rows,
-        delete_scope=delete_scope,
-    )
+    return list(config.build_rows(inputs))
 
 
 __all__ = [
     "UndirectedMetricsConfig",
-    "compute_undirected_symbol_metrics",
+    "build_undirected_symbol_metric_rows",
 ]

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json as _json
 import logging
-import os
 import shutil
 from dataclasses import dataclass, replace
 from enum import Enum
@@ -65,6 +64,7 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.errors import ResolutionError
+from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
 if TYPE_CHECKING:
@@ -955,12 +955,11 @@ def _publish_serving_snapshot_from_build(
         msg = f"Missing serving artifacts (run `codeintel build run serving_artifacts`): {joined}"
         raise FileNotFoundError(msg)
 
-    serve_dir_env = os.environ.get("CODEINTEL_SERVE_DIR")
-    serve_dir = (
-        Path(serve_dir_env).resolve()
-        if serve_dir_env is not None
-        else (runtime.root / ".codeintel" / "serve").resolve()
-    )
+    serve_dir = load_runtime_settings().serving.serve_dir
+    if not serve_dir.is_absolute():
+        serve_dir = (runtime.root / serve_dir).resolve()
+    else:
+        serve_dir = serve_dir.resolve()
 
     publish_serving_snapshot(
         gateway=gateway,

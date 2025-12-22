@@ -13,8 +13,6 @@ from typing import TYPE_CHECKING
 import ibis
 
 from codeintel.analytics.utilities.ast import safe_unparse
-from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
@@ -257,61 +255,6 @@ def build_semantic_roles_rows(
     return SemanticRolesResult(
         function_rows=fn_rows,
         module_rows=module_rows,
-    )
-
-
-def compute_semantic_roles(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    module_by_path: dict[str, str],
-    ast_map: dict[int, FunctionAst],
-    features_map: dict[int, FunctionAstFeatures],
-) -> None:
-    """
-    Populate semantic role tables for functions and modules.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway providing DuckDB access.
-    snapshot
-        Repository and commit identifiers.
-    module_by_path
-        Mapping of file path to module name.
-    ast_map
-        Mapping of function GOID to parsed AST data.
-    features_map
-        Mapping of function GOID to feature vector.
-    """
-    result = build_semantic_roles_rows(
-        gateway,
-        snapshot,
-        module_by_path=module_by_path,
-        ast_map=ast_map,
-        features_map=features_map,
-    )
-
-    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
-    function_count = write_analytics_tuple_rows(
-        gateway,
-        "analytics.semantic_roles_functions",
-        result.function_rows,
-        delete_scope=delete_scope,
-    )
-    module_count = write_analytics_tuple_rows(
-        gateway,
-        "analytics.semantic_roles_modules",
-        result.module_rows,
-        delete_scope=delete_scope,
-    )
-
-    log.info(
-        "semantic_roles populated: %d functions, %d modules for %s@%s",
-        function_count,
-        module_count,
-        snapshot.repo,
-        snapshot.commit,
     )
 
 

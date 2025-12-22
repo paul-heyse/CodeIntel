@@ -9,7 +9,7 @@ This subpackage provides:
 Note: To avoid circular imports, ``builder`` and ``rows`` modules are not
 re-exported here. Import them directly:
 
-    from codeintel.analytics.testing.profiles.builder import build_test_profile
+    from codeintel.analytics.testing.profiles.builder import build_test_profile_result
     from codeintel.analytics.testing.profiles.rows import build_test_profile_rows
 """
 

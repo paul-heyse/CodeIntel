@@ -2,9 +2,9 @@
 
 Configuration precedence
 ------------------------
-CLI flags override environment variables (``CODEINTEL_*``), which override the
-optional TOML config file (``codeintel.toml`` or ``CODEINTEL_CONFIG_PATH``),
-which finally fall back to defaults in function signatures.
+CLI flags override the optional TOML config file (``codeintel.toml`` or
+``CODEINTEL_CONFIG_PATH``), which finally falls back to defaults in function
+signatures.
 
 Execution model
 ---------------

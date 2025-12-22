@@ -27,7 +27,6 @@ Example Project Config
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 import yaml
@@ -310,7 +309,7 @@ def _read_git_head(git_dir: Path) -> str | None:
 def detect_commit(root: Path) -> str:
     """Detect current commit (best-effort).
 
-    Tries CODEINTEL_COMMIT env, then reads .git/HEAD, then 'HEAD'.
+    Reads .git/HEAD, then falls back to 'HEAD'.
 
     Parameters
     ----------
@@ -322,10 +321,6 @@ def detect_commit(root: Path) -> str:
     str
         Detected commit SHA or 'HEAD' as fallback.
     """
-    env_commit = os.environ.get("CODEINTEL_COMMIT")
-    if env_commit:
-        return env_commit
-
     git_dir = root / ".git"
     if git_dir.is_dir():
         commit = _read_git_head(git_dir)

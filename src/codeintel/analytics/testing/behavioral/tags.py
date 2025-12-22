@@ -19,7 +19,6 @@ from codeintel.analytics.testing.profiles.types import (
 )
 from codeintel.analytics.utilities.ast import resolve_call_target
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
-from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -161,13 +160,6 @@ def build_behavior_rows(
     """
     opts = options or BehavioralCoverageOptions()
     con = gateway.con
-    backend: DuckDBPolicyBackend | None
-    try:
-        backend = gateway.policy
-    except AttributeError:
-        backend = None
-    if backend is not None:
-        backend.ensure_table("analytics.behavioral_coverage")
     load_tests_fn = hooks.load_tests if hooks is not None else None
     if load_tests_fn is None:
         load_tests_fn = _default_load_test_records

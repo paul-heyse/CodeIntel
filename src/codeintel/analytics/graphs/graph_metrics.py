@@ -28,12 +28,6 @@ from codeintel.analytics.compute.row_builders import (
     load_symbol_module_edges,
     merge_component_metadata,
 )
-from codeintel.analytics.utilities.datasets import (
-    get_analytics_dataset_contract,
-    insert_analytics_rows,
-    validate_contract_rows,
-)
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.graphs.runtime import (
     GraphMetricsOptions,
     GraphRuntime,
@@ -48,6 +42,12 @@ from codeintel.storage.repositories.subsystems import SubsystemRepository
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
+    )
+    from codeintel.core.schemas.generated_rows.analytics import (
+        AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
+    )
     from codeintel.graphs.runtime.context import GraphContext
     from codeintel.storage.gateway import StorageGateway
 
@@ -147,6 +147,14 @@ class GraphMetricFilters:
         ]
 
 
+@dataclass(frozen=True)
+class GraphMetricsRows:
+    """Rows for function and module graph metrics."""
+
+    function_rows: list[GraphMetricsFunctionsRow]
+    module_rows: list[GraphMetricsModulesRow]
+
+
 def build_graph_metric_filters(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -187,13 +195,13 @@ def build_graph_metric_filters(
     )
 
 
-def compute_graph_metrics(
+def build_graph_metrics_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     options: GraphMetricsOptions | None = None,
     deps: GraphMetricsDeps | None = None,
-) -> None:
+) -> GraphMetricsRows:
     """
     Populate analytics graph metrics tables for the provided repo/commit.
 
@@ -207,6 +215,11 @@ def compute_graph_metrics(
         Graph metrics configuration options.
     deps
         Optional dependencies container (catalog_provider, runtime, filters, module_by_path).
+
+    Returns
+    -------
+    GraphMetricsRows
+        Row bundles for graph metrics tables.
     """
     opts = options or GraphMetricsOptions()
     deps = deps or GraphMetricsDeps()
@@ -244,26 +257,27 @@ def compute_graph_metrics(
         len(active_filters.modules or ()),
         len(active_filters.subsystems or ()),
     )
-    _compute_function_graph_metrics(
+    function_rows = _build_function_graph_metrics_rows(
         gateway, snapshot, ctx=ctx, runtime=resolved_runtime, filters=active_filters
     )
     module_by_path = deps.module_by_path
     if module_by_path is None and catalog_provider is not None:
         module_by_path = catalog_provider.catalog().module_by_path
     module_options = ModuleMetricOptions(module_by_path=module_by_path, filters=active_filters)
-    _compute_module_graph_metrics(
+    module_rows = _build_module_graph_metrics_rows(
         gateway, snapshot, ctx=ctx, runtime=resolved_runtime, options=module_options
     )
+    return GraphMetricsRows(function_rows=function_rows, module_rows=module_rows)
 
 
-def _compute_function_graph_metrics(
+def _build_function_graph_metrics_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     ctx: GraphContext,
     runtime: GraphRuntime,
     filters: GraphMetricFilters,
-) -> None:
+) -> list[GraphMetricsFunctionsRow]:
     graph = filters.filter_call_graph(runtime.ensure_call_graph())
     stats = neighbor_stats(graph, weight=ctx.betweenness_weight)
     centrality_bundle = centrality_directed(graph, ctx)
@@ -288,32 +302,24 @@ def _compute_function_graph_metrics(
         )
     )
 
-    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
-    validated_rows = validate_contract_rows(contract.table_key, rows)
-    insert_analytics_rows(
-        gateway,
-        contract,
-        validated_rows,
-        delete_scope=DeleteScope(repo=snapshot.repo, commit=snapshot.commit),
-        scope=f"{snapshot.repo}@{snapshot.commit}",
-    )
-    if validated_rows:
+    if rows:
         log.info(
-            "graph_metrics_functions populated: %d rows for %s@%s",
-            len(validated_rows),
+            "graph_metrics_functions rows built: %d rows for %s@%s",
+            len(rows),
             snapshot.repo,
             snapshot.commit,
         )
+    return rows
 
 
-def _compute_module_graph_metrics(
+def _build_module_graph_metrics_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     ctx: GraphContext,
     runtime: GraphRuntime,
     options: ModuleMetricOptions,
-) -> None:
+) -> list[GraphMetricsModulesRow]:
     filters = options.filters or GraphMetricFilters()
     graph = filters.filter_import_graph(runtime.ensure_import_graph())
     symbol_edges = load_symbol_module_edges(gateway, options.module_by_path)
@@ -361,19 +367,11 @@ def _compute_module_graph_metrics(
         )
     )
 
-    contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
-    validated_rows = validate_contract_rows(contract.table_key, rows_to_insert)
-    insert_analytics_rows(
-        gateway,
-        contract,
-        validated_rows,
-        delete_scope=DeleteScope(repo=snapshot.repo, commit=snapshot.commit),
-        scope=f"{snapshot.repo}@{snapshot.commit}",
-    )
-    if validated_rows:
+    if rows_to_insert:
         log.info(
-            "graph_metrics_modules populated: %d rows for %s@%s",
-            len(validated_rows),
+            "graph_metrics_modules rows built: %d rows for %s@%s",
+            len(rows_to_insert),
             snapshot.repo,
             snapshot.commit,
         )
+    return rows_to_insert

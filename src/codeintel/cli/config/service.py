@@ -34,9 +34,6 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
-CONFIG_ENV_PREFIX = "CODEINTEL_"
-
-
 CONFIG_PATH_ENV_VAR = "CODEINTEL_CONFIG_PATH"
 
 
@@ -117,9 +114,8 @@ class ConfigService:
     Precedence (highest to lowest):
 
     1. CLI flags (explicit overrides)
-    2. Environment variables (CODEINTEL_*)
-    3. Config file (codeintel.toml or ~/.codeintel/config.yaml)
-    4. Built-in defaults from CliConfig
+    2. Config file (codeintel.toml or ~/.codeintel/config.yaml)
+    3. Built-in defaults from CliConfig
 
     Parameters
     ----------
@@ -146,7 +142,6 @@ class ConfigService:
         config_path: Path | None = None,
         cli_overrides: dict[str, Any] | None = None,
         *,
-        env_prefix: str = CONFIG_ENV_PREFIX,
         validate: bool = True,
     ) -> ConfigService:
         """Load configuration from all sources with precedence.
@@ -157,8 +152,6 @@ class ConfigService:
             Explicit config file path. If None, searches default locations.
         cli_overrides
             Overrides from CLI flags (highest precedence).
-        env_prefix
-            Environment variable prefix.
         validate
             If True, validate config and raise ConfigLoadError on failure.
 
@@ -175,7 +168,6 @@ class ConfigService:
         """
         config = load_config(
             config_file=config_path,
-            env_prefix=env_prefix,
             cli_overrides=cli_overrides,
             validate=validate,
         )
@@ -193,13 +185,12 @@ class ConfigService:
         our unified precedence. The returned chain:
 
         1. Applies TOML config if present (codeintel.toml)
-        2. Applies environment variable overrides (CODEINTEL_*)
 
         Returns
         -------
         list[object]
             Config callables for Cyclopts App.config parameter.
-            Contains a TOML config loader and an environment variable loader.
+            Contains a TOML config loader.
 
         Examples
         --------
@@ -209,7 +200,6 @@ class ConfigService:
         """
         return [
             _make_optional_toml_config(),
-            cyclopts_config.Env(CONFIG_ENV_PREFIX),
         ]
 
     @staticmethod
@@ -283,17 +273,6 @@ def build_graph_backend_config(flags: BackendFlags) -> GraphBackendConfig:
     )
 
 
-def build_graph_feature_flags_from_env() -> GraphFeatureFlags:
-    """Construct GraphFeatureFlags from CODEINTEL_* environment variables.
-
-    Returns
-    -------
-    GraphFeatureFlags
-        Feature flags derived from environment variables.
-    """
-    return GraphFeatureFlags.from_env()
-
-
 def build_config_from_options(
     repo: str,
     commit: str,
@@ -319,7 +298,7 @@ def build_config_from_options(
         Configured CodeIntel settings.
     """
     graph_backend = build_graph_backend_config(backend)
-    graph_features = build_graph_feature_flags_from_env()
+    graph_features = GraphFeatureFlags()
     LOG.info(
         "cli.runtime.config repo=%s commit=%s backend=%s use_gpu=%s features=%s",
         repo,
@@ -337,11 +316,9 @@ def build_config_from_options(
 
 
 __all__ = [
-    "CONFIG_ENV_PREFIX",
     "CONFIG_PATH_ENV_VAR",
     "TOML_CONFIG_PATHS",
     "ConfigService",
     "build_config_from_options",
     "build_graph_backend_config",
-    "build_graph_feature_flags_from_env",
 ]

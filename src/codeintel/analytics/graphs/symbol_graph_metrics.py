@@ -10,7 +10,7 @@ from codeintel.analytics.compute.row_builders import (
 )
 from codeintel.analytics.graphs.symbol_orchestrator import (
     UndirectedMetricsConfig,
-    compute_undirected_symbol_metrics,
+    build_undirected_symbol_metric_rows,
 )
 from codeintel.storage.repositories.functions import FunctionRepository
 from codeintel.storage.repositories.modules import ModuleRepository
@@ -96,15 +96,21 @@ _FUNCTION_CONFIG: UndirectedMetricsConfig[int] = UndirectedMetricsConfig(
 )
 
 
-def compute_symbol_graph_metrics_modules(
+def build_symbol_graph_metrics_module_rows(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-) -> None:
-    """Populate analytics.symbol_graph_metrics_modules from module symbol coupling."""
-    compute_undirected_symbol_metrics(
+) -> list[tuple[object, ...]]:
+    """Build analytics.symbol_graph_metrics_modules rows from module symbol coupling.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Row tuples for analytics.symbol_graph_metrics_modules.
+    """
+    return build_undirected_symbol_metric_rows(
         gateway,
         repo=repo,
         commit=commit,
@@ -113,15 +119,21 @@ def compute_symbol_graph_metrics_modules(
     )
 
 
-def compute_symbol_graph_metrics_functions(
+def build_symbol_graph_metrics_function_rows(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
-) -> None:
-    """Populate analytics.symbol_graph_metrics_functions from function symbol coupling."""
-    compute_undirected_symbol_metrics(
+) -> list[tuple[object, ...]]:
+    """Build analytics.symbol_graph_metrics_functions rows from function symbol coupling.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Row tuples for analytics.symbol_graph_metrics_functions.
+    """
+    return build_undirected_symbol_metric_rows(
         gateway,
         repo=repo,
         commit=commit,

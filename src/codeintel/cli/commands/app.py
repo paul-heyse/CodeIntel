@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from typing import TYPE_CHECKING
 
@@ -66,21 +65,16 @@ app.command(help_commands_app, name="help-ops")
 
 
 def _detect_output_format() -> OutputFormat:
-    """Detect output format from environment or CLI args.
+    """Detect output format from CLI args.
 
-    Check for JSON output request via environment variable or CLI flags
-    before parsing begins. This enables structured error output even
-    when parsing fails.
+    Check for JSON output request via CLI flags before parsing begins.
+    This enables structured error output even when parsing fails.
 
     Returns
     -------
     OutputFormat
         Detected output format preference.
     """
-    env_format = os.environ.get("CODEINTEL_OUTPUT_FORMAT", "").lower()
-    if env_format == "json":
-        return OutputFormat.JSON
-
     if "--json" in sys.argv:
         return OutputFormat.JSON
 

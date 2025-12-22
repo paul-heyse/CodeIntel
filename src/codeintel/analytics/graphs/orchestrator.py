@@ -10,8 +10,7 @@ The orchestrator handles:
 3. Graph retrieval and filtering
 4. View building (graph, simple_graph, undirected)
 5. Slice computation delegation
-6. Row building delegation
-7. Contract validation and persistence
+6. Row building delegation for downstream materialization
 
 Example
 -------
@@ -20,7 +19,7 @@ from codeintel.analytics.graphs.orchestrator import (
     ExtendedMetricsConfig,
     ExtendedMetricsRequest,
     GraphViews,
-    compute_extended_metrics,
+    build_extended_metrics_rows,
 )
 
 
@@ -34,7 +33,7 @@ config = ExtendedMetricsConfig(
 )
 
 request = ExtendedMetricsRequest(repo="org/repo", commit="abc123")
-compute_extended_metrics(gateway, config, request)
+build_extended_metrics_rows(gateway, config, request)
 ```
 """
 
@@ -48,12 +47,6 @@ from typing import TYPE_CHECKING, cast
 import networkx as nx
 
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
-from codeintel.analytics.utilities.datasets import (
-    get_analytics_dataset_contract,
-    insert_analytics_rows,
-    validate_contract_rows,
-)
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
@@ -99,7 +92,8 @@ class ExtendedMetricsConfig[TSlices, TRow: Mapping[str, object]]:
     Attributes
     ----------
     table_key
-        Target table key for persistence (e.g., "analytics.graph_metrics_functions_ext").
+        Target table key for downstream materialization (e.g.,
+        "analytics.graph_metrics_functions_ext").
     get_source_graph
         Callable to retrieve the source graph from the resolved runtime.
     filter_graph
@@ -109,7 +103,7 @@ class ExtendedMetricsConfig[TSlices, TRow: Mapping[str, object]]:
     build_slices
         Callable to compute metric slices from graph views and context.
     build_rows
-        Callable to build rows from slices for persistence.
+        Callable to build rows from slices for downstream materialization.
     """
 
     table_key: str
@@ -168,17 +162,17 @@ def build_graph_views(source_graph: nx.DiGraph) -> GraphViews:
     return GraphViews(graph=source_graph, simple_graph=simple_graph, undirected=undirected)
 
 
-def compute_extended_metrics[TSlices, TRow: Mapping[str, object]](
+def build_extended_metrics_rows[TSlices, TRow: Mapping[str, object]](
     gateway: StorageGateway,
     config: ExtendedMetricsConfig[TSlices, TRow],
     request: ExtendedMetricsRequest,
-) -> None:
+) -> list[TRow]:
     """Execute the generic extended graph metrics computation workflow.
 
     Implement the common orchestration pattern for computing extended
     graph metrics. Handle runtime resolution, graph retrieval, filtering,
     view construction, and delegate to config-specific callables for slice
-    computation, row building, and persistence.
+    computation and row building.
 
     Parameters
     ----------
@@ -188,6 +182,11 @@ def compute_extended_metrics[TSlices, TRow: Mapping[str, object]](
         Configuration specifying domain-specific callables for this metric type.
     request
         Request parameters including repo, commit, runtime, and filters.
+
+    Returns
+    -------
+    list[TRow]
+        Rows produced by the extended metrics pipeline.
     """
     # 1. Resolve runtime options
     runtime_opts = (
@@ -213,23 +212,13 @@ def compute_extended_metrics[TSlices, TRow: Mapping[str, object]](
     # 8. Compute slices
     slices = config.build_slices(views, ctx)
     # 9. Build rows
-    rows = config.build_rows(request.repo, request.commit, ctx, views, slices)
-    # 10. Persist
-    contract = get_analytics_dataset_contract(gateway, config.table_key)
-    validated_rows = validate_contract_rows(contract.table_key, rows)
-    insert_analytics_rows(
-        gateway,
-        contract,
-        validated_rows,
-        delete_scope=DeleteScope(repo=request.repo, commit=request.commit),
-        scope=f"{request.repo}@{request.commit}",
-    )
+    return config.build_rows(request.repo, request.commit, ctx, views, slices)
 
 
 __all__ = [
     "ExtendedMetricsConfig",
     "ExtendedMetricsRequest",
     "GraphViews",
+    "build_extended_metrics_rows",
     "build_graph_views",
-    "compute_extended_metrics",
 ]

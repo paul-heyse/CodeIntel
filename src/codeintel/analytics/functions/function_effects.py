@@ -18,8 +18,6 @@ from codeintel.analytics.parsing.ast_cache import (
     load_function_asts,
 )
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.analytics.utilities.datasets import write_analytics_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates, eq, is_null, or_predicates
@@ -251,41 +249,6 @@ def build_function_effects_rows(
         missing_goids=input_opts.missing_goids,
     )
     return _build_effect_rows(inputs=effect_inputs, now=datetime.now(tz=UTC))
-
-
-def compute_function_effects(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    options: FunctionEffectsOptions | None = None,
-    inputs: FunctionEffectsInputs | None = None,
-) -> None:
-    """
-    Populate `analytics.function_effects` for the target repo/commit.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway for DuckDB.
-    snapshot
-        Snapshot reference (repo, commit, repo_root).
-    options
-        Configuration options for effects detection.
-    inputs
-        Optional inputs containing catalog, runtime, AST map, and missing GOIDs.
-    """
-    rows = build_function_effects_rows(gateway, snapshot, options=options, inputs=inputs)
-
-    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
-    inserted = write_analytics_rows(
-        gateway,
-        "analytics.function_effects",
-        rows,
-        delete_scope=delete_scope,
-    )
-    log.info(
-        "function_effects populated: %d rows for %s@%s", inserted, snapshot.repo, snapshot.commit
-    )
 
 
 def _build_effect_rows(

@@ -14,8 +14,6 @@ from codeintel.analytics.compute.row_builders import (
     build_subsystem_graph_rows,
 )
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
-from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
@@ -94,15 +92,21 @@ def _build_subsystem_graph(
     return subsystem_graph
 
 
-def compute_subsystem_graph_metrics(
+def build_subsystem_graph_metrics_rows(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> None:
-    """Build subsystem-level condensed import graph metrics."""
+) -> list[tuple[object, ...]]:
+    """Build subsystem-level condensed import graph metrics rows.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Row tuples for analytics.subsystem_graph_metrics.
+    """
     runtime_opts = (
         runtime.options if isinstance(runtime, GraphRuntime) else runtime or GraphRuntimeOptions()
     )
@@ -113,7 +117,6 @@ def compute_subsystem_graph_metrics(
         snapshot,
         runtime_opts,
     )
-    delete_scope = DeleteScope(repo=repo, commit=commit)
     graph_ctx = resolve_graph_context(
         GraphContextSpec(
             repo=repo,
@@ -131,13 +134,7 @@ def compute_subsystem_graph_metrics(
     ]
     membership_rows = active_filters.filter_subsystem_memberships(membership_rows)
     if not membership_rows:
-        write_analytics_tuple_rows(
-            gateway,
-            "analytics.subsystem_graph_metrics",
-            [],
-            delete_scope=delete_scope,
-        )
-        return
+        return []
 
     subsystem_graph = _build_subsystem_graph(
         active_filters.filter_import_graph(resolved_runtime.ensure_import_graph()),
@@ -147,13 +144,7 @@ def compute_subsystem_graph_metrics(
     subsystem_graph = active_filters.filter_subsystem_graph(subsystem_graph)
 
     if subsystem_graph.number_of_nodes() == 0:
-        write_analytics_tuple_rows(
-            gateway,
-            "analytics.subsystem_graph_metrics",
-            [],
-            delete_scope=delete_scope,
-        )
-        return
+        return []
 
     centralities = _subsystem_centralities(subsystem_graph, graph_ctx)
     layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
@@ -173,9 +164,4 @@ def compute_subsystem_graph_metrics(
         )
     )
 
-    write_analytics_tuple_rows(
-        gateway,
-        "analytics.subsystem_graph_metrics",
-        rows,
-        delete_scope=delete_scope,
-    )
+    return rows

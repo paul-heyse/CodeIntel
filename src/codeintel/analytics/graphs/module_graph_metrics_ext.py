@@ -22,7 +22,7 @@ from codeintel.analytics.graphs.constants import (
 from codeintel.analytics.graphs.orchestrator import (
     ExtendedMetricsConfig,
     ExtendedMetricsRequest,
-    compute_extended_metrics,
+    build_extended_metrics_rows,
 )
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
@@ -218,14 +218,14 @@ _MODULE_EXT_CONFIG: ExtendedMetricsConfig[ModuleGraphSlices, GraphMetricsModules
 )
 
 
-def compute_graph_metrics_modules_ext(
+def build_graph_metrics_modules_ext_rows(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> None:
+) -> list[GraphMetricsModulesExtRow]:
     """Populate analytics.graph_metrics_modules_ext with richer import metrics.
 
     Parameters
@@ -240,6 +240,11 @@ def compute_graph_metrics_modules_ext(
         Optional runtime options including cached graphs and backend selection.
     filters
         Optional allowlists for restricting graph nodes.
+
+    Returns
+    -------
+    list[GraphMetricsModulesExtRow]
+        Rows ready for insertion into analytics.graph_metrics_modules_ext.
     """
     request = ExtendedMetricsRequest(
         repo=repo,
@@ -247,4 +252,4 @@ def compute_graph_metrics_modules_ext(
         runtime=runtime,
         filters=filters,
     )
-    compute_extended_metrics(gateway, _MODULE_EXT_CONFIG, request)
+    return build_extended_metrics_rows(gateway, _MODULE_EXT_CONFIG, request)

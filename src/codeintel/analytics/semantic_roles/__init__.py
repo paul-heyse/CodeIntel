@@ -5,7 +5,6 @@ from codeintel.analytics.semantic_roles.core import (
     SemanticRolesResult,
     build_semantic_roles_rows,
     classify_function_role,
-    compute_semantic_roles,
 )
 
 __all__ = [
@@ -13,5 +12,4 @@ __all__ = [
     "SemanticRolesResult",
     "build_semantic_roles_rows",
     "classify_function_role",
-    "compute_semantic_roles",
 ]
