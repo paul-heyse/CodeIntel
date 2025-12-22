@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.config.primitives import BuildPaths
     from codeintel.graphs.runtime import GraphMetricsOptions
-    from codeintel.ingestion import (
+    from codeintel.ingestion.adapters import (
         DuckDBStorageAdapter,
         FilesystemDiscoveryAdapter,
         HashChangeDetectionAdapter,

@@ -56,6 +56,13 @@ class ObservabilitySettings:
     duckdb_statement_hash_len: int = 16
     duckdb_query_summary_max_len: int = 255
     duckdb_query_summary_max_targets: int = 6
+    duckdb_query_summary_emit_ellipsis: bool = True
+    duckdb_query_summary_hash_suspicious_targets: bool = True
+    duckdb_query_summary_hash_len: int = 12
+    duckdb_query_summary_hash_min_len: int = 64
+    duckdb_query_summary_include_subquery_operations: bool = True
+    duckdb_query_summary_include_multi_statement: bool = True
+    db_query_summary_span_name_hook: bool = False
     duckdb_emit_legacy_db_attributes: bool = False
     duckdb_query_text_policy: str = "never"
     duckdb_query_text_max_len: int = 4096
@@ -66,6 +73,13 @@ class ObservabilitySettings:
     duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
     duckdb_query_parameter_require_in_sql: bool = True
     duckdb_query_parameter_max_str_len: int = 80
+
+
+@dataclass(frozen=True, slots=True)
+class CliSettings:
+    """CLI-specific settings resolved from the runtime loader."""
+
+    config_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +212,7 @@ def _is_unspecified_host(host: str) -> bool:
 
 __all__ = [
     "BuildSettings",
+    "CliSettings",
     "ExportAuditSettings",
     "HamiltonExecutionSettings",
     "ObservabilitySettings",

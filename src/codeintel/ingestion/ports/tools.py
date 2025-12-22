@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from codeintel.ingestion.engine.plugins import ToolStatus
+from codeintel.ingestion.engine.status import ToolStatus
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

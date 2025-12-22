@@ -1,7 +1,7 @@
 """Tests for function contract extraction.
 
 This module tests the contract inference functionality through
-the public compute_function_contracts API and the ConditionContext dataclass.
+the build_function_contracts_rows helper and the ConditionContext dataclass.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pytest
 
 from codeintel.analytics.functions.function_contracts import (
     ConditionContext,
-    compute_function_contracts,
+    build_function_contracts_rows,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from tests._helpers import assert_frozen
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -99,6 +100,29 @@ def _create_sample_function_ast(
     )
 
 
+def _build_and_write_contract_rows(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    function_ast_map: dict[int, FunctionAst],
+    catalog: FunctionCatalogProvider | None = None,
+) -> None:
+    rows = build_function_contracts_rows(
+        gateway,
+        snapshot,
+        function_ast_map=function_ast_map,
+        catalog=catalog,
+    )
+    if not rows:
+        return
+    gateway.policy.delete_for_snapshot(
+        "analytics.function_contracts",
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    gateway.policy.bulk_insert_mappings("analytics.function_contracts", rows)
+
+
 def test_condition_context_creation() -> None:
     """Create a ConditionContext with all fields."""
     ctx = ConditionContext(
@@ -135,16 +159,15 @@ def test_condition_context_with_none_line() -> None:
     expect_is_none(ctx.line)
 
 
-def test_compute_function_contracts_empty_catalog(
+def test_build_function_contracts_empty_catalog(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts with empty function catalog."""
-    compute_function_contracts(
+    """Build contract rows with empty function catalog."""
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map={},
-        catalog=None,
     )
 
     total = count_rows(
@@ -155,11 +178,11 @@ def test_compute_function_contracts_empty_catalog(
     expect_equal(total, 0)
 
 
-def test_compute_function_contracts_with_simple_function(
+def test_build_function_contracts_with_simple_function(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for a simple function without guards."""
+    """Build contract rows for a simple function without guards."""
     goid = 12345
     code = """def simple_function(x, y):
     return x + y
@@ -173,11 +196,10 @@ def test_compute_function_contracts_with_simple_function(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     result = memory_gateway.con.execute(
@@ -192,11 +214,11 @@ def test_compute_function_contracts_with_simple_function(
     expect_is_none(result)
 
 
-def test_compute_function_contracts_with_assert_guard(
+def test_build_function_contracts_with_assert_guard(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with assert guard."""
+    """Build contract rows for function with assert guard."""
     goid = 12346
     code = """def guarded_function(x):
     assert x is not None
@@ -211,11 +233,10 @@ def test_compute_function_contracts_with_assert_guard(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     total = count_rows(
@@ -226,11 +247,11 @@ def test_compute_function_contracts_with_assert_guard(
     expect_equal(total, 0)
 
 
-def test_compute_function_contracts_with_raise(
+def test_build_function_contracts_with_raise(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with raise statement."""
+    """Build contract rows for function with raise statement."""
     goid = 12347
     code = """def raising_function(x):
     if x < 0:
@@ -246,22 +267,21 @@ def test_compute_function_contracts_with_raise(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     result = count_rows(memory_gateway.con, "SELECT COUNT(*) FROM analytics.function_contracts", [])
     expect_equal(result, 0)
 
 
-def test_compute_function_contracts_with_isinstance_check(
+def test_build_function_contracts_with_isinstance_check(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with isinstance check."""
+    """Build contract rows for function with isinstance check."""
     goid = 12348
     code = """def typed_function(x):
     assert isinstance(x, int)
@@ -276,11 +296,10 @@ def test_compute_function_contracts_with_isinstance_check(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     total = count_rows(
@@ -291,11 +310,11 @@ def test_compute_function_contracts_with_isinstance_check(
     expect_equal(total, 0)
 
 
-def test_compute_function_contracts_with_len_guard(
+def test_build_function_contracts_with_len_guard(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with len() guard."""
+    """Build contract rows for function with len() guard."""
     goid = 12349
     code = """def len_guarded(items):
     assert len(items) > 0
@@ -310,21 +329,20 @@ def test_compute_function_contracts_with_len_guard(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_multiple_functions(
+def test_build_function_contracts_multiple_functions(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for multiple functions."""
+    """Build contract rows for multiple functions."""
     funcs = [
         (1001, "func_a", "def func_a(x):\n    return x"),
         (1002, "func_b", "def func_b(y):\n    assert y > 0\n    return y"),
@@ -344,21 +362,20 @@ def test_compute_function_contracts_multiple_functions(
             code=code,
         )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     expect_equal(len(ast_map), MULTI_FUNC_COUNT)
 
 
-def test_compute_function_contracts_async_function(
+def test_build_function_contracts_async_function(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for async function."""
+    """Build contract rows for async function."""
     goid = 12350
     code = """async def async_func(x):
     assert x is not None
@@ -373,7 +390,7 @@ def test_compute_function_contracts_async_function(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -383,16 +400,15 @@ def test_compute_function_contracts_async_function(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_table_exists(
+def test_build_function_contracts_table_exists(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Verify contracts table is created by compute_function_contracts."""
-    compute_function_contracts(
+    """Verify contracts table is created by build_function_contracts_rows."""
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map={},
-        catalog=None,
     )
 
     total = count_rows(
@@ -403,11 +419,11 @@ def test_compute_function_contracts_table_exists(
     expect_equal(total, 0)
 
 
-def test_compute_function_contracts_typed_function(
+def test_build_function_contracts_typed_function(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with type annotations."""
+    """Build contract rows for function with type annotations."""
     goid = 12352
 
     code = """def typed_func(x: int) -> str:
@@ -422,21 +438,20 @@ def test_compute_function_contracts_typed_function(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_nullable_return(
+def test_build_function_contracts_nullable_return(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with explicit None return."""
+    """Build contract rows for function with explicit None return."""
     goid = 12353
     code = """def maybe_return(x):
     if x > 0:
@@ -452,21 +467,20 @@ def test_compute_function_contracts_nullable_return(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_numeric_guards(
+def test_build_function_contracts_numeric_guards(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with numeric guards."""
+    """Build contract rows for function with numeric guards."""
     goid = 12354
     code = """def numeric_guarded(x, y):
     assert x >= 0
@@ -482,21 +496,20 @@ def test_compute_function_contracts_numeric_guards(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_varargs(
+def test_build_function_contracts_varargs(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with *args and **kwargs."""
+    """Build contract rows for function with *args and **kwargs."""
     goid = 12355
     code = """def variadic_func(*args, **kwargs):
     return len(args) + len(kwargs)
@@ -510,21 +523,20 @@ def test_compute_function_contracts_varargs(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
-        catalog=None,
     )
 
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_keyword_only_params(
+def test_build_function_contracts_keyword_only_params(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with keyword-only params."""
+    """Build contract rows for function with keyword-only params."""
     goid = 12356
     code = """def keyword_only(a, *, b, c):
     return a + b + c
@@ -538,7 +550,7 @@ def test_compute_function_contracts_keyword_only_params(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -548,11 +560,11 @@ def test_compute_function_contracts_keyword_only_params(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_chained_exceptions(
+def test_build_function_contracts_chained_exceptions(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with chained exceptions."""
+    """Build contract rows for function with chained exceptions."""
     goid = 12357
     code = """def chained_exception(x):
     try:
@@ -569,7 +581,7 @@ def test_compute_function_contracts_chained_exceptions(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -579,11 +591,11 @@ def test_compute_function_contracts_chained_exceptions(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_complex_guards(
+def test_build_function_contracts_complex_guards(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with complex guard conditions."""
+    """Build contract rows for function with complex guard conditions."""
     goid = 12358
     code = """def complex_guarded(items, key):
     if items is None:
@@ -603,7 +615,7 @@ def test_compute_function_contracts_complex_guards(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -613,11 +625,11 @@ def test_compute_function_contracts_complex_guards(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_nested_conditions(
+def test_build_function_contracts_nested_conditions(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with nested conditions."""
+    """Build contract rows for function with nested conditions."""
     goid = 12359
     code = """def nested_conditions(x, y):
     if x is not None:
@@ -634,7 +646,7 @@ def test_compute_function_contracts_nested_conditions(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -644,11 +656,11 @@ def test_compute_function_contracts_nested_conditions(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_bool_predicate_name(
+def test_build_function_contracts_bool_predicate_name(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for function with bool predicate naming."""
+    """Build contract rows for function with bool predicate naming."""
     goid = 12360
     code = """def is_valid(x):
     return x is not None and x > 0
@@ -662,7 +674,7 @@ def test_compute_function_contracts_bool_predicate_name(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -672,11 +684,11 @@ def test_compute_function_contracts_bool_predicate_name(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_method_with_self(
+def test_build_function_contracts_method_with_self(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for method with self parameter."""
+    """Build contract rows for method with self parameter."""
     goid = 12361
     code = """def method(self, x):
     assert x is not None
@@ -691,7 +703,7 @@ def test_compute_function_contracts_method_with_self(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -701,11 +713,11 @@ def test_compute_function_contracts_method_with_self(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_classmethod_with_cls(
+def test_build_function_contracts_classmethod_with_cls(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts for classmethod with cls parameter."""
+    """Build contract rows for classmethod with cls parameter."""
     goid = 12362
     code = """def create(cls, data):
     assert data is not None
@@ -720,7 +732,7 @@ def test_compute_function_contracts_classmethod_with_cls(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -730,11 +742,11 @@ def test_compute_function_contracts_classmethod_with_cls(
     expect_equal(len(ast_map), 1)
 
 
-def test_compute_function_contracts_idempotent(
+def test_build_function_contracts_idempotent(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts is idempotent (running twice produces same result)."""
+    """Building contract rows is idempotent (running twice produces same result)."""
     goid = 12363
     code = """def idempotent_test(x):
     assert x is not None
@@ -749,13 +761,13 @@ def test_compute_function_contracts_idempotent(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
         catalog=None,
     )
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,
@@ -770,11 +782,11 @@ def test_compute_function_contracts_idempotent(
     expect_equal(total, 0)
 
 
-def test_compute_function_contracts_complex_assertions(
+def test_build_function_contracts_complex_assertions(
     memory_gateway: StorageGateway,
     contracts_snapshot: SnapshotRef,
 ) -> None:
-    """Compute contracts handles complex assertion expressions."""
+    """Build contract rows handles complex assertion expressions."""
     goid = 12364
     code = """def complex_assertions(x, y, z):
     assert x >= 0, "x must be non-negative"
@@ -791,7 +803,7 @@ def test_compute_function_contracts_complex_assertions(
 
     ast_map = {goid: func_ast}
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         memory_gateway,
         contracts_snapshot,
         function_ast_map=ast_map,

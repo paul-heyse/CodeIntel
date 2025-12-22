@@ -10,8 +10,4 @@ Split across focused submodules:
 
 from __future__ import annotations
 
-from codeintel.analytics.subsystems.materialize import build_subsystem_rows
-
-__all__ = [
-    "build_subsystem_rows",
-]
+__all__: list[str] = []

@@ -7,10 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.graphs import (
-    compute_graph_stats,
-    compute_subsystem_agreement,
-)
+from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
 from tests._helpers.builders import (
@@ -80,7 +78,18 @@ def test_graph_stats_include_symbol_and_config_graphs(graph_ctx: TestContext) ->
         ],
     )
 
-    compute_graph_stats(graph_ctx.gateway, repo=graph_ctx.repo, commit=graph_ctx.commit)
+    stats_rows = build_graph_stats_rows(
+        graph_ctx.gateway,
+        repo=graph_ctx.repo,
+        commit=graph_ctx.commit,
+    )
+    if stats_rows:
+        graph_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.graph_stats",
+            repo=graph_ctx.repo,
+            commit=graph_ctx.commit,
+        )
+        graph_ctx.gateway.policy.bulk_insert("analytics.graph_stats", stats_rows)
 
     rows = graph_ctx.query(
         "SELECT graph_name FROM analytics.graph_stats WHERE repo = ? AND commit = ?",
@@ -162,11 +171,18 @@ def test_subsystem_agreement_summary_aggregates(graph_ctx: TestContext) -> None:
         ],
     )
 
-    compute_subsystem_agreement(
+    agreement_rows = build_subsystem_agreement_rows(
         graph_ctx.gateway,
         repo=graph_ctx.repo,
         commit=graph_ctx.commit,
     )
+    if agreement_rows:
+        graph_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.subsystem_agreement",
+            repo=graph_ctx.repo,
+            commit=graph_ctx.commit,
+        )
+        graph_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
     graph_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
 
     disagree_row = graph_ctx.con.execute(

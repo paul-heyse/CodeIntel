@@ -18,7 +18,7 @@ from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.catalog import CatalogProvider
-from codeintel.analytics.semantic_roles import SemanticRolesResult, build_semantic_roles_rows
+from codeintel.analytics.semantic_roles.core import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv

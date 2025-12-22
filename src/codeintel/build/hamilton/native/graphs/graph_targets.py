@@ -748,6 +748,17 @@ class GraphMetricsComputeResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class GraphMetricsMaterializations:
+    """Materialization metadata bundle for graph_metrics tables."""
+
+    functions: MaterializationMetadata
+    functions_ext: MaterializationMetadata
+    modules: MaterializationMetadata
+    modules_ext: MaterializationMetadata
+    graph_stats: MaterializationMetadata
+
+
 # ---------------------------------------------------------------------------
 # Helper functions for graph_validation target
 # ---------------------------------------------------------------------------
@@ -1506,57 +1517,52 @@ def t__graph_metrics__compute(
             return None
 
     try:
-        gateway = env.gateway
-        snapshot = env.snapshot
-        repo, commit = snapshot.repo, snapshot.commit
-
         log.info(
             "graph_metrics: Computing metrics for repo=%s commit=%s",
-            repo,
-            commit,
+            env.snapshot.repo,
+            env.snapshot.commit,
         )
 
-        backend_config = GraphBackendConfig(use_gpu=True, backend="auto", strict=False)
-        base_runtime_options = load_graph_runtime_options(
-            env, target_name=GRAPH_METRICS_TARGET_NAME
-        )
         runtime_options = replace(
-            base_runtime_options,
-            snapshot=snapshot,
-            backend=backend_config,
+            load_graph_runtime_options(env, target_name=GRAPH_METRICS_TARGET_NAME),
+            snapshot=env.snapshot,
+            backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
         )
-        runtime = build_graph_runtime(gateway, runtime_options)
-        filters = build_graph_metric_filters(gateway, snapshot)
+        runtime = build_graph_runtime(env.gateway, runtime_options)
+        filters = build_graph_metric_filters(env.gateway, env.snapshot)
 
-        options = load_target_options(
-            env,
-            target_name=GRAPH_METRICS_TARGET_NAME,
-            options_type=GraphMetricsOptions,
+        metrics_rows = build_graph_metrics_rows(
+            env.gateway,
+            env.snapshot,
+            options=load_target_options(
+                env,
+                target_name=GRAPH_METRICS_TARGET_NAME,
+                options_type=GraphMetricsOptions,
+            ),
+            deps=GraphMetricsDeps(
+                catalog_provider=None,
+                runtime=runtime,
+                filters=filters,
+            ),
         )
-        deps = GraphMetricsDeps(
-            catalog_provider=None,
-            runtime=runtime,
-            filters=filters,
-        )
-        metrics_rows = build_graph_metrics_rows(gateway, snapshot, options=options, deps=deps)
         functions_ext_rows = build_graph_metrics_functions_ext_rows(
-            gateway,
-            repo=repo,
-            commit=commit,
+            env.gateway,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
             runtime=runtime,
             filters=filters,
         )
         modules_ext_rows = build_graph_metrics_modules_ext_rows(
-            gateway,
-            repo=repo,
-            commit=commit,
+            env.gateway,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
             runtime=runtime,
             filters=filters,
         )
         graph_stats_rows = build_graph_stats_rows(
-            gateway,
-            repo=repo,
-            commit=commit,
+            env.gateway,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
             runtime=runtime,
         )
 
@@ -1768,11 +1774,7 @@ def t__graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     t__graph_metrics__compute: GraphMetricsComputeResult | None,
-    m__analytics__graph_metrics_functions: MaterializationMetadata,
-    m__analytics__graph_metrics_functions_ext: MaterializationMetadata,
-    m__analytics__graph_metrics_modules: MaterializationMetadata,
-    m__analytics__graph_metrics_modules_ext: MaterializationMetadata,
-    m__analytics__graph_stats: MaterializationMetadata,
+    graph_metrics__materializations: GraphMetricsMaterializations,
 ) -> TargetRunRecord:
     """Materialize graph metrics target from row materializations.
 
@@ -1801,12 +1803,38 @@ def t__graph_metrics(
         graph=graph,
         target_name=GRAPH_METRICS_TARGET_NAME,
         materializations={
-            GRAPH_METRICS_FUNCTIONS_TABLE_KEY: m__analytics__graph_metrics_functions,
-            GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: m__analytics__graph_metrics_functions_ext,
-            GRAPH_METRICS_MODULES_TABLE_KEY: m__analytics__graph_metrics_modules,
-            GRAPH_METRICS_MODULES_EXT_TABLE_KEY: m__analytics__graph_metrics_modules_ext,
-            GRAPH_STATS_TABLE_KEY: m__analytics__graph_stats,
+            GRAPH_METRICS_FUNCTIONS_TABLE_KEY: graph_metrics__materializations.functions,
+            GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: graph_metrics__materializations.functions_ext,
+            GRAPH_METRICS_MODULES_TABLE_KEY: graph_metrics__materializations.modules,
+            GRAPH_METRICS_MODULES_EXT_TABLE_KEY: graph_metrics__materializations.modules_ext,
+            GRAPH_STATS_TABLE_KEY: graph_metrics__materializations.graph_stats,
         },
+    )
+
+
+@tag_compute(
+    domain="graphs", target=GRAPH_METRICS_TARGET_NAME, target_="graph_metrics__materializations"
+)
+def graph_metrics__materializations(
+    m__analytics__graph_metrics_functions: MaterializationMetadata,
+    m__analytics__graph_metrics_functions_ext: MaterializationMetadata,
+    m__analytics__graph_metrics_modules: MaterializationMetadata,
+    m__analytics__graph_metrics_modules_ext: MaterializationMetadata,
+    m__analytics__graph_stats: MaterializationMetadata,
+) -> GraphMetricsMaterializations:
+    """Bundle graph metrics materialization metadata for the target.
+
+    Returns
+    -------
+    GraphMetricsMaterializations
+        Grouped metadata for graph metrics materializations.
+    """
+    return GraphMetricsMaterializations(
+        functions=m__analytics__graph_metrics_functions,
+        functions_ext=m__analytics__graph_metrics_functions_ext,
+        modules=m__analytics__graph_metrics_modules,
+        modules_ext=m__analytics__graph_metrics_modules_ext,
+        graph_stats=m__analytics__graph_stats,
     )
 
 

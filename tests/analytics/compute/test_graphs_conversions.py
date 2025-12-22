@@ -17,9 +17,7 @@ import pytest
 from codeintel.analytics.compute.graphs.conversions import (
     log_empty_graph,
     log_projection_skipped,
-    normalize_node_id,
     safe_float,
-    to_decimal_id,
 )
 from codeintel.core.data_models.ids import normalize_decimal_id
 from tests._helpers.assertions import (
@@ -28,54 +26,6 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_not_in,
 )
-
-
-class TestToDecimalId:
-    """Tests for to_decimal_id function."""
-
-    @staticmethod
-    @pytest.mark.parametrize(
-        ("input_val", "expected"),
-        [
-            (None, None),
-            (123, Decimal(123)),
-            (456, Decimal(456)),
-            (0, Decimal(0)),
-            (-1, Decimal(-1)),
-        ],
-    )
-    def test_converts_integers(input_val: int | None, expected: Decimal | None) -> None:
-        """Verify integer values are converted to Decimal."""
-        result = to_decimal_id(input_val)
-        expect_equal(result, expected)
-
-    @staticmethod
-    @pytest.mark.parametrize(
-        ("input_val", "expected"),
-        [
-            ("123", Decimal(123)),
-            ("456", Decimal(456)),
-            ("0", Decimal(0)),
-        ],
-    )
-    def test_converts_string_integers(input_val: str, expected: Decimal) -> None:
-        """Verify string integers are converted to Decimal."""
-        result = to_decimal_id(input_val)
-        expect_equal(result, expected)
-
-    @staticmethod
-    def test_converts_decimal_input() -> None:
-        """Verify Decimal input is preserved."""
-        input_val = Decimal("999999999999999999999999999999")
-        result = to_decimal_id(input_val)
-        expect_equal(result, input_val)
-
-    @staticmethod
-    def test_handles_large_integers() -> None:
-        """Verify large integers are handled correctly."""
-        large_int = 340282366920938463463374607431768211456
-        result = to_decimal_id(large_int)
-        expect_equal(result, Decimal(large_int))
 
 
 class TestNormalizeDecimalId:
@@ -179,76 +129,6 @@ class TestNormalizeDecimalId:
         """Verify unconvertible values return None."""
         result = normalize_decimal_id("not_a_number")
         expect_is_none(result)
-
-
-class TestNormalizeNodeId:
-    """Tests for normalize_node_id function."""
-
-    @staticmethod
-    def test_returns_none_for_none() -> None:
-        """Verify None input returns None."""
-        expect_is_none(normalize_node_id(None))
-
-    @staticmethod
-    @pytest.mark.parametrize(
-        ("input_val", "expected"),
-        [
-            (Decimal("123"), 123),
-            (Decimal("999999999999"), 999999999999),
-        ],
-    )
-    def test_converts_decimal_to_int(input_val: Decimal, expected: int) -> None:
-        """Verify Decimal values are converted to integers."""
-        result = normalize_node_id(input_val)
-        expect_equal(result, expected)
-
-    @staticmethod
-    @pytest.mark.parametrize(
-        ("input_val", "expected"),
-        [
-            (123, 123),
-            (456.0, 456),
-            (0.0, 0),
-        ],
-    )
-    def test_converts_numeric_types(input_val: float, expected: int) -> None:
-        """Verify int and float values are converted to int."""
-        result = normalize_node_id(input_val)
-        expect_equal(result, expected)
-
-    @staticmethod
-    @pytest.mark.parametrize(
-        ("input_val", "expected"),
-        [
-            ("123", 123),
-            ("456", 456),
-            ("0", 0),
-        ],
-    )
-    def test_converts_digit_strings(input_val: str, expected: int) -> None:
-        """Verify digit-only strings are converted to integers."""
-        result = normalize_node_id(input_val)
-        expect_equal(result, expected)
-
-    @staticmethod
-    @pytest.mark.parametrize(
-        ("input_val", "expected"),
-        [
-            ("func_name", "func_name"),
-            ("module.function", "module.function"),
-            ("123abc", "123abc"),
-        ],
-    )
-    def test_preserves_non_digit_strings(input_val: str, expected: str) -> None:
-        """Verify non-digit strings are preserved as strings."""
-        result = normalize_node_id(input_val)
-        expect_equal(result, expected)
-
-    @staticmethod
-    def test_raises_on_float_infinity() -> None:
-        """Verify float infinity raises OverflowError (uncaught by function)."""
-        with pytest.raises(OverflowError):
-            normalize_node_id(float("inf"))
 
 
 class TestSafeFloat:
@@ -383,30 +263,29 @@ class TestIntegrationScenarios:
 
     @staticmethod
     def test_roundtrip_decimal_normalization() -> None:
-        """Verify roundtrip conversion of Decimal IDs."""
-        original = 123456789012345678901234567890
-        decimal_id = to_decimal_id(original)
-        normalized = normalize_decimal_id(decimal_id)
-        expect_equal(normalized, original)
+        """Verify Decimal IDs normalize to ints."""
+        original = Decimal("123456789012345678901234567890")
+        normalized = normalize_decimal_id(original)
+        expect_equal(normalized, int(original))
 
     @staticmethod
     def test_graph_node_id_normalization() -> None:
-        """Verify graph node IDs normalize consistently."""
+        """Verify numeric graph nodes normalize to ints."""
         graph: nx.DiGraph = nx.DiGraph()
         graph.add_node(Decimal("123"))
         graph.add_node(456)
         graph.add_node("789")
         graph.add_node("func_name")
 
-        normalized = {normalize_node_id(n) for n in graph.nodes()}
-        expected = {123, 456, 789, "func_name"}
+        normalized = {normalize_decimal_id(n) for n in graph.nodes()}
+        expected = {123, 456, 789, None}
         expect_equal(normalized, expected)
 
     @staticmethod
     def test_safe_float_for_metrics() -> None:
         """Verify safe_float handles metric values correctly."""
         metrics = [
-            Decimal("0.75"),
+            "0.75",
             "0.5",
             0.25,
             None,

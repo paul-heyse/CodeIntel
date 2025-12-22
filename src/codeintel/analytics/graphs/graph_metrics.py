@@ -271,7 +271,7 @@ def build_graph_metrics_rows(
 
 
 def _build_function_graph_metrics_rows(
-    gateway: StorageGateway,
+    _gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     ctx: GraphContext,

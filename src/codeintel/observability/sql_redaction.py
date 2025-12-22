@@ -15,6 +15,7 @@ _LEADING_WS_RE = re.compile(r"^\s+")
 _SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _SQL_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
 
+
 @dataclass(frozen=True, slots=True)
 class RedactedSQL:
     """Result of applying a redaction policy to a SQL statement."""

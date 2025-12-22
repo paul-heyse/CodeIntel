@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.analytics.testing.profiles.builder import (
-    build_test_profile,
+    build_test_profile_result,
     infer_behavior_tags,
 )
 from codeintel.analytics.testing.profiles.types import IoFlags, TestAstInfo
@@ -310,16 +310,28 @@ class TestInferBehaviorTags:
 
 
 class TestBuildTestProfile:
-    """Tests for build_test_profile function."""
+    """Tests for build_test_profile_result function."""
+
+    @staticmethod
+    def _build_and_write_test_profile(ctx: TestContext, snapshot: SnapshotRef) -> None:
+        result = build_test_profile_result(ctx.gateway, snapshot)
+        if result.rows is None:
+            return
+        ctx.gateway.policy.delete_for_snapshot(
+            "analytics.test_profile",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        ctx.gateway.policy.bulk_insert_mappings("analytics.test_profile", result.rows)
 
     @staticmethod
     def test_returns_early_when_no_tests(test_ctx: TestContext) -> None:
-        """Verify build_test_profile returns early with no test catalog."""
+        """Verify build_test_profile_result returns early with no test catalog."""
         snapshot = SnapshotRef(
             repo=test_ctx.repo, commit=test_ctx.commit, repo_root=test_ctx.repo_root
         )
 
-        build_test_profile(test_ctx.gateway, snapshot)
+        TestBuildTestProfile._build_and_write_test_profile(test_ctx, snapshot)
 
         count = test_ctx.query_count(
             "analytics.test_profile",
@@ -329,14 +341,14 @@ class TestBuildTestProfile:
 
     @staticmethod
     def test_builds_profiles_with_seeded_tests(coverage_ctx: TestContext) -> None:
-        """Verify build_test_profile creates rows when test catalog exists."""
+        """Verify build_test_profile_result creates rows when test catalog exists."""
         snapshot = SnapshotRef(
             repo=coverage_ctx.repo,
             commit=coverage_ctx.commit,
             repo_root=coverage_ctx.repo_root,
         )
 
-        build_test_profile(coverage_ctx.gateway, snapshot)
+        TestBuildTestProfile._build_and_write_test_profile(coverage_ctx, snapshot)
 
         count = coverage_ctx.query_count(
             "analytics.test_profile",

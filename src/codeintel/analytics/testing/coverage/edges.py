@@ -7,7 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from coverage import Coverage
 from coverage.exceptions import CoverageException
@@ -28,12 +28,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-
-TEST_CATALOG_UPDATE_GOIDS: Final[str] = (
-    "UPDATE analytics.test_catalog "
-    "SET test_goid_h128 = ?, urn = ? "
-    "WHERE test_id = ? AND rel_path = ? AND repo = ? AND commit = ?"
-)
 
 
 @dataclass(frozen=True)
@@ -245,9 +239,23 @@ def _backfill_test_goids(
     if updates:
         backend = gateway.policy
         backend.ensure_table("analytics.test_catalog")
-        con.executemany(
-            TEST_CATALOG_UPDATE_GOIDS,
-            [(g, u, tid, rel, snapshot.repo, snapshot.commit) for g, u, tid, rel in updates],
+        rows = [
+            (test_id, goid, urn, snapshot.repo, snapshot.commit, rel_path)
+            for goid, urn, test_id, rel_path in updates
+        ]
+        backend.upsert(
+            "analytics.test_catalog",
+            rows,
+            columns=[
+                "test_id",
+                "test_goid_h128",
+                "urn",
+                "repo",
+                "commit",
+                "rel_path",
+            ],
+            conflict_columns=["test_id"],
+            update_columns=["test_goid_h128", "urn"],
         )
 
     return goid_by_id, urn_by_id

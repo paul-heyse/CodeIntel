@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.testing import compute_test_coverage_edges
-from codeintel.analytics.testing.coverage.edges import TestCoverageOptions
+from codeintel.analytics.testing.coverage.edges import (
+    TestCoverageOptions,
+    build_test_coverage_edges_rows,
+)
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
@@ -127,11 +129,15 @@ def compute_coverage_edges(
         coverage_file=coverage_file,
         coverage_loader=coverage_loader,
     )
-    compute_test_coverage_edges(
-        env.gateway,
-        snapshot,
-        options=options,
-    )
+    rows = build_test_coverage_edges_rows(env.gateway, snapshot, options=options)
+    if rows:
+        backend = env.gateway.policy
+        backend.delete_for_snapshot(
+            "analytics.test_coverage_edges",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings("analytics.test_coverage_edges", rows)
 
 
 def seed_coverage_rows(

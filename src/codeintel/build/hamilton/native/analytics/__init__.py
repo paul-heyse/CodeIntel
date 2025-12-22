@@ -98,7 +98,7 @@ from codeintel.build.hamilton.native.analytics.hotspots import (
 )
 from codeintel.build.hamilton.native.analytics.metadata_targets import (
     AstFeaturesResult,
-    ProfilesResult,
+    ProfilesComputeResult,
     t__data_model_usage,
     t__data_model_usage__compute,
     t__data_models,
@@ -130,6 +130,13 @@ from codeintel.build.hamilton.native.analytics.risk_factors import (
     t__risk_factors,
     t__risk_factors__compute,
 )
+from codeintel.build.hamilton.native.analytics.subsystem_cache_targets import (
+    SubsystemCachesComputeResult,
+    subsystem_coverage_cache__rows,
+    subsystem_profile_cache__rows,
+    t__subsystem_caches,
+    t__subsystem_caches__compute,
+)
 from codeintel.build.hamilton.native.analytics.subsystem_targets import (
     t__subsystems,
 )
@@ -140,8 +147,9 @@ __all__ = [
     "FunctionAnalyticsResult",
     "FunctionContractsResult",
     "FunctionEffectsResult",
-    "ProfilesResult",
+    "ProfilesComputeResult",
     "SemanticRolesResult",
+    "SubsystemCachesComputeResult",
     "TestProfileComputeResult",
     "function_contracts__rows",
     "function_effects__rows",
@@ -153,6 +161,8 @@ __all__ = [
     "risk_factors__fan_out",
     "semantic_roles__functions_rows",
     "semantic_roles__modules_rows",
+    "subsystem_coverage_cache__rows",
+    "subsystem_profile_cache__rows",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",
     "t__cfg_dfg_metrics",
@@ -194,6 +204,8 @@ __all__ = [
     "t__semantic_roles__compute",
     "t__subsystem_agreement",
     "t__subsystem_agreement__compute",
+    "t__subsystem_caches",
+    "t__subsystem_caches__compute",
     "t__subsystem_graph_metrics",
     "t__subsystem_graph_metrics__compute",
     "t__subsystems",

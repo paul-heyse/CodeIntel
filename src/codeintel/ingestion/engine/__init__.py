@@ -38,7 +38,6 @@ from codeintel.ingestion.engine.plugins import (
     ToolPluginMetadata,
     ToolPluginRegistry,
     ToolPluginResult,
-    ToolStatus,
     build_default_registry,
 )
 from codeintel.ingestion.engine.results import (
@@ -54,6 +53,7 @@ from codeintel.ingestion.engine.results import (
     TestReport,
 )
 from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.engine.status import ToolStatus
 
 __all__ = [
     "CoverageFileSummary",

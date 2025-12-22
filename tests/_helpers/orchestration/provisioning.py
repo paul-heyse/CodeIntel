@@ -14,7 +14,10 @@ from typing import TYPE_CHECKING
 
 from coverage import Coverage
 
-from codeintel.analytics.graphs import compute_graph_metrics
+from codeintel.analytics.graphs.graph_metrics import build_graph_metrics_rows
+from codeintel.analytics.graphs.graph_metrics_ext import build_graph_metrics_functions_ext_rows
+from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.analytics.graphs.module_graph_metrics_ext import build_graph_metrics_modules_ext_rows
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.graphs.call_graph import t__call_graph__extract
@@ -22,7 +25,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.runtime import GraphMetricsOptions
-from codeintel.ingestion import (
+from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,
@@ -79,9 +82,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.models import ToolsConfig
-    from codeintel.ingestion import (
-        ModuleRecord,
-    )
+    from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -821,7 +822,73 @@ def graph_metrics_ready_gateway(
     if opts.run_metrics:
         snapshot = SnapshotRef(repo=opts.repo, commit=opts.commit, repo_root=repo_root)
         metric_options = opts.metrics_options or GraphMetricsOptions()
-        compute_graph_metrics(gateway, snapshot, options=metric_options)
+        metrics_rows = build_graph_metrics_rows(gateway, snapshot, options=metric_options)
+        backend = gateway.policy
+        if metrics_rows.function_rows:
+            backend.delete_for_snapshot(
+                "analytics.graph_metrics_functions",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            backend.bulk_insert_mappings(
+                "analytics.graph_metrics_functions",
+                metrics_rows.function_rows,
+            )
+        if metrics_rows.module_rows:
+            backend.delete_for_snapshot(
+                "analytics.graph_metrics_modules",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            backend.bulk_insert_mappings(
+                "analytics.graph_metrics_modules",
+                metrics_rows.module_rows,
+            )
+
+        functions_ext_rows = build_graph_metrics_functions_ext_rows(
+            gateway,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        if functions_ext_rows:
+            backend.delete_for_snapshot(
+                "analytics.graph_metrics_functions_ext",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            backend.bulk_insert_mappings(
+                "analytics.graph_metrics_functions_ext",
+                functions_ext_rows,
+            )
+
+        modules_ext_rows = build_graph_metrics_modules_ext_rows(
+            gateway,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        if modules_ext_rows:
+            backend.delete_for_snapshot(
+                "analytics.graph_metrics_modules_ext",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            backend.bulk_insert_mappings(
+                "analytics.graph_metrics_modules_ext",
+                modules_ext_rows,
+            )
+
+        graph_stats_rows = build_graph_stats_rows(
+            gateway,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        if graph_stats_rows:
+            backend.delete_for_snapshot(
+                "analytics.graph_stats",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            backend.bulk_insert("analytics.graph_stats", graph_stats_rows)
     return ctx
 
 

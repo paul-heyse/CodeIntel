@@ -1,18 +1,16 @@
-"""Tests for coverage_targets.py analytics module.
-
-This module validates that the consolidated coverage targets in
-``codeintel.build.hamilton.native.analytics.coverage_targets`` work correctly
-with the executor_materialize template for Pattern D targets.
-"""
+"""Tests for coverage_targets.py analytics module."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.analytics.coverage_targets import (
+    BehavioralCoverageComputeResult,
+    CoverageTestEdgesComputeResult,
     t__behavioral_coverage,
     t__coverage_test_edges,
 )
@@ -91,6 +89,23 @@ def _make_graph() -> TargetGraph:
     return graph
 
 
+def _make_materialization(
+    table_key: str,
+    row_count: int,
+    *,
+    status: str = "succeeded",
+    error: str | None = None,
+) -> MaterializationMetadata:
+    return {
+        "status": status,
+        "table_key": table_key,
+        "row_count": row_count,
+        "duration_ms": 0.0,
+        "input_hash": "test",
+        "error": error,
+    }
+
+
 # ---------------------------------------------------------------------------
 # ExecutionResult Tests
 # ---------------------------------------------------------------------------
@@ -133,9 +148,10 @@ def test_coverage_test_edges_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.ok(table_counts={"analytics.test_coverage_edges": 25})
+    compute_result = CoverageTestEdgesComputeResult(rows=[])
+    materialization = _make_materialization("analytics.test_coverage_edges", 25)
 
-    record = t__coverage_test_edges(env, graph, compute_result)
+    record = t__coverage_test_edges(env, graph, compute_result, materialization)
 
     expected_count = 25
     expect_equal(record.status, "succeeded")
@@ -162,9 +178,15 @@ def test_coverage_test_edges_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.failed("Upstream goids failed")
+    compute_result = CoverageTestEdgesComputeResult(rows=None, error="Upstream goids failed")
+    materialization = _make_materialization(
+        "analytics.test_coverage_edges",
+        0,
+        status="failed",
+        error="Upstream goids failed",
+    )
 
-    record = t__coverage_test_edges(env, graph, compute_result)
+    record = t__coverage_test_edges(env, graph, compute_result, materialization)
 
     expect_equal(record.status, "failed")
     expect_true(
@@ -190,9 +212,10 @@ def test_behavioral_coverage_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.ok(table_counts={"analytics.behavioral_coverage": 15})
+    compute_result = BehavioralCoverageComputeResult(rows=[])
+    materialization = _make_materialization("analytics.behavioral_coverage", 15)
 
-    record = t__behavioral_coverage(env, graph, compute_result)
+    record = t__behavioral_coverage(env, graph, compute_result, materialization)
 
     expected_count = 15
     expect_equal(record.status, "succeeded")
@@ -219,9 +242,15 @@ def test_behavioral_coverage_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.failed("Test profile failed")
+    compute_result = BehavioralCoverageComputeResult(rows=None, error="Test profile failed")
+    materialization = _make_materialization(
+        "analytics.behavioral_coverage",
+        0,
+        status="failed",
+        error="Test profile failed",
+    )
 
-    record = t__behavioral_coverage(env, graph, compute_result)
+    record = t__behavioral_coverage(env, graph, compute_result, materialization)
 
     expect_equal(record.status, "failed")
     expect_true(

@@ -595,8 +595,3 @@ def _uses_concurrency(node: ast.Call, config: SpanConfig) -> bool:
         return False
     library_root = target.library.split(".", maxsplit=1)[0]
     return library_root in config.patterns.concurrency_libs
-
-
-__all__ = [
-    "DuckDBPolicyBackend",
-]

@@ -215,8 +215,6 @@ def _build_rows(
     return subsystem_rows, membership_rows
 
 
-
-
 def _subsystem_id(repo: str, modules: list[str]) -> str:
     raw = f"{repo}:{','.join(sorted(modules))}"
     digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()

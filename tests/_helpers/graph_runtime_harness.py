@@ -6,20 +6,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow
-from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics
-from codeintel.analytics.graphs.graph_metrics import (
-    GraphMetricsDeps,
-    compute_graph_metrics,
-)
-from codeintel.analytics.graphs.graph_metrics_ext import compute_graph_metrics_functions_ext
-from codeintel.analytics.graphs.graph_stats import compute_graph_stats
-from codeintel.analytics.graphs.module_graph_metrics_ext import compute_graph_metrics_modules_ext
-from codeintel.analytics.graphs.subsystem_agreement import compute_subsystem_agreement
-from codeintel.analytics.graphs.subsystem_graph_metrics import compute_subsystem_graph_metrics
+from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow_result
+from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
+from codeintel.analytics.graphs.graph_metrics import GraphMetricsDeps, build_graph_metrics_rows
+from codeintel.analytics.graphs.graph_metrics_ext import build_graph_metrics_functions_ext_rows
+from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
+from codeintel.analytics.graphs.module_graph_metrics_ext import build_graph_metrics_modules_ext_rows
+from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.analytics.graphs.subsystem_graph_metrics import build_subsystem_graph_metrics_rows
 from codeintel.analytics.graphs.symbol_graph_metrics import (
-    compute_symbol_graph_metrics_functions,
-    compute_symbol_graph_metrics_modules,
+    build_symbol_graph_metrics_function_rows,
+    build_symbol_graph_metrics_module_rows,
 )
 from codeintel.config.primitives import SnapshotRef
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
@@ -54,6 +51,7 @@ from tests._helpers.repo import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.analytics.graphs.graph_metrics import (
@@ -201,19 +199,50 @@ def run_graph_metrics_pipeline(
     filters: GraphMetricFilters | None = None,
 ) -> None:
     """Run the full analytics graph metrics pipeline for a harness."""
-    compute_config_data_flow(
+
+    def _write_tuple_rows(table_key: str, rows: Sequence[tuple[object, ...]] | None) -> None:
+        if not rows:
+            return
+        ctx.gateway.policy.delete_for_snapshot(
+            table_key,
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+        )
+        ctx.gateway.policy.bulk_insert(table_key, rows)
+
+    def _write_mapping_rows(table_key: str, rows: Sequence[Mapping[str, object]] | None) -> None:
+        if not rows:
+            return
+        ctx.gateway.policy.delete_for_snapshot(
+            table_key,
+            repo=ctx.snapshot.repo,
+            commit=ctx.snapshot.commit,
+        )
+        ctx.gateway.policy.bulk_insert_mappings(table_key, rows)
+
+    data_flow_result = compute_config_data_flow_result(
         ctx.gateway,
         ctx.snapshot,
         call_graph=ctx.fixtures.call_graph,
         ast_by_goid=ctx.ast_by_goid,
     )
-    compute_config_graph_metrics(
+    _write_tuple_rows("analytics.config_data_flow", data_flow_result.rows)
+
+    config_metrics_result = compute_config_graph_metrics_result(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
     )
-    compute_graph_metrics(
+    _write_tuple_rows("analytics.config_graph_metrics_keys", config_metrics_result.key_rows)
+    _write_tuple_rows("analytics.config_graph_metrics_modules", config_metrics_result.module_rows)
+    _write_tuple_rows("analytics.config_projection_key_edges", config_metrics_result.key_edge_rows)
+    _write_tuple_rows(
+        "analytics.config_projection_module_edges",
+        config_metrics_result.module_edge_rows,
+    )
+
+    metrics_rows = build_graph_metrics_rows(
         ctx.gateway,
         ctx.snapshot,
         deps=GraphMetricsDeps(
@@ -222,50 +251,66 @@ def run_graph_metrics_pipeline(
             module_by_path=ctx.module_map,
         ),
     )
-    compute_graph_metrics_functions_ext(
+    _write_mapping_rows("analytics.graph_metrics_functions", metrics_rows.function_rows)
+    _write_mapping_rows("analytics.graph_metrics_modules", metrics_rows.module_rows)
+
+    functions_ext_rows = build_graph_metrics_functions_ext_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
         filters=filters,
     )
-    compute_graph_metrics_modules_ext(
+    _write_mapping_rows("analytics.graph_metrics_functions_ext", functions_ext_rows)
+
+    modules_ext_rows = build_graph_metrics_modules_ext_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
         filters=filters,
     )
-    compute_graph_stats(
+    _write_mapping_rows("analytics.graph_metrics_modules_ext", modules_ext_rows)
+
+    graph_stats_rows = build_graph_stats_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
     )
-    compute_subsystem_graph_metrics(
+    _write_tuple_rows("analytics.graph_stats", graph_stats_rows)
+
+    subsystem_graph_metrics_rows = build_subsystem_graph_metrics_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
         filters=filters,
     )
-    compute_subsystem_agreement(
+    _write_tuple_rows("analytics.subsystem_graph_metrics", subsystem_graph_metrics_rows)
+
+    subsystem_agreement_rows = build_subsystem_agreement_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
     )
-    compute_symbol_graph_metrics_modules(
+    _write_tuple_rows("analytics.subsystem_agreement", subsystem_agreement_rows)
+
+    symbol_module_rows = build_symbol_graph_metrics_module_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
     )
-    compute_symbol_graph_metrics_functions(
+    _write_tuple_rows("analytics.symbol_graph_metrics_modules", symbol_module_rows)
+
+    symbol_function_rows = build_symbol_graph_metrics_function_rows(
         ctx.gateway,
         repo=ctx.snapshot.repo,
         commit=ctx.snapshot.commit,
         runtime=ctx.runtime_options,
     )
+    _write_tuple_rows("analytics.symbol_graph_metrics_functions", symbol_function_rows)
 
 
 __all__ = [

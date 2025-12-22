@@ -303,6 +303,12 @@ def _build_span_builder(obs: ObservabilityRuntime) -> DbSpanAttributeBuilder:
         query_summary=DbQuerySummaryConfig(
             max_len=obs.duckdb_query_summary_max_len,
             max_targets=obs.duckdb_query_summary_max_targets,
+            emit_ellipsis=obs.duckdb_query_summary_emit_ellipsis,
+            hash_suspicious_targets=obs.duckdb_query_summary_hash_suspicious_targets,
+            hash_target_len=obs.duckdb_query_summary_hash_len,
+            hash_target_min_len=obs.duckdb_query_summary_hash_min_len,
+            include_subquery_operations=obs.duckdb_query_summary_include_subquery_operations,
+            include_multi_statement=obs.duckdb_query_summary_include_multi_statement,
         ),
         query_text=query_text_config,
         query_parameters=query_param_config,

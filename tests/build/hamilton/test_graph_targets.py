@@ -16,10 +16,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.graphs.graph_targets import (
     GoidExtractResult,
+    GraphMetricsComputeResult,
+    GraphMetricsMaterializations,
     GraphValidationResult,
     SymbolUsesExtractResult,
     goids__execution_result,
@@ -135,6 +138,40 @@ def _make_graph() -> TargetGraph:
         )
     )
     return graph
+
+
+def _make_materialization(
+    table_key: str,
+    row_count: int,
+    *,
+    status: str = "succeeded",
+    error: str | None = None,
+) -> MaterializationMetadata:
+    return {
+        "status": status,
+        "table_key": table_key,
+        "row_count": row_count,
+        "duration_ms": 0.0,
+        "input_hash": "test",
+        "error": error,
+    }
+
+
+def _make_graph_metrics_materializations(
+    *,
+    functions: int,
+    functions_ext: int,
+    modules: int,
+    modules_ext: int,
+    stats: int,
+) -> GraphMetricsMaterializations:
+    return GraphMetricsMaterializations(
+        functions=_make_materialization("analytics.graph_metrics_functions", functions),
+        functions_ext=_make_materialization("analytics.graph_metrics_functions_ext", functions_ext),
+        modules=_make_materialization("analytics.graph_metrics_modules", modules),
+        modules_ext=_make_materialization("analytics.graph_metrics_modules_ext", modules_ext),
+        graph_stats=_make_materialization("analytics.graph_stats", stats),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -439,14 +476,21 @@ def test_graph_metrics_materialize_success(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.ok(
-        table_counts={
-            "analytics.graph_metrics_functions": MAX_GRAPH_METRICS_COUNT,
-            "analytics.graph_metrics_modules": MAX_GRAPH_METRICS_COUNT,
-        }
+    compute_result = GraphMetricsComputeResult(
+        metrics=None,
+        functions_ext_rows=None,
+        modules_ext_rows=None,
+        graph_stats_rows=None,
+    )
+    materializations = _make_graph_metrics_materializations(
+        functions=MAX_GRAPH_METRICS_COUNT,
+        functions_ext=0,
+        modules=MAX_GRAPH_METRICS_COUNT,
+        modules_ext=0,
+        stats=0,
     )
 
-    record = t__graph_metrics(env, graph, compute_result)
+    record = t__graph_metrics(env, graph, compute_result, materializations)
 
     expect_equal(record.status, "succeeded")
     expect_true(
@@ -472,9 +516,22 @@ def test_graph_metrics_materialize_failure(
     env = _make_env(gateway=fake_gateway, snapshot=snapshot)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.failed("Upstream call_graph failed")
+    compute_result = GraphMetricsComputeResult(
+        metrics=None,
+        functions_ext_rows=None,
+        modules_ext_rows=None,
+        graph_stats_rows=None,
+        error="Upstream call_graph failed",
+    )
+    materializations = _make_graph_metrics_materializations(
+        functions=0,
+        functions_ext=0,
+        modules=0,
+        modules_ext=0,
+        stats=0,
+    )
 
-    record = t__graph_metrics(env, graph, compute_result)
+    record = t__graph_metrics(env, graph, compute_result, materializations)
 
     expect_equal(record.status, "failed")
     expect_true(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -48,12 +48,30 @@ from codeintel.analytics.compute.profiles.features import (
     ProfileFeatures,
     extract_profile_features,
 )
-from codeintel.analytics.profiles import (
-    SLOW_TEST_THRESHOLD_MS,
-    build_file_profile,
-    build_function_profile,
-    build_module_profile,
+from codeintel.analytics.profiles.files import (
+    build_file_profile_rows,
+    compute_file_profile_inputs,
 )
+from codeintel.analytics.profiles.functions import (
+    SLOW_TEST_THRESHOLD_MS,
+    FunctionProfileViews,
+    build_function_profile_rows,
+    compute_function_profile_inputs,
+    join_function_contracts,
+    join_function_coverage,
+    join_function_docs,
+    join_function_effects,
+    join_function_history,
+    join_function_risk,
+    join_function_roles,
+    load_function_base_info,
+)
+from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
+from codeintel.analytics.profiles.modules import (
+    build_module_profile_rows,
+    compute_module_profile_inputs,
+)
+from codeintel.analytics.profiles.utils import DEFAULT_MODULE_TABLE
 from codeintel.analytics.testing.profiles import rows as profile_rows
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers import METRICS_PACK, assert_frozen
@@ -93,9 +111,11 @@ from tests._helpers.seeds.core import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Mapping
+    from collections.abc import Iterator
     from pathlib import Path
 
+    from codeintel.analytics.profiles.types import FunctionProfileInputs
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
     )
@@ -111,6 +131,7 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsTestProfileRow as ProfileRowModel,
     )
+    from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
     from tests._helpers.context import TestContext
 
@@ -203,11 +224,67 @@ def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object,
     return serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
 
 
+def _build_function_profile_views(
+    inputs: FunctionProfileInputs,
+    module_table: str,
+) -> FunctionProfileViews:
+    return FunctionProfileViews(
+        base_by_func=load_function_base_info(inputs, module_table=module_table),
+        risk_by_func=join_function_risk(inputs),
+        coverage_by_func=join_function_coverage(inputs),
+        graph_by_func=summarize_graph_for_function_profile(inputs),
+        effects_by_func=join_function_effects(inputs),
+        contracts_by_func=join_function_contracts(inputs),
+        roles_by_func=join_function_roles(inputs),
+        docs_by_func=join_function_docs(inputs),
+        history_by_func=join_function_history(inputs),
+    )
+
+
+def _write_snapshot_rows(
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[Mapping[str, object]],
+    snapshot: SnapshotRef,
+) -> None:
+    if not rows:
+        return
+    gateway.policy.delete_for_snapshot(table_key, repo=snapshot.repo, commit=snapshot.commit)
+    gateway.policy.bulk_insert_mappings(table_key, rows)
+
+
+def _populate_profile_tables(gateway: StorageGateway, snapshot: SnapshotRef) -> None:
+    module_table = DEFAULT_MODULE_TABLE
+    function_inputs = compute_function_profile_inputs(gateway, snapshot)
+    views = _build_function_profile_views(function_inputs, module_table)
+    function_rows = list(build_function_profile_rows(function_inputs, views=views))
+    if not function_rows:
+        pytest.fail("function_profile rows missing")
+    _write_snapshot_rows(gateway, FUNCTION_PROFILE_TABLE_KEY, function_rows, snapshot)
+
+    file_inputs = compute_file_profile_inputs(gateway, snapshot)
+    file_rows_iter = build_file_profile_rows(file_inputs, module_table=module_table)
+    if file_rows_iter is None:
+        pytest.fail("file_profile rows missing")
+    file_rows = list(file_rows_iter)
+    _write_snapshot_rows(gateway, FILE_PROFILE_TABLE_KEY, file_rows, snapshot)
+
+    module_inputs = compute_module_profile_inputs(gateway, snapshot)
+    module_rows_iter = build_module_profile_rows(module_inputs, module_table=module_table)
+    if module_rows_iter is None:
+        pytest.fail("module_profile rows missing")
+    module_rows = list(module_rows_iter)
+    _write_snapshot_rows(gateway, MODULE_PROFILE_TABLE_KEY, module_rows, snapshot)
+
+
 EPSILON = 1e-6
 REL_PATH = "pkg/mod.py"
 MODULE = "pkg.mod"
-RowBuilder = Callable[[str, str], list[dict[str, object]]]
-WriterFn = Callable[[Any, list[dict[str, object]]], int]
+FUNCTION_PROFILE_TABLE_KEY = "analytics.function_profile"
+FILE_PROFILE_TABLE_KEY = "analytics.file_profile"
+MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
+RowBuilder = Callable[[str, str], Sequence[Mapping[str, object]]]
+WriterFn = Callable[[Any, Sequence[Mapping[str, object]]], int]
 
 
 # =============================================================================
@@ -327,9 +404,7 @@ def test_profile_builders_aggregate_expected_fields(profiles_ctx: TestContext) -
     gateway = profiles_ctx.gateway
     con = gateway.con
     snapshot = profiles_ctx.to_snapshot_ref()
-    build_function_profile(gateway, snapshot)
-    build_file_profile(gateway, snapshot)
-    build_module_profile(gateway, snapshot)
+    _populate_profile_tables(gateway, snapshot)
     _assert_function_profile(con)
     _assert_file_profile(con)
     _assert_module_profile(con)

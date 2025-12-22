@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import cast
 
 from sqlglot import exp, parse_one
@@ -25,7 +25,7 @@ _HEX_STRING_EXPR = cast("type[exp.Expression] | None", getattr(exp, "HexString",
 _PLACEHOLDER_EXPR = cast("type[exp.Expression] | None", getattr(exp, "Placeholder", None))
 
 
-class DbQueryTextPolicy(str, Enum):
+class DbQueryTextPolicy(StrEnum):
     """Policies for db.query.text emission."""
 
     NEVER = "never"
@@ -121,9 +121,7 @@ def redact_sql_literals_with_sqlglot(
 
 
 def _strip_comments(sql: str) -> str:
-    sql = _BLOCK_COMMENT_RE.sub(" ", sql)
-    sql = _LINE_COMMENT_RE.sub(" ", sql)
-    return sql
+    return _LINE_COMMENT_RE.sub(" ", _BLOCK_COMMENT_RE.sub(" ", sql))
 
 
 def _collapse_in_lists(sql: str) -> str:

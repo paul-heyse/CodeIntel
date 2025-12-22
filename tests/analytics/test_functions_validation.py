@@ -7,8 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.functions import (
-    compute_function_metrics_and_types,
+from codeintel.analytics.functions.metrics import (
+    FunctionAnalyticsResult,
+    compute_function_analytics_result,
 )
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.builders import GoidRow, insert_rows
@@ -55,6 +56,35 @@ def _get_snapshot(ctx: TestContext) -> SnapshotRef:
     return SnapshotRef(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
 
 
+def _write_function_results(ctx: TestContext, result: FunctionAnalyticsResult) -> None:
+    backend = ctx.gateway.policy
+    snapshot = _get_snapshot(ctx)
+    if result.metrics_rows:
+        backend.delete_for_snapshot(
+            "analytics.function_metrics",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings("analytics.function_metrics", result.metrics_rows)
+
+    if result.types_rows:
+        backend.delete_for_snapshot(
+            "analytics.function_types",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings("analytics.function_types", result.types_rows)
+
+    validation_rows = result.reporter.to_rows()
+    if validation_rows:
+        backend.delete_for_snapshot(
+            "analytics.function_validation",
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert("analytics.function_validation", validation_rows)
+
+
 @pytest.fixture
 def ctx(tmp_path: Path) -> Iterator[TestContext]:
     """Create a test context for function validation scenarios.
@@ -81,7 +111,8 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.broken")
 
     snapshot = _get_snapshot(ctx)
-    summary = compute_function_metrics_and_types(ctx.gateway, snapshot, fail_on_missing_spans=False)
+    result = compute_function_analytics_result(ctx.gateway, snapshot)
+    _write_function_results(ctx, result)
 
     metrics_rows = run_query(ctx.gateway, "SELECT * FROM analytics.function_metrics")
     validation_rows = run_query(
@@ -98,8 +129,8 @@ def test_records_validation_when_parse_fails(ctx: TestContext) -> None:
         pytest.fail(f"Expected no metrics rows, found {metrics_rows}")
     if validation_rows != [(1, "parse_failed")]:
         pytest.fail(f"Unexpected validation rows: {validation_rows}")
-    if summary["validation_parse_failed"] != 1:
-        pytest.fail(f"Unexpected parse_failed count: {summary['validation_parse_failed']}")
+    if result.reporter.parse_failed != 1:
+        pytest.fail(f"Unexpected parse_failed count: {result.reporter.parse_failed}")
 
 
 def test_span_not_found_is_recorded(ctx: TestContext) -> None:
@@ -111,7 +142,8 @@ def test_span_not_found_is_recorded(ctx: TestContext) -> None:
     _insert_goid(ctx, rel_path=rel_path, qualname="pkg.mod.foo", start_line=50, end_line=55)
 
     snapshot = _get_snapshot(ctx)
-    summary = compute_function_metrics_and_types(ctx.gateway, snapshot, fail_on_missing_spans=False)
+    result = compute_function_analytics_result(ctx.gateway, snapshot)
+    _write_function_results(ctx, result)
 
     validation_rows = run_query(
         ctx.gateway,
@@ -125,7 +157,5 @@ def test_span_not_found_is_recorded(ctx: TestContext) -> None:
 
     if validation_rows != [(1, "span_not_found")]:
         pytest.fail(f"Unexpected validation rows: {validation_rows}")
-    if summary["validation_span_not_found"] != 1:
-        pytest.fail(
-            f"Unexpected span_not_found count: {summary['validation_span_not_found']}",
-        )
+    if result.reporter.span_not_found != 1:
+        pytest.fail(f"Unexpected span_not_found count: {result.reporter.span_not_found}")

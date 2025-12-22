@@ -20,7 +20,7 @@ from codeintel.analytics.testing.coverage.edges import (
     TestCoverageOptions,
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
-    compute_test_coverage_edges,
+    build_test_coverage_edges_rows,
 )
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers import CORE_PACK, COVERAGE_PACK
@@ -36,9 +36,9 @@ from tests._helpers.factories import make_snapshot
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.analytics.testing.coverage.edges import (
-        FunctionRow,
-    )
+    from codeintel.analytics.testing.coverage.edges import FunctionRow
+    from codeintel.core.schemas.generated_rows.analytics import AnalyticsTestCoverageEdgesRow
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers import TestContext
 
 # =============================================================================
@@ -58,6 +58,25 @@ EXPECTED_EMPTY_LIST_LENGTH = 0
 EXPECTED_SINGLE_EDGE = 1
 EXPECTED_COVERAGE_RATIO_FULL = 1.0
 FLOAT_COMPARISON_TOLERANCE = 0.01
+TEST_COVERAGE_EDGES_TABLE_KEY = "analytics.test_coverage_edges"
+
+
+def _build_and_write_test_coverage_edges(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    options: TestCoverageOptions | None = None,
+) -> list[AnalyticsTestCoverageEdgesRow]:
+    rows = build_test_coverage_edges_rows(gateway, snapshot, options=options)
+    if rows:
+        backend = gateway.policy
+        backend.delete_for_snapshot(
+            TEST_COVERAGE_EDGES_TABLE_KEY,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        backend.bulk_insert_mappings(TEST_COVERAGE_EDGES_TABLE_KEY, rows)
+    return rows
 
 
 def test_synthesize_coverage_edges_populates_tables(test_ctx: TestContext) -> None:
@@ -284,8 +303,8 @@ class TestBackfillTestGoids:
         expect_equal(urn_by_id, {})
 
 
-class TestComputeTestCoverageEdges:
-    """Tests for compute_test_coverage_edges function."""
+class TestBuildTestCoverageEdgesRows:
+    """Tests for build_test_coverage_edges_rows helper path."""
 
     @staticmethod
     def test_returns_early_when_no_coverage_file(test_ctx: TestContext) -> None:
@@ -300,7 +319,7 @@ class TestComputeTestCoverageEdges:
         # Coverage file path doesn't exist by default in test context
 
         # Should not raise - just logs warning and returns
-        compute_test_coverage_edges(test_ctx.gateway, snapshot)
+        _build_and_write_test_coverage_edges(test_ctx.gateway, snapshot)
 
         # No edges should be created
         edge_count = test_ctx.query_count(
@@ -327,7 +346,7 @@ class TestComputeTestCoverageEdges:
         options = TestCoverageOptions(coverage_loader=null_loader)
 
         # Should not raise - custom loader returns None
-        compute_test_coverage_edges(test_ctx.gateway, snapshot, options=options)
+        _build_and_write_test_coverage_edges(test_ctx.gateway, snapshot, options=options)
 
     @staticmethod
     def test_handles_empty_function_catalog(test_ctx: TestContext) -> None:
@@ -348,4 +367,4 @@ class TestComputeTestCoverageEdges:
         options = TestCoverageOptions(coverage_loader=null_loader)
 
         # Should not raise
-        compute_test_coverage_edges(test_ctx.gateway, snapshot, options=options)
+        _build_and_write_test_coverage_edges(test_ctx.gateway, snapshot, options=options)

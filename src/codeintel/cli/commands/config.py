@@ -7,7 +7,6 @@ defaults, file-based config, and CLI flags.
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tomllib
 from dataclasses import asdict, dataclass
@@ -21,7 +20,7 @@ from codeintel.cli.config import (
     ConfigService,
     config_to_dict,
 )
-from codeintel.cli.config.service import CONFIG_PATH_ENV_VAR, TOML_CONFIG_PATHS
+from codeintel.cli.config.service import TOML_CONFIG_PATHS
 from codeintel.core.runtime.loader import load_runtime_settings
 
 
@@ -35,9 +34,9 @@ def _resolve_config_path() -> Path:
     Path
         Path to the config file.
     """
-    env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
-    if env_path:
-        return Path(env_path)
+    env_path = load_runtime_settings().cli.config_path
+    if env_path is not None:
+        return env_path
 
     for path in TOML_CONFIG_PATHS:
         if path.exists():

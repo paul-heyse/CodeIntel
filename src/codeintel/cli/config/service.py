@@ -10,7 +10,6 @@ from CLI options.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -20,6 +19,7 @@ from cyclopts import config as cyclopts_config
 from codeintel.cli.config.loader import apply_overrides, load_config
 from codeintel.config.models import CliConfigOptions, CodeIntelConfig, RepoConfig
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
+from codeintel.core.runtime.loader import load_runtime_settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -53,11 +53,9 @@ def _resolve_toml_config_path() -> Path | None:
     Path | None
         Path to the config file if found, None otherwise.
     """
-    env_path = os.environ.get(CONFIG_PATH_ENV_VAR)
-    if env_path:
-        path = Path(env_path)
-        if path.exists():
-            return path
+    env_path = load_runtime_settings().cli.config_path
+    if env_path is not None and env_path.exists():
+        return env_path
 
     for path in TOML_CONFIG_PATHS:
         if path.exists():

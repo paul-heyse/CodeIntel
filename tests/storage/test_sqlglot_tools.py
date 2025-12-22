@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from codeintel.storage.sqlglot_tools import (
     ParseError,
+    QuerySummaryConfig,
     canonical_sql_duckdb,
     extract_column_lineage_duckdb,
     extract_table_keys_duckdb,
@@ -13,7 +16,13 @@ from codeintel.storage.sqlglot_tools import (
     parse_one_duckdb,
     summarize_sql_duckdb,
 )
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
+)
+
+SUMMARY_MAX_LEN = 10
 
 
 def test_parse_one_duckdb_parses_valid_sql() -> None:
@@ -97,11 +106,11 @@ def test_summarize_sql_duckdb_ignores_cte_aliases() -> None:
     JOIN analytics.function_metrics fm ON 1 = 1
     """
     summary = summarize_sql_duckdb(sql)
-    expect_true(summary is not None, message="summary produced")
-    assert summary is not None
-    expect_true(" t" not in summary.lower(), message="cte alias not included")
-    expect_true("core.modules" in summary, message="physical table included")
-    expect_true("analytics.function_metrics" in summary, message="physical table included")
+    expect_is_instance(summary, str)
+    summary_text = cast("str", summary)
+    expect_true(" t" not in summary_text.lower(), message="cte alias not included")
+    expect_true("core.modules" in summary_text, message="physical table included")
+    expect_true("analytics.function_metrics" in summary_text, message="physical table included")
 
 
 def test_summarize_sql_duckdb_handles_insert_select() -> None:
@@ -113,3 +122,60 @@ def test_summarize_sql_duckdb_handles_insert_select() -> None:
     """
     summary = summarize_sql_duckdb(sql)
     expect_equal(summary, "INSERT analytics.rollups SELECT core.symbols")
+
+
+def test_summarize_sql_duckdb_hashes_suspicious_targets() -> None:
+    """summarize_sql_duckdb hashes suspicious targets when enabled."""
+    config = QuerySummaryConfig(
+        hash_suspicious_targets=True,
+        hash_target_min_len=1,
+    )
+    summary = summarize_sql_duckdb("SELECT * FROM core.symbols", config=config)
+    expect_is_instance(summary, str)
+    summary_text = cast("str", summary)
+    expect_true("h:" in summary_text, message="hashed target emitted")
+
+
+def test_summarize_sql_duckdb_appends_ellipsis_for_target_cap() -> None:
+    """summarize_sql_duckdb adds ellipsis when max_targets is exceeded."""
+    config = QuerySummaryConfig(max_targets=1, emit_ellipsis=True)
+    sql = "SELECT * FROM core.symbols JOIN analytics.function_metrics ON 1 = 1"
+    summary = summarize_sql_duckdb(sql, config=config)
+    expect_is_instance(summary, str)
+    summary_text = cast("str", summary)
+    expect_true(summary_text.endswith("..."), message="ellipsis appended for target cap")
+
+
+def test_summarize_sql_duckdb_appends_ellipsis_for_truncation() -> None:
+    """summarize_sql_duckdb adds ellipsis when max_len truncates tokens."""
+    max_len = SUMMARY_MAX_LEN
+    config = QuerySummaryConfig(max_len=max_len, emit_ellipsis=True)
+    summary = summarize_sql_duckdb("SELECT * FROM core.symbols", config=config)
+    expect_is_instance(summary, str)
+    summary_text = cast("str", summary)
+    expect_true(summary_text.endswith("..."), message="ellipsis appended for truncation")
+    expect_true(len(summary_text) <= max_len, message="summary length respects max_len")
+
+
+def test_summarize_sql_duckdb_includes_nested_subquery_operations() -> None:
+    """summarize_sql_duckdb includes nested subquery operations."""
+    config = QuerySummaryConfig(include_subquery_operations=True)
+    sql = "SELECT * FROM (SELECT * FROM core.orders) o JOIN core.customers ON 1 = 1"
+    summary = summarize_sql_duckdb(sql, config=config)
+    expect_is_instance(summary, str)
+    summary_text = cast("str", summary)
+    expect_true(summary_text.startswith("SELECT SELECT"), message="nested operation included")
+    expect_true("core.orders" in summary_text, message="subquery target included")
+    expect_true("core.customers" in summary_text, message="join target included")
+
+
+def test_summarize_sql_duckdb_handles_multi_statement() -> None:
+    """summarize_sql_duckdb can summarize multi-statement SQL."""
+    config = QuerySummaryConfig(include_multi_statement=True)
+    sql = "SELECT * FROM core.symbols; UPDATE core.modules SET name = 'x'"
+    summary = summarize_sql_duckdb(sql, config=config)
+    expect_is_instance(summary, str)
+    summary_text = cast("str", summary)
+    expect_true(summary_text.startswith("SELECT"), message="first statement preserved")
+    expect_true("UPDATE" in summary_text, message="second statement preserved")
+    expect_true(";" in summary_text, message="statement separator emitted")

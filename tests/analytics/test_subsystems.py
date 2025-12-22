@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.subsystems import build_subsystems
-from codeintel.analytics.subsystems.materialize import SubsystemOptions
+from codeintel.analytics.subsystems.materialize import (
+    SubsystemOptions,
+    build_subsystem_rows,
+)
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import expect_equal, expect_in, expect_length
 from tests._helpers.scenarios import TestScenario
@@ -51,6 +53,17 @@ def subsystem_ctx(tmp_path: Path) -> Iterator[TestContext]:
         ctx.close()
 
 
+def _cluster_by_risk(
+    subsystems: dict[str, tuple[set[str], str, int]],
+    risk_level: str,
+) -> tuple[set[str], int]:
+    for modules, risk, high_count in subsystems.values():
+        if risk == risk_level:
+            return modules, high_count
+    message = f"Expected subsystem with risk level {risk_level}"
+    raise AssertionError(message)
+
+
 def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> None:
     """Cluster modules and aggregate risk across subsystems using seeded pack."""
     snapshot = SnapshotRef(
@@ -62,7 +75,20 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
         max_subsystems=2,
         min_modules=1,
     )
-    build_subsystems(subsystem_ctx.gateway, snapshot, options=options)
+    rows = build_subsystem_rows(subsystem_ctx.gateway, snapshot, options=options)
+    backend = subsystem_ctx.gateway.policy
+    backend.delete_for_snapshot(
+        "analytics.subsystems",
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    backend.delete_for_snapshot(
+        "analytics.subsystem_modules",
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    backend.bulk_insert("analytics.subsystems", rows.subsystem_rows)
+    backend.bulk_insert("analytics.subsystem_modules", rows.membership_rows)
 
     subsystems = subsystem_ctx.query(
         """
@@ -83,19 +109,8 @@ def test_subsystems_cluster_and_risk_aggregation(subsystem_ctx: TestContext) -> 
         for row in subsystems
     }
 
-    high_cluster = next(
-        (modules, risk, high_count)
-        for modules, risk, high_count in subs_by_id.values()
-        if risk == "high"
-    )
-    low_cluster = next(
-        (modules, risk, high_count)
-        for modules, risk, high_count in subs_by_id.values()
-        if risk == "low"
-    )
-
-    high_modules, _high_risk, high_count = high_cluster
-    low_modules, _low_risk, low_count = low_cluster
+    high_modules, high_count = _cluster_by_risk(subs_by_id, "high")
+    low_modules, low_count = _cluster_by_risk(subs_by_id, "low")
 
     expect_in("pkg.core", high_modules)
     expect_equal(high_count, EXPECTED_HIGH_RISK_COUNT)

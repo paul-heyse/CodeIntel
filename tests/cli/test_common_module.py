@@ -18,12 +18,12 @@ from codeintel.cli.commands import (
 from codeintel.cli.config import (
     build_config_from_options,
     build_graph_backend_config,
-    build_graph_feature_flags_from_env,
 )
 from codeintel.cli.errors import ValidationError, runtime_required
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.params import BackendFlags
 from codeintel.config.models import CliPathsInput
+from codeintel.config.primitives import GraphFeatureFlags
 from tests._helpers.assertions import expect_equal, expect_true
 
 
@@ -63,7 +63,7 @@ def test_resolve_flag_and_backend_config() -> None:
     os.environ["CODEINTEL_GRAPH_COMMUNITY_LIMIT"] = "25"
     os.environ["CODEINTEL_GRAPH_VALIDATION_STRICT"] = "0"
     try:
-        flags = build_graph_feature_flags_from_env()
+        flags = GraphFeatureFlags.from_env()
         expect_true(flags.eager_hydration is True)
         expect_equal(flags.community_detection_limit, 25)
         expect_true(flags.validation_strict is False)

@@ -15,15 +15,9 @@ from codeintel.observability.db_query_text import (
     redact_sql_literals_with_sqlglot,
 )
 from codeintel.observability.sql_redaction import SQLStatementMode, redact_sql
-from codeintel.storage.sqlglot_tools import summarize_sql_duckdb
+from codeintel.storage.sqlglot_tools import QuerySummaryConfig, summarize_sql_duckdb
 
-
-@dataclass(frozen=True, slots=True)
-class DbQuerySummaryConfig:
-    """Configuration for db.query.summary generation."""
-
-    max_len: int = 255
-    max_targets: int = 6
+DbQuerySummaryConfig = QuerySummaryConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,11 +99,7 @@ class DbSpanAttributeBuilder:
         -----
         The result includes only attributes allowed by the configured policies.
         """
-        summary = summarize_sql_duckdb(
-            sql,
-            max_len=self._config.query_summary.max_len,
-            max_targets=self._config.query_summary.max_targets,
-        )
+        summary = summarize_sql_duckdb(sql, config=self._config.query_summary)
         redacted = redact_sql(
             sql,
             mode=self._config.statement_mode,
@@ -169,27 +159,32 @@ class DbSpanAttributeBuilder:
         if policy == DbQueryTextPolicy.FULL:
             return sql
 
-        if policy in {
-            DbQueryTextPolicy.PARAMETERIZED,
-            DbQueryTextPolicy.PARAMETERIZED_OR_REDACTED,
-        }:
-            if params is not None and looks_parameterized(sql, db_system_name=db_system_name):
-                return sql
-            if policy == DbQueryTextPolicy.PARAMETERIZED:
-                return None
+        result: str | None = None
+        if (
+            policy
+            in {
+                DbQueryTextPolicy.PARAMETERIZED,
+                DbQueryTextPolicy.PARAMETERIZED_OR_REDACTED,
+            }
+            and params is not None
+        ):
+            if looks_parameterized(sql, db_system_name=db_system_name):
+                result = sql
+            elif policy == DbQueryTextPolicy.PARAMETERIZED:
+                result = None
 
-        if policy in {
+        if result is None and policy in {
             DbQueryTextPolicy.REDACTED,
             DbQueryTextPolicy.PARAMETERIZED_OR_REDACTED,
         }:
             dialect = _dialect_for_system(db_system_name)
-            return redact_sql_literals_with_sqlglot(
+            result = redact_sql_literals_with_sqlglot(
                 sql,
                 dialect=dialect,
                 config=self._config.query_text,
             )
 
-        return None
+        return result
 
 
 def _dialect_for_system(db_system_name: str) -> str | None:

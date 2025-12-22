@@ -53,7 +53,7 @@ def emit_db_query_parameters(
     config: DbQueryParameterConfig,
     is_batch: bool = False,
 ) -> dict[str, ScalarAttr]:
-    """Emit db.query.parameter attributes for safe scalar parameters.
+    """Emit db.query.parameter attributes for allowlisted parameters.
 
     Parameters
     ----------
@@ -72,42 +72,54 @@ def emit_db_query_parameters(
     -------
     dict[str, ScalarAttr]
         Mapping of attribute keys to scalar values for observability.
-
-    Examples
-    --------
-    >>> config = DbQueryParameterConfig(enabled=True, allowed_keys=frozenset({"id"}))
-    >>> emit_db_query_parameters(
-    ...     sql="SELECT * FROM t WHERE id = $id",
-    ...     params={"id": 1},
-    ...     db_system_name="duckdb",
-    ...     config=config,
-    ... )
-    {'db.query.parameter.id': 1}
-
-    Notes
-    -----
-    Only scalar parameter values are emitted, and allowlists are enforced.
     """
     if not config.is_effectively_enabled():
         return {}
     if config.disable_on_batch and is_batch:
         return {}
+
+    params_map = _normalize_params(params)
+    if params_map is None:
+        return {}
+
+    keys_in_sql = _resolve_keys_in_sql(sql, db_system_name=db_system_name, config=config)
+    return _build_param_attrs(params_map, keys_in_sql, config=config)
+
+
+def _normalize_params(params: object | None) -> Mapping[str, object] | None:
     if not isinstance(params, Mapping):
-        return {}
-    if not all(isinstance(key, str) for key in params.keys()):
-        return {}
+        return None
+    for key in params:
+        if not isinstance(key, str):
+            return None
+    return params
 
-    keys_in_sql: set[str] = set()
-    if config.require_key_in_sql:
-        keys_in_sql = _extract_named_param_keys(sql, db_system_name=db_system_name)
-        if not keys_in_sql:
-            return {}
 
+def _resolve_keys_in_sql(
+    sql: str,
+    *,
+    db_system_name: str,
+    config: DbQueryParameterConfig,
+) -> set[str] | None:
+    if not config.require_key_in_sql:
+        return None
+    keys_in_sql = _extract_named_param_keys(sql, db_system_name=db_system_name)
+    if not keys_in_sql:
+        return set()
+    return keys_in_sql
+
+
+def _build_param_attrs(
+    params: Mapping[str, object],
+    keys_in_sql: set[str] | None,
+    *,
+    config: DbQueryParameterConfig,
+) -> dict[str, ScalarAttr]:
     attrs: dict[str, ScalarAttr] = {}
     for key in config.allowed_keys:
         if key not in params:
             continue
-        if config.require_key_in_sql and key not in keys_in_sql:
+        if keys_in_sql is not None and key not in keys_in_sql:
             continue
         raw = _coerce_scalar(params[key], max_string_len=config.max_string_len)
         if raw is None:
@@ -115,7 +127,6 @@ def emit_db_query_parameters(
         if isinstance(raw, str) and key in config.hash_string_values_for_keys:
             raw = _hash_str(raw, config.hash_len)
         attrs[f"db.query.parameter.{key}"] = raw
-
     return attrs
 
 
