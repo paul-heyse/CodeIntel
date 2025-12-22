@@ -28,7 +28,6 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_override_tables import RISK_FACTORS_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
     TargetSpecOptions,
     make_output_target,
@@ -56,7 +55,6 @@ register_output_targets(
         description="Composite risk factors per function.",
         options=TargetSpecOptions(
             table_keys=(RISK_FACTORS_TABLE_KEY,),
-            override_tables=RISK_FACTORS_OVERRIDE_TABLES,
         ),
     ),
 )
@@ -116,13 +114,20 @@ def risk_factors__fan_out(q__graph__call_graph_edges: ir.Table) -> ir.Table:
     )
 
 
-def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.Table) -> ir.Table:
-    """Join function metrics with fan-in and fan-out counts.
+def _risk_factors_join_metrics(
+    metrics: ir.Table,
+    coverage: ir.Table,
+    fan_in: ir.Table,
+    fan_out: ir.Table,
+) -> ir.Table:
+    """Join function metrics with coverage and fan-in/fan-out counts.
 
     Parameters
     ----------
     metrics
         Ibis table expression for analytics.function_metrics.
+    coverage
+        Ibis table expression for analytics.coverage_functions.
     fan_in
         Ibis table expression with per-function fan-in counts.
     fan_out
@@ -133,12 +138,21 @@ def _risk_factors_join_metrics(metrics: ir.Table, fan_in: ir.Table, fan_out: ir.
     ir.Table
         Joined Ibis expression with metrics and centrality columns.
     """
-    risk = metrics.select(
+    joined = metrics.left_join(
+        coverage,
+        predicates=[
+            ibis_bool(metrics.function_goid_h128 == coverage.function_goid_h128),
+            ibis_bool(metrics.repo == coverage.repo),
+            ibis_bool(metrics.commit == coverage.commit),
+        ],
+    )
+    has_tests = ibis.coalesce(coverage.tested, False)
+    risk = joined.select(
         "function_goid_h128",
         "repo",
         "commit",
         "cyclomatic_complexity",
-        "has_tests",
+        has_tests=has_tests,
     )
 
     risk = risk.left_join(
@@ -241,6 +255,7 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
         _risk_factors_join_metrics,
         fan_in=source("risk_factors__fan_in"),
         fan_out=source("risk_factors__fan_out"),
+        coverage=source("q__analytics__coverage_functions"),
     ),
     step(_risk_factors_score),
     step(_risk_factors_finalize),

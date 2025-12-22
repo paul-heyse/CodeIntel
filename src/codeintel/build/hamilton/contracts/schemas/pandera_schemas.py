@@ -41,7 +41,7 @@ _COLUMN_TYPE_TO_DTYPE: Mapping[str, PanderaDtype] = {
     "DECIMAL": _FLOAT_DTYPE,
     "DECIMAL(38,0)": _INT_DTYPE,
     "VARCHAR": _STRING_DTYPE,
-    "JSON": _STRING_DTYPE,
+    "JSON": object,
     "TIMESTAMP": "datetime64[ns]",
     "TIMESTAMPTZ": "datetime64[ns]",
 }
@@ -98,20 +98,6 @@ _DATAFRAME_CHECKS: dict[str, list[Check]] = {
             | df["executable_lines"].isna()
             | (df["covered_lines"] <= df["executable_lines"]),
             error="covered_lines must be <= executable_lines",
-        ),
-    ],
-    "analytics.goid_risk_factors": [
-        Check(
-            lambda df: df["covered_lines"].isna()
-            | df["executable_lines"].isna()
-            | (df["covered_lines"] <= df["executable_lines"]),
-            error="covered_lines must be <= executable_lines",
-        ),
-        Check(
-            lambda df: df["failing_test_count"].isna()
-            | df["test_count"].isna()
-            | (df["failing_test_count"] <= df["test_count"]),
-            error="failing_test_count must be <= test_count",
         ),
     ],
     "analytics.coverage_lines": [
@@ -335,18 +321,10 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
     },
     "analytics.goid_risk_factors": {
         "function_goid_h128": [_check_non_negative()],
-        "loc": [_check_non_negative()],
-        "logical_loc": [_check_non_negative()],
         "cyclomatic_complexity": [_check_non_negative()],
-        "hotspot_score": [_check_non_negative()],
-        "coverage_ratio": [_check_ratio()],
-        "file_typed_ratio": [_check_ratio()],
+        "fan_in_count": [_check_non_negative()],
+        "fan_out_count": [_check_non_negative()],
         "risk_score": [_check_non_negative()],
-        "executable_lines": [_check_non_negative()],
-        "covered_lines": [_check_non_negative()],
-        "test_count": [_check_non_negative()],
-        "failing_test_count": [_check_non_negative()],
-        "static_error_count": [_check_non_negative()],
     },
     "analytics.coverage_lines": {
         "start_line": [_check_positive()],
@@ -677,10 +655,12 @@ def _build_columns(
     columns: dict[str, Column] = {}
     for col in schema.columns:
         checks = list(column_checks.get(col.name, ()))
+        metadata = {"codeintel_column_type": col.type}
         columns[col.name] = Column(
             _dtype_for_column_type(col.type),
             nullable=col.nullable,
             checks=checks,
+            metadata=metadata,
         )
     return columns
 
@@ -1342,6 +1322,66 @@ def _extract_column_constraints(column: Column) -> dict[str, Any]:
     return constraints
 
 
+def _column_metadata_type(column: Column) -> str | None:
+    metadata = getattr(column, "metadata", None)
+    if isinstance(metadata, dict):
+        return metadata.get("codeintel_column_type")
+    return None
+
+
+def _json_value_types(*, nullable: bool) -> list[str]:
+    types = ["object", "array", "string", "number", "boolean"]
+    if nullable:
+        types.append("null")
+    return types
+
+
+def _build_field_schema(column: Column, *, include_constraints: bool) -> dict[str, Any]:
+    if _column_metadata_type(column) == "JSON":
+        return {"type": _json_value_types(nullable=column.nullable)}
+
+    json_type, fmt = _json_type_for_dtype(column.dtype)
+    types = [json_type]
+    if column.nullable:
+        types.append("null")
+    field_schema: dict[str, Any] = {"type": types}
+    if fmt is not None:
+        field_schema["format"] = fmt
+    if include_constraints:
+        constraints = _extract_column_constraints(column)
+        field_schema.update(constraints)
+    return field_schema
+
+
+def _build_json_schema_properties(
+    df_schema: DataFrameSchema,
+    *,
+    include_constraints: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for name, column in df_schema.columns.items():
+        properties[name] = _build_field_schema(
+            column,
+            include_constraints=include_constraints,
+        )
+        if not column.nullable:
+            required.append(name)
+    return properties, required
+
+
+def _apply_schema_metadata(
+    schema: dict[str, Any],
+    *,
+    include_metadata: bool,
+    schema_name: str | None,
+) -> None:
+    if include_metadata and schema_name:
+        schema["title"] = schema_name
+        if schema_name in _SCHEMA_DESCRIPTIONS:
+            schema["description"] = _SCHEMA_DESCRIPTIONS[schema_name]
+
+
 def pandera_to_json_schema(
     df_schema: DataFrameSchema,
     *,
@@ -1365,26 +1405,10 @@ def pandera_to_json_schema(
     dict[str, Any]
         JSON Schema describing the dataframe structure.
     """
-    properties: dict[str, Any] = {}
-    required: list[str] = []
-
-    for name, column in df_schema.columns.items():
-        json_type, fmt = _json_type_for_dtype(column.dtype)
-        types: list[str] = [json_type]
-        if column.nullable:
-            types.append("null")
-        field_schema: dict[str, Any] = {"type": types}
-        if fmt is not None:
-            field_schema["format"] = fmt
-
-        if include_constraints:
-            constraints = _extract_column_constraints(column)
-            field_schema.update(constraints)
-
-        properties[name] = field_schema
-        if not column.nullable:
-            required.append(name)
-
+    properties, required = _build_json_schema_properties(
+        df_schema,
+        include_constraints=include_constraints,
+    )
     schema: dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1393,10 +1417,11 @@ def pandera_to_json_schema(
     if required:
         schema["required"] = required
 
-    if include_metadata and df_schema.name:
-        schema["title"] = df_schema.name
-        if df_schema.name in _SCHEMA_DESCRIPTIONS:
-            schema["description"] = _SCHEMA_DESCRIPTIONS[df_schema.name]
+    _apply_schema_metadata(
+        schema,
+        include_metadata=include_metadata,
+        schema_name=df_schema.name,
+    )
 
     return schema
 

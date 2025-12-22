@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -248,7 +247,6 @@ def _load_serving_settings() -> ServingSettings:
     )
 
 
-@lru_cache(maxsize=1)
 def load_runtime_settings() -> RuntimeSettings:
     """Load runtime settings from environment variables.
 

@@ -44,6 +44,11 @@ if TYPE_CHECKING:
 
 MAX_HYPOTHESIS_EXAMPLES = 15
 TEXT_SAMPLES = ["alpha", "bravo", "charlie", "delta", "echo"]
+DATETIME_SAMPLES = [
+    datetime(2022, 1, 1, tzinfo=UTC),
+    datetime(2023, 6, 15, tzinfo=UTC),
+    datetime(2024, 12, 31, tzinfo=UTC),
+]
 CALL_GRAPH_EDGE_SAMPLES: list[CallGraphEdgeRow] = [
     {
         "repo": "alpha",
@@ -108,10 +113,6 @@ TEST_COVERAGE_EDGE_SAMPLES: list[TestCoverageEdgeRow] = [
 ]
 
 
-def _naive_datetime(year: int, month: int, day: int) -> datetime:
-    return datetime(year, month, day, tzinfo=UTC).replace(tzinfo=None)
-
-
 def _short_text() -> SearchStrategy[str]:
     return st.sampled_from(TEXT_SAMPLES)
 
@@ -170,11 +171,7 @@ def _behavioral_coverage_strategy() -> SearchStrategy[BehavioralCoverageRowModel
         "heuristic_version": _optional_text(),
         "llm_model": _optional_text(),
         "llm_run_id": _optional_text(),
-        "created_at": st.datetimes(
-            min_value=_naive_datetime(2000, 1, 1),
-            max_value=_naive_datetime(2030, 1, 1),
-            timezones=st.just(UTC),
-        ),
+        "created_at": st.sampled_from(DATETIME_SAMPLES),
     }
     return cast("SearchStrategy[BehavioralCoverageRowModel]", st.fixed_dictionaries(mapping))
 

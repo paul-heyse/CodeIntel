@@ -79,7 +79,12 @@ class BuildRunContext:
             run_overrides = _RunOverridesView(overrides)
         return BuildConfigStack.from_base(config, run_overrides=run_overrides)
 
-    def build_env(self) -> BuildEnv:
+    def build_env(
+        self,
+        *,
+        load_catalogs: bool = True,
+        load_schema_service: bool = True,
+    ) -> BuildEnv:
         """Construct BuildEnv with merged configuration and options.
 
         Returns
@@ -98,9 +103,11 @@ class BuildRunContext:
         if output_inventory is None:
             output_inventory = get_output_inventory()
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
-        load_contract_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
-        load_target_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
-        get_schema_service()
+        if load_catalogs:
+            load_contract_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
+            load_target_catalog(gateway=self.gateway, root=self.snapshot.repo_root)
+        if load_schema_service:
+            get_schema_service()
         return BuildEnv(
             gateway=self.gateway,
             snapshot=self.snapshot,
