@@ -16,10 +16,11 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlglot import diff as semantic_diff
-from sqlglot import exp, parse_one
+from sqlglot import exp, parse, parse_one
 from sqlglot.errors import ParseError, SqlglotError
 from sqlglot.lineage import lineage as build_lineage
 from sqlglot.optimizer import build_scope, normalize_identifiers, optimize, qualify
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ParseError",
+    "QuerySummaryConfig",
     "canonical_sql_duckdb",
     "canonicalize_expression_duckdb",
     "extract_column_lineage_duckdb",
@@ -54,6 +56,8 @@ _MIN_LINEAGE_PARTS = 2
 _SCHEMA_QUALIFIED_PARTS = 3
 _MAX_QUERY_SUMMARY_CHARS = 255
 _FALLBACK_TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+_HASHED_TARGET_PREFIX = "h:"
+_SUSPICIOUS_TARGET_RE = re.compile(r"(?:/|\\\\|://)")
 
 _SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
 _SQL_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
@@ -65,6 +69,26 @@ _SQL_UUID_RE = re.compile(
 )
 _SQL_NUMBER_RE = re.compile(r"\b\d+(?:\.\d+)?\b")
 _WS_RE = re.compile(r"\s+")
+
+
+@dataclass(frozen=True, slots=True)
+class QuerySummaryConfig:
+    """Configuration for db.query.summary generation."""
+
+    max_len: int = _MAX_QUERY_SUMMARY_CHARS
+    max_targets: int = 6
+    emit_ellipsis: bool = True
+    hash_suspicious_targets: bool = True
+    hash_target_len: int = 12
+    hash_target_min_len: int = 64
+    include_subquery_operations: bool = True
+    include_multi_statement: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class _SummaryTokens:
+    tokens: tuple[str, ...]
+    capped: bool = False
 
 
 def parse_one_duckdb(sql: str) -> exp.Expression:
@@ -230,8 +254,7 @@ def normalize_sql_for_hash(sql: str) -> str:
 def summarize_sql_duckdb(
     sql: str,
     *,
-    max_len: int = _MAX_QUERY_SUMMARY_CHARS,
-    max_targets: int = 6,
+    config: QuerySummaryConfig | None = None,
 ) -> str | None:
     """Generate a low-cardinality summary for a DuckDB SQL string.
 
@@ -242,10 +265,8 @@ def summarize_sql_duckdb(
     ----------
     sql
         SQL statement text.
-    max_len
-        Maximum length of the returned summary.
-    max_targets
-        Maximum number of target tokens to include.
+    config
+        Query summary configuration overrides.
 
     Returns
     -------
@@ -265,135 +286,199 @@ def summarize_sql_duckdb(
     if not stripped:
         return None
 
+    summary_config = config or QuerySummaryConfig()
+    max_len = max(0, summary_config.max_len)
+
     try:
-        root = parse_one_duckdb(stripped)
+        roots = _parse_statements_duckdb(
+            stripped,
+            include_multi_statement=summary_config.include_multi_statement,
+        )
     except (ParseError, SqlglotError, TypeError, ValueError):
-        return _fallback_query_summary(stripped, max_len=max_len)
+        return _fallback_query_summary(stripped, config=summary_config)
 
-    parts = _query_summary_parts_from_root(
-        root,
-        raw_sql=stripped,
-        max_targets=max_targets,
+    if not roots:
+        return None
+
+    parts: list[str] = []
+    capped = False
+    for root in roots:
+        statement_sql = root.sql(dialect=DUCKDB_DIALECT)
+        summary_parts = _query_summary_parts_from_root(
+            root,
+            raw_sql=statement_sql,
+            config=summary_config,
+        )
+        if not summary_parts.tokens:
+            continue
+        if parts:
+            parts.append(";")
+        parts.extend(summary_parts.tokens)
+        capped = capped or summary_parts.capped
+
+    if not parts:
+        return None
+
+    return _truncate_query_summary_parts(
+        parts,
+        max_len=max_len,
+        emit_ellipsis=summary_config.emit_ellipsis,
+        force_ellipsis=capped,
     )
-    return _truncate_query_summary_parts(parts, max_len=max_len)
 
 
-def _fallback_query_summary(sql: str, *, max_len: int) -> str | None:
+def _parse_statements_duckdb(
+    sql: str,
+    *,
+    include_multi_statement: bool,
+) -> list[exp.Expression]:
+    if include_multi_statement:
+        statements = parse(sql, read=DUCKDB_DIALECT)
+    else:
+        statements = [parse_one_duckdb(sql)]
+    return [stmt for stmt in statements if isinstance(stmt, exp.Expression)]
+
+
+def _fallback_query_summary(sql: str, *, config: QuerySummaryConfig) -> str | None:
     tokens = _FALLBACK_TOKEN_RE.findall(sql)
     if not tokens:
         return None
     parts = [tokens[0]]
     if len(tokens) > 1:
         parts.append(tokens[1])
-    return _truncate_query_summary_parts(parts, max_len=max_len)
+    return _truncate_query_summary_parts(
+        parts,
+        max_len=max(0, config.max_len),
+        emit_ellipsis=config.emit_ellipsis,
+        force_ellipsis=False,
+    )
 
 
 def _query_summary_parts_from_root(
     root: exp.Expression,
     *,
     raw_sql: str,
-    max_targets: int,
-) -> list[str]:
+    config: QuerySummaryConfig,
+) -> _SummaryTokens:
     if isinstance(root, exp.With) and isinstance(root.this, exp.Expression):
         return _query_summary_parts_from_root(
             root.this,
             raw_sql=raw_sql,
-            max_targets=max_targets,
+            config=config,
         )
 
     if isinstance(root, exp.Insert):
         return _query_summary_parts_for_insert(
             root,
             raw_sql=raw_sql,
-            max_targets=max_targets,
+            config=config,
         )
 
     if isinstance(root, exp.Create):
         return _query_summary_parts_for_create(
             root,
             raw_sql=raw_sql,
-            max_targets=max_targets,
+            config=config,
         )
 
     operation = _operation_name_for_root(root)
     parts: list[str] = [operation] if operation else []
-    parts.extend(
-        _query_summary_targets_for_expression(
-            root,
-            raw_sql=raw_sql,
-            max_targets=max_targets,
-        )
+    if config.include_subquery_operations:
+        parts.extend(_nested_subquery_operations(root))
+    targets = _query_summary_targets_for_expression(
+        root,
+        raw_sql=raw_sql,
+        config=config,
     )
-    return parts
+    parts.extend(targets.tokens)
+    return _SummaryTokens(tokens=tuple(parts), capped=targets.capped)
 
 
 def _query_summary_parts_for_insert(
     root: exp.Insert,
     *,
     raw_sql: str,
-    max_targets: int,
-) -> list[str]:
+    config: QuerySummaryConfig,
+) -> _SummaryTokens:
     parts: list[str] = ["INSERT"]
-    target = _format_table_for_summary(getattr(root, "this", None))
+    target = _sanitize_summary_target(
+        _format_table_for_summary(getattr(root, "this", None)),
+        hash_suspicious_targets=config.hash_suspicious_targets,
+        hash_target_len=config.hash_target_len,
+        hash_target_min_len=config.hash_target_min_len,
+    )
     if target:
         parts.append(target)
 
+    capped = False
     nested = getattr(root, "expression", None)
     if isinstance(nested, exp.Expression):
         nested_op = _operation_name_for_root(nested) or "SELECT"
         parts.append(nested_op)
+        if config.include_subquery_operations:
+            parts.extend(_nested_subquery_operations(nested))
         exclude = {target.lower()} if target else set()
-        parts.extend(
-            _query_summary_targets_for_expression(
-                nested,
-                raw_sql=raw_sql,
-                max_targets=max_targets,
-                exclude=exclude,
-            )
+        targets = _query_summary_targets_for_expression(
+            nested,
+            raw_sql=raw_sql,
+            exclude=exclude,
+            config=config,
         )
-    return parts
+        parts.extend(targets.tokens)
+        capped = targets.capped
+    return _SummaryTokens(tokens=tuple(parts), capped=capped)
 
 
 def _query_summary_parts_for_create(
     root: exp.Create,
     *,
     raw_sql: str,
-    max_targets: int,
-) -> list[str]:
+    config: QuerySummaryConfig,
+) -> _SummaryTokens:
     parts: list[str] = ["CREATE"]
-    target = _format_table_for_summary(getattr(root, "this", None))
+    target = _sanitize_summary_target(
+        _format_table_for_summary(getattr(root, "this", None)),
+        hash_suspicious_targets=config.hash_suspicious_targets,
+        hash_target_len=config.hash_target_len,
+        hash_target_min_len=config.hash_target_min_len,
+    )
     if target:
         parts.append(target)
 
+    capped = False
     nested = getattr(root, "expression", None)
     if isinstance(nested, exp.Expression):
         nested_op = _operation_name_for_root(nested) or "SELECT"
         parts.append(nested_op)
+        if config.include_subquery_operations:
+            parts.extend(_nested_subquery_operations(nested))
         exclude = {target.lower()} if target else set()
-        parts.extend(
-            _query_summary_targets_for_expression(
-                nested,
-                raw_sql=raw_sql,
-                max_targets=max_targets,
-                exclude=exclude,
-            )
+        targets = _query_summary_targets_for_expression(
+            nested,
+            raw_sql=raw_sql,
+            exclude=exclude,
+            config=config,
         )
-    return parts
+        parts.extend(targets.tokens)
+        capped = targets.capped
+    return _SummaryTokens(tokens=tuple(parts), capped=capped)
 
 
 def _operation_name_for_root(root: exp.Expression) -> str | None:
-    if isinstance(root, exp.Select):
-        return "SELECT"
-    if isinstance(root, exp.Update):
-        return "UPDATE"
-    if isinstance(root, exp.Delete):
-        return "DELETE"
-    if isinstance(root, exp.Insert):
-        return "INSERT"
-    if isinstance(root, exp.Create):
-        return "CREATE"
-    if isinstance(root, exp.Drop):
-        return "DROP"
+    operation: str | None = None
+    for expr_type, name in (
+        (exp.Select, "SELECT"),
+        (exp.Update, "UPDATE"),
+        (exp.Delete, "DELETE"),
+        (exp.Insert, "INSERT"),
+        (exp.Create, "CREATE"),
+        (exp.Drop, "DROP"),
+    ):
+        if isinstance(root, expr_type):
+            operation = name
+            break
+    if operation is not None:
+        return operation
     key = getattr(root, "key", None)
     if isinstance(key, str) and key:
         return key.replace("_", " ").upper()
@@ -404,22 +489,31 @@ def _query_summary_targets_for_expression(
     root: exp.Expression,
     *,
     raw_sql: str,
-    max_targets: int,
+    config: QuerySummaryConfig,
     exclude: set[str] | None = None,
-) -> list[str]:
+) -> _SummaryTokens:
     exclude = exclude or set()
     sql_lower = raw_sql.lower()
+    max_targets = max(0, config.max_targets)
 
     tables = extract_table_refs(root)
     formatted: list[tuple[int, str]] = []
     for table in tables:
-        key = _format_table_for_summary(table)
+        raw_key = _format_table_for_summary(table)
+        if not raw_key:
+            continue
+        pos = _best_effort_table_position(sql_lower, raw_key.lower())
+        key = _sanitize_summary_target(
+            raw_key,
+            hash_suspicious_targets=config.hash_suspicious_targets,
+            hash_target_len=config.hash_target_len,
+            hash_target_min_len=config.hash_target_min_len,
+        )
         if not key:
             continue
         key_lower = key.lower()
         if key_lower in exclude:
             continue
-        pos = _best_effort_table_position(sql_lower, key_lower)
         formatted.append((pos, key))
 
     formatted.sort(key=lambda item: item[0])
@@ -432,9 +526,33 @@ def _query_summary_targets_for_expression(
             continue
         out.append(key)
         seen.add(key_lower)
-        if max_targets > 0 and len(out) >= max_targets:
-            break
-    return out
+    capped = False
+    if max_targets > 0 and len(out) > max_targets:
+        out = out[:max_targets]
+        capped = True
+    return _SummaryTokens(tokens=tuple(out), capped=capped)
+
+
+def _nested_subquery_operations(root: exp.Expression) -> list[str]:
+    operations: list[str] = []
+    for subquery in root.find_all(exp.Subquery):
+        if _is_cte_subquery(subquery):
+            continue
+        inner = getattr(subquery, "this", None)
+        if isinstance(inner, exp.Expression):
+            op = _operation_name_for_root(inner)
+            if op:
+                operations.append(op)
+    return operations
+
+
+def _is_cte_subquery(node: exp.Subquery) -> bool:
+    parent = getattr(node, "parent", None)
+    while parent is not None:
+        if isinstance(parent, exp.CTE):
+            return True
+        parent = getattr(parent, "parent", None)
+    return False
 
 
 def _best_effort_table_position(sql_lower: str, table_key_lower: str) -> int:
@@ -461,19 +579,72 @@ def _format_table_for_summary(node: object) -> str | None:
     return name
 
 
-def _truncate_query_summary_parts(parts: list[str], *, max_len: int) -> str:
+def _sanitize_summary_target(
+    target: str | None,
+    *,
+    hash_suspicious_targets: bool,
+    hash_target_len: int,
+    hash_target_min_len: int,
+) -> str | None:
+    if not target:
+        return None
+    if not hash_suspicious_targets:
+        return target
+    if target.startswith(_HASHED_TARGET_PREFIX):
+        return target
+    if _SUSPICIOUS_TARGET_RE.search(target) or len(target) >= hash_target_min_len:
+        hashed = _short_target_hash(target, length=hash_target_len)
+        return f"{_HASHED_TARGET_PREFIX}{hashed}"
+    return target
+
+
+def _short_target_hash(text: str, *, length: int) -> str:
+    trimmed = max(4, min(64, length))
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return digest[:trimmed]
+
+
+def _truncate_query_summary_parts(
+    parts: list[str],
+    *,
+    max_len: int,
+    emit_ellipsis: bool,
+    force_ellipsis: bool,
+) -> str:
+    cleaned_parts = [token.strip() for token in parts if token.strip()]
     kept: list[str] = []
-    length = 0
-    for part in parts:
-        part = part.strip()
-        if not part:
-            continue
-        add_len = len(part) + (1 if kept else 0)
-        if length + add_len > max_len:
+    truncated = False
+    for token in cleaned_parts:
+        candidate = [*kept, token]
+        if _tokens_len(candidate) > max_len:
+            truncated = True
             break
-        kept.append(part)
-        length += add_len
+        kept.append(token)
+
+    truncated = truncated or force_ellipsis
+    if emit_ellipsis and truncated:
+        kept = _append_ellipsis(kept, max_len=max_len)
     return " ".join(kept)
+
+
+def _tokens_len(tokens: list[str]) -> int:
+    if not tokens:
+        return 0
+    return sum(len(token) for token in tokens) + len(tokens) - 1
+
+
+def _append_ellipsis(tokens: list[str], *, max_len: int) -> list[str]:
+    if not tokens:
+        return tokens
+    candidate = [*tokens, "..."]
+    if _tokens_len(candidate) <= max_len:
+        return candidate
+    trimmed = tokens[:]
+    while trimmed and _tokens_len([*trimmed, "..."]) > max_len:
+        trimmed.pop()
+    if trimmed:
+        trimmed = [*trimmed, "..."]
+    return trimmed
 
 
 def semantic_diff_sql_duckdb(

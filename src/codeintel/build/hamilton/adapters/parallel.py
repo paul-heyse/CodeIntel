@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import os
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -39,6 +38,7 @@ from hamilton.lifecycle import base as lifecycle_base
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.storage.gateway import open_gateway
 
 if TYPE_CHECKING:
@@ -119,15 +119,15 @@ class ParallelConfig:
         ParallelConfig
             Configuration from environment.
         """
-        backend_str = os.getenv("HAMILTON_BACKEND", "sequential").lower()
+        settings = load_runtime_settings()
+        backend_str = (settings.execution.parallel_backend or "sequential").lower()
         try:
             backend = ExecutionBackend(backend_str)
         except ValueError:
             log.warning("Unknown backend %s, using sequential", backend_str)
             backend = ExecutionBackend.SEQUENTIAL
 
-        max_workers_str = os.getenv("HAMILTON_MAX_WORKERS")
-        max_workers = int(max_workers_str) if max_workers_str else None
+        max_workers = settings.execution.max_workers
 
         return cls(backend=backend, max_workers=max_workers)
 

@@ -11,6 +11,7 @@ import networkx as nx
 from codeintel.analytics.compute.graphs import centrality_directed
 from codeintel.analytics.compute.row_builders import (
     SubsystemMetricInputs,
+    SubsystemMetricRow,
     build_subsystem_graph_rows,
 )
 from codeintel.analytics.graphs.graph_metrics import build_graph_metric_filters
@@ -99,7 +100,7 @@ def build_subsystem_graph_metrics_rows(
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> list[tuple[object, ...]]:
+) -> list[SubsystemMetricRow]:
     """Build subsystem-level condensed import graph metrics rows.
 
     Returns
@@ -150,7 +151,7 @@ def build_subsystem_graph_metrics_rows(
     layer_by_subsystem = _layer_by_subsystem(subsystem_graph)
     degree_maps = _degree_maps(subsystem_graph, weight=graph_ctx.betweenness_weight)
 
-    rows = build_subsystem_graph_rows(
+    return build_subsystem_graph_rows(
         SubsystemMetricInputs(
             repo=repo,
             commit=commit,
@@ -163,5 +164,3 @@ def build_subsystem_graph_metrics_rows(
             created_at=graph_ctx.resolved_now(),
         )
     )
-
-    return rows

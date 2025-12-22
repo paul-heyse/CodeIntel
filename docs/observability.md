@@ -45,6 +45,20 @@ OpenTelemetry is the canonical pipeline for traces and metrics across CLI, HTTP,
   - Token-safe truncation limit for `db.query.summary`.
 - `CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS` (default: 6)
   - Maximum number of table targets included per operation.
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_EMIT_ELLIPSIS` (default: true)
+  - Append `...` when the summary truncates or target cap is hit.
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_SUSPICIOUS` (default: true)
+  - Hash suspicious/high-cardinality targets (paths/URLs/long identifiers).
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_LEN` (default: 12)
+  - Length of hashed target identifiers in summaries.
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_MIN_LEN` (default: 64)
+  - Minimum identifier length that triggers hashing (when enabled).
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_SUBQUERY_OPS` (default: true)
+  - Include nested subquery operations (e.g., `SELECT SELECT orders`).
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_MULTI_STATEMENT` (default: true)
+  - Include multiple statements (semicolon-separated) in summaries.
+- `CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK` (default: false)
+  - Update DB span names to `db.query.summary` for DBAPI instrumentation.
 - `CODEINTEL_OTEL_DB_LEGACY_ATTRIBUTES` (default: false)
   - When true, emit legacy `db.system`/`db.name` attributes in addition to new keys.
 - `CODEINTEL_OTEL_DB_QUERY_TEXT_POLICY` (default: `never`)

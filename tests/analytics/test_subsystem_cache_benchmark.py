@@ -1,4 +1,4 @@
-"""Benchmark helpers for subsystem cache performance."""
+"""Tests for subsystem cache row builders."""
 
 from __future__ import annotations
 
@@ -7,7 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.subsystems.materialize import refresh_subsystem_caches
+from codeintel.analytics.subsystems.cache import (
+    build_subsystem_coverage_cache_rows,
+    build_subsystem_profile_cache_rows,
+)
 from tests._helpers import create_test_context
 
 if TYPE_CHECKING:
@@ -17,7 +20,7 @@ if TYPE_CHECKING:
 
 
 def _seed_subsystem(ctx: TestContext) -> None:
-    """Insert a minimal subsystem row for cache refresh tests."""
+    """Insert a minimal subsystem row for cache row tests."""
     ctx.gateway.con.execute(
         """
         INSERT INTO analytics.subsystems (
@@ -65,24 +68,21 @@ def _seed_subsystem(ctx: TestContext) -> None:
     )
 
 
-def test_refresh_and_benchmark_returns_timings(tmp_path: Path) -> None:
-    """Refreshing caches with benchmarking enabled should emit timing data."""
+def test_subsystem_cache_rows_build(tmp_path: Path) -> None:
+    """Building subsystem cache rows should return matching subsystem entries."""
     ctx = create_test_context(tmp_path)
-    _seed_subsystem(ctx)
-    result = refresh_subsystem_caches(
-        ctx.gateway,
-        repo=ctx.repo,
-        commit=ctx.commit,
-        benchmark=True,
-        benchmark_limit=5,
-    )
-    ctx.close()
-    if result is None:
-        pytest.fail("Expected benchmark results when benchmark flag is set")
-    if result.profile_view_ms < 0 or result.profile_cache_ms < 0:
-        pytest.fail("Profile timing metrics should be non-negative")
-    if result.coverage_view_ms < 0 or result.coverage_cache_ms < 0:
-        pytest.fail("Coverage timing metrics should be non-negative")
-    timings = result.as_dict()
-    if "profile_speedup" not in timings or "coverage_speedup" not in timings:
-        pytest.fail("Speedup metrics should be present in benchmark output")
+    try:
+        _seed_subsystem(ctx)
+        profile_rows = build_subsystem_profile_cache_rows(ctx.gateway, ctx.snapshot)
+        coverage_rows = build_subsystem_coverage_cache_rows(ctx.gateway, ctx.snapshot)
+    finally:
+        ctx.close()
+
+    if not profile_rows:
+        pytest.fail("Expected subsystem profile cache rows to be built")
+    if not coverage_rows:
+        pytest.fail("Expected subsystem coverage cache rows to be built")
+    if profile_rows[0]["subsystem_id"] != "subsys-1":
+        pytest.fail("Expected profile cache row to reference seeded subsystem")
+    if coverage_rows[0]["subsystem_id"] != "subsys-1":
+        pytest.fail("Expected coverage cache row to reference seeded subsystem")

@@ -16,6 +16,7 @@ from codeintel.config.primitives import (
 )
 from codeintel.core.config.settings import (
     BuildSettings,
+    CliSettings,
     ExportAuditSettings,
     HamiltonExecutionSettings,
     ObservabilitySettings,
@@ -40,6 +41,7 @@ class RuntimeSettings:
     """Bundle of runtime settings for build, execution, and serving."""
 
     build: BuildSettings
+    cli: CliSettings
     execution: HamiltonExecutionSettings
     serving: ServingSettings
     observability: ObservabilitySettings
@@ -115,6 +117,11 @@ def _load_execution_settings() -> HamiltonExecutionSettings:
         duckdb_enable_profiling=duckdb_enable_profiling,
         duckdb_profiling_output=duckdb_profiling_output,
     )
+
+
+def _load_cli_settings() -> CliSettings:
+    config_path = get_path("CODEINTEL_CONFIG_PATH", default=None)
+    return CliSettings(config_path=config_path)
 
 
 def _load_serving_settings() -> ServingSettings:
@@ -305,6 +312,27 @@ def _load_observability_settings() -> ObservabilitySettings:
         duckdb_query_summary_max_targets=int(
             get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS", default=6) or 6
         ),
+        duckdb_query_summary_emit_ellipsis=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_EMIT_ELLIPSIS", default=True)
+        ),
+        duckdb_query_summary_hash_suspicious_targets=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_SUSPICIOUS", default=True)
+        ),
+        duckdb_query_summary_hash_len=int(
+            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_LEN", default=12) or 12
+        ),
+        duckdb_query_summary_hash_min_len=int(
+            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_MIN_LEN", default=64) or 64
+        ),
+        duckdb_query_summary_include_subquery_operations=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_SUBQUERY_OPS", default=True)
+        ),
+        duckdb_query_summary_include_multi_statement=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_MULTI_STATEMENT", default=True)
+        ),
+        db_query_summary_span_name_hook=bool(
+            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK", default=False)
+        ),
         duckdb_emit_legacy_db_attributes=bool(
             get_bool("CODEINTEL_OTEL_DB_LEGACY_ATTRIBUTES", default=False)
         ),
@@ -346,6 +374,7 @@ def load_runtime_settings() -> RuntimeSettings:
     """
     return RuntimeSettings(
         build=_load_build_settings(),
+        cli=_load_cli_settings(),
         execution=_load_execution_settings(),
         serving=_load_serving_settings(),
         observability=_load_observability_settings(),

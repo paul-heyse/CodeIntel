@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion import DuckDBStorageAdapter
+from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep

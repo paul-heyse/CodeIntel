@@ -15,12 +15,14 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from decimal import Decimal
+
     import networkx as nx
 
 log = logging.getLogger(__name__)
 
 
-def safe_float(value: float | str | None) -> float | None:
+def safe_float(value: float | str | Decimal | None) -> float | None:
     """Coerce a value to float when possible.
 
     Parameters

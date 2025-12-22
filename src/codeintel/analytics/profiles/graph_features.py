@@ -22,8 +22,8 @@ def summarize_graph_for_function_profile(
     """
     Build graph-derived metrics keyed by function GOID.
 
-    The computation mirrors the call-graph degree CTEs previously embedded in
-    :func:`codeintel.analytics.profiles.build_function_profile`.
+    The computation mirrors the call-graph degree CTEs used by
+    :func:`codeintel.analytics.profiles.functions.build_function_profile_rows`.
 
     Returns
     -------

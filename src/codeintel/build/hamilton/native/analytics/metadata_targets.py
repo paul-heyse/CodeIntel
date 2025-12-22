@@ -22,26 +22,36 @@ from hamilton.function_modifiers import source, value
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import build_data_model_usage_rows
 from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
-from codeintel.analytics.profiles import (
-    build_file_profile,
-    build_function_profile,
-    build_module_profile,
+from codeintel.analytics.profiles.files import build_file_profile_rows, compute_file_profile_inputs
+from codeintel.analytics.profiles.functions import (
+    FunctionProfileViews,
+    build_function_profile_rows,
+    compute_function_profile_inputs,
+    join_function_contracts,
+    join_function_coverage,
+    join_function_docs,
+    join_function_effects,
+    join_function_history,
+    join_function_risk,
+    join_function_roles,
+    load_function_base_info,
 )
+from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
+from codeintel.analytics.profiles.modules import (
+    build_module_profile_rows,
+    compute_module_profile_inputs,
+)
+from codeintel.analytics.profiles.utils import DEFAULT_MODULE_TABLE, seed_catalog_modules
 from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.analytics.utilities.datasets import (
-    get_function_ast_features_contract,
-    insert_analytics_rows,
-)
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
@@ -68,6 +78,7 @@ from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
+from codeintel.core.schemas.row_serialization import row_to_tuple
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
@@ -141,6 +152,7 @@ log = LOG
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
+    from codeintel.analytics.profiles.types import FunctionProfileInputs
 
 
 @tag_compute(domain="analytics", target=DATA_MODELS_TARGET_NAME)
@@ -477,6 +489,7 @@ def t__function_ast_features(
     env: BuildEnv,
     graph: TargetGraph,
     t__function_ast_features__compute: AstFeaturesResult,
+    m__analytics__function_ast_features: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Materialize function AST features to DuckDB.
 
@@ -485,48 +498,76 @@ def t__function_ast_features(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, FUNCTION_AST_FEATURES_TARGET_NAME)
-
-    if executor.should_skip():
-        return executor.skip()
-
     if not t__function_ast_features__compute.success:
-        return executor.fail(
-            RuntimeError(t__function_ast_features__compute.error or "AST features failed")
+        options_hash = options_hash_for_target(env, FUNCTION_AST_FEATURES_TARGET_NAME)
+        return TargetRunRecord(
+            target=FUNCTION_AST_FEATURES_TARGET_NAME,
+            plugin_name=f"native:{FUNCTION_AST_FEATURES_TARGET_NAME}",
+            status="failed",
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__function_ast_features__compute.error or "AST features failed",
+            datasets=(),
+            artifacts=(),
         )
 
-    def compute() -> dict[str, int]:
-        features_map = t__function_ast_features__compute.features_map
-        if not features_map:
-            log.info(
-                "No function features computed for %s@%s",
-                env.snapshot.repo,
-                env.snapshot.commit,
-            )
-            return {FUNCTION_AST_FEATURES_TABLE_KEY: 0}
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
+        expected_table_key=FUNCTION_AST_FEATURES_TABLE_KEY,
+        materialization=m__analytics__function_ast_features,
+    )
 
-        rows = [
-            features_to_row(
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-                features=features,
-            )
-            for features in features_map.values()
-        ]
 
-        contract = get_function_ast_features_contract(env.gateway)
-        delete_scope = DeleteScope(repo=env.snapshot.repo, commit=env.snapshot.commit)
-        insert_analytics_rows(
-            env.gateway,
-            contract,
-            rows,
-            delete_scope=delete_scope,
-            scope=f"{env.snapshot.repo}@{env.snapshot.commit}",
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(FUNCTION_AST_FEATURES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(FUNCTION_AST_FEATURES_TARGET_NAME),
+    table_key=value(FUNCTION_AST_FEATURES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(FUNCTION_AST_FEATURES_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=FUNCTION_AST_FEATURES_TARGET_NAME,
+    target_="function_ast_features__rows",
+)
+def function_ast_features__rows(
+    env: BuildEnv,
+    t__function_ast_features__compute: AstFeaturesResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.function_ast_features table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if not t__function_ast_features__compute.success:
+        return None
+
+    features_map = t__function_ast_features__compute.features_map
+    if not features_map:
+        log.info(
+            "No function features computed for %s@%s",
+            env.snapshot.repo,
+            env.snapshot.commit,
         )
+        return None
 
-        return {FUNCTION_AST_FEATURES_TABLE_KEY: len(rows)}
-
-    return executor.execute(compute)
+    rows = [
+        features_to_row(
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+            features=features,
+        )
+        for features in features_map.values()
+    ]
+    return tuple(row_to_tuple(FUNCTION_AST_FEATURES_TABLE_KEY, row) for row in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -535,37 +576,78 @@ def t__function_ast_features(
 
 
 @dataclass(frozen=True)
-class ProfilesResult:
+class ProfilesComputeResult:
     """Result from profiles computation."""
 
-    success: bool
+    module_table: str | None
     error: str | None = None
+
+
+@dataclass(frozen=True)
+class ProfilesMaterializations:
+    """Materialization metadata bundle for profile tables."""
+
+    function_profile: MaterializationMetadata
+    file_profile: MaterializationMetadata
+    module_profile: MaterializationMetadata
+
+
+def _build_function_profile_views(
+    inputs: FunctionProfileInputs,
+    module_table: str,
+) -> FunctionProfileViews:
+    return FunctionProfileViews(
+        base_by_func=load_function_base_info(inputs, module_table=module_table),
+        risk_by_func=join_function_risk(inputs),
+        coverage_by_func=join_function_coverage(inputs),
+        graph_by_func=summarize_graph_for_function_profile(inputs),
+        effects_by_func=join_function_effects(inputs),
+        contracts_by_func=join_function_contracts(inputs),
+        roles_by_func=join_function_roles(inputs),
+        docs_by_func=join_function_docs(inputs),
+        history_by_func=join_function_history(inputs),
+    )
 
 
 @tag_compute(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles__compute(
     env: BuildEnv,
+    graph: TargetGraph,
     t__call_graph: TargetRunRecord,
     t__symbol_uses: TargetRunRecord,
-) -> ProfilesResult:
+) -> ProfilesComputeResult | None:
     """Build aggregated profiles for functions, files, and modules.
 
     Returns
     -------
-    ProfilesResult
-        Status indicator and optional error message.
+    ProfilesComputeResult | None
+        Computed module table name or None when skipped.
     """
     if t__call_graph.status != "succeeded":
-        return ProfilesResult(
-            success=False,
+        return ProfilesComputeResult(
+            module_table=None,
             error=f"Upstream call_graph target failed: {t__call_graph.error}",
         )
 
     if t__symbol_uses.status != "succeeded":
-        return ProfilesResult(
-            success=False,
+        return ProfilesComputeResult(
+            module_table=None,
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
+
+    target = graph.get(PROFILES_TARGET_NAME)
+    if target is not None:
+        options_hash = options_hash_for_target(env, PROFILES_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            settings=env.settings,
+            options=hash_options,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return None
 
     registry = build_registry(
         gateway=env.gateway,
@@ -577,37 +659,153 @@ def t__profiles__compute(
         catalog = registry.require(CatalogProvider).get()
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
-        return ProfilesResult(success=False, error=f"CatalogProvider is required: {exc}")
+        return ProfilesComputeResult(
+            module_table=None,
+            error=f"CatalogProvider is required: {exc}",
+        )
 
     try:
-        build_function_profile(
+        module_table = seed_catalog_modules(
             env.gateway,
-            env.snapshot,
-            catalog_provider=catalog,
-            module_map=None,
+            catalog,
+            env.snapshot.repo,
+            env.snapshot.commit,
         )
-        build_file_profile(
-            env.gateway,
-            env.snapshot,
-            catalog_provider=catalog,
-        )
-        build_module_profile(
-            env.gateway,
-            env.snapshot,
-            catalog_provider=catalog,
-        )
-
-        return ProfilesResult(success=True)
+        return ProfilesComputeResult(module_table=module_table)
     except Exception as exc:
         log.exception("Profiles computation failed")
-        return ProfilesResult(success=False, error=str(exc))
+        return ProfilesComputeResult(module_table=None, error=str(exc))
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(FUNCTION_PROFILE_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(PROFILES_TARGET_NAME),
+    table_key=value(FUNCTION_PROFILE_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(FUNCTION_PROFILE_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=PROFILES_TARGET_NAME,
+    target_="function_profile__rows",
+)
+def function_profile__rows(
+    env: BuildEnv,
+    t__profiles__compute: ProfilesComputeResult | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.function_profile table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__profiles__compute is None or t__profiles__compute.error:
+        return None
+
+    module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
+    inputs = compute_function_profile_inputs(env.gateway, env.snapshot)
+    views = _build_function_profile_views(inputs, module_table)
+    rows = build_function_profile_rows(inputs, views=views)
+    return tuple(row_to_tuple(FUNCTION_PROFILE_TABLE_KEY, row) for row in rows)
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(FILE_PROFILE_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(PROFILES_TARGET_NAME),
+    table_key=value(FILE_PROFILE_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(FILE_PROFILE_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=PROFILES_TARGET_NAME,
+    target_="file_profile__rows",
+)
+def file_profile__rows(
+    env: BuildEnv,
+    t__profiles__compute: ProfilesComputeResult | None,
+    m__analytics__function_profile: MaterializationMetadata,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.file_profile table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__profiles__compute is None or t__profiles__compute.error:
+        return None
+
+    meta = DuckDBMaterializationMetadata.from_mapping(
+        m__analytics__function_profile,
+        default_table_key=FUNCTION_PROFILE_TABLE_KEY,
+    )
+    if meta.status != "succeeded":
+        return None
+
+    module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
+    inputs = compute_file_profile_inputs(env.gateway, env.snapshot)
+    rows = build_file_profile_rows(inputs, module_table=module_table)
+    if rows is None:
+        return None
+    return tuple(row_to_tuple(FILE_PROFILE_TABLE_KEY, row) for row in rows)
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(MODULE_PROFILE_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(PROFILES_TARGET_NAME),
+    table_key=value(MODULE_PROFILE_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(MODULE_PROFILE_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=PROFILES_TARGET_NAME,
+    target_="module_profile__rows",
+)
+def module_profile__rows(
+    env: BuildEnv,
+    t__profiles__compute: ProfilesComputeResult | None,
+    m__analytics__file_profile: MaterializationMetadata,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.module_profile table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__profiles__compute is None or t__profiles__compute.error:
+        return None
+
+    meta = DuckDBMaterializationMetadata.from_mapping(
+        m__analytics__file_profile,
+        default_table_key=FILE_PROFILE_TABLE_KEY,
+    )
+    if meta.status != "succeeded":
+        return None
+
+    module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
+    inputs = compute_module_profile_inputs(env.gateway, env.snapshot)
+    rows = build_module_profile_rows(inputs, module_table=module_table)
+    if rows is None:
+        return None
+    return tuple(row_to_tuple(MODULE_PROFILE_TABLE_KEY, row) for row in rows)
 
 
 @tag_materialize(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles(
     env: BuildEnv,
     graph: TargetGraph,
-    t__profiles__compute: ProfilesResult,
+    t__profiles__compute: ProfilesComputeResult | None,
+    profiles__materializations: ProfilesMaterializations,
 ) -> TargetRunRecord:
     """Materialize profiles target.
 
@@ -616,27 +814,56 @@ def t__profiles(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, PROFILES_TARGET_NAME)
+    if t__profiles__compute is not None and t__profiles__compute.error:
+        options_hash = options_hash_for_target(env, PROFILES_TARGET_NAME)
+        return TargetRunRecord(
+            target=PROFILES_TARGET_NAME,
+            plugin_name=f"native:{PROFILES_TARGET_NAME}",
+            status="failed",
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__profiles__compute.error,
+            datasets=(),
+            artifacts=(),
+        )
 
-    if executor.should_skip():
-        return executor.skip()
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=PROFILES_TARGET_NAME,
+        materializations={
+            FUNCTION_PROFILE_TABLE_KEY: profiles__materializations.function_profile,
+            FILE_PROFILE_TABLE_KEY: profiles__materializations.file_profile,
+            MODULE_PROFILE_TABLE_KEY: profiles__materializations.module_profile,
+        },
+    )
 
-    if not t__profiles__compute.success:
-        return executor.fail(RuntimeError(t__profiles__compute.error or "Profiles failed"))
 
-    def compute() -> dict[str, int]:
-        return {
-            FUNCTION_PROFILE_TABLE_KEY: 0,
-            FILE_PROFILE_TABLE_KEY: 0,
-            MODULE_PROFILE_TABLE_KEY: 0,
-        }
+@tag_compute(domain="analytics", target=PROFILES_TARGET_NAME, target_="profiles__materializations")
+def profiles__materializations(
+    m__analytics__function_profile: MaterializationMetadata,
+    m__analytics__file_profile: MaterializationMetadata,
+    m__analytics__module_profile: MaterializationMetadata,
+) -> ProfilesMaterializations:
+    """Bundle profile materialization metadata for the profiles target.
 
-    return executor.execute(compute)
+    Returns
+    -------
+    ProfilesMaterializations
+        Grouped metadata for profile table materializations.
+    """
+    return ProfilesMaterializations(
+        function_profile=m__analytics__function_profile,
+        file_profile=m__analytics__file_profile,
+        module_profile=m__analytics__module_profile,
+    )
 
 
 __all__ = [
     "AstFeaturesResult",
-    "ProfilesResult",
+    "ProfilesComputeResult",
     "t__data_model_usage",
     "t__data_model_usage__compute",
     "t__data_models",

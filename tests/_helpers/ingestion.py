@@ -16,7 +16,7 @@ from codeintel.build.providers import create_default_providers
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
-from codeintel.ingestion import (
+from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
     HashChangeDetectionAdapter,

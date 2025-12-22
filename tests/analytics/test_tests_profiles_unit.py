@@ -548,18 +548,13 @@ def test_build_behavior_rows_mixed_sources() -> None:
         load_profile_ctx=lambda _con, _cfg: profile_ctx,
         row_builder=_fake_build_behavior_row,
     )
-    with _override(
-        behavioral_tags.DuckDBPolicyBackend,
-        "ensure_table",
-        lambda _self, _table_key: None,
-    ):
-        tuples = behavioral_tags.build_behavior_rows(
-            gateway,
-            snapshot,
-            options=beh_options,
-            llm_runner=_fake_llm_runner,
-            hooks=hooks,
-        )
+    tuples = behavioral_tags.build_behavior_rows(
+        gateway,
+        snapshot,
+        options=beh_options,
+        llm_runner=_fake_llm_runner,
+        hooks=hooks,
+    )
     models = rows.build_behavioral_coverage_rows(tuples)
     if {model["test_id"] for model in models} != {"t1", "t2"}:
         msg = "Behavioral coverage rows missing expected tests."

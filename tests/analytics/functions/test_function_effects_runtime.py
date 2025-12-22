@@ -12,7 +12,7 @@ import networkx as nx
 from codeintel.analytics.functions.function_effects import (
     FunctionEffectsInputs,
     FunctionEffectsOptions,
-    compute_function_effects,
+    build_function_effects_rows,
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
@@ -55,13 +55,12 @@ def _build_function_ast_map(
     return ast_by_goid, module_path
 
 
-def test_compute_function_effects_with_transitive_and_missing(
+def test_build_function_effects_with_transitive_and_missing(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """compute_function_effects records direct, transitive, and missing AST effects."""
+    """build_function_effects_rows records direct, transitive, and missing AST effects."""
     ctx = create_test_context(tmp_path)
     ctx.require(CORE_PACK)
-    repo_root = ctx.repo_root
     source = """
     import os
     import random
@@ -107,12 +106,11 @@ def test_compute_function_effects_with_transitive_and_missing(
         "naive_unicode": 1006,
     }
     ast_map, module_path = _build_function_ast_map(
-        repo_root, source, {k: v for k, v in goids.items() if k != "missing"}
+        ctx.repo_root, source, {k: v for k, v in goids.items() if k != "missing"}
     )
     snapshot = ctx.to_snapshot_ref()
-    gateway = ctx.gateway
     engine = build_graph_engine_double(
-        gateway,
+        ctx.gateway,
         snapshot,
         call_graph=nx.DiGraph(
             [
@@ -134,7 +132,7 @@ def test_compute_function_effects_with_transitive_and_missing(
     )
 
     insert_rows(
-        gateway,
+        ctx.gateway,
         [
             CallGraphEdgeRow(
                 repo=snapshot.repo,
@@ -157,7 +155,7 @@ def test_compute_function_effects_with_transitive_and_missing(
             functions=[
                 function_meta(
                     goid=goids["impure"],
-                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                     qualname="impure",
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(
@@ -167,7 +165,7 @@ def test_compute_function_effects_with_transitive_and_missing(
                 ),
                 function_meta(
                     goid=goids["caller"],
-                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                     qualname="caller",
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(
@@ -177,7 +175,7 @@ def test_compute_function_effects_with_transitive_and_missing(
                 ),
                 function_meta(
                     goid=goids["uses_nonlocal"],
-                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                     qualname="uses_nonlocal",
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(
@@ -187,14 +185,14 @@ def test_compute_function_effects_with_transitive_and_missing(
                 ),
                 function_meta(
                     goid=goids["missing"],
-                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                     qualname="missing",
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(1, 1),
                 ),
                 function_meta(
                     goid=goids["wrapper"],
-                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                     qualname="wrapper",
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(
@@ -204,7 +202,7 @@ def test_compute_function_effects_with_transitive_and_missing(
                 ),
                 function_meta(
                     goid=goids["naive_unicode"],
-                    rel_path=module_path.relative_to(repo_root).as_posix(),
+                    rel_path=module_path.relative_to(ctx.repo_root).as_posix(),
                     qualname="naïve_unicode",
                     snapshot=(snapshot.repo, snapshot.commit),
                     line_span=(
@@ -213,7 +211,7 @@ def test_compute_function_effects_with_transitive_and_missing(
                     ),
                 ),
             ],
-            module_by_path={module_path.relative_to(repo_root).as_posix(): "pkg.effects"},
+            module_by_path={module_path.relative_to(ctx.repo_root).as_posix(): "pkg.effects"},
         ),
         runtime=runtime,
         ast_map=ast_map,
@@ -222,10 +220,17 @@ def test_compute_function_effects_with_transitive_and_missing(
 
     caplog.set_level("INFO")
     try:
-        compute_function_effects(gateway, snapshot, options=options, inputs=inputs)
+        rows = build_function_effects_rows(ctx.gateway, snapshot, options=options, inputs=inputs)
+        if rows:
+            ctx.gateway.policy.delete_for_snapshot(
+                "analytics.function_effects",
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+            )
+            ctx.gateway.policy.bulk_insert_mappings("analytics.function_effects", rows)
         effects_by_goid = {
             int(row[0]): row
-            for row in gateway.con.execute(
+            for row in ctx.gateway.con.execute(
                 """
                 select
                   function_goid_h128,

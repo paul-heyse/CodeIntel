@@ -201,9 +201,10 @@ class SemanticQueryKernel:
             sql = query.compile_sql(ibis_con)
             assert_select_perimeter(sql, policy=SqlIngressPolicy())
             rows = self._execute_sql(warehouse=warehouse, sql=sql)
-            return rows, sql
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
+        else:
+            return rows, sql
         finally:
             cleanup_temp_tables_if_needed(
                 con=warehouse.gateway.con,
@@ -217,7 +218,8 @@ class SemanticQueryKernel:
             assert_select_perimeter(query.sql, policy=SqlIngressPolicy())
         except UnsafeSqlError as exc:
             raise ValueError(str(exc)) from exc
-        return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
+        else:
+            return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
 
     def _resolve_view_context_for_export(
         self, *, pointer: ServingSnapshotPointer, view_id: str

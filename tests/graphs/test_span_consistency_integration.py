@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from codeintel.analytics.testing import TestCoverageOptions, compute_test_coverage_edges
+from codeintel.analytics.testing.coverage.edges import (
+    TestCoverageOptions,
+    build_test_coverage_edges_rows,
+)
 from tests._helpers.orchestration import build_span_graph_components, collect_span_snapshot
 
 if TYPE_CHECKING:
@@ -14,6 +17,7 @@ if TYPE_CHECKING:
 
 REPO: Final = "demo/repo"
 COMMIT: Final = "deadbeef"
+TEST_COVERAGE_EDGES_TABLE_KEY: Final = "analytics.test_coverage_edges"
 
 
 def test_span_alignment_across_components(
@@ -28,11 +32,19 @@ def test_span_alignment_across_components(
         If any component produces mismatched GOIDs for the same function spans.
     """
     build_span_graph_components(span_env)
-    compute_test_coverage_edges(
+    rows = build_test_coverage_edges_rows(
         span_env.gateway,
         span_env.builder.snapshot,
         options=TestCoverageOptions(coverage_file=span_coverage_artifact),
     )
+    if rows:
+        backend = span_env.gateway.policy
+        backend.delete_for_snapshot(
+            TEST_COVERAGE_EDGES_TABLE_KEY,
+            repo=span_env.builder.snapshot.repo,
+            commit=span_env.builder.snapshot.commit,
+        )
+        backend.bulk_insert_mappings(TEST_COVERAGE_EDGES_TABLE_KEY, rows)
 
     snapshot = collect_span_snapshot(span_env.gateway.con)
 

@@ -13,6 +13,7 @@ from codeintel.core.singleton import SingletonHolder
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from opentelemetry.context import Context as ContextType
     from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
         OTLPMetricExporter as OTLPMetricExporterType,
     )
@@ -29,6 +30,9 @@ if TYPE_CHECKING:
         PeriodicExportingMetricReader as PeriodicExportingMetricReaderType,
     )
     from opentelemetry.sdk.resources import Resource as ResourceType
+    from opentelemetry.sdk.trace import ReadableSpan as ReadableSpanType
+    from opentelemetry.sdk.trace import Span as SpanType
+    from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorType
     from opentelemetry.sdk.trace import TracerProvider as TracerProviderType
     from opentelemetry.sdk.trace.export import (
         BatchSpanProcessor as BatchSpanProcessorType,
@@ -42,12 +46,13 @@ if TYPE_CHECKING:
 try:
     from opentelemetry import metrics as otel_metrics
     from opentelemetry import trace as otel_trace
+    from opentelemetry.context import Context
     from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 
     OTEL_AVAILABLE = True
@@ -61,6 +66,10 @@ except ImportError:
     PeriodicExportingMetricReader = None
     Resource = None
     TracerProvider = None
+    Span = None
+    ReadableSpan = None
+    SpanProcessor = None
+    Context = None
     BatchSpanProcessor = None
     ConsoleSpanExporter = None
 
@@ -161,6 +170,13 @@ class ObservabilityConfig:
     duckdb_statement_hash_len: int = 16
     duckdb_query_summary_max_len: int = 255
     duckdb_query_summary_max_targets: int = 6
+    duckdb_query_summary_emit_ellipsis: bool = True
+    duckdb_query_summary_hash_suspicious_targets: bool = True
+    duckdb_query_summary_hash_len: int = 12
+    duckdb_query_summary_hash_min_len: int = 64
+    duckdb_query_summary_include_subquery_operations: bool = True
+    duckdb_query_summary_include_multi_statement: bool = True
+    db_query_summary_span_name_hook: bool = False
     duckdb_emit_legacy_db_attributes: bool = False
     duckdb_query_text_policy: str = "never"
     duckdb_query_text_max_len: int = 4096
@@ -188,6 +204,13 @@ class ObservabilityRuntime:
     duckdb_statement_hash_len: int = 16
     duckdb_query_summary_max_len: int = 255
     duckdb_query_summary_max_targets: int = 6
+    duckdb_query_summary_emit_ellipsis: bool = True
+    duckdb_query_summary_hash_suspicious_targets: bool = True
+    duckdb_query_summary_hash_len: int = 12
+    duckdb_query_summary_hash_min_len: int = 64
+    duckdb_query_summary_include_subquery_operations: bool = True
+    duckdb_query_summary_include_multi_statement: bool = True
+    db_query_summary_span_name_hook: bool = False
     duckdb_emit_legacy_db_attributes: bool = False
     duckdb_query_text_policy: str = "never"
     duckdb_query_text_max_len: int = 4096
@@ -249,6 +272,56 @@ def _instrument_runtime() -> None:
         instrumentor.instrument()
 
 
+_DbQuerySummarySpanNameProcessor: type[SpanProcessorType] | None
+
+if (
+    OTEL_AVAILABLE
+    and SpanProcessor is not None
+    and Span is not None
+    and ReadableSpan is not None
+    and Context is not None
+):
+
+    class _DbQuerySummarySpanNameProcessorImpl(SpanProcessor):
+        _SUMMARY_KEY = "db.query.summary"
+        _enabled = True
+
+        def on_start(self, span: SpanType, parent_context: ContextType | None = None) -> None:
+            if not self._enabled:
+                del parent_context
+                return
+            attributes = span.attributes
+            if attributes is None:
+                del parent_context
+                return
+            summary = attributes.get(self._SUMMARY_KEY)
+            if isinstance(summary, str) and summary:
+                span.update_name(summary)
+            del parent_context
+
+        def on_end(self, span: ReadableSpanType) -> None:
+            if not self._enabled:
+                del span
+                return
+            del span
+
+        def shutdown(self) -> None:
+            if not self._enabled:
+                return
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            if not self._enabled:
+                del timeout_millis
+                return True
+            del timeout_millis
+            return True
+
+    _DbQuerySummarySpanNameProcessor = _DbQuerySummarySpanNameProcessorImpl
+
+else:
+    _DbQuerySummarySpanNameProcessor = None
+
+
 def _disabled_runtime() -> ObservabilityRuntime:
     return ObservabilityRuntime(
         enabled=False,
@@ -262,6 +335,13 @@ def _disabled_runtime() -> ObservabilityRuntime:
         duckdb_statement_hash_len=16,
         duckdb_query_summary_max_len=255,
         duckdb_query_summary_max_targets=6,
+        duckdb_query_summary_emit_ellipsis=True,
+        duckdb_query_summary_hash_suspicious_targets=True,
+        duckdb_query_summary_hash_len=12,
+        duckdb_query_summary_hash_min_len=64,
+        duckdb_query_summary_include_subquery_operations=True,
+        duckdb_query_summary_include_multi_statement=True,
+        db_query_summary_span_name_hook=False,
         duckdb_emit_legacy_db_attributes=False,
         duckdb_query_text_policy="never",
         duckdb_query_text_max_len=4096,
@@ -360,7 +440,16 @@ def _build_tracer_provider(
         tracer_provider.add_span_processor(
             components.batch_span_processor_cls(components.console_span_exporter_cls())
         )
+    span_name_processor = _db_query_summary_span_name_processor()
+    if config.db_query_summary_span_name_hook and span_name_processor is not None:
+        tracer_provider.add_span_processor(span_name_processor)
     return tracer_provider
+
+
+def _db_query_summary_span_name_processor() -> SpanProcessorType | None:
+    if _DbQuerySummarySpanNameProcessor is None:
+        return None
+    return _DbQuerySummarySpanNameProcessor()
 
 
 def _build_meter_provider(
@@ -440,6 +529,19 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
         duckdb_statement_hash_len=config.duckdb_statement_hash_len,
         duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
         duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
+        duckdb_query_summary_emit_ellipsis=config.duckdb_query_summary_emit_ellipsis,
+        duckdb_query_summary_hash_suspicious_targets=(
+            config.duckdb_query_summary_hash_suspicious_targets
+        ),
+        duckdb_query_summary_hash_len=config.duckdb_query_summary_hash_len,
+        duckdb_query_summary_hash_min_len=config.duckdb_query_summary_hash_min_len,
+        duckdb_query_summary_include_subquery_operations=(
+            config.duckdb_query_summary_include_subquery_operations
+        ),
+        duckdb_query_summary_include_multi_statement=(
+            config.duckdb_query_summary_include_multi_statement
+        ),
+        db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
         duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
         duckdb_query_text_policy=config.duckdb_query_text_policy,
         duckdb_query_text_max_len=config.duckdb_query_text_max_len,
@@ -487,6 +589,13 @@ def get_observability() -> ObservabilityRuntime:
         duckdb_statement_hash_len=16,
         duckdb_query_summary_max_len=255,
         duckdb_query_summary_max_targets=6,
+        duckdb_query_summary_emit_ellipsis=True,
+        duckdb_query_summary_hash_suspicious_targets=True,
+        duckdb_query_summary_hash_len=12,
+        duckdb_query_summary_hash_min_len=64,
+        duckdb_query_summary_include_subquery_operations=True,
+        duckdb_query_summary_include_multi_statement=True,
+        db_query_summary_span_name_hook=False,
         duckdb_emit_legacy_db_attributes=False,
         duckdb_query_text_policy="never",
         duckdb_query_text_max_len=4096,
@@ -546,6 +655,19 @@ def observability_config_from_settings(
         duckdb_statement_hash_len=settings.duckdb_statement_hash_len,
         duckdb_query_summary_max_len=settings.duckdb_query_summary_max_len,
         duckdb_query_summary_max_targets=settings.duckdb_query_summary_max_targets,
+        duckdb_query_summary_emit_ellipsis=settings.duckdb_query_summary_emit_ellipsis,
+        duckdb_query_summary_hash_suspicious_targets=(
+            settings.duckdb_query_summary_hash_suspicious_targets
+        ),
+        duckdb_query_summary_hash_len=settings.duckdb_query_summary_hash_len,
+        duckdb_query_summary_hash_min_len=settings.duckdb_query_summary_hash_min_len,
+        duckdb_query_summary_include_subquery_operations=(
+            settings.duckdb_query_summary_include_subquery_operations
+        ),
+        duckdb_query_summary_include_multi_statement=(
+            settings.duckdb_query_summary_include_multi_statement
+        ),
+        db_query_summary_span_name_hook=settings.db_query_summary_span_name_hook,
         duckdb_emit_legacy_db_attributes=settings.duckdb_emit_legacy_db_attributes,
         duckdb_query_text_policy=settings.duckdb_query_text_policy,
         duckdb_query_text_max_len=settings.duckdb_query_text_max_len,

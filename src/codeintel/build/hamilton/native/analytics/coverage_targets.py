@@ -34,8 +34,8 @@ from codeintel.analytics.compute.coverage.compute import (
 )
 from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.catalog import CatalogProvider
-from codeintel.analytics.testing import build_test_coverage_edges_rows
 from codeintel.analytics.testing.behavioral.tags import build_behavior_rows
+from codeintel.analytics.testing.coverage.edges import build_test_coverage_edges_rows
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver

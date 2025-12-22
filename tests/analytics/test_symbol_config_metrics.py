@@ -7,11 +7,9 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.analytics.graphs import (
-    compute_config_graph_metrics,
-    compute_subsystem_agreement,
-    compute_symbol_graph_metrics_modules,
-)
+from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
+from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
+from codeintel.analytics.graphs.symbol_graph_metrics import build_symbol_graph_metrics_module_rows
 from tests._helpers.builders import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
@@ -153,16 +151,63 @@ def test_symbol_and_config_metrics_populate_and_views_create(
     """Verify symbol/config metrics compute and derived views materialize."""
     _seed_symbol_config_data(test_ctx)
 
-    compute_symbol_graph_metrics_modules(
+    symbol_rows = build_symbol_graph_metrics_module_rows(
         test_ctx.gateway,
         repo=test_ctx.repo,
         commit=test_ctx.commit,
     )
-    compute_config_graph_metrics(
+    if symbol_rows:
+        test_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.symbol_graph_metrics_modules",
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
+        test_ctx.gateway.policy.bulk_insert("analytics.symbol_graph_metrics_modules", symbol_rows)
+
+    config_rows = compute_config_graph_metrics_result(
         test_ctx.gateway,
         repo=test_ctx.repo,
         commit=test_ctx.commit,
     )
+    if config_rows.key_rows:
+        test_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.config_graph_metrics_keys",
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
+        test_ctx.gateway.policy.bulk_insert(
+            "analytics.config_graph_metrics_keys", config_rows.key_rows
+        )
+    if config_rows.module_rows:
+        test_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.config_graph_metrics_modules",
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
+        test_ctx.gateway.policy.bulk_insert(
+            "analytics.config_graph_metrics_modules",
+            config_rows.module_rows,
+        )
+    if config_rows.key_edge_rows:
+        test_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.config_projection_key_edges",
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
+        test_ctx.gateway.policy.bulk_insert(
+            "analytics.config_projection_key_edges",
+            config_rows.key_edge_rows,
+        )
+    if config_rows.module_edge_rows:
+        test_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.config_projection_module_edges",
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
+        test_ctx.gateway.policy.bulk_insert(
+            "analytics.config_projection_module_edges",
+            config_rows.module_edge_rows,
+        )
     test_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
 
     sym_rows = test_ctx.con.execute(
@@ -196,11 +241,18 @@ def test_subsystem_agreement_exposed_in_views(
     """Verify subsystem agreement results exposed through docs views."""
     _seed_subsystem_agreement_data(test_ctx)
 
-    compute_subsystem_agreement(
+    agreement_rows = build_subsystem_agreement_rows(
         test_ctx.gateway,
         repo=test_ctx.repo,
         commit=test_ctx.commit,
     )
+    if agreement_rows:
+        test_ctx.gateway.policy.delete_for_snapshot(
+            "analytics.subsystem_agreement",
+            repo=test_ctx.repo,
+            commit=test_ctx.commit,
+        )
+        test_ctx.gateway.policy.bulk_insert("analytics.subsystem_agreement", agreement_rows)
     test_ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
 
     agree_rows = test_ctx.con.execute(

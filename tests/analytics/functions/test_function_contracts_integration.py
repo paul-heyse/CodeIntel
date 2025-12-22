@@ -1,6 +1,6 @@
 """Integration tests for function_contracts module with catalog.
 
-This module tests compute_function_contracts with a realistic fake catalog
+This module tests build_function_contracts_rows with a realistic fake catalog
 to exercise the main execution paths including docstrings and type info.
 
 Uses MockFunctionCatalog from tests._helpers.fakes for catalog mocking.
@@ -14,9 +14,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.analytics.functions.function_contracts import (
-    compute_function_contracts,
-)
+from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from tests._helpers.assertions import (
     expect_equal,
@@ -228,6 +226,29 @@ def _seed_function_types(
     )
 
 
+def _build_and_write_contract_rows(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    function_ast_map: dict[int, FunctionAst] | None = None,
+    catalog: FunctionCatalogProvider | None = None,
+) -> None:
+    rows = build_function_contracts_rows(
+        gateway,
+        snapshot,
+        function_ast_map=function_ast_map or {},
+        catalog=catalog,
+    )
+    if not rows:
+        return
+    gateway.policy.delete_for_snapshot(
+        "analytics.function_contracts",
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    gateway.policy.bulk_insert_mappings("analytics.function_contracts", rows)
+
+
 def test_compute_contracts_with_catalog_goid_iteration(
     ctx: TestContext,
     contracts_snapshot: SnapshotRef,
@@ -246,7 +267,7 @@ def test_compute_contracts_with_catalog_goid_iteration(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -275,7 +296,7 @@ def test_compute_contracts_with_missing_ast(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={},
@@ -324,7 +345,7 @@ def test_compute_contracts_with_docstring_data(
         ],
     )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -371,7 +392,7 @@ def test_compute_contracts_with_type_annotations(
         param_types={"x": "int", "y": "Optional[int]"},
     )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={GOID_TYPED: func_ast},
@@ -416,7 +437,7 @@ def test_compute_contracts_with_guards_and_catalog(
     catalog = _create_mock_catalog(spans)
     ensure_catalog_with_goids(ctx, catalog)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={GOID_GUARDED: func_ast},
@@ -464,7 +485,7 @@ def test_compute_contracts_with_bool_return_type(
         param_types={"x": "int"},
     )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -520,7 +541,7 @@ def test_compute_contracts_confidence_score(
         param_types={"x": "int"},
     )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         ctx.gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -562,7 +583,7 @@ def test_compute_contracts_multiple_goids(
     ]
     catalog = _create_mock_catalog(spans)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         fresh_gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: ast1, GOID_TYPED: ast2},
@@ -608,7 +629,7 @@ def test_compute_contracts_with_nullable_return(
         param_types={"x": "int"},
     )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         fresh_gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -647,7 +668,7 @@ def test_compute_contracts_with_isinstance_guard(
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "typed_guard", 1, 5)]
     catalog = _create_mock_catalog(spans)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         fresh_gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -689,7 +710,7 @@ def test_compute_contracts_with_len_check(
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "check_len", 1, 5)]
     catalog = _create_mock_catalog(spans)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         fresh_gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -725,7 +746,7 @@ def test_compute_contracts_with_predicate_name(
     spans = [MockFunctionSpan(GOID_SIMPLE, "module.py", "is_valid", 1, 3)]
     catalog = _create_mock_catalog(spans)
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         fresh_gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},
@@ -769,7 +790,7 @@ def test_compute_contracts_with_doc_return_none(
         returns={"desc": "Returns x or None if not found"},
     )
 
-    compute_function_contracts(
+    _build_and_write_contract_rows(
         fresh_gateway,
         contracts_snapshot,
         function_ast_map={GOID_SIMPLE: func_ast},

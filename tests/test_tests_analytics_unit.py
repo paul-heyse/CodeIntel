@@ -147,18 +147,18 @@ def test_edges_for_file_uses_test_meta() -> None:
         pytest.fail(f"Expected coverage_ratio {expected_cov_ratio}, got {edge['coverage_ratio']}")
 
 
-def test_compute_test_coverage_edges_with_real_coverage(
+def test_build_test_coverage_edges_with_real_coverage(
     coverage_env: CoverageEdgeEnv, coverage_artifact: Path
 ) -> None:
-    """compute_test_coverage_edges should join coverage contexts with test GOIDs."""
+    """build_test_coverage_edges_rows should join coverage contexts with test GOIDs."""
     compute_coverage_edges(coverage_env, coverage_file=coverage_artifact)
     assert_single_edge(coverage_env.gateway.con)
 
 
-def test_compute_test_coverage_edges_respects_injected_loader(
+def test_build_test_coverage_edges_respects_injected_loader(
     coverage_env: CoverageEdgeEnv, coverage_artifact: Path
 ) -> None:
-    """compute_test_coverage_edges should call injected loader when provided."""
+    """build_test_coverage_edges_rows should call injected loader when provided."""
 
     def _coverage_loader(_snapshot: SnapshotRef, _path: Path | None) -> Coverage:
         cov = Coverage(data_file=str(coverage_artifact))

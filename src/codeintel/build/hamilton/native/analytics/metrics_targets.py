@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
@@ -83,6 +84,9 @@ _HAMILTON_TYPE_HINTS = (
     TargetRunRecord,
     TestGraphMetricsResult,
 )
+
+if TYPE_CHECKING:
+    from codeintel.analytics.compute.row_builders import SubsystemMetricRow
 
 FUNCTION_HISTORY_TARGET_NAME = "function_history"
 HISTORY_TIMESERIES_TARGET_NAME = "history_timeseries"
@@ -381,7 +385,7 @@ def t__history_timeseries(
 class SubsystemGraphMetricsComputeResult:
     """Result from subsystem graph metrics computation."""
 
-    rows: list[tuple[object, ...]] | None
+    rows: list[SubsystemMetricRow] | None
     error: str | None = None
 
 

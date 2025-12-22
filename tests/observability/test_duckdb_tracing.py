@@ -79,9 +79,7 @@ def test_duckdb_tracing_redacts_statement(monkeypatch: pytest.MonkeyPatch) -> No
     con.close()
 
     spans = exporter.get_finished_spans()
-    db_spans = [
-        span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"
-    ]
+    db_spans = [span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"]
     expect_true(bool(db_spans), message="Expected DuckDB spans")
 
     span = db_spans[-1]
@@ -116,9 +114,7 @@ def test_duckdb_tracing_operation_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     con.close()
 
     spans = exporter.get_finished_spans()
-    db_spans = [
-        span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"
-    ]
+    db_spans = [span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"]
     expect_true(bool(db_spans), message="Expected DuckDB spans")
 
     attrs = _span_attributes(db_spans[-1])

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from codeintel.observability.db_query_parameters import (
     DbQueryParameterConfig,
     emit_db_query_parameters,
+)
+from tests._helpers.assertions.expectation_assertions import (
+    expect_equal,
+    expect_is_instance,
+    expect_true,
 )
 
 
@@ -17,7 +24,7 @@ def test_parameters_disabled_by_default() -> None:
         db_system_name="duckdb",
         config=config,
     )
-    assert attrs == {}
+    expect_equal(attrs, {})
 
 
 def test_parameters_require_mapping() -> None:
@@ -29,7 +36,7 @@ def test_parameters_require_mapping() -> None:
         db_system_name="duckdb",
         config=config,
     )
-    assert attrs == {}
+    expect_equal(attrs, {})
 
 
 def test_parameters_allowlist_and_in_sql_gate() -> None:
@@ -45,7 +52,7 @@ def test_parameters_allowlist_and_in_sql_gate() -> None:
         db_system_name="duckdb",
         config=config,
     )
-    assert attrs == {"db.query.parameter.limit": 25}
+    expect_equal(attrs, {"db.query.parameter.limit": 25})
 
 
 def test_parameters_truncate_strings() -> None:
@@ -62,7 +69,12 @@ def test_parameters_truncate_strings() -> None:
         db_system_name="duckdb",
         config=config,
     )
-    assert attrs["db.query.parameter.q"].startswith("ab")
+    value = attrs["db.query.parameter.q"]
+    expect_is_instance(value, str)
+    expect_true(
+        cast("str", value).startswith("ab"),
+        message="expected truncated parameter value",
+    )
 
 
 def test_parameters_skip_batches() -> None:
@@ -75,4 +87,4 @@ def test_parameters_skip_batches() -> None:
         config=config,
         is_batch=True,
     )
-    assert attrs == {}
+    expect_equal(attrs, {})

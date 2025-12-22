@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion import FilesystemDiscoveryAdapter
+from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute import (
     ast_extract,
     config_ingest,
