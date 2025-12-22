@@ -28,6 +28,7 @@ from codeintel.serving.export.formats import (
     suffix_for_export_format,
 )
 from codeintel.serving.export.models import ExportArtifactSpec
+from codeintel.serving.export.ndjson import encode_ndjson_line
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -311,9 +312,9 @@ class ResourceStore:
         path, mime_type = self._artifact_path_for_format(token, spec.format)
         try:
             if normalized == "ndjson":
-                with path.open("w", encoding="utf-8") as f:
+                with path.open("wb") as f:
                     for row in rows:
-                        f.write(json.dumps(row, default=str) + "\n")
+                        f.write(encode_ndjson_line(row))
             else:
                 content = json.dumps({"rows": rows}, indent=2, sort_keys=True, default=str)
                 path.write_text(content, encoding="utf-8")
@@ -404,16 +405,16 @@ class ResourceStore:
 
         def _write_rows_to_path() -> tuple[tuple[str, ...], int]:
             nonlocal row_count
-            with path.open("w", encoding="utf-8") as f:
+            with path.open("wb") as f:
                 if first_row is not None:
                     resolved_columns = spec.columns or tuple(first_row.keys())
-                    f.write(json.dumps(first_row, default=str) + "\n")
+                    f.write(encode_ndjson_line(first_row))
                     row_count += 1
                     for row in rows_iter:
                         if not isinstance(row, dict):
                             msg = "rows must yield dictionaries"
                             raise TypeError(msg)
-                        f.write(json.dumps(row, default=str) + "\n")
+                        f.write(encode_ndjson_line(row))
                         row_count += 1
                     return resolved_columns, row_count
                 resolved_columns = spec.columns

@@ -40,9 +40,10 @@ from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.utilities.dataframe import to_records
 from codeintel.analytics.utilities.datasets import (
-    get_analytics_dataset_contract,
+    write_analytics_rows,
+    write_analytics_tuple_rows,
 )
-from codeintel.build.hamilton.contracts.schemas.validation import validate_df
+from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.ibis_typing import and_predicates, isin_values
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.validation.reporters import (
@@ -613,46 +614,30 @@ def persist_function_analytics(
     dict[str, int]
         Summary counts of persisted rows and validation.
     """
-    metrics_contract = get_analytics_dataset_contract(gateway, "analytics.function_metrics")
-    types_contract = get_analytics_dataset_contract(gateway, "analytics.function_types")
-    metrics_rows = result.metrics_rows
-    types_rows = result.types_rows
-
-    def _validated_records(
-        table_key: str, rows: Sequence[Mapping[str, object]]
-    ) -> list[dict[str, object]]:
-        if not rows:
-            return []
-        df = pd.DataFrame(rows)
-        validated = validate_df(table_key, df)
-        return validated.where(pd.notna(validated), None).to_dict(orient="records")
-
-    validated_metrics = _validated_records(metrics_contract.table_key, list(metrics_rows))
-    validated_types = _validated_records(types_contract.table_key, list(types_rows))
-    backend = gateway.policy
-    backend.ensure_table(metrics_contract.table_key)
-    backend.delete_for_snapshot(
-        metrics_contract.table_key,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
+    write_analytics_rows(
+        gateway,
+        "analytics.function_metrics",
+        list(result.metrics_rows),
+        delete_scope=delete_scope,
+        scope=f"{snapshot.repo}@{snapshot.commit}",
     )
-    backend.bulk_insert_mappings(metrics_contract.table_key, validated_metrics)
-    backend.ensure_table(types_contract.table_key)
-    backend.delete_for_snapshot(
-        types_contract.table_key,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
+    write_analytics_rows(
+        gateway,
+        "analytics.function_types",
+        list(result.types_rows),
+        delete_scope=delete_scope,
+        scope=f"{snapshot.repo}@{snapshot.commit}",
     )
-    backend.bulk_insert_mappings(types_contract.table_key, validated_types)
     validation_rows = result.reporter.to_rows()
     if validation_rows:
-        backend.delete_for_snapshot(
-            "analytics.function_validation", repo=snapshot.repo, commit=snapshot.commit
-        )
-        backend.bulk_insert(
+        write_analytics_tuple_rows(
+            gateway,
             "analytics.function_validation",
             list(validation_rows),
-            columns=list(FUNCTION_VALIDATION_COLS),
+            delete_scope=delete_scope,
+            columns=FUNCTION_VALIDATION_COLS,
+            scope=f"{snapshot.repo}@{snapshot.commit}",
         )
 
     log.info(

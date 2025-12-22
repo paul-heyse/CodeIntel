@@ -12,9 +12,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
-from codeintel.core.singleton import SingletonHolder
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.singleton import SingletonHolder
 from codeintel.observability.otel import ObservabilityConfig, bootstrap_observability
 
 if TYPE_CHECKING:

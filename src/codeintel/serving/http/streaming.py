@@ -6,25 +6,15 @@ JSON (NDJSON) to support efficient export of large datasets.
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING
 
 from starlette.responses import StreamingResponse
 
 from codeintel.serving.export.formats import mime_type_for_export_format
+from codeintel.serving.export.ndjson import iter_ndjson_bytes
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
-
-try:
-    import msgspec
-
-    def _enc_hook(obj: object) -> object:
-        return str(obj)
-
-    _MSG_ENCODER: msgspec.json.Encoder | None = msgspec.json.Encoder(enc_hook=_enc_hook)
-except ImportError:
-    _MSG_ENCODER = None
 
 
 def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:
@@ -40,16 +30,7 @@ def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:
     bytes
         JSON-encoded row followed by newline.
     """
-    for row in rows:
-        if _MSG_ENCODER is not None:
-            yield _MSG_ENCODER.encode(row) + b"\n"
-        else:
-            yield json.dumps(
-                row,
-                default=str,
-                separators=(",", ":"),
-                ensure_ascii=False,
-            ).encode("utf-8") + b"\n"
+    yield from iter_ndjson_bytes(rows)
 
 
 def ndjson_response(

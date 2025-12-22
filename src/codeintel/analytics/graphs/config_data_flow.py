@@ -380,53 +380,6 @@ def compute_config_data_flow_result(
     return ConfigDataFlowResult(rows=tuple(rows_to_insert) if rows_to_insert else None)
 
 
-def compute_config_data_flow(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    call_graph: nx.DiGraph,
-    ast_by_goid: dict[int, FunctionAst],
-    missing_goids: set[int] | None = None,
-) -> None:
-    """Populate analytics.config_data_flow with config usage per function.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway providing DuckDB access.
-    snapshot
-        Repository and commit identifiers.
-    call_graph
-        Call graph for the repository snapshot.
-    ast_by_goid
-        Mapping of function GOID to parsed AST data.
-    missing_goids
-        Optional set of function GOIDs that could not be parsed.
-    """
-    backend = gateway.policy
-    backend.ensure_table("analytics.config_data_flow")
-    backend.delete_for_snapshot(
-        "analytics.config_data_flow", repo=snapshot.repo, commit=snapshot.commit
-    )
-
-    result = compute_config_data_flow_result(
-        gateway,
-        snapshot,
-        call_graph=call_graph,
-        ast_by_goid=ast_by_goid,
-        missing_goids=missing_goids,
-    )
-
-    if result.rows:
-        backend.bulk_insert("analytics.config_data_flow", list(result.rows))
-    log.info(
-        "config_data_flow populated: %d rows for %s@%s",
-        len(result.rows) if result.rows else 0,
-        snapshot.repo,
-        snapshot.commit,
-    )
-
-
 def _build_config_flow_rows(
     *,
     artifacts: ConfigFlowArtifacts,

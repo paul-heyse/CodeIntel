@@ -27,7 +27,6 @@ from codeintel.serving.mcp.tools.shared import (
     validate_semantic_query_request,
 )
 from codeintel.serving.operations.ops import ServingOperations
-from codeintel.serving.semantic.fingerprints import sqlglot_canonical_sha256
 from codeintel.serving.semantic.models import SemanticQueryRequest
 
 if TYPE_CHECKING:
@@ -60,13 +59,7 @@ class SemanticQueryHandler:
         query_hash = result.query_hash
         schema_hash = result.schema_hash
 
-        sql_fingerprint: str | None = None
-        try:
-            compiled_sql = await self.limiter.run(self.ops.compile_query_sql, request)
-        except (KeyError, TypeError, ValueError):
-            compiled_sql = None
-        if isinstance(compiled_sql, str) and compiled_sql:
-            sql_fingerprint = sqlglot_canonical_sha256(compiled_sql)
+        sql_fingerprint = result.sql_fingerprint
 
         preview: QueryPreview | None = None
         if truncated or row_count > PREVIEW_ROW_COUNT:

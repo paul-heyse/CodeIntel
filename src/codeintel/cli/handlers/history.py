@@ -10,12 +10,9 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-from ibis.common.exceptions import IbisError
 
 from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
 from codeintel.build.config import load_build_config
@@ -34,7 +31,6 @@ from codeintel.storage.gateway import (
     DuckDBInvalidInputException,
     StorageConfig,
     build_snapshot_gateway_resolver,
-    ibis_facade,
     open_gateway,
 )
 
@@ -43,7 +39,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.cli.context import CommandContext
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 
@@ -93,7 +89,7 @@ def _build_history_env(
     gateway: StorageGateway,
     *,
     options: HistoryTimeseriesOptions,
-    db_resolver: Callable[[str], DuckDBConnection],
+    gateway_resolver: Callable[[str], StorageGateway],
 ) -> BuildEnv:
     tools = ctx.runtime.tools if ctx.has_runtime else ToolsConfig.default()
     providers = create_default_providers(tools)
@@ -110,94 +106,16 @@ def _build_history_env(
         settings=build_settings,
         execution_settings=execution_settings,
         history_options=options,
-        history_db_resolver=db_resolver,
+        history_db_resolver=gateway_resolver,
     )
     return context.build_env()
 
-
-def _write_synthetic_history_rows(
-    *,
-    repo: str,
-    commits: list[str],
-    gateway: StorageGateway,
-    snapshot_resolver: Callable[[str], StorageGateway],
-) -> None:
-    """Backfill history_timeseries when no rows exist by projecting profiles."""
-    table_key = "analytics.history_timeseries"
-    backend = gateway.policy
-    backend.ensure_table(table_key)
-    synthetic_rows: list[dict[str, object]] = []
-
-    for commit in commits:
-        commit_timestamp = datetime.now(UTC)
-        snapshot_gateway = snapshot_resolver(commit)
-        try:
-            profile = ibis_facade.table(snapshot_gateway, "analytics.function_profile")
-            df = profile.select("repo", "module", "rel_path", "qualname").execute()
-        except (DuckDBError, IbisError, RuntimeError, ValueError, TypeError) as load_exc:
-            LOG.warning(
-                "Failed to synthesize history rows from function_profile for %s@%s: %s",
-                repo,
-                commit,
-                load_exc,
-            )
-            df = None
-        finally:
-            if snapshot_gateway is not gateway:
-                snapshot_gateway.close()
-
-        if df is None:
-            continue
-
-        records = [
-            dict(zip(df.columns, row, strict=False))
-            for row in df.itertuples(index=False, name=None)
-        ]
-        for record in records:
-            rel_path = record["rel_path"]
-            qualname = record["qualname"]
-            synthetic_rows.append(
-                {
-                    "repo": record["repo"],
-                    "entity_kind": "function",
-                    "entity_stable_id": qualname or rel_path,
-                    "function_goid_h128": None,
-                    "module": record["module"],
-                    "rel_path": rel_path,
-                    "language": "python",
-                    "qualname": qualname,
-                    "commit": commit,
-                    "commit_ts": commit_timestamp,
-                    "loc": None,
-                    "cyclomatic_complexity": None,
-                    "coverage_ratio": None,
-                    "static_error_count": None,
-                    "typedness_bucket": None,
-                    "risk_score": None,
-                    "risk_level": None,
-                    "bucket_label": None,
-                    "created_at_row": commit_timestamp,
-                }
-            )
-
-    if not synthetic_rows:
-        return
-
-    for commit in commits:
-        backend.delete_for_snapshot(
-            table_key,
-            repo=repo,
-            commit=commit,
-        )
-    backend.bulk_insert_mappings(table_key, synthetic_rows)
-
-
-def _build_db_resolver(
+def _build_gateway_resolver(
     gateway: StorageGateway,
     snapshot_resolver: Callable[[str], StorageGateway],
     snapshot_gateways: dict[str, StorageGateway],
-) -> Callable[[str], DuckDBConnection]:
-    """Build a db_resolver from a snapshot_resolver.
+) -> Callable[[str], StorageGateway]:
+    """Build a gateway resolver from a snapshot_resolver.
 
     Parameters
     ----------
@@ -210,26 +128,26 @@ def _build_db_resolver(
 
     Returns
     -------
-    Callable[[str], DuckDBConnection]
-        Database connection resolver for each commit.
+    Callable[[str], StorageGateway]
+        Storage gateway resolver for each commit.
     """
 
-    def _db_resolver(commit: str) -> DuckDBConnection:
+    def _gateway_resolver(commit: str) -> StorageGateway:
         cached_gateway = snapshot_gateways.get(commit)
         if cached_gateway is not None:
-            return gateway.con if cached_gateway is gateway else cached_gateway.con
+            return cached_gateway
 
         snapshot_gateway = snapshot_resolver(commit)
         if snapshot_gateway.config.db_path.resolve() == gateway.config.db_path.resolve():
             if snapshot_gateway is not gateway:
                 snapshot_gateway.close()
             snapshot_gateways[commit] = gateway
-            return gateway.con
+            return gateway
 
         snapshot_gateways[commit] = snapshot_gateway
-        return snapshot_gateway.con
+        return snapshot_gateway
 
-    return _db_resolver
+    return _gateway_resolver
 
 
 def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseriesResult]:
@@ -291,7 +209,11 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
         )
 
         snapshot_gateways: dict[str, StorageGateway] = {}
-        db_resolver = _build_db_resolver(gateway, snapshot_resolver, snapshot_gateways)
+        gateway_resolver = _build_gateway_resolver(
+            gateway,
+            snapshot_resolver,
+            snapshot_gateways,
+        )
 
         try:
             env = _build_history_env(
@@ -299,7 +221,7 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
                 snapshot,
                 gateway,
                 options=options,
-                db_resolver=db_resolver,
+                gateway_resolver=gateway_resolver,
             )
             executor = HamiltonBuildExecutor(
                 parallel_backend=env.execution_settings.parallel_backend,
@@ -308,12 +230,6 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
             result = executor.run(env=env, targets=["history_timeseries"])
         except DuckDBInvalidInputException as exc:
             LOG.warning("No history rows to aggregate: %s", exc)
-            _write_synthetic_history_rows(
-                repo=repo,
-                commits=commits,
-                gateway=gateway,
-                snapshot_resolver=snapshot_resolver,
-            )
         except FileNotFoundError as exc:
             LOG.exception("Missing snapshot database for history_timeseries")
             return fail_history_error(
@@ -326,12 +242,7 @@ def history_timeseries_handler(ctx: CommandContext) -> CliResult[HistoryTimeseri
             if not result.success:
                 error_msg = result.error or "History timeseries execution failed"
                 if "Invalid Input" in error_msg or "invalid input" in error_msg:
-                    _write_synthetic_history_rows(
-                        repo=repo,
-                        commits=commits,
-                        gateway=gateway,
-                        snapshot_resolver=snapshot_resolver,
-                    )
+                    LOG.warning("history_timeseries returned no rows: %s", error_msg)
                 else:
                     return fail_history_error("Execution Error", error_msg)
         finally:

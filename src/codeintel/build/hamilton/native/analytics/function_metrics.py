@@ -22,11 +22,11 @@ import logging
 
 from hamilton.function_modifiers import source, value
 
-from codeintel.analytics.functions import (
-    FunctionAnalyticsOptions,
+from codeintel.analytics.functions import FunctionAnalyticsOptions
+from codeintel.analytics.functions.metrics import (
+    FunctionAnalyticsResult,
     compute_function_analytics_result,
 )
-from codeintel.analytics.functions.metrics import FunctionAnalyticsResult
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver

@@ -6,6 +6,7 @@ import base64
 import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
+from uuid import UUID
 
 import duckdb
 import pytest
@@ -238,6 +239,65 @@ def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
     expect_equal(json.loads(lines[0]), {"id": 1, "name": "one"})
     expect_equal(json.loads(lines[1]), {"id": 2, "name": "two"})
     expect_equal(json.loads(lines[2]), {"id": 3, "name": "three"})
+
+
+def test_resource_store_ndjson_encoding_is_utf8(tmp_path: Path) -> None:
+    """Verify NDJSON encoding preserves UTF-8 and stringifies unknown types."""
+    store = ResourceStore(tmp_path / "exports")
+
+    row: dict[str, object] = {
+        "text": "naïve 🧪",
+        "ts": datetime(2024, 1, 1, tzinfo=UTC),
+        "uuid": UUID("12345678-1234-5678-1234-567812345678"),
+        "bytes": b"hello",
+    }
+    token, artifact, _meta = store.put_with_metadata(
+        [row],
+        spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+    )
+
+    expect_true(len(token) > 0, message="Token should be non-empty")
+
+    raw = artifact.path.read_text(encoding="utf-8").strip()
+    expect_true(bool(raw), message="Expected NDJSON output")
+    expect_equal(raw.count("\n"), 0)
+    expect_true("🧪" in raw, message="Expected UTF-8 output to preserve unicode")
+
+    payload = json.loads(raw)
+    expect_equal(payload["text"], row["text"])
+    expect_equal(payload["ts"], str(row["ts"]))
+    expect_equal(payload["uuid"], str(row["uuid"]))
+    expect_equal(payload["bytes"], str(row["bytes"]))
+
+
+def test_resource_store_ndjson_stream_encoding_is_utf8(tmp_path: Path) -> None:
+    """Verify streaming NDJSON encoding preserves UTF-8 and stringifies types."""
+    store = ResourceStore(tmp_path / "exports")
+
+    row: dict[str, object] = {
+        "text": "naïve 🧪",
+        "ts": datetime(2024, 1, 1, tzinfo=UTC),
+        "uuid": UUID("12345678-1234-5678-1234-567812345678"),
+        "bytes": b"hello",
+    }
+
+    token, artifact, _meta = store.put_with_metadata_stream(
+        [row],
+        spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+    )
+
+    expect_true(len(token) > 0, message="Token should be non-empty")
+
+    raw = artifact.path.read_text(encoding="utf-8").strip()
+    expect_true(bool(raw), message="Expected NDJSON output")
+    expect_equal(raw.count("\n"), 0)
+    expect_true("🧪" in raw, message="Expected UTF-8 output to preserve unicode")
+
+    payload = json.loads(raw)
+    expect_equal(payload["text"], row["text"])
+    expect_equal(payload["ts"], str(row["ts"]))
+    expect_equal(payload["uuid"], str(row["uuid"]))
+    expect_equal(payload["bytes"], str(row["bytes"]))
 
 
 def test_resource_store_get_unknown_token(tmp_path: Path) -> None:

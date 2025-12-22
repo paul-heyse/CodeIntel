@@ -157,6 +157,8 @@ class SemanticQueryResponse(BaseModel):
         Stable fingerprint of validated query inputs.
     schema_hash
         Stable fingerprint of the resolved schema (when available).
+    sql_fingerprint
+        Stable fingerprint of canonical SQL when compiled SQL is available.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -168,6 +170,7 @@ class SemanticQueryResponse(BaseModel):
     snapshot: ServingSnapshotIdentity
     query_hash: str | None = None
     schema_hash: str | None = None
+    sql_fingerprint: str | None = None
 
 
 class SemanticExplainResponse(BaseModel):
