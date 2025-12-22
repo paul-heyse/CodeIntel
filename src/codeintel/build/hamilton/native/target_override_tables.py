@@ -938,23 +938,6 @@ COVERAGE_TEST_EDGES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
-COVERAGE_FUNCTIONS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
-    TableSchema(
-        schema="analytics",
-        name="coverage_functions",
-        columns=[
-            *REPO_COMMIT_COLS,
-            *FUNCTION_GOID_COL,
-            Column("covered_by_tests", "INTEGER"),
-            Column("primary_tests", "JSON"),
-            Column("touching_tests", "JSON"),
-            Column("created_at", "TIMESTAMP", nullable=False),
-        ],
-        primary_key=("repo", "commit", "function_goid_h128"),
-        description="Per-function test coverage metadata",
-    ),
-)
-
 FUNCTION_METRICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
@@ -1070,28 +1053,6 @@ FUNCTION_CONTRACTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         primary_key=("repo", "commit", "function_goid_h128"),
         indexes=(Index("idx_analytics_function_contracts_goid", ("function_goid_h128",)),),
         description="Inferred pre/postconditions and nullability per function",
-    ),
-)
-
-RISK_FACTORS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
-    TableSchema(
-        schema="analytics",
-        name="goid_risk_factors",
-        columns=[
-            *REPO_COMMIT_COLS,
-            *FUNCTION_GOID_COL,
-            Column("risk_score", "DOUBLE"),
-            Column("risk_level", "VARCHAR"),
-            Column("risk_component_coverage", "DOUBLE"),
-            Column("risk_component_complexity", "DOUBLE"),
-            Column("risk_component_static", "DOUBLE"),
-            Column("risk_component_hotspot", "DOUBLE"),
-            Column("risk_component_profile", "DOUBLE"),
-            Column("risk_component_graph", "DOUBLE"),
-            *CREATED_AT_COL,
-        ],
-        primary_key=("repo", "commit", "function_goid_h128"),
-        description="Risk scores for functions derived from multiple signals",
     ),
 )
 
@@ -1943,7 +1904,6 @@ __all__ = [
     "CFG_OVERRIDE_TABLES",
     "CONFIG_DATA_FLOW_OVERRIDE_TABLES",
     "CONFIG_INGEST_OVERRIDE_TABLES",
-    "COVERAGE_FUNCTIONS_OVERRIDE_TABLES",
     "COVERAGE_INGEST_OVERRIDE_TABLES",
     "COVERAGE_TEST_EDGES_OVERRIDE_TABLES",
     "CST_OVERRIDE_TABLES",
@@ -1966,7 +1926,6 @@ __all__ = [
     "IMPORT_GRAPH_OVERRIDE_TABLES",
     "MODULES_OVERRIDE_TABLES",
     "PROFILES_OVERRIDE_TABLES",
-    "RISK_FACTORS_OVERRIDE_TABLES",
     "SCIP_OVERRIDE_TABLES",
     "SEMANTIC_ROLES_OVERRIDE_TABLES",
     "SUBSYSTEMS_OVERRIDE_TABLES",

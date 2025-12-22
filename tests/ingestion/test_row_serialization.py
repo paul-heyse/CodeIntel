@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from codeintel.core.schemas import MappingSchemaProvider, SchemaService, clear_schema_service
+from codeintel.build.schemas import get_schema_provider
+from codeintel.core.schemas import SchemaService, clear_schema_service
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.core.schemas.service import set_schema_service
-from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
 
 def test_ingestion_row_serializer_matches_schema_order() -> None:
     """Row serializer should follow schema column ordering."""
-    service = SchemaService(table_provider=MappingSchemaProvider(TABLE_SCHEMAS))
-    set_schema_service(service)
+    schema_provider = get_schema_provider()
+    set_schema_service(SchemaService(table_provider=schema_provider))
     try:
         table_key = "core.modules"
-        schema = TABLE_SCHEMAS[table_key]
+        schema = schema_provider.require_table_schema(table_key)
         serializer = row_serializer_for_table_key(table_key)
 
         row = {

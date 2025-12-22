@@ -77,6 +77,63 @@ def _extract_column_constraints(column: Column) -> dict[str, Any]:
     return constraints
 
 
+def _column_metadata_type(column: Column) -> str | None:
+    metadata = getattr(column, "metadata", None)
+    if isinstance(metadata, dict):
+        return metadata.get("codeintel_column_type")
+    return None
+
+
+def _json_value_types(*, nullable: bool) -> list[str]:
+    types = ["object", "array", "string", "number", "boolean"]
+    if nullable:
+        types.append("null")
+    return types
+
+
+def _build_field_schema(column: Column, *, include_constraints: bool) -> dict[str, Any]:
+    if _column_metadata_type(column) == "JSON":
+        return {"type": _json_value_types(nullable=column.nullable)}
+
+    json_type, fmt = _json_type_for_dtype(column.dtype)
+    types = [json_type]
+    if column.nullable:
+        types.append("null")
+    field_schema: dict[str, Any] = {"type": types}
+    if fmt is not None:
+        field_schema["format"] = fmt
+    if include_constraints:
+        field_schema.update(_extract_column_constraints(column))
+    return field_schema
+
+
+def _build_json_schema_properties(
+    df_schema: DataFrameSchema,
+    *,
+    include_constraints: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+    for name, column in df_schema.columns.items():
+        properties[name] = _build_field_schema(
+            column,
+            include_constraints=include_constraints,
+        )
+        if not column.nullable:
+            required.append(name)
+    return properties, required
+
+
+def _apply_schema_metadata(
+    schema: dict[str, Any],
+    *,
+    include_metadata: bool,
+    schema_name: str | None,
+) -> None:
+    if include_metadata and schema_name:
+        schema["title"] = schema_name
+
+
 def pandera_to_json_schema(
     df_schema: DataFrameSchema,
     *,
@@ -107,26 +164,10 @@ def pandera_to_json_schema(
     >>> json_schema["$schema"]
     'https://json-schema.org/draft/2020-12/schema'
     """
-    properties: dict[str, Any] = {}
-    required: list[str] = []
-
-    for name, column in df_schema.columns.items():
-        json_type, fmt = _json_type_for_dtype(column.dtype)
-        types: list[str] = [json_type]
-        if column.nullable:
-            types.append("null")
-        field_schema: dict[str, Any] = {"type": types}
-        if fmt is not None:
-            field_schema["format"] = fmt
-
-        if include_constraints:
-            constraints = _extract_column_constraints(column)
-            field_schema.update(constraints)
-
-        properties[name] = field_schema
-        if not column.nullable:
-            required.append(name)
-
+    properties, required = _build_json_schema_properties(
+        df_schema,
+        include_constraints=include_constraints,
+    )
     schema: dict[str, Any] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -135,8 +176,11 @@ def pandera_to_json_schema(
     if required:
         schema["required"] = required
 
-    if include_metadata and df_schema.name:
-        schema["title"] = df_schema.name
+    _apply_schema_metadata(
+        schema,
+        include_metadata=include_metadata,
+        schema_name=df_schema.name,
+    )
 
     return schema
 

@@ -46,7 +46,6 @@ from codeintel.build.hamilton.native.materialization_records import (
 )
 from codeintel.build.hamilton.native.target_override_tables import (
     BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
-    COVERAGE_FUNCTIONS_OVERRIDE_TABLES,
     COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
 )
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -82,7 +81,6 @@ register_output_targets(
         description="Per-function coverage aggregation.",
         options=TargetSpecOptions(
             table_keys=(COVERAGE_FUNCTIONS_TABLE_KEY,),
-            override_tables=COVERAGE_FUNCTIONS_OVERRIDE_TABLES,
         ),
     ),
     make_output_target(

@@ -237,7 +237,7 @@ def _inference_env(*, gateway: StorageGateway, force_targets: frozenset[str]) ->
         force_targets=force_targets,
         output_inventory=OutputInventory(datasets_by_target={}, artifacts_by_target={}),
     )
-    return context.build_env()
+    return context.build_env(load_catalogs=False, load_schema_service=False)
 
 
 def _infer_table_schema_for_compute(
@@ -248,19 +248,18 @@ def _infer_table_schema_for_compute(
 ) -> TableSchema:
     with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
-        inputs: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
-        if job.requires_env:
-            inputs["env"] = _inference_env(
-                gateway=gateway,
-                force_targets=frozenset({job.target_name}),
-            )
-        if job.requires_graph:
-            inputs["graph"] = runtime.graph
+        overrides: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
+        inputs: dict[str, object] = {}
+        inputs["env"] = _inference_env(
+            gateway=gateway,
+            force_targets=frozenset({job.target_name}),
+        )
+        inputs["graph"] = runtime.graph
 
-        out = runtime.dr.execute([job.compute_name], inputs=inputs)
-        expr_obj = out[job.compute_name]
+        out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
+        expr_obj = out[job.exec_name]
         if not isinstance(expr_obj, ir.Table):
-            msg = f"{job.compute_name} returned {type(expr_obj)}; expected ibis Table"
+            msg = f"{job.exec_name} returned {type(expr_obj)}; expected ibis Table"
             raise TypeError(msg)
 
         return infer_table_schema_from_ibis(expr=expr_obj, con=gateway.con, table_key=job.table_key)
