@@ -24,7 +24,7 @@ from codeintel.analytics.graphs.constants import (
 from codeintel.analytics.graphs.orchestrator import (
     ExtendedMetricsConfig,
     ExtendedMetricsRequest,
-    compute_extended_metrics,
+    build_extended_metrics_rows,
 )
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
@@ -228,14 +228,14 @@ _FUNCTION_EXT_CONFIG: ExtendedMetricsConfig[FunctionGraphSlices, GraphMetricsFun
 )
 
 
-def compute_graph_metrics_functions_ext(
+def build_graph_metrics_functions_ext_rows(
     gateway: StorageGateway,
     *,
     repo: str,
     commit: str,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     filters: GraphMetricFilters | None = None,
-) -> None:
+) -> list[GraphMetricsFunctionsExtRow]:
     """Populate analytics.graph_metrics_functions_ext with additional centralities.
 
     Parameters
@@ -250,6 +250,11 @@ def compute_graph_metrics_functions_ext(
         Optional runtime options including cached graphs and backend selection.
     filters
         Optional allowlists for restricting graph nodes.
+
+    Returns
+    -------
+    list[GraphMetricsFunctionsExtRow]
+        Rows ready for insertion into analytics.graph_metrics_functions_ext.
     """
     request = ExtendedMetricsRequest(
         repo=repo,
@@ -257,4 +262,4 @@ def compute_graph_metrics_functions_ext(
         runtime=runtime,
         filters=filters,
     )
-    compute_extended_metrics(gateway, _FUNCTION_EXT_CONFIG, request)
+    return build_extended_metrics_rows(gateway, _FUNCTION_EXT_CONFIG, request)

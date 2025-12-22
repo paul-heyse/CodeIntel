@@ -39,17 +39,9 @@ from codeintel.analytics.functions.config import (
 from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.analytics.utilities.dataframe import to_records
-from codeintel.analytics.utilities.datasets import (
-    write_analytics_rows,
-    write_analytics_tuple_rows,
-)
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.ibis_typing import and_predicates, isin_values
 from codeintel.core.parsing import SourceSpan
-from codeintel.core.validation.reporters import (
-    FUNCTION_VALIDATION_COLS,
-    FunctionValidationReporter,
-)
+from codeintel.core.validation.reporters import FunctionValidationReporter
 from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
@@ -591,71 +583,6 @@ def _build_function_analytics_from_ast_data(
     )
 
 
-def persist_function_analytics(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    result: FunctionAnalyticsResult,
-) -> dict[str, int]:
-    """
-    Persist analytics rows and validation to DuckDB.
-
-    Parameters
-    ----------
-    gateway : StorageGateway
-        Storage gateway exposing the DuckDB connection.
-    snapshot : SnapshotRef
-        Repository and commit identifiers.
-    result : FunctionAnalyticsResult
-        Rows and validation to persist.
-
-    Returns
-    -------
-    dict[str, int]
-        Summary counts of persisted rows and validation.
-    """
-    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
-    write_analytics_rows(
-        gateway,
-        "analytics.function_metrics",
-        list(result.metrics_rows),
-        delete_scope=delete_scope,
-        scope=f"{snapshot.repo}@{snapshot.commit}",
-    )
-    write_analytics_rows(
-        gateway,
-        "analytics.function_types",
-        list(result.types_rows),
-        delete_scope=delete_scope,
-        scope=f"{snapshot.repo}@{snapshot.commit}",
-    )
-    validation_rows = result.reporter.to_rows()
-    if validation_rows:
-        write_analytics_tuple_rows(
-            gateway,
-            "analytics.function_validation",
-            list(validation_rows),
-            delete_scope=delete_scope,
-            columns=FUNCTION_VALIDATION_COLS,
-            scope=f"{snapshot.repo}@{snapshot.commit}",
-        )
-
-    log.info(
-        ("Function metrics/types build complete for repo=%s commit=%s: %d functions (missing=%d)"),
-        snapshot.repo,
-        snapshot.commit,
-        result.metrics_count,
-        result.validation_total,
-    )
-
-    return {
-        "metrics_rows": result.metrics_count,
-        "types_rows": result.types_count,
-        "validation_total": result.validation_total,
-        "validation_parse_failed": result.parse_failed_count,
-        "validation_span_not_found": result.span_not_found_count,
-    }
-
-
 def compute_function_analytics_result(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
@@ -718,70 +645,3 @@ def compute_function_analytics_result(
         ctx=ctx,
     )
     return build_function_analytics(goids_by_file=goids_by_file, state=state)
-
-
-def compute_function_metrics_and_types(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    options: FunctionAnalyticsOptions | None = None,
-    fail_on_missing_spans: bool = False,
-) -> dict[str, int]:
-    """
-    Populate function metrics and type coverage tables from GOID spans.
-
-    Extended Summary
-    ----------------
-    For each function or method GOID in `core.goids`, the routine parses the
-    corresponding Python file, derives structural metrics (LOC, complexity,
-    nesting depth), and captures annotation coverage for parameters and return
-    values. Outputs are written to `analytics.function_metrics` and
-    `analytics.function_types`, enabling downstream risk scoring and typedness
-    reporting.
-
-    Parameters
-    ----------
-    gateway :
-        StorageGateway providing the DuckDB connection with `core.goids`,
-        `analytics.function_metrics`, and `analytics.function_types` tables available.
-    snapshot : SnapshotRef
-        Repository and commit identifiers.
-    options : FunctionAnalyticsOptions | None
-        Optional hooks for reusing parsed AST context and overriding the validation reporter.
-    fail_on_missing_spans : bool
-        Whether to raise an error if any spans are missing.
-
-    Notes
-    -----
-    - The function reads each source file once and reuses the parsed AST for all
-      contained GOIDs.
-    - Missing spans are recorded in `analytics.function_validation` to avoid
-      silent drops; set `fail_on_missing_spans` to raise instead of warn.
-
-    Raises
-    ------
-    ValueError
-        If `fail_on_missing_spans` is enabled and any GOID span cannot be
-        matched to an AST node or parsed file.
-
-    Returns
-    -------
-    dict[str, int]
-        Summary counts of emitted metrics/types and validation issues.
-    """
-    result = compute_function_analytics_result(gateway, snapshot, options=options)
-    summary = persist_function_analytics(gateway, snapshot, result)
-    if fail_on_missing_spans and result.validation_total:
-        message = (
-            f"Missing analytics for {result.validation_total} functions; "
-            "see analytics.function_validation"
-        )
-        raise ValueError(message)
-
-    if result.validation_total:
-        log.warning(
-            "Function validation gaps: parse_failed=%d span_not_found=%d",
-            result.parse_failed_count,
-            result.span_not_found_count,
-        )
-    return summary

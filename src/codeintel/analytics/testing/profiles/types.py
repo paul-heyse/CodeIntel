@@ -181,16 +181,10 @@ class TestProfileOptions:
         Threshold in ms above which tests are considered slow.
     io_spec
         Optional I/O specification for AST analysis.
-    refresh_subsystem_cache
-        Whether to refresh subsystem cache.
-    benchmark_subsystem_cache
-        Whether to benchmark subsystem cache.
     """
 
     slow_test_threshold_ms: float = 2000.0
     io_spec: dict[str, object] | None = None
-    refresh_subsystem_cache: bool = True
-    benchmark_subsystem_cache: bool = False
 
 
 @dataclass(frozen=True)

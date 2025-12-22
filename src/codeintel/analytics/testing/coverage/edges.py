@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING, Final, TypedDict
 from coverage import Coverage
 from coverage.exceptions import CoverageException
 
-from codeintel.analytics.utilities.datasets import write_analytics_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.catalog import CatalogService
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -133,7 +131,7 @@ __all__ = [
     "TestCoverageOptions",
     "backfill_test_goids_for_catalog",
     "build_edges_for_file_for_tests",
-    "compute_test_coverage_edges",
+    "build_test_coverage_edges_rows",
     "load_coverage_data",
 ]
 
@@ -448,13 +446,13 @@ def _test_status_and_meta(
     return status_by_test, test_meta_by_id
 
 
-def compute_test_coverage_edges(
+def build_test_coverage_edges_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     options: TestCoverageOptions | None = None,
     catalog_provider: FunctionCatalogProvider | None = None,
-) -> None:
+) -> list[TestCoverageEdgeRow]:
     """Populate analytics.test_coverage_edges by combining coverage contexts with GOIDs.
 
     This expects coverage.py to have been run with dynamic contexts enabled
@@ -471,8 +469,17 @@ def compute_test_coverage_edges(
         Optional coverage configuration options.
     catalog_provider
         Optional pre-loaded catalog provider.
+
+    Returns
+    -------
+    list[TestCoverageEdgeRow]
+        Rows ready for insertion into analytics.test_coverage_edges.
     """
-    log.info("Computing test_coverage_edges for repo=%s commit=%s", snapshot.repo, snapshot.commit)
+    log.info(
+        "Building test_coverage_edges rows for repo=%s commit=%s",
+        snapshot.repo,
+        snapshot.commit,
+    )
 
     opts = options or TestCoverageOptions()
     if opts.coverage_loader is not None:
@@ -480,12 +487,12 @@ def compute_test_coverage_edges(
     else:
         cov = _load_coverage_data(snapshot, opts.coverage_file)
     if cov is None:
-        return
+        return []
 
     funcs_by_path = _functions_by_path(gateway, snapshot, catalog_provider=catalog_provider)
     if not funcs_by_path:
         log.info("No functions found; skipping test coverage edges")
-        return
+        return []
 
     status_by_test, test_meta_by_id = _test_status_and_meta(gateway, snapshot)
 
@@ -524,17 +531,10 @@ def compute_test_coverage_edges(
             )
         )
 
-    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
-    inserted = write_analytics_rows(
-        gateway,
-        "analytics.test_coverage_edges",
-        insert_rows,
-        delete_scope=delete_scope,
-    )
-
     log.info(
-        "test_coverage_edges populated: %d rows for %s@%s",
-        inserted,
+        "test_coverage_edges rows built: %d rows for %s@%s",
+        len(insert_rows),
         snapshot.repo,
         snapshot.commit,
     )
+    return insert_rows

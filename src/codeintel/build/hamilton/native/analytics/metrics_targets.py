@@ -6,7 +6,7 @@ History Targets (Pattern B - Rows):
 - ``function_history``: Per-function creation/modification/churn metrics
 - ``history_timeseries``: Multi-commit timeseries analytics
 
-Graph Metrics Targets (Pattern D - Executor):
+Graph Metrics Targets (Rows):
 - ``subsystem_graph_metrics``: Metrics for subsystem coupling and centrality
 - ``symbol_graph_metrics``: Metrics for symbol usage patterns
 - ``subsystem_agreement``: Subsystem assignment agreement metrics
@@ -14,24 +14,26 @@ Graph Metrics Targets (Pattern D - Executor):
 Multi-Table Target (Pattern C):
 - ``test_graph_metrics``: Metrics from test-function bipartite graph
 
-All Pattern D targets use the ``executor_materialize`` template for simplified
-materialize nodes with ``NativeTargetExecutor`` pattern.
+Graph metrics targets use DAG-visible row materialization via DuckDBRowsSaver.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.functions.function_history import build_function_history_rows
-from codeintel.analytics.graphs.subsystem_agreement import compute_subsystem_agreement
+from codeintel.analytics.graphs.subsystem_agreement import (
+    build_subsystem_agreement_rows,
+)
 from codeintel.analytics.graphs.subsystem_graph_metrics import (
-    compute_subsystem_graph_metrics,
+    build_subsystem_graph_metrics_rows,
 )
 from codeintel.analytics.graphs.symbol_graph_metrics import (
-    compute_symbol_graph_metrics_functions,
-    compute_symbol_graph_metrics_modules,
+    build_symbol_graph_metrics_function_rows,
+    build_symbol_graph_metrics_module_rows,
 )
 from codeintel.analytics.history.history_timeseries import build_history_timeseries_rows
 from codeintel.analytics.testing.compute import (
@@ -40,7 +42,6 @@ from codeintel.analytics.testing.compute import (
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -68,12 +69,10 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
-from codeintel.build.hamilton.templates import executor_materialize
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
-from codeintel.storage.queries.safe import count_rows_for_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -374,15 +373,40 @@ def t__history_timeseries(
 
 
 # -----------------------------------------------------------------------------
-# Subsystem graph metrics (Pattern D - Executor)
+# Graph metrics (Rows)
 # -----------------------------------------------------------------------------
 
 
-@tag_tool(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
+@dataclass(frozen=True)
+class SubsystemGraphMetricsComputeResult:
+    """Result from subsystem graph metrics computation."""
+
+    rows: list[tuple[object, ...]] | None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class SymbolGraphMetricsComputeResult:
+    """Result from symbol graph metrics computation."""
+
+    module_rows: list[tuple[object, ...]] | None
+    function_rows: list[tuple[object, ...]] | None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class SubsystemAgreementComputeResult:
+    """Result from subsystem agreement computation."""
+
+    rows: list[tuple[object, ...]] | None
+    error: str | None = None
+
+
+@tag_compute(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
-) -> ExecutionResult:
+) -> SubsystemGraphMetricsComputeResult:
     """Compute graph metrics for subsystems.
 
     Parameters
@@ -394,11 +418,14 @@ def t__subsystem_graph_metrics__compute(
 
     Returns
     -------
-    ExecutionResult
-        Result indicating success or failure with table counts.
+    SubsystemGraphMetricsComputeResult
+        Row results and optional error.
     """
     if t__subsystems.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream subsystems target failed: {t__subsystems.error}")
+        return SubsystemGraphMetricsComputeResult(
+            rows=None,
+            error=f"Upstream subsystems target failed: {t__subsystems.error}",
+        )
 
     try:
         graph_runtime = _get_graph_runtime(env, target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
@@ -407,34 +434,56 @@ def t__subsystem_graph_metrics__compute(
             env.snapshot.repo,
             env.snapshot.commit,
         )
-        compute_subsystem_graph_metrics(
+        rows = build_subsystem_graph_metrics_rows(
             env.gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             runtime=graph_runtime,
         )
-
-        row_count = count_rows_for_snapshot(
-            env.gateway.con,
-            SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-
-        return ExecutionResult.ok(table_counts={SUBSYSTEM_GRAPH_METRICS_TABLE_KEY: row_count})
+        return SubsystemGraphMetricsComputeResult(rows=rows)
 
     except Exception as exc:
         log.exception("Subsystem graph metrics computation failed")
-        return ExecutionResult.failed(str(exc))
+        return SubsystemGraphMetricsComputeResult(rows=None, error=str(exc))
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SUBSYSTEM_GRAPH_METRICS_TARGET_NAME),
+    table_key=value(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+    target_="subsystem_graph_metrics__rows",
+)
+def subsystem_graph_metrics__rows(
+    t__subsystem_graph_metrics__compute: SubsystemGraphMetricsComputeResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.subsystem_graph_metrics table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__subsystem_graph_metrics__compute.rows is None:
+        return None
+    return tuple(t__subsystem_graph_metrics__compute.rows)
 
 
 @tag_materialize(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__subsystem_graph_metrics__compute: ExecutionResult,
+    t__subsystem_graph_metrics__compute: SubsystemGraphMetricsComputeResult,
+    m__analytics__subsystem_graph_metrics: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize subsystem graph metrics target using executor template.
+    """Materialize subsystem graph metrics target.
 
     Parameters
     ----------
@@ -444,30 +493,48 @@ def t__subsystem_graph_metrics(
         Target graph for metadata lookup.
     t__subsystem_graph_metrics__compute
         Computed subsystem graph metrics result.
+    m__analytics__subsystem_graph_metrics
+        Materialization metadata for analytics.subsystem_graph_metrics.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(
-        env,
-        graph,
-        SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-        t__subsystem_graph_metrics__compute,
+    if t__subsystem_graph_metrics__compute.error:
+        options_hash = options_hash_for_target(env, SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
+        return TargetRunRecord(
+            target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+            plugin_name=f"native:{SUBSYSTEM_GRAPH_METRICS_TARGET_NAME}",
+            status="failed",
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__subsystem_graph_metrics__compute.error,
+            datasets=(),
+            artifacts=(),
+        )
+
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+        expected_table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
+        materialization=m__analytics__subsystem_graph_metrics,
     )
 
 
 # -----------------------------------------------------------------------------
-# Symbol graph metrics (Pattern D - Executor)
+# Symbol graph metrics (Rows)
 # -----------------------------------------------------------------------------
 
 
-@tag_tool(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
+@tag_compute(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics__compute(
     env: BuildEnv,
     t__symbol_uses: TargetRunRecord,
-) -> ExecutionResult:
+) -> SymbolGraphMetricsComputeResult:
     """Compute graph metrics from symbol usage patterns.
 
     Parameters
@@ -479,16 +546,18 @@ def t__symbol_graph_metrics__compute(
 
     Returns
     -------
-    ExecutionResult
-        Result indicating success or failure with table counts.
+    SymbolGraphMetricsComputeResult
+        Row results and optional error.
     """
     if t__symbol_uses.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream symbol_uses target failed: {t__symbol_uses.error}")
+        return SymbolGraphMetricsComputeResult(
+            module_rows=None,
+            function_rows=None,
+            error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
+        )
 
-    table_counts: dict[str, int] = {
-        SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY: 0,
-        SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY: 0,
-    }
+    module_rows: list[tuple[object, ...]] | None = None
+    function_rows: list[tuple[object, ...]] | None = None
     errors: list[str] = []
 
     try:
@@ -498,17 +567,11 @@ def t__symbol_graph_metrics__compute(
 
         try:
             log.info("Computing symbol graph metrics (modules) for %s@%s", repo, commit)
-            compute_symbol_graph_metrics_modules(
+            module_rows = build_symbol_graph_metrics_module_rows(
                 env.gateway,
                 repo=repo,
                 commit=commit,
                 runtime=graph_runtime,
-            )
-            table_counts[SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY] = count_rows_for_snapshot(
-                env.gateway.con,
-                SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
             )
         except (RuntimeError, ValueError, OSError) as exc:
             errors.append(f"modules: {exc}")
@@ -516,39 +579,107 @@ def t__symbol_graph_metrics__compute(
 
         try:
             log.info("Computing symbol graph metrics (functions) for %s@%s", repo, commit)
-            compute_symbol_graph_metrics_functions(
+            function_rows = build_symbol_graph_metrics_function_rows(
                 env.gateway,
                 repo=repo,
                 commit=commit,
                 runtime=graph_runtime,
             )
-            table_counts[SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY] = count_rows_for_snapshot(
-                env.gateway.con,
-                SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-                repo=env.snapshot.repo,
-                commit=env.snapshot.commit,
-            )
         except (RuntimeError, ValueError, OSError) as exc:
             errors.append(f"functions: {exc}")
             log.warning("Symbol graph metrics (functions) failed: %s", exc)
 
-        log.info("Symbol graph metrics completed: %s", table_counts)
         if errors:
-            return ExecutionResult.failed("; ".join(errors), table_counts=table_counts)
-        return ExecutionResult.ok(table_counts=table_counts)
+            return SymbolGraphMetricsComputeResult(
+                module_rows=module_rows,
+                function_rows=function_rows,
+                error="; ".join(errors),
+            )
+        return SymbolGraphMetricsComputeResult(
+            module_rows=module_rows,
+            function_rows=function_rows,
+        )
 
     except Exception as exc:
         log.exception("Symbol graph metrics computation failed")
-        return ExecutionResult.failed(str(exc))
+        return SymbolGraphMetricsComputeResult(
+            module_rows=None,
+            function_rows=None,
+            error=str(exc),
+        )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SYMBOL_GRAPH_METRICS_TARGET_NAME),
+    table_key=value(SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+    target_="symbol_graph_metrics__modules_rows",
+)
+def symbol_graph_metrics__modules_rows(
+    t__symbol_graph_metrics__compute: SymbolGraphMetricsComputeResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.symbol_graph_metrics_modules.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__symbol_graph_metrics__compute.error:
+        return None
+    if t__symbol_graph_metrics__compute.module_rows is None:
+        return None
+    return tuple(t__symbol_graph_metrics__compute.module_rows)
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SYMBOL_GRAPH_METRICS_TARGET_NAME),
+    table_key=value(SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+    target_="symbol_graph_metrics__functions_rows",
+)
+def symbol_graph_metrics__functions_rows(
+    t__symbol_graph_metrics__compute: SymbolGraphMetricsComputeResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.symbol_graph_metrics_functions.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__symbol_graph_metrics__compute.error:
+        return None
+    if t__symbol_graph_metrics__compute.function_rows is None:
+        return None
+    return tuple(t__symbol_graph_metrics__compute.function_rows)
 
 
 @tag_materialize(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    t__symbol_graph_metrics__compute: ExecutionResult,
+    t__symbol_graph_metrics__compute: SymbolGraphMetricsComputeResult,
+    m__analytics__symbol_graph_metrics_modules: MaterializationMetadata,
+    m__analytics__symbol_graph_metrics_functions: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize symbol graph metrics target using executor template.
+    """Materialize symbol graph metrics target.
 
     Parameters
     ----------
@@ -558,30 +689,52 @@ def t__symbol_graph_metrics(
         Target graph for metadata lookup.
     t__symbol_graph_metrics__compute
         Computed symbol graph metrics result.
+    m__analytics__symbol_graph_metrics_modules
+        Materialization metadata for analytics.symbol_graph_metrics_modules.
+    m__analytics__symbol_graph_metrics_functions
+        Materialization metadata for analytics.symbol_graph_metrics_functions.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(
-        env,
-        graph,
-        SYMBOL_GRAPH_METRICS_TARGET_NAME,
-        t__symbol_graph_metrics__compute,
+    if t__symbol_graph_metrics__compute.error:
+        options_hash = options_hash_for_target(env, SYMBOL_GRAPH_METRICS_TARGET_NAME)
+        return TargetRunRecord(
+            target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+            plugin_name=f"native:{SYMBOL_GRAPH_METRICS_TARGET_NAME}",
+            status="failed",
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__symbol_graph_metrics__compute.error,
+            datasets=(),
+            artifacts=(),
+        )
+
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+        materializations={
+            SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY: m__analytics__symbol_graph_metrics_modules,
+            SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY: m__analytics__symbol_graph_metrics_functions,
+        },
     )
 
 
 # -----------------------------------------------------------------------------
-# Subsystem agreement (Pattern D - Executor)
+# Subsystem agreement (Rows)
 # -----------------------------------------------------------------------------
 
 
-@tag_tool(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
+@tag_compute(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement__compute(
     env: BuildEnv,
     t__subsystems: TargetRunRecord,
-) -> ExecutionResult:
+) -> SubsystemAgreementComputeResult:
     """Compare subsystem assignments with import community labels.
 
     Parameters
@@ -593,11 +746,14 @@ def t__subsystem_agreement__compute(
 
     Returns
     -------
-    ExecutionResult
-        Status indicator, table counts, and optional error message.
+    SubsystemAgreementComputeResult
+        Row results and optional error message.
     """
     if t__subsystems.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream subsystems target failed: {t__subsystems.error}")
+        return SubsystemAgreementComputeResult(
+            rows=None,
+            error=f"Upstream subsystems target failed: {t__subsystems.error}",
+        )
 
     try:
         log.info(
@@ -605,32 +761,54 @@ def t__subsystem_agreement__compute(
             env.snapshot.repo,
             env.snapshot.commit,
         )
-        compute_subsystem_agreement(
+        rows = build_subsystem_agreement_rows(
             env.gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-
-        row_count = count_rows_for_snapshot(
-            env.gateway.con,
-            SUBSYSTEM_AGREEMENT_TABLE_KEY,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-
-        return ExecutionResult.ok(table_counts={SUBSYSTEM_AGREEMENT_TABLE_KEY: row_count})
+        return SubsystemAgreementComputeResult(rows=rows)
     except Exception as exc:
         log.exception("Subsystem agreement computation failed")
-        return ExecutionResult.failed(str(exc))
+        return SubsystemAgreementComputeResult(rows=None, error=str(exc))
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SUBSYSTEM_AGREEMENT_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SUBSYSTEM_AGREEMENT_TARGET_NAME),
+    table_key=value(SUBSYSTEM_AGREEMENT_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SUBSYSTEM_AGREEMENT_TABLE_KEY)),
+)
+@tag_compute(
+    domain="analytics",
+    target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+    target_="subsystem_agreement__rows",
+)
+def subsystem_agreement__rows(
+    t__subsystem_agreement__compute: SubsystemAgreementComputeResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.subsystem_agreement table.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples ready for materialization, or ``None`` when unavailable.
+    """
+    if t__subsystem_agreement__compute.rows is None:
+        return None
+    return tuple(t__subsystem_agreement__compute.rows)
 
 
 @tag_materialize(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement(
     env: BuildEnv,
     graph: TargetGraph,
-    t__subsystem_agreement__compute: ExecutionResult,
+    t__subsystem_agreement__compute: SubsystemAgreementComputeResult,
+    m__analytics__subsystem_agreement: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize subsystem agreement target using executor template.
+    """Materialize subsystem agreement target.
 
     Parameters
     ----------
@@ -640,17 +818,35 @@ def t__subsystem_agreement(
         Target graph for metadata lookup.
     t__subsystem_agreement__compute
         Computed subsystem agreement result.
+    m__analytics__subsystem_agreement
+        Materialization metadata for analytics.subsystem_agreement.
 
     Returns
     -------
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(
-        env,
-        graph,
-        SUBSYSTEM_AGREEMENT_TARGET_NAME,
-        t__subsystem_agreement__compute,
+    if t__subsystem_agreement__compute.error:
+        options_hash = options_hash_for_target(env, SUBSYSTEM_AGREEMENT_TARGET_NAME)
+        return TargetRunRecord(
+            target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+            plugin_name=f"native:{SUBSYSTEM_AGREEMENT_TARGET_NAME}",
+            status="failed",
+            input_hash="",
+            options_hash=options_hash,
+            duration_ms=0.0,
+            row_counts={},
+            error=t__subsystem_agreement__compute.error,
+            datasets=(),
+            artifacts=(),
+        )
+
+    return record_from_duckdb_materialization(
+        env=env,
+        graph=graph,
+        target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+        expected_table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
+        materialization=m__analytics__subsystem_agreement,
     )
 
 
@@ -803,6 +999,13 @@ def t__test_graph_metrics(
 
 
 __all__ = [
+    "SubsystemAgreementComputeResult",
+    "SubsystemGraphMetricsComputeResult",
+    "SymbolGraphMetricsComputeResult",
+    "subsystem_agreement__rows",
+    "subsystem_graph_metrics__rows",
+    "symbol_graph_metrics__functions_rows",
+    "symbol_graph_metrics__modules_rows",
     "t__function_history",
     "t__function_history__compute",
     "t__history_timeseries",

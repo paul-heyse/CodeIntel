@@ -3,8 +3,7 @@
 Load CLI configuration with proper precedence:
 1. Built-in defaults (lowest priority)
 2. Config file (~/.codeintel/config.yaml)
-3. Environment variables
-4. Command-line flags (highest priority)
+3. Command-line flags (highest priority)
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from typing import TYPE_CHECKING, cast
 
 import yaml
 
-from codeintel.cli.config.env import load_env_config
 from codeintel.cli.config.model import (
     CliConfig,
     ConfigLoadError,
@@ -52,7 +50,6 @@ VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 def load_config(
     config_file: Path | None = None,
-    env_prefix: str = "CODEINTEL_",
     cli_overrides: dict[str, object] | None = None,
     *,
     validate: bool = True,
@@ -63,8 +60,6 @@ def load_config(
     ----------
     config_file
         Explicit config file path.
-    env_prefix
-        Prefix for environment variables.
     cli_overrides
         Command-line overrides.
     validate
@@ -87,11 +82,6 @@ def load_config(
     if file_config:
         merged = _deep_merge(merged, file_config)
         sources.append(file_source)
-
-    env_config = load_env_config(env_prefix)
-    if env_config:
-        merged = _deep_merge(merged, env_config)
-        sources.append("environment")
 
     if cli_overrides:
         flat_overrides = {k: v for k, v in cli_overrides.items() if v is not None}

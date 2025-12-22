@@ -6,7 +6,7 @@ to ensure consistent behavior across:
 
 - Handler parameter accessors (context.py)
 - CLI argument coercion (introspection/params.py)
-- Environment variable parsing (config/env.py, config/service.py)
+- Config parsing (config/service.py)
 - Dynamic operation parameters (handlers/ops.py)
 """
 

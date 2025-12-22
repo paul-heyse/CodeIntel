@@ -23,8 +23,6 @@ from codeintel.analytics.subsystems.edge_stats import (
     compute_subsystem_edge_stats,
 )
 from codeintel.analytics.subsystems.risk import SubsystemRisk, aggregate_risk
-from codeintel.analytics.utilities.datasets import write_analytics_tuple_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 
 if TYPE_CHECKING:
@@ -85,15 +83,23 @@ class SubsystemBuildContext:
     now: datetime
 
 
-def build_subsystems(
+@dataclass(frozen=True)
+class SubsystemRows:
+    """Container for subsystem and membership rows."""
+
+    subsystem_rows: list[tuple[Any, ...]]
+    membership_rows: list[tuple[Any, ...]]
+
+
+def build_subsystem_rows(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
     *,
     runtime: GraphRuntime | GraphRuntimeOptions | None = None,
     options: SubsystemOptions | None = None,
-) -> None:
+) -> SubsystemRows:
     """
-    Populate analytics.subsystems and analytics.subsystem_modules for a repo/commit.
+    Build analytics.subsystems and analytics.subsystem_modules rows for a repo/commit.
 
     Parameters
     ----------
@@ -105,26 +111,18 @@ def build_subsystems(
         Shared graph runtime or options describing how to build one.
     options :
         Subsystem inference options.
+
+    Returns
+    -------
+    SubsystemRows
+        Container holding subsystem and membership rows.
     """
     opts = options or SubsystemOptions()
-    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
 
     modules, tags_by_module = load_modules(gateway, snapshot)
     if not modules:
         log.info("No modules available for subsystem inference; skipping.")
-        write_analytics_tuple_rows(
-            gateway,
-            "analytics.subsystems",
-            [],
-            delete_scope=delete_scope,
-        )
-        write_analytics_tuple_rows(
-            gateway,
-            "analytics.subsystem_modules",
-            [],
-            delete_scope=delete_scope,
-        )
-        return
+        return SubsystemRows(subsystem_rows=[], membership_rows=[])
 
     affinity_graph = build_weighted_graph(gateway, snapshot, modules, weights=opts.weights)
     adjacency = graph_to_adjacency(affinity_graph)
@@ -153,25 +151,14 @@ def build_subsystems(
     )
     subsystem_rows, membership_rows = _build_rows(clusters_from_labels(labels), ctx)
 
-    membership_count = write_analytics_tuple_rows(
-        gateway,
-        "analytics.subsystem_modules",
-        membership_rows,
-        delete_scope=delete_scope,
-    )
-    subsystem_count = write_analytics_tuple_rows(
-        gateway,
-        "analytics.subsystems",
-        subsystem_rows,
-        delete_scope=delete_scope,
-    )
     log.info(
-        "subsystems populated: %d subsystems, %d memberships for %s@%s",
-        subsystem_count,
-        membership_count,
+        "subsystems rows built: %d subsystems, %d memberships for %s@%s",
+        len(subsystem_rows),
+        len(membership_rows),
         snapshot.repo,
         snapshot.commit,
     )
+    return SubsystemRows(subsystem_rows=subsystem_rows, membership_rows=membership_rows)
 
 
 def _build_rows(
@@ -227,124 +214,6 @@ def _build_rows(
         )
 
     return subsystem_rows, membership_rows
-
-
-def refresh_subsystem_profile_cache(gateway: StorageGateway, *, repo: str, commit: str) -> None:
-    """
-    Materialize docs.v_subsystem_profile rows into the cache table.
-
-    Parameters
-    ----------
-    gateway:
-        Storage gateway backing the analytics tables.
-    repo:
-        Repository identifier.
-    commit:
-        Commit identifier.
-    """
-    backend = gateway.policy
-    backend.ensure_table("analytics.subsystem_profile_cache")
-    con = gateway.con
-    con.execute(
-        "DELETE FROM analytics.subsystem_profile_cache WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.subsystem_profile_cache
-        SELECT *
-        FROM docs.v_subsystem_profile
-        WHERE repo = ?
-          AND commit = ?
-        """,
-        [repo, commit],
-    )
-
-
-def refresh_subsystem_coverage_cache(gateway: StorageGateway, *, repo: str, commit: str) -> None:
-    """
-    Materialize docs.v_subsystem_coverage rows into the cache table.
-
-    Parameters
-    ----------
-    gateway:
-        Storage gateway backing the analytics tables.
-    repo:
-        Repository identifier.
-    commit:
-        Commit identifier.
-    """
-    backend = gateway.policy
-    backend.ensure_table("analytics.subsystem_coverage_cache")
-    con = gateway.con
-    con.execute(
-        "DELETE FROM analytics.subsystem_coverage_cache WHERE repo = ? AND commit = ?",
-        [repo, commit],
-    )
-    con.execute(
-        """
-        INSERT INTO analytics.subsystem_coverage_cache
-        SELECT *
-        FROM docs.v_subsystem_coverage
-        WHERE repo = ?
-          AND commit = ?
-        """,
-        [repo, commit],
-    )
-
-
-def refresh_subsystem_caches(
-    gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    benchmark: bool = False,
-    benchmark_limit: int = 100,
-) -> SubsystemCacheBenchmark | None:
-    """
-    Refresh both subsystem cache tables for a repo/commit.
-
-    Parameters
-    ----------
-    gateway:
-        Storage gateway backing the analytics tables.
-    repo:
-        Repository identifier.
-    commit:
-        Commit identifier.
-    benchmark:
-        When True, run a light timing comparison of docs views vs caches.
-    benchmark_limit:
-        Row limit to use for benchmark reads (default: 100).
-
-    Returns
-    -------
-    SubsystemCacheBenchmark | None
-        Timing data when benchmarking is enabled; otherwise None.
-    """
-    refresh_subsystem_profile_cache(gateway, repo=repo, commit=commit)
-    refresh_subsystem_coverage_cache(gateway, repo=repo, commit=commit)
-    if not benchmark:
-        return None
-    result = benchmark_subsystem_cache_reads(
-        gateway,
-        repo=repo,
-        commit=commit,
-        limit=benchmark_limit,
-    )
-    log.info(
-        "subsystem cache benchmark repo=%s commit=%s profile_ms=%.3f cache_ms=%.3f "
-        "coverage_ms=%.3f coverage_cache_ms=%.3f profile_speedup=%s coverage_speedup=%s",
-        repo,
-        commit,
-        result.profile_view_ms,
-        result.profile_cache_ms,
-        result.coverage_view_ms,
-        result.coverage_cache_ms,
-        result.profile_speedup,
-        result.coverage_speedup,
-    )
-    return result
 
 
 @dataclass(frozen=True)

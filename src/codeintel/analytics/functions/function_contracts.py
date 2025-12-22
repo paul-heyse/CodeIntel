@@ -10,8 +10,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
-from codeintel.analytics.utilities.datasets import write_analytics_rows
-from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.gateway import ibis_facade
@@ -113,40 +111,6 @@ def build_function_contracts_rows(
     )
 
 
-def compute_function_contracts(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    function_ast_map: dict[int, FunctionAst] | None = None,
-    catalog: FunctionCatalogProvider | None = None,
-    max_conditions_per_func: int = 64,
-) -> None:
-    """
-    Populate `analytics.function_contracts` for a repo/commit snapshot.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway providing DuckDB access.
-    snapshot
-        Repository and commit identifiers.
-    function_ast_map
-        Mapping of GOID to parsed function AST (from AstProvider).
-    catalog
-        Function catalog provider (from CatalogProvider).
-    max_conditions_per_func
-        Maximum number of preconditions/postconditions/raises per function.
-    """
-    rows = build_function_contracts_rows(
-        gateway,
-        snapshot,
-        function_ast_map=function_ast_map,
-        catalog=catalog,
-        max_conditions_per_func=max_conditions_per_func,
-    )
-    _persist_contract_rows(gateway, snapshot, rows)
-
-
 def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
     """Build contract rows from ASTs, docs, and types.
 
@@ -200,25 +164,6 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
             }
         )
     return rows
-
-
-def _persist_contract_rows(
-    gateway: StorageGateway, snapshot: SnapshotRef, rows: list[dict[str, object]]
-) -> None:
-    """Persist contract rows using the policy backend."""
-    delete_scope = DeleteScope(repo=snapshot.repo, commit=snapshot.commit)
-    inserted = write_analytics_rows(
-        gateway,
-        "analytics.function_contracts",
-        rows,
-        delete_scope=delete_scope,
-    )
-    log.info(
-        "function_contracts populated: %d rows for %s@%s",
-        inserted,
-        snapshot.repo,
-        snapshot.commit,
-    )
 
 
 def _load_docstrings(

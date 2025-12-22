@@ -13,17 +13,11 @@ from __future__ import annotations
 from codeintel.analytics.subsystems.materialize import (
     SubsystemCacheBenchmark,
     benchmark_subsystem_cache_reads,
-    build_subsystems,
-    refresh_subsystem_caches,
-    refresh_subsystem_coverage_cache,
-    refresh_subsystem_profile_cache,
+    build_subsystem_rows,
 )
 
 __all__ = [
     "SubsystemCacheBenchmark",
     "benchmark_subsystem_cache_reads",
-    "build_subsystems",
-    "refresh_subsystem_caches",
-    "refresh_subsystem_coverage_cache",
-    "refresh_subsystem_profile_cache",
+    "build_subsystem_rows",
 ]

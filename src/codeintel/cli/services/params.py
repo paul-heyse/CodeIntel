@@ -2,7 +2,6 @@
 
 Consolidate parameter type coercion from:
 - ``handlers/context.py`` (ParameterAccessors)
-- ``config/env.py`` (_convert_value)
 - ``introspection/params.py`` (coerce_string_param)
 - ``commands/decorators.py`` (_convert_to_path, _get_output_format)
 
