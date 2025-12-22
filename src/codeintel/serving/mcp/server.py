@@ -5,6 +5,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.otel import bootstrap_observability, observability_config_from_settings
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.runtime import build_db_manager, build_kernel
@@ -38,6 +40,13 @@ def create_mcp_server(
         Configured MCP server.
     """
     cfg = settings
+    observability_settings = load_runtime_settings().observability
+    bootstrap_observability(
+        observability_config_from_settings(
+            observability_settings,
+            default_service_name="codeintel-serving",
+        )
+    )
 
     # Fail-fast security check
     cfg.validate_auth_for_host()

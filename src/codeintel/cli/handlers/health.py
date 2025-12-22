@@ -20,6 +20,7 @@ from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
+from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.storage.gateway import open_memory_gateway
 
@@ -274,7 +275,8 @@ def _check_telemetry() -> CheckResult:
     CheckResult
         Check result.
     """
-    config = TelemetryConfig.from_env()
+    settings = load_runtime_settings().observability
+    config = TelemetryConfig.from_settings(settings, default_service_name="codeintel-cli")
 
     if config.enabled:
         return CheckResult(

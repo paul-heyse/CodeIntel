@@ -2,7 +2,8 @@
 ### Requirement: NDJSON exports are UTF-8 and deterministic
 NDJSON exports SHALL be UTF-8 encoded line-delimited JSON and SHALL use msgspec encoding
 when available with a stdlib json fallback. Unknown types MUST be stringified and JSON
-output MUST use compact separators without ASCII escaping.
+output MUST use compact separators without ASCII escaping. This applies to HTTP streaming
+responses and MCP export artifacts written by the resource store.
 
 #### Scenario: NDJSON line preserves unicode and stringifies types
 - **WHEN** a row with unicode text and datetime values is streamed as NDJSON

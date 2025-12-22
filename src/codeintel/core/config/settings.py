@@ -40,6 +40,22 @@ class HamiltonExecutionSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ObservabilitySettings:
+    """Observability settings for OpenTelemetry and storage tracing."""
+
+    enabled: bool = True
+    service_name: str | None = None
+    otlp_endpoint: str | None = None
+    export_traces: bool = True
+    export_metrics: bool = True
+    console_export: bool = False
+    prometheus_enabled: bool = False
+    duckdb_tracing_enabled: bool = True
+    duckdb_statement_mode: str = "hash"
+    duckdb_statement_hash_len: int = 16
+
+
+@dataclass(frozen=True, slots=True)
 class ServingSettings:
     """Serving layer configuration injected into runtime builders."""
 
@@ -108,6 +124,7 @@ class ServingSettings:
 
     # Security: Auth Enforcement
     auth_required_for_remote: bool = True
+    metrics_auth_required: bool = False
 
     # MCP Tool Feature Flags
     mcp_enable_search: bool = True
@@ -170,5 +187,6 @@ __all__ = [
     "BuildSettings",
     "ExportAuditSettings",
     "HamiltonExecutionSettings",
+    "ObservabilitySettings",
     "ServingSettings",
 ]

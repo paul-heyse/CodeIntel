@@ -8,9 +8,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import anyio
+from anyio import lowlevel
 from fastmcp import FastMCP
 from starlette.responses import JSONResponse, PlainTextResponse
 
+from codeintel.observability.otel import get_observability
 from codeintel.serving.auth.policy import mcp_auth_provider
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.middleware_stack import build_mcp_middleware
@@ -30,6 +32,15 @@ from codeintel.serving.mcp.tools import (
 )
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.settings import ServingSettings
+
+try:
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:
+    _PROMETHEUS_AVAILABLE = False
+    CONTENT_TYPE_LATEST = "text/plain"
+    generate_latest = None
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -107,6 +118,7 @@ def build_mcp_app(
 
     register_resources(mcp, ops, store, settings=settings)
     _register_health_routes(mcp, ops)
+    _register_metrics_routes(mcp)
     register_prompts(mcp, settings=settings, kernel=ops)
 
     return mcp
@@ -163,6 +175,20 @@ def _register_health_routes(mcp: FastMCP, ops: ServingOperations) -> None:
         if not ready:
             return PlainTextResponse("not ready", status_code=503)
         return PlainTextResponse("ready")
+
+
+def _register_metrics_routes(mcp: FastMCP) -> None:
+    obs = get_observability()
+    if not obs.prometheus_enabled or not _PROMETHEUS_AVAILABLE or generate_latest is None:
+        return
+
+    generate_latest_fn = generate_latest
+
+    @mcp.custom_route("/metrics", methods=["GET"])
+    async def mcp_metrics(_request: Request) -> Response:
+        await lowlevel.checkpoint()
+        payload = generate_latest_fn()
+        return PlainTextResponse(payload, media_type=CONTENT_TYPE_LATEST)
 
 
 __all__ = ["build_mcp_app"]

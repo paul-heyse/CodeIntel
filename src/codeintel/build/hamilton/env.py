@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from codeintel.build.target_metadata import OutputInventory
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
+    from codeintel.storage.gateway import StorageGateway
 
 
 @dataclass(frozen=True)
@@ -82,7 +82,7 @@ class BuildEnv:
     history_options
         Optional options for multi-commit history aggregation targets.
     history_db_resolver
-        Optional resolver for fetching DuckDB connections by commit for
+        Optional resolver for fetching StorageGateways by commit for
         history aggregation targets.
     fingerprint_policy
         Policy for computing asset version fingerprints. Defaults to STABLE_V1
@@ -116,7 +116,7 @@ class BuildEnv:
     validate_outputs: bool = False
     strict_contracts: bool = False
     history_options: HistoryTimeseriesOptions | None = None
-    history_db_resolver: Callable[[str], DuckDBConnection] | None = None
+    history_db_resolver: Callable[[str], StorageGateway] | None = None
     fingerprint_policy: FingerprintPolicy = field(
         default_factory=lambda: DEFAULT_FINGERPRINT_POLICY
     )

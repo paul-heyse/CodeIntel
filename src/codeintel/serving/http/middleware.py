@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import time
-import uuid
 from typing import TYPE_CHECKING
+
+from codeintel.core.execution.ids import new_uuid_hex
+from codeintel.observability.context import correlation_context
+
+try:
+    from opentelemetry import trace as _otel_trace
+except ImportError:
+    _otel_trace = None
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -60,10 +67,15 @@ async def correlation_id_and_timing_middleware(
     start = time.perf_counter()
 
     incoming = request.headers.get(CORRELATION_ID_HEADER)
-    correlation_id = incoming.strip() if incoming else uuid.uuid4().hex
+    correlation_id = incoming.strip() if incoming else new_uuid_hex()
     request.state.correlation_id = correlation_id
 
-    response = await call_next(request)
+    with correlation_context(correlation_id):
+        if _otel_trace is not None:
+            span = _otel_trace.get_current_span()
+            if span is not None:
+                span.set_attribute("codeintel.correlation_id", correlation_id)
+        response = await call_next(request)
     response.headers[CORRELATION_ID_HEADER] = correlation_id
 
     elapsed_s = time.perf_counter() - start

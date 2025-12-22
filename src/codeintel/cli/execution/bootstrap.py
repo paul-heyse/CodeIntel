@@ -21,6 +21,12 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.config import load_config as load_cli_config
 from codeintel.cli.observability._observability import configure_structured_logging
+from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.otel import (
+    ObservabilityConfig,
+    bootstrap_observability,
+    observability_config_from_settings,
+)
 
 if TYPE_CHECKING:
     from types import FrameType
@@ -110,6 +116,8 @@ def bootstrap_cli(
         use_structured = structured_logging or active_config.telemetry.enabled
         _configure_logging(verbosity, active_config, structured=use_structured)
 
+        bootstrap_observability(_build_cli_observability_config(active_config))
+
         _register_signal_handlers()
 
         _state.config = active_config
@@ -187,6 +195,29 @@ def _register_signal_handlers() -> None:
         signal.signal(signal.SIGTERM, _handle_signal)
     except (ValueError, OSError):
         LOG.debug("Could not register signal handlers")
+
+
+def _build_cli_observability_config(config: CliConfig) -> ObservabilityConfig:
+    runtime_settings = load_runtime_settings().observability
+    base = observability_config_from_settings(
+        runtime_settings,
+        default_service_name="codeintel-cli",
+    )
+    enabled = base.enabled and config.telemetry.enabled
+    service_name = config.telemetry.service_name or base.service_name
+    otlp_endpoint = config.telemetry.endpoint or base.otlp_endpoint
+    return ObservabilityConfig(
+        enabled=enabled,
+        service_name=service_name,
+        otlp_endpoint=otlp_endpoint,
+        export_traces=base.export_traces,
+        export_metrics=base.export_metrics,
+        console_export=base.console_export,
+        prometheus_enabled=False,
+        duckdb_tracing_enabled=base.duckdb_tracing_enabled,
+        duckdb_statement_mode=base.duckdb_statement_mode,
+        duckdb_statement_hash_len=base.duckdb_statement_hash_len,
+    )
 
 
 def reset_bootstrap() -> None:

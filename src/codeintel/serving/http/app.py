@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +14,12 @@ from fastmcp.server.event_store import EventStore
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from codeintel.observability.otel import (
+    bootstrap_observability,
+    get_observability,
+    observability_config_from_settings,
+)
+from codeintel.serving.auth.policy import require_http_auth
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.http.errors import (
     CodeIntelDomainError,
@@ -33,6 +39,24 @@ from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.runtime import build_runtime
 from codeintel.serving.settings import ServingSettings
+from codeintel.core.runtime.loader import load_runtime_settings
+
+try:
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+    _FASTAPI_INSTRUMENTOR_AVAILABLE = True
+except ImportError:
+    _FASTAPI_INSTRUMENTOR_AVAILABLE = False
+    FastAPIInstrumentor = None
+
+try:
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:
+    _PROMETHEUS_AVAILABLE = False
+    CONTENT_TYPE_LATEST = "text/plain"
+    generate_latest = None
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -92,11 +116,21 @@ def create_serving_app(
     )
     app.state.serving = state
 
+    observability_settings = load_runtime_settings().observability
+    bootstrap_observability(
+        observability_config_from_settings(
+            observability_settings,
+            default_service_name="codeintel-serving",
+        )
+    )
+
     _install_exception_handlers(app)
     _install_middlewares(app, cfg)
     app.include_router(build_http_router(features))
-    _install_observability_routes(app, db_manager=runtime.db_manager)
+    _install_observability_routes(app, db_manager=runtime.db_manager, settings=cfg)
     _maybe_mount_mcp(app, kernel=runtime.kernel, settings=cfg, features=features, enabled=mount_mcp)
+
+    _instrument_fastapi(app)
 
     app.openapi = lambda: _custom_openapi(app)
     return app
@@ -172,7 +206,18 @@ def _install_middlewares(app: FastAPI, cfg: ServingSettings) -> None:
     app.middleware("http")(correlation_id_and_timing_middleware)
 
 
-def _install_observability_routes(app: FastAPI, *, db_manager: ServingDBManager) -> None:
+def _instrument_fastapi(app: FastAPI) -> None:
+    if not _FASTAPI_INSTRUMENTOR_AVAILABLE or FastAPIInstrumentor is None:
+        return
+    FastAPIInstrumentor.instrument_app(app)
+
+
+def _install_observability_routes(
+    app: FastAPI,
+    *,
+    db_manager: ServingDBManager,
+    settings: ServingSettings,
+) -> None:
     @app.get("/health")
     async def health() -> dict[str, str]:
         pointer = db_manager.current_pointer()
@@ -187,6 +232,20 @@ def _install_observability_routes(app: FastAPI, *, db_manager: ServingDBManager)
     async def meta() -> dict[str, object]:
         payload = await run_in_threadpool(lambda: build_kernel_meta_payload(db_manager))
         return payload.model_dump(mode="json")
+
+    obs = get_observability()
+    metrics_auth_required = settings.metrics_auth_required
+    if not obs.prometheus_enabled or not _PROMETHEUS_AVAILABLE or generate_latest is None:
+        return
+
+    generate_latest_fn = generate_latest
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics(request: Request) -> Response:
+        if metrics_auth_required:
+            require_http_auth(headers=request.headers, settings=settings)
+        payload = generate_latest_fn()
+        return Response(content=payload, media_type=CONTENT_TYPE_LATEST)
 
 
 def _maybe_mount_mcp(

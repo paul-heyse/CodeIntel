@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from codeintel.observability import record_query_metrics
+
 LOG = logging.getLogger("codeintel.serving.metrics")
 
 
@@ -60,6 +62,7 @@ def log_query_metrics(metrics: QueryMetrics) -> None:
     metrics
         Captured query metrics to log.
     """
+    record_query_metrics(metrics)
     LOG.info(
         "query_executed",
         extra={

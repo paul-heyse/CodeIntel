@@ -7,9 +7,10 @@ and guaranteeing cleanup.
 
 from __future__ import annotations
 
-import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
+
+from codeintel.core.execution.ids import new_uuid_hex
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -51,7 +52,7 @@ def registered_temp_relation(
         raise TypeError(msg)
 
     safe_prefix = prefix.strip() or "ci_tmp_"
-    name = f"{safe_prefix}{uuid.uuid4().hex}"
+    name = f"{safe_prefix}{new_uuid_hex()}"
     register(name, obj)
     try:
         yield name

@@ -77,9 +77,7 @@ def register_explain_tool(
         validated = validate_semantic_query_request(request)
         return await handler.handle(validated, ctx=ctx)
 
-    semantic_explain.__annotations__ = get_type_hints(
-        semantic_explain, include_extras=True
-    )
+    semantic_explain.__annotations__ = get_type_hints(semantic_explain, include_extras=True)
     mcp.tool(
         name="semantic_explain",
         description="Return compiled SQL and DuckDB plan for a semantic query",

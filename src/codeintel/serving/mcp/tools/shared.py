@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Final
 from fastmcp import Context
 from mcp import McpError
 
+from codeintel.core.execution.ids import new_uuid_hex
 from codeintel.serving.export.formats import normalize_export_format
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.models import QueryPreview
@@ -52,7 +53,7 @@ def mcp_correlation_id(ctx: Context | None) -> str:
     session_id_obj = getattr(ctx, "session_id", None)
     if isinstance(session_id_obj, str) and session_id_obj:
         return session_id_obj
-    return "mcp-unknown"
+    return new_uuid_hex()
 
 
 @dataclass(frozen=True, slots=True)

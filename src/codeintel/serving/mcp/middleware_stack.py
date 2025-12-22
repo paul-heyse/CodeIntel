@@ -21,6 +21,7 @@ from fastmcp.server.middleware.logging import StructuredLoggingMiddleware
 from fastmcp.server.middleware.rate_limiting import RateLimitingMiddleware
 from fastmcp.server.middleware.timing import DetailedTimingMiddleware
 
+from codeintel.observability.mcp import McpOpenTelemetryMiddleware
 from codeintel.serving.mcp.middleware_errors import CodeIntelErrorMappingMiddleware
 
 if TYPE_CHECKING:
@@ -61,6 +62,7 @@ def build_mcp_middleware(settings: ServingSettings) -> Sequence[Middleware]:
     """
     middleware: list[Middleware] = []
 
+    middleware.append(McpOpenTelemetryMiddleware())
     middleware.append(CodeIntelErrorMappingMiddleware())
 
     if settings.mcp_enable_structured_logging:

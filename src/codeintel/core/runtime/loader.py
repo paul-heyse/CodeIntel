@@ -18,6 +18,7 @@ from codeintel.core.config.settings import (
     BuildSettings,
     ExportAuditSettings,
     HamiltonExecutionSettings,
+    ObservabilitySettings,
     ServingSettings,
 )
 from codeintel.core.env import (
@@ -41,6 +42,7 @@ class RuntimeSettings:
     build: BuildSettings
     execution: HamiltonExecutionSettings
     serving: ServingSettings
+    observability: ObservabilitySettings
 
 
 @dataclass(frozen=True)
@@ -239,11 +241,44 @@ def _load_serving_settings() -> ServingSettings:
             "CODEINTEL_AUTH_REQUIRED_FOR_REMOTE",
             default=True,
         ),
+        metrics_auth_required=get_required_bool(
+            "CODEINTEL_METRICS_REQUIRE_AUTH",
+            default=False,
+        ),
         # MCP Tool Feature Flags
         mcp_enable_search=get_required_bool("CODEINTEL_MCP_ENABLE_SEARCH", default=True),
         mcp_enable_explain=get_required_bool("CODEINTEL_MCP_ENABLE_EXPLAIN", default=True),
         mcp_enable_meta=get_required_bool("CODEINTEL_MCP_ENABLE_META", default=True),
         mcp_enable_export=get_required_bool("CODEINTEL_MCP_ENABLE_EXPORT", default=True),
+    )
+
+
+def _load_observability_settings() -> ObservabilitySettings:
+    def _opt_str(name: str) -> str | None:
+        value = get_str(name, default=None)
+        return value.strip() if value else None
+
+    sdk_disabled = get_bool("OTEL_SDK_DISABLED", default=False)
+    enabled = not bool(sdk_disabled)
+
+    statement_mode = get_str("CODEINTEL_OTEL_DB_STATEMENT_MODE", default=None)
+    statement_mode_value = statement_mode.strip().lower() if statement_mode else "hash"
+    if statement_mode_value not in {"full", "hash", "operation", "none"}:
+        statement_mode_value = "hash"
+
+    return ObservabilitySettings(
+        enabled=enabled,
+        service_name=_opt_str("OTEL_SERVICE_NAME"),
+        otlp_endpoint=_opt_str("OTEL_EXPORTER_OTLP_ENDPOINT"),
+        export_traces=bool(get_bool("CODEINTEL_EXPORT_TRACES", default=True)),
+        export_metrics=bool(get_bool("CODEINTEL_EXPORT_METRICS", default=True)),
+        console_export=bool(get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
+        prometheus_enabled=bool(get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
+        duckdb_tracing_enabled=bool(
+            get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)
+        ),
+        duckdb_statement_mode=statement_mode_value,
+        duckdb_statement_hash_len=int(get_int("CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN", default=16) or 16),
     )
 
 
@@ -259,6 +294,7 @@ def load_runtime_settings() -> RuntimeSettings:
         build=_load_build_settings(),
         execution=_load_execution_settings(),
         serving=_load_serving_settings(),
+        observability=_load_observability_settings(),
     )
 
 

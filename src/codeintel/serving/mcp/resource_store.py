@@ -148,7 +148,8 @@ class ResourceStore:
         root
             Root directory for artifact storage.
         ttl_seconds
-            Optional TTL for exports. When set, resources may expire and cleanup removes old artifacts.
+            Optional TTL for exports. When set, resources may expire and cleanup removes
+            old artifacts.
         """
         self._root = root
         self._root.mkdir(parents=True, exist_ok=True)

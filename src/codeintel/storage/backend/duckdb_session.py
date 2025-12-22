@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.observability.duckdb_tracing import maybe_instrument_duckdb_connection
 from codeintel.storage.gateway.extensions import (
     load_extensions_from_env,
     load_required_extensions,
@@ -86,7 +87,7 @@ class DuckDBSession:
         _bootstrap_duckdb_secrets_from_env(con)
         _register_fsspec_filesystems_from_env()
         _run_init_sql_from_env(con)
-        return con
+        return maybe_instrument_duckdb_connection(con, config=self.config)
 
     def open_reader(self) -> DuckDBConnection:
         """Open a new read-only connection to the same database.
@@ -115,7 +116,7 @@ class DuckDBSession:
         _bootstrap_duckdb_secrets_from_env(con)
         _register_fsspec_filesystems_from_env()
         _run_init_sql_from_env(con)
-        return con
+        return maybe_instrument_duckdb_connection(con, config=cfg)
 
     def connect(self) -> AbstractContextManager[DuckDBConnection]:
         """Return a context manager that yields an open connection.

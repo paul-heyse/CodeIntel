@@ -16,6 +16,7 @@ import hashlib
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from sqlglot import diff as semantic_diff
 from sqlglot import exp, parse_one
 from sqlglot.errors import ParseError, SqlglotError
 from sqlglot.lineage import lineage as build_lineage
@@ -38,8 +39,10 @@ __all__ = [
     "extract_table_refs",
     "fingerprint_canonical_sql",
     "fingerprint_sql_duckdb",
+    "fingerprint_sql_duckdb_safe",
     "parse_one_duckdb",
     "render_sql_duckdb",
+    "semantic_diff_sql_duckdb",
 ]
 
 SchemaMapping = Mapping[str, Mapping[str, str]]
@@ -140,6 +143,20 @@ def fingerprint_sql_duckdb(sql: str, *, schema: SchemaMapping | None = None) -> 
     return fingerprint_canonical_sql(canon)
 
 
+def fingerprint_sql_duckdb_safe(sql: str, *, schema: SchemaMapping | None = None) -> str:
+    """Return a stable fingerprint with a fallback to raw SQL hashing.
+
+    Returns
+    -------
+    str
+        Stable fingerprint for the SQL text.
+    """
+    try:
+        return fingerprint_sql_duckdb(sql, schema=schema)
+    except (ParseError, SqlglotError, TypeError, ValueError):
+        return hashlib.sha256(sql.encode("utf-8")).hexdigest()
+
+
 def fingerprint_canonical_sql(canon: str) -> str:
     """Return a stable SHA-256 fingerprint for canonical SQL text.
 
@@ -154,6 +171,25 @@ def fingerprint_canonical_sql(canon: str) -> str:
         Stable fingerprint of the text.
     """
     return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def semantic_diff_sql_duckdb(
+    before_sql: str,
+    after_sql: str,
+    *,
+    schema: SchemaMapping | None = None,
+) -> tuple[str, ...]:
+    """Return a semantic diff between two SQL strings (DuckDB dialect).
+
+    Returns
+    -------
+    tuple[str, ...]
+        Human-readable diff actions between the two queries.
+    """
+    before = canonicalize_expression_duckdb(parse_one_duckdb(before_sql), schema=schema)
+    after = canonicalize_expression_duckdb(parse_one_duckdb(after_sql), schema=schema)
+    actions = semantic_diff(before, after)
+    return tuple(str(action) for action in actions)
 
 
 def extract_table_refs(root: exp.Expression) -> tuple[exp.Table, ...]:

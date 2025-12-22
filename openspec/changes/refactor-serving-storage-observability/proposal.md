@@ -15,8 +15,9 @@ surfaces more consistent.
   semantic SQL diffs for upgrade diagnostics.
 - Standardize ID generation with a canonical UUID factory (UUIDv7 when available) across
   correlation IDs, error instance/debug IDs, and run/job IDs.
-- Improve export responses: explicit MIME metadata for MCP resources and UTF-8 NDJSON
-  streaming with a msgspec fast path.
+- Improve export responses: MCP reads return content with registry MIME, export metadata is
+  served via export meta resources/resource listing _meta, and NDJSON uses a shared UTF-8
+  encoder with a msgspec fast path.
 
 ## Impact
 - Affected specs: observability (new), serving-interfaces, export-formats,

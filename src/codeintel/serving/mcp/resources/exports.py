@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
+
+from fastmcp.resources import Resource
+from fastmcp.resources.template import FunctionResourceTemplate
+from pydantic import PrivateAttr
 
 from codeintel.serving.errors import ExportNotFoundError
 from codeintel.serving.export.formats import (
@@ -56,6 +61,48 @@ class ExportChunkRequestError(ValueError):
 
 class ExportFullReadNotAllowedError(ValueError):
     """Full export reads are disallowed due to server payload limits."""
+
+
+class _ExportResourceTemplate(FunctionResourceTemplate):
+    _meta_builder: Callable[[str], dict[str, object]] = PrivateAttr()
+    _mime_type_builder: Callable[[str], str] = PrivateAttr()
+
+    @classmethod
+    def from_base(
+        cls,
+        base: FunctionResourceTemplate,
+        *,
+        meta_builder: Callable[[str], dict[str, object]],
+        mime_type_builder: Callable[[str], str],
+    ) -> _ExportResourceTemplate:
+        template = cls(
+            uri_template=base.uri_template,
+            name=base.name,
+            title=base.title,
+            description=base.description,
+            icons=base.icons,
+            mime_type=base.mime_type,
+            fn=base.fn,
+            parameters=base.parameters,
+            tags=base.tags,
+            enabled=base.enabled,
+            annotations=base.annotations,
+            meta=base.meta,
+            task_config=base.task_config,
+        )
+        template._meta_builder = meta_builder
+        template._mime_type_builder = mime_type_builder
+        return template
+
+    async def create_resource(self, uri: str, params: dict[str, object]) -> Resource:
+        resource = await super().create_resource(uri, params)
+        export_id = params.get("export_id")
+        if export_id is None:
+            return resource
+        export_id_str = str(export_id)
+        resource.mime_type = self._mime_type_builder(export_id_str)
+        resource.meta = self._meta_builder(export_id_str)
+        return resource
 
 
 def _validate_chunk_request(*, offset: int, limit: int, max_limit: int) -> None:
@@ -155,14 +202,45 @@ def _register_export_read_resource(
     *,
     settings: ServingSettings,
 ) -> None:
-    @mcp.resource(EXPORT_URI_TEMPLATE)
+    def _export_mime_type(export_id: str) -> str:
+        return store.get(export_id).mime_type
+
+    def _export_meta(export_id: str) -> dict[str, object]:
+        artifact = store.get(export_id)
+        meta = store.get_meta(export_id)
+        filename = f"{meta.view_id}_{export_id}{suffix_for_export_format(meta.format)}"
+        meta_payload: dict[str, object] = {
+            "export_id": export_id,
+            "row_count": artifact.row_count,
+            "size_bytes": artifact.size_bytes,
+            "filename": filename,
+        }
+        if settings.mcp_export_ttl_seconds is not None:
+            meta_payload["cache_ttl_seconds"] = settings.mcp_export_ttl_seconds
+        return meta_payload
+
     def read_export(export_id: str) -> str | bytes:
         artifact = store.get(export_id)
         if artifact.size_bytes > settings.mcp_export_max_full_read_bytes:
             raise ExportFullReadNotAllowedError
-        if artifact.mime_type in {_MIME_PARQUET, _MIME_ARROW}:
+        is_binary = artifact.mime_type in {_MIME_PARQUET, _MIME_ARROW}
+        if is_binary:
             return artifact.path.read_bytes()
         return artifact.path.read_text(encoding="utf-8")
+
+    base_template = FunctionResourceTemplate.from_function(
+        fn=read_export,
+        uri_template=EXPORT_URI_TEMPLATE,
+        name="codeintel_export_payload",
+        description="Export payload content",
+        mime_type="application/octet-stream",
+    )
+    template = _ExportResourceTemplate.from_base(
+        base_template,
+        meta_builder=_export_meta,
+        mime_type_builder=_export_mime_type,
+    )
+    mcp.add_template(template)
 
 
 def _register_export_metadata_resources(mcp: FastMCP, store: ResourceStore) -> None:
