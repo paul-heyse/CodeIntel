@@ -60,7 +60,7 @@ class FunctionRepository(BaseRepository):
         if goid_from_goids is not None:
             return goid_from_goids
 
-        return self._resolve_goid_from_risk_factors(
+        return self._resolve_goid_from_function_metrics(
             urn=urn,
             rel_path=rel_path,
             qualname=qualname,
@@ -94,26 +94,26 @@ class FunctionRepository(BaseRepository):
             return None
         return self._coerce_goid(records[0].get("goid_h128"))
 
-    def _resolve_goid_from_risk_factors(
+    def _resolve_goid_from_function_metrics(
         self,
         *,
         urn: str | None,
         rel_path: str | None,
         qualname: str | None,
     ) -> int | None:
-        factors = self._ibis_table("analytics.goid_risk_factors")
-        expr = factors
+        metrics = self._ibis_table("analytics.function_metrics")
+        expr = metrics
 
         if urn:
-            expr = expr.filter(ibis_bool(factors.urn == urn))
+            expr = expr.filter(ibis_bool(metrics.urn == urn))
         elif rel_path and qualname:
             expr = expr.filter(
-                and_predicates(factors.rel_path == rel_path, factors.qualname == qualname)
+                and_predicates(metrics.rel_path == rel_path, metrics.qualname == qualname)
             )
         else:
             return None
 
-        records = self._validated_records("analytics.goid_risk_factors", expr.limit(1))
+        records = self._validated_records("analytics.function_metrics", expr.limit(1))
         if not records:
             return None
         return self._coerce_goid(records[0].get("function_goid_h128"))
@@ -187,7 +187,7 @@ class FunctionRepository(BaseRepository):
         list[RowDict]
             High-risk function rows limited by ``limit``.
         """
-        table = self._ibis_table("analytics.goid_risk_factors")
+        table = self._ibis_table("analytics.function_profile")
         expr = table.filter(
             and_predicates(
                 ge(table.risk_score, min_risk),
@@ -196,7 +196,7 @@ class FunctionRepository(BaseRepository):
         if tested_only:
             expr = expr.filter(ibis_bool(table.tested))
         expr = expr.order_by(table.risk_score.desc()).limit(limit)
-        return self._validated_records("analytics.goid_risk_factors", expr)
+        return self._validated_records("analytics.function_profile", expr)
 
     def get_function_profile(self, goid_h128: int) -> RowDict | None:
         """

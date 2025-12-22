@@ -554,6 +554,9 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
             "keyword_only_params": "keyword_params",
             "has_varargs": "vararg",
             "has_varkw": "kwarg",
+            "fan_in_count": "call_fan_in",
+            "fan_out_count": "call_fan_out",
+            "has_tests": "tested",
         },
         excluded_columns=frozenset(
             {
@@ -575,9 +578,6 @@ COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
                 "history_window_start",
                 "history_window_end",
                 "created_at_row",
-                "failing_test_count",
-                "hotspot_score",
-                "test_count",
             }
         ),
     ),

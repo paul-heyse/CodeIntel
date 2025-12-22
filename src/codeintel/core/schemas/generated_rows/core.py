@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TypedDict
 
-_TYPE_HINTS_DATETIME = datetime
-
 __all__ = [
     "CoreAstMetricsRow",
     "CoreAstNodesRow",
@@ -20,8 +18,6 @@ __all__ = [
     "CoreRepoMapRow",
     "CoreScipOccurrencesRow",
     "CoreScipSymbolsRow",
-    "CoreTestResultsRow",
-    "CoreTestSummaryRow",
 ]
 
 
@@ -208,30 +204,4 @@ class CoreScipSymbolsRow(TypedDict):
     rel_path: str
     symbol: str
     documentation: str | None
-    created_at: datetime
-
-
-class CoreTestResultsRow(TypedDict):
-    """Row model for core.test_results."""
-
-    repo: str
-    commit: str
-    nodeid: str
-    rel_path: str
-    outcome: str
-    duration: float | None
-    longrepr: str | None
-    created_at: datetime
-
-
-class CoreTestSummaryRow(TypedDict):
-    """Row model for core.test_summary."""
-
-    repo: str
-    commit: str
-    passed: int
-    failed: int
-    skipped: int
-    error: int
-    duration: float | None
     created_at: datetime

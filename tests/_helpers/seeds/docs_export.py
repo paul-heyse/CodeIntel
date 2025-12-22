@@ -118,7 +118,7 @@ class DocsExportPack:
         self._seed_function_metrics(ctx, repo, commit, goid, now)
         self._seed_function_types(ctx, repo, commit, goid, now)
         self._seed_coverage_functions(ctx, repo, commit, goid, now)
-        self._seed_risk_factors(ctx, repo, commit, goid, now)
+        self._seed_risk_factors(ctx, repo, commit, goid)
         self._seed_test_catalog(ctx, repo, commit, now)
         self._seed_test_coverage_edges(ctx, repo, commit, goid, now)
 
@@ -440,42 +440,19 @@ class DocsExportPack:
         insert_rows(ctx.gateway, rows)
 
     @staticmethod
-    def _seed_risk_factors(
-        ctx: TestContext, repo: str, commit: str, goid: int, now: datetime
-    ) -> None:
+    def _seed_risk_factors(ctx: TestContext, repo: str, commit: str, goid: int) -> None:
         """Seed the analytics.goid_risk_factors table."""
         rows = [
             RiskFactorRow(
                 function_goid_h128=goid,
-                urn=DEFAULT_URN,
                 repo=repo,
                 commit=commit,
-                rel_path=DEFAULT_PATH,
-                language="python",
-                kind="function",
-                qualname=DEFAULT_QUALNAME,
-                loc=10,
-                logical_loc=10,
-                cyclomatic_complexity=1,
-                complexity_bucket="low",
-                typedness_bucket="typed",
-                typedness_source="pyright",
-                hotspot_score=0.0,
-                file_typed_ratio=1.0,
-                static_error_count=0,
-                has_static_errors=False,
-                executable_lines=1,
-                covered_lines=1,
-                coverage_ratio=1.0,
-                tested=True,
-                test_count=1,
-                failing_test_count=0,
-                last_test_status="passed",
-                risk_score=0.1,
+                risk_score=1,
                 risk_level="low",
-                tags="[]",
-                owners="[]",
-                created_at=now,
+                cyclomatic_complexity=1,
+                fan_in_count=0,
+                fan_out_count=0,
+                has_tests=True,
             )
         ]
         insert_rows(ctx.gateway, rows)

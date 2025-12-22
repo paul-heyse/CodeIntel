@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TypedDict
 
-_TYPE_HINTS_DATETIME = datetime
-
 __all__ = [
     "AnalyticsBehavioralCoverageRow",
     "AnalyticsCfgBlockMetricsRow",
@@ -820,35 +818,14 @@ class AnalyticsGoidRiskFactorsRow(TypedDict):
     """Row model for analytics.goid_risk_factors."""
 
     function_goid_h128: int | None
-    urn: str | None
     repo: str | None
     commit: str | None
-    rel_path: str | None
-    language: str | None
-    kind: str | None
-    qualname: str | None
-    loc: int | None
-    logical_loc: int | None
-    cyclomatic_complexity: int | None
-    complexity_bucket: str | None
-    typedness_bucket: str | None
-    typedness_source: str | None
-    hotspot_score: float | None
-    file_typed_ratio: float | None
-    static_error_count: int | None
-    has_static_errors: bool | None
-    executable_lines: int | None
-    covered_lines: int | None
-    coverage_ratio: float | None
-    tested: bool | None
-    test_count: int | None
-    failing_test_count: int | None
-    last_test_status: str | None
-    risk_score: float | None
+    risk_score: int | None
     risk_level: str | None
-    tags: object | None
-    owners: object | None
-    created_at: datetime | None
+    cyclomatic_complexity: int | None
+    fan_in_count: int | None
+    fan_out_count: int | None
+    has_tests: bool | None
 
 
 class AnalyticsGraphMetricsFunctionsRow(TypedDict):

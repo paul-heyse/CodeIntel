@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -16,7 +15,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.builders import RiskFactorRow, insert_rows
+from tests._helpers.builders import insert_rows
 from tests._helpers.rows import function_metrics_row, function_profile_row
 
 if TYPE_CHECKING:
@@ -102,7 +101,6 @@ def test_list_high_risk_functions_with_tested_only_filter(
     metrics_ctx: TestContext,
 ) -> None:
     """Verify list_high_risk_functions applies tested_only filter."""
-    now = datetime.now(tz=UTC)
     untested_goid = 999_001
     insert_rows(
         metrics_ctx.gateway,
@@ -116,41 +114,30 @@ def test_list_high_risk_functions_with_tested_only_filter(
             )
         ],
     )
-    insert_rows(
-        metrics_ctx.gateway,
-        [
-            RiskFactorRow(
-                function_goid_h128=untested_goid,
-                urn=f"urn:{metrics_ctx.repo}:{metrics_ctx.commit}:test.py#untested_fn",
+    warehouse = Warehouse(metrics_ctx.gateway)
+    warehouse.materialize_mappings(
+        table_key="analytics.function_profile",
+        rows=[
+            function_profile_row(
+                goid=Decimal(untested_goid),
                 repo=metrics_ctx.repo,
                 commit=metrics_ctx.commit,
                 rel_path="test.py",
-                language="python",
-                kind="function",
                 qualname="untested_fn",
-                loc=12,
-                logical_loc=10,
-                cyclomatic_complexity=5,
-                complexity_bucket="high",
-                typedness_bucket="low",
-                typedness_source="inferred",
-                hotspot_score=0.5,
-                file_typed_ratio=0.5,
-                static_error_count=1,
-                has_static_errors=True,
-                executable_lines=2,
-                covered_lines=0,
-                coverage_ratio=0.0,
                 tested=False,
-                test_count=0,
-                failing_test_count=0,
-                last_test_status="unknown",
-                risk_score=0.9,
-                risk_level="critical",
-                tags="[]",
-                owners="[]",
-                created_at=now,
-            )
+                risk_score=9.0,
+                risk_level="high",
+            ),
+            function_profile_row(
+                goid=Decimal(untested_goid + 1),
+                repo=metrics_ctx.repo,
+                commit=metrics_ctx.commit,
+                rel_path="test.py",
+                qualname="tested_fn",
+                tested=True,
+                risk_score=5.0,
+                risk_level="medium",
+            ),
         ],
     )
 

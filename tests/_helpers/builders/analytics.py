@@ -440,67 +440,25 @@ class RiskFactorRow:
     __table__: ClassVar[str] = "analytics.goid_risk_factors"
     __columns__: ClassVar[tuple[str, ...]] = (
         "function_goid_h128",
-        "urn",
         "repo",
         "commit",
-        "rel_path",
-        "language",
-        "kind",
-        "qualname",
-        "loc",
-        "logical_loc",
-        "cyclomatic_complexity",
-        "complexity_bucket",
-        "typedness_bucket",
-        "typedness_source",
-        "hotspot_score",
-        "file_typed_ratio",
-        "static_error_count",
-        "has_static_errors",
-        "executable_lines",
-        "covered_lines",
-        "coverage_ratio",
-        "tested",
-        "test_count",
-        "failing_test_count",
-        "last_test_status",
         "risk_score",
         "risk_level",
-        "tags",
-        "owners",
-        "created_at",
+        "cyclomatic_complexity",
+        "fan_in_count",
+        "fan_out_count",
+        "has_tests",
     )
 
     function_goid_h128: int
-    urn: str
     repo: str
     commit: str
-    rel_path: str
-    language: str
-    kind: str
-    qualname: str
-    loc: int
-    logical_loc: int
-    cyclomatic_complexity: int
-    complexity_bucket: str
-    typedness_bucket: str
-    typedness_source: str
-    hotspot_score: float
-    file_typed_ratio: float
-    static_error_count: int
-    has_static_errors: bool
-    executable_lines: int
-    covered_lines: int
-    coverage_ratio: float
-    tested: bool
-    test_count: int
-    failing_test_count: int
-    last_test_status: str
-    risk_score: float
-    risk_level: str
-    tags: str
-    owners: str
-    created_at: datetime
+    risk_score: int = 0
+    risk_level: str = "low"
+    cyclomatic_complexity: int = 0
+    fan_in_count: int = 0
+    fan_out_count: int = 0
+    has_tests: bool = False
 
     def to_tuple(
         self,
@@ -508,33 +466,12 @@ class RiskFactorRow:
         int,
         str,
         str,
-        str,
-        str,
-        str,
-        str,
+        int,
         str,
         int,
         int,
-        int,
-        str,
-        str,
-        str,
-        float,
-        float,
         int,
         bool,
-        int,
-        int,
-        float,
-        bool,
-        int,
-        int,
-        str,
-        float,
-        str,
-        str,
-        str,
-        str,
     ]:
         """Serialize row to database insert order.
 
@@ -545,35 +482,14 @@ class RiskFactorRow:
         """
         return (
             self.function_goid_h128,
-            self.urn,
             self.repo,
             self.commit,
-            self.rel_path,
-            self.language,
-            self.kind,
-            self.qualname,
-            self.loc,
-            self.logical_loc,
-            self.cyclomatic_complexity,
-            self.complexity_bucket,
-            self.typedness_bucket,
-            self.typedness_source,
-            self.hotspot_score,
-            self.file_typed_ratio,
-            self.static_error_count,
-            self.has_static_errors,
-            self.executable_lines,
-            self.covered_lines,
-            self.coverage_ratio,
-            self.tested,
-            self.test_count,
-            self.failing_test_count,
-            self.last_test_status,
             self.risk_score,
             self.risk_level,
-            self.tags,
-            self.owners,
-            _iso(self.created_at),
+            self.cyclomatic_complexity,
+            self.fan_in_count,
+            self.fan_out_count,
+            self.has_tests,
         )
 
 
