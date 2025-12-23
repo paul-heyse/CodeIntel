@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 import ibis
 
-from codeintel.build.schemas.contract_service import (
+from codeintel.core.schemas.contract_service import (
     column_order_for_table_key,
     get_contract_for_table_key,
 )

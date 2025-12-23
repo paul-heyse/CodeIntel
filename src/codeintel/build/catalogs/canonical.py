@@ -14,10 +14,8 @@ from codeintel.build.catalogs.target_serde import (
     output_target_to_json_obj,
 )
 from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.core.schemas.contract_serde import (
-    contract_from_json_obj,
-    contract_to_json_obj,
-)
+from codeintel.core.schemas.contract_serde import contract_from_json_obj, contract_to_json_obj
+from codeintel.core.schemas.contract_service import get_enriched_contract_service
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 from codeintel.storage.metadata import (
     build_catalog_entry,
@@ -26,10 +24,10 @@ from codeintel.storage.metadata import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.build.schemas.contract_service import ContractService
     from codeintel.build.schemas.service import SchemaService
     from codeintel.build.targets import OutputTarget
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.contract_service import ContractService
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -72,11 +70,7 @@ def _targets_payload(targets: Mapping[str, OutputTarget]) -> dict[str, object]:
 
 
 def _get_contract_service() -> Callable[[], ContractService]:
-    module = importlib.import_module("codeintel.build.schemas.contract_service")
-    return cast(
-        "Callable[[], ContractService]",
-        module.get_enriched_contract_service,
-    )
+    return get_enriched_contract_service
 
 
 def _build_contract_catalog() -> dict[str, DatasetContract]:

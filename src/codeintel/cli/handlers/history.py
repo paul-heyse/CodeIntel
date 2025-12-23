@@ -18,14 +18,24 @@ from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOpti
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import HamiltonBuildExecutor
 from codeintel.build.providers import create_default_providers
-from codeintel.build.run_context import BuildRunContext
-from codeintel.build.settings import get_build_settings, get_hamilton_execution_settings
+from codeintel.build.run_context import BuildRunContext, BuildRunContextOverrides
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HistoryTimeseriesResult
 from codeintel.cli.errors.results import fail_history_error
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.config.primitives import (
+    BuildPaths,
+    GraphBackendConfig,
+    GraphFeatureFlags,
+    SnapshotRef,
+)
+from codeintel.core.execution import ExecutionContext, new_run_context
+from codeintel.core.runtime.loader import (
+    RuntimeInputs,
+    build_runtime_primitives,
+    load_execution_context,
+)
 from codeintel.storage.gateway import (
     DuckDBError,
     DuckDBInvalidInputException,
@@ -83,6 +93,26 @@ def _coerce_enum_param(value: object | None, *, default: str) -> str:
     return str(value)
 
 
+def _build_execution_context(
+    *,
+    snapshot: SnapshotRef,
+    paths: BuildPaths,
+    tools: ToolsConfig,
+) -> ExecutionContext:
+    primitives = build_runtime_primitives(
+        RuntimeInputs(
+            snapshot=snapshot,
+            paths=paths,
+            tools=tools.to_binaries(),
+            graph_backend=GraphBackendConfig(),
+            graph_features=GraphFeatureFlags(),
+            profiles=None,
+        )
+    )
+    run_context = new_run_context(snapshot=snapshot, kind="analytics", trigger="cli")
+    return load_execution_context(primitives=primitives, run=run_context)
+
+
 def _build_history_env(
     ctx: CommandContext,
     snapshot: SnapshotRef,
@@ -94,19 +124,18 @@ def _build_history_env(
     tools = ctx.runtime.tools if ctx.has_runtime else ToolsConfig.default()
     providers = create_default_providers(tools)
     config = load_build_config(snapshot.repo_root)
-    build_settings = get_build_settings()
-    execution_settings = get_hamilton_execution_settings()
     paths = ctx.runtime.paths if ctx.has_runtime else BuildPaths.from_repo_root(snapshot.repo_root)
-    context = BuildRunContext(
-        snapshot=snapshot,
-        gateway=gateway,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=build_settings,
-        execution_settings=execution_settings,
+    execution_context = _build_execution_context(snapshot=snapshot, paths=paths, tools=tools)
+    overrides = BuildRunContextOverrides(
         history_options=options,
         history_db_resolver=gateway_resolver,
+    )
+    context = BuildRunContext.from_execution_context(
+        execution_context=execution_context,
+        gateway=gateway,
+        providers=providers,
+        config=config,
+        overrides=overrides,
     )
     return context.build_env()
 

@@ -40,7 +40,7 @@ from codeintel.core.errors.execution import (
     PluginSkipRequestError,
     PluginTimeoutError,
 )
-from codeintel.core.execution.context import RunContext, RunKind, TriggerKind
+from codeintel.core.execution.context import ExecutionContext, RunContext, RunKind, TriggerKind
 from codeintel.core.execution.ids import (
     RUN_PREFIX_ANALYTICS,
     RUN_PREFIX_GRAPHS,
@@ -147,6 +147,7 @@ __all__ = [
     "RUN_PREFIX_INGEST",
     "RUN_PREFIX_PIPELINE",
     "RUN_PREFIX_PLAN",
+    "ExecutionContext",
     "PluginFatalError",
     "PluginSkipRequestError",
     "PluginSkippedError",

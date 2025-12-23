@@ -35,6 +35,9 @@ if TYPE_CHECKING:
     from codeintel.build.target_metadata import OutputInventory
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
+    from codeintel.core.execution import ExecutionContext, RunContext
+    from codeintel.core.registry import RegistryService
+    from codeintel.storage import StorageFacade
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -50,6 +53,8 @@ class BuildEnv:
     ----------
     gateway
         Storage gateway for database access and build tracking.
+    storage
+        Storage facade for non-storage access patterns.
     snapshot
         Repository snapshot reference (repo, commit, root path).
     paths
@@ -87,6 +92,11 @@ class BuildEnv:
     fingerprint_policy
         Policy for computing asset version fingerprints. Defaults to STABLE_V1
         for cross-commit reuse capability.
+    execution_context
+        Optional unified execution context with run metadata, primitives,
+        and settings for this build.
+    registry
+        Optional registry service for dataset and target discovery.
 
     Examples
     --------
@@ -108,6 +118,7 @@ class BuildEnv:
     providers: Providers
     config: BuildConfig
     settings: BuildSettings
+    storage: StorageFacade | None = None
     execution_settings: HamiltonExecutionSettings = field(default_factory=HamiltonExecutionSettings)
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
@@ -120,6 +131,8 @@ class BuildEnv:
     fingerprint_policy: FingerprintPolicy = field(
         default_factory=lambda: DEFAULT_FINGERPRINT_POLICY
     )
+    execution_context: ExecutionContext | None = None
+    registry: RegistryService | None = None
 
     @property
     def repo(self) -> str:
@@ -159,6 +172,13 @@ class BuildEnv:
         return target_name in self.force_targets
 
     @property
+    def run_context(self) -> RunContext | None:
+        """Return the unified run context when available."""
+        if self.execution_context is None:
+            return None
+        return self.execution_context.run
+
+    @property
     def warehouse(self) -> Warehouse:
         """Return a storage Warehouse façade for the current gateway.
 
@@ -167,6 +187,8 @@ class BuildEnv:
         Warehouse
             Warehouse wrapper around the build gateway.
         """
+        if self.storage is not None:
+            return self.storage.warehouse
         return Warehouse(self.gateway)
 
 

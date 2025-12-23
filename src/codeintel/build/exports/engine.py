@@ -46,11 +46,7 @@ from codeintel.build.exports.manifest import (
     write_per_dataset_manifest,
 )
 from codeintel.build.exports.validation import validate_export_files
-from codeintel.build.exports.writers import (
-    default_json_serializer,
-    write_jsonl_records,
-    write_parquet_relation,
-)
+from codeintel.build.exports.writers import write_jsonl_records, write_parquet_relation
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.errors.schema import SCHEMA_VALIDATION_FAILED
 from codeintel.core.exports.formats import normalize_export_format, suffix_for_export_format
@@ -113,7 +109,6 @@ def export_jsonl_for_table(
         rows_written = write_jsonl_records(
             handle,
             rel=rel,
-            serializer=default_json_serializer,
             batch_size=_EXPORT_RECORD_BATCH_SIZE,
         )
     duration = perf_counter() - start

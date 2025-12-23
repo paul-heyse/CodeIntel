@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from contextlib import AbstractContextManager
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self, cast
 
-from codeintel.observability.context import get_correlation_id
 from codeintel.observability.db_query_parameters import DbQueryParameterConfig
 from codeintel.observability.db_query_text import DbQueryTextConfig, DbQueryTextPolicy
 from codeintel.observability.db_span_attributes import (
@@ -15,41 +13,19 @@ from codeintel.observability.db_span_attributes import (
     DbSpanAttributeBuilder,
     DbSpanAttributeConfig,
 )
+from codeintel.observability.db_span_emitter import DbSpanEmitter, DbSpanEmitterConfig
 from codeintel.observability.otel import get_observability
 from codeintel.observability.sql_redaction import SQLStatementMode
 
 if TYPE_CHECKING:
-    from opentelemetry.trace import Span, SpanKind, Tracer
-
     from codeintel.observability.otel import ObservabilityRuntime
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
-try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.trace import SpanKind as _SpanKind
-    from opentelemetry.trace.status import Status, StatusCode
-
-    _SPAN_KIND_CLIENT: SpanKind | None = _SpanKind.CLIENT
-except ImportError:
-    otel_trace = None
-    Status = None
-    StatusCode = None
-    _SPAN_KIND_CLIENT = None
-
-SpanAttributeValue = (
-    str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
-)
-
-
 @dataclass(frozen=True, slots=True)
 class _TracingConfig:
-    tracer: Tracer
-    db_name: str
-    attributes: Mapping[str, object]
-    span_builder: DbSpanAttributeBuilder
-    require_parent_span: bool
+    emitter: DbSpanEmitter
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,76 +132,21 @@ class _RedactingConnectionProxy:
         return _trace_db_call(call, self._config)
 
 
-def _coerce_attribute_value(value: object) -> SpanAttributeValue | None:
-    if value is None:
-        return None
-    if isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, (list, tuple)):
-        if all(isinstance(item, (str, bool, int, float)) for item in value):
-            return list(value)
-        return str(value)
-    return str(value)
-
-
-def _start_span(tracer: Tracer, operation: str) -> AbstractContextManager[Span]:
-    if _SPAN_KIND_CLIENT is None:
-        return tracer.start_as_current_span(operation)
-    return tracer.start_as_current_span(operation, kind=_SPAN_KIND_CLIENT)
-
-
 def _trace_db_call(call: _TraceCall, config: _TracingConfig) -> object:
-    if config.require_parent_span and not _has_parent_span():
-        return call.func(call.statement, *call.args, **call.kwargs)
-
     sql_text = _coerce_statement(call.statement)
     params = _extract_params(call.args, call.kwargs)
-    spec = config.span_builder.build(
+    result = config.emitter.trace_call(
         sql=sql_text,
         params=params,
-        db_system_name="duckdb",
-        db_namespace=config.db_name,
         is_batch=call.is_batch,
+        call=lambda: call.func(call.statement, *call.args, **call.kwargs),
     )
-
-    with _start_span(config.tracer, spec.name) as span:
-        _set_span_attributes(span, spec.attributes)
-        correlation_id = get_correlation_id()
-        if correlation_id:
-            span.set_attribute("codeintel.correlation_id", correlation_id)
-        _set_span_attributes(span, config.attributes)
-        try:
-            result = call.func(call.statement, *call.args, **call.kwargs)
-        except Exception as exc:  # pragma: no cover - surface via tests
-            _record_span_error(span, exc)
-            raise
 
     if result is getattr(call.chain_target, "_cursor", None) or result is getattr(
         call.chain_target, "_connection", None
     ):
         return call.chain_target
     return result
-
-
-def _set_span_attributes(span: Span, attrs: Mapping[str, object]) -> None:
-    for key, value in attrs.items():
-        attr_value = _coerce_attribute_value(value)
-        if attr_value is not None:
-            span.set_attribute(key, attr_value)
-
-
-def _record_span_error(span: Span, exc: Exception) -> None:
-    span.record_exception(exc)
-    if Status is not None and StatusCode is not None:
-        span.set_status(Status(StatusCode.ERROR))
-
-
-def _has_parent_span() -> bool:
-    if otel_trace is None:
-        return False
-    span = otel_trace.get_current_span()
-    context = span.get_span_context()
-    return context.is_valid
 
 
 def _extract_params(args: tuple[object, ...], kwargs: Mapping[str, object]) -> object | None:
@@ -270,13 +191,15 @@ def maybe_instrument_duckdb_connection(
     }
     db_name = str(config.db_path)
 
-    tracing_config = _TracingConfig(
+    emitter_config = DbSpanEmitterConfig(
         tracer=tracer,
-        db_name=db_name,
+        db_system_name="duckdb",
+        db_namespace=db_name,
         attributes=attributes,
         span_builder=_build_span_builder(obs),
         require_parent_span=obs.duckdb_require_parent_span,
     )
+    tracing_config = _TracingConfig(emitter=DbSpanEmitter(emitter_config))
     wrapped = _RedactingConnectionProxy(con, tracing_config)
     return cast("DuckDBConnection", wrapped)
 

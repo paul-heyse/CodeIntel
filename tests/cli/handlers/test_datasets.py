@@ -193,7 +193,7 @@ def test_datasets_snapshot_handler_missing_output(
     expect_true(not result.success)
     error = result.error
     if error is not None:
-        expect_equal(error.type, "urn:codeintel:cli:validation:missing-required")
+        expect_equal(error.type, "urn:codeintel:validation/missing-required")
 
 
 def test_datasets_snapshot_handler_success(
@@ -229,7 +229,7 @@ def test_datasets_diff_handler_missing_baseline(
     expect_true(not result.success)
     error = result.error
     if error is not None:
-        expect_equal(error.type, "urn:codeintel:cli:validation:missing-required")
+        expect_equal(error.type, "urn:codeintel:validation/missing-required")
 
 
 def test_datasets_diff_handler_baseline_not_found(

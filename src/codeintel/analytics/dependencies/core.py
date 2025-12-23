@@ -13,7 +13,6 @@ The Hamilton native module is at:
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import logging
 from collections import defaultdict
@@ -33,6 +32,7 @@ from codeintel.analytics.compute.dependencies.classification import (
 from codeintel.analytics.compute.dependencies.detection import DependencyCall
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import resolve_call_target, safe_unparse, snippet_from_lines
+from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 
 EXTERNAL_DEPENDENCY_CALLS_COLS = [
@@ -563,7 +563,7 @@ def _ensure_str_list(value: object) -> list[str]:
 
 def _dep_id(repo: str, commit: str, library: str) -> str:
     raw = f"{repo}:{commit}:{library}"
-    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+    return sha1_short(raw, length=16, used_for_security=False)
 
 
 def _decimal(value: int) -> Decimal:

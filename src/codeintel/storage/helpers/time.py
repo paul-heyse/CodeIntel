@@ -13,26 +13,6 @@ True
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from codeintel.core.time import utc_now
 
 __all__ = ["utc_now"]
-
-
-def utc_now() -> datetime:
-    """Return current UTC timestamp with timezone info.
-
-    Returns
-    -------
-    datetime
-        Current datetime with UTC timezone attached.
-
-    Examples
-    --------
-    >>> ts = utc_now()
-    >>> ts.tzinfo is not None
-    True
-    >>> from datetime import UTC
-    >>> ts.tzinfo == UTC
-    True
-    """
-    return datetime.now(tz=UTC)

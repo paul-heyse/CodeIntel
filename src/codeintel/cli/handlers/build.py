@@ -32,12 +32,12 @@ from codeintel.build.hamilton.observability import (
 )
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.providers import create_default_providers
-from codeintel.build.run_context import BuildRunContext
+from codeintel.build.run_context import BuildRunContext, BuildRunContextOverrides
 from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
-from codeintel.build.settings import get_build_settings, get_hamilton_execution_settings
+from codeintel.build.settings import get_build_settings
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.cli.core import CliResult
@@ -64,7 +64,8 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
+from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
 if TYPE_CHECKING:
@@ -98,6 +99,21 @@ class TargetScope(Enum):
 
 _VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export")
 _CACHE_LOG_KEY_TUPLE_LEN: int = 2
+
+
+def _build_execution_context(
+    runtime: ResolvedRuntime,
+    *,
+    kind: RunKind = "full",
+    requested_datasets: tuple[str, ...] = (),
+) -> ExecutionContext:
+    run_context = new_run_context(
+        snapshot=runtime.snapshot,
+        kind=kind,
+        trigger="cli",
+        requested_datasets=requested_datasets,
+    )
+    return load_execution_context(primitives=runtime.primitives, run=run_context)
 
 
 @dataclass(frozen=True)
@@ -329,9 +345,12 @@ def _execute_build_hamilton(
         override = Path(execution.cache_dir).expanduser()
         cache_dir = override if override.is_absolute() else (runtime.root / override)
 
-    build_settings = get_build_settings()
+    execution_context = _build_execution_context(
+        runtime,
+        requested_datasets=tuple(execution.goals),
+    )
     execution_settings = replace(
-        get_hamilton_execution_settings(),
+        execution_context.execution_settings,
         parallel_backend=execution.parallel_backend,
         max_workers=execution.max_workers,
     )
@@ -342,14 +361,7 @@ def _execute_build_hamilton(
         enable_hamilton_cache=execution.enable_cache,
         cache_dir=str(cache_dir),
     )
-    context = BuildRunContext(
-        snapshot=runtime.snapshot,
-        gateway=gateway,
-        paths=runtime.paths,
-        providers=providers,
-        config=config,
-        settings=build_settings,
-        execution_settings=execution_settings,
+    overrides = BuildRunContextOverrides(
         run_config=None,
         execution_options=execution_options,
         force_targets=frozenset(execution.force or ()),
@@ -357,6 +369,14 @@ def _execute_build_hamilton(
         strict_contracts=execution.strict_contracts,
         manifest_index=manifest_index,
     )
+    context = BuildRunContext.from_execution_context(
+        execution_context=execution_context,
+        gateway=gateway,
+        providers=providers,
+        config=config,
+        overrides=overrides,
+    )
+    context = replace(context, execution_settings=execution_settings)
     env = context.build_env()
 
     if execution.clear_cache:
@@ -1154,8 +1174,7 @@ def build_plan_handler(
     with runtime_gateway(runtime, read_only=True) as gateway:
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
-        build_settings = get_build_settings()
-        execution_settings = get_hamilton_execution_settings()
+        execution_context = _build_execution_context(runtime, requested_datasets=tuple(goals))
         manifest_index = {
             m.target: m
             for m in gateway.build.list_manifests(
@@ -1164,18 +1183,18 @@ def build_plan_handler(
             )
         }
 
-        context = BuildRunContext(
-            snapshot=runtime.snapshot,
-            gateway=gateway,
-            paths=runtime.paths,
-            providers=providers,
-            config=config,
-            settings=build_settings,
-            execution_settings=execution_settings,
+        overrides = BuildRunContextOverrides(
             run_config=None,
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=frozenset(plan_args.force or ()),
             manifest_index=manifest_index,
+        )
+        context = BuildRunContext.from_execution_context(
+            execution_context=execution_context,
+            gateway=gateway,
+            providers=providers,
+            config=config,
+            overrides=overrides,
         )
         env = context.build_env()
 
@@ -1244,8 +1263,7 @@ def _compute_plan_for_explain(
     with runtime_gateway(runtime, read_only=True) as gateway:
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
-        build_settings = get_build_settings()
-        execution_settings = get_hamilton_execution_settings()
+        execution_context = _build_execution_context(runtime, requested_datasets=(target,))
 
         manifests_list = gateway.build.list_manifests(
             repo=runtime.snapshot.repo,
@@ -1253,18 +1271,18 @@ def _compute_plan_for_explain(
         )
         manifest_index = {m.target: m for m in manifests_list}
 
-        context = BuildRunContext(
-            snapshot=runtime.snapshot,
-            gateway=gateway,
-            paths=runtime.paths,
-            providers=providers,
-            config=config,
-            settings=build_settings,
-            execution_settings=execution_settings,
+        overrides = BuildRunContextOverrides(
             run_config=None,
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=force_targets,
             manifest_index=manifest_index,
+        )
+        context = BuildRunContext.from_execution_context(
+            execution_context=execution_context,
+            gateway=gateway,
+            providers=providers,
+            config=config,
+            overrides=overrides,
         )
         env = context.build_env()
 

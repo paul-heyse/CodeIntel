@@ -15,8 +15,8 @@ from __future__ import annotations
 import traceback
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.errors._cli_errors import ProblemDetail
 from codeintel.cli.errors.taxonomy import make_error_type
+from codeintel.core.errors.problem_details import ProblemDetail
 from codeintel.core.errors.taxonomy import (
     INTERNAL_ERROR,
     NOT_FOUND,
