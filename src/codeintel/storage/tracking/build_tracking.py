@@ -9,6 +9,7 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
@@ -28,6 +29,8 @@ if TYPE_CHECKING:
     from codeintel.core.build_manifest import BuildStatus
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
     from codeintel.storage.gateway.protocol import StorageGateway
+
+log = logging.getLogger(__name__)
 
 
 def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
@@ -276,7 +279,7 @@ class BuildTracking:
         record
             The run record to save.
         """
-        self._backend.bulk_insert(
+        inserted = self._backend.upsert(
             "build.runs",
             [
                 (
@@ -306,7 +309,11 @@ class BuildTracking:
                 "error_summary",
                 "duration_ms",
             ),
+            conflict_columns=("run_id",),
+            update_columns=(),
         )
+        if inserted == 0:
+            log.warning("build.run start ignored due to duplicate run_id: %s", record.run_id)
 
     def complete_run(
         self,

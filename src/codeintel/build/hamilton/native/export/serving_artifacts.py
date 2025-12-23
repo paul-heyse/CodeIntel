@@ -311,6 +311,7 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
     graph=source("graph"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_SEMANTIC_REGISTRY),
+    path_template=value("{build_dir}/serving/artifacts/semantic_registry.json"),
 )
 @tag_compute(
     domain="export",
@@ -340,6 +341,7 @@ def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
     graph=source("graph"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_SCHEMA_MANIFEST),
+    path_template=value("{build_dir}/serving/artifacts/schema_manifest.json"),
 )
 @tag_compute(
     domain="export",
@@ -369,6 +371,7 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
     graph=source("graph"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_BUILDSPEC),
+    path_template=value("{build_dir}/serving/artifacts/buildspec.json"),
 )
 @tag_compute(
     domain="export",
@@ -398,6 +401,7 @@ def serving_artifacts__buildspec(_env: BuildEnv) -> str:
     graph=source("graph"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_ENVIRONMENT),
+    path_template=value("{build_dir}/serving/artifacts/environment.json"),
 )
 @tag_compute(
     domain="export",
@@ -427,6 +431,7 @@ def serving_artifacts__environment(env: BuildEnv) -> str:
     graph=source("graph"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL),
+    path_template=value("{build_dir}/serving/artifacts/views_sql.json"),
 )
 @tag_compute(
     domain="export",
@@ -456,6 +461,7 @@ def serving_artifacts__views_sql(env: BuildEnv) -> str:
     graph=source("graph"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL_DIFF),
+    path_template=value("{build_dir}/serving/artifacts/views_sql_diff.json"),
 )
 @tag_compute(
     domain="export",

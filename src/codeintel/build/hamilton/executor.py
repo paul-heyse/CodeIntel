@@ -30,7 +30,7 @@ from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.run_writer import BuildRunWriter
-from codeintel.core.execution.ids import new_uuid_hex
+from codeintel.core.execution.ids import new_run_id
 
 if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
@@ -68,9 +68,7 @@ def _generate_run_id() -> str:
     str
         Unique run identifier for this Hamilton execution.
     """
-    timestamp = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
-    suffix = new_uuid_hex()[:8]
-    return f"hamilton-{timestamp}-{suffix}"
+    return new_run_id("hamilton")
 
 
 def _categorize_outputs(
@@ -183,10 +181,14 @@ class HamiltonBuildResult:
             Execution record for the target, if present.
         """
         node_name = target_to_node_name(target_name, runtime=self.runtime)
-        if node_name is None:
-            return None
-        value = self.outputs.get(node_name)
-        return value if isinstance(value, TargetRunRecord) else None
+        if node_name is not None:
+            value = self.outputs.get(node_name)
+            if isinstance(value, TargetRunRecord):
+                return value
+        for value in self.outputs.values():
+            if isinstance(value, TargetRunRecord) and value.target == target_name:
+                return value
+        return None
 
 
 class HamiltonBuildExecutor:

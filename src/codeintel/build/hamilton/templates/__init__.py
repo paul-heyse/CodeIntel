@@ -18,11 +18,9 @@ from ``codeintel.build.hamilton.templates.rows_helpers`` (or from this package).
 
 from __future__ import annotations
 
-from types import ModuleType
-
 from codeintel.build.hamilton.templates.all_targets import get_template_module
 from codeintel.build.hamilton.templates.materialize_template import (
-    duckdb_record,
+    build_duckdb_materialization_module,
     executor_materialize,
     executor_record,
 )
@@ -31,23 +29,16 @@ from codeintel.build.hamilton.templates.multi_table_pipeline import (
     multi_table_record,
 )
 from codeintel.build.hamilton.templates.rows_helpers import row_to_tuple, rows_to_tuples
-from codeintel.build.hamilton.templates.tool_pipeline import (
-    record as tool_record,
-)
-from codeintel.build.hamilton.templates.tool_pipeline import (
-    tool_output_to_save,
-)
+from codeintel.build.hamilton.templates.tool_pipeline import build_tool_pipeline_module
 
 __all__ = [
-    "ModuleType",
+    "build_duckdb_materialization_module",
+    "build_tool_pipeline_module",
     "create_row_extractor",
-    "duckdb_record",
     "executor_materialize",
     "executor_record",
     "get_template_module",
     "multi_table_record",
     "row_to_tuple",
     "rows_to_tuples",
-    "tool_output_to_save",
-    "tool_record",
 ]

@@ -298,6 +298,17 @@ class BuildExplainCommand:
             help="Mark specific targets as forced (repeatable).",
         ),
     ] = None
+    io_surface: Annotated[
+        bool,
+        Parameter(
+            name=["--io-surface"],
+            help=(
+                "Include a per-target IO surface (reads/writes) derived strictly from "
+                "Hamilton DAG tags."
+            ),
+            negative=(),
+        ),
+    ] = False
     flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
 
 

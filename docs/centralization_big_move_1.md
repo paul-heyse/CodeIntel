@@ -1,11 +1,11 @@
+Below is what I meant by “#1” (the most leverage-y consolidation I saw) **plus** the exact introspection algorithm + the smallest, safest set of edits to implement it end-to-end with a **compare-then-flip** migration.
 
-
-## #1 I’m implementing here: make “what a target outputs” truly DAG-derived (from Hamilton materialization nodes), not contract-self-referential
+## #1 I’m implementing here: make “what a target outputs” truly DAG-derived (from Hamilton DataSaver nodes), not contract-self-referential
 
 Right now, your architecture clearly separates:
 
 * **Compute nodes** (tagged compute) that produce table rows / artifact paths, and
-* **Saver metadata nodes** produced by `SaveToObjectMetadataDecorator`, named via `materialize_node(...)`, which are the *actual* “materializations exist in the DAG” signal. 
+* **Saver metadata nodes** produced by `SaveToObjectMetadataDecorator`, named via `materialize_node(...)`, which are the *actual* “writes exist in the DAG” signal. 
 
 But your *current* `derive_target_outputs()` derives outputs from **support nodes** (dataset/artifact nodes) — and those support nodes are generated from the **target contract**. That makes “DAG output validation” self-fulfilling: the DAG “outputs” will always match the contract because they were generated from it.
 
@@ -16,7 +16,7 @@ And materializers/savers *are* nodes in the graph (materialization adds nodes to
 
 So #1 is:
 
-> **Derive each target’s dataset/artifact outputs from the *materialization metadata nodes* (the SaveTo-created nodes), and then drive downstream registries/support nodes/validation from that derived view.**
+> **Derive each target’s dataset/artifact outputs from the *DataSaver metadata nodes* (the SaveTo-created nodes), and then drive downstream registries/support nodes/validation from that derived view.**
 
 ---
 
@@ -27,13 +27,15 @@ So #1 is:
 * `HamiltonRuntime runtime` (you already have this abstraction)
 * `runtime.dr` (Hamilton Driver)
 * `runtime.dr.graph` (function graph; you currently inspect nodes directly in other places)
-* Tag keys you already standardize on:
+* Canonical tags (from `codeintel.core.hamilton.tags`):
 
-  * `TAG_NODE_TYPE`, `TAG_TARGET`, `TAG_TABLE_KEY`, `TAG_ARTIFACT` (from `codeintel.core.hamilton.tags`)
-* **New node types** we’ll introduce for materialization metadata nodes:
+  * `TAG_TARGET`, `TAG_TABLE_KEY`, `TAG_ARTIFACT`, `TAG_DOMAIN`
+* Hamilton saver tags (built-in to your `SaveToObjectMetadataDecorator` nodes):
 
-  * `NODE_TYPE_MATERIALIZATION_DATASET`
-  * `NODE_TYPE_MATERIALIZATION_ARTIFACT`
+  * `hamilton.data_saver`, `hamilton.data_saver.sink`, `hamilton.data_saver.classname`
+* New explicit visibility tag:
+
+  * `output_role = contract | internal`
 
 ### Required invariant
 
@@ -49,22 +51,26 @@ You already have the information at decorator-build time (e.g., `target_name=val
 **Step 0: Query nodes by tag** (preferred Hamilton surface)
 Use `Driver.list_available_variables(tag_filter={...})` rather than scanning raw `graph.nodes`, because tag queries are a first-class Hamilton pattern. ([Hamilton][1])
 
-**Step 1: Collect dataset materializations**
+**Step 1: Collect DataSaver nodes**
 
-* `dataset_mats = dr.list_available_variables(tag_filter={TAG_NODE_TYPE: NODE_TYPE_MATERIALIZATION_DATASET})`
-* For each node `n` in `dataset_mats`:
+* `savers = dr.list_available_variables(tag_filter={"hamilton.data_saver": True})`
+* For each node `n` in `savers`:
 
   * `target = n.tags[TAG_TARGET]` (must be non-empty `str`)
-  * `table_key = n.tags[TAG_TABLE_KEY]` (must be non-empty `str`)
+  * `output_role = n.tags["output_role"]` (must be `contract` or `internal`)
+  * `table_key = n.tags[TAG_TABLE_KEY]` (optional)
+  * `artifact = n.tags[TAG_ARTIFACT]` (optional)
+  * `sink = n.tags["hamilton.data_saver.sink"]` (non-empty)
+  * `classname = n.tags["hamilton.data_saver.classname"]` (non-empty)
+  * If `output_role=contract`, require exactly one of `table_key` or `artifact`.
+
+**Step 2: Build output maps (contract only)**
+
+* If `output_role=contract` and `table_key` is present:
+
   * `datasets_by_target[target].add(table_key)`
+* If `output_role=contract` and `artifact` is present:
 
-**Step 2: Collect artifact materializations**
-
-* `artifact_mats = dr.list_available_variables(tag_filter={TAG_NODE_TYPE: NODE_TYPE_MATERIALIZATION_ARTIFACT})`
-* For each node `n` in `artifact_mats`:
-
-  * `target = n.tags[TAG_TARGET]` (must be non-empty `str`)
-  * `artifact = n.tags[TAG_ARTIFACT]` (must be non-empty `str`)
   * `artifacts_by_target[target].add(artifact)`
 
 **Step 3: Normalize**
@@ -91,8 +97,11 @@ Given a `TargetGraph` with `OutputTarget.contract`:
 
   * observed outputs for unknown targets (tag target not in graph)
   * targets that have no observed outputs (fine)
+  * optional escape hatch: `allow_dynamic_outputs=False` by default; when set
+    for a target, treat extra DAG outputs as `output_role=internal` and exclude
+    them from contract reconciliation
 
-This yields a real, meaningful “contract ↔ DAG materialization” verification.
+This yields a real, meaningful “contract ↔ DAG write surface” verification.
 
 ---
 
@@ -100,22 +109,7 @@ This yields a real, meaningful “contract ↔ DAG materialization” verificati
 
 I’m listing edits in the order that lets you do a **safe compare-then-flip**.
 
-### 1) Add node-type constants for materialization metadata nodes
-
-**File:** `src/codeintel/core/hamilton/tags.py`
-**Edit:** add two constants (string values are up to you; keep them stable)
-
-```python
-# New node-type values (do NOT reuse NODE_TYPE_DATASET / NODE_TYPE_ARTIFACT)
-NODE_TYPE_MATERIALIZATION_DATASET = "materialization.dataset"
-NODE_TYPE_MATERIALIZATION_ARTIFACT = "materialization.artifact"
-```
-
-Why: you cannot tag SaveTo metadata nodes as `dataset/artifact` today without breaking your current `derive_target_outputs()` logic (it assumes dataset/artifact nodes are support nodes with a producing-target dependency).
-
----
-
-### 2) Tag SaveTo-produced metadata nodes with (target, table_key/artifact_name, node_type)
+### 1) Tag SaveTo-produced metadata nodes with canonical saver tags + output_role
 
 **File:** `src/codeintel/build/hamilton/save_to.py`
 **Function:** `SaveToObjectMetadataDecorator.create_saver_node(...)`
@@ -126,8 +120,10 @@ You already build the metadata node and set Hamilton saver tags.
 
 ```python
 from codeintel.core.hamilton.tags import (
-    TAG_NODE_TYPE, TAG_TARGET, TAG_TABLE_KEY, TAG_ARTIFACT,
-    NODE_TYPE_MATERIALIZATION_DATASET, NODE_TYPE_MATERIALIZATION_ARTIFACT,
+    TAG_TARGET,
+    TAG_TABLE_KEY,
+    TAG_ARTIFACT,
+    TAG_DOMAIN,
 )
 ```
 
@@ -138,6 +134,7 @@ from codeintel.core.hamilton.tags import (
   * `target_name = resolved_kwargs.get("target_name")`
   * `table_key = resolved_kwargs.get("table_key")`
   * `artifact_name = resolved_kwargs.get("artifact_name")`
+  * `output_role = resolved_kwargs.get("output_role")` (default `contract`)
 
 **Patch-like sketch:**
 
@@ -146,6 +143,7 @@ tags = {
     "hamilton.data_saver": True,
     "hamilton.data_saver.sink": self.sink,
     "hamilton.data_saver.classname": self.get_saver_classes()[0].name(),
+    "output_role": output_role or "contract",
 }
 
 target_name = resolved_kwargs_typed.get("target_name")
@@ -156,19 +154,22 @@ table_key = resolved_kwargs_typed.get("table_key")
 artifact_name = resolved_kwargs_typed.get("artifact_name")
 
 if isinstance(table_key, str) and table_key:
-    tags[TAG_NODE_TYPE] = NODE_TYPE_MATERIALIZATION_DATASET
     tags[TAG_TABLE_KEY] = table_key
 elif isinstance(artifact_name, str) and artifact_name:
-    tags[TAG_NODE_TYPE] = NODE_TYPE_MATERIALIZATION_ARTIFACT
     tags[TAG_ARTIFACT] = artifact_name
-# else: leave untyped (some savers might not map to “dataset/artifact”)
+# else: leave untyped (for internal-only savers)
+
+domain = node_.tags.get(TAG_DOMAIN) if isinstance(node_.tags, dict) else None
+if isinstance(domain, str) and domain:
+    tags[TAG_DOMAIN] = domain
 ```
 
-Result: every SaveTo metadata node becomes self-describing and queryable via tag filters, matching Hamilton’s best-practice usage of tags for compilation/introspection. ([Hamilton][3])
+Result: every SaveTo metadata node becomes self-describing and queryable via
+DataSaver tag filtering, and contract visibility is controlled by `output_role`.
 
 ---
 
-### 3) Add a new “materialization-derived outputs” introspector
+### 2) Add a new “DataSaver-derived outputs” introspector
 
 **File:** `src/codeintel/build/hamilton/introspect.py`
 
@@ -176,43 +177,53 @@ Result: every SaveTo metadata node becomes self-describing and queryable via tag
 
 ```python
 from codeintel.core.hamilton.tags import (
-    NODE_TYPE_MATERIALIZATION_DATASET,
-    NODE_TYPE_MATERIALIZATION_ARTIFACT,
+    TAG_TARGET,
+    TAG_TABLE_KEY,
+    TAG_ARTIFACT,
 )
 ```
 
 **Add a new function (do not change existing one yet):**
 
 ```python
-def derive_target_outputs_from_materializations(runtime: HamiltonRuntime) -> DerivedTargetOutputs:
+def derive_target_outputs_from_savers(runtime: HamiltonRuntime) -> DerivedTargetOutputs:
     dr = runtime.dr
 
     datasets: dict[str, set[str]] = {}
     artifacts: dict[str, set[str]] = {}
 
-    dataset_nodes = dr.list_available_variables(
-        tag_filter={TAG_NODE_TYPE: NODE_TYPE_MATERIALIZATION_DATASET}
+    saver_nodes = dr.list_available_variables(
+        tag_filter={"hamilton.data_saver": True}
     )
-    for n in dataset_nodes:
+    for n in saver_nodes:
         tags = n.tags or {}
         target = tags.get(TAG_TARGET)
-        table_key = tags.get(TAG_TABLE_KEY)
-        if isinstance(target, str) and target and isinstance(table_key, str) and table_key:
-            datasets.setdefault(target, set()).add(table_key)
-        else:
-            raise RuntimeError(f"Bad dataset materialization tags on {n.name}: {tags}")
+        output_role = tags.get("output_role")
+        output_role = tags.get("output_role")
+        if output_role not in {"contract", "internal"}:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="missing_tag",
+                    message="DataSaver node missing/invalid output_role tag",
+                    node=node.name,
+                    target=target,
+                )
+            )
+            continue
+        if output_role != "contract":
+            continue
 
-    artifact_nodes = dr.list_available_variables(
-        tag_filter={TAG_NODE_TYPE: NODE_TYPE_MATERIALIZATION_ARTIFACT}
-    )
-    for n in artifact_nodes:
-        tags = n.tags or {}
-        target = tags.get(TAG_TARGET)
+        table_key = tags.get(TAG_TABLE_KEY)
         artifact = tags.get(TAG_ARTIFACT)
-        if isinstance(target, str) and target and isinstance(artifact, str) and artifact:
+        if not isinstance(target, str) or not target:
+            raise RuntimeError(f"Bad saver tags on {n.name}: {tags}")
+        if isinstance(table_key, str) and table_key:
+            datasets.setdefault(target, set()).add(table_key)
+        elif isinstance(artifact, str) and artifact:
             artifacts.setdefault(target, set()).add(artifact)
         else:
-            raise RuntimeError(f"Bad artifact materialization tags on {n.name}: {tags}")
+            raise RuntimeError(f"Bad saver tags on {n.name}: {tags}")
 
     return DerivedTargetOutputs(
         datasets_by_target={k: tuple(sorted(v)) for k, v in datasets.items()},
@@ -221,6 +232,23 @@ def derive_target_outputs_from_materializations(runtime: HamiltonRuntime) -> Der
 ```
 
 Why `list_available_variables(tag_filter=...)`? Hamilton explicitly documents tag-based discovery + `tag_filter` semantics (exact match, tag-exists, AND queries). ([Hamilton][1])
+
+---
+
+### 3) Add a unified OutputInventoryResolver (single source of truth)
+
+Introduce a resolver with modes `declared | compare | dag`, and route every
+inventory consumer through it. This removes parallel sources of truth and keeps
+BuildSpec, schema services, and runtime aligned.
+
+**Call sites to switch (explicit):**
+
+* `src/codeintel/build/target_metadata.py`
+* `src/codeintel/build/target_inventory.py`
+* `src/codeintel/build/spec/compile.py`
+* `src/codeintel/build/schemas/contract_service.py`
+* `src/codeintel/build/run_context.py`
+* `src/codeintel/build/hamilton/native/outputs.py`
 
 ---
 
@@ -239,8 +267,8 @@ Change to:
 
 * compute:
 
-  * `support_outputs = derive_target_outputs(system.runtime)`  (existing behavior)
-  * `mat_outputs = derive_target_outputs_from_materializations(system.runtime)` (new)
+  * `declared_outputs = resolver.get(mode="declared")`
+  * `saver_outputs = derive_target_outputs_from_savers(system.runtime)` (new)
 * diff them and either:
 
   * log warnings (default)
@@ -259,19 +287,19 @@ This checker intends to verify contract-vs-DAG output agreement, but as discusse
 
 **Minimal change for the compare phase:**
 
-* Have it call the *materialization-derived* function directly for “observed,” while leaving everything else untouched:
+* Have it call the *saver-derived* function directly for “observed,” while leaving everything else untouched:
 
 ```python
-observed = derive_target_outputs_from_materializations(service.system.runtime)
+observed = derive_target_outputs_from_savers(service.system.runtime)
 ```
 
-Now it truly checks that your `SaveToObjectMetadataDecorator` nodes exist for each contract output. This aligns with your architecture where these metadata nodes are the real materialization surface. 
+Now it truly checks that your `SaveToObjectMetadataDecorator` nodes exist for each contract output. This aligns with your architecture where these metadata nodes are the real write surface. 
 
 ---
 
-### 6) “Flip” plumbing: drive support-node generation from materializations (optional but completes the E2E loop)
+### 6) “Flip” plumbing: drive support-node generation from saver-derived outputs (optional but completes the E2E loop)
 
-This is what makes the DAG *seamlessly adapt* when you add a new materialization node: support nodes appear because the DAG says the output exists, not because a parallel contract list was updated.
+This is what makes the DAG *seamlessly adapt* when you add a new saver node: support nodes appear because the DAG says the output exists, not because a parallel contract list was updated.
 
 **Files:**
 
@@ -283,15 +311,34 @@ This is what makes the DAG *seamlessly adapt* when you add a new materialization
 1. In `driver_factory._build_support_graph_and_module(...)`:
 
 * Build the native driver (you already do)
-* Compute `mat_outputs = derive_target_outputs_from_materializations(native_runtime)`
-* Pass `mat_outputs` into support module generation when the flag is enabled.
+* Compute `saver_outputs = derive_target_outputs_from_savers(native_runtime)`
+* Pass `saver_outputs` into support module generation when the flag is enabled.
 
 2. In `support_factory.build_support_module(...)` / `_populate_for_target(...)`:
 
 * Add optional parameter `derived_outputs: DerivedTargetOutputs | None = None`
 * If provided, use `derived_outputs.datasets_by_target[target.name]` instead of `target.contract.table_keys`, similarly for artifacts.
 
-This is directly relevant to your stated support-node runtime gating (dataset/loader nodes enforce upstream success) —you want those nodes to exist because the DAG says the materialization exists, not because a second registry said so.
+This is directly relevant to your stated support-node runtime gating (dataset/loader nodes enforce upstream success) —you want those nodes to exist because the DAG says the saver output exists, not because a second registry said so.
+
+---
+
+### 7) Template factory for static identity (contract outputs only)
+
+**Files:**
+
+* `src/codeintel/build/hamilton/templates/materialize_template.py`
+* `src/codeintel/build/hamilton/templates/tool_pipeline.py`
+
+**Change:**
+
+* Replace `source(...)` for `target_name`, `table_key`, and `artifact_name` in
+  contract outputs with a factory pattern that binds `value(target_name)` and
+  `value(table_key)` at module construction time.
+* If truly dynamic identity is needed, set `output_role=internal` and exclude
+  those saver nodes from the official output inventory and contract checks.
+
+This keeps templates useful without weakening the static identity invariant.
 
 ---
 
@@ -301,41 +348,42 @@ This is directly relevant to your stated support-node runtime gating (dataset/lo
 
 Goal: prove the new derivation matches reality before changing orchestration.
 
-* Ship steps **(1)–(5)**:
+* Ship steps **(1)–(5)** (plus **(7)** if templates are in use):
 
   * new tags on SaveTo metadata nodes
-  * new `derive_target_outputs_from_materializations`
-  * contract checker uses materialization-derived outputs
-  * `TargetMetadataService` logs diffs, but still returns old `support_outputs`
+  * new `derive_target_outputs_from_savers`
+  * contract checker uses saver-derived outputs
+  * `TargetMetadataService` logs diffs, but still returns `declared_outputs`
 
-**What you get immediately:** a meaningful CI/quality check that your DAG’s actual materializations match declared contracts.
+**What you get immediately:** a meaningful CI/quality check that your DAG’s actual saver outputs match declared contracts.
 
 ### Phase B — “Flip outputs source behind a flag”
 
 Add a config/env flag, e.g.:
 
-* `CODEINTEL_OUTPUTS_SOURCE=materializations|support` (default `support`)
+* `CODEINTEL_OUTPUT_INVENTORY_SOURCE=declared|compare|dag` (default `declared`)
 
-When `materializations`:
+When `dag`:
 
-* `TargetMetadataService.outputs` returns `mat_outputs`
-* still compute and diff `support_outputs`; if mismatch, raise in strict mode
+* `TargetMetadataService.outputs` returns `saver_outputs`
+* still compute and diff declared outputs; if mismatch, raise in strict mode
+* enable a quality_report gate that fails on contract ↔ DAG drift once the flip lands
 
 ### Phase C — “Flip support generation behind the same flag”
 
 Add:
 
-* `CODEINTEL_SUPPORT_NODES_FROM=materializations|contracts` (or reuse same flag)
+* `CODEINTEL_SUPPORT_NODES_FROM=dag|contracts` (or reuse the inventory source flag)
 
 When enabled:
 
-* support nodes generated from `mat_outputs`
+* support nodes generated from `saver_outputs`
 
 ### Phase D — Make it the default, then delete old path
 
 Once stable:
 
-* default to materializations
+* default to `dag`
 * remove the support-derived output introspection path (or keep only as debug)
 
 ---
@@ -352,7 +400,7 @@ Once stable:
 
 1. **Enforce tag completeness at decorator-build time**
 
-   * If a saver node has `table_key` but no `target_name`, raise early in `create_saver_node()`.
+   * If a **contract** saver node has `table_key` or `artifact_name` but no `target_name`, raise early in `create_saver_node()`.
 2. **Include saver class + sink in tags** (you already do with `hamilton.data_saver.*`)
 
    * Later you can compile operational registries like: “all DuckDB materializations” vs “artifact writes”.
@@ -365,9 +413,6 @@ If you meant a *different* “#1” from my earlier list (e.g., “auto-generate
 [2]: https://hamilton.staged.apache.org/concepts/materialization/?utm_source=chatgpt.com "Materialization - Hamilton - The Apache Software Foundation"
 [3]: https://hamilton.apache.org/reference/decorators/tag/?utm_source=chatgpt.com "tag* - Hamilton - The Apache Software Foundation"
 
-
-
-# enforce tag completeness and Include saver class + sink in tags #
 
 Below are the “small extras” in **comprehensive, implementation-level detail** (with ready-to-apply diffs + a couple of usage/test snippets). Everything here is designed to be **minimal**, **fail-fast at DAG-build time**, and to make saver/materialization I/O nodes **first-class, tag-indexable DAG citizens**.
 
@@ -385,12 +430,15 @@ For any node your `SaveToObjectMetadataDecorator` creates (i.e., the **DataSaver
   * `hamilton.data_saver.sink = <stable sink name>` (operational grouping)
   * `hamilton.data_saver.classname = <class qualname>` (debuggability)
   * `target = <target_name>` (**critical** for contract enforcement + telemetry attribution)
+  * `output_role = contract | internal` (explicit visibility)
 
 * And when applicable, it should also include:
 
   * `table_key = <table_key>` for table materializations
   * `artifact = <artifact_name>` for artifact writes
   * `domain = <domain>` (optional but extremely useful for grouping; can be copied from upstream node tags)
+
+* For `output_role=contract`, **exactly one** of `table_key` or `artifact` is required.
 
 ### Why enforce at decorator-build time (graph construction)?
 
@@ -401,12 +449,14 @@ Because this gives you:
 
 ---
 
-## 2) “If a saver node has table_key but no target_name, raise early in create_saver_node()”
+## 2) “If a contract saver node has table_key but no target_name, raise early in create_saver_node()”
 
 This is the “pairing invariant” you called out:
 
 * `table_key` strongly implies “this write belongs to a particular target”
 * and your DataSavers rely on `target_name` for **manifest hashing**, **skip decisions**, and correct attribution.
+* contract outputs require static identity at DAG-build time (`value(...)`), so missing
+  `target_name` or `table_key` is a hard error in that mode.
 
 So we fail fast during Driver construction.
 
@@ -424,8 +474,8 @@ You already did this with:
 The diff below **keeps that**, but adds:
 
 * checks that `name()` returns a non-empty string
-* tag completeness validation (including `target`)
-* canonical tags (`target`, `table_key`, `artifact`, and optionally `domain`)
+* tag completeness validation (including `target` and `output_role`)
+* canonical tags (`target`, `table_key`, `artifact`, `output_role`, and optionally `domain`)
 
 ---
 
@@ -451,6 +501,7 @@ The diff below **keeps that**, but adds:
 +_TAG_DATA_SAVER = "hamilton.data_saver"
 +_TAG_DATA_SAVER_SINK = "hamilton.data_saver.sink"
 +_TAG_DATA_SAVER_CLASSNAME = "hamilton.data_saver.classname"
++_TAG_OUTPUT_ROLE = "output_role"
 +
 +
  class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
@@ -499,6 +550,7 @@ The diff below **keeps that**, but adds:
 +            _TAG_DATA_SAVER,
 +            _TAG_DATA_SAVER_SINK,
 +            _TAG_DATA_SAVER_CLASSNAME,
++            _TAG_OUTPUT_ROLE,
 +            ht.TAG_TARGET,
 +        )
 +        missing = [k for k in required if k not in tags]
@@ -515,7 +567,12 @@ The diff below **keeps that**, but adds:
 +            )
 +            raise InvalidDecoratorException(msg)
 +
-+        for key in (_TAG_DATA_SAVER_SINK, _TAG_DATA_SAVER_CLASSNAME, ht.TAG_TARGET):
++        for key in (
++            _TAG_DATA_SAVER_SINK,
++            _TAG_DATA_SAVER_CLASSNAME,
++            _TAG_OUTPUT_ROLE,
++            ht.TAG_TARGET,
++        ):
 +            value = tags.get(key)
 +            if not isinstance(value, str) or not value.strip():
 +                msg = (
@@ -537,7 +594,7 @@ The diff below **keeps that**, but adds:
 +        if "table_key" in self.kwargs and "target_name" not in self.kwargs:
 +            msg = (
 +                f"{fn.__qualname__}: SaveToObjectMetadataDecorator specifies table_key but is "
-+                "missing target_name. Table materializations require target_name=value(<target>) "
++                "missing target_name. Contract table writes require target_name=value(<target>) "
 +                "so manifest hashing + contract enforcement are attributed to the correct target."
 +            )
 +            raise InvalidDecoratorException(msg)
@@ -559,6 +616,14 @@ The diff below **keeps that**, but adds:
 +            fn_qualname=fn.__qualname__,
 +        )
 +
++        output_role = resolved_kwargs_typed.get("output_role")
++        if output_role not in {None, "contract", "internal"}:
++            msg = (
++                f"{fn.__qualname__}: output_role must be 'contract' or 'internal'; "
++                f"got {output_role!r}"
++            )
++            raise InvalidDecoratorException(msg)
++
 +        table_key: str | None = None
 +        if "table_key" in self.kwargs:
 +            table_key = self._require_resolved_str(
@@ -574,6 +639,15 @@ The diff below **keeps that**, but adds:
 +                key="artifact_name",
 +                fn_qualname=fn.__qualname__,
 +            )
++
++        effective_role = "contract" if output_role is None else output_role
++        if effective_role == "contract":
++            if (table_key is None) == (artifact_tag is None):
++                msg = (
++                    f"{fn.__qualname__}: contract saver nodes must declare exactly one of "
++                    "table_key or artifact_name"
++                )
++                raise InvalidDecoratorException(msg)
 +
          def save_data(
              __adapter_factory: AdapterFactory = adapter_factory,
@@ -596,6 +670,7 @@ The diff below **keeps that**, but adds:
 +            _TAG_DATA_SAVER: True,
 +            _TAG_DATA_SAVER_SINK: sink,
 +            _TAG_DATA_SAVER_CLASSNAME: f"{saver_cls.__qualname__}",
++            _TAG_OUTPUT_ROLE: output_role or "contract",
 +            ht.TAG_TARGET: target_name,
 +        }
 +        if table_key is not None:
@@ -792,8 +867,6 @@ def test_save_to_requires_target_name_when_table_key_present():
 If you want next: I can extend this same pattern to **loaders** (q__/df__ nodes) so you can compile a complete “read/write surface map” per target strictly from DAG tags (no extra registries), but I kept the above strictly within the “small extras / minimal touch” scope you asked for.
 
 
-# introspection algorithm #
-
 Below is a concrete, “drop-in” sketch of the **exact introspection algorithm** + the **minimal code edits (by file/function)** to implement the end-to-end “compare-then-flip” migration, plus the “small extras” (tag completeness + saver tags), and then the **loader (q__/df__) extension** to produce a **complete read/write surface map per target derived purely from DAG tags**.
 
 I’m going to be very explicit about:
@@ -822,11 +895,16 @@ A DataSaver node must be *self-describing* enough that you can answer, from tags
 * `hamilton.data_saver.sink = saver_cls.name()` (already present)
 * `hamilton.data_saver.classname = saver_cls.__qualname__` (already present)
 * `target = <owning target name>`  ✅ **new**
-* exactly one of:
+* `output_role = contract | internal` ✅ **new**
+* for `output_role=contract`, **exactly one** of:
 
   * `table_key = <schema.table>` ✅ **new**, OR
   * `artifact = <artifact_name>` ✅ **new**
 * (optional but very useful): propagate `domain = <module>` from the decorated compute node ✅ **new**
+
+Contract outputs must be taggable at DAG-build time, so `target_name`, `table_key`,
+and `artifact_name` must be provided via `value(...)`. Dynamic identity is allowed
+only for `output_role=internal`.
 
 This single change unlocks:
 
@@ -1068,7 +1146,8 @@ Your current “derived outputs” are derived from `d__`/`a__` nodes, but those
 
 ### The fix
 
-Derive target output inventory from **saver nodes** (`hamilton.data_saver=True`) instead.
+Derive target output inventory from **saver nodes** (`hamilton.data_saver=True`) and
+only include nodes tagged `output_role=contract`.
 
 ### Minimal code addition: `derive_target_outputs_from_savers(runtime)`
 
@@ -1077,11 +1156,7 @@ Derive target output inventory from **saver nodes** (`hamilton.data_saver=True`)
 Add imports at the top:
 
 ```python
-from codeintel.core.hamilton.tags import (
-    NODE_TYPE_LOADER_QUERY,
-    NODE_TYPE_LOADER_DATAFRAME,
-    # already imported: TAG_TARGET, TAG_TABLE_KEY, TAG_ARTIFACT, TAG_NODE_TYPE, ...
-)
+from codeintel.core.hamilton.tags import TAG_TARGET, TAG_TABLE_KEY, TAG_ARTIFACT
 ```
 
 Add this function (and export it):
@@ -1105,17 +1180,20 @@ def derive_target_outputs_from_savers(runtime: HamiltonRuntime) -> DerivedTarget
         if not isinstance(target, str) or not target:
             raise RuntimeError(f"DataSaver node {node.name} missing target tag")
 
+        output_role = tags.get("output_role")
         table_key = tags.get(TAG_TABLE_KEY)
         artifact_name = tags.get(TAG_ARTIFACT)
 
+        if output_role != "contract":
+            continue
+
         if isinstance(table_key, str) and table_key:
             datasets.setdefault(target, set()).add(table_key)
-        if isinstance(artifact_name, str) and artifact_name:
+        elif isinstance(artifact_name, str) and artifact_name:
             artifacts.setdefault(target, set()).add(artifact_name)
-
-        if (not table_key) and (not artifact_name):
+        else:
             raise RuntimeError(
-                f"DataSaver node {node.name} missing both table_key and artifact tags"
+                f"DataSaver node {node.name} missing table_key/artifact tags for contract output"
             )
 
     datasets_by_target = {k: tuple(sorted(v)) for k, v in datasets.items()}
@@ -1233,7 +1311,7 @@ def _collect_saver_outputs(
                 GraphValidationIssue(
                     severity="error",
                     code="missing_tag",
-                    message="DataSaver node missing both table_key and artifact tags",
+                    message="Contract DataSaver node missing table_key/artifact tags",
                     node=node.name,
                     target=target,
                 )
@@ -1588,8 +1666,6 @@ If you want, I can also:
 * Add one “golden” test that asserts saver nodes always have `{target, (table_key|artifact)}` tags, so this never regresses again.
 
 
-# CLI output and golden test enforcing behaviors #
-
 Below is an end-to-end, “drop-in” implementation of what you asked for:
 
 1. **Wire `derive_target_io_surface()` into the CLI `build explain` command** so you can print a per-target IO surface (reads/writes) in one command, and
@@ -1606,8 +1682,9 @@ Your IO-surface derivation is only as good as the tags on the saver metadata nod
 * Add canonical tags to saver nodes when they’re created:
 
   * `target` (from `target_name`)
-  * `table_key` (from `table_key`) **or** `artifact` (from `artifact_name`)
-* Add a guardrail: **if a saver has `table_key`/`artifact` but no `target_name`, raise early**.
+  * `output_role` (default `contract`)
+  * `table_key` (from `table_key`) **or** `artifact` (from `artifact_name`) for contract outputs
+* Add a guardrail: **if a contract saver has `table_key`/`artifact` but no `target_name`, raise early**.
 
 ### File: `src/codeintel/build/hamilton/save_to.py`
 
@@ -1629,6 +1706,7 @@ add:
 ```py
 # --- Canonical tags for DAG-derived IO surface mapping ---
 target_tag = resolved_kwargs_typed.get("target_name")
+output_role_tag = resolved_kwargs_typed.get("output_role")
 table_key_tag = resolved_kwargs_typed.get("table_key")
 artifact_tag = resolved_kwargs_typed.get("artifact_name")
 if artifact_tag is None:
@@ -1636,11 +1714,14 @@ if artifact_tag is None:
     artifact_tag = resolved_kwargs_typed.get("artifact")
 
 tag_target = target_tag if isinstance(target_tag, str) and target_tag else None
+tag_output_role = (
+    output_role_tag if isinstance(output_role_tag, str) and output_role_tag else "contract"
+)
 tag_table_key = table_key_tag if isinstance(table_key_tag, str) and table_key_tag else None
 tag_artifact = artifact_tag if isinstance(artifact_tag, str) and artifact_tag else None
 
-# Guardrail: if a saver declares a table_key/artifact, it must also declare a target.
-if (tag_table_key or tag_artifact) and not tag_target:
+# Guardrail: if a contract saver declares a table_key/artifact, it must also declare a target.
+if tag_output_role == "contract" and (tag_table_key or tag_artifact) and not tag_target:
     msg = (
         "Saver node has table_key/artifact but no target_name. "
         "Pass target_name=value(<target>) into SaveToObjectMetadataDecorator so tags are complete. "
@@ -1657,6 +1738,7 @@ tags={
     "hamilton.data_saver.sink": f"{saver_cls.name()}",
     "hamilton.data_saver.classname": f"{saver_cls.__qualname__}",
     **({TAG_TARGET: tag_target} if tag_target else {}),
+    "output_role": tag_output_role,
     **({TAG_TABLE_KEY: tag_table_key} if tag_table_key else {}),
     **({TAG_ARTIFACT: tag_artifact} if tag_artifact else {}),
 },
@@ -1968,7 +2050,8 @@ This ensures the whole surface-map mechanism can’t silently regress.
 
 Required tags:
 - target
-- table_key OR artifact
+- output_role
+- table_key OR artifact (contract outputs only)
 """
 
 from __future__ import annotations
@@ -1991,6 +2074,7 @@ def test_prXX_saver_nodes_have_target_and_output_tags() -> None:
             continue
 
         target = tags.get(ht.TAG_TARGET)
+        output_role = tags.get("output_role")
         table_key = tags.get(ht.TAG_TABLE_KEY)
         artifact = tags.get(ht.TAG_ARTIFACT)
 
@@ -1998,10 +2082,15 @@ def test_prXX_saver_nodes_have_target_and_output_tags() -> None:
             missing.append(f"{node_name}: missing target tag")
             continue
 
-        has_table = isinstance(table_key, str) and bool(table_key)
-        has_artifact = isinstance(artifact, str) and bool(artifact)
-        if not (has_table or has_artifact):
-            missing.append(f"{node_name}: missing table_key/artifact tag")
+        if output_role not in {"contract", "internal"}:
+            missing.append(f"{node_name}: missing/invalid output_role tag")
+            continue
+
+        if output_role == "contract":
+            has_table = isinstance(table_key, str) and bool(table_key)
+            has_artifact = isinstance(artifact, str) and bool(artifact)
+            if not (has_table or has_artifact):
+                missing.append(f"{node_name}: missing table_key/artifact tag")
 
     if missing:
         pytest.fail("Saver nodes missing canonical tags:\n" + "\n".join(sorted(missing)))
@@ -2026,3 +2115,11 @@ If you later want IO surface in lineage too, the clean design is usually:
 
 ---
 
+If you want next (optional, but pairs extremely well with this):
+I can show the tiny follow-up that **asserts** `writes.tables` from saver nodes equals the target’s contract-produced tables (and same for artifacts) — giving you a *DAG vs contract* drift detector that’s still Hamilton-first.
+        output_role = resolved_kwargs_typed.get("output_role")
+        if output_role not in {None, "contract", "internal"}:
+            msg = (
+                f"{fn.__qualname__}: output_role must be 'contract' or 'internal'; got {output_role!r}"
+            )
+            raise InvalidDecoratorException(msg)

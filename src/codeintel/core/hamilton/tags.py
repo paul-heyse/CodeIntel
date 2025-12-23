@@ -9,6 +9,7 @@ TAG_DOMAIN = "domain"
 TAG_TARGET = "target"
 TAG_TABLE_KEY = "table_key"
 TAG_ARTIFACT = "artifact"
+TAG_ARTIFACT_PATH_TEMPLATE = "artifact_path_template"
 TAG_NODE_TYPE = "node_type"
 
 TAG_OUTPUT_KIND = "output_kind"
@@ -41,6 +42,7 @@ __all__ = [
     "OUTPUT_KIND_SEMANTIC_VIEW",
     "OUTPUT_KIND_VIEW",
     "TAG_ARTIFACT",
+    "TAG_ARTIFACT_PATH_TEMPLATE",
     "TAG_DOMAIN",
     "TAG_ENTITY",
     "TAG_GRAIN",

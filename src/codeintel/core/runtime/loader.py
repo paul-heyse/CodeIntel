@@ -70,6 +70,24 @@ def _resolve_export_audit_table_enabled() -> bool:
     return os.environ.get("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 
 
+def _resolve_output_inventory_source() -> str:
+    value = os.environ.get("CODEINTEL_OUTPUT_INVENTORY_SOURCE", "declared").strip().lower()
+    if value not in {"declared", "compare", "dag"}:
+        return "declared"
+    return value
+
+
+def _resolve_output_inventory_strict() -> bool:
+    return os.environ.get("CODEINTEL_OUTPUT_INVENTORY_STRICT") is not None
+
+
+def _resolve_support_nodes_source() -> str:
+    value = os.environ.get("CODEINTEL_SUPPORT_NODES_FROM", "contracts").strip().lower()
+    if value not in {"contracts", "dag"}:
+        return "contracts"
+    return value
+
+
 def _load_build_settings() -> BuildSettings:
     return BuildSettings(
         engine_version=_resolve_engine_version(),
@@ -77,6 +95,9 @@ def _load_build_settings() -> BuildSettings:
             log_path=_resolve_export_audit_log_path(),
             table_enabled=_resolve_export_audit_table_enabled(),
         ),
+        output_inventory_source=_resolve_output_inventory_source(),
+        output_inventory_strict=_resolve_output_inventory_strict(),
+        support_nodes_source=_resolve_support_nodes_source(),
     )
 
 

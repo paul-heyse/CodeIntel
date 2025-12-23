@@ -35,7 +35,7 @@ class SpanTestEnv:
     repo_root: Path
     builder: ConfigBuilder
     gateway: StorageGateway
-    expected_goid: int
+    expected_goid: int | None
 
 
 @dataclass(frozen=True)

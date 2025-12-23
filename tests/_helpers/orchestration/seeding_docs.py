@@ -92,12 +92,14 @@ def seed_docs_export_minimal(
         [repo, commit],
     )
 
-    resolved_module_map = module_map
+    resolved_module_map = dict(module_map) if module_map is not None else None
     if resolved_module_map is None and repo_root is not None:
         path_map = modules_expected_from_repo_tree(repo_root)
         resolved_module_map = {module: path for path, module in path_map.items()}
-    if resolved_module_map is None:
+    if not resolved_module_map:
         resolved_module_map = {"pkg.foo": "foo.py"}
+    elif "pkg.foo" not in resolved_module_map:
+        resolved_module_map["pkg.foo"] = "foo.py"
     insert_rows(
         gateway,
         [RepoMapRow(repo=repo, commit=commit, modules=resolved_module_map, overlays={})],

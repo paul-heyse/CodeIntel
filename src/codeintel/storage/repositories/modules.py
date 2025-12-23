@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.repositories.base import BaseRepository
@@ -15,6 +15,27 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class ModuleRepository(BaseRepository):
     """Read module and file metadata from docs views."""
+
+    _FILE_SUMMARY_COLUMNS: ClassVar[tuple[str, ...]] = (
+        "repo",
+        "commit",
+        "rel_path",
+        "module",
+        "language",
+        "function_count",
+        "class_count",
+        "loc",
+        "complexity",
+        "avg_risk_score",
+        "max_risk_score",
+        "high_risk_function_count",
+        "coverage_ratio",
+        "typed_ratio",
+        "hotspot_score",
+        "static_error_count",
+        "tags",
+        "owners",
+    )
 
     def list_modules(self) -> list[str]:
         """
@@ -51,7 +72,31 @@ class ModuleRepository(BaseRepository):
                 tbl.rel_path == rel_path,
             )
         ).limit(1)
-        return self._ibis_to_one(expr)
+        summary = self._ibis_to_one(expr)
+        if summary is not None:
+            return summary
+
+        modules = self._ibis_table("core.modules")
+        fallback_expr = modules.filter(
+            and_predicates(
+                modules.path == rel_path,
+            )
+        ).limit(1)
+        module_row = self._ibis_to_one(fallback_expr)
+        if module_row is None:
+            return None
+
+        fallback: RowDict = {}
+        for key in self._FILE_SUMMARY_COLUMNS:
+            fallback[key] = None
+        fallback["repo"] = module_row.get("repo")
+        fallback["commit"] = module_row.get("commit")
+        fallback["rel_path"] = module_row.get("path")
+        fallback["module"] = module_row.get("module")
+        fallback["language"] = module_row.get("language")
+        fallback["tags"] = module_row.get("tags")
+        fallback["owners"] = module_row.get("owners")
+        return fallback
 
     def get_module_architecture(self, module: str) -> RowDict | None:
         """

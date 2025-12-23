@@ -128,5 +128,64 @@ class ManifestPriming:
         )
         return self.prime_manifest(spec)
 
+    def prime_target_manifest(
+        self,
+        target: str,
+        *,
+        file_state_hash: str | None = None,
+        row_count: int | None = None,
+        change_delta: dict[str, object] | None = None,
+    ) -> OutputManifest:
+        """Prime a manifest for an arbitrary target.
+
+        Parameters
+        ----------
+        target
+            Target name to prime.
+        file_state_hash
+            Optional file state hash used in input hash computation.
+        row_count
+            Optional row count to store on the manifest.
+        change_delta
+            Optional change delta payload to store.
+
+        Returns
+        -------
+        OutputManifest
+            Saved manifest record for the target.
+
+        Raises
+        ------
+        RuntimeError
+            If the target is not found in the target graph.
+        """
+        env = self.harness.build_env()
+        runtime = build_driver(config={"profile": env.profile})
+        node = runtime.graph.get(target)
+        if node is None:
+            message = f"Target '{target}' not found in target graph"
+            raise RuntimeError(message)
+
+        opts_hash = options_hash_for_target(env, target)
+        input_hash = compute_target_input_hash(
+            target=node,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            settings=env.settings,
+            options=InputHashOptions(
+                options_hash=opts_hash,
+                file_state_hash=file_state_hash,
+                manifests=None,
+            ),
+        )
+        spec = self.ManifestSpec(
+            target=target,
+            input_hash=input_hash,
+            options_hash=opts_hash,
+            row_count=row_count,
+            change_delta=change_delta,
+        )
+        return self.prime_manifest(spec)
+
 
 __all__ = ["ManifestPriming"]

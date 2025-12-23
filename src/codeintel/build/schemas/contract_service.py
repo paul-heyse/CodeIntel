@@ -9,14 +9,11 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.catalogs.canonical import load_contract_catalog
+from codeintel.build.output_inventory import OutputInventory
 from codeintel.build.schemas.provider_declared import declared_schema_provider_for_inventory
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.target_inventory import get_output_inventory
-from codeintel.build.target_metadata import (
-    OutputInventory,
-    TargetMetadataProvider,
-    get_target_metadata_provider,
-)
+from codeintel.build.target_metadata import TargetMetadataProvider, get_target_metadata_provider
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.schemas.contract_factory import (
     DatasetContractOverrides,

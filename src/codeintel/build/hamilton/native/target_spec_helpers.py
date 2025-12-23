@@ -10,10 +10,10 @@ These helpers support the "DAG-first" target catalog strategy:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from string import Formatter
 from typing import TYPE_CHECKING
 
 from codeintel.build.contracts import OutputContract, placeholder_table_schema
+from codeintel.build.hamilton.materializers.path_templates import validate_path_template
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import DEFAULT_EXECUTION, DEFAULT_RESOURCES
 from codeintel.build.targets import OutputTarget
@@ -29,15 +29,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
 
 
-_ALLOWED_ARTIFACT_TEMPLATE_KEYS: frozenset[str] = frozenset(
-    {
-        "build_dir",
-        "export_dir",
-        "repo_root",
-        "scip_dir",
-    }
-)
-
 _TARGET_REGISTRY: dict[str, OutputTarget] = {}
 
 
@@ -50,7 +41,6 @@ def _validate_table_key(table_key: str) -> None:
 
 def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
     seen_names: set[str] = set()
-    formatter = Formatter()
 
     for artifact in artifacts:
         if not artifact.name:
@@ -61,18 +51,8 @@ def _validate_artifact_specs(artifacts: tuple[ArtifactSpec, ...]) -> None:
             raise ValueError(msg)
         seen_names.add(artifact.name)
 
-        if artifact.path_template is None:
-            continue
-
-        for _, field_name, _, _ in formatter.parse(artifact.path_template):
-            if field_name is None:
-                continue
-            if field_name not in _ALLOWED_ARTIFACT_TEMPLATE_KEYS:
-                msg = (
-                    "Unsupported artifact path_template placeholder "
-                    f"{field_name!r} (allowed={sorted(_ALLOWED_ARTIFACT_TEMPLATE_KEYS)})"
-                )
-                raise ValueError(msg)
+        if artifact.path_template is not None:
+            validate_path_template(artifact.path_template)
 
 
 def _resolve_table_schemas(

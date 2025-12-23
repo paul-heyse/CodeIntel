@@ -8,6 +8,7 @@ helpers so call sites do not rely on unchecked casts.
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol, cast
 
 import ibis.expr.types as it
@@ -243,4 +244,14 @@ def records_from_dataframe(frame: pd.DataFrame) -> list[dict[str, object]]:
         List of row dictionaries with missing values set to None.
     """
     sanitized = frame.astype("object").where(pd.notna(frame), None)
+    for column in sanitized.columns:
+        if "goid" not in str(column).lower():
+            continue
+        sanitized[column] = sanitized[column].map(_normalize_goid_value)
     return sanitized.to_dict(orient="records")
+
+
+def _normalize_goid_value(value: object) -> object:
+    if isinstance(value, Decimal):
+        return int(value)
+    return value

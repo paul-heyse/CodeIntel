@@ -180,7 +180,12 @@ class HarnessArtifacts:
             {
                 "relativePath": "pkg/mod_a.py",
                 "symbols": [{"symbol": "scip-python python pkg/mod_a foo()."}],
-                "occurrences": [],
+                "occurrences": [
+                    {
+                        "symbol": "scip-python python pkg/mod_a foo().",
+                        "range": [1, 0, 1, 1],
+                    }
+                ],
             }
         ]
         payload = scip_json_payload(documents=docs)

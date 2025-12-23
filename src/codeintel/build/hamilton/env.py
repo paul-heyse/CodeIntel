@@ -31,8 +31,8 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.config import BuildConfig
+    from codeintel.build.output_inventory import OutputInventory
     from codeintel.build.providers import Providers
-    from codeintel.build.target_metadata import OutputInventory
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.core.execution import ExecutionContext, RunContext

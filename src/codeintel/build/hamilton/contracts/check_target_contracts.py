@@ -13,7 +13,9 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
+from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
+from codeintel.build.output_inventory import OutputInventory
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
 
 if TYPE_CHECKING:
@@ -100,6 +102,7 @@ def _check_contract_outputs(graph: TargetGraph, outputs: OutputInventory) -> lis
     all_targets = graph.all_targets
     datasets_by_target = outputs.datasets_by_target
     artifacts_by_target = outputs.artifacts_by_target
+    templates_by_target = outputs.artifact_templates_by_target
 
     for target in all_targets:
         name = getattr(target, "name", None)
@@ -109,9 +112,13 @@ def _check_contract_outputs(graph: TargetGraph, outputs: OutputInventory) -> lis
 
         expected_tables = tuple(sorted(getattr(contract, "table_keys", ())))
         expected_artifacts = tuple(sorted(getattr(contract, "artifact_names", ())))
+        expected_templates = {
+            artifact.name: artifact.path_template for artifact in getattr(contract, "artifacts", ())
+        }
 
         observed_tables = tuple(sorted(datasets_by_target.get(name, ())))
         observed_artifacts = tuple(sorted(artifacts_by_target.get(name, ())))
+        observed_templates = templates_by_target.get(name, {})
 
         if expected_tables != observed_tables:
             issues.append(
@@ -122,6 +129,11 @@ def _check_contract_outputs(graph: TargetGraph, outputs: OutputInventory) -> lis
             issues.append(
                 "Target contract artifact_names differ from DAG outputs "
                 f"for {name}: expected={expected_artifacts} observed={observed_artifacts}"
+            )
+        if expected_templates != observed_templates:
+            issues.append(
+                "Target contract artifact templates differ from DAG outputs "
+                f"for {name}: expected={expected_templates} observed={observed_templates}"
             )
 
     return issues
@@ -141,7 +153,13 @@ def main() -> int:
 
     issues: list[str] = []
     issues.extend(_check_catalog_completeness(runtime))
-    issues.extend(_check_contract_outputs(graph, service.outputs))
+    derived = derive_target_outputs_from_savers(service.system.runtime)
+    observed = OutputInventory(
+        datasets_by_target=derived.datasets_by_target,
+        artifacts_by_target=derived.artifacts_by_target,
+        artifact_templates_by_target=derived.artifact_templates_by_target,
+    )
+    issues.extend(_check_contract_outputs(graph, observed))
 
     if issues:
         err = TargetContractsError(issues=issues)

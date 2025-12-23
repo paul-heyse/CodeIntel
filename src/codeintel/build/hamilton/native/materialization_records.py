@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.materializers.metadata import (
     DuckDBMaterializationMetadata,
@@ -28,8 +29,7 @@ from codeintel.build.hamilton.run_records import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import OutputTarget, TargetGraph
+    from codeintel.build.targets import TargetGraph
 
 
 @dataclass(frozen=True)
@@ -223,8 +223,9 @@ def record_from_file_artifact_materialization(
         )
 
     contract_artifact_names = tuple(target.contract.artifact_names)
-    if contract_artifact_names != (expected_artifact_name,):
-        if expected_artifact_name not in contract_artifact_names:
+    expected_names = _expected_artifact_names(env, target.name, contract_artifact_names)
+    if expected_names != (expected_artifact_name,):
+        if expected_artifact_name not in expected_names:
             msg = (
                 "Artifact materialization name is not declared in the target contract: "
                 f"target={target_name} artifact_name={expected_artifact_name}"
@@ -232,7 +233,7 @@ def record_from_file_artifact_materialization(
         else:
             msg = (
                 "record_from_file_artifact_materialization requires a single-artifact contract: "
-                f"target={target_name} contract_artifact_names={contract_artifact_names} "
+                f"target={target_name} contract_artifact_names={expected_names} "
                 f"expected_artifact_name={expected_artifact_name}"
             )
         run = NativeRunInfo(
@@ -500,7 +501,8 @@ def record_from_file_artifact_materializations(
             artifacts=(),
         )
 
-    extra_artifacts = set(materializations) - set(target.contract.artifact_names)
+    expected_names = _expected_artifact_names(env, target.name, tuple(target.contract.artifact_names))
+    extra_artifacts = set(materializations) - set(expected_names)
     if extra_artifacts:
         msg = f"Unexpected materialization metadata for artifacts: {sorted(extra_artifacts)}"
         run = NativeRunInfo(
@@ -516,7 +518,7 @@ def record_from_file_artifact_materializations(
             inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
         )
 
-    parsed = _parse_expected_artifact_materializations(target, materializations)
+    parsed = _parse_expected_artifact_materializations(expected_names, materializations)
     statuses, input_hash, duration_ms = _summarize_file_artifact_results(parsed)
 
     if "failed" in statuses:
@@ -570,11 +572,11 @@ def record_from_file_artifact_materializations(
 
 
 def _parse_expected_artifact_materializations(
-    target: OutputTarget,
+    expected_artifact_names: tuple[str, ...],
     materializations: dict[str, MaterializationMetadata],
 ) -> dict[str, FileArtifactMaterializationMetadata]:
     parsed: dict[str, FileArtifactMaterializationMetadata] = {}
-    for expected_artifact_name in target.contract.artifact_names:
+    for expected_artifact_name in expected_artifact_names:
         meta = materializations.get(expected_artifact_name)
         if meta is None:
             parsed[expected_artifact_name] = FileArtifactMaterializationMetadata(
@@ -609,6 +611,17 @@ def _parse_expected_artifact_materializations(
 
         parsed[expected_artifact_name] = result
     return parsed
+
+
+def _expected_artifact_names(
+    env: BuildEnv,
+    target_name: str,
+    fallback: tuple[str, ...],
+) -> tuple[str, ...]:
+    inventory = env.output_inventory
+    if inventory is None:
+        return fallback
+    return tuple(inventory.artifacts_for(target_name))
 
 
 def _summarize_file_artifact_results(

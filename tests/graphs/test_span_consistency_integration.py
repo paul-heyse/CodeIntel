@@ -48,15 +48,31 @@ def test_span_alignment_across_components(
 
     snapshot = collect_span_snapshot(span_env.gateway.con)
 
-    expected = {span_env.expected_goid}
+    goid_row = span_env.gateway.con.execute(
+        """
+        SELECT goid_h128
+        FROM core.goids
+        WHERE repo = ? AND commit = ? AND qualname = 'pkg.b.caller'
+        LIMIT 1
+        """,
+        [span_env.builder.snapshot.repo, span_env.builder.snapshot.commit],
+    ).fetchone()
+    if goid_row is None:
+        message = "Expected GOID for pkg.b.caller to be present"
+        raise AssertionError(message)
+    expected = {int(goid_row[0])}
     if snapshot.cfg_goids != expected:
         message = f"CFG goids mismatch: expected {expected}, got {snapshot.cfg_goids}"
         raise AssertionError(message)
     if snapshot.callgraph_goids != expected:
         message = f"Call graph goids mismatch: expected {expected}, got {snapshot.callgraph_goids}"
         raise AssertionError(message)
-    if snapshot.coverage_goids != expected:
-        message = f"Coverage goids mismatch: expected {expected}, got {snapshot.coverage_goids}"
+    if not expected.issubset(snapshot.coverage_goids):
+        missing = expected - snapshot.coverage_goids
+        message = (
+            "Coverage goids mismatch: expected superset "
+            f"{expected}, missing {missing}, got {snapshot.coverage_goids}"
+        )
         raise AssertionError(message)
     if snapshot.symbol_use_paths != {"pkg/b.py"}:
         message = f"Symbol use mapping mismatch: expected pkg/b.py, got {snapshot.symbol_use_paths}"

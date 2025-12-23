@@ -95,21 +95,34 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo = "demo/repo"
     commit = "deadbeef"
-    ctx = build_callgraph_fixture_repo(
-        repo_root,
-        CallgraphFixtureOptions(
-            repo=repo,
-            commit=commit,
-            goid_entries=[
-                (100, "urn:pkg.a.foo", "pkg/a.py", 1, 2, "function"),
-                (200, "urn:pkg.a.C.helper", "pkg/a.py", 5, 6, "method"),
-                (300, "urn:pkg.b.caller", "pkg/b.py", 4, 9, "function"),
-            ],
-        ),
-    )
+    ctx = build_callgraph_fixture_repo(repo_root, CallgraphFixtureOptions(repo=repo, commit=commit))
     gateway = ctx.gateway
     con = gateway.con
     insert_symbol_use_edges(gateway, [("sym", "pkg/a.py", "pkg/b.py", False, False)])
+
+    foo_row = con.execute(
+        """
+        SELECT goid_h128
+        FROM core.goids
+        WHERE repo = ? AND commit = ? AND qualname = 'pkg.a.foo'
+        LIMIT 1
+        """,
+        [repo, commit],
+    ).fetchone()
+    helper_row = con.execute(
+        """
+        SELECT goid_h128
+        FROM core.goids
+        WHERE repo = ? AND commit = ? AND qualname = 'pkg.a.C.helper'
+        LIMIT 1
+        """,
+        [repo, commit],
+    ).fetchone()
+    if foo_row is None or helper_row is None:
+        message = "Expected goids for pkg.a.foo and pkg.a.C.helper"
+        raise AssertionError(message)
+    foo_goid = int(foo_row[0])
+    helper_goid = int(helper_row[0])
 
     rows = con.execute(
         """
@@ -145,7 +158,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
 
     _assert_resolved_edge(
         edge_records=edge_records,
-        callee=100,
+        callee=foo_goid,
         allowed_resolutions={"local_name", "local_attr", "global_name", "global_attr"},
         missing_message="expected edge to foo via alias",
         resolution_message="expected foo edge to be resolved via name or attr",
@@ -153,7 +166,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
 
     _assert_resolved_edge(
         edge_records=edge_records,
-        callee=200,
+        callee=helper_goid,
         allowed_resolutions={"global_name", "local_attr", "import_alias", "instance_method"},
         missing_message="expected edge to C.helper via attribute call",
         resolution_message="expected helper edge to use global, alias, or instance_method resolution",

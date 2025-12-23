@@ -176,6 +176,13 @@ def t__scip__run(
     output_scip = env.paths.scip_dir / "index.scip"
     output_json = env.paths.scip_dir / "index.json"
 
+    if output_scip.exists() and output_json.exists():
+        return ScipRunResult(
+            success=True,
+            index_path=output_scip,
+            json_path=output_json,
+        )
+
     try:
         result = asyncio.run(
             env.providers.tool_service.run_scip_full(
@@ -204,6 +211,7 @@ def t__scip__run(
     graph=source("graph"),
     target_name=value(SCIP_TARGET_NAME),
     artifact_name=value(SCIP_ARTIFACT_INDEX),
+    path_template=value("{scip_dir}/index.scip"),
 )
 @tag_compute(
     domain="ingestion",
@@ -230,6 +238,7 @@ def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
     graph=source("graph"),
     target_name=value(SCIP_TARGET_NAME),
     artifact_name=value(SCIP_ARTIFACT_JSON),
+    path_template=value("{scip_dir}/index.json"),
 )
 @tag_compute(
     domain="ingestion",
@@ -301,6 +310,12 @@ def t__scip__ingest(
                 serializer=occurrence_serializer,
             )
         )
+        if not symbol_rows or not occurrence_rows:
+            return ScipIngestResult(
+                result=ExecutionResult.failed(
+                    "SCIP ingestion produced empty symbols or occurrences"
+                )
+            )
 
         table_counts = {
             SCIP_SYMBOLS_TABLE_KEY: len(symbol_rows),

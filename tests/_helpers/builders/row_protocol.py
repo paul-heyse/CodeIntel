@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
-from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
 from tests._helpers.sql import validate_identifier
 
 if TYPE_CHECKING:
@@ -119,11 +119,28 @@ def insert_rows(
         validate_identifier(table, kind="table")
         for col in columns:
             validate_identifier(col, kind="column")
+        options = MaterializeOptions(mode="append")
+        if table == "core.repo_map":
+            options = MaterializeOptions(
+                mode="upsert",
+                upsert=UpsertConfig(
+                    conflict_columns=("repo", "commit"),
+                    update_columns=("modules", "overlays", "generated_at"),
+                ),
+            )
+        elif table == "core.modules":
+            options = MaterializeOptions(
+                mode="upsert",
+                upsert=UpsertConfig(
+                    conflict_columns=("module", "path"),
+                    update_columns=("repo", "commit", "language", "tags", "owners"),
+                ),
+            )
         result = warehouse.materialize_rows(
             table,
             [r.to_tuple() for r in group_rows],
             columns=columns,
-            options=MaterializeOptions(mode="append"),
+            options=options,
         )
         inserted += result.rows_written or 0
     return inserted

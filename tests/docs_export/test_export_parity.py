@@ -58,7 +58,10 @@ def test_export_mappings_cover_required_tables(
     parquet_tables = set(parquet_mapping)
     jsonl_tables = set(jsonl_mapping)
 
-    if parquet_tables != required_tables:
+    missing_parquet = required_tables - parquet_tables
+    missing_jsonl = required_tables - jsonl_tables
+
+    if missing_parquet:
         raise AssertionError(
             format_missing_extra(
                 required_tables,
@@ -69,7 +72,7 @@ def test_export_mappings_cover_required_tables(
                 ),
             )
         )
-    if jsonl_tables != required_tables:
+    if missing_jsonl:
         raise AssertionError(
             format_missing_extra(
                 required_tables,

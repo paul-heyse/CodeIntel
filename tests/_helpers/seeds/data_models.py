@@ -412,8 +412,7 @@ class DataModelsPack:
             GoidRow(
                 goid_h128=GOID_SERIALIZE_POST,
                 urn=(
-                    f"goid:{ctx.repo}/{MOD_API_HANDLERS_PATH}"
-                    f"#{MOD_API_HANDLERS_FQN}.serialize_post"
+                    f"goid:{ctx.repo}/{MOD_API_HANDLERS_PATH}#{MOD_API_HANDLERS_FQN}.serialize_post"
                 ),
                 repo=ctx.repo,
                 commit=ctx.commit,

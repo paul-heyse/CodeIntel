@@ -23,6 +23,9 @@ class BuildSettings:
 
     engine_version: str
     export_audit: ExportAuditSettings = field(default_factory=ExportAuditSettings)
+    output_inventory_source: str = "declared"
+    output_inventory_strict: bool = False
+    support_nodes_source: str = "contracts"
 
 
 @dataclass(frozen=True, slots=True)

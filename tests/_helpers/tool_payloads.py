@@ -91,8 +91,13 @@ def scip_json_payload(*, documents: Iterable[Mapping[str, Any]] | None = None) -
             or [
                 {
                     "relativePath": "src/example.py",
-                    "symbols": [],
-                    "occurrences": [],
+                    "symbols": [{"symbol": "scip-python python src/example foo()."}],
+                    "occurrences": [
+                        {
+                            "symbol": "scip-python python src/example foo().",
+                            "range": [1, 0, 1, 1],
+                        }
+                    ],
                 }
             ]
         )

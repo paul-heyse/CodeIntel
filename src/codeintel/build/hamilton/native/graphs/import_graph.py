@@ -14,10 +14,14 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from hamilton.function_modifiers.dependencies import source, value
+
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root
 from codeintel.build.hamilton.materialize_options import materialize_options
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
 from codeintel.build.hamilton.native.target_override_tables import IMPORT_GRAPH_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -27,8 +31,10 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
@@ -63,6 +69,48 @@ register_output_targets(
         ),
     ),
 )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(IMPORT_MODULES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(IMPORT_GRAPH_TARGET_NAME),
+    table_key=value(IMPORT_MODULES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(IMPORT_MODULES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__modules_marker")
+def import_graph__modules_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare import graph modules output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(IMPORT_GRAPH_EDGES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(IMPORT_GRAPH_TARGET_NAME),
+    table_key=value(IMPORT_GRAPH_EDGES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(IMPORT_GRAPH_EDGES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__edges_marker")
+def import_graph__edges_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare import graph edges output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
 
 
 @dataclass(frozen=True)

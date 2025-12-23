@@ -102,18 +102,24 @@ class CorePack:
         """
         now = datetime.now(UTC)
         canonical = ctx.ensure_canonical_repo()
+        selected_modules = self._select_modules(canonical)
 
         # Seed repo_map
-        self._seed_repo_map(ctx, now, canonical)
+        self._seed_repo_map(ctx, now, selected_modules)
 
         # Seed modules
-        self._seed_modules(ctx, canonical)
+        self._seed_modules(ctx, selected_modules)
         ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
 
         # Seed GOIDs
         self._seed_goids(ctx, now, canonical)
 
-    def _seed_repo_map(self, ctx: TestContext, now: datetime, canonical: CanonicalRepo) -> None:
+    @staticmethod
+    def _seed_repo_map(
+        ctx: TestContext,
+        now: datetime,
+        selected_modules: list[tuple[str, str]],
+    ) -> None:
         """Seed the repo_map table.
 
         Parameters
@@ -122,12 +128,10 @@ class CorePack:
             Test context with gateway.
         now
             Timestamp for created_at fields.
-        canonical
-            Canonical repo metadata.
+        selected_modules
+            Selected (module, path) pairs to record in repo_map.
         """
-        modules_dict = dict(canonical.module_paths)
-        if not self.include_util and MOD_UTIL_FQN in modules_dict:
-            modules_dict.pop(MOD_UTIL_FQN, None)
+        modules_dict = dict(selected_modules)
 
         insert_rows(
             ctx.gateway,
@@ -142,23 +146,23 @@ class CorePack:
             ],
         )
 
-    def _seed_modules(self, ctx: TestContext, canonical: CanonicalRepo) -> None:
+    @staticmethod
+    def _seed_modules(ctx: TestContext, selected_modules: list[tuple[str, str]]) -> None:
         """Seed the modules table.
 
         Parameters
         ----------
         ctx
             Test context with gateway.
-        canonical
-            Canonical repo metadata.
+        selected_modules
+            Selected (module, path) pairs to insert into core.modules.
         """
         rows = [
             ModuleRow(module=module, path=path, repo=ctx.repo, commit=ctx.commit)
-            for module, path in canonical.module_paths.items()
-            if self.include_util or module != MOD_UTIL_FQN
+            for module, path in selected_modules
         ]
 
-        insert_rows(ctx.gateway, rows[: self.module_count])
+        insert_rows(ctx.gateway, rows)
 
     def _seed_goids(self, ctx: TestContext, now: datetime, canonical: CanonicalRepo) -> None:
         """Seed the goids table.
@@ -194,6 +198,14 @@ class CorePack:
             )
 
         insert_rows(ctx.gateway, goid_rows[: self.function_count])
+
+    def _select_modules(self, canonical: CanonicalRepo) -> list[tuple[str, str]]:
+        selected = [
+            (module, path)
+            for module, path in canonical.module_paths.items()
+            if self.include_util or module != MOD_UTIL_FQN
+        ]
+        return selected[: self.module_count]
 
 
 # Default instance for common usage

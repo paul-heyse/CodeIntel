@@ -272,11 +272,11 @@ def build_occurrence_rows(
                     "commit": commit,
                     "rel_path": doc.relative_path,
                     "symbol": occ.symbol,
-                    "range_start_line": occ.range_start_line,
-                    "range_start_col": occ.range_start_col,
-                    "range_end_line": occ.range_end_line,
-                    "range_end_col": occ.range_end_col,
-                    "symbol_roles": occ.symbol_roles,
+                    "start_line": occ.range_start_line,
+                    "start_col": occ.range_start_col,
+                    "end_line": occ.range_end_line,
+                    "end_col": occ.range_end_col,
+                    "roles": occ.symbol_roles,
                     "created_at": created_at,
                 }
 
@@ -291,11 +291,11 @@ def build_occurrence_rows(
                     payload["commit"],
                     payload["rel_path"],
                     payload["symbol"],
-                    payload["range_start_line"],
-                    payload["range_start_col"],
-                    payload["range_end_line"],
-                    payload["range_end_col"],
-                    payload["symbol_roles"],
+                    payload["start_line"],
+                    payload["start_col"],
+                    payload["end_line"],
+                    payload["end_col"],
+                    payload["roles"],
                     payload["created_at"],
                 )
             )

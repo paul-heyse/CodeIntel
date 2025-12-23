@@ -17,10 +17,14 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from hamilton.function_modifiers.dependencies import source, value
+
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialize_options import materialize_options
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
 from codeintel.build.hamilton.native.target_override_tables import (
     CFG_OVERRIDE_TABLES,
@@ -33,8 +37,10 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
@@ -85,6 +91,69 @@ register_output_targets(
         ),
     ),
 )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(CFG_BLOCKS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(CFG_TARGET_NAME),
+    table_key=value(CFG_BLOCKS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(CFG_BLOCKS_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=CFG_TARGET_NAME, target_="cfg__blocks_marker")
+def cfg__blocks_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare CFG blocks output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(CFG_EDGES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(CFG_TARGET_NAME),
+    table_key=value(CFG_EDGES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(CFG_EDGES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=CFG_TARGET_NAME, target_="cfg__edges_marker")
+def cfg__edges_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare CFG edges output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(DFG_EDGES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(DFG_TARGET_NAME),
+    table_key=value(DFG_EDGES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(DFG_EDGES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=DFG_TARGET_NAME, target_="dfg__edges_marker")
+def dfg__edges_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare DFG edges output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
 
 
 @dataclass(frozen=True)
