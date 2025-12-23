@@ -8,7 +8,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.build.target_metadata import OutputInventory, get_target_metadata_service
+from codeintel.build.output_inventory import OutputInventory
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.schemas.declared import (
     source_declared_schema_provider,
 )

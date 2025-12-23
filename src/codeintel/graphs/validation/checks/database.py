@@ -293,6 +293,8 @@ def _warn_orphan_modules_impl(
         )
         rows = [(path,) for (path,) in rows_df.itertuples(index=False, name=None)]
 
+        module_count_df = module_rows.select(module_rows.path.count().name("cnt")).execute()
+        module_count = 0 if module_count_df.empty else int(module_count_df.iloc[0]["cnt"])
         if rows:
             stats_df = (
                 joined.select(
@@ -316,8 +318,12 @@ def _warn_orphan_modules_impl(
     except DuckDBError:
         query_failed = True
         rows = []
+        module_count = 0
 
     if query_failed and catalog.module_by_path:
+        rows = [(path,) for path in catalog.module_by_path]
+
+    if not rows and module_count == 0 and catalog.module_by_path:
         rows = [(path,) for path in catalog.module_by_path]
 
     if not rows:

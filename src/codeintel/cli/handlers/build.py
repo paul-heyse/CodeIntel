@@ -8,7 +8,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import shutil
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -24,6 +24,7 @@ from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import HamiltonBuildExecutor
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
+from codeintel.build.hamilton.introspect import derive_target_io_surface
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -1342,6 +1343,16 @@ def build_explain_handler(
 
     explanation = entry.explain_staleness()
 
+    io_surface: dict[str, object] | None = None
+    if ctx.params.get_bool("io_surface"):
+        h_runtime = build_driver()
+        surface = derive_target_io_surface(
+            h_runtime,
+            include_targets=(params.target,),
+        ).get(params.target)
+        if surface is not None:
+            io_surface = asdict(surface)
+
     result = BuildExplainResult(
         target=explanation.target,
         status=explanation.status,
@@ -1353,6 +1364,7 @@ def build_explain_handler(
         added_deps=list(explanation.added_deps),
         removed_deps=list(explanation.removed_deps),
         summary=explanation.summary(),
+        io_surface=io_surface,
     )
 
     return CliResult.ok(result)

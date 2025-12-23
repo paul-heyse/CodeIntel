@@ -22,10 +22,7 @@ from codeintel.build.exports.engine import ExportFormat, export_all_datasets
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
-from codeintel.build.hamilton.materializers.artifact_saver import (
-    ArtifactWritePlan,
-    resolve_artifact_path,
-)
+from codeintel.build.hamilton.materializers.artifact_saver import ArtifactWritePlan
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     FileArtifactRecordContext,
@@ -125,18 +122,6 @@ def _export_manifest_plan(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    if (
-        resolve_artifact_path(
-            env,
-            graph,
-            target_name=target_name,
-            artifact_name=request.artifact_name,
-        )
-        is None
-    ):
-        msg = f"Artifact path could not be resolved: {request.artifact_name}"
-        raise ValueError(msg)
-
     export_options = load_target_options(
         env,
         target_name=target_name,
@@ -201,6 +186,7 @@ def t__export_jsonl__compute(
     graph=source("graph"),
     target_name=value(EXPORT_JSONL_TARGET_NAME),
     artifact_name=value(EXPORT_JSONL_ARTIFACT_NAME),
+    path_template=value("{export_dir}/datasets_manifest.json"),
 )
 @tag_compute(domain="export", target=EXPORT_JSONL_TARGET_NAME, target_="export_jsonl__content")
 def export_jsonl__content(
@@ -274,6 +260,7 @@ def t__export_parquet__compute(
     graph=source("graph"),
     target_name=value(EXPORT_PARQUET_TARGET_NAME),
     artifact_name=value(EXPORT_PARQUET_ARTIFACT_NAME),
+    path_template=value("{export_dir}/datasets_manifest.json"),
 )
 @tag_tool(domain="export", target=EXPORT_PARQUET_TARGET_NAME, target_="export_parquet__bytes")
 def export_parquet__bytes(

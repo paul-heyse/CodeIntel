@@ -41,5 +41,11 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
         catalog_provider=provider,
         runtime=runtime_with_graphs(gateway, snapshot)[0],
     )
-    rows = con.execute("SELECT rel_path FROM analytics.graph_validation").fetchall()
+    rows = con.execute(
+        """
+        SELECT rel_path
+        FROM analytics.graph_validation
+        WHERE graph_name = 'orphan_module'
+        """
+    ).fetchall()
     expect_rows_equal(rows, [("pkg/a.py",)], message="graph_validation_paths")

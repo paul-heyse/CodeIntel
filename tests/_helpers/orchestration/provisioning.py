@@ -76,6 +76,7 @@ from tests._helpers.orchestration.repo_writers import (
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
+from tests._helpers.schemas import ensure_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -667,6 +668,7 @@ def provision_docs_export_ready(
             file_backed=file_backed,
         ),
     )
+    ensure_schema_service()
     seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit, repo_root=repo_root)
     return ctx
 
@@ -712,6 +714,7 @@ def provision_graph_ready_repo(
             include_seed_goid=opts.include_seed_goid,
         ),
     )
+    ensure_schema_service()
     if opts.include_seed_goid:
         con = ctx.gateway.con
         con.execute(
@@ -968,6 +971,7 @@ def docs_views_ready_gateway(
             include_seed_goid=True,
         ),
     )
+    ensure_schema_service()
     seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit, repo_root=repo_root)
     _seed_minimal_subsystems(ctx.gateway, repo=repo, commit=commit)
     ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)

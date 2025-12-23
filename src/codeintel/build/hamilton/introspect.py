@@ -13,6 +13,8 @@ Design Principles
 
 from __future__ import annotations
 
+from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -20,8 +22,11 @@ from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_DATASET,
+    NODE_TYPE_LOADER_DATAFRAME,
+    NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
     TAG_ARTIFACT,
+    TAG_ARTIFACT_PATH_TEMPLATE,
     TAG_NODE_TYPE,
     TAG_TABLE_KEY,
     TAG_TARGET,
@@ -231,6 +236,45 @@ class DerivedTargetOutputs:
 
     datasets_by_target: dict[str, tuple[str, ...]]
     artifacts_by_target: dict[str, tuple[str, ...]]
+    artifact_templates_by_target: dict[str, dict[str, str]]
+
+
+@dataclass(frozen=True)
+class TableRead:
+    """Table read derived from loader nodes."""
+
+    table_key: str
+    producer_target: str | None
+    loader_node: str
+    loader_type: str
+
+
+@dataclass(frozen=True)
+class TableWrite:
+    """Table write derived from DataSaver tags."""
+
+    table_key: str
+    sink: str
+    saver_node: str
+
+
+@dataclass(frozen=True)
+class ArtifactWrite:
+    """Artifact write derived from DataSaver tags."""
+
+    artifact_name: str
+    sink: str
+    saver_node: str
+
+
+@dataclass(frozen=True)
+class TargetIOSurface:
+    """Read/write surface for a target."""
+
+    target: str
+    reads: tuple[TableRead, ...]
+    table_writes: tuple[TableWrite, ...]
+    artifact_writes: tuple[ArtifactWrite, ...]
 
 
 def _producer_target_for_node(*, node: Node, node_to_target: Mapping[str, str]) -> str:
@@ -295,6 +339,312 @@ def derive_target_outputs(runtime: HamiltonRuntime) -> DerivedTargetOutputs:
     return DerivedTargetOutputs(
         datasets_by_target=datasets_by_target,
         artifacts_by_target=artifacts_by_target,
+        artifact_templates_by_target={},
+    )
+
+
+def derive_target_outputs_from_savers(runtime: HamiltonRuntime) -> DerivedTargetOutputs:
+    """Derive target outputs from DataSaver tags.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime containing a configured Driver.
+
+    Returns
+    -------
+    DerivedTargetOutputs
+        Output mappings derived from DataSaver tags on saver nodes.
+
+    Raises
+    ------
+    RuntimeError
+        If required saver tags are missing or inconsistent.
+    """
+    datasets: dict[str, set[str]] = {}
+    artifacts: dict[str, set[str]] = {}
+    artifact_templates: dict[str, dict[str, str]] = {}
+
+    for target, table_key, artifact_name, template in _iter_contract_saver_tags(runtime):
+        if table_key is not None:
+            datasets.setdefault(target, set()).add(table_key)
+        if artifact_name is not None:
+            artifacts.setdefault(target, set()).add(artifact_name)
+            if template is None:
+                msg = f"Missing artifact_path_template for {target}.{artifact_name}"
+                raise RuntimeError(msg)
+            artifact_templates.setdefault(target, {})[artifact_name] = template
+
+    datasets_by_target = {k: tuple(sorted(v)) for k, v in datasets.items()}
+    artifacts_by_target = {k: tuple(sorted(v)) for k, v in artifacts.items()}
+    return DerivedTargetOutputs(
+        datasets_by_target=datasets_by_target,
+        artifacts_by_target=artifacts_by_target,
+        artifact_templates_by_target=artifact_templates,
+    )
+
+
+def _iter_contract_saver_tags(
+    runtime: HamiltonRuntime,
+) -> Iterable[tuple[str, str | None, str | None, str | None]]:
+    saver_nodes = runtime.dr.list_available_variables()
+    for node in saver_nodes:
+        tags = getattr(node, "tags", None)
+        if not isinstance(tags, dict):
+            continue
+        if tags.get("hamilton.data_saver") is not True:
+            continue
+
+        output_role = _require_output_role(tags=tags, node_name=node.name)
+        if output_role != "contract":
+            continue
+
+        target = _require_tag(tags=tags, node_name=node.name, key=TAG_TARGET, label="target")
+        table_key, artifact_name = _resolve_output_identity(tags=tags, node_name=node.name)
+
+        template = None
+        if artifact_name is not None:
+            template = _require_tag(
+                tags=tags,
+                node_name=node.name,
+                key=TAG_ARTIFACT_PATH_TEMPLATE,
+                label="artifact_path_template",
+            )
+
+        yield target, table_key, artifact_name, template
+
+
+def _require_output_role(*, tags: dict[str, object], node_name: str) -> str:
+    output_role = tags.get("output_role")
+    if not isinstance(output_role, str) or output_role not in {"contract", "internal"}:
+        msg = f"DataSaver node {node_name} missing/invalid output_role tag"
+        raise RuntimeError(msg)
+    return output_role
+
+
+def _resolve_output_identity(
+    *,
+    tags: dict[str, object],
+    node_name: str,
+) -> tuple[str | None, str | None]:
+    table_key = _optional_tag(tags=tags, key=TAG_TABLE_KEY)
+    artifact_name = _optional_tag(tags=tags, key=TAG_ARTIFACT)
+    if (table_key is None) == (artifact_name is None):
+        msg = f"DataSaver node {node_name} missing table_key/artifact tags"
+        raise RuntimeError(msg)
+    return table_key, artifact_name
+
+
+def _require_tag(*, tags: dict[str, object], node_name: str, key: str, label: str) -> str:
+    value = tags.get(key)
+    if not isinstance(value, str) or not value:
+        msg = f"DataSaver node {node_name} missing {label} tag"
+        raise RuntimeError(msg)
+    return value
+
+
+def _optional_tag(*, tags: dict[str, object], key: str) -> str | None:
+    value = tags.get(key)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def derive_target_io_surface(
+    runtime: HamiltonRuntime,
+    *,
+    include_targets: Iterable[str] | None = None,
+) -> dict[str, TargetIOSurface]:
+    """Derive per-target read/write IO surface from Hamilton tags.
+
+    Parameters
+    ----------
+    runtime
+        Hamilton runtime containing a configured Driver.
+    include_targets
+        Optional target names to include.
+
+    Returns
+    -------
+    dict[str, TargetIOSurface]
+        Mapping of target name to its read/write surface.
+
+    """
+    nodes: Mapping[str, Node] = runtime.dr.graph.nodes
+    node_to_target = _target_node_index(nodes)
+    target_to_node = _target_to_node(node_to_target)
+    targets = _select_targets(target_to_node, include_targets=include_targets)
+    saver_nodes = runtime.dr.list_available_variables()
+
+    surfaces: dict[str, TargetIOSurface] = {}
+    for target_name in sorted(targets):
+        root = nodes.get(target_to_node[target_name])
+        if root is None:
+            continue
+
+        table_writes, artifact_writes = _collect_target_writes(
+            saver_nodes=saver_nodes,
+            target_name=target_name,
+        )
+        reads = _collect_target_reads(
+            root=root,
+            node_to_target=node_to_target,
+            target_name=target_name,
+        )
+
+        reads_deduped = {
+            (r.table_key, r.loader_type, r.producer_target, r.loader_node): r for r in reads
+        }
+
+        surfaces[target_name] = TargetIOSurface(
+            target=target_name,
+            reads=tuple(
+                sorted(
+                    reads_deduped.values(),
+                    key=lambda r: (
+                        r.table_key,
+                        r.loader_type,
+                        r.producer_target or "",
+                        r.loader_node,
+                    ),
+                )
+            ),
+            table_writes=tuple(
+                sorted(
+                    table_writes,
+                    key=lambda w: (w.table_key, w.sink, w.saver_node),
+                )
+            ),
+            artifact_writes=tuple(
+                sorted(
+                    artifact_writes,
+                    key=lambda w: (w.artifact_name, w.sink, w.saver_node),
+                )
+            ),
+        )
+
+    return surfaces
+
+
+def _target_to_node(node_to_target: Mapping[str, str]) -> dict[str, str]:
+    target_to_node: dict[str, str] = {}
+    for node_name, target_name in node_to_target.items():
+        if target_name in target_to_node:
+            msg = f"Duplicate materialize nodes for target '{target_name}'"
+            raise RuntimeError(msg)
+        target_to_node[target_name] = node_name
+    return target_to_node
+
+
+def _select_targets(
+    target_to_node: Mapping[str, str],
+    *,
+    include_targets: Iterable[str] | None,
+) -> set[str]:
+    targets = set(target_to_node)
+    if include_targets is None:
+        return targets
+    return targets.intersection(set(include_targets))
+
+
+def _collect_target_writes(
+    *,
+    saver_nodes: Iterable[Node],
+    target_name: str,
+) -> tuple[list[TableWrite], list[ArtifactWrite]]:
+    table_writes: list[TableWrite] = []
+    artifact_writes: list[ArtifactWrite] = []
+
+    for node in saver_nodes:
+        tags = node.tags
+        if not isinstance(tags, dict):
+            continue
+        if tags.get("hamilton.data_saver") is not True:
+            continue
+        if tags.get(TAG_TARGET) != target_name:
+            continue
+        if tags.get("output_role") != "contract":
+            continue
+
+        sink = tags.get("hamilton.data_saver.sink")
+        sink_str = sink if isinstance(sink, str) and sink else "unknown"
+
+        table_key = tags.get(TAG_TABLE_KEY)
+        if isinstance(table_key, str) and table_key:
+            table_writes.append(
+                TableWrite(table_key=table_key, sink=sink_str, saver_node=node.name)
+            )
+            continue
+
+        artifact_name = tags.get(TAG_ARTIFACT)
+        if isinstance(artifact_name, str) and artifact_name:
+            artifact_writes.append(
+                ArtifactWrite(
+                    artifact_name=artifact_name,
+                    sink=sink_str,
+                    saver_node=node.name,
+                )
+            )
+
+    return table_writes, artifact_writes
+
+
+def _collect_target_reads(
+    *,
+    root: Node,
+    node_to_target: Mapping[str, str],
+    target_name: str,
+) -> list[TableRead]:
+    reads: list[TableRead] = []
+    seen: set[str] = set()
+    queue: deque[Node] = deque(root.dependencies)
+
+    while queue:
+        cur = queue.popleft()
+        if cur.name in seen:
+            continue
+        seen.add(cur.name)
+
+        upstream_target = node_to_target.get(cur.name)
+        if upstream_target is not None and upstream_target != target_name:
+            continue
+
+        tags = cur.tags if isinstance(cur.tags, dict) else {}
+        node_type = tags.get(TAG_NODE_TYPE)
+
+        read = _read_from_node(cur, node_type)
+        if read is not None:
+            reads.append(read)
+            continue
+
+        if node_type == NODE_TYPE_MATERIALIZE and cur.name != root.name:
+            continue
+
+        queue.extend(cur.dependencies)
+
+    return reads
+
+
+def _read_from_node(node: Node, node_type: object) -> TableRead | None:
+    if node_type not in {
+        NODE_TYPE_LOADER_QUERY,
+        NODE_TYPE_LOADER_DATAFRAME,
+        NODE_TYPE_DATASET,
+    }:
+        return None
+
+    tags = node.tags if isinstance(node.tags, dict) else {}
+    table_key = tags.get(TAG_TABLE_KEY)
+    if not isinstance(table_key, str) or not table_key:
+        return None
+
+    producer = tags.get(TAG_TARGET)
+    producer_str = producer if isinstance(producer, str) else None
+    return TableRead(
+        table_key=table_key,
+        producer_target=producer_str,
+        loader_node=node.name,
+        loader_type=str(node_type),
     )
 
 
@@ -365,10 +715,16 @@ def _clone_target_with_dependencies(target: OutputTarget, *, deps: Iterable[str]
 
 
 __all__ = [
+    "ArtifactWrite",
     "DerivedTargetOutputs",
     "GraphSource",
+    "TableRead",
+    "TableWrite",
+    "TargetIOSurface",
     "derive_target_dependencies",
+    "derive_target_io_surface",
     "derive_target_outputs",
+    "derive_target_outputs_from_savers",
     "parse_graph_source",
     "target_graph_from_hamilton",
     "target_names_from_nodes",

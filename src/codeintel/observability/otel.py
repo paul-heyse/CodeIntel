@@ -238,8 +238,8 @@ class _OtelComponents:
     periodic_reader_cls: type[PeriodicExportingMetricReaderType]
     batch_span_processor_cls: type[BatchSpanProcessorType]
     console_span_exporter_cls: type[ConsoleSpanExporterType]
-    otlp_metric_exporter_cls: type[OTLPMetricExporterType]
-    otlp_span_exporter_cls: type[OTLPSpanExporterType]
+    otlp_metric_exporter_cls: type[OTLPMetricExporterType] | None
+    otlp_span_exporter_cls: type[OTLPSpanExporterType] | None
     resource_cls: type[ResourceType]
 
 
@@ -368,8 +368,6 @@ def _resolve_components() -> _OtelComponents | None:
         "periodic_reader_cls": PeriodicExportingMetricReader,
         "batch_span_processor_cls": BatchSpanProcessor,
         "console_span_exporter_cls": ConsoleSpanExporter,
-        "otlp_metric_exporter_cls": OTLPMetricExporter,
-        "otlp_span_exporter_cls": OTLPSpanExporter,
         "resource_cls": Resource,
     }
     if any(value is None for value in required.values()):
@@ -389,14 +387,6 @@ def _resolve_components() -> _OtelComponents | None:
         "type[ConsoleSpanExporterType]",
         required["console_span_exporter_cls"],
     )
-    otlp_metric_exporter_cls = cast(
-        "type[OTLPMetricExporterType]",
-        required["otlp_metric_exporter_cls"],
-    )
-    otlp_span_exporter_cls = cast(
-        "type[OTLPSpanExporterType]",
-        required["otlp_span_exporter_cls"],
-    )
     resource_cls = cast("type[ResourceType]", required["resource_cls"])
 
     return _OtelComponents(
@@ -409,8 +399,8 @@ def _resolve_components() -> _OtelComponents | None:
         periodic_reader_cls=periodic_reader_cls,
         batch_span_processor_cls=batch_span_processor_cls,
         console_span_exporter_cls=console_span_exporter_cls,
-        otlp_metric_exporter_cls=otlp_metric_exporter_cls,
-        otlp_span_exporter_cls=otlp_span_exporter_cls,
+        otlp_metric_exporter_cls=OTLPMetricExporter,
+        otlp_span_exporter_cls=OTLPSpanExporter,
         resource_cls=resource_cls,
     )
 
@@ -430,12 +420,18 @@ def _build_tracer_provider(
     components: _OtelComponents,
 ) -> TracerProviderType:
     tracer_provider = components.tracer_provider_cls(resource=resource)
+    if not hasattr(tracer_provider, "add_span_processor"):
+        LOG.warning("Tracer provider lacks add_span_processor; tracing disabled")
+        return tracer_provider
     if config.export_traces and config.otlp_endpoint:
-        tracer_provider.add_span_processor(
-            components.batch_span_processor_cls(
-                components.otlp_span_exporter_cls(endpoint=config.otlp_endpoint)
+        if components.otlp_span_exporter_cls is None:
+            LOG.warning("OTLP span exporter unavailable; trace export disabled")
+        else:
+            tracer_provider.add_span_processor(
+                components.batch_span_processor_cls(
+                    components.otlp_span_exporter_cls(endpoint=config.otlp_endpoint)
+                )
             )
-        )
     if config.console_export:
         tracer_provider.add_span_processor(
             components.batch_span_processor_cls(components.console_span_exporter_cls())
@@ -459,11 +455,14 @@ def _build_meter_provider(
 ) -> tuple[MeterProviderType, bool]:
     metric_readers: list[MetricReader] = []
     if config.export_metrics and config.otlp_endpoint:
-        metric_readers.append(
-            components.periodic_reader_cls(
-                components.otlp_metric_exporter_cls(endpoint=config.otlp_endpoint)
+        if components.otlp_metric_exporter_cls is None:
+            LOG.warning("OTLP metric exporter unavailable; metrics export disabled")
+        else:
+            metric_readers.append(
+                components.periodic_reader_cls(
+                    components.otlp_metric_exporter_cls(endpoint=config.otlp_endpoint)
+                )
             )
-        )
 
     prometheus_enabled = False
     if config.prometheus_enabled:

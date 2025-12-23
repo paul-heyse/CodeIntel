@@ -17,11 +17,14 @@ from typing import TYPE_CHECKING, cast
 
 import ibis
 import libcst as cst
+from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialize_options import materialize_options
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
 from codeintel.build.hamilton.native.target_override_tables import CALL_GRAPH_OVERRIDE_TABLES
 from codeintel.build.hamilton.native.target_spec_helpers import (
@@ -31,8 +34,10 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
 from codeintel.core.ibis_typing import and_predicates, filter_by, isin_values
@@ -82,6 +87,48 @@ register_output_targets(
         ),
     ),
 )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(CALL_GRAPH_NODES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(CALL_GRAPH_TARGET_NAME),
+    table_key=value(CALL_GRAPH_NODES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(CALL_GRAPH_NODES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME, target_="call_graph__nodes_marker")
+def call_graph__nodes_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare call graph nodes output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(CALL_GRAPH_EDGES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(CALL_GRAPH_TARGET_NAME),
+    table_key=value(CALL_GRAPH_EDGES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(CALL_GRAPH_EDGES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME, target_="call_graph__edges_marker")
+def call_graph__edges_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare call graph edges output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
 
 
 @dataclass(frozen=True)

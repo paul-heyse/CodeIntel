@@ -11,10 +11,10 @@ from codeintel.build.config import BuildConfig, BuildConfigStack
 from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
+from codeintel.build.output_inventory import OutputInventory
 from codeintel.build.run_config import BuildRunConfig
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.target_inventory import get_output_inventory
-from codeintel.build.target_metadata import OutputInventory
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
 from codeintel.core.registry import RegistryService

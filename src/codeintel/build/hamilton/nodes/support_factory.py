@@ -60,6 +60,7 @@ from codeintel.build.targets import TargetGraph
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from codeintel.build.hamilton.introspect import DerivedTargetOutputs
     from codeintel.build.targets import OutputTarget
 
 log = logging.getLogger(__name__)
@@ -420,6 +421,7 @@ def _populate_for_target(
     target: OutputTarget,
     options: SupportGenerationOptions,
     mappings: SupportNodeMappings,
+    derived_outputs: DerivedTargetOutputs | None,
 ) -> None:
     """Attach all enabled support nodes for a target to the module."""
     if options.include_target_stubs:
@@ -433,7 +435,12 @@ def _populate_for_target(
         )
 
     if options.include_dataset_nodes:
-        for table_key in target.contract.table_keys:
+        table_keys = (
+            derived_outputs.datasets_by_target.get(target.name, target.contract.table_keys)
+            if derived_outputs is not None
+            else target.contract.table_keys
+        )
+        for table_key in table_keys:
             d_name = dataset_node(table_key)
             mappings.dataset_to_node[table_key] = d_name
             attach_node(
@@ -472,7 +479,12 @@ def _populate_for_target(
                 )
 
     if options.include_artifact_nodes:
-        for artifact_name in target.contract.artifact_names:
+        artifact_names = (
+            derived_outputs.artifacts_by_target.get(target.name, target.contract.artifact_names)
+            if derived_outputs is not None
+            else target.contract.artifact_names
+        )
+        for artifact_name in artifact_names:
             a_name = artifact_node(artifact_name)
             mappings.artifact_to_node[artifact_name] = a_name
             attach_node(
@@ -490,6 +502,7 @@ def build_support_module(
     *,
     options: SupportGenerationOptions | None = None,
     graph: TargetGraph | None = None,
+    derived_outputs: DerivedTargetOutputs | None = None,
 ) -> ModuleType:
     """Build a Python module containing Hamilton support nodes.
 
@@ -499,6 +512,8 @@ def build_support_module(
         Optional generation options.
     graph
         Optional target graph to use instead of building from contracts.
+    derived_outputs
+        Optional saver-derived outputs to drive support-node generation.
 
     Returns
     -------
@@ -517,7 +532,13 @@ def build_support_module(
     for target in resolved_graph.all_targets:
         if not _include_target(target_name=target.name, include=include, exclude=exclude):
             continue
-        _populate_for_target(module, target=target, options=resolved, mappings=mappings)
+        _populate_for_target(
+            module,
+            target=target,
+            options=resolved,
+            mappings=mappings,
+            derived_outputs=derived_outputs,
+        )
 
     mappings.attach_to(module)
 
@@ -541,6 +562,7 @@ def get_support_module(
     *,
     options: SupportGenerationOptions | None = None,
     graph: TargetGraph | None = None,
+    derived_outputs: DerivedTargetOutputs | None = None,
 ) -> ModuleType:
     """Return a cached support-node module, creating it on first call.
 
@@ -549,8 +571,8 @@ def get_support_module(
     ModuleType
         Cached module containing generated support nodes.
     """
-    if graph is not None:
-        return build_support_module(options=options, graph=graph)
+    if graph is not None or derived_outputs is not None:
+        return build_support_module(options=options, graph=graph, derived_outputs=derived_outputs)
 
     resolved = options or SupportGenerationOptions()
     key = _cache_key(resolved)

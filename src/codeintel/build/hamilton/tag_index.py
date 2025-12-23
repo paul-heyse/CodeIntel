@@ -61,6 +61,20 @@ def _node_tags(node: Node) -> dict[str, str]:
     return {str(k): _stringify_tag_value(v) for k, v in tags_raw.items()}
 
 
+def _truthy(value: str | None) -> bool:
+    """Return True if a normalized tag value should be treated as truthy.
+
+    Returns
+    -------
+    bool
+        True when the value should be treated as truthy.
+    """
+    if value is None:
+        return False
+    lowered = value.strip().lower()
+    return lowered in {"1", "true", "t", "yes", "y"}
+
+
 @dataclass(frozen=True, slots=True)
 class TagIndex:
     """Index of Hamilton node tags."""
@@ -161,6 +175,34 @@ class TagIndex:
             for name, tags in self.tags_by_node.items()
             if tags.get(ht.TAG_NODE_TYPE) == ht.NODE_TYPE_ARTIFACT
         }
+
+    def data_saver_nodes(self) -> dict[str, dict[str, str]]:
+        """Return DataSaver nodes keyed by node name.
+
+        Returns
+        -------
+        dict[str, dict[str, str]]
+            Node tag mappings for DataSaver nodes.
+        """
+        return {
+            name: tags
+            for name, tags in self.tags_by_node.items()
+            if _truthy(tags.get("hamilton.data_saver"))
+        }
+
+    def saver_nodes_by_sink(self) -> dict[str, dict[str, dict[str, str]]]:
+        """Group DataSaver nodes by sink.
+
+        Returns
+        -------
+        dict[str, dict[str, dict[str, str]]]
+            Mapping of sink name to node tag mappings.
+        """
+        grouped: dict[str, dict[str, dict[str, str]]] = {}
+        for node_name, tags in self.data_saver_nodes().items():
+            sink = tags.get("hamilton.data_saver.sink") or "unknown"
+            grouped.setdefault(sink, {})[node_name] = tags
+        return grouped
 
 
 __all__ = ["TagIndex"]

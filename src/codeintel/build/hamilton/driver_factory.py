@@ -19,6 +19,7 @@ import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.introspect import (
     derive_target_dependencies,
+    derive_target_outputs_from_savers,
     target_graph_from_hamilton,
     target_names_from_nodes,
 )
@@ -30,6 +31,7 @@ from codeintel.build.hamilton.nodes.support_factory import (
     build_support_module,
 )
 from codeintel.build.hamilton.runtime import HamiltonRuntime
+from codeintel.build.settings import get_build_settings
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -75,6 +77,10 @@ def _build_support_graph_and_module(
         derived_deps=native_deps,
         strict=True,
     )
+    settings = get_build_settings()
+    derived_outputs = None
+    if settings.support_nodes_source == "dag":
+        derived_outputs = derive_target_outputs_from_savers(native_runtime)
     support_module = build_support_module(
         options=SupportGenerationOptions(
             include_target_stubs=False,
@@ -83,6 +89,7 @@ def _build_support_graph_and_module(
             include_artifact_nodes=True,
         ),
         graph=native_graph,
+        derived_outputs=derived_outputs,
     )
     return base_graph, support_module
 

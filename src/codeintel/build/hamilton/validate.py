@@ -22,6 +22,7 @@ from codeintel.core.hamilton.tags import (
     NODE_TYPE_DATASET,
     NODE_TYPE_MATERIALIZE,
     TAG_ARTIFACT,
+    TAG_ARTIFACT_PATH_TEMPLATE,
     TAG_DOMAIN,
     TAG_NODE_TYPE,
     TAG_TABLE_KEY,
@@ -81,6 +82,18 @@ class GraphValidationResult:
     def has_errors(self) -> bool:
         """Return True when the result contains errors."""
         return bool(self.errors)
+
+
+@dataclass(frozen=True, slots=True)
+class _ValidationInputs:
+    node_to_target: Mapping[str, str]
+    materialize_nodes_by_target: Mapping[str, list[str]]
+    materialize_issues: list[GraphValidationIssue]
+    dataset_issues: list[GraphValidationIssue]
+    artifact_issues: list[GraphValidationIssue]
+    saver_table_to_target: dict[str, str]
+    saver_artifact_to_target: dict[str, str]
+    saver_issues: list[GraphValidationIssue]
 
 
 def _issue_to_obj(issue: GraphValidationIssue) -> dict[str, object]:
@@ -407,6 +420,175 @@ def _artifact_tag_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationI
     return issues
 
 
+def _record_saver_table(
+    *,
+    produced: dict[str, str],
+    table_key: str,
+    target: str,
+    node_name: str,
+    issues: list[GraphValidationIssue],
+) -> None:
+    existing = produced.get(table_key)
+    if existing is not None and existing != target:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="duplicate_table_key",
+                message=f"table_key produced by multiple targets: {existing}, {target}",
+                node=node_name,
+                target=target,
+                table_key=table_key,
+            )
+        )
+    produced[table_key] = target
+
+
+def _record_saver_artifact(
+    *,
+    produced: dict[str, str],
+    artifact: str,
+    target: str,
+    node_name: str,
+    issues: list[GraphValidationIssue],
+) -> None:
+    existing = produced.get(artifact)
+    if existing is not None and existing != target:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="duplicate_artifact",
+                message=f"artifact produced by multiple targets: {existing}, {target}",
+                node=node_name,
+                target=target,
+                artifact=artifact,
+            )
+        )
+    produced[artifact] = target
+
+
+def _validate_saver_tags(
+    *,
+    node_name: str,
+    tags: Mapping[str, object],
+    issues: list[GraphValidationIssue],
+) -> tuple[str | None, bool]:
+    target = tags.get(TAG_TARGET)
+    if not isinstance(target, str) or not target:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="missing_tag",
+                message="DataSaver node missing target tag",
+                node=node_name,
+            )
+        )
+        return None, False
+
+    output_role = tags.get("output_role")
+    if output_role not in {"contract", "internal"}:
+        issues.append(
+            GraphValidationIssue(
+                severity="error",
+                code="missing_tag",
+                message="DataSaver node missing/invalid output_role tag",
+                node=node_name,
+                target=target,
+            )
+        )
+        return target, False
+
+    return target, output_role == "contract"
+
+
+def _collect_saver_outputs(
+    nodes: Mapping[str, NodeLike],
+) -> tuple[dict[str, str], dict[str, str], list[GraphValidationIssue]]:
+    produced_table_to_target: dict[str, str] = {}
+    produced_artifact_to_target: dict[str, str] = {}
+    issues: list[GraphValidationIssue] = []
+
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+        if tags.get("hamilton.data_saver") is not True:
+            continue
+
+        target, is_contract = _validate_saver_tags(
+            node_name=node.name,
+            tags=tags,
+            issues=issues,
+        )
+        if target is None or not is_contract:
+            continue
+
+        table_key = tags.get(TAG_TABLE_KEY)
+        artifact = tags.get(TAG_ARTIFACT)
+        table_key_str = table_key if isinstance(table_key, str) and table_key else None
+        artifact_str = artifact if isinstance(artifact, str) and artifact else None
+
+        if table_key_str is not None:
+            _record_saver_table(
+                produced=produced_table_to_target,
+                table_key=table_key_str,
+                target=target,
+                node_name=node.name,
+                issues=issues,
+            )
+        if artifact_str is not None:
+            template = tags.get(TAG_ARTIFACT_PATH_TEMPLATE)
+            if not isinstance(template, str) or not template:
+                issues.append(
+                    GraphValidationIssue(
+                        severity="error",
+                        code="missing_tag",
+                        message="Contract DataSaver node missing artifact_path_template tag",
+                        node=node.name,
+                        target=target,
+                        artifact=artifact_str,
+                    )
+                )
+            _record_saver_artifact(
+                produced=produced_artifact_to_target,
+                artifact=artifact_str,
+                target=target,
+                node_name=node.name,
+                issues=issues,
+            )
+        if table_key_str is None and artifact_str is None:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="missing_tag",
+                    message="Contract DataSaver node missing table_key/artifact tags",
+                    node=node.name,
+                    target=target,
+                )
+            )
+
+    return produced_table_to_target, produced_artifact_to_target, issues
+
+
+def _collect_validation_inputs(nodes: Mapping[str, NodeLike]) -> _ValidationInputs:
+    node_to_target, materialize_nodes_by_target, materialize_issues = _collect_materialize_index(
+        nodes
+    )
+    _, dataset_issues = _collect_produced_tables(nodes, node_to_target=node_to_target)
+    _, artifact_issues = _collect_produced_artifacts(nodes, node_to_target=node_to_target)
+    saver_table_to_target, saver_artifact_to_target, saver_issues = _collect_saver_outputs(nodes)
+    return _ValidationInputs(
+        node_to_target=node_to_target,
+        materialize_nodes_by_target=materialize_nodes_by_target,
+        materialize_issues=materialize_issues,
+        dataset_issues=dataset_issues,
+        artifact_issues=artifact_issues,
+        saver_table_to_target=saver_table_to_target,
+        saver_artifact_to_target=saver_artifact_to_target,
+        saver_issues=saver_issues,
+    )
+
+
 def _derived_outputs_mismatch_issues(
     *,
     base_graph: TargetGraph,
@@ -476,6 +658,41 @@ def _compute_node_origin_fn(node: NodeLike) -> FunctionType | MethodType | None:
     if isinstance(unwrapped, (FunctionType, MethodType)):
         return unwrapped
     return None
+
+
+def _async_node_issue(
+    *,
+    node: NodeLike,
+    tags: Mapping[str, object],
+) -> GraphValidationIssue | None:
+    fn = _compute_node_origin_fn(node)
+    if fn is None:
+        return None
+    if not inspect.iscoroutinefunction(fn):
+        return None
+    target = _target_tag_value(tags)
+    return GraphValidationIssue(
+        severity="error",
+        code="async_node_forbidden",
+        message="Hamilton nodes must not be async; resolve async work inside the node",
+        node=node.name,
+        target=target,
+    )
+
+
+def _async_node_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+        if getattr(node, "user_defined", False):
+            continue
+        issue = _async_node_issue(node=node, tags=tags)
+        if issue is not None:
+            issues.append(issue)
+    return issues
 
 
 def _forbidden_calls_in_source(source: str) -> frozenset[str] | None:
@@ -660,31 +877,28 @@ def validate_nodes(
     """
     provider = get_schema_provider() if schema_provider is None else schema_provider
 
-    node_to_target, materialize_nodes_by_target, materialize_issues = _collect_materialize_index(
-        nodes
-    )
-    produced_table_to_target, dataset_issues = _collect_produced_tables(
-        nodes, node_to_target=node_to_target
-    )
-    produced_artifact_to_target, artifact_issues = _collect_produced_artifacts(
-        nodes, node_to_target=node_to_target
-    )
+    inputs = _collect_validation_inputs(nodes)
 
     errors: list[GraphValidationIssue] = [
-        *materialize_issues,
-        *dataset_issues,
-        *artifact_issues,
+        *inputs.materialize_issues,
+        *inputs.dataset_issues,
+        *inputs.artifact_issues,
+        *inputs.saver_issues,
     ]
-    errors.extend(_duplicate_materialize_issues(materialize_nodes_by_target))
+    errors.extend(_async_node_issues(nodes))
+    errors.extend(_duplicate_materialize_issues(inputs.materialize_nodes_by_target))
     errors.extend(
-        _unknown_schema_issues(provider=provider, produced_table_to_target=produced_table_to_target)
+        _unknown_schema_issues(
+            provider=provider,
+            produced_table_to_target=inputs.saver_table_to_target,
+        )
     )
 
     warnings: list[GraphValidationIssue] = []
 
     derived_deps: dict[str, tuple[str, ...]] | None = None
     if not any(issue.code == "duplicate_materialize" for issue in errors):
-        derived_deps = _derive_target_dependencies(nodes, node_to_target=node_to_target)
+        derived_deps = _derive_target_dependencies(nodes, node_to_target=inputs.node_to_target)
         cycles = _find_cycles(derived_deps)
         errors.extend(
             GraphValidationIssue(
@@ -700,8 +914,8 @@ def validate_nodes(
         errors.extend(
             _derived_outputs_mismatch_issues(
                 base_graph=base_graph,
-                produced_table_to_target=produced_table_to_target,
-                produced_artifact_to_target=produced_artifact_to_target,
+                produced_table_to_target=inputs.saver_table_to_target,
+                produced_artifact_to_target=inputs.saver_artifact_to_target,
             )
         )
 

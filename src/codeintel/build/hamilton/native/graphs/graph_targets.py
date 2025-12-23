@@ -211,6 +211,94 @@ register_output_targets(
     ),
 )
 
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GOIDS_GOIDS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GOIDS_TARGET_NAME),
+    table_key=value(GOIDS_GOIDS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GOIDS_GOIDS_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME, target_="goids__rows_marker")
+def goids__rows_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare GOIDs output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GOIDS_CROSSWALK_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GOIDS_TARGET_NAME),
+    table_key=value(GOIDS_CROSSWALK_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GOIDS_CROSSWALK_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME, target_="goids__crosswalk_marker")
+def goids__crosswalk_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare GOID crosswalk output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SYMBOL_USE_EDGES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SYMBOL_USES_TARGET_NAME),
+    table_key=value(SYMBOL_USE_EDGES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SYMBOL_USE_EDGES_TABLE_KEY)),
+)
+@tag_compute(domain="graphs", target=SYMBOL_USES_TARGET_NAME, target_="symbol_uses__rows_marker")
+def symbol_uses__rows_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare symbol use edges output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(GRAPH_VALIDATION_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(GRAPH_VALIDATION_TARGET_NAME),
+    table_key=value(GRAPH_VALIDATION_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(GRAPH_VALIDATION_TABLE_KEY)),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_VALIDATION_TARGET_NAME,
+    target_="graph_validation__rows_marker",
+)
+def graph_validation__rows_marker() -> tuple[tuple[object, ...], ...] | None:
+    """Declare graph validation output for inventory checks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Always ``None`` so the saver node is used only for metadata.
+    """
+    return None
+
 # ---------------------------------------------------------------------------
 # Result dataclasses for goids target
 # ---------------------------------------------------------------------------

@@ -11,8 +11,10 @@ re-exports from `codeintel.build.hamilton.templates`.
 
 from __future__ import annotations
 
+from types import ModuleType
+
 import ibis.expr.types as ir
-from hamilton.function_modifiers import source
+from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata, RowCounts
 from codeintel.build.hamilton.env import BuildEnv
@@ -105,53 +107,70 @@ def executor_record(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBIbisTableSaver],
-    output_name_="materialization",
-    env=source("env"),
-    graph=source("graph"),
-    target_name=source("target_name"),
-    table_key=source("table_key"),
-)
-@tag_compute()
-def ibis_expr_to_save(expr: ir.Table | None) -> ir.Table | None:
-    """Return the Ibis expression to be materialized.
+def build_duckdb_materialization_module(*, target_name: str, table_key: str) -> ModuleType:
+    """Build a module that materializes an Ibis expression to DuckDB.
+
+    Parameters
+    ----------
+    target_name
+        Target name for contract attribution and manifest hashing.
+    table_key
+        Output table key.
 
     Returns
     -------
-    ir.Table | None
-        The same Ibis table expression.
+    ModuleType
+        Module exposing ``ibis_expr_to_save`` and ``duckdb_record`` nodes.
     """
-    return expr
+    module = ModuleType(f"duckdb_materialization_{target_name}_{table_key}")
 
-
-@tag_materialize()
-def duckdb_record(
-    env: BuildEnv,
-    graph: TargetGraph,
-    target_name: str,
-    table_key: str,
-    materialization: MaterializationMetadata,
-) -> TargetRunRecord:
-    """Convert a saver metadata dict into a TargetRunRecord.
-
-    Returns
-    -------
-    TargetRunRecord
-        Execution record for the target.
-    """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=target_name,
-        expected_table_key=table_key,
-        materialization=materialization,
+    @SaveToObjectMetadataDecorator(
+        [DuckDBIbisTableSaver],
+        output_name_="materialization",
+        env=source("env"),
+        graph=source("graph"),
+        target_name=value(target_name),
+        table_key=value(table_key),
     )
+    @tag_compute()
+    def ibis_expr_to_save(expr: ir.Table | None) -> ir.Table | None:
+        """Return the Ibis expression to be materialized.
+
+        Returns
+        -------
+        ir.Table | None
+            The same Ibis table expression.
+        """
+        return expr
+
+    @tag_materialize(target=target_name)
+    def duckdb_record(
+        env: BuildEnv,
+        graph: TargetGraph,
+        materialization: MaterializationMetadata,
+    ) -> TargetRunRecord:
+        """Convert saver metadata into a TargetRunRecord.
+
+        Returns
+        -------
+        TargetRunRecord
+            Execution record for the target.
+        """
+        return record_from_duckdb_materialization(
+            env=env,
+            graph=graph,
+            target_name=target_name,
+            expected_table_key=table_key,
+            materialization=materialization,
+        )
+
+    module.__dict__["ibis_expr_to_save"] = ibis_expr_to_save
+    module.__dict__["duckdb_record"] = duckdb_record
+    return module
 
 
 __all__ = [
-    "duckdb_record",
+    "build_duckdb_materialization_module",
     "executor_materialize",
     "executor_record",
-    "ibis_expr_to_save",
 ]

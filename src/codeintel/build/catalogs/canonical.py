@@ -13,7 +13,6 @@ from codeintel.build.catalogs.target_serde import (
     output_target_from_json_obj,
     output_target_to_json_obj,
 )
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.schemas.contract_serde import contract_from_json_obj, contract_to_json_obj
 from codeintel.core.schemas.contract_service import get_enriched_contract_service
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
@@ -24,6 +23,7 @@ from codeintel.storage.metadata import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.build.schemas.service import SchemaService
     from codeintel.build.targets import OutputTarget
     from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -81,8 +81,14 @@ def _build_contract_catalog() -> dict[str, DatasetContract]:
 
 
 def _build_target_catalog() -> dict[str, OutputTarget]:
-    service = get_target_metadata_service()
-    targets = {target.name: target for target in service.system.graph.all_targets}
+    module = importlib.import_module("codeintel.build.hamilton.driver_factory")
+    build_driver_fn_raw = getattr(module, "build_driver", None)
+    if not callable(build_driver_fn_raw):
+        msg = "codeintel.build.hamilton.driver_factory.build_driver is missing or not callable"
+        raise TypeError(msg)
+    build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
+    runtime = build_driver_fn()
+    targets = {target.name: target for target in runtime.graph.all_targets}
     return dict(sorted(targets.items(), key=lambda item: item[0]))
 
 

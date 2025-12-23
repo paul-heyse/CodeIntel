@@ -237,6 +237,8 @@ class DocsExportPack:
         module_map = {module: path for path, module in path_map.items()}
         if not module_map:
             module_map = {DEFAULT_MODULE: DEFAULT_PATH}
+        elif DEFAULT_MODULE not in module_map:
+            module_map[DEFAULT_MODULE] = DEFAULT_PATH
         return module_map
 
     @staticmethod

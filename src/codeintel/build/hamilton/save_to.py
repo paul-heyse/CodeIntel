@@ -8,6 +8,7 @@ as ``MaterializationMetadata`` at the DAG boundary, with typed schemas (e.g.,
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import hamilton.node as h_node
@@ -20,6 +21,8 @@ from hamilton.function_modifiers.base import InvalidDecoratorException, SingleNo
 from hamilton.node import DependencyType
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.materializers.path_templates import validate_path_template
+from codeintel.core.hamilton import tags as ht
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Sequence
@@ -83,30 +86,39 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
         hamilton.node.Node
             A metadata node that executes the saver and returns a metadata mapping.
 
-        Raises
-        ------
-        InvalidDecoratorException
-            If no saver class can handle the upstream node's output type.
         """
-        artifact_name = self.artifact_name
-        artifact_namespace: tuple[str, ...] = ()
-        node_to_save = node_.name if self.target is None else self.target
-        node_to_save_str = str(node_to_save)
-
-        if artifact_name is None:
-            artifact_name = node_to_save_str
-            artifact_namespace = ("save",)
-        artifact_name_str = str(artifact_name)
-
-        saver_cls = resolve_adapter_class(node_.type, list(self.saver_classes))
-        if saver_cls is None:
-            msg = f"No saver class found for type: {node_.type!r} (fn={fn.__qualname__})"
-            raise InvalidDecoratorException(msg)
-
-        adapter_factory = AdapterFactory(saver_cls, **self.kwargs)
-        dependencies, resolved_kwargs = resolve_kwargs(self.kwargs)
+        node_to_save_str = str(node_.name if self.target is None else self.target)
+        metadata_node_name, metadata_namespace = _resolve_metadata_node_name(
+            node_to_save=node_to_save_str,
+            output_name=self.artifact_name,
+        )
+        saver_cls = _resolve_saver_class(
+            node_type=node_.type,
+            saver_classes=self.saver_classes,
+            fn=fn,
+        )
+        adapter_factory, dependencies, resolved_kwargs_typed = _resolve_saver_factory(
+            saver_cls=saver_cls,
+            kwargs=self.kwargs,
+        )
         dependencies_inverted = {v: k for k, v in dependencies.items()}
-        resolved_kwargs_typed = cast("dict[str, object]", resolved_kwargs)
+        sink = _resolve_saver_sink(saver_cls=saver_cls, fn=fn)
+        output_role = _resolve_output_role(
+            fn=fn,
+            kwargs=self.kwargs,
+            resolved_kwargs=resolved_kwargs_typed,
+        )
+        target_name = _resolve_target_name(fn=fn, resolved_kwargs=resolved_kwargs_typed)
+        table_key, artifact_name = _resolve_output_identity(
+            fn=fn,
+            resolved_kwargs=resolved_kwargs_typed,
+            output_role=output_role,
+        )
+        path_template = _resolve_artifact_path_template(
+            fn=fn,
+            resolved_kwargs=resolved_kwargs_typed,
+            artifact_name=artifact_name,
+        )
 
         def save_data(
             __adapter_factory: AdapterFactory = adapter_factory,
@@ -141,21 +153,28 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
             }
         )
         input_types = {
-            key: value for key, value in input_types.items() if key not in resolved_kwargs
+            key: value for key, value in input_types.items() if key not in resolved_kwargs_typed
         }
         input_types[node_to_save_str] = (node_.type, DependencyType.REQUIRED)
 
         return h_node.Node(
-            name=artifact_name_str,
+            name=metadata_node_name,
             callabl=save_data,
             typ=cast("type[object]", MaterializationMetadata),
             input_types=input_types,
-            namespace=artifact_namespace,
-            tags={
-                "hamilton.data_saver": True,
-                "hamilton.data_saver.sink": f"{saver_cls.name()}",
-                "hamilton.data_saver.classname": f"{saver_cls.__qualname__}",
-            },
+            namespace=metadata_namespace,
+            tags=_build_saver_tags(
+                node_=node_,
+                context=SaverTagContext(
+                    sink=sink,
+                    saver_cls=saver_cls,
+                    output_role=output_role,
+                    target_name=target_name,
+                    table_key=table_key,
+                    artifact_name=artifact_name,
+                    path_template=path_template,
+                ),
+            ),
         )
 
     def transform_node(
@@ -190,3 +209,164 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
 
 
 __all__ = ["SaveToObjectMetadataDecorator"]
+
+
+def _resolve_metadata_node_name(
+    *,
+    node_to_save: str,
+    output_name: str | None,
+) -> tuple[str, tuple[str, ...]]:
+    if output_name is None:
+        return node_to_save, ("save",)
+    return str(output_name), ()
+
+
+def _resolve_saver_class(
+    *,
+    node_type: type[object],
+    saver_classes: Sequence[type[AdapterCommon]],
+    fn: Callable[..., object],
+) -> type[AdapterCommon]:
+    node_type_cast = cast("type[type]", node_type)
+    saver_cls = resolve_adapter_class(node_type_cast, list(saver_classes))
+    if saver_cls is None:
+        msg = f"No saver class found for type: {node_type!r} (fn={fn.__qualname__})"
+        raise InvalidDecoratorException(msg)
+    return saver_cls
+
+
+def _resolve_saver_factory(
+    *,
+    saver_cls: type[AdapterCommon],
+    kwargs: dict[str, ParametrizedDependency],
+) -> tuple[AdapterFactory, dict[str, str], dict[str, object]]:
+    adapter_factory = AdapterFactory(saver_cls, **kwargs)
+    dependencies, resolved_kwargs = resolve_kwargs(kwargs)
+    resolved_kwargs_typed = cast("dict[str, object]", resolved_kwargs)
+    return adapter_factory, dependencies, resolved_kwargs_typed
+
+
+def _resolve_saver_sink(*, saver_cls: type[AdapterCommon], fn: Callable[..., object]) -> str:
+    sink = saver_cls.name()
+    if not isinstance(sink, str) or not sink:
+        msg = f"{fn.__qualname__}: DataSaver.name() must return a non-empty string"
+        raise InvalidDecoratorException(msg)
+    return sink
+
+
+def _resolve_output_role(
+    *,
+    fn: Callable[..., object],
+    kwargs: dict[str, ParametrizedDependency],
+    resolved_kwargs: dict[str, object],
+) -> str | None:
+    if "output_role" in kwargs and "output_role" not in resolved_kwargs:
+        msg = (
+            f"{fn.__qualname__}: output_role must be provided via value(...) so tags "
+            "are available at DAG-build time."
+        )
+        raise InvalidDecoratorException(msg)
+
+    output_role = resolved_kwargs.get("output_role")
+    if output_role not in {None, "contract", "internal"}:
+        msg = (
+            f"{fn.__qualname__}: output_role must be 'contract' or 'internal'; got {output_role!r}"
+        )
+        raise InvalidDecoratorException(msg)
+    return cast("str | None", output_role)
+
+
+def _resolve_target_name(*, fn: Callable[..., object], resolved_kwargs: dict[str, object]) -> str:
+    target_name = resolved_kwargs.get("target_name")
+    if not isinstance(target_name, str) or not target_name:
+        msg = (
+            f"{fn.__qualname__}: SaveToObjectMetadataDecorator requires target_name=value(<str>) "
+            "so saver tags can be derived at DAG-build time."
+        )
+        raise InvalidDecoratorException(msg)
+    return target_name
+
+
+def _resolve_output_identity(
+    *,
+    fn: Callable[..., object],
+    resolved_kwargs: dict[str, object],
+    output_role: str | None,
+) -> tuple[str | None, str | None]:
+    table_key = resolved_kwargs.get("table_key")
+    artifact_name = resolved_kwargs.get("artifact_name")
+    if isinstance(table_key, str) and table_key:
+        table_key_str: str | None = table_key
+    else:
+        table_key_str = None
+
+    if isinstance(artifact_name, str) and artifact_name:
+        artifact_name_str: str | None = artifact_name
+    else:
+        artifact_name_str = None
+
+    if output_role != "internal" and (table_key_str is None) == (artifact_name_str is None):
+        msg = (
+            f"{fn.__qualname__}: contract saver nodes must declare exactly one of "
+            "table_key or artifact_name"
+        )
+        raise InvalidDecoratorException(msg)
+
+    return table_key_str, artifact_name_str
+
+
+@dataclass(frozen=True, slots=True)
+class SaverTagContext:
+    """Container for saver tag metadata."""
+
+    sink: str
+    saver_cls: type[AdapterCommon]
+    output_role: str | None
+    target_name: str
+    table_key: str | None
+    artifact_name: str | None
+    path_template: str | None
+
+
+def _build_saver_tags(
+    *,
+    node_: h_node.Node,
+    context: SaverTagContext,
+) -> dict[str, object]:
+    tags: dict[str, object] = {
+        "hamilton.data_saver": True,
+        "hamilton.data_saver.sink": context.sink,
+        "hamilton.data_saver.classname": f"{context.saver_cls.__qualname__}",
+        "output_role": "contract" if context.output_role is None else context.output_role,
+        ht.TAG_TARGET: context.target_name,
+    }
+    if context.table_key is not None:
+        tags[ht.TAG_TABLE_KEY] = context.table_key
+    if context.artifact_name is not None:
+        tags[ht.TAG_ARTIFACT] = context.artifact_name
+    if context.path_template is not None:
+        tags[ht.TAG_ARTIFACT_PATH_TEMPLATE] = context.path_template
+    if isinstance(node_.tags, dict):
+        domain = node_.tags.get(ht.TAG_DOMAIN)
+        if isinstance(domain, str) and domain:
+            tags[ht.TAG_DOMAIN] = domain
+    return tags
+
+
+def _resolve_artifact_path_template(
+    *,
+    fn: Callable[..., object],
+    resolved_kwargs: dict[str, object],
+    artifact_name: str | None,
+) -> str | None:
+    path_template = resolved_kwargs.get("path_template")
+    if artifact_name is None:
+        return None
+    if not isinstance(path_template, str) or not path_template:
+        msg = (
+            f"{fn.__qualname__}: artifact saver nodes must provide "
+            "path_template=value(<str>) so artifact paths are DAG-derived."
+        )
+        raise InvalidDecoratorException(msg)
+    validate_path_template(path_template)
+    return path_template

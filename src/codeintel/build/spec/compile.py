@@ -10,12 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.output_inventory import OutputInventory
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
 from codeintel.build.target_catalog import target_graph_from_catalog
 from codeintel.build.target_inventory import get_output_inventory
-from codeintel.build.target_metadata import OutputInventory
 from codeintel.core.schemas.hashing import schema_hash
 
 if TYPE_CHECKING:
@@ -36,6 +36,7 @@ class BuildSpecCompileOptions:
 
 def _artifact_specs_for_target(
     target: OutputTarget,
+    derived_outputs: OutputInventory,
     *,
     artifact_names: Iterable[str],
 ) -> tuple[ArtifactOutSpec, ...]:
@@ -45,6 +46,8 @@ def _artifact_specs_for_target(
     ----------
     target
         OutputTarget with a contract that may declare artifacts.
+    derived_outputs
+        DAG-derived output inventory with artifact templates per target.
     artifact_names
         Names of artifacts to include.
 
@@ -54,13 +57,15 @@ def _artifact_specs_for_target(
         Artifact output specifications for the target.
     """
     specs: list[ArtifactOutSpec] = []
+    templates = derived_outputs.artifact_templates_for(target.name)
     for artifact_name in artifact_names:
         artifact = target.contract.get_artifact(artifact_name)
+        template = templates.get(artifact_name)
         specs.append(
             ArtifactOutSpec(
                 name=artifact_name,
                 kind=None,
-                path_template=artifact.path_template if artifact is not None else None,
+                path_template=template or (artifact.path_template if artifact is not None else None),
             )
         )
     return tuple(sorted(specs, key=lambda a: a.name))
@@ -104,7 +109,11 @@ def _compile_target_specs(
                 impl_kind=impl_kind,
                 deps=target.dependencies,
                 outputs=tuple(outputs),
-                artifacts=_artifact_specs_for_target(target, artifact_names=artifacts),
+                artifacts=_artifact_specs_for_target(
+                    target,
+                    derived_outputs,
+                    artifact_names=artifacts,
+                ),
             )
         )
 

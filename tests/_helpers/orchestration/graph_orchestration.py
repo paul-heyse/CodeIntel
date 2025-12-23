@@ -16,9 +16,9 @@ from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
+from codeintel.storage.query_results import coerce_int
 from tests._helpers.assertions import ModulesAssertions, assert_target_ok
 from tests._helpers.builders import (
-    GoidRow,
     ModuleRow,
     RepoMapRow,
     TestCatalogRow,
@@ -88,8 +88,8 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
         Prepared environment with builder, gateway, and expected GOID.
     """
     repo_root = tmp_path / "repo"
-    caller_start, caller_end = _write_repo(repo_root)
-    expected_goid = _seed_modules_and_goids(gateway, caller_start, caller_end, repo_root)
+    _write_repo(repo_root)
+    _seed_modules_and_goids(gateway, repo_root)
     snapshot = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=repo_root)
     ModulesAssertions(gateway, snapshot).inventory_consistent()
     _seed_test_catalog(gateway)
@@ -101,7 +101,7 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
         repo_root=repo_root,
         builder=builder,
         gateway=gateway,
-        expected_goid=expected_goid,
+        expected_goid=None,
     )
 
 
@@ -192,22 +192,25 @@ def collect_span_snapshot(con: object) -> SpanSnapshot:
     """
     con = _as_duckdb(con)
     cfg_goids = {
-        row[0]
+        _coerce_goid(row[0])
         for row in con.execute(
             "SELECT function_goid_h128 FROM graph.cfg_blocks WHERE file_path = 'pkg/b.py'"
         ).fetchall()
+        if row[0] is not None
     }
     callgraph_goids = {
-        row[0]
+        _coerce_goid(row[0])
         for row in con.execute(
             "SELECT goid_h128 FROM graph.call_graph_nodes WHERE rel_path = 'pkg/b.py'"
         ).fetchall()
+        if row[0] is not None
     }
     coverage_goids = {
-        row[0]
+        _coerce_goid(row[0])
         for row in con.execute(
             "SELECT function_goid_h128 FROM analytics.test_coverage_edges"
         ).fetchall()
+        if row[0] is not None
     }
     symbol_use_paths = {
         row[0]
@@ -221,6 +224,10 @@ def collect_span_snapshot(con: object) -> SpanSnapshot:
         coverage_goids=coverage_goids,
         symbol_use_paths=symbol_use_paths,
     )
+
+
+def _coerce_goid(value: object) -> int:
+    return coerce_int(value, ctx="span snapshot goid")
 
 
 def _write_repo(repo_root: Path) -> tuple[int, int]:
@@ -238,11 +245,8 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
 
 def _seed_modules_and_goids(
     gateway: StorageGateway,
-    caller_start: int,
-    caller_end: int,
     repo_root: Path,
-) -> int:
-    now = datetime.now(UTC)
+) -> None:
     path_map = modules_expected_from_repo_tree(repo_root)
     module_map = {module: path for path, module in path_map.items()}
     if not module_map:
@@ -275,25 +279,6 @@ def _seed_modules_and_goids(
             )
         ],
     )
-    expected_goid = 200
-    insert_rows(
-        gateway,
-        [
-            GoidRow(
-                goid_h128=expected_goid,
-                urn="urn:pkg.b.caller",
-                repo=REPO,
-                commit=COMMIT,
-                rel_path="pkg/b.py",
-                kind="function",
-                qualname="pkg.b.caller",
-                start_line=caller_start,
-                end_line=caller_end,
-                created_at=now,
-            )
-        ],
-    )
-    return expected_goid
 
 
 def _seed_test_catalog(gateway: StorageGateway) -> None:

@@ -619,6 +619,8 @@ class BuildExplainResult:
         List of dependencies that were removed.
     summary
         Human-readable summary of staleness.
+    io_surface
+        Optional per-target IO surface (reads/writes).
     """
 
     target: str
@@ -631,6 +633,7 @@ class BuildExplainResult:
     added_deps: list[str]
     removed_deps: list[str]
     summary: str
+    io_surface: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -651,6 +654,7 @@ class BuildExplainResult:
             "added_deps": self.added_deps,
             "removed_deps": self.removed_deps,
             "summary": self.summary,
+            **({"io_surface": self.io_surface} if self.io_surface is not None else {}),
         }
 
 

@@ -28,7 +28,10 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
-from codeintel.build.hamilton.native.outputs import expected_artifacts
+from codeintel.build.hamilton.materializers.path_templates import (
+    default_formatter,
+    format_path_template,
+)
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 
@@ -78,6 +81,7 @@ class FileArtifactSaver(DataSaver):
     graph: TargetGraph
     target_name: str
     artifact_name: str
+    path_template: str | None = None
     hash_options: InputHashOptions | None = None
 
     _hamilton_runtime_types = (BuildEnv, TargetGraph)
@@ -170,9 +174,9 @@ class FileArtifactSaver(DataSaver):
                 if context.should_skip:
                     resolved = _resolve_artifact_path(
                         self.env,
-                        self.graph,
                         self.target_name,
                         self.artifact_name,
+                        path_template=self.path_template,
                     )
                     result = _skipped(
                         artifact_name=self.artifact_name,
@@ -189,7 +193,10 @@ class FileArtifactSaver(DataSaver):
                     )
                 else:
                     output_path = _resolve_artifact_path(
-                        self.env, self.graph, self.target_name, self.artifact_name
+                        self.env,
+                        self.target_name,
+                        self.artifact_name,
+                        path_template=self.path_template,
                     )
                     if output_path is None:
                         return _failed(
@@ -313,57 +320,31 @@ def _failed(
 
 
 def _resolve_artifact_path(
-    env: BuildEnv, graph: TargetGraph, target_name: str, artifact_name: str
-) -> Path | None:
-    target = graph.get(target_name)
-    if target is None:
-        return None
-
-    artifacts = expected_artifacts(
-        target,
-        env.snapshot,
-        output_inventory=env.output_inventory,
-        path_formatter={
-            "build_dir": str(env.paths.build_dir),
-            "scip_dir": str(env.paths.scip_dir),
-            "export_dir": str(env.paths.document_output_dir),
-            "repo_root": str(env.snapshot.repo_root),
-        },
-    )
-    for art in artifacts:
-        if art.name == artifact_name:
-            if art.path is None:
-                return None
-            return Path(art.path)
-    return None
-
-
-def resolve_artifact_path(
     env: BuildEnv,
-    graph: TargetGraph,
-    *,
     target_name: str,
     artifact_name: str,
+    *,
+    path_template: str | None,
 ) -> Path | None:
-    """Resolve the contract-declared artifact path for a target.
+    if not path_template:
+        msg = (
+            f"Missing artifact path_template for {target_name}.{artifact_name} "
+            "on a contract output node."
+        )
+        raise ValueError(msg)
+    return _resolve_artifact_path_from_template(env, path_template)
 
-    Parameters
-    ----------
-    env
-        Build environment providing snapshot and build paths.
-    graph
-        Target graph for looking up the target contract.
-    target_name
-        Target name that declares the artifact.
-    artifact_name
-        Artifact name in the target contract.
 
-    Returns
-    -------
-    Path | None
-        Resolved artifact path, or None when not declared/resolvable.
-    """
-    return _resolve_artifact_path(env, graph, target_name, artifact_name)
+def _resolve_artifact_path_from_template(env: BuildEnv, template: str) -> Path:
+    fmt = default_formatter(
+        build_dir=str(env.paths.build_dir),
+        scip_dir=str(env.paths.scip_dir),
+        export_dir=str(env.paths.document_output_dir),
+        repo_root=str(env.snapshot.repo_root),
+    )
+    return Path(format_path_template(template, formatter=fmt))
+
+
 
 
 def _coerce_bytes(data: object) -> bytes:
@@ -422,5 +403,4 @@ __all__ = [
     "ArtifactWritePlan",
     "FileArtifactSaver",
     "SaveStatus",
-    "resolve_artifact_path",
 ]

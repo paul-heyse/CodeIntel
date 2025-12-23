@@ -696,7 +696,7 @@ def _resolve_coverage_file(env: BuildEnv) -> Path | None:
 
 
 @tag_tool(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-async def t__coverage_ingest__ingest(
+def t__coverage_ingest__ingest(
     env: BuildEnv,
     graph: TargetGraph,
     t__modules: TargetRunRecord,
@@ -724,12 +724,14 @@ async def t__coverage_ingest__ingest(
 
     tools = ToolRunnerAdapter(env.providers.tool_service)
     step = CoverageIngestStep(tools=tools)
-    return await step.execute_async(
-        module_records,
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        repo_root=env.snapshot.repo_root,
-        coverage_file=coverage_path,
+    return asyncio.run(
+        step.execute_async(
+            module_records,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
+            repo_root=env.snapshot.repo_root,
+            coverage_file=coverage_path,
+        )
     )
 
 

@@ -23,6 +23,7 @@ from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.repo import write_canonical_repo
+from tests._helpers.schemas import ensure_schema_service
 from tests._helpers.seeds.core import CORE_PACK
 from tests._helpers.seeds.coverage import COVERAGE_PACK
 from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
@@ -484,6 +485,7 @@ def create_test_context(
             commit=env_opts.commit,
         )
     )
+    ensure_schema_service()
 
     return TestContext(
         snapshot=snapshot,
