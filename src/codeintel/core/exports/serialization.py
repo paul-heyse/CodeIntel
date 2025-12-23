@@ -38,10 +38,7 @@ def coerce_export_value(value: object) -> object:
     elif isinstance(value, bytes):
         result = str(value)
     elif isinstance(value, Mapping):
-        result = {
-            str(key): coerce_export_value(item)
-            for key, item in value.items()
-        }
+        result = {str(key): coerce_export_value(item) for key, item in value.items()}
     elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
         result = [coerce_export_value(item) for item in value]
     else:

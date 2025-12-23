@@ -7,11 +7,13 @@ for all I/O operations.
 
 from __future__ import annotations
 
+import json
 import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 if TYPE_CHECKING:
@@ -21,10 +23,35 @@ if TYPE_CHECKING:
     from codeintel.ingestion.infrastructure.scanning import ScanProfile
     from codeintel.ingestion.ports.change_detection import ChangeDetectionPort, ChangeSet
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 MODULES_TABLE_KEY = "core.modules"
+REPO_MAP_TABLE_KEY = "core.repo_map"
+
+
+@dataclass(frozen=True)
+class RepoScanResult:
+    """Result from repository scanning.
+
+    Attributes
+    ----------
+    modules
+        Discovered module records.
+    change_set
+        Change set describing added/modified/deleted modules.
+    module_rows
+        Row tuples for core.modules.
+    file_state_rows
+        Row tuples for core.file_state.
+    repo_map_rows
+        Row tuples for core.repo_map.
+    """
+
+    modules: tuple[ModuleRecord, ...]
+    change_set: ChangeSet
+    module_rows: tuple[tuple[object, ...], ...]
+    file_state_rows: tuple[tuple[object, ...], ...]
+    repo_map_rows: tuple[tuple[object, ...], ...]
 
 
 class RepoScanStep:
@@ -35,8 +62,6 @@ class RepoScanStep:
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     discovery
         Discovery port for finding modules.
     change_detection
@@ -45,7 +70,6 @@ class RepoScanStep:
 
     def __init__(
         self,
-        storage: IngestStoragePort,
         discovery: ModuleDiscoveryPort,
         change_detection: ChangeDetectionPort,
         module_filter: Callable[[Sequence[ModuleRecord]], Sequence[ModuleRecord]] | None = None,
@@ -54,8 +78,6 @@ class RepoScanStep:
 
         Parameters
         ----------
-        storage
-            Storage port for persisting data.
         discovery
             Discovery port for finding modules.
         change_detection
@@ -63,7 +85,6 @@ class RepoScanStep:
         module_filter
             Optional filter applied to discovered modules before persistence.
         """
-        self._storage = storage
         self._discovery = discovery
         self._change_detection = change_detection
         self._module_filter = module_filter
@@ -76,7 +97,7 @@ class RepoScanStep:
         repo_root: Path,
         profile: ScanProfile,
         full_rebuild: bool = False,
-    ) -> tuple[ExecutionResult, Sequence[ModuleRecord], ChangeSet]:
+    ) -> RepoScanResult:
         """Execute repository scanning.
 
         Parameters
@@ -94,10 +115,10 @@ class RepoScanStep:
 
         Returns
         -------
-        tuple[ExecutionResult, Sequence[ModuleRecord], ChangeSet]
-            Execution result, discovered modules, and change set.
+        RepoScanResult
+            Discovered modules, change set, and row tuples.
         """
-        modules = self._discovery.discover_modules(repo_root, profile)
+        modules = list(self._discovery.discover_modules(repo_root, profile))
         if self._module_filter is not None:
             modules = list(self._module_filter(modules))
         log.info("Discovered %d modules in %s", len(modules), repo_root)
@@ -128,12 +149,11 @@ class RepoScanStep:
             for module in modules
         ]
 
-        table_counts: dict[str, int] = {}
-        if module_rows:
-            scope = f"{repo}@{commit}"
-            self._storage.delete_by_params(MODULES_TABLE_KEY, [repo, commit])
-            result = self._storage.write_batch(MODULES_TABLE_KEY, module_rows, scope=scope)
-            table_counts[MODULES_TABLE_KEY] = result.rows_affected
+        repo_map_rows = self._build_repo_map_rows(
+            repo=repo,
+            commit=commit,
+            modules=modules,
+        )
 
         log.info(
             "Repo scan: repo=%s commit=%s modules=%d added=%d modified=%d deleted=%d",
@@ -145,9 +165,38 @@ class RepoScanStep:
             len(change_set.deleted),
         )
 
-        step_result = ExecutionResult.ok(table_counts=table_counts)
+        return RepoScanResult(
+            modules=tuple(modules),
+            change_set=change_set,
+            module_rows=tuple(module_rows),
+            file_state_rows=tuple(change_set.state_rows),
+            repo_map_rows=repo_map_rows,
+        )
 
-        return step_result, modules, change_set
+    @staticmethod
+    def _build_repo_map_rows(
+        *,
+        repo: str,
+        commit: str,
+        modules: Sequence[ModuleRecord],
+    ) -> tuple[tuple[object, ...], ...]:
+        if not modules:
+            return ()
+        module_entries: dict[str, str] = {}
+        for module in modules:
+            module_entries[str(module.module_name)] = str(module.rel_path)
+        serializer = row_serializer_for_table_key(REPO_MAP_TABLE_KEY)
+        return (
+            serializer(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "modules": json.dumps(module_entries),
+                    "overlays": json.dumps({}),
+                    "generated_at": datetime.now(tz=UTC),
+                }
+            ),
+        )
 
 
-__all__ = ["RepoScanStep"]
+__all__ = ["RepoScanResult", "RepoScanStep"]

@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import (
     decode_json_dict,
     decode_json_list,
@@ -19,7 +20,6 @@ from codeintel.storage.helpers.json import (
     encode_json_compact,
     serialize_str_sequence,
 )
-from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

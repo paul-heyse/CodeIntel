@@ -13,12 +13,13 @@ patterns (tool invocations + table writes) and are frequently evolved together:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
+from hamilton.function_modifiers import source, value
+
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import (
@@ -27,10 +28,13 @@ from codeintel.build.hamilton.helpers import (
     get_module_paths_from_env,
     paths_to_modules,
 )
-from codeintel.build.hamilton.materialize_options import materialize_options
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver
+from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.materialization_records import (
+    record_from_duckdb_materializations,
+)
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
-from codeintel.build.hamilton.native.table_counts import normalize_table_counts
 from codeintel.build.hamilton.native.target_override_tables import (
     CONFIG_INGEST_OVERRIDE_TABLES,
     COVERAGE_INGEST_OVERRIDE_TABLES,
@@ -44,11 +48,16 @@ from codeintel.build.hamilton.native.target_spec_helpers import (
     register_output_targets,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
-from codeintel.build.hamilton.tagging import tag_helper, tag_materialize, tag_tool
-from codeintel.build.hamilton.templates import executor_materialize
-from codeintel.build.hashing import InputHashOptions
+from codeintel.build.hamilton.run_records import (
+    TargetRunRecord,
+    options_hash_for_target,
+    should_skip_native_target,
+)
+from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
+from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
@@ -57,11 +66,11 @@ from codeintel.ingestion.adapters import (
     HashChangeDetectionAdapter,
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.compute.config_ingest import ConfigIngestStep
-from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
-from codeintel.ingestion.compute.repo_scan import RepoScanStep
-from codeintel.ingestion.compute.tests_ingest import TestsIngestStep
-from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
+from codeintel.ingestion.compute.config_ingest import ConfigIngestResult, ConfigIngestStep
+from codeintel.ingestion.compute.coverage_ingest import CoverageIngestResult, CoverageIngestStep
+from codeintel.ingestion.compute.repo_scan import RepoScanResult, RepoScanStep
+from codeintel.ingestion.compute.tests_ingest import TestsIngestResult, TestsIngestStep
+from codeintel.ingestion.compute.typing_ingest import TypingIngestResult, TypingIngestStep
 from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
@@ -73,19 +82,19 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ModuleRecord)
+_HAMILTON_TYPE_HINTS = (
+    BuildEnv,
+    MaterializationMetadata,
+    TargetGraph,
+    TargetRunRecord,
+    ModuleRecord,
+)
 
 MODULES_TARGET_NAME = "modules"
 CONFIG_INGEST_TARGET_NAME = "config_ingest"
 COVERAGE_INGEST_TARGET_NAME = "coverage_ingest"
 TESTS_INGEST_TARGET_NAME = "tests_ingest"
 TYPING_TARGET_NAME = "typing"
-
-# Stable result aliases imported by `codeintel.build.hamilton.native.ingestion`.
-type ConfigIngestResult = ExecutionResult
-type CoverageIngestResult = ExecutionResult
-type TestsIngestResult = ExecutionResult
-type TypingIngestResult = ExecutionResult
 
 MODULES_TABLE_KEY = "core.modules"
 FILE_STATE_TABLE_KEY = "core.file_state"
@@ -98,7 +107,6 @@ TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
 TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
-
 
 register_output_targets(
     make_output_target(
@@ -173,36 +181,45 @@ class ModuleScanResult:
         Computed change set for incremental processing.
     file_state_hash
         Stable hash of the current file state.
-    table_counts
-        Row counts per produced table.
+    module_rows
+        Row tuples for core.modules.
+    file_state_rows
+        Row tuples for core.file_state.
+    repo_map_rows
+        Row tuples for core.repo_map.
     error
         Error message if scan failed.
     """
 
     success: bool
-    modules: Sequence[ModuleRecord] = field(default_factory=tuple)
+    modules: tuple[ModuleRecord, ...] = field(default_factory=tuple)
     change_set: ChangeSet | None = None
     file_state_hash: str | None = None
-    table_counts: dict[str, int] = field(default_factory=dict)
+    module_rows: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
+    file_state_rows: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
+    repo_map_rows: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
     error: str | None = None
 
 
 @dataclass(frozen=True)
-class RepoMapWriteResult:
-    """Result from writing repo_map entry.
+class ConfigScanResult:
+    """Result from config file discovery.
 
     Attributes
     ----------
     success
-        Whether the write completed successfully.
-    row_count
-        Number of rows written (typically 1 for repo_map).
+        Whether discovery completed successfully.
+    config_files
+        List of discovered config files.
+    file_state_hash
+        Stable hash of the config file state for input hashing.
     error
-        Error message if write failed.
+        Error message if discovery failed.
     """
 
     success: bool
-    row_count: int = 0
+    config_files: list[ModuleRecord] = field(default_factory=list)
+    file_state_hash: str | None = None
     error: str | None = None
 
 
@@ -256,27 +273,17 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
     """Execute repository scan to discover modules.
 
     This is the primary compute node for the modules target. It scans
-    the repository tree, discovers Python modules, computes file hashes
-    for change detection, and persists the modules table.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway, snapshot, and configuration.
+    the repository tree, discovers Python modules, and computes file hashes
+    for change detection.
 
     Returns
     -------
     ModuleScanResult
-        Result containing discovered modules and row counts.
-
-    Notes
-    -----
-    The modules target is unique in that it has no upstream dependencies.
-    It is the root of the ingestion domain dependency tree.
+        Result containing discovered modules and row tuples.
     """
     try:
-        storage = DuckDBStorageAdapter(env.gateway)
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
+        storage = DuckDBStorageAdapter(env.gateway)
         change_detection = HashChangeDetectionAdapter(storage)
 
         opts = load_target_options(
@@ -287,13 +294,12 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
         profile = build_scan_profile(env.snapshot.repo_root, opts)
 
         step = RepoScanStep(
-            storage=storage,
             discovery=discovery,
             change_detection=change_detection,
             module_filter=lambda discovered: filter_modules(discovered, opts),
         )
 
-        result, modules, change_set = step.execute(
+        scan_result = step.execute(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             repo_root=env.snapshot.repo_root,
@@ -303,91 +309,132 @@ def t__modules__scan(env: BuildEnv) -> ModuleScanResult:
 
         return ModuleScanResult(
             success=True,
-            modules=tuple(modules),
-            change_set=change_set,
-            file_state_hash=change_set.state_hash if change_set is not None else None,
-            table_counts=result.table_counts or {},
+            modules=scan_result.modules,
+            change_set=scan_result.change_set,
+            file_state_hash=scan_result.change_set.state_hash,
+            module_rows=scan_result.module_rows,
+            file_state_rows=scan_result.file_state_rows,
+            repo_map_rows=scan_result.repo_map_rows,
         )
 
     except Exception as exc:
         log.exception("Module scan failed")
-        return ModuleScanResult(
-            success=False,
-            error=str(exc),
-        )
+        return ModuleScanResult(success=False, error=str(exc))
 
 
-@tag_tool(domain="ingestion", target=MODULES_TARGET_NAME)
-def t__modules__write_repo_map(
-    env: BuildEnv,
-    t__modules__scan: ModuleScanResult,
-) -> RepoMapWriteResult:
-    """Write repo_map entry for the repository snapshot.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    t__modules__scan
-        Upstream scan result containing discovered modules.
+@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
+def modules__hash_options(env: BuildEnv, t__modules__scan: ModuleScanResult) -> InputHashOptions:
+    """Build input hash options for modules target materialization.
 
     Returns
     -------
-    RepoMapWriteResult
-        Result indicating success/failure of repo_map write.
+    InputHashOptions
+        Hash inputs used to gate target materialization.
+    """
+    options_hash = options_hash_for_target(env, MODULES_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=t__modules__scan.file_state_hash,
+    )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(MODULES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(MODULES_TARGET_NAME),
+    table_key=value(MODULES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(MODULES_TABLE_KEY)),
+    hash_options=source("modules__hash_options"),
+)
+@tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__module_rows")
+def modules__module_rows(
+    t__modules__scan: ModuleScanResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for core.modules.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the modules table, or None when scanning failed.
     """
     if not t__modules__scan.success:
-        return RepoMapWriteResult(
-            success=False,
-            error=f"Upstream scan failed: {t__modules__scan.error}",
-        )
+        return None
+    return t__modules__scan.module_rows
 
-    try:
-        modules = t__modules__scan.modules
-        generated_at = datetime.now(tz=UTC).isoformat()
 
-        # Build module entries JSON
-        module_entries: dict[str, str] = {}
-        for module in modules:
-            name = getattr(module, "module_name", None) or getattr(module, "name", None)
-            rel_path = getattr(module, "rel_path", None) or getattr(module, "path", None)
-            if name is None:
-                name = str(module)
-            module_entries[str(name)] = str(rel_path) if rel_path is not None else ""
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(FILE_STATE_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(MODULES_TARGET_NAME),
+    table_key=value(FILE_STATE_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(FILE_STATE_TABLE_KEY)),
+    hash_options=source("modules__hash_options"),
+)
+@tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__file_state_rows")
+def modules__file_state_rows(
+    t__modules__scan: ModuleScanResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for core.file_state.
 
-        modules_json = json.dumps(module_entries)
-        overlays_json = json.dumps({})
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the file_state table, or None when scanning failed.
+    """
+    if not t__modules__scan.success:
+        return None
+    return t__modules__scan.file_state_rows
 
-        warehouse = env.warehouse
-        warehouse.materialize_mappings(
-            REPO_MAP_TABLE_KEY,
-            [
-                {
-                    "repo": env.snapshot.repo,
-                    "commit": env.snapshot.commit,
-                    "modules": modules_json,
-                    "overlays": overlays_json,
-                    "generated_at": generated_at,
-                }
-            ],
-            options=materialize_options(
-                env,
-                owner_target=MODULES_TARGET_NAME,
-                mode="replace",
-            ),
-        )
 
-        return RepoMapWriteResult(
-            success=True,
-            row_count=1,
-        )
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(REPO_MAP_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(MODULES_TARGET_NAME),
+    table_key=value(REPO_MAP_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(REPO_MAP_TABLE_KEY)),
+    hash_options=source("modules__hash_options"),
+)
+@tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__repo_map_rows")
+def modules__repo_map_rows(
+    t__modules__scan: ModuleScanResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for core.repo_map.
 
-    except Exception as exc:
-        log.exception("Repo map write failed")
-        return RepoMapWriteResult(
-            success=False,
-            error=str(exc),
-        )
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the repo_map table, or None when scanning failed.
+    """
+    if not t__modules__scan.success:
+        return None
+    return t__modules__scan.repo_map_rows
+
+
+@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
+def modules__materializations(
+    m__core__modules: MaterializationMetadata,
+    m__core__file_state: MaterializationMetadata,
+    m__core__repo_map: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect materialization metadata for modules target tables.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Mapping from table key to saver metadata.
+    """
+    return {
+        MODULES_TABLE_KEY: m__core__modules,
+        FILE_STATE_TABLE_KEY: m__core__file_state,
+        REPO_MAP_TABLE_KEY: m__core__repo_map,
+    }
 
 
 @tag_materialize(domain="ingestion", target=MODULES_TARGET_NAME)
@@ -395,66 +442,27 @@ def t__modules(
     env: BuildEnv,
     graph: TargetGraph,
     t__modules__scan: ModuleScanResult,
-    t__modules__write_repo_map: RepoMapWriteResult,
+    modules__hash_options: InputHashOptions,
+    modules__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize modules target with validation.
-
-    This is the entry point for the modules target. It orchestrates
-    the scan and repo_map write, then returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    t__modules__scan
-        Scan result from upstream compute node.
-    t__modules__write_repo_map
-        Repo map write result from upstream compute node.
 
     Returns
     -------
     TargetRunRecord
-        Record with status, datasets, and execution metadata.
+        Record describing the execution outcome.
     """
-    options_hash = options_hash_for_target(env, MODULES_TARGET_NAME)
-    hash_options = InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=t__modules__scan.file_state_hash,
-    )
-    executor = NativeTargetExecutor.for_target(
-        env,
-        graph,
-        MODULES_TARGET_NAME,
-        options_hash=options_hash,
-        hash_options=hash_options,
-    )
-
-    # Check for upstream failures
     if not t__modules__scan.success:
+        executor = NativeTargetExecutor.for_target(
+            env,
+            graph,
+            MODULES_TARGET_NAME,
+            hash_options=modules__hash_options,
+        )
         return executor.fail(RuntimeError(t__modules__scan.error or "Module scan failed"))
 
-    if not t__modules__write_repo_map.success:
-        return executor.fail(
-            RuntimeError(t__modules__write_repo_map.error or "Repo map write failed")
-        )
-
-    if executor.should_skip():
-        return executor.skip()
-
-    # Compute final row counts
-    def compute() -> dict[str, int]:
-        row_counts = normalize_table_counts(
-            MODULES_TABLE_KEYS,
-            dict(t__modules__scan.table_counts),
-        )
-        row_counts[REPO_MAP_TABLE_KEY] = t__modules__write_repo_map.row_count
-        return row_counts
-
-    change_set = t__modules__scan.change_set
     change_delta: dict[str, object] | None = None
+    change_set = t__modules__scan.change_set
     if change_set is not None:
         change_delta = cast(
             "dict[str, object]",
@@ -471,34 +479,18 @@ def t__modules(
             },
         )
 
-    return executor.execute(compute, change_delta=change_delta)
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=MODULES_TARGET_NAME,
+        materializations=modules__materializations,
+        change_delta=change_delta,
+    )
 
 
 # ---------------------------------------------------------------------------
 # config_ingest target
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ConfigScanResult:
-    """Result from config file discovery.
-
-    Attributes
-    ----------
-    success
-        Whether discovery completed successfully.
-    config_files
-        List of discovered config files.
-    file_state_hash
-        Stable hash of the config file state for input hashing.
-    error
-        Error message if discovery failed.
-    """
-
-    success: bool
-    config_files: list[ModuleRecord] = field(default_factory=list)
-    file_state_hash: str | None = None
-    error: str | None = None
 
 
 def _compute_file_state_hash(config_files: Sequence[ModuleRecord]) -> str:
@@ -511,42 +503,30 @@ def _compute_file_state_hash(config_files: Sequence[ModuleRecord]) -> str:
     return HashChangeDetectionAdapter.compute_state_hash(state)
 
 
-def _config_ingest_execution_result(result: ExecutionResult) -> ExecutionResult:
-    table_counts = normalize_table_counts(
-        (CONFIG_VALUES_TABLE_KEY,),
-        dict(result.table_counts) if result.table_counts else None,
+def _should_skip_target(
+    env: BuildEnv,
+    graph: TargetGraph,
+    target_name: str,
+    *,
+    file_state_hash: str | None = None,
+) -> bool:
+    target = graph.get(target_name)
+    if target is None:
+        return False
+    options_hash = options_hash_for_target(env, target_name)
+    hash_options = InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=file_state_hash,
     )
-    warnings = result.warnings
-
-    if result.skipped:
-        return ExecutionResult.skip(
-            result.skip_reason,
-            table_counts=table_counts,
-            warnings=warnings,
-        )
-
-    if not result.success:
-        return ExecutionResult.failed(
-            result.error or "Config ingest failed",
-            table_counts=table_counts,
-            warnings=warnings,
-        )
-
-    for warning in warnings:
-        log.warning("Config parse warning: %s", warning)
-
-    if warnings and result.rows_written == 0:
-        warning_text = "; ".join(warnings)
-        return ExecutionResult.failed(
-            f"Config ingest failed: {warning_text}",
-            table_counts=table_counts,
-            warnings=warnings,
-        )
-
-    return ExecutionResult.ok(
-        table_counts=table_counts,
-        warnings=warnings,
+    input_hash = compute_input_hash(
+        target=target,
+        snapshot=env.snapshot,
+        gateway=env.gateway,
+        settings=env.settings,
+        options=hash_options,
     )
+    return should_skip_native_target(env, target, input_hash, options_hash=options_hash)
 
 
 @tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
@@ -584,46 +564,85 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
 @tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__ingest(
     env: BuildEnv,
+    graph: TargetGraph,
     t__config_ingest__scan: ConfigScanResult,
-) -> ExecutionResult:
+) -> ConfigIngestResult:
     """Ingest discovered config files into structured tables.
 
     Returns
     -------
-    ExecutionResult
-        Ingestion status and per-table row counts.
+    ConfigIngestResult
+        Ingestion status and row tuples.
     """
     if not t__config_ingest__scan.success:
-        return ExecutionResult.failed(f"Config scan failed: {t__config_ingest__scan.error}")
+        return ConfigIngestResult(
+            result=ExecutionResult.failed(f"Config scan failed: {t__config_ingest__scan.error}")
+        )
+
+    if _should_skip_target(
+        env,
+        graph,
+        CONFIG_INGEST_TARGET_NAME,
+        file_state_hash=t__config_ingest__scan.file_state_hash,
+    ):
+        return ConfigIngestResult(result=ExecutionResult.skip("Config ingest skipped"))
 
     config_files = t__config_ingest__scan.config_files
-    if not config_files:
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts((CONFIG_VALUES_TABLE_KEY,), None),
-        )
+    discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
+    step = ConfigIngestStep(discovery=discovery)
+    return step.execute(
+        config_files,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+    )
 
-    try:
-        storage = DuckDBStorageAdapter(env.gateway)
-        discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
 
-        step = ConfigIngestStep(storage=storage, discovery=discovery)
-        result = step.execute(
-            config_files,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-        return _config_ingest_execution_result(result)
-    except Exception:
-        log.exception("Config ingestion failed")
-        return ExecutionResult.failed("Config ingestion failed with exception")
+@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
+def config_ingest__hash_options(
+    env: BuildEnv,
+    t__config_ingest__scan: ConfigScanResult,
+) -> InputHashOptions:
+    options_hash = options_hash_for_target(env, CONFIG_INGEST_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=t__config_ingest__scan.file_state_hash,
+    )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(CONFIG_VALUES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(CONFIG_INGEST_TARGET_NAME),
+    table_key=value(CONFIG_VALUES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(CONFIG_VALUES_TABLE_KEY)),
+    hash_options=source("config_ingest__hash_options"),
+)
+@tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__rows")
+def config_ingest__rows(
+    t__config_ingest__ingest: ConfigIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.config_values.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the config_values table, or None when ingestion is skipped or failed.
+    """
+    if t__config_ingest__ingest.result.skipped or not t__config_ingest__ingest.result.success:
+        return None
+    return t__config_ingest__ingest.rows
 
 
 @tag_materialize(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest(
     env: BuildEnv,
     graph: TargetGraph,
-    t__config_ingest__scan: ConfigScanResult,
-    t__config_ingest__ingest: ExecutionResult,
+    t__config_ingest__ingest: ConfigIngestResult,
+    config_ingest__hash_options: InputHashOptions,
+    m__analytics__config_values: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Finalize config_ingest execution and persist manifest.
 
@@ -632,13 +651,27 @@ def t__config_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    hash_options = InputHashOptions(file_state_hash=t__config_ingest__scan.file_state_hash)
-    return executor_materialize(
-        env,
-        graph,
-        CONFIG_INGEST_TARGET_NAME,
-        t__config_ingest__ingest,
-        hash_options=hash_options,
+    if not t__config_ingest__ingest.result.success and not t__config_ingest__ingest.result.skipped:
+        executor = NativeTargetExecutor.for_target(
+            env,
+            graph,
+            CONFIG_INGEST_TARGET_NAME,
+            hash_options=config_ingest__hash_options,
+        )
+        return executor.fail(
+            RuntimeError(t__config_ingest__ingest.result.error or "Config ingest failed")
+        )
+
+    for warning in t__config_ingest__ingest.result.warnings:
+        log.warning("Config parse warning: %s", warning)
+
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=CONFIG_INGEST_TARGET_NAME,
+        materializations={
+            CONFIG_VALUES_TABLE_KEY: m__analytics__config_values,
+        },
     )
 
 
@@ -665,74 +698,72 @@ def _resolve_coverage_file(env: BuildEnv) -> Path | None:
 @tag_tool(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 async def t__coverage_ingest__ingest(
     env: BuildEnv,
+    graph: TargetGraph,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> ExecutionResult:
+) -> CoverageIngestResult:
     """Execute coverage data ingestion from coverage.py output.
 
     Returns
     -------
-    ExecutionResult
-        Ingestion status and per-table row counts.
+    CoverageIngestResult
+        Ingestion status and row tuples.
     """
     if t__modules.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        return CoverageIngestResult(
+            result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        )
+
+    if _should_skip_target(env, graph, COVERAGE_INGEST_TARGET_NAME):
+        return CoverageIngestResult(result=ExecutionResult.skip("Coverage ingest skipped"))
 
     coverage_path = _resolve_coverage_file(env)
     if coverage_path is None:
-        log.info("No coverage file found, skipping coverage ingestion")
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts((COVERAGE_LINES_TABLE_KEY,), None),
-        )
+        log.info("No coverage file found, writing empty coverage rows")
+        return CoverageIngestResult(result=ExecutionResult.ok(), rows=())
 
-    try:
-        storage = DuckDBStorageAdapter(env.gateway)
-        tools = ToolRunnerAdapter(env.providers.tool_service)
+    tools = ToolRunnerAdapter(env.providers.tool_service)
+    step = CoverageIngestStep(tools=tools)
+    return await step.execute_async(
+        module_records,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        repo_root=env.snapshot.repo_root,
+        coverage_file=coverage_path,
+    )
 
-        step = CoverageIngestStep(storage=storage, tools=tools)
-        result = await step.execute_async(
-            module_records,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            repo_root=env.snapshot.repo_root,
-            coverage_file=coverage_path,
-        )
 
-        if result.skipped:
-            return ExecutionResult.skip(
-                result.skip_reason,
-                table_counts=normalize_table_counts(
-                    (COVERAGE_LINES_TABLE_KEY,),
-                    dict(result.table_counts) if result.table_counts else None,
-                ),
-                warnings=result.warnings,
-            )
-        if not result.success:
-            return ExecutionResult.failed(
-                result.error or "Coverage ingest failed",
-                table_counts=normalize_table_counts(
-                    (COVERAGE_LINES_TABLE_KEY,),
-                    dict(result.table_counts) if result.table_counts else None,
-                ),
-                warnings=result.warnings,
-            )
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(COVERAGE_LINES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(COVERAGE_INGEST_TARGET_NAME),
+    table_key=value(COVERAGE_LINES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(COVERAGE_LINES_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, target_="coverage__rows")
+def coverage__rows(
+    t__coverage_ingest__ingest: CoverageIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.coverage_lines.
 
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts(
-                (COVERAGE_LINES_TABLE_KEY,),
-                dict(result.table_counts) if result.table_counts else None,
-            )
-        )
-    except Exception:
-        log.exception("Coverage ingestion failed")
-        return ExecutionResult.failed("Coverage ingestion failed with exception")
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the coverage_lines table, or None when ingestion is skipped or failed.
+    """
+    if t__coverage_ingest__ingest.result.skipped or not t__coverage_ingest__ingest.result.success:
+        return None
+    return t__coverage_ingest__ingest.rows
 
 
 @tag_materialize(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def t__coverage_ingest(
     env: BuildEnv,
     graph: TargetGraph,
-    t__coverage_ingest__ingest: ExecutionResult,
+    t__coverage_ingest__ingest: CoverageIngestResult,
+    m__analytics__coverage_lines: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Finalize coverage_ingest execution and persist manifest.
 
@@ -741,7 +772,23 @@ def t__coverage_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, COVERAGE_INGEST_TARGET_NAME, t__coverage_ingest__ingest)
+    if (
+        not t__coverage_ingest__ingest.result.success
+        and not t__coverage_ingest__ingest.result.skipped
+    ):
+        executor = NativeTargetExecutor.for_target(env, graph, COVERAGE_INGEST_TARGET_NAME)
+        return executor.fail(
+            RuntimeError(t__coverage_ingest__ingest.result.error or "Coverage ingest failed")
+        )
+
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=COVERAGE_INGEST_TARGET_NAME,
+        materializations={
+            COVERAGE_LINES_TABLE_KEY: m__analytics__coverage_lines,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -774,71 +821,70 @@ def _resolve_report_file(env: BuildEnv) -> Path | None:
 @tag_tool(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest__ingest(
     env: BuildEnv,
+    graph: TargetGraph,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> ExecutionResult:
+) -> TestsIngestResult:
     """Execute pytest report ingestion into analytics tables.
 
     Returns
     -------
-    ExecutionResult
-        Ingestion status and per-table row counts.
+    TestsIngestResult
+        Ingestion status and row tuples.
     """
     if t__modules.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        return TestsIngestResult(
+            result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        )
+
+    if _should_skip_target(env, graph, TESTS_INGEST_TARGET_NAME):
+        return TestsIngestResult(result=ExecutionResult.skip("Tests ingest skipped"))
 
     report_path = _resolve_report_file(env)
     if report_path is None:
-        log.info("No pytest report found, skipping tests ingestion")
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts((TEST_CATALOG_TABLE_KEY,), None),
-        )
+        log.info("No pytest report found, writing empty test rows")
+        return TestsIngestResult(result=ExecutionResult.ok(), rows=())
 
-    try:
-        storage = DuckDBStorageAdapter(env.gateway)
-        step = TestsIngestStep(storage=storage)
-        result = step.execute(
-            module_records,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            json_report_path=report_path,
-        )
+    step = TestsIngestStep()
+    return step.execute(
+        module_records,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        json_report_path=report_path,
+    )
 
-        if result.skipped:
-            return ExecutionResult.skip(
-                result.skip_reason,
-                table_counts=normalize_table_counts(
-                    (TEST_CATALOG_TABLE_KEY,),
-                    dict(result.table_counts) if result.table_counts else None,
-                ),
-                warnings=result.warnings,
-            )
-        if not result.success:
-            return ExecutionResult.failed(
-                result.error or "Tests ingest failed",
-                table_counts=normalize_table_counts(
-                    (TEST_CATALOG_TABLE_KEY,),
-                    dict(result.table_counts) if result.table_counts else None,
-                ),
-                warnings=result.warnings,
-            )
 
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts(
-                (TEST_CATALOG_TABLE_KEY,),
-                dict(result.table_counts) if result.table_counts else None,
-            )
-        )
-    except Exception:
-        log.exception("Tests ingestion failed")
-        return ExecutionResult.failed("Tests ingestion failed with exception")
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(TEST_CATALOG_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(TESTS_INGEST_TARGET_NAME),
+    table_key=value(TEST_CATALOG_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(TEST_CATALOG_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, target_="tests__rows")
+def tests__rows(
+    t__tests_ingest__ingest: TestsIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.test_catalog.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the test_catalog table, or None when ingestion is skipped or failed.
+    """
+    if t__tests_ingest__ingest.result.skipped or not t__tests_ingest__ingest.result.success:
+        return None
+    return t__tests_ingest__ingest.rows
 
 
 @tag_materialize(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest(
     env: BuildEnv,
     graph: TargetGraph,
-    t__tests_ingest__ingest: ExecutionResult,
+    t__tests_ingest__ingest: TestsIngestResult,
+    m__analytics__test_catalog: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Finalize tests_ingest execution and persist manifest.
 
@@ -847,7 +893,20 @@ def t__tests_ingest(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, TESTS_INGEST_TARGET_NAME, t__tests_ingest__ingest)
+    if not t__tests_ingest__ingest.result.success and not t__tests_ingest__ingest.result.skipped:
+        executor = NativeTargetExecutor.for_target(env, graph, TESTS_INGEST_TARGET_NAME)
+        return executor.fail(
+            RuntimeError(t__tests_ingest__ingest.result.error or "Tests ingest failed")
+        )
+
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=TESTS_INGEST_TARGET_NAME,
+        materializations={
+            TEST_CATALOG_TABLE_KEY: m__analytics__test_catalog,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -861,31 +920,32 @@ def t__typing__ingest(
     graph: TargetGraph,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-) -> ExecutionResult:
+) -> TypingIngestResult:
     """Execute typing analysis and persist typedness + diagnostics tables.
 
     Returns
     -------
-    ExecutionResult
-        Ingestion status and per-table row counts.
+    TypingIngestResult
+        Ingestion status and row tuples.
     """
     if t__modules.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        return TypingIngestResult(
+            result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        )
 
-    executor = NativeTargetExecutor.for_target(env, graph, TYPING_TARGET_NAME)
-    if executor.should_skip():
-        return ExecutionResult.ok(table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None))
+    if _should_skip_target(env, graph, TYPING_TARGET_NAME):
+        return TypingIngestResult(result=ExecutionResult.skip("Typing ingest skipped"))
 
     if not module_records:
-        return ExecutionResult.ok(table_counts=normalize_table_counts(TYPING_TABLE_KEYS, None))
+        return TypingIngestResult(
+            result=ExecutionResult.ok(), typedness_rows=(), diagnostic_rows=()
+        )
 
-    storage = DuckDBStorageAdapter(env.gateway)
     discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
-
     tools = ToolRunnerAdapter(env.providers.tool_service)
 
-    step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
-    result = asyncio.run(
+    step = TypingIngestStep(discovery=discovery, tools=tools)
+    return asyncio.run(
         step.execute_async(
             module_records,
             repo=env.snapshot.repo,
@@ -895,32 +955,64 @@ def t__typing__ingest(
         )
     )
 
-    if result.skipped:
-        if result.skip_reason:
-            log.info("Typing ingestion skipped: %s", result.skip_reason)
-        return ExecutionResult.skip(
-            result.skip_reason,
-            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
-            warnings=result.warnings,
-        )
 
-    if not result.success:
-        return ExecutionResult.failed(
-            result.error or "Typing ingestion failed",
-            table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts)),
-            warnings=result.warnings,
-        )
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(TYPEDNESS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(TYPING_TARGET_NAME),
+    table_key=value(TYPEDNESS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(TYPEDNESS_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=TYPING_TARGET_NAME, target_="typing__typedness_rows")
+def typing__typedness_rows(
+    t__typing__ingest: TypingIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.typedness.
 
-    return ExecutionResult.ok(
-        table_counts=normalize_table_counts(TYPING_TABLE_KEYS, dict(result.table_counts))
-    )
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the typedness table, or None when ingestion is skipped or failed.
+    """
+    if t__typing__ingest.result.skipped or not t__typing__ingest.result.success:
+        return None
+    return t__typing__ingest.typedness_rows
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(STATIC_DIAGNOSTICS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(TYPING_TARGET_NAME),
+    table_key=value(STATIC_DIAGNOSTICS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(STATIC_DIAGNOSTICS_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=TYPING_TARGET_NAME, target_="typing__diagnostic_rows")
+def typing__diagnostic_rows(
+    t__typing__ingest: TypingIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.static_diagnostics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Rows for the static_diagnostics table, or None when ingestion is skipped or failed.
+    """
+    if t__typing__ingest.result.skipped or not t__typing__ingest.result.success:
+        return None
+    return t__typing__ingest.diagnostic_rows
 
 
 @tag_materialize(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing(
     env: BuildEnv,
     graph: TargetGraph,
-    t__typing__ingest: ExecutionResult,
+    t__typing__ingest: TypingIngestResult,
+    m__analytics__typedness: MaterializationMetadata,
+    m__analytics__static_diagnostics: MaterializationMetadata,
 ) -> TargetRunRecord:
     """Finalize typing target execution and persist manifest.
 
@@ -929,4 +1021,40 @@ def t__typing(
     TargetRunRecord
         Record describing the execution outcome.
     """
-    return executor_materialize(env, graph, TYPING_TARGET_NAME, t__typing__ingest)
+    if not t__typing__ingest.result.success and not t__typing__ingest.result.skipped:
+        executor = NativeTargetExecutor.for_target(env, graph, TYPING_TARGET_NAME)
+        return executor.fail(
+            RuntimeError(t__typing__ingest.result.error or "Typing ingestion failed")
+        )
+
+    return record_from_duckdb_materializations(
+        env=env,
+        graph=graph,
+        target_name=TYPING_TARGET_NAME,
+        materializations={
+            TYPEDNESS_TABLE_KEY: m__analytics__typedness,
+            STATIC_DIAGNOSTICS_TABLE_KEY: m__analytics__static_diagnostics,
+        },
+    )
+
+
+__all__: list[str] = [
+    "ConfigIngestResult",
+    "ConfigScanResult",
+    "CoverageIngestResult",
+    "ModuleScanResult",
+    "RepoScanResult",
+    "TestsIngestResult",
+    "TypingIngestResult",
+    "t__config_ingest",
+    "t__config_ingest__ingest",
+    "t__config_ingest__scan",
+    "t__coverage_ingest",
+    "t__coverage_ingest__ingest",
+    "t__modules",
+    "t__modules__scan",
+    "t__tests_ingest",
+    "t__tests_ingest__ingest",
+    "t__typing",
+    "t__typing__ingest",
+]

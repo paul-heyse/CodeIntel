@@ -42,7 +42,6 @@ from codeintel.storage.helpers.table_key import (
     split_table_key,
     validate_table_key,
 )
-from codeintel.storage.helpers.time import utc_now
 
 __all__ = [
     "TableKey",
@@ -56,6 +55,5 @@ __all__ = [
     "parse_table_key",
     "serialize_str_sequence",
     "split_table_key",
-    "utc_now",
     "validate_table_key",
 ]

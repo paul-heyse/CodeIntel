@@ -17,7 +17,7 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import TYPE_CHECKING, NamedTuple
 
-from codeintel.build.table_keys import split_table_key
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

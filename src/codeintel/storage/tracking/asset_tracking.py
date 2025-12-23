@@ -9,8 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import decode_json_dict, encode_json_compact
-from codeintel.storage.helpers.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

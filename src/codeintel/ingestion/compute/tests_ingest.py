@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.engine.results import parse_test_duration, parse_test_markers
 
 if TYPE_CHECKING:
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
 
 log = logging.getLogger(__name__)
 TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
@@ -81,34 +81,16 @@ class TestsIngestStep:
 
     This step ingests pytest JSON reports into analytics.test_catalog, using
     ports for all I/O operations.
-
-    Parameters
-    ----------
-    storage
-        Storage port for persisting data.
     """
 
-    def __init__(
-        self,
-        storage: IngestStoragePort,
-    ) -> None:
-        """Initialize the step.
-
-        Parameters
-        ----------
-        storage
-            Storage port for persisting data.
-        """
-        self._storage = storage
-
+    @staticmethod
     def execute(
-        self,
         _modules: Sequence[ModuleRecord],
         *,
         repo: str,
         commit: str,
         json_report_path: Path,
-    ) -> ExecutionResult:
+    ) -> TestsIngestResult:
         """Execute test catalog ingestion.
 
         Parameters
@@ -124,20 +106,24 @@ class TestsIngestStep:
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        TestsIngestResult
+            Result bundle with row tuples and execution status.
         """
         created_at = datetime.now(UTC)
 
         if not json_report_path.exists():
             log.warning("Test report not found: %s", json_report_path)
-            return ExecutionResult.skip("Test report not found")
+            return TestsIngestResult(
+                result=ExecutionResult.skip("Test report not found"),
+            )
 
         try:
             data = json.loads(json_report_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
             log.warning("Failed to read test report: %s", exc)
-            return ExecutionResult.failed(f"Failed to read test report: {exc}")
+            return TestsIngestResult(
+                result=ExecutionResult.failed(f"Failed to read test report: {exc}")
+            )
 
         tests = data.get("tests", [])
         catalog_serializer = row_serializer_for_table_key(TEST_CATALOG_TABLE_KEY)
@@ -150,13 +136,6 @@ class TestsIngestStep:
             serializer=catalog_serializer,
         )
 
-        table_counts: dict[str, int] = {}
-
-        if all_rows:
-            scope = f"{repo}@{commit}"
-            result = self._storage.write_batch(TEST_CATALOG_TABLE_KEY, all_rows, scope=scope)
-            table_counts[TEST_CATALOG_TABLE_KEY] = result.rows_affected
-
         log.info(
             "Test catalog ingest: repo=%s commit=%s tests=%d",
             repo,
@@ -164,7 +143,18 @@ class TestsIngestStep:
             len(tests),
         )
 
-        return ExecutionResult.ok(table_counts=table_counts)
+        return TestsIngestResult(
+            result=ExecutionResult.ok(),
+            rows=tuple(all_rows),
+        )
 
 
-__all__ = ["TestsIngestStep"]
+@dataclass(frozen=True)
+class TestsIngestResult:
+    """Result bundle for tests ingestion."""
+
+    result: ExecutionResult
+    rows: tuple[tuple[object, ...], ...] = ()
+
+
+__all__ = ["TestsIngestResult", "TestsIngestStep"]

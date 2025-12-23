@@ -25,13 +25,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.table_keys import split_table_key
 from codeintel.config.datasets.primitives import (
     Column,
     ColumnType,
     Index,
     TableSchema,
 )
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

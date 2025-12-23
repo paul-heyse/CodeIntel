@@ -33,6 +33,7 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.schemas.column_resolution import DeferredColumns, resolve_columns
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import TargetGraph
@@ -77,6 +78,7 @@ class DuckDBRowsSaver(DataSaver):
     target_name: str
     table_key: str
     columns: tuple[str, ...] | DeferredColumns
+    hash_options: InputHashOptions | None = None
 
     @classmethod
     def name(cls) -> str:
@@ -154,6 +156,7 @@ class DuckDBRowsSaver(DataSaver):
                 env=self.env,
                 graph=self.graph,
                 target_name=self.target_name,
+                hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
                 result = _failed(

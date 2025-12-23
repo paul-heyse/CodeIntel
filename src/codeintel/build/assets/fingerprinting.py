@@ -9,10 +9,10 @@ repo/commit, enabling cross-commit asset reuse through upstream version hashes.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from enum import Enum
 
+from codeintel.core.hashing import sha256_short
 from codeintel.core.schemas.hashing import compute_table_schema_hash
 
 
@@ -142,7 +142,7 @@ class FingerprintPolicy:
             inp.options_hash or "",
             *sorted(inp.upstream_versions),
         ]
-        return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+        return sha256_short("|".join(parts), length=16, used_for_security=False)
 
     def compute_artifact_version(self, inp: ArtifactVersionInput) -> str:
         """Compute version hash for an artifact asset.
@@ -182,7 +182,7 @@ class FingerprintPolicy:
             inp.options_hash or "",
             *sorted(inp.upstream_versions),
         ]
-        return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+        return sha256_short("|".join(parts), length=16, used_for_security=False)
 
 
 # Default policy for new builds

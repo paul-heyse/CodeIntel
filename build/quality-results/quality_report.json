@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-23T00:18:52.190641+00:00",
+  "generated_at": "2025-12-23T02:14:57.165704+00:00",
   "overall_status": "passed",
-  "duration_seconds": 29.664734,
+  "duration_seconds": 31.253906,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T00:18:22.525379+00:00",
-      "ended_at": "2025-12-23T00:18:27.959041+00:00",
-      "duration_seconds": 5.433662,
+      "started_at": "2025-12-23T02:14:25.911339+00:00",
+      "ended_at": "2025-12-23T02:14:31.422455+00:00",
+      "duration_seconds": 5.511116,
       "stdout": [],
       "stderr": []
     },
@@ -32,9 +32,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T00:18:27.959091+00:00",
-      "ended_at": "2025-12-23T00:18:28.027942+00:00",
-      "duration_seconds": 0.068851,
+      "started_at": "2025-12-23T02:14:31.422521+00:00",
+      "ended_at": "2025-12-23T02:14:31.482202+00:00",
+      "duration_seconds": 0.059681,
       "stdout": [
         "All checks passed!"
       ],
@@ -51,9 +51,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T00:18:28.027980+00:00",
-      "ended_at": "2025-12-23T00:18:30.914659+00:00",
-      "duration_seconds": 2.886679,
+      "started_at": "2025-12-23T02:14:31.482235+00:00",
+      "ended_at": "2025-12-23T02:14:34.508642+00:00",
+      "duration_seconds": 3.026407,
       "stdout": [],
       "stderr": []
     },
@@ -68,9 +68,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T00:18:30.914707+00:00",
-      "ended_at": "2025-12-23T00:18:33.354158+00:00",
-      "duration_seconds": 2.439451,
+      "started_at": "2025-12-23T02:14:34.508690+00:00",
+      "ended_at": "2025-12-23T02:14:37.062352+00:00",
+      "duration_seconds": 2.553662,
       "stdout": [],
       "stderr": []
     },
@@ -85,9 +85,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T00:18:33.354195+00:00",
-      "ended_at": "2025-12-23T00:18:50.181654+00:00",
-      "duration_seconds": 16.827459,
+      "started_at": "2025-12-23T02:14:37.062383+00:00",
+      "ended_at": "2025-12-23T02:14:55.155115+00:00",
+      "duration_seconds": 18.092732,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -103,9 +103,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T00:18:50.181720+00:00",
-      "ended_at": "2025-12-23T00:18:52.190113+00:00",
-      "duration_seconds": 2.008393,
+      "started_at": "2025-12-23T02:14:55.155245+00:00",
+      "ended_at": "2025-12-23T02:14:57.165245+00:00",
+      "duration_seconds": 2.01,
       "stdout": [
         " WARN Redundant cast: `CliConfig` is the same type as `CliConfig` [redundant-cast]",
         "   --> tests/observability/test_observability_smoke.py:124:30",

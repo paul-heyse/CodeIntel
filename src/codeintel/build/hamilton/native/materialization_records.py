@@ -26,6 +26,8 @@ from codeintel.build.hamilton.run_records import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget, TargetGraph
 
@@ -309,6 +311,7 @@ def record_from_duckdb_materializations(
     graph: TargetGraph,
     target_name: str,
     materializations: dict[str, MaterializationMetadata],
+    change_delta: Mapping[str, object] | None = None,
 ) -> TargetRunRecord:
     """Build a TargetRunRecord from multiple DuckDB saver metadata dicts.
 
@@ -322,6 +325,8 @@ def record_from_duckdb_materializations(
         Target name for which the record is being produced.
     materializations
         Mapping of table_key to materialization metadata dict returned by saver nodes.
+    change_delta
+        Optional change-detection payload to store with the manifest.
 
     Returns
     -------
@@ -446,7 +451,7 @@ def record_from_duckdb_materializations(
         input_hash,
         inputs=RunRecordInputs(env=env, run=run),
     )
-    save_manifest(env, record)
+    save_manifest(env, record, change_delta=change_delta)
     return record
 
 

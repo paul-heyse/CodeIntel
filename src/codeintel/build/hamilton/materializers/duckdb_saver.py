@@ -31,6 +31,7 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
@@ -68,6 +69,7 @@ class DuckDBIbisTableSaver(DataSaver):
     graph: TargetGraph
     target_name: str
     table_key: str
+    hash_options: InputHashOptions | None = None
 
     @classmethod
     def name(cls) -> str:
@@ -134,6 +136,7 @@ class DuckDBIbisTableSaver(DataSaver):
                 env=self.env,
                 graph=self.graph,
                 target_name=self.target_name,
+                hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
                 result = _failed(

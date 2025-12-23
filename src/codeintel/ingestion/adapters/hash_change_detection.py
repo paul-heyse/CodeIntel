@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
 
+from codeintel.core.hashing import sha256_short
 from codeintel.core.ibis_typing import filter_by, ibis_bool, window_over
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -117,7 +118,12 @@ class HashChangeDetectionAdapter:
             if rel_path not in current_paths
         ]
 
-        self.save_current_state(request.repo, request.commit, request.language, current_state)
+        state_rows = self._build_state_rows(
+            repo=request.repo,
+            commit=request.commit,
+            language=request.language,
+            state=current_state,
+        )
 
         log.info(
             "Change detection: repo=%s added=%d modified=%d deleted=%d",
@@ -132,6 +138,7 @@ class HashChangeDetectionAdapter:
             modified=modified,
             deleted=deleted,
             state_hash=state_hash,
+            state_rows=state_rows,
         )
 
     def load_previous_state(
@@ -307,13 +314,11 @@ class HashChangeDetectionAdapter:
         str
             Stable hash derived from path + content hashes.
         """
-        hasher = hashlib.sha256()
-        for rel_path, digest in sorted(state.items()):
-            hasher.update(rel_path.encode("utf-8"))
-            hasher.update(b":")
-            hasher.update(digest.content_hash.encode("utf-8"))
-            hasher.update(b"|")
-        return hasher.hexdigest()[:16]
+        parts = [f"{rel_path}:{digest.content_hash}" for rel_path, digest in sorted(state.items())]
+        payload = "|".join(parts)
+        if payload:
+            payload = f"{payload}|"
+        return sha256_short(payload, length=16, used_for_security=False)
 
     def _build_current_state(
         self,
@@ -338,6 +343,32 @@ class HashChangeDetectionAdapter:
                 normalized = normalize_path(module.rel_path)
                 state[normalized] = digest
         return state
+
+    @staticmethod
+    def _build_state_rows(
+        *,
+        repo: str,
+        commit: str,
+        language: str,
+        state: Mapping[str, FileDigest],
+    ) -> list[tuple[object, ...]]:
+        if not state:
+            return []
+        serializer = row_serializer_for_table_key(FILE_STATE_TABLE_KEY)
+        return [
+            serializer(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "rel_path": rel_path,
+                    "language": language,
+                    "size_bytes": digest.size_bytes,
+                    "mtime_ns": digest.mtime_ns,
+                    "content_hash": digest.content_hash,
+                }
+            )
+            for rel_path, digest in sorted(state.items())
+        ]
 
 
 __all__ = ["HashChangeDetectionAdapter"]

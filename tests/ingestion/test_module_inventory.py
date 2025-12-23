@@ -17,7 +17,7 @@ from codeintel.ingestion.compute import (
     typing_ingest,
 )
 from codeintel.storage.helpers.module_index import load_module_map
-from tests._helpers.ingestion import module_inventory_context
+from tests._helpers.ingestion import materialize_repo_scan_result, module_inventory_context
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -55,11 +55,16 @@ def test_scanning_only_used_in_repo_scan_and_config_ingest() -> None:
 def test_module_inventory_round_trip(tmp_path: Path) -> None:
     """Verify module inventory round-trips through core.modules and iter_modules."""
     with module_inventory_context(tmp_path) as ctx:
-        _, modules, _ = ctx.scan_step.execute(
+        scan_result = ctx.scan_step.execute(
             repo=ctx.snapshot.repo,
             commit=ctx.snapshot.commit,
             repo_root=ctx.snapshot.repo_root,
             profile=ctx.profile,
+        )
+        materialize_repo_scan_result(
+            ctx.gateway,
+            scan_result,
+            snapshot=ctx.snapshot,
         )
 
         module_map = load_module_map(
@@ -82,7 +87,7 @@ def test_module_inventory_round_trip(tmp_path: Path) -> None:
         if not all("/" in rel_path for rel_path in rel_paths):
             pytest.fail(f"Non-POSIX module paths: {rel_paths}")
 
-        scan_paths = sorted(module.rel_path for module in modules)
+        scan_paths = sorted(module.rel_path for module in scan_result.modules)
         if scan_paths != rel_paths:
             pytest.fail(
                 f"Scan modules {scan_paths} differ from module_map derived paths {rel_paths}"

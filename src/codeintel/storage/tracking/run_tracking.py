@@ -12,13 +12,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
+from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import (
     decode_json_dict,
     deserialize_str_tuple,
     encode_json_compact,
     serialize_str_sequence,
 )
-from codeintel.storage.helpers.time import utc_now
 from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:

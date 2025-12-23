@@ -51,12 +51,15 @@ class ChangeSet:
         Modules that were deleted.
     state_hash
         Stable hash of the current file state for caching.
+    state_rows
+        Serialized row tuples for persisting current file state.
     """
 
     added: list[ModuleRecord] = field(default_factory=list)
     modified: list[ModuleRecord] = field(default_factory=list)
     deleted: list[ModuleRecord] = field(default_factory=list)
     state_hash: str | None = None
+    state_rows: list[tuple[object, ...]] = field(default_factory=list)
 
     @property
     def has_changes(self) -> bool:

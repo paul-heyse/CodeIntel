@@ -16,11 +16,11 @@ from codeintel.build.errors import BuildProblemError
 from codeintel.build.exports.exprs import build_export_expr, compile_export_sql
 from codeintel.build.schemas import iter_contracts
 from codeintel.build.schemas.json_schema_registry import compute_json_schema_digest
-from codeintel.build.table_keys import split_table_key
 from codeintel.core.config.settings import ExportAuditSettings
 from codeintel.core.errors.schema import SchemaError
 from codeintel.core.errors.taxonomy import SCHEMA_MISMATCH, ErrorCode
 from codeintel.storage.exports import ExportAuditRecord as AuditRecord
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.validation import validate_contract_or_raise
 
