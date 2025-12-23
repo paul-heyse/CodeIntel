@@ -19,12 +19,15 @@ from codeintel.core.exports.formats import (
     supports_line_chunks,
     supports_preview,
 )
+from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
 
 __all__ = [
     "EXPORT_FORMATS",
     "CanonicalExportFormat",
     "ExportFormat",
     "ExportFormatSpec",
+    "coerce_export_row",
+    "coerce_export_value",
     "default_export_format",
     "export_format_choices",
     "is_binary_export_format",

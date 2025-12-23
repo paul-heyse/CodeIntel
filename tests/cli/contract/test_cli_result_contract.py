@@ -70,7 +70,7 @@ def test_json_serialization_success() -> None:
 def test_json_serialization_error() -> None:
     """Error result JSON follows RFC 9457 structure."""
     error = ProblemDetail(
-        type="urn:codeintel:cli:validation-error",
+        type="urn:codeintel:validation/missing-required",
         title="Validation Failed",
         detail="Field 'name' is required",
         status=STATUS_SUCCESS,

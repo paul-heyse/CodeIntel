@@ -11,7 +11,6 @@ tables by the build system.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -32,6 +31,7 @@ from codeintel.analytics.dependencies.core import (
     _load_dependency_patterns,
     _serialize_dependency_rows,
 )
+from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
@@ -208,7 +208,7 @@ def _dep_id(repo: str, commit: str, library: str) -> str:
         A 16-character hex hash ID.
     """
     raw = f"{repo}:{commit}:{library}"
-    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+    return sha1_short(raw, length=16, used_for_security=False)
 
 
 def compute_dependency_calls_pure(

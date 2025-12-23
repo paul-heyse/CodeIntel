@@ -21,7 +21,7 @@ GraphValidationReporter
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, TypeVar, cast
 
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -31,6 +31,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphValidationRow as GraphValidationRow,
 )
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.time import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -271,7 +272,7 @@ def gateway_timestamp() -> datetime:
     datetime
         Current UTC timestamp.
     """
-    return datetime.now(UTC)
+    return utc_now()
 
 
 __all__ = [

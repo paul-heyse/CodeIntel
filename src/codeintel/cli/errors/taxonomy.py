@@ -1,40 +1,40 @@
 """Standardized error types and codes for CLI operations.
 
-This module emits CLI-scoped RFC 9457 Problem `type` URNs using the
-`urn:codeintel:cli:` namespace.
+This module emits canonical RFC 9457 Problem `type` URNs using the
+`urn:codeintel:` namespace.
 
 The CLI taxonomy follows this hierarchy:
 
-    urn:codeintel:cli:
-    ├── validation:
+    urn:codeintel:
+    ├── validation/
     │   ├── missing-required
     │   ├── invalid-type
     │   ├── invalid-format
     │   ├── out-of-range
     │   └── constraint-violation
-    ├── operation:
+    ├── operation/
     │   ├── not-found
     │   ├── already-exists
     │   ├── timeout
     │   ├── dependency-failed
     │   ├── cancelled
     │   └── internal-error
-    ├── storage:
+    ├── storage/
     │   ├── connection-failed
     │   ├── query-failed
     │   ├── schema-mismatch
     │   └── corruption-detected
-    ├── config:
+    ├── config/
     │   ├── file-not-found
     │   ├── parse-error
     │   ├── invalid-value
     │   └── schema-violation
-    ├── service:
+    ├── service/
     │   ├── unavailable
     │   ├── rate-limited
     │   ├── authentication-failed
     │   └── permission-denied
-    └── job:
+    └── job/
         ├── not-found
         ├── already-running
         ├── failed
@@ -47,8 +47,7 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Any
 
-# Use CLI-specific ProblemDetail for rendering
-from codeintel.cli.errors._cli_errors import ProblemDetail
+from codeintel.core.errors.problem_details import ProblemDetail
 from codeintel.core.errors.taxonomy import (
     CONFIG_FILE_NOT_FOUND,
     CONFIG_SCHEMA_VIOLATION,
@@ -61,10 +60,13 @@ from codeintel.core.errors.taxonomy import (
     ErrorCode,
     OperationErrorCode,
 )
+from codeintel.core.errors.taxonomy import (
+    make_error_type as _make_error_type,
+)
 
 
 def make_error_type(category: ErrorCategory, code: str) -> str:
-    """Construct a CLI-scoped error type URN.
+    """Construct a canonical error type URN.
 
     Parameters
     ----------
@@ -78,7 +80,7 @@ def make_error_type(category: ErrorCategory, code: str) -> str:
     str
         RFC 9457 `type` identifier for CLI errors.
     """
-    return f"urn:codeintel:cli:{category.value}:{code}"
+    return _make_error_type(category, code)
 
 
 def validation_error(

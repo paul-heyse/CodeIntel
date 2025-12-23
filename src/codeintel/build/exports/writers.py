@@ -4,33 +4,17 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterable
-from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol, SupportsInt, TextIO, cast, runtime_checkable
+from typing import TYPE_CHECKING, SupportsInt, TextIO, cast
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-@runtime_checkable
-class SupportsIsoformat(Protocol):
-    """Protocol for ISO-serializable values."""
-
-    def isoformat(self) -> str:
-        """Return the ISO-8601 string representation.
-
-        Returns
-        -------
-        str
-            ISO-8601 formatted string.
-        """
-        ...
 
 
 def default_json_serializer(obj: object) -> object:
@@ -45,20 +29,8 @@ def default_json_serializer(obj: object) -> object:
     -------
     object
         JSON-serializable representation.
-
-    Raises
-    ------
-    TypeError
-        If the object cannot be serialized for JSON output.
     """
-    if isinstance(obj, SupportsIsoformat):
-        return obj.isoformat()
-    if isinstance(obj, Decimal):
-        normalized = normalize_decimal_id(obj)
-        if normalized is not None:
-            return normalized
-    msg = f"Type {type(obj)} is not JSON serializable"
-    raise TypeError(msg)
+    return coerce_export_value(obj)
 
 
 def _coerce_row_count(value: object) -> int:
@@ -136,7 +108,8 @@ def write_jsonl_records(
             record = {name: payload[name][idx] for name in columns}
             if record_type is not None:
                 record["_type"] = record_type
-            handle.write(json.dumps(record, ensure_ascii=False, default=serializer))
+            payload_row = coerce_export_row(record)
+            handle.write(json.dumps(payload_row, ensure_ascii=False, default=serializer))
             handle.write("\n")
             rows_written += 1
     return rows_written
@@ -203,7 +176,6 @@ __all__ = [
     "ExportRelation",
     "RecordBatch",
     "RecordBatchReader",
-    "SupportsIsoformat",
     "default_json_serializer",
     "write_jsonl_records",
     "write_parquet_relation",

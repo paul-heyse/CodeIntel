@@ -41,14 +41,7 @@ from codeintel.build.schemas.contract_service import (
     ContractResolutionSettings,
     SchemaContractService,
     clear_contract_cache,
-    column_order_for_table_key,
-    get_contract_for_table_key,
     get_contract_provider,
-    get_contract_service,
-    get_enriched_contract_service,
-    is_view,
-    iter_contracts,
-    iter_contracts_by_table_key,
 )
 from codeintel.build.schemas.diff import (
     ColumnDiff,
@@ -92,6 +85,16 @@ from codeintel.build.schemas.service import (
 )
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.imports.lazy import lazy_import
+from codeintel.core.schemas.contract_service import (
+    column_order_for_table_key,
+    get_contract_for_table_key,
+    get_contract_service,
+    get_enriched_contract_service,
+    is_view,
+    iter_contracts,
+    iter_contracts_by_table_key,
+    overrides_from_output_contract,
+)
 
 if TYPE_CHECKING:
     from codeintel.build.schemas.provider_unified import (
@@ -178,6 +181,7 @@ __all__ = [
     "iter_row_bindings",
     "iter_table_schemas",
     "normalize_duckdb_type",
+    "overrides_from_output_contract",
     "require_table_schema",
     "unified_schema_provider",
 ]

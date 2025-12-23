@@ -237,7 +237,7 @@ def execute_batch(
         if spec is None:
             result: CliResult[Any] = CliResult.fail(
                 ProblemDetail(
-                    type="urn:codeintel:cli:operation/not-found",
+                    type="urn:codeintel:operation/not-found",
                     title="Operation Not Found",
                     detail=f"Unknown operation: {batch_op.operation_id}",
                     status=404,

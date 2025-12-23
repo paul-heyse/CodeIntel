@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Literal
 from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relation
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
-from codeintel.build.exports.writers import default_json_serializer
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.core.exports.serialization import coerce_export_row
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
@@ -180,7 +180,8 @@ def export_repo_map_json(
                         first = False
                     else:
                         handle.write(",")
-                    handle.write(json.dumps(record, default=default_json_serializer))
+                    payload_row = coerce_export_row(record)
+                    handle.write(json.dumps(payload_row, ensure_ascii=False))
             handle.write("]\n")
     else:
         output_path = document_output_dir / "repo_map.jsonl"

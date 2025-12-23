@@ -31,4 +31,38 @@ import issues when storage.views depends on storage.gateway.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from typing import TYPE_CHECKING
+
+from codeintel.core.imports.lazy import lazy_import
+
+__all__ = ["StorageFacade"]
+
+if TYPE_CHECKING:
+    from codeintel.storage.facade import StorageFacade
+
+_LAZY_IMPORTS: dict[str, tuple[str, str]] = {
+    "StorageFacade": ("codeintel.storage.facade", "StorageFacade"),
+}
+
+
+def __getattr__(name: str) -> object:
+    """Lazily import storage symbols to avoid import-time cycles.
+
+    Returns
+    -------
+    object
+        Requested attribute loaded from its defining module.
+
+    Raises
+    ------
+    AttributeError
+        If the requested attribute is not registered for lazy loading.
+    """
+    if name in _LAZY_IMPORTS:
+        module_name, attr_name = _LAZY_IMPORTS[name]
+        module = lazy_import(module_name)
+        value = getattr(module, attr_name)
+        globals()[name] = value
+        return value
+    message = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(message)

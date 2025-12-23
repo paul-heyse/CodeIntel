@@ -11,7 +11,6 @@ The Hamilton native module is at:
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from collections import defaultdict
@@ -22,6 +21,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.entrypoints.detection import detect_entrypoints
 from codeintel.analytics.profiles.functions import SLOW_TEST_THRESHOLD_MS
+from codeintel.core.hashing import sha1_short
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters.filesystem_discovery import FilesystemDiscoveryAdapter
 
@@ -321,7 +321,7 @@ def _entrypoint_id(repo: str, commit: str, cand: EntryPointCandidate, urn: str) 
             cand.schedule or "",
         ]
     )
-    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+    return sha1_short(raw, length=16, used_for_security=False)
 
 
 def _normalize_json(value: object | None) -> object | None:

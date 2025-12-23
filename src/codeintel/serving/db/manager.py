@@ -14,9 +14,22 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.spec import buildspec_from_json
+from codeintel.config.primitives import (
+    BuildPaths,
+    GraphBackendConfig,
+    GraphFeatureFlags,
+    SnapshotRef,
+)
+from codeintel.core.execution import ExecutionContext, new_run_context
+from codeintel.core.registry import RegistryService
+from codeintel.core.runtime.loader import (
+    RuntimeInputs,
+    build_runtime_primitives,
+    load_execution_context,
+)
+from codeintel.core.tools import ToolBinaries
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.inventory import SchemaInventory
-from codeintel.serving.semantic.registry import SemanticRegistry
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
@@ -24,6 +37,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.build.spec import BuildSpec
+    from codeintel.serving.semantic.registry import SemanticRegistry
     from codeintel.storage.warehouse import Warehouse
 
 
@@ -300,6 +314,10 @@ class ServingSnapshotContext:
         BuildSpec contract loaded from the snapshot artifact.
     environment
         Optional environment metadata artifact (tool versions, settings).
+    execution_context
+        Unified execution context derived from the serving snapshot metadata.
+    registry_service
+        Canonical registry service used for semantic discovery.
     """
 
     pointer: ServingSnapshotPointer
@@ -307,6 +325,8 @@ class ServingSnapshotContext:
     inventory: SchemaInventory
     buildspec: BuildSpec
     environment: dict[str, object] | None = None
+    execution_context: ExecutionContext | None = None
+    registry_service: RegistryService | None = None
     summary: dict[str, object] = field(default_factory=dict)
 
     def to_summary(self) -> Mapping[str, object]:
@@ -320,8 +340,33 @@ class ServingSnapshotContext:
         return self.summary
 
 
+def _build_execution_context(pointer: ServingSnapshotPointer) -> ExecutionContext:
+    repo_root = pointer.semantic_registry_path.parent
+    snapshot = SnapshotRef.from_args(
+        repo=pointer.repo,
+        commit=pointer.commit,
+        repo_root=repo_root,
+    )
+    primitives = build_runtime_primitives(
+        RuntimeInputs(
+            snapshot=snapshot,
+            paths=BuildPaths.from_repo_root(repo_root),
+            tools=ToolBinaries(),
+            graph_backend=GraphBackendConfig(),
+            graph_features=GraphFeatureFlags(),
+            profiles=None,
+        )
+    )
+    run_context = new_run_context(snapshot=snapshot, kind="op_prereqs", trigger="api")
+    return load_execution_context(primitives=primitives, run=run_context)
+
+
 def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
-    registry = SemanticRegistry.load(pointer.semantic_registry_path)
+    registry_service = RegistryService.from_semantic_registry_path(pointer.semantic_registry_path)
+    registry = registry_service.semantic_registry
+    if registry is None:
+        msg = "Semantic registry was not loaded for the serving snapshot"
+        raise ValueError(msg)
     inventory = SchemaInventory.load(pointer.schema_manifest_path)
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
@@ -356,5 +401,7 @@ def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotCo
         inventory=inventory,
         buildspec=buildspec,
         environment=environment,
+        execution_context=_build_execution_context(pointer),
+        registry_service=registry_service,
         summary=summary,
     )

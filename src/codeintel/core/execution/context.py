@@ -1,7 +1,7 @@
-"""Unified run context types for CodeIntel pipelines.
+"""Unified run and execution context types for CodeIntel pipelines.
 
-This module defines the canonical RunContext type that provides consistent
-run identity across ingestion, graphs, and analytics engines.
+This module defines RunContext for consistent run identity metadata and
+ExecutionContext for bundling runtime primitives and settings.
 """
 
 from __future__ import annotations
@@ -10,7 +10,22 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from codeintel.config.primitives import SnapshotRef
+    from codeintel.config.primitives import (
+        BuildPaths,
+        GraphBackendConfig,
+        GraphFeatureFlags,
+        ScanProfiles,
+        SnapshotRef,
+    )
+    from codeintel.core.config.settings import (
+        BuildSettings,
+        CliSettings,
+        HamiltonExecutionSettings,
+        ObservabilitySettings,
+        ServingSettings,
+    )
+    from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
+    from codeintel.core.tools import ToolBinaries
 
 
 RunKind = Literal["ingest", "graphs", "analytics", "full", "op_prereqs"]
@@ -91,7 +106,105 @@ class RunContext:
         return self.snapshot.commit
 
 
+@dataclass(frozen=True)
+class ExecutionContext:
+    """Unified execution context for runtime entrypoints and Hamilton DAGs.
+
+    Parameters
+    ----------
+    run
+        Run metadata including snapshot identity and run ID.
+    primitives
+        Runtime primitives resolved for the entrypoint.
+    settings
+        Runtime settings resolved from the canonical loader.
+    """
+
+    run: RunContext
+    primitives: RuntimePrimitives
+    settings: RuntimeSettings
+
+    def __post_init__(self) -> None:
+        """Validate that runtime primitives match the run snapshot.
+
+        Raises
+        ------
+        ValueError
+            If the run snapshot differs from the runtime primitives snapshot.
+        """
+        if self.run.snapshot != self.primitives.snapshot:
+            msg = "ExecutionContext snapshot does not match runtime primitives"
+            raise ValueError(msg)
+
+    @property
+    def snapshot(self) -> SnapshotRef:
+        """Snapshot reference for this execution."""
+        return self.run.snapshot
+
+    @property
+    def paths(self) -> BuildPaths:
+        """Build paths for the current runtime primitives."""
+        return self.primitives.paths
+
+    @property
+    def tools(self) -> ToolBinaries:
+        """Tool binary configuration for the runtime."""
+        return self.primitives.tools
+
+    @property
+    def graph_backend(self) -> GraphBackendConfig:
+        """Graph backend selection for this execution."""
+        return self.primitives.graph_backend
+
+    @property
+    def graph_features(self) -> GraphFeatureFlags:
+        """Graph feature flags for this execution."""
+        return self.primitives.graph_features
+
+    @property
+    def profiles(self) -> ScanProfiles | None:
+        """Optional scan profile bundle for this execution."""
+        return self.primitives.profiles
+
+    @property
+    def build_settings(self) -> BuildSettings:
+        """Build settings for the execution."""
+        return self.settings.build
+
+    @property
+    def execution_settings(self) -> HamiltonExecutionSettings:
+        """Hamilton execution settings for the run."""
+        return self.settings.execution
+
+    @property
+    def serving_settings(self) -> ServingSettings:
+        """Serving settings for the execution."""
+        return self.settings.serving
+
+    @property
+    def observability_settings(self) -> ObservabilitySettings:
+        """Observability settings for the execution."""
+        return self.settings.observability
+
+    @property
+    def cli_settings(self) -> CliSettings:
+        """CLI settings for the execution."""
+        return self.settings.cli
+
+    @classmethod
+    def from_runtime_bundle(cls, *, bundle: RuntimeBundle, run: RunContext) -> ExecutionContext:
+        """Construct an ExecutionContext from a RuntimeBundle and RunContext.
+
+        Returns
+        -------
+        ExecutionContext
+            Unified execution context built from the runtime bundle.
+        """
+        return cls(run=run, primitives=bundle.primitives, settings=bundle.settings)
+
+
 __all__ = [
+    "ExecutionContext",
     "RunContext",
     "RunKind",
     "TriggerKind",

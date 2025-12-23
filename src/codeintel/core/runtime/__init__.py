@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codeintel.core.runtime.bundle import RuntimeBundle, RuntimeSettings
 from codeintel.core.runtime.primitives import RuntimePrimitives
 
-__all__ = ["RuntimePrimitives"]
+__all__ = ["RuntimeBundle", "RuntimePrimitives", "RuntimeSettings"]

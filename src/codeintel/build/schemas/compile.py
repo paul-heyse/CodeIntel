@@ -15,7 +15,6 @@ from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.schemas.contract_service import (
     ContractResolutionMode,
     ContractResolutionSettings,
-    iter_contracts,
 )
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.inference_service import (
@@ -35,6 +34,7 @@ from codeintel.build.schemas.provider_unified import (
     non_inferable_schema_provider,
 )
 from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.schemas.contract_service import iter_contracts
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.views.inventory import discover_derived_docs_views
 

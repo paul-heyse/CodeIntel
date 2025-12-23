@@ -31,28 +31,10 @@ from codeintel.core.env import (
     is_set,
     split_csv,
 )
-from codeintel.core.runtime import RuntimePrimitives
+from codeintel.core.execution.context import ExecutionContext, RunContext
+from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
 from codeintel.core.tools import ToolBinaries
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
-
-
-@dataclass(frozen=True)
-class RuntimeSettings:
-    """Bundle of runtime settings for build, execution, and serving."""
-
-    build: BuildSettings
-    cli: CliSettings
-    execution: HamiltonExecutionSettings
-    serving: ServingSettings
-    observability: ObservabilitySettings
-
-
-@dataclass(frozen=True)
-class RuntimeBundle:
-    """Runtime primitives and settings resolved for an entrypoint."""
-
-    primitives: RuntimePrimitives
-    settings: RuntimeSettings
 
 
 @dataclass(frozen=True)
@@ -411,11 +393,29 @@ def load_runtime_bundle(inputs: RuntimeInputs) -> RuntimeBundle:
     return RuntimeBundle(primitives=primitives, settings=load_runtime_settings())
 
 
+def load_execution_context(*, primitives: RuntimePrimitives, run: RunContext) -> ExecutionContext:
+    """Build an ExecutionContext using runtime settings from the loader.
+
+    Parameters
+    ----------
+    primitives
+        Runtime primitives resolved for the entrypoint.
+    run
+        Run context metadata for this execution.
+
+    Returns
+    -------
+    ExecutionContext
+        Unified execution context for the run.
+    """
+    bundle = RuntimeBundle(primitives=primitives, settings=load_runtime_settings())
+    return ExecutionContext.from_runtime_bundle(bundle=bundle, run=run)
+
+
 __all__ = [
-    "RuntimeBundle",
     "RuntimeInputs",
-    "RuntimeSettings",
     "build_runtime_primitives",
+    "load_execution_context",
     "load_runtime_bundle",
     "load_runtime_settings",
 ]
