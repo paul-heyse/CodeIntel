@@ -8,10 +8,13 @@ SeedPack system for cases where direct function calls are needed.
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import Warehouse
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,
@@ -37,6 +40,7 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.fakes import utcnow
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.rows import function_profile_row
 
 if TYPE_CHECKING:
@@ -48,6 +52,8 @@ def seed_docs_export_minimal(
     *,
     repo: str,
     commit: str,
+    repo_root: Path | None = None,
+    module_map: dict[str, str] | None = None,
 ) -> None:
     """Seed the minimal rows needed for docs export smoke tests.
 
@@ -59,6 +65,10 @@ def seed_docs_export_minimal(
         Repository identifier.
     commit
         Commit hash.
+    repo_root
+        Optional repo root to derive module inventory from the filesystem.
+    module_map
+        Optional module->path mapping to seed core tables.
     """
     con = gateway.con
     now = utcnow()
@@ -82,20 +92,25 @@ def seed_docs_export_minimal(
         [repo, commit],
     )
 
+    resolved_module_map = module_map
+    if resolved_module_map is None and repo_root is not None:
+        path_map = modules_expected_from_repo_tree(repo_root)
+        resolved_module_map = {module: path for path, module in path_map.items()}
+    if resolved_module_map is None:
+        resolved_module_map = {"pkg.foo": "foo.py"}
     insert_rows(
-        gateway, [RepoMapRow(repo=repo, commit=commit, modules={"pkg.foo": "foo.py"}, overlays={})]
+        gateway,
+        [RepoMapRow(repo=repo, commit=commit, modules=resolved_module_map, overlays={})],
     )
     insert_rows(
         gateway,
         [
-            ModuleRow(
-                module="pkg.foo",
-                path="foo.py",
-                repo=repo,
-                commit=commit,
-            )
+            ModuleRow(module=module, path=path, repo=repo, commit=commit)
+            for module, path in sorted(resolved_module_map.items())
         ],
     )
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     insert_rows(
         gateway,
         [

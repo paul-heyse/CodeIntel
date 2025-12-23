@@ -15,13 +15,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import (
     CallGraphNodeRow,
     FunctionTypesRow,
     GoidRow,
     ModuleRow,
+    RepoMapRow,
     insert_rows,
 )
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.seeds.core import CORE_PACK
 
 if TYPE_CHECKING:
@@ -249,7 +252,10 @@ class DataModelsPack:
             self._write_source_files(ctx.repo_root)
 
         # Seed database tables
-        self._seed_modules(ctx)
+        module_map = self._resolve_module_map(ctx)
+        self._seed_repo_map(ctx, module_map)
+        self._seed_modules(ctx, module_map)
+        ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
         self._seed_goids(ctx, now)
 
         if self.include_call_graph_nodes:
@@ -282,30 +288,47 @@ class DataModelsPack:
         (pkg_dir / "config_loader.py").write_text(CONFIG_SOURCE, encoding="utf-8")
 
     @staticmethod
-    def _seed_modules(ctx: TestContext) -> None:
+    def _seed_repo_map(ctx: TestContext, module_map: dict[str, str]) -> None:
+        """Seed the core.repo_map table."""
+        rows = [
+            RepoMapRow(
+                repo=ctx.repo,
+                commit=ctx.commit,
+                modules=module_map,
+                overlays={},
+            )
+        ]
+        insert_rows(ctx.gateway, rows)
+
+    @staticmethod
+    def _seed_modules(ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed modules table.
 
         Parameters
         ----------
         ctx
             Test context with gateway.
+        module_map
+            Module map keyed by module name to repo-relative paths.
         """
         rows = [
-            ModuleRow(
-                module=MOD_MODELS_FQN, path=MOD_MODELS_PATH, repo=ctx.repo, commit=ctx.commit
-            ),
-            ModuleRow(module=MOD_DB_FQN, path=MOD_DB_PATH, repo=ctx.repo, commit=ctx.commit),
-            ModuleRow(
-                module=MOD_API_HANDLERS_FQN,
-                path=MOD_API_HANDLERS_PATH,
-                repo=ctx.repo,
-                commit=ctx.commit,
-            ),
-            ModuleRow(
-                module=MOD_CONFIG_FQN, path=MOD_CONFIG_PATH, repo=ctx.repo, commit=ctx.commit
-            ),
+            ModuleRow(module=module, path=path, repo=ctx.repo, commit=ctx.commit)
+            for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
+
+    @staticmethod
+    def _resolve_module_map(ctx: TestContext) -> dict[str, str]:
+        path_map = modules_expected_from_repo_tree(ctx.repo_root)
+        module_map = {module: path for path, module in path_map.items()}
+        if not module_map:
+            module_map = {
+                MOD_MODELS_FQN: MOD_MODELS_PATH,
+                MOD_DB_FQN: MOD_DB_PATH,
+                MOD_API_HANDLERS_FQN: MOD_API_HANDLERS_PATH,
+                MOD_CONFIG_FQN: MOD_CONFIG_PATH,
+            }
+        return module_map
 
     @staticmethod
     def _seed_goids(ctx: TestContext, now: datetime) -> None:
@@ -388,7 +411,10 @@ class DataModelsPack:
             ),
             GoidRow(
                 goid_h128=GOID_SERIALIZE_POST,
-                urn=f"goid:{ctx.repo}/{MOD_API_HANDLERS_PATH}#{MOD_API_HANDLERS_FQN}.serialize_post",
+                urn=(
+                    f"goid:{ctx.repo}/{MOD_API_HANDLERS_PATH}"
+                    f"#{MOD_API_HANDLERS_FQN}.serialize_post"
+                ),
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_API_HANDLERS_PATH,

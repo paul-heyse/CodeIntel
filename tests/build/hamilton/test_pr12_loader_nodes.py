@@ -19,6 +19,7 @@ from codeintel.build.hamilton.nodes.support_factory import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
+from tests._helpers.assertions import assert_target_ok
 
 
 class TestLoaderNodeNaming:
@@ -176,8 +177,7 @@ class TestValidateOutputsBehavior:
             error="Validation failed: Column 'loc' has wrong type",
         )
 
-        if record.status != "failed":
-            pytest.fail("Record with validation error should have status='failed'")
+        assert_target_ok(record, expected_status="failed")
 
     @staticmethod
     def test_target_run_record_has_validation_fields() -> None:
@@ -189,5 +189,4 @@ class TestValidateOutputsBehavior:
             input_hash="hash123",
         )
 
-        if record.status not in {"succeeded", "failed", "skipped"}:
-            pytest.fail(f"Unexpected status: {record.status}")
+        assert_target_ok(record)

@@ -56,6 +56,7 @@ class DocsExportPack:
             ctx.gateway,
             repo=ctx.repo,
             commit=ctx.commit,
+            repo_root=ctx.repo_root,
         )
 
 

@@ -52,6 +52,7 @@ from codeintel.build.hamilton.observability import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from tests._helpers import assert_frozen
+from tests._helpers.assertions import assert_target_ok
 
 DEFAULT_ROW_COUNT = 1500
 UPDATED_ROW_COUNT = 100
@@ -173,8 +174,7 @@ class TestUpstreamFailureGating:
             input_hash=None,
             error="upstream_failed:goids,scip",
         )
-        if record.status != "skipped":
-            pytest.fail("Should be skipped when upstream fails")
+        assert_target_ok(record, expected_status="skipped")
         if not record.error or "upstream_failed:" not in record.error:
             pytest.fail("Error should contain upstream_failed prefix")
 

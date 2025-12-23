@@ -17,6 +17,14 @@ from codeintel.ingestion.compute import (
     typing_ingest,
 )
 from codeintel.storage.helpers.module_index import load_module_map
+from tests._helpers import modules_expected_from_repo_tree
+from tests._helpers.assertions import (
+    MissingExtraOptions,
+    ModuleMapDiffOptions,
+    format_missing_extra,
+    format_module_map_diff,
+    module_map_from_path_map,
+)
 from tests._helpers.ingestion import materialize_repo_scan_result, module_inventory_context
 
 if TYPE_CHECKING:
@@ -81,11 +89,32 @@ def test_module_inventory_round_trip(tmp_path: Path) -> None:
         )
 
         rel_paths = sorted(record.rel_path for record in records)
-        expected = ["src/pkg/a.py", "src/pkg/b.py"]
-        if rel_paths != expected:
-            pytest.fail(f"Unexpected module paths {rel_paths}, expected {expected}")
+        expected_map = modules_expected_from_repo_tree(ctx.snapshot.repo_root)
+        expected_paths = sorted(expected_map)
+        if rel_paths != expected_paths:
+            pytest.fail(
+                format_missing_extra(
+                    expected_paths,
+                    rel_paths,
+                    options=MissingExtraOptions(
+                        noun="module paths",
+                        context="module inventory",
+                    ),
+                )
+            )
         if not all("/" in rel_path for rel_path in rel_paths):
             pytest.fail(f"Non-POSIX module paths: {rel_paths}")
+
+        expected_module_map = module_map_from_path_map(expected_map)
+        actual_module_map = module_map_from_path_map(module_map)
+        if actual_module_map != expected_module_map:
+            pytest.fail(
+                format_module_map_diff(
+                    expected_module_map,
+                    actual_module_map,
+                    options=ModuleMapDiffOptions(context="core.modules"),
+                )
+            )
 
         scan_paths = sorted(module.rel_path for module in scan_result.modules)
         if scan_paths != rel_paths:

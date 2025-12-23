@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from dataclasses import replace
 
 import pytest
 
@@ -10,59 +10,30 @@ from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.storage.gateway import open_memory_gateway
-from tests._helpers.build import TEST_BUILD_SETTINGS
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from codeintel.build.providers import Providers
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 
-def _snapshot(tmp_path: Path) -> SnapshotRef:
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
-    return SnapshotRef(repo="test/repo", commit="abc123", repo_root=repo_root)
-
-
-def _make_env(tmp_path: Path, config: BuildConfig, snapshot: SnapshotRef) -> BuildEnv:
+def _make_env(harness: HamiltonBuildHarness, config: BuildConfig) -> BuildEnv:
     """Create a stubbed BuildEnv suitable for planning tests.
-
-    Parameters
-    ----------
-    tmp_path
-        Temporary directory for building artifacts.
-    config
-        Build configuration for the plan.
-    snapshot
-        Snapshot reference for repo/commit under test.
 
     Returns
     -------
     BuildEnv
         Build environment configured for planning-only scenarios.
     """
-    gateway = open_memory_gateway(validate_schema=False)
-    paths = BuildPaths.from_explicit(build_dir=tmp_path / "build")
-    return BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=cast("Providers", None),
+    return replace(
+        harness.build_env(),
         config=config,
-        settings=TEST_BUILD_SETTINGS,
         manifest_index={},
     )
 
 
-def test_native_analytics_marked_in_plan(tmp_path: Path) -> None:
+def test_native_analytics_marked_in_plan(build_harness: HamiltonBuildHarness) -> None:
     """Verify plan marks migrated analytics targets as native."""
     # Build driver in auto mode
     # Create minimal config and snapshot for planning
     config = BuildConfig()
-    snapshot = _snapshot(tmp_path)
-    env = _make_env(tmp_path, config, snapshot)
+    env = _make_env(build_harness, config)
 
     graph = get_target_metadata_service().system.graph
 
@@ -85,7 +56,9 @@ def test_native_analytics_marked_in_plan(tmp_path: Path) -> None:
             )
 
 
-def test_function_metrics_now_native_after_phase4(tmp_path: Path) -> None:
+def test_function_metrics_now_native_after_phase4(
+    build_harness: HamiltonBuildHarness,
+) -> None:
     """Verify function_metrics is now native after Phase 4 migration.
 
     This target was migrated from wrapper to native in Phase 4 of the
@@ -94,8 +67,7 @@ def test_function_metrics_now_native_after_phase4(tmp_path: Path) -> None:
     # Build driver in auto mode
     # Create minimal config and snapshot for planning
     config = BuildConfig()
-    snapshot = _snapshot(tmp_path)
-    env = _make_env(tmp_path, config, snapshot)
+    env = _make_env(build_harness, config)
 
     graph = get_target_metadata_service().system.graph
 
@@ -121,13 +93,12 @@ def test_function_metrics_now_native_after_phase4(tmp_path: Path) -> None:
         )
 
 
-def test_risk_factors_still_native_after_wave2(tmp_path: Path) -> None:
+def test_risk_factors_still_native_after_wave2(build_harness: HamiltonBuildHarness) -> None:
     """Verify Wave 1 native target (risk_factors) remains native."""
     # Build driver in auto mode
     # Create minimal config and snapshot for planning
     config = BuildConfig()
-    snapshot = _snapshot(tmp_path)
-    env = _make_env(tmp_path, config, snapshot)
+    env = _make_env(build_harness, config)
 
     graph = get_target_metadata_service().system.graph
 

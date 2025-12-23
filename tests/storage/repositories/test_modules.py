@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.storage.repositories.modules import ModuleRepository
+from tests._helpers.assertions import MissingExtraOptions, format_missing_extra
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_none,
@@ -27,7 +28,13 @@ def _repo(ctx: TestContext) -> ModuleRepository:
 
 
 def test_list_modules_returns_sorted_list(test_ctx: TestContext) -> None:
-    """Verify list_modules returns sorted list of module names."""
+    """Verify list_modules returns sorted list of module names.
+
+    Raises
+    ------
+    AssertionError
+        If the module list is not sorted or has missing entries.
+    """
     insert_rows(
         test_ctx.gateway,
         [
@@ -42,7 +49,18 @@ def test_list_modules_returns_sorted_list(test_ctx: TestContext) -> None:
     modules = repo.list_modules()
 
     expected_modules = ["amod", "mmod", "zmod"]
-    expect_equal(modules, expected_modules, label="sorted modules")
+    if modules != expected_modules:
+        diff = format_missing_extra(
+            expected_modules,
+            modules,
+            options=MissingExtraOptions(
+                noun="modules",
+                context="list_modules",
+            ),
+        )
+        if set(modules) == set(expected_modules):
+            diff = f"{diff}\n  ordering mismatch: expected {expected_modules} actual {modules}"
+        raise AssertionError(diff)
 
 
 def test_list_modules_returns_empty_for_no_data(

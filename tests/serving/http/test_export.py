@@ -10,6 +10,7 @@ import duckdb
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from codeintel.config.primitives import BuildPaths
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import (
@@ -17,6 +18,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_in,
     expect_true,
 )
+from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -36,63 +38,6 @@ def _make_db(db_path: Path) -> None:
         (5, 'epsilon', 5.5)
     """)
     con.close()
-
-
-def _write_registry(path: Path) -> None:
-    """Write semantic registry with export test view."""
-    registry = {
-        "version": "v1",
-        "views": [
-            {
-                "id": "export.test",
-                "kind": "view",
-                "table_key": "docs.v_export_test",
-                "entity": "test",
-                "grain": "per_row",
-                "description": "Export test view",
-                "primary_key": ["id"],
-                "columns": ["id", "name", "value"],
-                "joins": [],
-                "defaults": {"limit": 200, "order_by": ["id"]},
-                "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
-            }
-        ],
-    }
-    path.write_text(json.dumps(registry, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _write_schema_manifest(path: Path) -> None:
-    """Write schema manifest for export test view."""
-    manifest = {
-        "version": "v1",
-        "tables": [
-            {
-                "schema": "docs",
-                "name": "v_export_test",
-                "table_key": "docs.v_export_test",
-                "primary_key": ["id"],
-                "indexes": [],
-                "columns": [
-                    {"name": "id", "type": "INTEGER", "nullable": False},
-                    {"name": "name", "type": "VARCHAR", "nullable": True},
-                    {"name": "value", "type": "DOUBLE", "nullable": True},
-                ],
-            }
-        ],
-    }
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _write_buildspec(path: Path) -> None:
-    """Write buildspec for export test."""
-    buildspec = {
-        "spec_version": 1,
-        "targets": [],
-        "datasets": [{"table_key": "docs.v_export_test", "schema_hash": "schema_export_test"}],
-    }
-    path.write_text(json.dumps(buildspec, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _write_pointer(
@@ -135,9 +80,51 @@ def _setup_serving_env(tmp_path: Path) -> ServingSettings:
     buildspec_path = tmp_path / "buildspec.json"
 
     _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
+    artifacts = HarnessArtifacts(
+        repo_root=tmp_path,
+        paths=BuildPaths.from_explicit(build_dir=tmp_path / "build"),
+    )
+    artifacts.write_semantic_registry(
+        path=registry_path,
+        views=[
+            {
+                "id": "export.test",
+                "kind": "view",
+                "table_key": "docs.v_export_test",
+                "entity": "test",
+                "grain": "per_row",
+                "description": "Export test view",
+                "primary_key": ["id"],
+                "columns": ["id", "name", "value"],
+                "joins": [],
+                "defaults": {"limit": 200, "order_by": ["id"]},
+                "sensitivity": "internal",
+                "deprecated": False,
+                "replaced_by": None,
+            }
+        ],
+    )
+    artifacts.write_schema_manifest(
+        path=manifest_path,
+        tables=[
+            {
+                "schema": "docs",
+                "name": "v_export_test",
+                "table_key": "docs.v_export_test",
+                "primary_key": ["id"],
+                "indexes": [],
+                "columns": [
+                    {"name": "id", "type": "INTEGER", "nullable": False},
+                    {"name": "name", "type": "VARCHAR", "nullable": True},
+                    {"name": "value", "type": "DOUBLE", "nullable": True},
+                ],
+            }
+        ],
+    )
+    artifacts.write_buildspec(
+        path=buildspec_path,
+        datasets=[{"table_key": "docs.v_export_test", "schema_hash": "schema_export_test"}],
+    )
     _write_pointer(
         serve_dir / "current.json",
         db_path=db_path,
@@ -318,9 +305,51 @@ def test_export_respects_api_key(tmp_path: Path) -> None:
     buildspec_path = tmp_path / "buildspec.json"
 
     _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
+    artifacts = HarnessArtifacts(
+        repo_root=tmp_path,
+        paths=BuildPaths.from_explicit(build_dir=tmp_path / "build"),
+    )
+    artifacts.write_semantic_registry(
+        path=registry_path,
+        views=[
+            {
+                "id": "export.test",
+                "kind": "view",
+                "table_key": "docs.v_export_test",
+                "entity": "test",
+                "grain": "per_row",
+                "description": "Export test view",
+                "primary_key": ["id"],
+                "columns": ["id", "name", "value"],
+                "joins": [],
+                "defaults": {"limit": 200, "order_by": ["id"]},
+                "sensitivity": "internal",
+                "deprecated": False,
+                "replaced_by": None,
+            }
+        ],
+    )
+    artifacts.write_schema_manifest(
+        path=manifest_path,
+        tables=[
+            {
+                "schema": "docs",
+                "name": "v_export_test",
+                "table_key": "docs.v_export_test",
+                "primary_key": ["id"],
+                "indexes": [],
+                "columns": [
+                    {"name": "id", "type": "INTEGER", "nullable": False},
+                    {"name": "name", "type": "VARCHAR", "nullable": True},
+                    {"name": "value", "type": "DOUBLE", "nullable": True},
+                ],
+            }
+        ],
+    )
+    artifacts.write_buildspec(
+        path=buildspec_path,
+        datasets=[{"table_key": "docs.v_export_test", "schema_hash": "schema_export_test"}],
+    )
     _write_pointer(
         serve_dir / "current.json",
         db_path=db_path,

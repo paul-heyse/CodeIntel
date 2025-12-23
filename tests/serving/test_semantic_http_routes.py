@@ -10,9 +10,11 @@ import duckdb
 from fastapi import status
 from fastapi.testclient import TestClient
 
+from codeintel.config.primitives import BuildPaths
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,10 +28,20 @@ def _make_db(db_path: Path) -> None:
     con.close()
 
 
-def _write_registry(path: Path) -> None:
-    registry = {
-        "version": "v1",
-        "views": [
+def _write_serving_artifacts(
+    tmp_path: Path,
+    *,
+    registry_path: Path,
+    manifest_path: Path,
+    buildspec_path: Path,
+) -> None:
+    artifacts = HarnessArtifacts(
+        repo_root=tmp_path,
+        paths=BuildPaths.from_explicit(build_dir=tmp_path / "build"),
+    )
+    artifacts.write_semantic_registry(
+        path=registry_path,
+        views=[
             {
                 "id": "demo.view",
                 "kind": "view",
@@ -46,14 +58,10 @@ def _write_registry(path: Path) -> None:
                 "replaced_by": None,
             }
         ],
-    }
-    path.write_text(json.dumps(registry, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _write_schema_manifest(path: Path) -> None:
-    manifest = {
-        "version": "v1",
-        "tables": [
+    )
+    artifacts.write_schema_manifest(
+        path=manifest_path,
+        tables=[
             {
                 "schema": "docs",
                 "name": "v_demo",
@@ -66,17 +74,11 @@ def _write_schema_manifest(path: Path) -> None:
                 ],
             }
         ],
-    }
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-
-
-def _write_buildspec(path: Path) -> None:
-    buildspec = {
-        "spec_version": 1,
-        "targets": [],
-        "datasets": [{"table_key": "docs.v_demo", "schema_hash": "schema_v_demo"}],
-    }
-    path.write_text(json.dumps(buildspec, indent=2, sort_keys=True), encoding="utf-8")
+    )
+    artifacts.write_buildspec(
+        path=buildspec_path,
+        datasets=[{"table_key": "docs.v_demo", "schema_hash": "schema_v_demo"}],
+    )
 
 
 def _write_pointer(
@@ -111,9 +113,12 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
     manifest_path = tmp_path / "schema_manifest.json"
     buildspec_path = tmp_path / "buildspec.json"
     _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
+    _write_serving_artifacts(
+        tmp_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
     _write_pointer(
         serve_dir / "current.json",
         db_path=db_path,
@@ -159,9 +164,12 @@ def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
     manifest_path = tmp_path / "schema_manifest.json"
     buildspec_path = tmp_path / "buildspec.json"
     _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
+    _write_serving_artifacts(
+        tmp_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
     _write_pointer(
         serve_dir / "current.json",
         db_path=db_path,
@@ -196,9 +204,12 @@ def test_semantic_routes_support_correlation_id(tmp_path: Path) -> None:
     manifest_path = tmp_path / "schema_manifest.json"
     buildspec_path = tmp_path / "buildspec.json"
     _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
+    _write_serving_artifacts(
+        tmp_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
     _write_pointer(
         serve_dir / "current.json",
         db_path=db_path,
@@ -234,9 +245,12 @@ def test_semantic_routes_support_optional_api_key(tmp_path: Path) -> None:
     manifest_path = tmp_path / "schema_manifest.json"
     buildspec_path = tmp_path / "buildspec.json"
     _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
+    _write_serving_artifacts(
+        tmp_path,
+        registry_path=registry_path,
+        manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+    )
     _write_pointer(
         serve_dir / "current.json",
         db_path=db_path,

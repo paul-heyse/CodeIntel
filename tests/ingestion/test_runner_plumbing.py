@@ -2,31 +2,126 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
-from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
-from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
-from tests._helpers.assertions import expect_equal, expect_rows_equal
+from tests._helpers.assertions import assert_target_ok, expect_equal, expect_rows_equal
+from tests._helpers.harnesses.hamilton_build import (
+    HamiltonBuildHarness,
+    HarnessConfig,
+    HarnessOpenOptions,
+)
 from tests._helpers.ingestion import (
     ScanSetupOptions,
-    build_scan_profile,
     closing_gateway,
-    create_scan_step,
     make_scan_setup,
     materialize_repo_scan_result,
-    materialize_rows_for_snapshot,
 )
+from tests._helpers.orchestration.repo_writers import write_sample_repo
+from tests._helpers.tool_payloads import coverage_json_payload, pytest_report_payload
+from tests._helpers.tool_sandbox import ToolSandbox, ToolStubSpec
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.storage.gateway import StorageGateway
-    from tests._helpers.orchestration.tooling import ToolingOutputs
+    from codeintel.config.models import ToolsConfig
+
+
+class CoverageFile(TypedDict):
+    """Coverage line data for a single file."""
+
+    executed_lines: list[int]
+    missing_lines: list[int]
+
+
+class CoveragePayload(TypedDict):
+    """Coverage payload keyed by file path."""
+
+    files: dict[str, CoverageFile]
+
+
+def _install_tool_stubs(tool_sandbox: ToolSandbox, repo_root: Path) -> tuple[ToolsConfig, int]:
+    mod_path = repo_root / "pkg" / "mod.py"
+    coverage_payload = coverage_json_payload(
+        files={
+            str(mod_path): {
+                "executed_lines": [1, 2, 3],
+                "missing_lines": [4],
+            }
+        }
+    )
+    tool_sandbox.install_stub(
+        "coverage",
+        spec=ToolStubSpec(
+            writes="-o",
+            writes_payload=json.dumps(coverage_payload),
+        ),
+    )
+    tool_sandbox.install_stub(
+        "pyright",
+        spec=ToolStubSpec(
+            stdout=json.dumps(
+                {
+                    "generalDiagnostics": [
+                        {
+                            "file": str(mod_path),
+                            "severity": "error",
+                            "message": "stub error",
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+    tool_sandbox.install_stub(
+        "pyrefly",
+        spec=ToolStubSpec(
+            writes="--output",
+            writes_payload=json.dumps(
+                {
+                    "errors": [
+                        {
+                            "path": str(mod_path),
+                            "severity": "error",
+                            "message": "stub error",
+                        }
+                    ]
+                }
+            ),
+        ),
+    )
+    tool_sandbox.install_stub(
+        "ruff",
+        spec=ToolStubSpec(
+            stdout=json.dumps(
+                [
+                    {
+                        "filename": str(mod_path),
+                        "code": "F401",
+                        "message": "stub error",
+                    }
+                ]
+            )
+        ),
+    )
+    pytest_payload = pytest_report_payload(
+        tests=[], summary={"passed": 0, "failed": 0, "skipped": 0}
+    )
+    tool_sandbox.install_stub(
+        "pytest",
+        spec=ToolStubSpec(
+            writes="--json-report-file",
+            writes_payload=json.dumps(pytest_payload),
+        ),
+    )
+    typed_payload = cast("CoveragePayload", coverage_payload)
+    expected_lines = len(typed_payload["files"][str(mod_path)]["executed_lines"]) + len(
+        typed_payload["files"][str(mod_path)]["missing_lines"]
+    )
+    return tool_sandbox.tools_config(), expected_lines
 
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
@@ -59,102 +154,89 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
         expect_rows_equal(rows, [("keep/a.py",)], message="Unexpected modules from repo_scan")
 
 
-def test_coverage_ingest_uses_runner(
-    tooling_outputs_session: ToolingOutputs, ingestion_gateway: StorageGateway
-) -> None:
+def test_coverage_ingest_uses_runner(tool_sandbox: ToolSandbox, tmp_path: Path) -> None:
     """Verify coverage ingestion prefers the shared runner path."""
-    tooling_outputs = tooling_outputs_session
-    repo_root = tooling_outputs.context.repo_root
-    tool_service = tooling_outputs.context.service
-    gateway = ingestion_gateway
-    expected_lines = sum(
-        len(report.executed_lines | report.missing_lines)
-        for report in tooling_outputs.coverage_reports
-    )
+    repo_root = tmp_path / "repo"
+    tools_config, expected_lines = _install_tool_stubs(tool_sandbox, repo_root)
+    with HamiltonBuildHarness.open(
+        tmp_path,
+        harness=HarnessConfig(repo="r", commit="c"),
+        options=HarnessOpenOptions(
+            repo_strategy="writer",
+            repo_writer=write_sample_repo,
+            tools_config=tools_config,
+        ),
+    ) as harness:
+        harness.artifacts.touch_coverage_file()
+        result = harness.run_targets(["coverage_ingest"])
+        record = harness.record("coverage_ingest", result=result)
+        assert_target_ok(record)
 
-    tools = ToolRunnerAdapter(tool_service)
-    step = CoverageIngestStep(tools=tools)
+        row = harness.ctx.gateway.con.execute(
+            "SELECT COUNT(*) FROM analytics.coverage_lines"
+        ).fetchone()
+        count = row[0] if row is not None else 0
+        expect_equal(count, expected_lines, label="coverage_line_count")
 
-    ingest_result = asyncio.run(
-        step.execute_async(
-            [],
-            repo="r",
-            commit="c",
-            repo_root=repo_root,
-            coverage_file=tooling_outputs.context.coverage_file,
+
+def test_tests_ingest_uses_report_file(tool_sandbox: ToolSandbox, tmp_path: Path) -> None:
+    """Verify tests_ingest consumes the pytest report artifact."""
+    repo_root = tmp_path / "repo"
+    tools_config, _expected_lines = _install_tool_stubs(tool_sandbox, repo_root)
+    with HamiltonBuildHarness.open(
+        tmp_path,
+        harness=HarnessConfig(repo="r", commit="c"),
+        options=HarnessOpenOptions(
+            repo_strategy="writer",
+            repo_writer=write_sample_repo,
+            tools_config=tools_config,
+        ),
+    ) as harness:
+        harness.artifacts.write_pytest_report(
+            tests=[
+                {
+                    "nodeid": "tests/test_mod.py::test_hello",
+                    "outcome": "passed",
+                    "duration": 0.01,
+                }
+            ],
+            summary={"passed": 1, "failed": 0, "skipped": 0},
         )
-    )
+        result = harness.run_targets(["tests_ingest"])
+        record = harness.record("tests_ingest", result=result)
+        assert_target_ok(record)
 
-    if not ingest_result.result.success:
-        error_message = (
-            ingest_result.result.error
-            or "; ".join(ingest_result.result.warnings)
-            or "unknown"
-        )
-        pytest.fail(f"Coverage ingest failed: {error_message}")
-
-    materialize_rows_for_snapshot(
-        gateway,
-        "analytics.coverage_lines",
-        ingest_result.rows,
-        snapshot=SnapshotRef(repo="r", commit="c", repo_root=repo_root),
-    )
-
-    row = gateway.con.table("analytics.coverage_lines").aggregate("count(*)").fetchone()
-    count = row[0] if row is not None else 0
-    expect_equal(count, expected_lines, label="coverage_line_count")
+        row = harness.ctx.gateway.con.execute(
+            "SELECT test_id FROM analytics.test_catalog WHERE test_id = ?",
+            ["tests/test_mod.py::test_hello"],
+        ).fetchone()
+        if row is None:
+            pytest.fail("tests_ingest failed to persist test_catalog rows")
 
 
 @pytest.mark.skip(
     reason="Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)"
 )
 def test_typing_ingest_uses_shared_runner(
-    tooling_outputs_session: ToolingOutputs,
-    ingestion_gateway: StorageGateway,
     tmp_path: Path,
+    tool_sandbox: ToolSandbox,
 ) -> None:
     """Ensure typing ingestion reuses the provided ToolRunner."""
-    tooling = tooling_outputs_session
-    repo_root = tooling.context.repo_root
-    profile = build_scan_profile(repo_root)
-    scan_step, _storage, discovery = create_scan_step(ingestion_gateway, repo_root, tmp_path)
-    tools = ToolRunnerAdapter(tooling.context.service)
+    repo_root = tmp_path / "repo"
+    tools_config, _expected_lines = _install_tool_stubs(tool_sandbox, repo_root)
+    with HamiltonBuildHarness.open(
+        tmp_path,
+        harness=HarnessConfig(repo="r", commit="c"),
+        options=HarnessOpenOptions(
+            repo_strategy="writer",
+            repo_writer=write_sample_repo,
+            tools_config=tools_config,
+        ),
+    ) as harness:
+        result = harness.run_targets(["typing"])
+        record = harness.record("typing", result=result)
+        assert_target_ok(record)
 
-    scan_result = scan_step.execute(
-        repo="r",
-        commit="c",
-        repo_root=repo_root,
-        profile=profile,
-    )
-    modules = scan_result.modules
-
-    typing_step = TypingIngestStep(discovery=discovery, tools=tools)
-    ingest_result = asyncio.run(
-        typing_step.execute_async(list(modules), repo="r", commit="c", repo_root=str(repo_root))
-    )
-
-    if not ingest_result.result.success:
-        error_message = (
-            ingest_result.result.error
-            or "; ".join(ingest_result.result.warnings)
-            or "unknown"
-        )
-        pytest.fail(f"Typing ingest failed: {error_message}")
-
-    snapshot = SnapshotRef(repo="r", commit="c", repo_root=repo_root)
-    materialize_rows_for_snapshot(
-        ingestion_gateway,
-        "analytics.typedness",
-        ingest_result.typedness_rows,
-        snapshot=snapshot,
-    )
-    materialize_rows_for_snapshot(
-        ingestion_gateway,
-        "analytics.static_diagnostics",
-        ingest_result.diagnostic_rows,
-        snapshot=snapshot,
-    )
-
-    row = ingestion_gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
-    if (row[0] if row else 0) < 1:
-        pytest.fail("Typedness ingestion wrote no rows")
+        row = harness.ctx.gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
+        if (row[0] if row else 0) < 1:
+            pytest.fail("Typedness ingestion wrote no rows")

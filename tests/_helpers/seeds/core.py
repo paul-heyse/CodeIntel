@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.repo import (
     GOID_CALLEE,
@@ -107,6 +108,7 @@ class CorePack:
 
         # Seed modules
         self._seed_modules(ctx, canonical)
+        ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
 
         # Seed GOIDs
         self._seed_goids(ctx, now, canonical)

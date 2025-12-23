@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-23T02:14:57.165704+00:00",
+  "generated_at": "2025-12-23T08:30:53.021096+00:00",
   "overall_status": "passed",
-  "duration_seconds": 31.253906,
+  "duration_seconds": 30.35508,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T02:14:25.911339+00:00",
-      "ended_at": "2025-12-23T02:14:31.422455+00:00",
-      "duration_seconds": 5.511116,
+      "started_at": "2025-12-23T08:30:22.665628+00:00",
+      "ended_at": "2025-12-23T08:30:27.013081+00:00",
+      "duration_seconds": 4.347453,
       "stdout": [],
       "stderr": []
     },
@@ -32,9 +32,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T02:14:31.422521+00:00",
-      "ended_at": "2025-12-23T02:14:31.482202+00:00",
-      "duration_seconds": 0.059681,
+      "started_at": "2025-12-23T08:30:27.013117+00:00",
+      "ended_at": "2025-12-23T08:30:27.070457+00:00",
+      "duration_seconds": 0.05734,
       "stdout": [
         "All checks passed!"
       ],
@@ -51,9 +51,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T02:14:31.482235+00:00",
-      "ended_at": "2025-12-23T02:14:34.508642+00:00",
-      "duration_seconds": 3.026407,
+      "started_at": "2025-12-23T08:30:27.070489+00:00",
+      "ended_at": "2025-12-23T08:30:30.119026+00:00",
+      "duration_seconds": 3.048537,
       "stdout": [],
       "stderr": []
     },
@@ -68,9 +68,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T02:14:34.508690+00:00",
-      "ended_at": "2025-12-23T02:14:37.062352+00:00",
-      "duration_seconds": 2.553662,
+      "started_at": "2025-12-23T08:30:30.119068+00:00",
+      "ended_at": "2025-12-23T08:30:32.692480+00:00",
+      "duration_seconds": 2.573412,
       "stdout": [],
       "stderr": []
     },
@@ -85,9 +85,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T02:14:37.062383+00:00",
-      "ended_at": "2025-12-23T02:14:55.155115+00:00",
-      "duration_seconds": 18.092732,
+      "started_at": "2025-12-23T08:30:32.692525+00:00",
+      "ended_at": "2025-12-23T08:30:50.810834+00:00",
+      "duration_seconds": 18.118309,
       "stdout": [
         "0 errors, 0 warnings, 0 informations"
       ],
@@ -103,17 +103,10 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-23T02:14:55.155245+00:00",
-      "ended_at": "2025-12-23T02:14:57.165245+00:00",
-      "duration_seconds": 2.01,
-      "stdout": [
-        " WARN Redundant cast: `CliConfig` is the same type as `CliConfig` [redundant-cast]",
-        "   --> tests/observability/test_observability_smoke.py:124:30",
-        "    |",
-        "124 |     bootstrap_cli(config=cast(\"CliConfig\", config))",
-        "    |                              ---------------------",
-        "    |"
-      ],
+      "started_at": "2025-12-23T08:30:50.810895+00:00",
+      "ended_at": "2025-12-23T08:30:53.020708+00:00",
+      "duration_seconds": 2.209813,
+      "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/Users/paulheyse/CodeIntel/CodeIntel/pyrefly.toml`",
         " INFO 0 errors (146 suppressed)"

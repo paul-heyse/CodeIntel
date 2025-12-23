@@ -19,9 +19,6 @@ from codeintel.analytics.graphs.graph_metrics_ext import build_graph_metrics_fun
 from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
 from codeintel.analytics.graphs.module_graph_metrics_ext import build_graph_metrics_modules_ext_rows
 from codeintel.build.config import BuildConfig
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.call_graph import t__call_graph__extract
-from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import create_default_providers
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.graphs.runtime import GraphMetricsOptions
@@ -40,7 +37,8 @@ from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
-from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.assertions import assert_target_ok
+from tests._helpers.assertions.modules import ModulesAssertions, compute_file_state_hash_from_table
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -66,7 +64,9 @@ from tests._helpers.configs import (
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 from tests._helpers.ingestion import materialize_repo_scan_result, materialize_rows_for_snapshot
+from tests._helpers.modules_expectations import module_paths_expected_from_repo_tree
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
     write_coverage_driver,
@@ -478,11 +478,13 @@ def provision_ingested_repo(
         repo_root=repo_root,
         profile=code_profile,
     )
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     materialize_repo_scan_result(
         setup.gateway,
         scan_result,
-        snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=repo_root),
+        snapshot=snapshot,
     )
+    ModulesAssertions(setup.gateway, snapshot).inventory_consistent()
 
     _run_ingestion_steps(setup, list(scan_result.modules), opts, repo, commit)
 
@@ -530,7 +532,8 @@ def provision_existing_repo(
     opts = options or ProvisionOptions()
     repo_root.mkdir(parents=True, exist_ok=True)
 
-    files = sorted(path for path in repo_root.rglob("*.py") if path.is_file())
+    module_paths = module_paths_expected_from_repo_tree(repo_root)
+    files = [repo_root / path for path in module_paths]
     setup = _build_provisioning_setup(repo_root, files, opts, repo, commit)
     code_profile = default_code_profile(repo_root)
 
@@ -545,11 +548,13 @@ def provision_existing_repo(
         profile=code_profile,
     )
 
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
     materialize_repo_scan_result(
         setup.gateway,
         scan_result,
-        snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=repo_root),
+        snapshot=snapshot,
     )
+    ModulesAssertions(setup.gateway, snapshot).inventory_consistent()
 
     _run_ingestion_steps(setup, list(scan_result.modules), opts, repo, commit)
 
@@ -662,7 +667,7 @@ def provision_docs_export_ready(
             file_backed=file_backed,
         ),
     )
-    seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit)
+    seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit, repo_root=repo_root)
     return ctx
 
 
@@ -963,7 +968,7 @@ def docs_views_ready_gateway(
             include_seed_goid=True,
         ),
     )
-    seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit)
+    seed_docs_export_minimal(ctx.gateway, repo=repo, commit=commit, repo_root=repo_root)
     _seed_minimal_subsystems(ctx.gateway, repo=repo, commit=commit)
     ctx.gateway.policy.ensure_all_views(overwrite=True, strict=True)
     return ctx
@@ -1093,24 +1098,31 @@ def build_callgraph_fixture_repo(
         log_db_path=build_dir / "db" / "codeintel_logs.duckdb",
     )
     providers = create_default_providers(make_tools_config())
-    build_env = BuildEnv(
-        gateway=gateway,
+    ctx_runtime = TestContext(
         snapshot=snapshot,
-        paths=paths,
+        gateway=gateway,
+        build_paths=paths,
+    )
+    harness = HamiltonBuildHarness.wrap(
+        ctx_runtime,
         providers=providers,
-        config=BuildConfig.empty(),
-        settings=TEST_BUILD_SETTINGS,
+        build_config=BuildConfig.empty(),
     )
-    goids_record = TargetRunRecord(
-        target="goids",
-        plugin_name="graphs.goids",
-        status="succeeded",
-        input_hash=None,
+    harness.with_force_targets("modules")
+    artifacts = harness.artifacts
+    artifacts.write_pytest_report()
+    file_state_hash = compute_file_state_hash_from_table(gateway, snapshot)
+    harness.priming.prime_modules_manifest(
+        file_state_hash=file_state_hash,
+        change_delta={"state_hash": file_state_hash},
     )
-    result = t__call_graph__extract(build_env, goids_record)
-    if not result.success:
-        message = f"call_graph extraction failed: {result.error}"
-        raise RuntimeError(message)
+    result = harness.run_targets(["call_graph"])
+    record = harness.record("call_graph", result=result)
+    try:
+        assert_target_ok(record)
+    except AssertionError as exc:
+        message = f"call_graph extraction failed: {record.error}"
+        raise RuntimeError(message) from exc
 
     return ctx
 

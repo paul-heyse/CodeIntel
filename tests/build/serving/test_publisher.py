@@ -4,21 +4,33 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.build.hamilton.native.export.serving_artifacts import (
+    SERVING_ARTIFACT_BUILDSPEC,
+    SERVING_ARTIFACT_SCHEMA_MANIFEST,
+    SERVING_ARTIFACT_SEMANTIC_REGISTRY,
+    SERVING_ARTIFACTS_TARGET_NAME,
+)
 from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway.config import StorageConfig
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.assertions import (
+    assert_record_has_artifacts,
+    assert_target_ok,
+    expect_equal,
+    expect_true,
+)
+from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -141,3 +153,22 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
 
     snaps = sorted([p.name for p in (serve_dir / "snapshots").iterdir() if p.is_dir()])
     expect_equal(snaps, ["run-2"])
+
+
+def test_serving_harness_publishes_snapshot(
+    serving_target_harness: ServingTargetHarness,
+) -> None:
+    """Run serving_artifacts and publish a snapshot via the harness."""
+    records = serving_target_harness.run_targets([SERVING_ARTIFACTS_TARGET_NAME])
+    record = records[SERVING_ARTIFACTS_TARGET_NAME]
+    assert_target_ok(record)
+    assert_record_has_artifacts(
+        record,
+        (
+            SERVING_ARTIFACT_SEMANTIC_REGISTRY,
+            SERVING_ARTIFACT_SCHEMA_MANIFEST,
+            SERVING_ARTIFACT_BUILDSPEC,
+        ),
+    )
+    manifest = serving_target_harness.publish_snapshot(run_id="publisher-harness")
+    expect_true(Path(manifest.db_path).is_file())

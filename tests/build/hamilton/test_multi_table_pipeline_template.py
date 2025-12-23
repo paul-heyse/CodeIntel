@@ -7,8 +7,8 @@ multiple materialization results and that the row extractor factory works.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass, field, replace
+from typing import Any
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.env import BuildEnv
@@ -17,28 +17,16 @@ from codeintel.build.hamilton.templates.multi_table_pipeline import (
     multi_table_record,
 )
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import assert_record_row_counts, assert_target_ok
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_none,
     expect_true,
 )
-from tests._helpers.build import TEST_BUILD_SETTINGS, make_build_config, make_build_paths
-from tests._helpers.fakes.fake_providers import FakeProviders
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from codeintel.build.providers import Providers
-    from codeintel.storage.gateway import StorageGateway
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 
-def _make_env(
-    *,
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    force_targets: frozenset[str] | None = None,
-) -> BuildEnv:
+def _make_env(harness: HamiltonBuildHarness) -> BuildEnv:
     """Create a BuildEnv for testing.
 
     Returns
@@ -46,18 +34,7 @@ def _make_env(
     BuildEnv
         Build environment configured for testing.
     """
-    paths = make_build_paths(snapshot.repo_root)
-    config = make_build_config()
-    providers = cast("Providers", FakeProviders.defaults())
-    return BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=TEST_BUILD_SETTINGS,
-        force_targets=force_targets or frozenset({"function_metrics"}),
-    )
+    return replace(harness.build_env(), force_targets=frozenset({"function_metrics"}))
 
 
 def _make_graph() -> TargetGraph:
@@ -138,15 +115,9 @@ def _materialization(
     ).to_dict()
 
 
-def test_multi_table_record_all_succeeded(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
+def test_multi_table_record_all_succeeded(build_harness: HamiltonBuildHarness) -> None:
     """Verify multi_table_record produces succeeded when all tables succeed."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     materializations = {
@@ -169,34 +140,21 @@ def test_multi_table_record_all_succeeded(
 
     record = multi_table_record(env, graph, "function_metrics", materializations)
 
-    expect_equal(record.status, expected="succeeded", label="record.status")
+    assert_target_ok(record)
     expect_equal(record.target, expected="function_metrics", label="record.target")
-    expect_equal(
-        record.row_counts.get("analytics.function_metrics"),
-        expected=100,
-        label="row_counts[analytics.function_metrics]",
-    )
-    expect_equal(
-        record.row_counts.get("analytics.function_types"),
-        expected=100,
-        label="row_counts[analytics.function_types]",
-    )
-    expect_equal(
-        record.row_counts.get("analytics.function_validation"),
-        expected=5,
-        label="row_counts[analytics.function_validation]",
+    assert_record_row_counts(
+        record,
+        {
+            "analytics.function_metrics": 100,
+            "analytics.function_types": 100,
+            "analytics.function_validation": 5,
+        },
     )
 
 
-def test_multi_table_record_partial_failure(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
+def test_multi_table_record_partial_failure(build_harness: HamiltonBuildHarness) -> None:
     """Verify multi_table_record produces failed when one table fails."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     materializations = {
@@ -219,22 +177,16 @@ def test_multi_table_record_partial_failure(
 
     record = multi_table_record(env, graph, "function_metrics", materializations)
 
-    expect_equal(record.status, expected="failed", label="record.status")
+    assert_target_ok(record, expected_status="failed")
     expect_true(
         record.error is not None and "Write failed" in record.error,
         message=f"Expected error message containing 'Write failed', got: {record.error}",
     )
 
 
-def test_multi_table_record_all_skipped(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
-) -> None:
+def test_multi_table_record_all_skipped(build_harness: HamiltonBuildHarness) -> None:
     """Verify multi_table_record produces skipped when all tables skipped."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     materializations = {
@@ -254,18 +206,14 @@ def test_multi_table_record_all_skipped(
 
     record = multi_table_record(env, graph, "function_metrics", materializations)
 
-    expect_equal(record.status, expected="skipped", label="record.status")
+    assert_target_ok(record, expected_status="skipped")
 
 
 def test_multi_table_record_mixed_success_skip(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Verify multi_table_record handles mix of succeeded and skipped."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     materializations = {
@@ -288,7 +236,7 @@ def test_multi_table_record_mixed_success_skip(
     record = multi_table_record(env, graph, "function_metrics", materializations)
 
     # Mixed succeeded/skipped should still be succeeded overall
-    expect_equal(record.status, expected="succeeded", label="record.status")
+    assert_target_ok(record)
 
 
 # ============================================================================

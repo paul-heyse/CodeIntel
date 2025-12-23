@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from tests._helpers.assertions import MissingExtraOptions, format_missing_extra
+
 if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
@@ -53,15 +55,31 @@ def test_export_mappings_cover_required_tables(
         "analytics.goid_risk_factors",
     }
 
-    missing_parquet = required_tables - set(parquet_mapping)
-    missing_jsonl = required_tables - set(jsonl_mapping)
+    parquet_tables = set(parquet_mapping)
+    jsonl_tables = set(jsonl_mapping)
 
-    if missing_parquet:
-        message = f"Parquet mapping missing: {sorted(missing_parquet)}"
-        raise AssertionError(message)
-    if missing_jsonl:
-        message = f"JSONL mapping missing: {sorted(missing_jsonl)}"
-        raise AssertionError(message)
+    if parquet_tables != required_tables:
+        raise AssertionError(
+            format_missing_extra(
+                required_tables,
+                parquet_tables,
+                options=MissingExtraOptions(
+                    noun="export tables",
+                    context="parquet mapping",
+                ),
+            )
+        )
+    if jsonl_tables != required_tables:
+        raise AssertionError(
+            format_missing_extra(
+                required_tables,
+                jsonl_tables,
+                options=MissingExtraOptions(
+                    noun="export tables",
+                    context="jsonl mapping",
+                ),
+            )
+        )
 
 
 def test_export_mappings_registered_with_dataset_registry(
@@ -78,11 +96,27 @@ def test_export_mappings_registered_with_dataset_registry(
     mapping_tables = set(docs_export_gateway.gateway.datasets.by_table_key)
     jsonl_mapping = docs_export_gateway.gateway.datasets.jsonl_datasets
     parquet_mapping = docs_export_gateway.gateway.datasets.parquet_datasets
-    missing_parquet = set(parquet_mapping) - mapping_tables
-    missing_jsonl = set(jsonl_mapping) - mapping_tables
-    if missing_parquet:
-        message = f"Parquet export tables not registered: {sorted(missing_parquet)}"
-        raise AssertionError(message)
-    if missing_jsonl:
-        message = f"JSONL export tables not registered: {sorted(missing_jsonl)}"
-        raise AssertionError(message)
+    parquet_tables = set(parquet_mapping)
+    jsonl_tables = set(jsonl_mapping)
+    if not parquet_tables.issubset(mapping_tables):
+        raise AssertionError(
+            format_missing_extra(
+                parquet_tables,
+                mapping_tables,
+                options=MissingExtraOptions(
+                    noun="export tables",
+                    context="parquet registry",
+                ),
+            )
+        )
+    if not jsonl_tables.issubset(mapping_tables):
+        raise AssertionError(
+            format_missing_extra(
+                jsonl_tables,
+                mapping_tables,
+                options=MissingExtraOptions(
+                    noun="export tables",
+                    context="jsonl registry",
+                ),
+            )
+        )

@@ -6,10 +6,38 @@ for test repository setup, including sample packages and coverage drivers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@dataclass(frozen=True)
+class RepoFixture:
+    """Repo fixture metadata with expected module inventory."""
+
+    files: tuple[Path, ...]
+    module_map: dict[str, str]
+
+    def module_paths(self) -> list[str]:
+        """Return sorted module paths from the expected module map.
+
+        Returns
+        -------
+        list[str]
+            Sorted module paths from the expected map.
+        """
+        return sorted(self.module_map.keys())
+
+
+def _write_file(path: Path, content: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf8")
+    return path
 
 
 def write_sample_repo(repo_root: Path) -> list[Path]:
@@ -205,9 +233,192 @@ def write_coverage_driver(repo_root: Path, files: list[Path]) -> Path:
     return driver_path
 
 
+def write_monorepo_fixture(
+    repo_root: Path,
+    *,
+    include_tests: bool = True,
+) -> RepoFixture:
+    """Create a multi-language monorepo with deterministic Python modules.
+
+    Returns
+    -------
+    RepoFixture
+        Fixture metadata including expected module inventory.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "services" / "py_service" / "src" / "app.py",
+            "\n".join(
+                [
+                    "def run() -> int:",
+                    "    return 42",
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "services" / "py_service" / "src" / "__init__.py",
+            "",
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "libs" / "shared" / "util.py",
+            "\n".join(
+                [
+                    "def greet(name: str) -> str:",
+                    '    return f"hi {name}"',
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "apps" / "web" / "index.ts",
+            "export const value = 1;",
+        )
+    )
+    if include_tests:
+        files.append(
+            _write_file(
+                repo_root / "services" / "py_service" / "tests" / "test_app.py",
+                "\n".join(
+                    [
+                        "from services.py_service.src.app import run",
+                        "",
+                        "def test_run() -> None:",
+                        "    assert run() == 42",
+                    ]
+                ),
+            )
+        )
+
+    options = ModuleIngestOptions(include_tests=include_tests)
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def write_generated_noise_fixture(
+    repo_root: Path,
+    *,
+    include_generated: bool = False,
+) -> RepoFixture:
+    """Create a repo with generated file noise.
+
+    Returns
+    -------
+    RepoFixture
+        Fixture metadata including expected module inventory.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "src" / "main.py",
+            "\n".join(
+                [
+                    "def main() -> None:",
+                    "    return None",
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "generated" / "service_pb2.py",
+            "class Stub: pass",
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "src" / "models_generated.py",
+            "class Generated: pass",
+        )
+    )
+
+    options = ModuleIngestOptions(include_generated=include_generated)
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def write_large_file_fixture(
+    repo_root: Path,
+    *,
+    max_file_size_kb: int = 1,
+) -> RepoFixture:
+    """Create a repo with a file exceeding max size limits.
+
+    Returns
+    -------
+    RepoFixture
+        Fixture metadata including expected module inventory.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "src" / "small.py",
+            "VALUE = 1",
+        )
+    )
+    large_payload = "x" * (max_file_size_kb * 1024 + 10)
+    files.append(
+        _write_file(
+            repo_root / "src" / "large.py",
+            large_payload,
+        )
+    )
+
+    options = ModuleIngestOptions(max_file_size_kb=max_file_size_kb)
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def write_scoped_paths_fixture(
+    repo_root: Path,
+    *,
+    scope_paths: list[str],
+) -> RepoFixture:
+    """Create a repo with scoped paths for module discovery.
+
+    Returns
+    -------
+    RepoFixture
+        Fixture metadata including expected module inventory.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "src" / "pkg_a" / "__init__.py",
+            "",
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "src" / "pkg_a" / "mod.py",
+            "VALUE = 'a'",
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "src" / "pkg_b" / "mod.py",
+            "VALUE = 'b'",
+        )
+    )
+
+    options = ModuleIngestOptions(scope_paths=scope_paths)
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
 __all__ = [
+    "RepoFixture",
     "write_callgraph_alias_repo",
     "write_coverage_driver",
+    "write_generated_noise_fixture",
     "write_graph_metrics_repo",
+    "write_large_file_fixture",
+    "write_monorepo_fixture",
     "write_sample_repo",
+    "write_scoped_paths_fixture",
 ]

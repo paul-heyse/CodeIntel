@@ -32,6 +32,7 @@ from tests._helpers.analytics_samples import (
     dependency_patterns_yaml,
 )
 from tests._helpers.assertions import (
+    MissingExtraOptions,
     assert_edge_count,
     assert_no_cycles,
     build_dependency_graph,
@@ -43,6 +44,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_not_in,
     expect_true,
+    format_missing_extra,
 )
 from tests._helpers.scenarios import TestScenario
 
@@ -168,7 +170,13 @@ def test_severity_scores_constant() -> None:
 def test_build_alias_maps_handles_dotted_imports(
     dependencies_ctx: DependenciesFixture,
 ) -> None:
-    """Verify alias maps are built for multiple files."""
+    """Verify alias maps are built for multiple files.
+
+    Raises
+    ------
+    AssertionError
+        If the alias map paths do not match the expected sources.
+    """
     repo_root = dependencies_ctx.ctx.repo_root
     sources = dependency_alias_sources()
     module_map = {name: f"pkg.{name.removesuffix('.py')}" for name in sources}
@@ -176,6 +184,19 @@ def test_build_alias_maps_handles_dotted_imports(
         (repo_root / name).write_text(source, encoding="utf-8")
 
     alias_maps = build_alias_maps(repo_root, module_map)
+    expected_paths = sorted(sources)
+    actual_paths = sorted(alias_maps)
+    if actual_paths != expected_paths:
+        raise AssertionError(
+            format_missing_extra(
+                expected_paths,
+                actual_paths,
+                options=MissingExtraOptions(
+                    noun="alias map paths",
+                    context="dependency alias maps",
+                ),
+            )
+        )
     expect_equal(alias_maps["a.py"], {"rq": "requests"})
     expect_equal(alias_maps["b.py"], {"create_engine": "sqlalchemy"})
 

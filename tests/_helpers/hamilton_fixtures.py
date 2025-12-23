@@ -9,30 +9,94 @@ production - no monkeypatching, no test-only code paths.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.build.config import BuildConfig
-from codeintel.build.hamilton import BuildEnv
 from codeintel.build.providers import create_default_providers
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
-from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.context import TestContext
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.build.providers import Providers
     from codeintel.storage.gateway import StorageGateway
+
+
+@dataclass(frozen=True)
+class BuildEnvOptions:
+    """Optional overrides for building a BuildEnv in tests."""
+
+    build_dir: Path | None = None
+    snapshot_info: tuple[str, str] = ("test/repo", "abc123")
+    tools_config: ToolsConfig | None = None
+    providers: Providers | None = None
+    config: BuildConfig | None = None
+    profile: str = DEFAULT_PROFILE_NAME
+
+
+def make_build_harness(
+    *,
+    gateway: StorageGateway,
+    repo_root: Path,
+    options: BuildEnvOptions | None = None,
+) -> HamiltonBuildHarness:
+    """Create a HamiltonBuildHarness for execution tests.
+
+    This function builds a harness using real providers and paths, so tests can
+    reuse a consistent setup when an executor or BuildEnv is needed.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    repo_root
+        Root path of the repository.
+    options
+        Optional overrides for build paths, snapshot, providers, and profile.
+
+    Returns
+    -------
+    HamiltonBuildHarness
+        Configured build harness.
+    """
+    resolved_options = options or BuildEnvOptions()
+    repo, commit = resolved_options.snapshot_info
+    resolved_build = resolved_options.build_dir or (repo_root / "build")
+
+    snapshot = SnapshotRef(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+    )
+
+    paths = BuildPaths.from_explicit(build_dir=resolved_build)
+
+    resolved_tools = resolved_options.tools_config or ToolsConfig.default()
+    resolved_providers = resolved_options.providers or create_default_providers(resolved_tools)
+    resolved_config = resolved_options.config or BuildConfig.empty()
+
+    ctx = TestContext(snapshot=snapshot, gateway=gateway, build_paths=paths)
+    return HamiltonBuildHarness.wrap(
+        ctx,
+        harness=HarnessConfig(repo=repo, commit=commit, profile=resolved_options.profile),
+        providers=resolved_providers,
+        build_config=resolved_config,
+    )
 
 
 def make_build_env(
     *,
     gateway: StorageGateway,
     repo_root: Path,
-    build_dir: Path | None = None,
-    snapshot_info: tuple[str, str] = ("test/repo", "abc123"),
+    options: BuildEnvOptions | None = None,
 ) -> BuildEnv:
     """Create a BuildEnv for Hamilton execution tests.
 
@@ -45,42 +109,20 @@ def make_build_env(
         Storage gateway for database access.
     repo_root
         Root path of the repository.
-    build_dir
-        Build output directory (defaults to repo_root/build).
-    snapshot_info
-        Tuple of (repo_slug, commit_sha) for snapshot reference.
+    options
+        Optional overrides for build paths, snapshot, providers, and profile.
 
     Returns
     -------
     BuildEnv
         Configured build environment.
     """
-    repo, commit = snapshot_info
-    resolved_build = build_dir or (repo_root / "build")
-
-    snapshot = SnapshotRef(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-    )
-
-    paths = BuildPaths.from_explicit(build_dir=resolved_build)
-
-    tools_config = ToolsConfig.default()
-
-    providers = create_default_providers(tools_config)
-
-    config = BuildConfig.empty()
-
-    return BuildEnv(
+    harness = make_build_harness(
         gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=TEST_BUILD_SETTINGS,
-        profile=DEFAULT_PROFILE_NAME,
+        repo_root=repo_root,
+        options=options,
     )
+    return harness.build_env()
 
 
 @pytest.fixture
@@ -113,7 +155,7 @@ def hamilton_env(
     return make_build_env(
         gateway=analytics_gateway,
         repo_root=repo_root,
-        build_dir=build_dir,
+        options=BuildEnvOptions(build_dir=build_dir),
     )
 
 
@@ -147,12 +189,14 @@ def seeded_hamilton_env(
     return make_build_env(
         gateway=seeded_analytics_gateway,
         repo_root=repo_root,
-        build_dir=build_dir,
+        options=BuildEnvOptions(build_dir=build_dir),
     )
 
 
 __all__ = [
+    "BuildEnvOptions",
     "hamilton_env",
     "make_build_env",
+    "make_build_harness",
     "seeded_hamilton_env",
 ]

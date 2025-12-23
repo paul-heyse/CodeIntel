@@ -93,3 +93,12 @@ not provided and SHALL surface it in HTTP response headers and MCP error context
 - **WHEN** an MCP call fails without a prior correlation identifier
 - **THEN** the error context includes a generated correlation ID
 
+### Requirement: Serving uses the canonical registry service
+Serving SHALL source semantic catalogs, export metadata, and schema summaries from the
+canonical RegistryService and shared manifests. Serving SHALL NOT compile or maintain
+local registry copies.
+
+#### Scenario: Serving catalog derives from registry service
+- **WHEN** a serving catalog response is generated
+- **THEN** it uses RegistryService outputs backed by the canonical metadata tables
+

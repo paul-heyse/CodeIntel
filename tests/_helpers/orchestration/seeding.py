@@ -7,9 +7,13 @@ call graph scoping, and invalid profile setups.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -19,19 +23,52 @@ from tests._helpers.builders import (
     GoidRow,
     ImportGraphEdgeRow,
     ModuleRow,
+    RepoMapRow,
     RiskFactorRow,
     SymbolUseEdgeRow,
     insert_rows,
 )
 from tests._helpers.fakes import utcnow
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
-
 from tests._helpers.orchestration.seeding_docs import (
     seed_docs_export_minimal as _seed_docs_export_minimal,
 )
+
+
+@dataclass(frozen=True)
+class ModuleGraphInputSeed:
+    """Configuration for seeding module graph inputs."""
+
+    repo: str
+    commit: str
+    module_a: str
+    module_b: str
+    repo_root: Path | None = None
+    module_map: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class GraphValidationGapSeed:
+    """Configuration for seeding graph validation gaps."""
+
+    repo: str
+    commit: str
+    include_modules: bool = True
+    repo_root: Path | None = None
+    module_map: dict[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class DocsExportInvalidProfileOptions:
+    """Options for seeding invalid docs export profiles."""
+
+    repo_root: Path | None = None
+    null_commit: bool = True
+    drop_commit_column: bool = False
 
 
 def seed_cfg_dfg_for_metrics(
@@ -235,11 +272,7 @@ def seed_function_graph_cycle(
 
 def seed_module_graph_inputs(
     gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    module_a: str,
-    module_b: str,
+    spec: ModuleGraphInputSeed,
 ) -> None:
     """Seed import/symbol edges for module graph metrics calculations.
 
@@ -247,41 +280,75 @@ def seed_module_graph_inputs(
     ----------
     gateway
         Storage gateway to seed.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    module_a
-        First module name.
-    module_b
-        Second module name.
+    spec
+        Module graph seed configuration.
+
+    Raises
+    ------
+    ValueError
+        If module paths cannot be resolved for the requested modules.
     """
+    resolved_module_map = spec.module_map
+    if resolved_module_map is None:
+        if spec.repo_root is not None:
+            path_map = modules_expected_from_repo_tree(spec.repo_root)
+            resolved_module_map = {module: path for path, module in path_map.items()}
+        else:
+            resolved_module_map = {
+                spec.module_a: "pkg/mod_a.py",
+                spec.module_b: "pkg/mod_b.py",
+            }
+    path_a = resolved_module_map.get(spec.module_a)
+    path_b = resolved_module_map.get(spec.module_b)
+    if path_a is None or path_b is None:
+        message = f"Missing module paths for {spec.module_a!r} or {spec.module_b!r}"
+        raise ValueError(message)
     gateway.con.execute(
-        "DELETE FROM core.modules WHERE repo = ? AND commit = ? AND module IN (?, ?)",
-        [repo, commit, module_a, module_b],
+        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+        [spec.repo, spec.commit],
+    )
+    gateway.con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [spec.repo, spec.commit],
     )
     insert_rows(
         gateway,
         [
-            ModuleRow(module=module_a, path="pkg/mod_a.py", repo=repo, commit=commit),
-            ModuleRow(module=module_b, path="pkg/mod_b.py", repo=repo, commit=commit),
+            ModuleRow(module=module, path=path, repo=spec.repo, commit=spec.commit)
+            for module, path in sorted(resolved_module_map.items())
         ],
     )
+    insert_rows(
+        gateway,
+        [
+            RepoMapRow(
+                repo=spec.repo,
+                commit=spec.commit,
+                modules=resolved_module_map,
+            )
+        ],
+    )
+    snapshot = SnapshotRef(
+        repo=spec.repo,
+        commit=spec.commit,
+        repo_root=spec.repo_root or Path.cwd(),
+    )
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     gateway.con.execute(
         """
         DELETE FROM graph.import_graph_edges
         WHERE repo = ? AND commit = ? AND src_module = ? AND dst_module = ?
         """,
-        [repo, commit, module_a, module_b],
+        [spec.repo, spec.commit, spec.module_a, spec.module_b],
     )
     insert_rows(
         gateway,
         [
             ImportGraphEdgeRow(
-                repo=repo,
-                commit=commit,
-                src_module=module_a,
-                dst_module=module_b,
+                repo=spec.repo,
+                commit=spec.commit,
+                src_module=spec.module_a,
+                dst_module=spec.module_b,
                 src_fan_out=1,
                 dst_fan_in=1,
                 cycle_group=0,
@@ -311,9 +378,7 @@ def seed_module_graph_inputs(
 
 def seed_graph_validation_gaps(
     gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
+    spec: GraphValidationGapSeed,
 ) -> None:
     """Seed rows that trigger graph validation warnings.
 
@@ -321,11 +386,14 @@ def seed_graph_validation_gaps(
     ----------
     gateway
         Storage gateway to seed.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
+    spec
+        Graph validation gap seed configuration.
     """
+    repo = spec.repo
+    commit = spec.commit
+    include_modules = spec.include_modules
+    repo_root = spec.repo_root
+    module_map = spec.module_map
     con = gateway.con
     now = utcnow()
     con.execute(
@@ -337,13 +405,41 @@ def seed_graph_validation_gaps(
                   '[]', NULL, 'h1')
         """
     )
-    con.execute(
-        """
-        INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-        VALUES ('pkg.a', 'pkg/a.py', ?, ?, 'python', '[]', '[]')
-        """,
-        [repo, commit],
-    )
+    if include_modules:
+        con.execute(
+            "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        )
+        con.execute(
+            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+            [repo, commit],
+        )
+        resolved_module_map = module_map
+        if resolved_module_map is None and repo_root is not None:
+            path_map = modules_expected_from_repo_tree(repo_root)
+            module_name = path_map.get("pkg/a.py", "pkg.a")
+            resolved_module_map = {module_name: "pkg/a.py"}
+        if resolved_module_map is None:
+            resolved_module_map = {"pkg.a": "pkg/a.py"}
+        insert_rows(
+            gateway,
+            [
+                ModuleRow(module=module, path=path, repo=repo, commit=commit)
+                for module, path in sorted(resolved_module_map.items())
+            ],
+        )
+        insert_rows(
+            gateway,
+            [
+                RepoMapRow(
+                    repo=repo,
+                    commit=commit,
+                    modules=resolved_module_map,
+                )
+            ],
+        )
+        snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
+        ModulesAssertions(gateway, snapshot).inventory_consistent()
     con.execute(
         """
         INSERT INTO core.goids (
@@ -482,8 +578,7 @@ def seed_docs_export_invalid_profile(
     *,
     repo: str,
     commit: str,
-    null_commit: bool = True,
-    drop_commit_column: bool = False,
+    options: DocsExportInvalidProfileOptions | None = None,
 ) -> None:
     """Seed minimal docs export data and flip required fields to trigger validation failures.
 
@@ -495,11 +590,8 @@ def seed_docs_export_invalid_profile(
         Repository identifier.
     commit
         Commit hash.
-    null_commit
-        When True, sets commit column in function_profile to NULL.
-    drop_commit_column
-        When True, removes the commit column from function_profile to induce
-        schema validation failures.
+    options
+        Optional invalid profile seed options.
 
     Raises
     ------
@@ -511,11 +603,17 @@ def seed_docs_export_invalid_profile(
             "seed_docs_export_invalid_profile requires a non-strict gateway (use loose_gateway)."
         )
         raise ValueError(message)
-    _seed_docs_export_minimal(gateway, repo=repo, commit=commit)
+    resolved_options = options or DocsExportInvalidProfileOptions()
+    _seed_docs_export_minimal(
+        gateway,
+        repo=repo,
+        commit=commit,
+        repo_root=resolved_options.repo_root,
+    )
     con = gateway.con
     con.execute("DROP TABLE IF EXISTS analytics.function_profile")
-    commit_value = None if null_commit else commit
-    if drop_commit_column:
+    commit_value = None if resolved_options.null_commit else commit
+    if resolved_options.drop_commit_column:
         con.execute(
             """
             CREATE TABLE analytics.function_profile (

@@ -13,6 +13,7 @@ from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef, refs_from_target_result
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import assert_record_has_artifacts, assert_record_has_datasets
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 
 EXPECTED_DUAL_OUTPUT_REFS = 2
@@ -192,8 +193,7 @@ class TestTargetRunRecordArtifacts:
         )
         if len(record.artifacts) != 1:
             pytest.fail("artifacts should have 1 entry")
-        if record.artifacts[0].name != "scip_index":
-            pytest.fail("artifact not stored correctly")
+        assert_record_has_artifacts(record, ["scip_index"])
 
 
 class TestSkippedTargetsDatasetRef:
@@ -215,8 +215,7 @@ class TestSkippedTargetsDatasetRef:
                 ),
             ),
         )
-        if not record.datasets:
-            pytest.fail("Skipped target should have datasets")
+        assert_record_has_datasets(record, ["analytics.function_metrics"])
         if len(record.datasets) != 1:
             pytest.fail("Expected 1 dataset")
 

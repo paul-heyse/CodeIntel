@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,6 +12,7 @@ from codeintel.analytics.utilities.datasets import (
     insert_analytics_rows,
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
 )
@@ -26,9 +28,12 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration import seed_coverage_rows
+from tests._helpers.orchestration.coverage_orchestration import CoverageSeedOptions
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -118,6 +123,7 @@ def open_seeded_architecture_gateway(
     commit: str,
     db_path: Path | None = None,
     strict_schema: bool = True,
+    repo_root: Path | None = None,
 ) -> StorageGateway:
     """
     Open a gateway (file-backed or in-memory) and seed architecture tables.
@@ -133,6 +139,8 @@ def open_seeded_architecture_gateway(
         gateway is created.
     strict_schema : bool
         When True, schemas/views/validation are applied before seeding.
+    repo_root : Path | None
+        Optional repo root for modules-first inventory derivation.
 
     Returns
     -------
@@ -151,10 +159,16 @@ def open_seeded_architecture_gateway(
             validate_schema=strict_schema,
         )
         gateway = open_gateway(cfg)
-    return seed_architecture(gateway=gateway, repo=repo, commit=commit)
+    return seed_architecture(gateway=gateway, repo=repo, commit=commit, repo_root=repo_root)
 
 
-def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> StorageGateway:
+def seed_architecture(
+    *,
+    gateway: StorageGateway,
+    repo: str,
+    commit: str,
+    repo_root: Path | None = None,
+) -> StorageGateway:
     """
     Populate the minimal set of architecture tables required by docs views.
 
@@ -166,6 +180,8 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         Repository identifier to attach to seed data.
     commit : str
         Commit hash anchoring the seeded rows.
+    repo_root : Path | None
+        Optional repo root for modules-first inventory derivation.
 
     Returns
     -------
@@ -181,9 +197,10 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
     seed = CoverageSeedConfig(test_goid=10)
     rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
 
+    module_map = _resolve_architecture_module_map(repo_root, rel_path, seed.module_import)
     warehouse.materialize_rows(
         "core.repo_map",
-        [(repo, commit, "{}", "{}", now_iso)],
+        [(repo, commit, json.dumps(module_map), "{}", now_iso)],
         columns=_table_columns(gateway, "core.repo_map"),
         options=append,
     )
@@ -191,32 +208,31 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         gateway=gateway,
         rel_path=rel_path,
         seed=seed,
-        include_test_catalog=False,
+        options=CoverageSeedOptions(
+            include_test_catalog=False,
+            seed_repo_map=False,
+        ),
     )
+    core_module_map = dict(module_map)
+    core_module_map.pop(seed.module_import, None)
     warehouse.materialize_mappings(
         "core.modules",
         [
             {
-                "module": "pkg.alpha",
-                "path": "pkg/alpha.py",
+                "module": module,
+                "path": path,
                 "repo": repo,
                 "commit": commit,
                 "language": "python",
                 "tags": "[]",
                 "owners": "[]",
-            },
-            {
-                "module": "pkg.beta",
-                "path": "pkg/beta.py",
-                "repo": repo,
-                "commit": commit,
-                "language": "python",
-                "tags": "[]",
-                "owners": "[]",
-            },
+            }
+            for module, path in sorted(core_module_map.items())
         ],
         options=append,
     )
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     warehouse.materialize_rows(
         "analytics.function_metrics",
         [
@@ -641,3 +657,21 @@ def seed_architecture(*, gateway: StorageGateway, repo: str, commit: str) -> Sto
         ),
     )
     return gateway
+
+
+def _resolve_architecture_module_map(
+    repo_root: Path | None,
+    rel_path: str,
+    module_import: str,
+) -> dict[str, str]:
+    module_map: dict[str, str] = {}
+    if repo_root is not None:
+        path_map = modules_expected_from_repo_tree(repo_root)
+        module_map = {module: path for path, module in path_map.items()}
+    if not module_map:
+        module_map = {
+            "pkg.alpha": "pkg/alpha.py",
+            "pkg.beta": "pkg/beta.py",
+        }
+    module_map.setdefault(module_import, rel_path)
+    return module_map

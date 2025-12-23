@@ -6,9 +6,21 @@ from typing import TYPE_CHECKING, cast
 
 from hamilton.driver import Driver
 
+from codeintel.build.hamilton.native.export.serving_artifacts import (
+    SERVING_ARTIFACT_BUILDSPEC,
+    SERVING_ARTIFACT_SCHEMA_MANIFEST,
+    SERVING_ARTIFACT_SEMANTIC_REGISTRY,
+    SERVING_ARTIFACTS_TARGET_NAME,
+)
 from codeintel.core.hamilton import tags as ht
 from codeintel.storage.views import ibis_views
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.assertions import (
+    assert_record_has_artifacts,
+    assert_target_ok,
+    expect_equal,
+    expect_true,
+)
+from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 
 if TYPE_CHECKING:
     from hamilton.driver import HamiltonNode
@@ -27,3 +39,20 @@ def test_semantic_view_decorator_applies_hamilton_tags() -> None:
     expect_true(match is not None)
     match_node = cast("HamiltonNode", match)
     expect_equal(match_node.tags.get(ht.TAG_TABLE_KEY), "docs.v_function_summary")
+
+
+def test_serving_harness_emits_semantic_artifacts(
+    serving_target_harness: ServingTargetHarness,
+) -> None:
+    """Serving harness should emit semantic registry artifacts."""
+    records = serving_target_harness.run_targets([SERVING_ARTIFACTS_TARGET_NAME])
+    record = records[SERVING_ARTIFACTS_TARGET_NAME]
+    assert_target_ok(record)
+    assert_record_has_artifacts(
+        record,
+        (
+            SERVING_ARTIFACT_SEMANTIC_REGISTRY,
+            SERVING_ARTIFACT_SCHEMA_MANIFEST,
+            SERVING_ARTIFACT_BUILDSPEC,
+        ),
+    )

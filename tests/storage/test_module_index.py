@@ -6,11 +6,17 @@ import logging
 import logging.handlers
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeintel.storage.helpers.module_index import load_module_map
 from codeintel.storage.warehouse import Warehouse
+from tests._helpers.assertions import (
+    ModuleMapDiffOptions,
+    format_module_map_diff,
+    module_map_from_path_map,
+)
 from tests._helpers.assertions.expectation_assertions import (
     expect_empty,
-    expect_equal,
     expect_in,
     expect_is_instance,
     expect_length,
@@ -19,8 +25,6 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.builders import ModuleRow, insert_rows
 
 if TYPE_CHECKING:
-    import pytest
-
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -44,9 +48,20 @@ def test_load_module_map_returns_normalized_paths(
     result = load_module_map(fresh_gateway, repo, commit)
 
     expect_is_instance(result, dict)
-    expect_length(result, 2)
-    expect_in("src/test/module.py", result)
-    expect_equal(result.get("src/test/module.py"), "test.module")
+    expected = {
+        "src/test/module.py": "test.module",
+        "src/another/module.py": "another.module",
+    }
+    if result != expected:
+        expected_module_map = module_map_from_path_map(expected)
+        actual_module_map = module_map_from_path_map(result)
+        pytest.fail(
+            format_module_map_diff(
+                expected_module_map,
+                actual_module_map,
+                options=ModuleMapDiffOptions(context="load_module_map"),
+            )
+        )
 
 
 def test_load_module_map_filters_by_language(

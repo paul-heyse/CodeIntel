@@ -22,6 +22,7 @@ from tests._helpers import (
     seed_docs_export_invalid_profile,
 )
 from tests._helpers.assertions import expect_equal, expect_not_equal, expect_true
+from tests._helpers.orchestration.seeding import DocsExportInvalidProfileOptions
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -96,7 +97,7 @@ def test_export_raises_on_validation_failure(tmp_path: Path) -> None:
             ctx.gateway,
             repo=ctx.repo,
             commit=ctx.commit,
-            null_commit=True,
+            options=DocsExportInvalidProfileOptions(null_commit=True),
         )
         output_dir = tmp_path / "out"
         with pytest.raises(BuildProblemError):
@@ -127,8 +128,10 @@ def test_export_logs_problem_detail_on_validation_failure(
             ctx.gateway,
             repo=ctx.repo,
             commit=ctx.commit,
-            null_commit=True,
-            drop_commit_column=True,
+            options=DocsExportInvalidProfileOptions(
+                null_commit=True,
+                drop_commit_column=True,
+            ),
         )
         output_dir = tmp_path / "out_jsonl"
         caplog.set_level("ERROR")

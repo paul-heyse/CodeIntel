@@ -49,6 +49,5 @@ source of truth.
 6. Remove legacy registries, serializers, and helper utilities.
 
 ## Open Questions
-- Which legacy registry APIs should be kept temporarily as adapters during migration?
-- Do we need a transitional feature flag to switch between old and new registry paths?
-- What deprecation timeline is acceptable for duplicate helper modules?
+- None. Legacy registries/helpers were removed, tags aligned to the registry, and
+  no transitional feature flags were required.

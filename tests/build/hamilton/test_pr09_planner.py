@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.build.contracts import OutputContract
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.planner import (
     HamiltonBuildPlan,
     PlanEntry,
@@ -26,10 +25,12 @@ from tests._helpers.build import (
     make_snapshot,
 )
 from tests._helpers.fakes.fake_providers import FakeProviders
+from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
     from codeintel.storage.gateway import StorageGateway
     from tests.build.hamilton.conftest import FakeGateway
@@ -66,15 +67,17 @@ def make_test_build_env(
     config = make_build_config()
     providers = cast("Providers", FakeProviders.defaults())
 
-    return BuildEnv(
-        gateway=cast("StorageGateway", gateway),
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=TEST_BUILD_SETTINGS,
-        force_targets=force_targets or frozenset(),
-        manifest_index=manifest_index,
+    return build_test_env(
+        BuildEnvSpec(
+            gateway=cast("StorageGateway", gateway),
+            snapshot=snapshot,
+            paths=paths,
+            providers=providers,
+            build_config=config,
+            settings=TEST_BUILD_SETTINGS,
+            force_targets=force_targets or frozenset(),
+            manifest_index=manifest_index,
+        )
     )
 
 

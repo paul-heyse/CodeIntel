@@ -12,6 +12,7 @@ import pytest
 
 from codeintel.build.hamilton.run_records import SkipCheckRequest, TargetRunRecord, should_skip
 from codeintel.core.build_manifest import OutputManifest
+from tests._helpers.assertions import assert_record_row_counts, assert_target_ok
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
@@ -112,10 +113,11 @@ class TestTargetRunRecord:
             row_counts={"analytics.test_table": 50},
         )
 
+        assert_target_ok(record)
         expect_true(record.success)
         expect_false(record.skipped)
         expect_equal(record.target, "test_target")
-        expect_equal(record.row_counts["analytics.test_table"], 50)
+        assert_record_row_counts(record, {"analytics.test_table": 50})
 
     @staticmethod
     def test_target_run_record_skipped() -> None:
@@ -127,6 +129,7 @@ class TestTargetRunRecord:
             input_hash="hash123",
         )
 
+        assert_target_ok(record, expected_status="skipped")
         expect_false(record.success)
         expect_true(record.skipped)
 
@@ -141,6 +144,7 @@ class TestTargetRunRecord:
             error="Something went wrong",
         )
 
+        assert_target_ok(record, expected_status="failed")
         expect_false(record.success)
         expect_false(record.skipped)
         expect_equal(record.error, "Something went wrong")
@@ -168,7 +172,7 @@ class TestNativeTargetExecutorSkipLogic:
             row_counts={},
         )
 
-        expect_equal(record.status, "skipped")
+        assert_target_ok(record, expected_status="skipped")
         expect_equal(record.duration_ms, 0.0)
         expect_true(record.skipped)
 
@@ -188,9 +192,10 @@ class TestNativeTargetExecutorSkipLogic:
             row_counts={"analytics.test_table": 100},
         )
 
-        expect_equal(record.status, "succeeded")
+        assert_target_ok(record)
         expect_equal(record.duration_ms, 123.4)
         expect_true(record.success)
+        assert_record_row_counts(record, {"analytics.test_table": 100})
 
     @staticmethod
     def test_executor_fail_returns_correct_status() -> None:
@@ -203,7 +208,7 @@ class TestNativeTargetExecutorSkipLogic:
             error="Validation failed",
         )
 
-        expect_equal(record.status, "failed")
+        assert_target_ok(record, expected_status="failed")
         expect_equal(record.error, "Validation failed")
         expect_false(record.success)
 

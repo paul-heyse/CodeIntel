@@ -8,17 +8,20 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING
 from warnings import warn
 
 import duckdb
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBConnection, StorageConfig, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
+from tests._helpers.assertions import ModulesAssertions
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
-    from pathlib import Path
 
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.env_options import GatewayOptions
@@ -263,6 +266,30 @@ class GatewayFactory:
 
         return gateway
 
+    @classmethod
+    def open_on_disk(
+        cls,
+        db_path: Path,
+        *,
+        options: GatewayOptions | None = None,
+    ) -> StorageGateway:
+        """Open a file-backed gateway with optional overrides.
+
+        Parameters
+        ----------
+        db_path
+            Path to the DuckDB file on disk.
+        options
+            Optional GatewayOptions to apply before opening.
+
+        Returns
+        -------
+        StorageGateway
+            File-backed gateway opened with schema and views.
+        """
+        factory = cls.from_options(options) if options else cls()
+        return factory.file_backed(db_path).open()
+
 
 @contextmanager
 def analytics_gateway(options: GatewayOptions | None = None) -> Iterator[StorageGateway]:
@@ -330,6 +357,7 @@ def seed_repo_identity(
     repo: str,
     commit: str,
     modules: dict[str, str] | None = None,
+    repo_root: Path | None = None,
 ) -> None:
     """
     Insert a repo identity row for serving-layer verification.
@@ -344,8 +372,15 @@ def seed_repo_identity(
         Commit hash to record.
     modules
         Optional module->path mappings to persist alongside identity.
+    repo_root
+        Optional repo root to derive module mappings when not provided.
     """
-    modules_payload = modules or {}
+    modules_payload = modules
+    if modules_payload is None and repo_root is not None:
+        path_map = modules_expected_from_repo_tree(repo_root)
+        modules_payload = {module: path for path, module in path_map.items()}
+    if modules_payload is None:
+        modules_payload = {}
     gateway.con.execute(
         "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
         [repo, commit],
@@ -369,6 +404,8 @@ def seed_repo_identity(
             """,
             [(module, path, repo, commit) for module, path in modules_payload.items()],
         )
+        snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
+        ModulesAssertions(gateway, snapshot).inventory_consistent()
 
 
 __all__ = [

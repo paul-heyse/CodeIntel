@@ -41,6 +41,18 @@ def _write_text(path: Path, payload: str) -> None:
     path.write_text(payload, encoding="utf8")
 
 
+@dataclass(frozen=True)
+class FakeToolRunnerConfig:
+    """Configuration for FakeToolRunner behavior."""
+
+    payloads: dict[str, Any] = field(default_factory=dict)
+    returncodes: dict[str, int] = field(default_factory=dict)
+    raise_on: set[str] = field(default_factory=set)
+    not_found: set[str] = field(default_factory=set)
+    no_output: set[str] = field(default_factory=set)
+    on_run: Callable[[ToolName, list[str]], None] | None = None
+
+
 class FakeToolRunner(ToolRunner):
     """ToolRunner stub returning canned payloads."""
 
@@ -48,13 +60,18 @@ class FakeToolRunner(ToolRunner):
         self,
         cache_dir: Path,
         *,
-        payloads: dict[str, Any] | None = None,
-        on_run: Callable[[ToolName, list[str]], None] | None = None,
+        config: FakeToolRunnerConfig | None = None,
     ) -> None:
+        """Initialize a fake runner with optional configuration."""
         super().__init__(cache_dir=cache_dir)
-        self.payloads = payloads or {}
+        resolved = config or FakeToolRunnerConfig()
+        self.payloads = resolved.payloads
+        self.returncodes = resolved.returncodes
+        self.raise_on = resolved.raise_on
+        self.not_found = resolved.not_found
+        self.no_output = resolved.no_output
         self.calls: CallRecorder[ToolRunCall] = CallRecorder()
-        self.on_run = on_run
+        self.on_run = resolved.on_run
 
     async def run_async(
         self,
@@ -79,13 +96,21 @@ class FakeToolRunner(ToolRunner):
         -------
         ToolRunResult
             Structured result capturing stdout/stderr and codes.
+
+        Raises
+        ------
+        ToolNotFoundError
+            Raised when the tool is configured as missing.
+        ToolExecutionError
+            Raised when the tool is configured to error.
         """
         run_options = options or ToolRunOptions()
         tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
         args_list = list(args)
+        tool_key = tool_enum.value
         self.calls.record(
             ToolRunCall(
-                tool=tool_enum.value,
+                tool=tool_key,
                 args=args_list,
                 cwd=run_options.cwd or self.cache_dir,
                 timeout_ms=(
@@ -96,30 +121,87 @@ class FakeToolRunner(ToolRunner):
         )
         if self.on_run is not None:
             self.on_run(tool_enum, args_list)
-        payload_stdout = self.payloads.get(tool_enum.value, "")
-        if run_options.output_path is not None and tool_enum in {
-            ToolName.COVERAGE,
-            ToolName.PYREFLY,
-        }:
-            json_payload = self.payloads.get(
-                f"{tool_enum.value}_json",
-                self.payloads.get("json", {}),
-            )
+
+        if tool_key in self.not_found:
+            raise ToolNotFoundError(tool_enum, tool_key)
+
+        stdout_payload = self._resolve_stdout_payload(tool_enum)
+        output_payload = self._resolve_output_payload(tool_enum)
+
+        if run_options.output_path is not None and tool_key not in self.no_output:
             await to_thread.run_sync(_mkdir_parents, run_options.output_path.parent)
             await to_thread.run_sync(
                 _write_text,
                 run_options.output_path,
-                json.dumps(json_payload),
+                output_payload,
             )
-        return ToolRunResult(
+
+        returncode = self.returncodes.get(tool_key, 0)
+        result = ToolRunResult(
             tool=tool_enum,
             args=tuple(args_list),
-            returncode=0,
-            stdout=str(payload_stdout),
+            returncode=returncode,
+            stdout=stdout_payload,
             stderr="",
             output_path=run_options.output_path,
             duration_s=0.0,
         )
+        if tool_key in self.raise_on:
+            raise ToolExecutionError(result)
+        return result
+
+    def _resolve_stdout_payload(self, tool: ToolName) -> str:
+        """Resolve stdout payload for a tool invocation.
+
+        Returns
+        -------
+        str
+            Text payload used for stdout.
+        """
+        if tool is ToolName.SCIP:
+            payload = self.payloads.get("scip_print_stdout", "")
+            return self._stringify_payload(payload)
+        payload = self.payloads.get(tool.value, "")
+        return self._stringify_payload(payload)
+
+    def _resolve_output_payload(self, tool: ToolName) -> str:
+        """Resolve file output payload for a tool invocation.
+
+        Returns
+        -------
+        str
+            Text payload used for output files.
+        """
+        if tool is ToolName.COVERAGE:
+            payload = self.payloads.get("coverage_json", self.payloads.get("json", {}))
+            return self._stringify_payload(payload)
+        if tool is ToolName.PYREFLY:
+            payload = self.payloads.get("pyrefly_json", self.payloads.get("json", {}))
+            return self._stringify_payload(payload)
+        if tool is ToolName.PYTEST:
+            payload = self.payloads.get("pytest_json", self.payloads.get("json", {}))
+            return self._stringify_payload(payload)
+        if tool is ToolName.SCIP_PYTHON:
+            payload = self.payloads.get("scip_binary", "scip-binary")
+            return self._stringify_payload(payload)
+        if tool is ToolName.SCIP:
+            payload = self.payloads.get("scip_print_stdout", "{}")
+            return self._stringify_payload(payload)
+        payload = self.payloads.get(tool.value, "")
+        return self._stringify_payload(payload)
+
+    @staticmethod
+    def _stringify_payload(payload: object) -> str:
+        """Convert payloads to a stable string representation.
+
+        Returns
+        -------
+        str
+            Stringified payload content.
+        """
+        if isinstance(payload, str):
+            return payload
+        return json.dumps(payload)
 
 
 @dataclass(frozen=True)
@@ -554,6 +636,7 @@ def make_failing_tool_service() -> FakeToolService:
 __all__ = [
     "FakeScipResult",
     "FakeToolRunner",
+    "FakeToolRunnerConfig",
     "FakeToolService",
     "FakeToolServiceConfig",
     "PresetRunner",

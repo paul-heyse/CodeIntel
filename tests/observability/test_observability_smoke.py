@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import BackgroundTasks
@@ -26,7 +26,6 @@ from codeintel.serving.mcp.middleware_stack import McpOpenTelemetryMiddleware
 from codeintel.serving.metrics import QueryMetrics
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
-    expect_is_instance,
     expect_true,
 )
 
@@ -121,7 +120,7 @@ def test_cli_bootstrap_emits_span() -> None:
         ),
     )
 
-    bootstrap_cli(config=cast("CliConfig", config))
+    bootstrap_cli(config=config)
 
     exporter = in_memory.InMemorySpanExporter()
     provider = trace_api.get_tracer_provider()
@@ -205,13 +204,10 @@ async def test_mcp_middleware_emits_span() -> None:
     exporter = _configure_tracing()
 
     middleware = McpOpenTelemetryMiddleware()
-    context = cast(
-        "MiddlewareContext[object]",
-        MiddlewareContext(
-            message=SimpleNamespace(name="semantic_query"),
-            fastmcp_context=None,
-            method="tools/call",
-        ),
+    context: MiddlewareContext[object] = MiddlewareContext(
+        message=SimpleNamespace(name="semantic_query"),
+        fastmcp_context=None,
+        method="tools/call",
     )
 
     async def _call_next(context: MiddlewareContext[object]) -> str:
@@ -228,8 +224,9 @@ async def test_mcp_middleware_emits_span() -> None:
     expect_equal(span.name, "mcp.tools/call:semantic_query")
     attrs = _span_attributes(span)
     correlation_id = attrs.get("codeintel.correlation_id")
-    expect_is_instance(correlation_id, str)
-    correlation_value = cast("str", correlation_id)
+    if not isinstance(correlation_id, str):
+        pytest.fail("Expected string correlation id")
+    correlation_value = correlation_id
     expect_true(
         len(correlation_value) == _CORRELATION_ID_HEX_LENGTH,
         message="Expected hex correlation id",

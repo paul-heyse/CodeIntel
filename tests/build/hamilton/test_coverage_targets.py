@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from dataclasses import replace
 
 from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
@@ -15,51 +15,26 @@ from codeintel.build.hamilton.native.analytics.coverage_targets import (
     t__coverage_test_edges,
 )
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.config.primitives import SnapshotRef
-from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.build import TEST_BUILD_SETTINGS, make_build_config, make_build_paths
-from tests._helpers.fakes.fake_providers import FakeProviders
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from codeintel.build.providers import Providers
-    from codeintel.storage.gateway import StorageGateway
+from tests._helpers.assertions import (
+    assert_record_row_counts,
+    assert_target_ok,
+    expect_equal,
+    expect_true,
+)
+from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 
 
-def _make_env(
-    *,
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    force_targets: frozenset[str] | None = None,
-) -> BuildEnv:
+def _make_env(harness: AnalyticsTargetHarness) -> BuildEnv:
     """Create a BuildEnv for testing.
-
-    Parameters
-    ----------
-    gateway
-        Storage gateway to use.
-    snapshot
-        Snapshot reference.
-    force_targets
-        Optional set of forced targets.
 
     Returns
     -------
     BuildEnv
         Build environment configured for testing.
     """
-    paths = make_build_paths(snapshot.repo_root)
-    config = make_build_config()
-    providers = cast("Providers", FakeProviders.defaults())
-    return BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=TEST_BUILD_SETTINGS,
-        force_targets=force_targets or frozenset({"coverage_test_edges", "behavioral_coverage"}),
+    return replace(
+        harness.harness.build_env(),
+        force_targets=frozenset({"coverage_test_edges", "behavioral_coverage"}),
     )
 
 
@@ -132,20 +107,16 @@ def test_execution_result_failure() -> None:
 
 
 def test_coverage_test_edges_materialize_success(
-    fake_gateway: StorageGateway,
-    tmp_path: Path,
+    analytics_target_harness: AnalyticsTargetHarness,
 ) -> None:
     """Verify t__coverage_test_edges returns success record.
 
     Parameters
     ----------
-    fake_gateway
-        In-memory storage gateway fixture.
-    tmp_path
-        Temporary directory fixture.
+    analytics_target_harness
+        Analytics target harness fixture.
     """
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
-    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    env = _make_env(analytics_target_harness)
     graph = _make_graph()
 
     compute_result = CoverageTestEdgesComputeResult(rows=[])
@@ -154,28 +125,21 @@ def test_coverage_test_edges_materialize_success(
     record = t__coverage_test_edges(env, graph, compute_result, materialization)
 
     expected_count = 25
-    expect_equal(record.status, "succeeded")
-    expect_true(
-        record.row_counts.get("analytics.test_coverage_edges", 0) == expected_count,
-        message="Row count should match compute result",
-    )
+    assert_target_ok(record)
+    assert_record_row_counts(record, {"analytics.test_coverage_edges": expected_count})
 
 
 def test_coverage_test_edges_materialize_failure(
-    fake_gateway: StorageGateway,
-    tmp_path: Path,
+    analytics_target_harness: AnalyticsTargetHarness,
 ) -> None:
     """Verify t__coverage_test_edges returns failure record when compute fails.
 
     Parameters
     ----------
-    fake_gateway
-        In-memory storage gateway fixture.
-    tmp_path
-        Temporary directory fixture.
+    analytics_target_harness
+        Analytics target harness fixture.
     """
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
-    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    env = _make_env(analytics_target_harness)
     graph = _make_graph()
 
     compute_result = CoverageTestEdgesComputeResult(rows=None, error="Upstream goids failed")
@@ -188,7 +152,7 @@ def test_coverage_test_edges_materialize_failure(
 
     record = t__coverage_test_edges(env, graph, compute_result, materialization)
 
-    expect_equal(record.status, "failed")
+    assert_target_ok(record, expected_status="failed")
     expect_true(
         "Upstream goids failed" in (record.error or ""),
         message="Error message should be propagated",
@@ -196,20 +160,16 @@ def test_coverage_test_edges_materialize_failure(
 
 
 def test_behavioral_coverage_materialize_success(
-    fake_gateway: StorageGateway,
-    tmp_path: Path,
+    analytics_target_harness: AnalyticsTargetHarness,
 ) -> None:
     """Verify t__behavioral_coverage returns success record.
 
     Parameters
     ----------
-    fake_gateway
-        In-memory storage gateway fixture.
-    tmp_path
-        Temporary directory fixture.
+    analytics_target_harness
+        Analytics target harness fixture.
     """
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
-    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    env = _make_env(analytics_target_harness)
     graph = _make_graph()
 
     compute_result = BehavioralCoverageComputeResult(rows=[])
@@ -218,28 +178,21 @@ def test_behavioral_coverage_materialize_success(
     record = t__behavioral_coverage(env, graph, compute_result, materialization)
 
     expected_count = 15
-    expect_equal(record.status, "succeeded")
-    expect_true(
-        record.row_counts.get("analytics.behavioral_coverage", 0) == expected_count,
-        message="Row count should match compute result",
-    )
+    assert_target_ok(record)
+    assert_record_row_counts(record, {"analytics.behavioral_coverage": expected_count})
 
 
 def test_behavioral_coverage_materialize_failure(
-    fake_gateway: StorageGateway,
-    tmp_path: Path,
+    analytics_target_harness: AnalyticsTargetHarness,
 ) -> None:
     """Verify t__behavioral_coverage returns failure record when compute fails.
 
     Parameters
     ----------
-    fake_gateway
-        In-memory storage gateway fixture.
-    tmp_path
-        Temporary directory fixture.
+    analytics_target_harness
+        Analytics target harness fixture.
     """
-    snapshot = SnapshotRef(repo="test/repo", commit="abc123", repo_root=tmp_path)
-    env = _make_env(gateway=fake_gateway, snapshot=snapshot)
+    env = _make_env(analytics_target_harness)
     graph = _make_graph()
 
     compute_result = BehavioralCoverageComputeResult(rows=None, error="Test profile failed")
@@ -252,7 +205,7 @@ def test_behavioral_coverage_materialize_failure(
 
     record = t__behavioral_coverage(env, graph, compute_result, materialization)
 
-    expect_equal(record.status, "failed")
+    assert_target_ok(record, expected_status="failed")
     expect_true(
         "Test profile failed" in (record.error or ""),
         message="Error message should be propagated",
