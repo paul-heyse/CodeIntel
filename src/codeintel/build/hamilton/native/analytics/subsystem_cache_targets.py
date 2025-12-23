@@ -19,19 +19,14 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import SUBSYSTEM_CACHE_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -56,18 +51,6 @@ SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY = "analytics.subsystem_coverage_cache"
 SUBSYSTEM_CACHE_TABLE_KEYS = (
     SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
     SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY,
-)
-
-register_output_targets(
-    make_output_target(
-        name=SUBSYSTEM_CACHES_TARGET_NAME,
-        module="analytics",
-        description="Cached subsystem profile and coverage tables.",
-        options=TargetSpecOptions(
-            table_keys=SUBSYSTEM_CACHE_TABLE_KEYS,
-            override_tables=SUBSYSTEM_CACHE_OVERRIDE_TABLES,
-        ),
-    ),
 )
 
 
@@ -235,7 +218,7 @@ def subsystem_coverage_cache__rows(
     )
 
 
-@tag_materialize(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
+@codeintel_target(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
 def t__subsystem_caches(
     env: BuildEnv,
     graph: TargetGraph,
@@ -243,7 +226,7 @@ def t__subsystem_caches(
     m__analytics__subsystem_profile_cache: MaterializationMetadata,
     m__analytics__subsystem_coverage_cache: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize subsystem cache tables from computed rows.
+    """Materialize cached subsystem profile and coverage tables.
 
     Returns
     -------

@@ -46,6 +46,11 @@ TagKey = Literal[
     "entity",
     "grain",
     "mcp_visible",
+    "target_resources",
+    "target_execution",
+    "target_parameters",
+    "target_estimated_duration_ms",
+    "target_spec_version",
 ]
 
 
@@ -60,6 +65,11 @@ class _HamiltonTagKwargs(TypedDict, total=False):
     entity: TagValue
     grain: TagValue
     mcp_visible: TagValue
+    target_resources: TagValue
+    target_execution: TagValue
+    target_parameters: TagValue
+    target_estimated_duration_ms: TagValue
+    target_spec_version: TagValue
 
 
 class _TagDecoratorFactory(Protocol):
@@ -91,20 +101,25 @@ def _set_tag_primary(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) 
     return True
 
 
+_SECONDARY_TAGS: dict[TagKey, TagKey] = {
+    "output_kind": "output_kind",
+    "semantic_id": "semantic_id",
+    "entity": "entity",
+    "grain": "grain",
+    "mcp_visible": "mcp_visible",
+    "target_resources": "target_resources",
+    "target_execution": "target_execution",
+    "target_parameters": "target_parameters",
+    "target_estimated_duration_ms": "target_estimated_duration_ms",
+    "target_spec_version": "target_spec_version",
+}
+
+
 def _set_tag_secondary(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> None:
-    match key:
-        case "output_kind":
-            tags["output_kind"] = value
-        case "semantic_id":
-            tags["semantic_id"] = value
-        case "entity":
-            tags["entity"] = value
-        case "grain":
-            tags["grain"] = value
-        case "mcp_visible":
-            tags["mcp_visible"] = value
-        case _:
-            return
+    mapped = _SECONDARY_TAGS.get(key)
+    if mapped is None:
+        return
+    tags[mapped] = value
 
 
 def _set_tag(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> None:

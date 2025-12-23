@@ -1,6 +1,6 @@
 """Consolidated Hamilton implementation for coverage-related analytics targets.
 
-This module consolidates coverage analytics targets using Phase 1 templates:
+This module consolidates coverage analytics targets using native materialization helpers:
 
 - ``coverage_functions``: Per-function coverage aggregation (Ibis -> DuckDB)
 - ``coverage_test_edges``: Test-to-function coverage edge computation (Rows)
@@ -43,18 +43,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
-    COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -77,35 +69,6 @@ BEHAVIORAL_COVERAGE_TARGET_NAME = "behavioral_coverage"
 COVERAGE_FUNCTIONS_TABLE_KEY = "analytics.coverage_functions"
 TEST_COVERAGE_EDGES_TABLE_KEY = "analytics.test_coverage_edges"
 BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
-
-register_output_targets(
-    make_output_target(
-        name=COVERAGE_FUNCTIONS_TARGET_NAME,
-        module="analytics",
-        description="Per-function coverage aggregation.",
-        options=TargetSpecOptions(
-            table_keys=(COVERAGE_FUNCTIONS_TABLE_KEY,),
-        ),
-    ),
-    make_output_target(
-        name=COVERAGE_TEST_EDGES_TARGET_NAME,
-        module="analytics",
-        description="Test-to-function coverage edges.",
-        options=TargetSpecOptions(
-            table_keys=(TEST_COVERAGE_EDGES_TABLE_KEY,),
-            override_tables=COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=BEHAVIORAL_COVERAGE_TARGET_NAME,
-        module="analytics",
-        description="Behavioral coverage tagging from test patterns.",
-        options=TargetSpecOptions(
-            table_keys=(BEHAVIORAL_COVERAGE_TABLE_KEY,),
-            override_tables=BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 # -----------------------------------------------------------------------------
@@ -270,13 +233,13 @@ def t__coverage_functions__compute(
     return q__core__goids
 
 
-@tag_materialize(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME)
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__coverage_functions: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Convert materialization metadata to a TargetRunRecord.
+    """Aggregate per-function coverage.
 
     Parameters
     ----------
@@ -397,14 +360,14 @@ def coverage_test_edges__rows(
     )
 
 
-@tag_materialize(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
+@codeintel_target(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
 def t__coverage_test_edges(
     env: BuildEnv,
     graph: TargetGraph,
     t__coverage_test_edges__compute: CoverageTestEdgesComputeResult,
     m__analytics__test_coverage_edges: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize coverage test edges target.
+    """Compute test-to-function coverage edges.
 
     Parameters
     ----------
@@ -526,14 +489,14 @@ def behavioral_coverage__rows(
     return tuple(t__behavioral_coverage__compute.rows)
 
 
-@tag_materialize(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
+@codeintel_target(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
 def t__behavioral_coverage(
     env: BuildEnv,
     graph: TargetGraph,
     t__behavioral_coverage__compute: BehavioralCoverageComputeResult,
     m__analytics__behavioral_coverage: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize behavioral coverage target.
+    """Tag behavioral coverage from test patterns.
 
     Parameters
     ----------

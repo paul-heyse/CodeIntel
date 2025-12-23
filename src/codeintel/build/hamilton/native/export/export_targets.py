@@ -16,7 +16,6 @@ from pathlib import Path
 import ibis.expr.types as ir
 from hamilton.function_modifiers import source, value
 
-from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.exports.common import ExportCallOptions
 from codeintel.build.exports.engine import ExportFormat, export_all_datasets
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
@@ -28,11 +27,7 @@ from codeintel.build.hamilton.native.materialization_records import (
     FileArtifactRecordContext,
     record_from_file_artifact_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -40,7 +35,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.targets import TargetGraph
 
@@ -49,46 +44,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, Path)
 EXPORT_JSONL_TARGET_NAME = "export_jsonl"
 EXPORT_PARQUET_TARGET_NAME = "export_parquet"
 
-EXPORT_MANIFEST_FILENAME = "datasets_manifest.json"
 EXPORT_JSONL_ARTIFACT_NAME = "datasets_manifest_jsonl"
 EXPORT_PARQUET_ARTIFACT_NAME = "datasets_manifest_parquet"
 
 DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules", "function_metrics")
 DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("function_metrics",)
 
-EXPORT_JSONL_ARTIFACT_SPECS = (
-    ArtifactSpec(
-        EXPORT_JSONL_ARTIFACT_NAME,
-        f"{{export_dir}}/{EXPORT_MANIFEST_FILENAME}",
-        "Dataset manifest for JSONL exports.",
-    ),
-)
-EXPORT_PARQUET_ARTIFACT_SPECS = (
-    ArtifactSpec(
-        EXPORT_PARQUET_ARTIFACT_NAME,
-        f"{{export_dir}}/{EXPORT_MANIFEST_FILENAME}",
-        "Dataset manifest for Parquet exports.",
-    ),
-)
-
-register_output_targets(
-    make_output_target(
-        name=EXPORT_JSONL_TARGET_NAME,
-        module="export",
-        description="Export datasets to JSONL format for Document Output.",
-        options=TargetSpecOptions(
-            artifacts=EXPORT_JSONL_ARTIFACT_SPECS,
-        ),
-    ),
-    make_output_target(
-        name=EXPORT_PARQUET_TARGET_NAME,
-        module="export",
-        description="Export datasets to Parquet format for Document Output.",
-        options=TargetSpecOptions(
-            artifacts=EXPORT_PARQUET_ARTIFACT_SPECS,
-        ),
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -202,13 +163,13 @@ def export_jsonl__content(
     return t__export_jsonl__compute
 
 
-@tag_materialize(domain="export", target=EXPORT_JSONL_TARGET_NAME)
+@codeintel_target(domain="export", target=EXPORT_JSONL_TARGET_NAME)
 def t__export_jsonl(
     env: BuildEnv,
     graph: TargetGraph,
     m__artifact__datasets_manifest_jsonl: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Write JSONL export artifacts and return record with ArtifactRef.
+    """Export datasets to JSONL format for Document Output.
 
     Returns
     -------
@@ -276,13 +237,13 @@ def export_parquet__bytes(
     return t__export_parquet__compute
 
 
-@tag_materialize(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
+@codeintel_target(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
 def t__export_parquet(
     env: BuildEnv,
     graph: TargetGraph,
     m__artifact__datasets_manifest_parquet: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Write Parquet export artifacts and return record with ArtifactRef.
+    """Export datasets to Parquet format for Document Output.
 
     Returns
     -------

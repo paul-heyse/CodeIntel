@@ -21,12 +21,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_override_tables import HOTSPOTS_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -34,7 +29,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -54,18 +49,6 @@ HOTSPOTS_TARGET_NAME = "hotspots"
 HOTSPOTS_TABLE_KEY = "analytics.hotspots"
 MAX_STDERR_CHARS = 500
 
-
-register_output_targets(
-    make_output_target(
-        name=HOTSPOTS_TARGET_NAME,
-        module="analytics",
-        description="File hotspot analysis based on churn.",
-        options=TargetSpecOptions(
-            table_keys=(HOTSPOTS_TABLE_KEY,),
-            override_tables=HOTSPOTS_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -255,13 +238,13 @@ def hotspots__rows(
     return _rows_to_tuples(t__hotspots__compute.rows)
 
 
-@tag_materialize(domain="analytics", target=HOTSPOTS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def t__hotspots(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__hotspots: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Finalize hotspots execution from DuckDB materialization metadata.
+    """File hotspot analysis based on churn.
 
     Returns
     -------

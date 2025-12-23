@@ -1,6 +1,6 @@
 """Standard execution result for executor-style native targets.
 
-The `executor_materialize` template expects a simple "compute result" object with:
+The `executor_materialize` helper expects a simple "compute result" object with:
 
 - `success: bool`
 - `table_counts: dict[str, int]`
@@ -156,8 +156,6 @@ class ExecutionResultLike(Protocol):
 
 def _extract_warnings(result: object) -> tuple[str, ...]:
     warnings = getattr(result, "warnings", None)
-    if warnings is None:
-        warnings = getattr(result, "errors", None)
     if warnings is None:
         return ()
     if isinstance(warnings, tuple):

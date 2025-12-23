@@ -9,8 +9,6 @@ batch writes, and queries.
 See Also
 --------
 codeintel.core.ports.storage : Canonical storage types
-codeintel.core.ports.BaseQueryResult : Base protocol for query results
-codeintel.core.ports.BaseBatchResult : Base protocol for batch results
 """
 
 from __future__ import annotations

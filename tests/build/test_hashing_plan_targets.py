@@ -26,6 +26,7 @@ from tests._helpers.assertions import (
     expect_not_equal,
     expect_true,
 )
+from tests._helpers.contracts import table_schema_for_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -195,7 +196,7 @@ def test_target_table_keys_and_execution_duration() -> None:
     legacy_target = OutputTarget(
         name="legacy",
         module="graphs",
-        contract=OutputContract.simple(table_keys=("core.legacy",)),
+        contract=OutputContract(tables=(table_schema_for_key("core.legacy"),)),
     )
     expect_equal(contract_target.table_keys, ("core.t",))
     expect_equal(legacy_target.table_keys, ("core.legacy",))

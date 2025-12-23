@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.config import ConfigBuilder
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -25,7 +25,7 @@ class CoverageEdgeEnv:
 
     repo_root: Path
     gateway: StorageGateway
-    builder: ConfigBuilder
+    snapshot: SnapshotRef
     module_import: str
     function_name: str
     test_id: str

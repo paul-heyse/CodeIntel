@@ -22,24 +22,16 @@ from hamilton.function_modifiers.dependencies import source, value
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
+from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
-from codeintel.build.hamilton.native.target_override_tables import (
-    CFG_OVERRIDE_TABLES,
-    DFG_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
-from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by, isin_values
@@ -64,33 +56,6 @@ DFG_TARGET_NAME = "dfg"
 CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
-
-CFG_TABLE_KEYS = (
-    CFG_BLOCKS_TABLE_KEY,
-    CFG_EDGES_TABLE_KEY,
-)
-DFG_TABLE_KEYS = (DFG_EDGES_TABLE_KEY,)
-
-register_output_targets(
-    make_output_target(
-        name=CFG_TARGET_NAME,
-        module="graphs",
-        description="Control flow graph construction per function.",
-        options=TargetSpecOptions(
-            table_keys=CFG_TABLE_KEYS,
-            override_tables=CFG_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=DFG_TARGET_NAME,
-        module="graphs",
-        description="Data flow graph construction per function.",
-        options=TargetSpecOptions(
-            table_keys=DFG_TABLE_KEYS,
-            override_tables=DFG_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 @SaveToObjectMetadataDecorator(
@@ -594,13 +559,13 @@ def t__cfg__extract(
         )
 
 
-@tag_materialize(domain="graphs", target=CFG_TARGET_NAME)
+@codeintel_target(domain="graphs", target=CFG_TARGET_NAME)
 def t__cfg(
     env: BuildEnv,
     graph: TargetGraph,
     cfg__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
-    """Materialize CFG target with validation.
+    """Construct control flow graphs per function.
 
     This is the entry point for the cfg target. It orchestrates
     CFG extraction and returns a TargetRunRecord.
@@ -701,13 +666,13 @@ def t__dfg__extract(
         )
 
 
-@tag_materialize(domain="graphs", target=DFG_TARGET_NAME)
+@codeintel_target(domain="graphs", target=DFG_TARGET_NAME)
 def t__dfg(
     env: BuildEnv,
     graph: TargetGraph,
     dfg__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
-    """Materialize DFG target with validation.
+    """Construct data flow graphs per function.
 
     This is the entry point for the dfg target. It orchestrates
     DFG extraction and returns a TargetRunRecord.

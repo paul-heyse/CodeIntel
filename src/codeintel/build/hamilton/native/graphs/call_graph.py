@@ -22,21 +22,16 @@ from hamilton.function_modifiers.dependencies import source, value
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
+from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
-from codeintel.build.hamilton.native.target_override_tables import CALL_GRAPH_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
-from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
@@ -75,19 +70,6 @@ CALL_GRAPH_TABLE_KEYS = (
     CALL_GRAPH_NODES_TABLE_KEY,
     CALL_GRAPH_EDGES_TABLE_KEY,
 )
-
-register_output_targets(
-    make_output_target(
-        name=CALL_GRAPH_TARGET_NAME,
-        module="graphs",
-        description="Function call graph construction.",
-        options=TargetSpecOptions(
-            table_keys=CALL_GRAPH_TABLE_KEYS,
-            override_tables=CALL_GRAPH_OVERRIDE_TABLES,
-        ),
-    ),
-)
-
 
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
@@ -660,13 +642,13 @@ def t__call_graph__extract(
         )
 
 
-@tag_materialize(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+@codeintel_target(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph(
     env: BuildEnv,
     graph: TargetGraph,
     call_graph__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
-    """Materialize call graph target with validation.
+    """Construct a function call graph.
 
     This is the entry point for the call_graph target. It orchestrates
     call graph extraction and returns a TargetRunRecord.

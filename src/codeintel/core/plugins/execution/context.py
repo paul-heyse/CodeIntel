@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import BuildPaths, SnapshotRef
-    from codeintel.core.config.accessor import ConfigAccessor
     from codeintel.core.execution import RunContext
     from codeintel.storage.gateway import StorageGateway
 
@@ -239,7 +238,7 @@ class PluginExecutionContext:
 
     resources: ResourceRegistry = field(default_factory=ResourceRegistry)
 
-    configs: ConfigAccessor = field(default_factory=ConfigProvider)
+    configs: ConfigProvider = field(default_factory=ConfigProvider)
 
     scratch: PluginScratch = field(default_factory=PluginScratch)
 

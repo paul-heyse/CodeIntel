@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
-from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -31,15 +30,13 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
-from codeintel.build.hamilton.native.target_override_tables import SCIP_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
+from codeintel.build.hamilton.native.target_decorators import (
+    TargetSpecDescriptor,
+    codeintel_target,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -64,33 +61,6 @@ SCIP_ARTIFACT_JSON = "scip_json"
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbols"
 SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
 SCIP_TABLE_KEYS = (SCIP_SYMBOLS_TABLE_KEY, SCIP_OCCURRENCES_TABLE_KEY)
-
-SCIP_ARTIFACT_SPECS = (
-    ArtifactSpec(SCIP_ARTIFACT_INDEX, "{scip_dir}/index.scip", "SCIP index file"),
-    ArtifactSpec(SCIP_ARTIFACT_JSON, "{scip_dir}/index.json", "SCIP JSON export"),
-)
-
-register_output_targets(
-    make_output_target(
-        name=SCIP_TARGET_NAME,
-        module="ingestion",
-        description="SCIP index ingestion and GOID generation.",
-        options=TargetSpecOptions(
-            table_keys=SCIP_TABLE_KEYS,
-            override_tables=SCIP_OVERRIDE_TABLES,
-            artifacts=SCIP_ARTIFACT_SPECS,
-            resources=TargetResources(
-                tracker=True,
-                modules=True,
-                tools=(
-                    "scip-python",
-                    "scip",
-                ),
-            ),
-            execution=TOOL_EXECUTION,
-        ),
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -499,14 +469,28 @@ def _summarize_scip_table_materializations(
     return "succeeded", row_counts, None
 
 
-@tag_materialize(domain="ingestion", target=SCIP_TARGET_NAME)
+@codeintel_target(
+    domain="ingestion",
+    target=SCIP_TARGET_NAME,
+    spec=TargetSpecDescriptor(
+        resources=TargetResources(
+            tracker=True,
+            modules=True,
+            tools=(
+                "scip-python",
+                "scip",
+            ),
+        ),
+        execution=TOOL_EXECUTION,
+    ),
+)
 def t__scip(
     env: BuildEnv,
     graph: TargetGraph,
     t__modules: TargetRunRecord,
     scip__inputs: ScipMaterializationInputs,
 ) -> TargetRunRecord:
-    """Finalize scip target from artifact materialization metadata.
+    """SCIP index ingestion and GOID generation.
 
     Returns
     -------

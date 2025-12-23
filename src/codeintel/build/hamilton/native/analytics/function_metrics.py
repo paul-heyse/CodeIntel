@@ -34,12 +34,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import FUNCTION_METRICS_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -47,7 +42,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -65,18 +60,6 @@ FUNCTION_METRICS_TABLE_KEYS = (
     FUNCTION_METRICS_TABLE_KEY,
     FUNCTION_TYPES_TABLE_KEY,
     FUNCTION_VALIDATION_TABLE_KEY,
-)
-
-register_output_targets(
-    make_output_target(
-        name=FUNCTION_METRICS_TARGET_NAME,
-        module="analytics",
-        description="Function structural metrics and type annotations.",
-        options=TargetSpecOptions(
-            table_keys=FUNCTION_METRICS_TABLE_KEYS,
-            override_tables=FUNCTION_METRICS_OVERRIDE_TABLES,
-        ),
-    ),
 )
 
 
@@ -249,7 +232,7 @@ def function_metrics__validation_rows(
     return tuple(validation_rows)
 
 
-@tag_materialize(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -257,7 +240,7 @@ def t__function_metrics(
     m__analytics__function_types: MaterializationMetadata,
     m__analytics__function_validation: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize function metrics target.
+    """Materialize function structural metrics and type annotations.
 
     Combines materialization metadata from all three table writes into a
     single TargetRunRecord for the function_metrics target.

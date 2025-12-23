@@ -16,11 +16,7 @@ from codeintel.analytics.testing.coverage.edges import (
     backfill_test_goids_for_catalog,
     build_edges_for_file_for_tests,
 )
-from codeintel.config import (
-    BuildLayoutOptions,
-    ConfigBuilder,
-    SnapshotInit,
-)
+from codeintel.config import SnapshotInit
 from tests._helpers.assertions import assert_single_edge
 from tests._helpers.configs import ProvisionOptions
 from tests._helpers.orchestration import compute_coverage_edges, provision_graph_ready_repo
@@ -59,11 +55,11 @@ def test_backfill_test_goids_updates_catalog() -> None:
     gateway = ctx.gateway
     con = gateway.con
 
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=ctx.repo, commit=ctx.commit, repo_root=repo_root),
-        layout=BuildLayoutOptions(build_dir=ctx.build_dir),
-    )
-    snapshot = builder.snapshot
+    snapshot = SnapshotInit(
+        repo=ctx.repo,
+        commit=ctx.commit,
+        repo_root=repo_root,
+    ).to_snapshot_ref()
 
     _insert_goids(con, snapshot)
     con.execute(

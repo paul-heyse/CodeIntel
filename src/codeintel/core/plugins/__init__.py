@@ -7,7 +7,6 @@ Subpackages
 -----------
 - types: Protocol, result, and report types
 - execution: Context and manifest
-- registry: Base registry and plan types
 """
 
 from __future__ import annotations
@@ -17,21 +16,6 @@ from codeintel.core.plugins.execution.context import (
     PluginExecutionContext,
     PluginExecutionContextBuilder,
     PluginScratch,
-)
-from codeintel.core.plugins.registry.base import (
-    BasePluginRegistry,
-    DefaultRegistryHooks,
-    PluginPlan,
-    PluginSkip,
-    RegistrablePlugin,
-    RegistryEntry,
-    RegistryHooks,
-)
-from codeintel.core.plugins.registry.sorting import (
-    CapabilityProvider,
-    build_provider_index,
-    build_provider_index_from_metadata,
-    topological_sort,
 )
 from codeintel.core.plugins.types.protocol import (
     CapabilityKind,
@@ -67,12 +51,9 @@ from codeintel.core.resources.registry import (
 __all__ = [
     "BaseExecutionReport",
     "BasePluginExecutionRecord",
-    "BasePluginRegistry",
     "BasePluginResult",
     "CapabilityKind",
-    "CapabilityProvider",
     "ConfigProvider",
-    "DefaultRegistryHooks",
     "ExecutionStatus",
     "InputSource",
     "PluginCapability",
@@ -84,22 +65,14 @@ __all__ = [
     "PluginKind",
     "PluginMetadata",
     "PluginOutputSpec",
-    "PluginPlan",
     "PluginProtocol",
     "PluginResourceHints",
     "PluginResult",
     "PluginScratch",
     "PluginSeverity",
-    "PluginSkip",
     "PluginStage",
     "PluginStatus",
-    "RegistrablePlugin",
-    "RegistryEntry",
-    "RegistryHooks",
     "ResourceNotFoundError",
     "ResourceRegistry",
     "ValidationOutcome",
-    "build_provider_index",
-    "build_provider_index_from_metadata",
-    "topological_sort",
 ]

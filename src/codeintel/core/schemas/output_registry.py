@@ -1,4 +1,4 @@
-"""TableSchema override bundles for non-inferable outputs."""
+"""Canonical TableSchema bundles for build output datasets."""
 
 from __future__ import annotations
 
@@ -316,6 +316,24 @@ COVERAGE_INGEST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Index("idx_analytics_cov_lines_line", ("line",)),
         ),
         description="Line-level coverage facts",
+    ),
+)
+
+COVERAGE_FUNCTIONS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="analytics",
+        name="coverage_functions",
+        columns=[
+            *FUNCTION_ENTITY_COLS,
+            Column("executable_lines", "INTEGER"),
+            Column("covered_lines", "INTEGER"),
+            Column("coverage_ratio", "DOUBLE"),
+            Column("tested", "BOOLEAN"),
+            Column("untested_reason", "VARCHAR"),
+            *CREATED_AT_COL_NULLABLE,
+        ],
+        indexes=(Index("idx_analytics_coverage_functions_goid", ("function_goid_h128",)),),
+        description="Per-function coverage aggregation and tested status.",
     ),
 )
 
@@ -1416,6 +1434,26 @@ HOTSPOTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+GOID_RISK_FACTORS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="analytics",
+        name="goid_risk_factors",
+        columns=[
+            *REPO_COMMIT_COLS,
+            *FUNCTION_GOID_COL,
+            Column("risk_score", "INTEGER"),
+            Column("risk_level", "VARCHAR"),
+            Column("cyclomatic_complexity", "INTEGER"),
+            Column("fan_in_count", "INTEGER"),
+            Column("fan_out_count", "INTEGER"),
+            Column("has_tests", "BOOLEAN"),
+        ],
+        primary_key=("repo", "commit", "function_goid_h128"),
+        indexes=(Index("idx_analytics_risk_factors_goid", ("function_goid_h128",)),),
+        description="Composite risk factors per function GOID.",
+    ),
+)
+
 FUNCTION_HISTORY_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
@@ -1956,6 +1994,68 @@ TEST_PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+def _all_output_tables() -> tuple[TableSchema, ...]:
+    return (
+        *AST_OVERRIDE_TABLES,
+        *BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
+        *CALL_GRAPH_OVERRIDE_TABLES,
+        *CALL_GRAPH_VIEWS_OVERRIDE_TABLES,
+        *CFG_DFG_METRICS_OVERRIDE_TABLES,
+        *CFG_OVERRIDE_TABLES,
+        *CONFIG_DATA_FLOW_OVERRIDE_TABLES,
+        *CONFIG_INGEST_OVERRIDE_TABLES,
+        *COVERAGE_INGEST_OVERRIDE_TABLES,
+        *COVERAGE_FUNCTIONS_OVERRIDE_TABLES,
+        *COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
+        *CST_OVERRIDE_TABLES,
+        *DATA_MODELS_OVERRIDE_TABLES,
+        *DATA_MODEL_USAGE_OVERRIDE_TABLES,
+        *DFG_OVERRIDE_TABLES,
+        *DOCSTRINGS_OVERRIDE_TABLES,
+        *ENTRYPOINTS_OVERRIDE_TABLES,
+        *EXTERNAL_DEPS_OVERRIDE_TABLES,
+        *FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
+        *FUNCTION_CONTRACTS_OVERRIDE_TABLES,
+        *FUNCTION_EFFECTS_OVERRIDE_TABLES,
+        *FUNCTION_HISTORY_OVERRIDE_TABLES,
+        *FUNCTION_METRICS_OVERRIDE_TABLES,
+        *GOIDS_OVERRIDE_TABLES,
+        *GOID_RISK_FACTORS_OVERRIDE_TABLES,
+        *GRAPH_METRICS_OVERRIDE_TABLES,
+        *GRAPH_VALIDATION_OVERRIDE_TABLES,
+        *HISTORY_TIMESERIES_OVERRIDE_TABLES,
+        *HOTSPOTS_OVERRIDE_TABLES,
+        *IMPORT_GRAPH_OVERRIDE_TABLES,
+        *MODULES_OVERRIDE_TABLES,
+        *PROFILES_OVERRIDE_TABLES,
+        *SCIP_OVERRIDE_TABLES,
+        *SEMANTIC_ROLES_OVERRIDE_TABLES,
+        *SUBSYSTEMS_OVERRIDE_TABLES,
+        *SUBSYSTEM_AGREEMENT_OVERRIDE_TABLES,
+        *SUBSYSTEM_CACHE_OVERRIDE_TABLES,
+        *SUBSYSTEM_GRAPH_METRICS_OVERRIDE_TABLES,
+        *SYMBOL_GRAPH_METRICS_OVERRIDE_TABLES,
+        *SYMBOL_USES_OVERRIDE_TABLES,
+        *TESTS_INGEST_OVERRIDE_TABLES,
+        *TEST_GRAPH_METRICS_OVERRIDE_TABLES,
+        *TEST_PROFILE_OVERRIDE_TABLES,
+        *TYPING_OVERRIDE_TABLES,
+    )
+
+
+def _build_output_table_schemas() -> dict[str, TableSchema]:
+    table_map: dict[str, TableSchema] = {}
+    for table in _all_output_tables():
+        if table.table_key in table_map:
+            msg = f"Duplicate output TableSchema: {table.table_key}"
+            raise ValueError(msg)
+        table_map[table.table_key] = table
+    return table_map
+
+
+OUTPUT_TABLE_SCHEMAS = _build_output_table_schemas()
+
+
 __all__ = [
     "AST_OVERRIDE_TABLES",
     "BEHAVIORAL_COVERAGE_OVERRIDE_TABLES",
@@ -1965,6 +2065,7 @@ __all__ = [
     "CFG_OVERRIDE_TABLES",
     "CONFIG_DATA_FLOW_OVERRIDE_TABLES",
     "CONFIG_INGEST_OVERRIDE_TABLES",
+    "COVERAGE_FUNCTIONS_OVERRIDE_TABLES",
     "COVERAGE_INGEST_OVERRIDE_TABLES",
     "COVERAGE_TEST_EDGES_OVERRIDE_TABLES",
     "CST_OVERRIDE_TABLES",
@@ -1980,12 +2081,14 @@ __all__ = [
     "FUNCTION_HISTORY_OVERRIDE_TABLES",
     "FUNCTION_METRICS_OVERRIDE_TABLES",
     "GOIDS_OVERRIDE_TABLES",
+    "GOID_RISK_FACTORS_OVERRIDE_TABLES",
     "GRAPH_METRICS_OVERRIDE_TABLES",
     "GRAPH_VALIDATION_OVERRIDE_TABLES",
     "HISTORY_TIMESERIES_OVERRIDE_TABLES",
     "HOTSPOTS_OVERRIDE_TABLES",
     "IMPORT_GRAPH_OVERRIDE_TABLES",
     "MODULES_OVERRIDE_TABLES",
+    "OUTPUT_TABLE_SCHEMAS",
     "PROFILES_OVERRIDE_TABLES",
     "SCIP_OVERRIDE_TABLES",
     "SEMANTIC_ROLES_OVERRIDE_TABLES",

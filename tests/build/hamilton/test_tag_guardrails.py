@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.validate import validate_graph, validation_result_to_json
+from codeintel.build.hamilton.graph_validation import (
+    validate_graph,
+    validation_result_to_json,
+)
 
 
 def test_validate_graph_has_no_errors() -> None:

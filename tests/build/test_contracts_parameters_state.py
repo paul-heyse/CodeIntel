@@ -25,6 +25,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.build import ManifestParams, sample_manifest
+from tests._helpers.contracts import contract_for_keys
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -89,7 +90,7 @@ def _make_target(name: str, dependencies: tuple[str, ...] = ()) -> OutputTarget:
     return OutputTarget(
         name=name,
         module="analytics",
-        contract=OutputContract.simple(table_keys=(f"core.{name}",)),
+        contract=contract_for_keys((f"core.{name}",)),
         dependencies=dependencies,
         description=f"{name} target",
     )

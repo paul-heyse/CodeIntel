@@ -35,18 +35,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    CFG_DFG_METRICS_OVERRIDE_TABLES,
-    CONFIG_DATA_FLOW_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import options_hash_for_target, should_skip_native_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -91,27 +83,6 @@ CFG_DFG_METRICS_TABLE_KEYS = (
     DFG_FUNCTION_METRICS_TABLE_KEY,
     DFG_BLOCK_METRICS_TABLE_KEY,
     DFG_FUNCTION_METRICS_EXT_TABLE_KEY,
-)
-
-register_output_targets(
-    make_output_target(
-        name=CONFIG_DATA_FLOW_TARGET_NAME,
-        module="analytics",
-        description="Config key usage flow through functions.",
-        options=TargetSpecOptions(
-            table_keys=CONFIG_DATA_FLOW_TABLE_KEYS,
-            override_tables=CONFIG_DATA_FLOW_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=CFG_DFG_METRICS_TARGET_NAME,
-        module="analytics",
-        description="Control-flow and data-flow graph metrics per function.",
-        options=TargetSpecOptions(
-            table_keys=CFG_DFG_METRICS_TABLE_KEYS,
-            override_tables=CFG_DFG_METRICS_OVERRIDE_TABLES,
-        ),
-    ),
 )
 
 
@@ -440,14 +411,14 @@ def config_data_flow__materializations(
     )
 
 
-@tag_materialize(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
+@codeintel_target(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def t__config_data_flow(
     env: BuildEnv,
     graph: TargetGraph,
     t__config_data_flow__compute: ConfigDataFlowComputeResult,
     config_data_flow__materializations: _ConfigMaterializations,
 ) -> TargetRunRecord:
-    """Materialize config data flow target.
+    """Config key usage flow through functions.
 
     Combines all materializations into a single TargetRunRecord.
 
@@ -794,13 +765,13 @@ def cfg_dfg_metrics__materializations(
     return materializations
 
 
-@tag_materialize(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def t__cfg_dfg_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     cfg_dfg_metrics__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Materialize cfg_dfg_metrics tables to DuckDB.
+    """Control-flow and data-flow graph metrics per function.
 
     Returns
     -------

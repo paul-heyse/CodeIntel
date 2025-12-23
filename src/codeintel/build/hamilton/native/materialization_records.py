@@ -501,7 +501,9 @@ def record_from_file_artifact_materializations(
             artifacts=(),
         )
 
-    expected_names = _expected_artifact_names(env, target.name, tuple(target.contract.artifact_names))
+    expected_names = _expected_artifact_names(
+        env, target.name, tuple(target.contract.artifact_names)
+    )
     extra_artifacts = set(materializations) - set(expected_names)
     if extra_artifacts:
         msg = f"Unexpected materialization metadata for artifacts: {sorted(extra_artifacts)}"

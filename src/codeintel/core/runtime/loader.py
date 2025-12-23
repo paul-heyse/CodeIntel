@@ -336,9 +336,6 @@ def _load_observability_settings() -> ObservabilitySettings:
         db_query_summary_span_name_hook=bool(
             get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK", default=False)
         ),
-        duckdb_emit_legacy_db_attributes=bool(
-            get_bool("CODEINTEL_OTEL_DB_LEGACY_ATTRIBUTES", default=False)
-        ),
         duckdb_query_text_policy=query_text_policy_value,
         duckdb_query_text_max_len=int(
             get_int("CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN", default=4096) or 4096

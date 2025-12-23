@@ -19,21 +19,16 @@ from hamilton.function_modifiers.dependencies import source, value
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root
+from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
-from codeintel.build.hamilton.native.target_override_tables import IMPORT_GRAPH_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
-from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by
@@ -58,19 +53,6 @@ IMPORT_GRAPH_TABLE_KEYS = (
     IMPORT_GRAPH_EDGES_TABLE_KEY,
 )
 
-register_output_targets(
-    make_output_target(
-        name=IMPORT_GRAPH_TARGET_NAME,
-        module="graphs",
-        description="Module import graph construction.",
-        options=TargetSpecOptions(
-            table_keys=IMPORT_GRAPH_TABLE_KEYS,
-            override_tables=IMPORT_GRAPH_OVERRIDE_TABLES,
-        ),
-    ),
-)
-
-
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(IMPORT_MODULES_TABLE_KEY),
@@ -80,7 +62,9 @@ register_output_targets(
     table_key=value(IMPORT_MODULES_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(IMPORT_MODULES_TABLE_KEY)),
 )
-@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__modules_marker")
+@tag_compute(
+    domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__modules_marker"
+)
 def import_graph__modules_marker() -> tuple[tuple[object, ...], ...] | None:
     """Declare import graph modules output for inventory checks.
 
@@ -383,13 +367,13 @@ def t__import_graph__extract(
         )
 
 
-@tag_materialize(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+@codeintel_target(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph(
     env: BuildEnv,
     graph: TargetGraph,
     import_graph__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
-    """Materialize import graph target with validation.
+    """Construct a module import graph.
 
     This is the entry point for the import_graph target. It orchestrates
     import graph extraction and returns a TargetRunRecord.

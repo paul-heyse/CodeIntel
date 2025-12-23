@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import Column, OutputContract, TableSchema, placeholder_table_schema
+from codeintel.build.contracts import Column, OutputContract, TableSchema
 from codeintel.build.schemas.inference_service import (
     SchemaInferenceService,
     get_schema_inference_service,
@@ -43,25 +43,6 @@ def _build_target_system(targets: tuple[OutputTarget, ...]) -> TargetSystem:
         by_table_key=MappingProxyType(by_table_key),
         by_artifact_name=MappingProxyType(by_artifact_name),
     )
-
-
-def test_schema_index_requires_override_for_non_inferable_outputs() -> None:
-    """Non-inferable outputs must provide explicit overrides."""
-    table_key = "analytics.override_required"
-    target = OutputTarget(
-        name="override_required_target",
-        module="analytics",
-        contract=OutputContract(tables=(placeholder_table_schema(table_key),)),
-        description="Test target requiring overrides.",
-    )
-    system = _build_target_system((target,))
-
-    with pytest.raises(ValueError, match="Missing explicit schema overrides"):
-        build_schema_index(
-            system=system,
-            declared_provider=MappingSchemaProvider({}),
-            inference_service=get_schema_inference_service(),
-        )
 
 
 def test_schema_index_accepts_explicit_override_for_non_inferable_outputs() -> None:

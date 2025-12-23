@@ -16,6 +16,7 @@ from tests._helpers.assertions import (
     expect_false,
     expect_true,
 )
+from tests._helpers.contracts import contract_for_keys
 
 _DURATION_THRESHOLD_MS = 5000
 
@@ -38,7 +39,7 @@ def test_registry_get_target_by_table() -> None:
     target = OutputTarget(
         name="producer",
         module="analytics",
-        contract=OutputContract.simple(table_keys=("core.produced",)),
+        contract=contract_for_keys(("core.produced",)),
     )
 
     found = get_target_by_table("core.produced", targets=(target,))

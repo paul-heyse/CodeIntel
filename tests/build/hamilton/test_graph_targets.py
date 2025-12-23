@@ -2,7 +2,7 @@
 
 This module validates that the consolidated graph targets in
 ``codeintel.build.hamilton.native.graphs.graph_targets`` work correctly
-with the executor_materialize template for Pattern D targets.
+with the executor_materialize helper for Pattern D targets.
 
 Tests cover:
 - goids target (GOID extraction)
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -39,6 +38,7 @@ from tests._helpers.assertions import (
     expect_equal,
     expect_true,
 )
+from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 
 # Test constants to avoid magic numbers
@@ -82,22 +82,22 @@ def _make_graph() -> TargetGraph:
         OutputTarget(
             name="goids",
             module="graphs",
-            contract=OutputContract.simple(table_keys=("core.goids", "core.goid_crosswalk")),
+            contract=contract_for_keys(("core.goids", "core.goid_crosswalk")),
         )
     )
     graph.register(
         OutputTarget(
             name="symbol_uses",
             module="graphs",
-            contract=OutputContract.simple(table_keys=("graph.symbol_use_edges",)),
+            contract=contract_for_keys(("graph.symbol_use_edges",)),
         )
     )
     graph.register(
         OutputTarget(
             name="graph_metrics",
             module="graphs",
-            contract=OutputContract.simple(
-                table_keys=(
+            contract=contract_for_keys(
+                (
                     "analytics.graph_metrics_functions",
                     "analytics.graph_metrics_modules",
                 )
@@ -108,7 +108,7 @@ def _make_graph() -> TargetGraph:
         OutputTarget(
             name="graph_validation",
             module="graphs",
-            contract=OutputContract.simple(table_keys=("analytics.graph_validation",)),
+            contract=contract_for_keys(("analytics.graph_validation",)),
         )
     )
     return graph
@@ -249,12 +249,12 @@ def test_graph_validation_result_success() -> None:
     result = GraphValidationResult(
         success=True,
         error_count=0,
-        errors=[],
+        issues=[],
         table_counts={"analytics.graph_validation": 0},
     )
     expect_true(result.success, message="Result should be successful")
     expect_equal(result.error_count, 0)
-    expect_equal(len(result.errors), 0)
+    expect_equal(len(result.issues), 0)
     expect_equal(result.error, None)
 
 
@@ -267,12 +267,12 @@ def test_graph_validation_result_with_errors() -> None:
     result = GraphValidationResult(
         success=False,
         error_count=len(validation_errors),
-        errors=validation_errors,
+        issues=validation_errors,
         table_counts={"analytics.graph_validation": len(validation_errors)},
     )
     expect_true(not result.success, message="Result should indicate failure")
     expect_equal(result.error_count, len(validation_errors))
-    expect_equal(len(result.errors), len(validation_errors))
+    expect_equal(len(result.issues), len(validation_errors))
 
 
 def test_graph_validation_result_fatal_failure() -> None:
@@ -502,7 +502,7 @@ def test_graph_validation_materialize_success(
     compute_result = GraphValidationResult(
         success=True,
         error_count=0,
-        errors=[],
+        issues=[],
         table_counts={"analytics.graph_validation": 0},
     )
 
@@ -527,7 +527,7 @@ def test_graph_validation_materialize_failure(
     compute_result = GraphValidationResult(
         success=False,
         error_count=2,
-        errors=["Error 1", "Error 2"],
+        issues=["Error 1", "Error 2"],
         table_counts={"analytics.graph_validation": 2},
     )
 

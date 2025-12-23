@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
@@ -21,6 +20,7 @@ from tests._helpers.assertions import (
     expect_equal,
     expect_true,
 )
+from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 
 
@@ -51,14 +51,14 @@ def _make_graph() -> TargetGraph:
         OutputTarget(
             name="coverage_test_edges",
             module="analytics",
-            contract=OutputContract.simple(table_keys=("analytics.test_coverage_edges",)),
+            contract=contract_for_keys(("analytics.test_coverage_edges",)),
         )
     )
     graph.register(
         OutputTarget(
             name="behavioral_coverage",
             module="analytics",
-            contract=OutputContract.simple(table_keys=("analytics.behavioral_coverage",)),
+            contract=contract_for_keys(("analytics.behavioral_coverage",)),
         )
     )
     return graph

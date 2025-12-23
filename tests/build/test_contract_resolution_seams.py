@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.build.contracts import OutputContract, placeholder_table_schema
+from codeintel.build.contracts import OutputContract
 from codeintel.build.schemas import (
     ContractResolutionMode,
     ContractResolutionSettings,
@@ -20,6 +20,7 @@ from codeintel.build.target_metadata import (
 )
 from codeintel.build.targets import OutputTarget
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_false, expect_true
+from tests._helpers.contracts import table_schema_for_key
 
 
 @dataclass(frozen=True)
@@ -64,7 +65,7 @@ def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
 
     table_key = "analytics.function_metrics"
     contract = OutputContract(
-        tables=(placeholder_table_schema(table_key),),
+        tables=(table_schema_for_key(table_key),),
         owner="unit-test-owner",
         jsonl_filenames=("custom.jsonl",),
     )

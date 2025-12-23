@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.validate import validate_graph
+from codeintel.build.hamilton.graph_validation import validate_graph
 
 _MAX_ISSUES: int = 25
 

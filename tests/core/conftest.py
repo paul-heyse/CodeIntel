@@ -1,7 +1,7 @@
 """Pytest configuration and shared fixtures for core module tests.
 
 This module provides reusable fixtures for testing the core infrastructure,
-including configuration registries, resource registries, and plugin metadata.
+including configuration providers, resource registries, and plugin metadata.
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.core.config.registry import ConfigRegistry
 from codeintel.core.plugins.execution.context import ConfigProvider, PluginScratch
 from codeintel.core.plugins.types.protocol import (
     PluginMetadata,
@@ -51,46 +50,6 @@ class SampleCacheConfig:
 
     ttl_seconds: int
     max_entries: int
-
-
-@pytest.fixture
-def config_registry() -> ConfigRegistry:
-    """Create a fresh ConfigRegistry instance for testing.
-
-    Returns
-    -------
-    ConfigRegistry
-        Empty registry instance.
-    """
-    return ConfigRegistry()
-
-
-@pytest.fixture
-def populated_config_registry() -> ConfigRegistry:
-    """Create a ConfigRegistry with sample configurations registered.
-
-    Returns
-    -------
-    ConfigRegistry
-        Registry with database and app configs pre-registered.
-    """
-    registry = ConfigRegistry()
-    registry.register(
-        SampleDatabaseConfig,
-        SampleDatabaseConfig(
-            host="localhost",
-            port=5432,
-            database="test_db",
-        ),
-    )
-    registry.register(
-        SampleAppConfig,
-        SampleAppConfig(
-            debug=True,
-            log_level="DEBUG",
-        ),
-    )
-    return registry
 
 
 @pytest.fixture

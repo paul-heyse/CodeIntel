@@ -11,6 +11,11 @@ TAG_TABLE_KEY = "table_key"
 TAG_ARTIFACT = "artifact"
 TAG_ARTIFACT_PATH_TEMPLATE = "artifact_path_template"
 TAG_NODE_TYPE = "node_type"
+TAG_TARGET_RESOURCES = "target_resources"
+TAG_TARGET_EXECUTION = "target_execution"
+TAG_TARGET_PARAMETERS = "target_parameters"
+TAG_TARGET_ESTIMATED_DURATION_MS = "target_estimated_duration_ms"
+TAG_TARGET_SPEC_VERSION = "target_spec_version"
 
 TAG_OUTPUT_KIND = "output_kind"
 TAG_SEMANTIC_ID = "semantic_id"
@@ -52,4 +57,9 @@ __all__ = [
     "TAG_SEMANTIC_ID",
     "TAG_TABLE_KEY",
     "TAG_TARGET",
+    "TAG_TARGET_ESTIMATED_DURATION_MS",
+    "TAG_TARGET_EXECUTION",
+    "TAG_TARGET_PARAMETERS",
+    "TAG_TARGET_RESOURCES",
+    "TAG_TARGET_SPEC_VERSION",
 ]

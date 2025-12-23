@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
-from codeintel.build.contracts import OutputContract
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.contracts import contract_for_keys
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
     FakeCoverageCollector,
@@ -243,27 +243,27 @@ def _default_targets() -> tuple[OutputTarget, ...]:
     ingestion_modules = OutputTarget(
         name="modules",
         module="ingestion",
-        contract=OutputContract.simple(table_keys=("core.modules",)),
+        contract=contract_for_keys(("core.modules",)),
         description="Repository module index",
     )
     ast_target = OutputTarget(
         name="ast",
         module="ingestion",
-        contract=OutputContract.simple(table_keys=("core.ast_nodes",)),
+        contract=contract_for_keys(("core.ast_nodes",)),
         dependencies=("modules",),
         description="AST extraction",
     )
     goids_target = OutputTarget(
         name="goids",
         module="graphs",
-        contract=OutputContract.simple(table_keys=("core.goids",)),
+        contract=contract_for_keys(("core.goids",)),
         dependencies=("ast",),
         description="GOID construction",
     )
     metrics_target = OutputTarget(
         name="function_metrics",
         module="analytics",
-        contract=OutputContract.simple(table_keys=("analytics.function_metrics",)),
+        contract=contract_for_keys(("analytics.function_metrics",)),
         dependencies=("goids",),
         description="Function metrics",
     )

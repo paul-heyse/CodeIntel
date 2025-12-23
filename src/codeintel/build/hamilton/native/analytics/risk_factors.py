@@ -28,14 +28,10 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
@@ -47,17 +43,6 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
-
-register_output_targets(
-    make_output_target(
-        name=RISK_FACTORS_TARGET_NAME,
-        module="analytics",
-        description="Composite risk factors per function.",
-        options=TargetSpecOptions(
-            table_keys=(RISK_FACTORS_TABLE_KEY,),
-        ),
-    ),
-)
 
 
 COMPLEXITY_THRESHOLD = 10
@@ -332,13 +317,13 @@ def t__risk_factors__compute(
     return q__analytics__function_metrics
 
 
-@tag_materialize(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__goid_risk_factors: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Finalize risk_factors execution from DAG-visible DuckDB materialization.
+    """Compute composite risk factors per function.
 
     The actual DuckDB write is performed by a Hamilton materializer node
     (``m__analytics__goid_risk_factors``). This target node converts the

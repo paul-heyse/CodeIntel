@@ -41,8 +41,6 @@ from codeintel.build.hamilton.naming import dataset_node, target_node
 from codeintel.build.hamilton.nodes.support_factory import (
     SupportGenerationOptions,
     build_support_module,
-    clear_support_module_cache,
-    get_support_module,
 )
 from codeintel.build.hamilton.observability import (
     export_dag_json,
@@ -395,23 +393,22 @@ class TestSupportFactory:
     @staticmethod
     def test_build_support_module_creates_module() -> None:
         """Verify build_support_module returns a module with nodes."""
-        clear_support_module_cache()
         module = build_support_module()
         if not hasattr(module, "__doc__"):
             pytest.fail("Module missing __doc__")
 
     @staticmethod
     def test_build_support_module_has_target_to_node() -> None:
-        """Verify support module has TARGET_TO_NODE mapping."""
-        clear_support_module_cache()
+        """Verify support module exposes TARGET_TO_NODE mapping."""
         module = build_support_module()
         if not hasattr(module, "TARGET_TO_NODE"):
             pytest.fail("Module missing TARGET_TO_NODE")
+        if len(module.TARGET_TO_NODE) != 0:
+            pytest.fail("TARGET_TO_NODE should be empty for native-only modules")
 
     @staticmethod
     def test_build_support_module_has_dataset_to_node() -> None:
         """Verify support module has DATASET_TO_NODE mapping."""
-        clear_support_module_cache()
         module = build_support_module()
         if not hasattr(module, "DATASET_TO_NODE"):
             pytest.fail("Module missing DATASET_TO_NODE mapping")
@@ -419,21 +416,11 @@ class TestSupportFactory:
     @staticmethod
     def test_build_support_module_respects_exclude() -> None:
         """Verify exclude_targets filters out targets."""
-        clear_support_module_cache()
         module = build_support_module(
             options=SupportGenerationOptions(exclude_targets=frozenset({"modules"})),
         )
-        if hasattr(module, target_node("modules")):
-            pytest.fail("Excluded target should not be in module")
-
-    @staticmethod
-    def test_get_support_module_caches() -> None:
-        """Verify get_support_module returns cached instance."""
-        clear_support_module_cache()
-        module1 = get_support_module()
-        module2 = get_support_module()
-        if module1 is not module2:
-            pytest.fail("get_support_module should return cached instance")
+        if hasattr(module, dataset_node("core.modules")):
+            pytest.fail("Excluded target should not expose dataset nodes")
 
 
 class TestDriverConstruction:
@@ -442,7 +429,6 @@ class TestDriverConstruction:
     @staticmethod
     def test_build_driver_constructs_driver() -> None:
         """Verify build_driver constructs a Driver."""
-        clear_support_module_cache()
         runtime = build_driver()
         if runtime.dr is None:
             pytest.fail("Driver runtime missing dr")

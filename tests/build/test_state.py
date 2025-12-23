@@ -22,6 +22,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.contracts import contract_for_keys, table_schema_for_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -47,14 +48,14 @@ def _create_test_graph() -> TargetGraph:
     modules_target = OutputTarget(
         name="modules",
         module="ingestion",
-        contract=OutputContract.simple(table_keys=("core.modules",)),
+        contract=contract_for_keys(("core.modules",)),
         description="Repository module index",
     )
 
     ast_target = OutputTarget(
         name="ast",
         module="ingestion",
-        contract=OutputContract.simple(table_keys=("core.ast_nodes",)),
+        contract=contract_for_keys(("core.ast_nodes",)),
         dependencies=("modules",),
         description="AST extraction",
     )
@@ -62,7 +63,7 @@ def _create_test_graph() -> TargetGraph:
     goids_target = OutputTarget(
         name="goids",
         module="graphs",
-        contract=OutputContract.simple(table_keys=("core.goids",)),
+        contract=contract_for_keys(("core.goids",)),
         dependencies=("ast",),
         description="GOID construction",
     )
@@ -70,7 +71,7 @@ def _create_test_graph() -> TargetGraph:
     typing_target = OutputTarget(
         name="typing",
         module="ingestion",
-        contract=OutputContract.simple(table_keys=("analytics.typedness",)),
+        contract=contract_for_keys(("analytics.typedness",)),
         dependencies=("modules",),
         description="Type analysis",
     )
@@ -78,7 +79,7 @@ def _create_test_graph() -> TargetGraph:
     metrics_target = OutputTarget(
         name="function_metrics",
         module="analytics",
-        contract=OutputContract.simple(table_keys=("analytics.function_metrics",)),
+        contract=contract_for_keys(("analytics.function_metrics",)),
         dependencies=("goids", "ast"),
         description="Function metrics",
     )
@@ -437,7 +438,7 @@ class TestStateValidatorInit:
         target = OutputTarget(
             name="target",
             module="ingestion",
-            contract=OutputContract.simple(table_keys=("core.table",)),
+            contract=OutputContract(tables=(table_schema_for_key("core.table"),)),
             dependencies=("nonexistent",),
         )
         graph.register(target)

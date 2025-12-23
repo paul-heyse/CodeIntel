@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
     import networkx as nx
 
-    from codeintel.config import ConfigBuilder
+    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -33,7 +33,7 @@ class SpanTestEnv:
     """Reusable environment for span alignment checks."""
 
     repo_root: Path
-    builder: ConfigBuilder
+    snapshot: SnapshotRef
     gateway: StorageGateway
     expected_goid: int | None
 

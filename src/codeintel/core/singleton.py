@@ -1,8 +1,7 @@
 """Thread-safe singleton holder pattern for global registries.
 
 This module provides a reusable pattern for managing global singleton instances
-in a thread-safe manner, eliminating the need for `global` statements and
-their associated `
+in a thread-safe manner, eliminating the need for `global` statements.
 
 Example
 -------
@@ -64,12 +63,12 @@ class SingletonHolder[T]:
 
     Example
     -------
-    >>> class ConfigRegistryHolder(SingletonHolder[ConfigRegistry]):
-    ...     '''Holder for ConfigRegistry singleton.'''
+    >>> class RegistryHolder(SingletonHolder["MyRegistry"]):
+    ...     '''Holder for MyRegistry singleton.'''
     ...
     ...     pass
     >>>
-    >>> registry = ConfigRegistryHolder.get(ConfigRegistry)
+    >>> registry = RegistryHolder.get(MyRegistry)
     """
 
     _instance: ClassVar[object | None] = None

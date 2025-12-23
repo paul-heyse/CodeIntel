@@ -177,7 +177,6 @@ class ObservabilityConfig:
     duckdb_query_summary_include_subquery_operations: bool = True
     duckdb_query_summary_include_multi_statement: bool = True
     db_query_summary_span_name_hook: bool = False
-    duckdb_emit_legacy_db_attributes: bool = False
     duckdb_query_text_policy: str = "never"
     duckdb_query_text_max_len: int = 4096
     duckdb_query_text_strip_comments: bool = True
@@ -211,7 +210,6 @@ class ObservabilityRuntime:
     duckdb_query_summary_include_subquery_operations: bool = True
     duckdb_query_summary_include_multi_statement: bool = True
     db_query_summary_span_name_hook: bool = False
-    duckdb_emit_legacy_db_attributes: bool = False
     duckdb_query_text_policy: str = "never"
     duckdb_query_text_max_len: int = 4096
     duckdb_query_text_strip_comments: bool = True
@@ -342,7 +340,6 @@ def _disabled_runtime() -> ObservabilityRuntime:
         duckdb_query_summary_include_subquery_operations=True,
         duckdb_query_summary_include_multi_statement=True,
         db_query_summary_span_name_hook=False,
-        duckdb_emit_legacy_db_attributes=False,
         duckdb_query_text_policy="never",
         duckdb_query_text_max_len=4096,
         duckdb_query_text_strip_comments=True,
@@ -541,7 +538,6 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
             config.duckdb_query_summary_include_multi_statement
         ),
         db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
-        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
         duckdb_query_text_policy=config.duckdb_query_text_policy,
         duckdb_query_text_max_len=config.duckdb_query_text_max_len,
         duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
@@ -595,7 +591,6 @@ def get_observability() -> ObservabilityRuntime:
         duckdb_query_summary_include_subquery_operations=True,
         duckdb_query_summary_include_multi_statement=True,
         db_query_summary_span_name_hook=False,
-        duckdb_emit_legacy_db_attributes=False,
         duckdb_query_text_policy="never",
         duckdb_query_text_max_len=4096,
         duckdb_query_text_strip_comments=True,
@@ -667,7 +662,6 @@ def observability_config_from_settings(
             settings.duckdb_query_summary_include_multi_statement
         ),
         db_query_summary_span_name_hook=settings.db_query_summary_span_name_hook,
-        duckdb_emit_legacy_db_attributes=settings.duckdb_emit_legacy_db_attributes,
         duckdb_query_text_policy=settings.duckdb_query_text_policy,
         duckdb_query_text_max_len=settings.duckdb_query_text_max_len,
         duckdb_query_text_strip_comments=settings.duckdb_query_text_strip_comments,
