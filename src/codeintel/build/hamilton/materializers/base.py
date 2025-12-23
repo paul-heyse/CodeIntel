@@ -41,6 +41,7 @@ def resolve_materialization_context(
     env: BuildEnv,
     graph: TargetGraph,
     target_name: str,
+    hash_options: InputHashOptions | None = None,
 ) -> MaterializationContext | MaterializationContextError:
     """Resolve materialization context from environment and graph.
 
@@ -52,6 +53,8 @@ def resolve_materialization_context(
         Target graph describing build dependencies.
     target_name
         Name of the target being materialized.
+    hash_options
+        Optional hash inputs override (options hash, manifest cache, file state hash).
 
     Returns
     -------
@@ -72,13 +75,31 @@ def resolve_materialization_context(
         return MaterializationContextError(message=f"Target not found in graph: {target_name}")
 
     options_hash = options_hash_for_target(env, target_name)
-    hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
+    resolved_hash_options = hash_options
+    if resolved_hash_options is None:
+        resolved_hash_options = InputHashOptions(
+            options_hash=options_hash,
+            manifests=env.manifest_index,
+        )
+    else:
+        if resolved_hash_options.options_hash is None:
+            resolved_hash_options = InputHashOptions(
+                options_hash=options_hash,
+                manifests=resolved_hash_options.manifests,
+                file_state_hash=resolved_hash_options.file_state_hash,
+            )
+        if resolved_hash_options.manifests is None:
+            resolved_hash_options = InputHashOptions(
+                options_hash=resolved_hash_options.options_hash,
+                manifests=env.manifest_index,
+                file_state_hash=resolved_hash_options.file_state_hash,
+            )
     input_hash = compute_input_hash(
         target=target,
         snapshot=env.snapshot,
         gateway=env.gateway,
         settings=env.settings,
-        options=hash_options,
+        options=resolved_hash_options,
     )
     return MaterializationContext(
         target=target,

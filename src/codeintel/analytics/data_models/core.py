@@ -12,7 +12,6 @@ The Hamilton native module is at:
 from __future__ import annotations
 
 import ast
-import hashlib
 import logging
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
@@ -25,6 +24,7 @@ from codeintel.analytics.utilities.ast import (
     safe_unparse,
     snippet_from_lines,
 )
+from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path, path_to_module
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module
 
@@ -202,7 +202,7 @@ def _annotation_to_str(node: ast.AST | None) -> str | None:
 
 def _compute_model_id(repo: str, commit: str, module: str, qualname: str, model_kind: str) -> str:
     raw = f"{repo}:{commit}:{module}:{qualname}:{model_kind}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return sha256_short(raw, length=16, used_for_security=False)
 
 
 def _is_dataclass(decorators: list[str]) -> bool:

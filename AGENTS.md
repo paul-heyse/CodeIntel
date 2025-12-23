@@ -47,7 +47,7 @@
   ```bash
   uv run python -m tools.quality_report --output build/quality-results/quality_report.json
   # If OpenAPI changed: lint spec (e.g., spectral lint openapi.yaml)
-  After resolving quality report items, uv run pytest -q
+  After resolving quality report items, uv run pytest -q for first the targeted subset of tests that are likely impacted by the scope of work, then for each of the major directories (build, serving, etc.). Running all pytests at once will take 15 minutes or more, soafter validating affected tests in a focused manner, it is preferable to do the final validation in a segmented manner by subdirectory
 
   ```
   - The consolidated report is written to `build/quality-results/quality_report.json`

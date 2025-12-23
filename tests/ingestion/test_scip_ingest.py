@@ -18,7 +18,11 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.hamilton.records import TargetRunRecord
 from tests._helpers.build import TEST_BUILD_SETTINGS
-from tests._helpers.ingestion import build_scip_ingest_context, closing_gateway
+from tests._helpers.ingestion import (
+    build_scip_ingest_context,
+    closing_gateway,
+    materialize_rows_for_snapshot,
+)
 from tests._helpers.sql import count_table_rows
 
 if TYPE_CHECKING:
@@ -84,8 +88,21 @@ def test_scip_target_writes_tables(scip_ingest_context: ScipIngestContext) -> No
             pytest.skip(run_result.error or "SCIP execution failed")
 
         ingest_result = t__scip__ingest(env, modules_record, run_result)
-        if not ingest_result.success:
-            pytest.fail(ingest_result.error or "SCIP ingestion failed")
+        if not ingest_result.result.success:
+            pytest.fail(ingest_result.result.error or "SCIP ingestion failed")
+
+        materialize_rows_for_snapshot(
+            gateway,
+            "core.scip_symbols",
+            ingest_result.symbol_rows,
+            snapshot=snapshot,
+        )
+        materialize_rows_for_snapshot(
+            gateway,
+            "core.scip_occurrences",
+            ingest_result.occurrence_rows,
+            snapshot=snapshot,
+        )
 
         if run_result.index_path is None or not run_result.index_path.is_file():
             pytest.fail("index.scip was not created under build/scip")

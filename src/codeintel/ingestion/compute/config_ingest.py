@@ -10,12 +10,14 @@ import configparser
 import json
 import logging
 import tomllib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -245,6 +247,14 @@ def parse_config_file(path: Path, content: str) -> list[tuple[str, Any]] | None:
     return None
 
 
+@dataclass(frozen=True)
+class ConfigIngestResult:
+    """Result bundle for config ingestion."""
+
+    result: ExecutionResult
+    rows: tuple[tuple[object, ...], ...] = ()
+
+
 class ConfigIngestStep(BaseExtractStep):
     """Configuration file ingestion step with port injection.
 
@@ -253,8 +263,6 @@ class ConfigIngestStep(BaseExtractStep):
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     discovery
         Discovery port for reading file content.
     """
@@ -265,7 +273,7 @@ class ConfigIngestStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> ExecutionResult:
+    ) -> ConfigIngestResult:
         """Execute configuration file ingestion.
 
         Parameters
@@ -279,12 +287,15 @@ class ConfigIngestStep(BaseExtractStep):
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        ConfigIngestResult
+            Result bundle with row tuples and execution status.
         """
         all_rows: list[tuple[object, ...]] = []
         errors: list[str] = []
-        serializer = row_serializer_for_table_key(CONFIG_VALUES_TABLE_KEY)
+        try:
+            serializer = row_serializer_for_table_key(CONFIG_VALUES_TABLE_KEY)
+        except RuntimeError as exc:
+            return ConfigIngestResult(result=ExecutionResult.failed(str(exc)))
 
         for record in config_files:
             content = self._discovery.read_text(record.file_path)
@@ -314,12 +325,15 @@ class ConfigIngestStep(BaseExtractStep):
                     )
                 )
 
-        table_counts: dict[str, int] = {}
-
-        if all_rows:
-            scope = f"{repo}@{commit}"
-            result = self._storage.write_batch(CONFIG_VALUES_TABLE_KEY, all_rows, scope=scope)
-            table_counts[CONFIG_VALUES_TABLE_KEY] = result.rows_affected
+        warnings = tuple(errors)
+        if warnings and not all_rows:
+            warning_text = "; ".join(warnings)
+            return ConfigIngestResult(
+                result=ExecutionResult.failed(
+                    f"Config ingest failed: {warning_text}",
+                    warnings=warnings,
+                )
+            )
 
         log.info(
             "Config ingest: repo=%s commit=%s files=%d values=%d",
@@ -329,13 +343,14 @@ class ConfigIngestStep(BaseExtractStep):
             len(all_rows),
         )
 
-        return ExecutionResult.ok(
-            table_counts=table_counts,
-            warnings=tuple(errors),
+        return ConfigIngestResult(
+            result=ExecutionResult.ok(warnings=warnings),
+            rows=tuple(all_rows),
         )
 
 
 __all__ = [
+    "ConfigIngestResult",
     "ConfigIngestStep",
     "flatten_dict",
     "flatten_list_items",

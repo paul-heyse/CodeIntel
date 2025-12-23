@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -14,6 +13,7 @@ import networkx as nx
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
 
 if TYPE_CHECKING:
@@ -300,7 +300,7 @@ def _call_chain_id(
     repo: str, commit: str, config_key: str, usage_kind: str, path: list[int]
 ) -> str:
     raw = f"{repo}:{commit}:{config_key}:{usage_kind}:{'->'.join(str(node) for node in path)}"
-    return hashlib.sha256(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
+    return sha256_short(raw, length=16, used_for_security=False)
 
 
 @dataclass(frozen=True)

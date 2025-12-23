@@ -13,8 +13,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -84,6 +85,15 @@ class ModuleAstResult:
 
     ast_rows: list[dict[str, object]]
     metric_row: dict[str, object] | None
+
+
+@dataclass(frozen=True)
+class AstExtractResult:
+    """Result bundle for AST extraction."""
+
+    result: ExecutionResult
+    ast_rows: tuple[tuple[object, ...], ...] = ()
+    metric_rows: tuple[tuple[object, ...], ...] = ()
 
 
 class AstVisitor(ast.NodeVisitor):
@@ -347,8 +357,6 @@ class AstExtractStep(BaseExtractStep):
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     discovery
         Discovery port for reading module source.
     """
@@ -359,7 +367,7 @@ class AstExtractStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> ExecutionResult:
+    ) -> AstExtractResult:
         """Execute AST extraction on the provided modules.
 
         Parameters
@@ -373,14 +381,18 @@ class AstExtractStep(BaseExtractStep):
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        AstExtractResult
+            Result bundle with row tuples and execution status.
         """
         ast_rows: list[tuple[object, ...]] = []
         metric_rows: list[tuple[object, ...]] = []
         warnings: list[str] = []
-        ast_serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
-        metrics_serializer = row_serializer_for_table_key(AST_METRICS_TABLE_KEY)
+
+        try:
+            ast_serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
+            metrics_serializer = row_serializer_for_table_key(AST_METRICS_TABLE_KEY)
+        except RuntimeError as exc:
+            return AstExtractResult(result=ExecutionResult.failed(str(exc)))
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_ast(module, source)
@@ -392,16 +404,6 @@ class AstExtractStep(BaseExtractStep):
             if result.metric_row is not None:
                 metric_rows.append(metrics_serializer(result.metric_row))
 
-        table_counts = self._write_and_count(
-            AST_NODES_TABLE_KEY,
-            ast_rows,
-            repo=repo,
-            commit=commit,
-        )
-        if metric_rows:
-            result = self._storage.write_batch(AST_METRICS_TABLE_KEY, metric_rows)
-            table_counts[AST_METRICS_TABLE_KEY] = result.rows_affected
-
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",
             repo,
@@ -410,13 +412,15 @@ class AstExtractStep(BaseExtractStep):
             len(metric_rows),
         )
 
-        return ExecutionResult.ok(
-            table_counts=table_counts,
-            warnings=tuple(warnings),
+        return AstExtractResult(
+            result=ExecutionResult.ok(warnings=tuple(warnings)),
+            ast_rows=tuple(ast_rows),
+            metric_rows=tuple(metric_rows),
         )
 
 
 __all__ = [
+    "AstExtractResult",
     "AstExtractStep",
     "AstMetrics",
     "AstRowInfo",

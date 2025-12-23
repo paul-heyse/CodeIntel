@@ -7,18 +7,18 @@ test coverage data, using ports for all I/O operations.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import ExecutionResult
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 log = logging.getLogger(__name__)
@@ -33,27 +33,21 @@ class CoverageIngestStep:
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     tools
         Tool port for running coverage export.
     """
 
     def __init__(
         self,
-        storage: IngestStoragePort,
         tools: IngestToolPort,
     ) -> None:
         """Initialize the step.
 
         Parameters
         ----------
-        storage
-            Storage port for persisting data.
         tools
             Tool port for running coverage.
         """
-        self._storage = storage
         self._tools = tools
 
     async def execute_async(
@@ -64,7 +58,7 @@ class CoverageIngestStep:
         commit: str,
         repo_root: Path,
         coverage_file: Path | None = None,
-    ) -> ExecutionResult:
+    ) -> CoverageIngestResult:
         """Execute coverage ingestion.
 
         Parameters
@@ -82,8 +76,8 @@ class CoverageIngestStep:
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        CoverageIngestResult
+            Result bundle with row tuples and execution status.
         """
         created_at = datetime.now(UTC)
 
@@ -94,7 +88,9 @@ class CoverageIngestStep:
 
         if result.error is not None:
             log.warning("Coverage export failed: %s", result.error)
-            return ExecutionResult.failed(f"Coverage export failed: {result.error}")
+            return CoverageIngestResult(
+                result=ExecutionResult.failed(f"Coverage export failed: {result.error}")
+            )
 
         all_rows: list[tuple[object, ...]] = []
         file_count = 0
@@ -138,17 +134,6 @@ class CoverageIngestStep:
                 for line_num in file_data.missing_lines
             )
 
-        table_counts: dict[str, int] = {}
-
-        if all_rows:
-            scope = f"{repo}@{commit}"
-            write_result = self._storage.write_batch(
-                COVERAGE_LINES_TABLE_KEY,
-                all_rows,
-                scope=scope,
-            )
-            table_counts[COVERAGE_LINES_TABLE_KEY] = write_result.rows_affected
-
         log.info(
             "Coverage ingest: repo=%s commit=%s files=%d lines=%d",
             repo,
@@ -157,7 +142,18 @@ class CoverageIngestStep:
             len(all_rows),
         )
 
-        return ExecutionResult.ok(table_counts=table_counts)
+        return CoverageIngestResult(
+            result=ExecutionResult.ok(),
+            rows=tuple(all_rows),
+        )
 
 
-__all__ = ["CoverageIngestStep"]
+@dataclass(frozen=True)
+class CoverageIngestResult:
+    """Result bundle for coverage ingestion."""
+
+    result: ExecutionResult
+    rows: tuple[tuple[object, ...], ...] = ()
+
+
+__all__ = ["CoverageIngestResult", "CoverageIngestStep"]

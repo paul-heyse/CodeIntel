@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
 )
@@ -22,7 +23,6 @@ from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTypednessRow as TypednessRow,
 )
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import ExecutionResult
 from codeintel.ingestion.ports.tools import ToolStatus
 
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
@@ -33,7 +33,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.ingestion.ports.discovery import ModuleDiscoveryPort, ModuleRecord
-    from codeintel.ingestion.ports.storage import IngestStoragePort
     from codeintel.ingestion.ports.tools import IngestToolPort
 
 log = logging.getLogger(__name__)
@@ -205,8 +204,6 @@ class TypingIngestStep:
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     discovery
         Discovery port for reading module source.
     tools
@@ -215,7 +212,6 @@ class TypingIngestStep:
 
     def __init__(
         self,
-        storage: IngestStoragePort,
         discovery: ModuleDiscoveryPort,
         tools: IngestToolPort | None = None,
     ) -> None:
@@ -223,14 +219,11 @@ class TypingIngestStep:
 
         Parameters
         ----------
-        storage
-            Storage port for persisting data.
         discovery
             Discovery port for reading module source.
         tools
             Optional tool port for running diagnostics.
         """
-        self._storage = storage
         self._discovery = discovery
         self._tools = tools
 
@@ -242,7 +235,7 @@ class TypingIngestStep:
         commit: str,
         repo_root: str,
         run_diagnostics: bool = True,
-    ) -> ExecutionResult:
+    ) -> TypingIngestResult:
         """Execute typing analysis on the provided modules.
 
         Parameters
@@ -260,8 +253,8 @@ class TypingIngestStep:
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        TypingIngestResult
+            Result bundle with row tuples and execution status.
         """
         diag_counts = DiagnosticCounts(pyright={}, pyrefly={}, ruff={})
         if run_diagnostics and self._tools is not None:
@@ -269,7 +262,19 @@ class TypingIngestStep:
 
         typedness_rows, diagnostic_rows = self._process_modules(modules, repo, commit, diag_counts)
 
-        return self._persist_rows(typedness_rows, diagnostic_rows, repo, commit)
+        log.info(
+            "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",
+            repo,
+            commit,
+            len(typedness_rows),
+            len(diagnostic_rows),
+        )
+
+        return TypingIngestResult(
+            result=ExecutionResult.ok(),
+            typedness_rows=tuple(typedness_rows),
+            diagnostic_rows=tuple(diagnostic_rows),
+        )
 
     def _process_modules(
         self,
@@ -354,76 +359,6 @@ class TypingIngestStep:
 
         return typedness_rows, diagnostic_rows
 
-    def _persist_rows(
-        self,
-        typedness_rows: list[tuple[object, ...]],
-        diagnostic_rows: list[tuple[object, ...]],
-        repo: str,
-        commit: str,
-    ) -> ExecutionResult:
-        """Persist rows to storage.
-
-        Deletes existing rows for the same paths before inserting to ensure
-        idempotent re-ingestion (tables have primary keys that would cause
-        duplicate key errors otherwise).
-
-        Parameters
-        ----------
-        typedness_rows
-            Typedness rows to persist.
-        diagnostic_rows
-            Diagnostic rows to persist.
-        repo
-            Repository identifier.
-        commit
-            Commit identifier.
-
-        Returns
-        -------
-        ExecutionResult
-            Result with row counts.
-        """
-        table_counts: dict[str, int] = {}
-
-        if typedness_rows:
-            typedness_paths = [str(row[2]) for row in typedness_rows]
-
-            self._storage.delete_by_paths(
-                TYPEDNESS_TABLE_KEY,
-                typedness_paths,
-                path_column="path",
-                repo=repo,
-                commit=commit,
-            )
-
-            scope = f"{repo}@{commit}"
-            result = self._storage.write_batch(TYPEDNESS_TABLE_KEY, typedness_rows, scope=scope)
-            table_counts[TYPEDNESS_TABLE_KEY] = result.rows_affected
-
-        if diagnostic_rows:
-            diagnostic_paths = [str(row[2]) for row in diagnostic_rows]
-
-            self._storage.delete_by_paths(
-                DIAGNOSTICS_TABLE_KEY,
-                diagnostic_paths,
-                path_column="rel_path",
-                repo=repo,
-                commit=commit,
-            )
-
-            result = self._storage.write_batch(DIAGNOSTICS_TABLE_KEY, diagnostic_rows)
-            table_counts[DIAGNOSTICS_TABLE_KEY] = result.rows_affected
-
-        log.info(
-            "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",
-            repo,
-            commit,
-            len(typedness_rows),
-            len(diagnostic_rows),
-        )
-
-        return ExecutionResult.ok(table_counts=table_counts)
-
     def execute(
         self,
         modules: Sequence[ModuleRecord],
@@ -431,7 +366,7 @@ class TypingIngestStep:
         repo: str,
         commit: str,
         repo_root: str,
-    ) -> ExecutionResult:
+    ) -> TypingIngestResult:
         """Execute typing analysis synchronously (without diagnostics).
 
         Parameters
@@ -447,14 +382,23 @@ class TypingIngestStep:
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        TypingIngestResult
+            Result bundle with row tuples and execution status.
         """
         return asyncio.run(
             self.execute_async(
                 modules, repo=repo, commit=commit, repo_root=repo_root, run_diagnostics=False
             )
         )
+
+
+@dataclass(frozen=True)
+class TypingIngestResult:
+    """Result bundle for typing ingestion."""
+
+    result: ExecutionResult
+    typedness_rows: tuple[tuple[object, ...], ...] = ()
+    diagnostic_rows: tuple[tuple[object, ...], ...] = ()
 
 
 def collect_function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
@@ -505,6 +449,7 @@ def is_fully_typed(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 __all__ = [
     "AnnotationInfo",
+    "TypingIngestResult",
     "TypingIngestStep",
     "collect_function_params",
     "compute_annotation_info",

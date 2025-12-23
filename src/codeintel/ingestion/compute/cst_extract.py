@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING
 import libcst as cst
 from libcst import metadata
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
     CstCaptureVisitor,
@@ -82,6 +83,14 @@ class ModuleCstResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class CstExtractResult:
+    """Result bundle for CST extraction."""
+
+    result: ExecutionResult
+    rows: tuple[tuple[object, ...], ...] = ()
+
+
 class CstVisitor(CstCaptureVisitor):
     """Collect CST rows using shared capture helpers."""
 
@@ -142,8 +151,6 @@ class CstExtractStep(BaseExtractStep):
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     discovery
         Discovery port for reading module source.
     """
@@ -154,7 +161,7 @@ class CstExtractStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> ExecutionResult:
+    ) -> CstExtractResult:
         """Execute CST extraction on the provided modules.
 
         Parameters
@@ -168,12 +175,15 @@ class CstExtractStep(BaseExtractStep):
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        CstExtractResult
+            Result bundle with row tuples and execution status.
         """
         all_rows: list[tuple[object, ...]] = []
         warnings: list[str] = []
-        serializer = row_serializer_for_table_key(CST_NODES_TABLE_KEY)
+        try:
+            serializer = row_serializer_for_table_key(CST_NODES_TABLE_KEY)
+        except RuntimeError as exc:
+            return CstExtractResult(result=ExecutionResult.failed(str(exc)))
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_cst(module, source)
@@ -198,13 +208,6 @@ class CstExtractStep(BaseExtractStep):
                     )
                 )
 
-        table_counts = self._write_and_count(
-            CST_NODES_TABLE_KEY,
-            all_rows,
-            repo=repo,
-            commit=commit,
-        )
-
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
             repo,
@@ -212,14 +215,15 @@ class CstExtractStep(BaseExtractStep):
             len(all_rows),
         )
 
-        return ExecutionResult.ok(
-            table_counts=table_counts,
-            warnings=tuple(warnings),
+        return CstExtractResult(
+            result=ExecutionResult.ok(warnings=tuple(warnings)),
+            rows=tuple(all_rows),
         )
 
 
 __all__ = [
     "CST_CAPTURE_CONFIG",
+    "CstExtractResult",
     "CstExtractStep",
     "CstVisitor",
     "ModuleCstResult",

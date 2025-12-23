@@ -29,6 +29,7 @@ from codeintel.build.hamilton.materializers.base import (
 )
 from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
 from codeintel.build.hamilton.native.outputs import expected_artifacts
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 
 SaveStatus = Literal["succeeded", "skipped", "failed"]
@@ -77,6 +78,7 @@ class FileArtifactSaver(DataSaver):
     graph: TargetGraph
     target_name: str
     artifact_name: str
+    hash_options: InputHashOptions | None = None
 
     _hamilton_runtime_types = (BuildEnv, TargetGraph)
 
@@ -152,6 +154,7 @@ class FileArtifactSaver(DataSaver):
                 env=self.env,
                 graph=self.graph,
                 target_name=self.target_name,
+                hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
                 result = _failed(

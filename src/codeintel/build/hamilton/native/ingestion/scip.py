@@ -23,7 +23,8 @@ from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.materializers import FileArtifactSaver
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
+from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -40,9 +41,9 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.adapters import DuckDBStorageAdapter
 from codeintel.ingestion.scip import (
     build_occurrence_rows,
     build_symbol_rows,
@@ -121,12 +122,32 @@ class ScipRunResult:
 
 
 @dataclass(frozen=True)
+class ScipIngestResult:
+    """Result from SCIP ingestion row preparation.
+
+    Attributes
+    ----------
+    result
+        Execution status for ingest step.
+    symbol_rows
+        Row tuples for core.scip_symbols.
+    occurrence_rows
+        Row tuples for core.scip_occurrences.
+    """
+
+    result: ExecutionResult
+    symbol_rows: tuple[tuple[object, ...], ...] = ()
+    occurrence_rows: tuple[tuple[object, ...], ...] = ()
+
+
+@dataclass(frozen=True)
 class ScipMaterializationInputs:
     """Aggregated inputs for scip materialization."""
 
     run: ScipRunResult
-    ingest: ExecutionResult
-    materializations: dict[str, MaterializationMetadata]
+    ingest: ScipIngestResult
+    artifact_materializations: dict[str, MaterializationMetadata]
+    table_materializations: dict[str, MaterializationMetadata]
 
 
 @tag_tool(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -233,20 +254,24 @@ def t__scip__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     t__scip__run: ScipRunResult,
-) -> ExecutionResult:
-    """Ingest SCIP JSON payloads into core.scip_* tables.
+) -> ScipIngestResult:
+    """Build SCIP row payloads for core.scip_* tables.
 
     Returns
     -------
-    ExecutionResult
-        Ingestion status and per-table row counts.
+    ScipIngestResult
+        Ingestion status and row tuples.
     """
     if t__modules.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        return ScipIngestResult(
+            result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        )
     if not t__scip__run.success:
-        return ExecutionResult.failed(t__scip__run.error or "SCIP execution failed")
+        return ScipIngestResult(
+            result=ExecutionResult.failed(t__scip__run.error or "SCIP execution failed")
+        )
     if t__scip__run.skipped:
-        return ExecutionResult.skip("SCIP target skipped")
+        return ScipIngestResult(result=ExecutionResult.skip("SCIP target skipped"))
 
     try:
         output_scip = t__scip__run.index_path or (env.paths.scip_dir / "index.scip")
@@ -258,44 +283,91 @@ def t__scip__ingest(
         symbol_serializer = row_serializer_for_table_key(SCIP_SYMBOLS_TABLE_KEY)
         occurrence_serializer = row_serializer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)
 
-        symbol_rows = build_symbol_rows(
-            documents,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
-            serializer=symbol_serializer,
+        symbol_rows = tuple(
+            build_symbol_rows(
+                documents,
+                env.snapshot.repo,
+                env.snapshot.commit,
+                created_at,
+                serializer=symbol_serializer,
+            )
         )
-        occurrence_rows = build_occurrence_rows(
-            documents,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
-            serializer=occurrence_serializer,
-        )
-
-        storage = DuckDBStorageAdapter(env.gateway)
-        storage.delete_by_params(SCIP_SYMBOLS_TABLE_KEY, [env.snapshot.repo, env.snapshot.commit])
-        storage.delete_by_params(
-            SCIP_OCCURRENCES_TABLE_KEY, [env.snapshot.repo, env.snapshot.commit]
+        occurrence_rows = tuple(
+            build_occurrence_rows(
+                documents,
+                env.snapshot.repo,
+                env.snapshot.commit,
+                created_at,
+                serializer=occurrence_serializer,
+            )
         )
 
-        table_counts: dict[str, int] = {}
-        scope = f"{env.snapshot.repo}@{env.snapshot.commit}"
-
-        if symbol_rows:
-            result = storage.write_batch(SCIP_SYMBOLS_TABLE_KEY, symbol_rows, scope=scope)
-            table_counts[SCIP_SYMBOLS_TABLE_KEY] = result.rows_affected
-
-        if occurrence_rows:
-            result = storage.write_batch(SCIP_OCCURRENCES_TABLE_KEY, occurrence_rows, scope=scope)
-            table_counts[SCIP_OCCURRENCES_TABLE_KEY] = result.rows_affected
-
-        return ExecutionResult.ok(
-            table_counts=normalize_table_counts(SCIP_TABLE_KEYS, table_counts),
+        table_counts = {
+            SCIP_SYMBOLS_TABLE_KEY: len(symbol_rows),
+            SCIP_OCCURRENCES_TABLE_KEY: len(occurrence_rows),
+        }
+        return ScipIngestResult(
+            result=ExecutionResult.ok(
+                table_counts=normalize_table_counts(SCIP_TABLE_KEYS, table_counts),
+            ),
+            symbol_rows=symbol_rows,
+            occurrence_rows=occurrence_rows,
         )
     except Exception:
         log.exception("SCIP ingestion failed")
-        return ExecutionResult.failed("SCIP ingestion failed with exception")
+        return ScipIngestResult(
+            result=ExecutionResult.failed("SCIP ingestion failed with exception")
+        )
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCIP_SYMBOLS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SCIP_TARGET_NAME),
+    table_key=value(SCIP_SYMBOLS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCIP_SYMBOLS_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_rows")
+def scip__symbol_rows(
+    t__scip__ingest: ScipIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return rows for core.scip_symbols.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for scip_symbols, or None when ingestion skipped or failed.
+    """
+    if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
+        return None
+    return t__scip__ingest.symbol_rows
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCIP_OCCURRENCES_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SCIP_TARGET_NAME),
+    table_key=value(SCIP_OCCURRENCES_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__occurrence_rows")
+def scip__occurrence_rows(
+    t__scip__ingest: ScipIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return rows for core.scip_occurrences.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for scip_occurrences, or None when ingestion skipped or failed.
+    """
+    if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
+        return None
+    return t__scip__ingest.occurrence_rows
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -317,23 +389,99 @@ def scip__materializations(
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
+def scip__table_materializations(
+    m__core__scip_symbols: MaterializationMetadata,
+    m__core__scip_occurrences: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect scip table materialization payloads into a single mapping.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Mapping from table key to saver metadata.
+    """
+    return {
+        SCIP_SYMBOLS_TABLE_KEY: m__core__scip_symbols,
+        SCIP_OCCURRENCES_TABLE_KEY: m__core__scip_occurrences,
+    }
+
+
+@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__inputs(
     t__scip__run: ScipRunResult,
-    t__scip__ingest: ExecutionResult,
+    t__scip__ingest: ScipIngestResult,
     scip__materializations: dict[str, MaterializationMetadata],
+    scip__table_materializations: dict[str, MaterializationMetadata],
 ) -> ScipMaterializationInputs:
     """Bundle scip execution and materialization inputs.
 
     Returns
     -------
     ScipMaterializationInputs
-        Collected inputs for the scip materialization node.
+        Aggregated inputs for scip materialization.
     """
     return ScipMaterializationInputs(
         run=t__scip__run,
         ingest=t__scip__ingest,
-        materializations=scip__materializations,
+        artifact_materializations=scip__materializations,
+        table_materializations=scip__table_materializations,
     )
+
+
+def _summarize_scip_table_materializations(
+    materializations: dict[str, MaterializationMetadata],
+) -> tuple[str, dict[str, int] | None, str | None]:
+    parsed: dict[str, DuckDBMaterializationMetadata] = {}
+    for table_key in SCIP_TABLE_KEYS:
+        meta = materializations.get(table_key)
+        if meta is None:
+            parsed[table_key] = DuckDBMaterializationMetadata(
+                status="failed",
+                table_key=table_key,
+                row_count=None,
+                duration_ms=0.0,
+                input_hash="",
+                error=f"Missing materialization metadata for table: {table_key}",
+            )
+            continue
+
+        result = DuckDBMaterializationMetadata.from_mapping(
+            meta,
+            default_table_key=table_key,
+        )
+        if result.status != "failed" and result.table_key != table_key:
+            parsed[table_key] = DuckDBMaterializationMetadata(
+                status="failed",
+                table_key=table_key,
+                row_count=None,
+                duration_ms=result.duration_ms,
+                input_hash=result.input_hash,
+                error=(
+                    "DuckDB materialization metadata table_key mismatch: "
+                    f"expected={table_key} got={result.table_key}"
+                ),
+            )
+            continue
+
+        parsed[table_key] = result
+
+    statuses = {result.status for result in parsed.values()}
+    if "failed" in statuses:
+        errors = [result.error for result in parsed.values() if result.error]
+        message = errors[0] if errors else "One or more table writes failed"
+        return "failed", None, message
+
+    if statuses == {"skipped"}:
+        return "skipped", None, None
+
+    row_counts: dict[str, int] = {}
+    for table_key, result in parsed.items():
+        if result.status == "succeeded":
+            row_counts[table_key] = result.row_count or 0
+        else:
+            row_counts[table_key] = 0
+
+    return "succeeded", row_counts, None
 
 
 @tag_materialize(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -351,27 +499,32 @@ def t__scip(
         Record describing the materialization outcome.
     """
     executor = NativeTargetExecutor.for_target(env, graph, SCIP_TARGET_NAME)
-    if executor.should_skip():
-        return executor.skip()
     if t__modules.status != "succeeded":
         return executor.fail(RuntimeError(t__modules.error or "Upstream modules target failed"))
     if not scip__inputs.run.success:
         return executor.fail(RuntimeError(scip__inputs.run.error or "SCIP execution failed"))
-    if scip__inputs.ingest.skipped:
-        return executor.skip()
-    if not scip__inputs.ingest.success:
-        return executor.fail(RuntimeError(scip__inputs.ingest.error or "SCIP ingestion failed"))
+    if not scip__inputs.ingest.result.success and not scip__inputs.ingest.result.skipped:
+        return executor.fail(
+            RuntimeError(scip__inputs.ingest.result.error or "SCIP ingestion failed")
+        )
+
+    table_status, row_counts, table_error = _summarize_scip_table_materializations(
+        scip__inputs.table_materializations
+    )
+    if table_status == "failed":
+        return executor.fail(RuntimeError(table_error or "SCIP table writes failed"))
 
     return record_from_file_artifact_materializations(
         env=env,
         graph=graph,
         target_name="scip",
-        materializations=scip__inputs.materializations,
-        row_counts=normalize_table_counts(SCIP_TABLE_KEYS, scip__inputs.ingest.table_counts),
+        materializations=scip__inputs.artifact_materializations,
+        row_counts=row_counts,
     )
 
 
 __all__ = [
+    "ScipIngestResult",
     "ScipRunResult",
     "t__scip",
     "t__scip__ingest",

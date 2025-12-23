@@ -13,6 +13,7 @@ from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.providers import create_default_providers
+from codeintel.build.schemas import column_names_for_table_key
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
@@ -27,6 +28,7 @@ from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
+from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.ingestion_context import build_repo_tree
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.ingestion.compute.repo_scan import RepoScanResult
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
 
@@ -91,6 +94,8 @@ __all__ = [
     "create_scan_step",
     "make_resource_case_params",
     "make_scan_setup",
+    "materialize_repo_scan_result",
+    "materialize_rows_for_snapshot",
     "module_inventory_context",
     "module_paths_from_context",
     "module_records_for_paths",
@@ -321,7 +326,8 @@ def repo_variants(
     Returns
     -------
     dict[str, RepoVariantOptions]
-        Variants keyed by label (base, with_invalid, with_macros, with_invalid_and_macros, with_symlink).
+        Variants keyed by label (base, with_invalid, with_macros,
+        with_invalid_and_macros, with_symlink).
     """
     structure = base_structure or {
         "pkg/__init__.py": "",
@@ -392,6 +398,55 @@ def build_ingestion_context_bundle(
         change_detection=change_detection,
         tools=tools,
         module_paths=seeded_paths,
+    )
+
+
+def materialize_rows_for_snapshot(
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    *,
+    snapshot: SnapshotRef,
+) -> None:
+    """Materialize row tuples into a snapshot-scoped table."""
+    columns = column_names_for_table_key(table_key)
+    resolved_columns = columns if columns else None
+    warehouse = Warehouse(gateway)
+    warehouse.materialize_rows(
+        table_key,
+        rows,
+        columns=resolved_columns,
+        options=MaterializeOptions(
+            mode="replace",
+            snapshot=snapshot,
+        ),
+    )
+
+
+def materialize_repo_scan_result(
+    gateway: StorageGateway,
+    scan_result: RepoScanResult,
+    *,
+    snapshot: SnapshotRef,
+) -> None:
+    """Persist repo scan rows for module inventory tables."""
+    materialize_rows_for_snapshot(
+        gateway,
+        "core.modules",
+        scan_result.module_rows,
+        snapshot=snapshot,
+    )
+    materialize_rows_for_snapshot(
+        gateway,
+        "core.file_state",
+        scan_result.file_state_rows,
+        snapshot=snapshot,
+    )
+    materialize_rows_for_snapshot(
+        gateway,
+        "core.repo_map",
+        scan_result.repo_map_rows,
+        snapshot=snapshot,
     )
 
 
@@ -562,9 +617,7 @@ def create_scan_step(
         config=TargetContextConfig(repo_root=repo_root, gateway=gateway),
     )
     storage, discovery, change_detection, _ = build_ingestion_adapters(ctx)
-    scan_step = RepoScanStep(
-        storage=storage, discovery=discovery, change_detection=change_detection
-    )
+    scan_step = RepoScanStep(discovery=discovery, change_detection=change_detection)
     return scan_step, storage, discovery
 
 
@@ -632,8 +685,8 @@ def create_scan_and_docstring_steps(
     tuple[RepoScanStep, DocstringsExtractStep]
         Configured repo scan and docstring extraction steps.
     """
-    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
-    doc_step = DocstringsExtractStep(storage=storage, discovery=discovery)
+    scan_step, _storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    doc_step = DocstringsExtractStep(discovery=discovery)
     return scan_step, doc_step
 
 

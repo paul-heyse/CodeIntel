@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING, TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
-from codeintel.ingestion.compute.base import BaseExtractStep, ExecutionResult
+from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -247,6 +248,14 @@ def _extract_module_docstrings(
     return visitor.rows
 
 
+@dataclass(frozen=True)
+class DocstringsExtractResult:
+    """Result bundle for docstring extraction."""
+
+    result: ExecutionResult
+    rows: tuple[tuple[object, ...], ...] = ()
+
+
 class DocstringsExtractStep(BaseExtractStep):
     """Docstring extraction step with port injection.
 
@@ -255,8 +264,6 @@ class DocstringsExtractStep(BaseExtractStep):
 
     Parameters
     ----------
-    storage
-        Storage port for persisting data.
     discovery
         Discovery port for reading module source.
     """
@@ -267,7 +274,7 @@ class DocstringsExtractStep(BaseExtractStep):
         *,
         repo: str,
         commit: str,
-    ) -> ExecutionResult:
+    ) -> DocstringsExtractResult:
         """Execute docstring extraction on the provided modules.
 
         Parameters
@@ -281,8 +288,8 @@ class DocstringsExtractStep(BaseExtractStep):
 
         Returns
         -------
-        ExecutionResult
-            Execution result with row counts.
+        DocstringsExtractResult
+            Result bundle with row tuples and execution status.
         """
         ctx = DocstringContext(
             repo=repo,
@@ -293,30 +300,12 @@ class DocstringsExtractStep(BaseExtractStep):
         try:
             serializer = row_serializer_for_table_key(DOCSTRINGS_TABLE_KEY)
         except RuntimeError as exc:
-            return ExecutionResult.failed(str(exc))
+            return DocstringsExtractResult(result=ExecutionResult.failed(str(exc)))
         all_rows: list[tuple[object, ...]] = []
-        processed_paths: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
-            processed_paths.append(module.rel_path)
             docstrings = _extract_module_docstrings(module, source, ctx)
             all_rows.extend(serializer(ds) for ds in docstrings)
-
-        if processed_paths:
-            self._storage.delete_by_paths(
-                DOCSTRINGS_TABLE_KEY,
-                processed_paths,
-                path_column="rel_path",
-                repo=repo,
-                commit=commit,
-            )
-
-        table_counts = self._write_and_count(
-            DOCSTRINGS_TABLE_KEY,
-            all_rows,
-            repo=repo,
-            commit=commit,
-        )
 
         log.info(
             "Docstring extraction: repo=%s commit=%s rows=%d",
@@ -325,12 +314,16 @@ class DocstringsExtractStep(BaseExtractStep):
             len(all_rows),
         )
 
-        return ExecutionResult.ok(table_counts=table_counts)
+        return DocstringsExtractResult(
+            result=ExecutionResult.ok(),
+            rows=tuple(all_rows),
+        )
 
 
 __all__ = [
     "DocstringContext",
     "DocstringVisitor",
+    "DocstringsExtractResult",
     "DocstringsExtractStep",
     "ParsedDocstring",
 ]

@@ -8,12 +8,14 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.compute.docstrings_extract import DocstringsExtractStep
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     build_repo_with_variants,
     build_scan_profile,
     create_scan_step,
+    materialize_rows_for_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -33,13 +35,12 @@ def _docstrings_setup(
 ) -> Iterator[SimpleNamespace]:
     repo_root = build_repo_with_variants(tmp_path, extra_structure=repo_structure)
     profile = build_scan_profile(repo_root, ignore_dirs=ignore_dirs)
-    scan_step, storage, discovery = create_scan_step(gateway, repo_root, tmp_path)
+    scan_step, _, discovery = create_scan_step(gateway, repo_root, tmp_path)
     ctx = SimpleNamespace(
         repo_root=repo_root,
         gateway=gateway,
         profile=profile,
         scan_step=scan_step,
-        storage=storage,
         discovery=discovery,
     )
     yield ctx
@@ -61,15 +62,31 @@ def test_docstrings_respects_scan_profile_and_module_inventory(
         ignore_dirs=("ignored",),
     ) as setup:
         snapshot = make_snapshot(repo="demo/docstrings", commit="abc123", repo_root=setup.repo_root)
-        doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
+        doc_step = DocstringsExtractStep(discovery=setup.discovery)
 
-        _, modules, _ = setup.scan_step.execute(
+        scan_result = setup.scan_step.execute(
             repo=snapshot.repo,
             commit=snapshot.commit,
             repo_root=snapshot.repo_root,
             profile=setup.profile,
         )
-        doc_step.execute(list(modules), repo=snapshot.repo, commit=snapshot.commit)
+        doc_result = doc_step.execute(
+            list(scan_result.modules),
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        if not doc_result.result.success:
+            pytest.fail(doc_result.result.error or "Docstring ingest failed")
+        materialize_rows_for_snapshot(
+            setup.gateway,
+            "core.docstrings",
+            doc_result.rows,
+            snapshot=SnapshotRef(
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                repo_root=snapshot.repo_root,
+            ),
+        )
         rows = setup.gateway.con.execute(
             "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"
         ).fetchall()
@@ -96,21 +113,33 @@ def test_docstrings_uses_module_inventory_not_filesystem_scan(
         repo_structure=structure,
     ) as setup:
         snapshot = make_snapshot(repo="demo/docstrings", repo_root=setup.repo_root)
-        doc_step = DocstringsExtractStep(storage=setup.storage, discovery=setup.discovery)
-        _, modules, _ = setup.scan_step.execute(
+        doc_step = DocstringsExtractStep(discovery=setup.discovery)
+        scan_result = setup.scan_step.execute(
             repo=snapshot.repo,
             commit=snapshot.commit,
             repo_root=setup.repo_root,
             profile=setup.profile,
         )
 
-        setup.gateway.con.execute(
-            "DELETE FROM core.modules WHERE repo = ? AND commit = ? AND path = ?",
-            [snapshot.repo, snapshot.commit, "src/pkg/ghost.py"],
-        )
-        filtered_modules = [m for m in modules if m.rel_path != "src/pkg/ghost.py"]
+        filtered_modules = [m for m in scan_result.modules if m.rel_path != "src/pkg/ghost.py"]
 
-        doc_step.execute(filtered_modules, repo=snapshot.repo, commit=snapshot.commit)
+        doc_result = doc_step.execute(
+            filtered_modules,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        )
+        if not doc_result.result.success:
+            pytest.fail(doc_result.result.error or "Docstring ingest failed")
+        materialize_rows_for_snapshot(
+            setup.gateway,
+            "core.docstrings",
+            doc_result.rows,
+            snapshot=SnapshotRef(
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                repo_root=snapshot.repo_root,
+            ),
+        )
 
         rows = setup.gateway.con.execute(
             "SELECT DISTINCT rel_path FROM core.docstrings ORDER BY rel_path"

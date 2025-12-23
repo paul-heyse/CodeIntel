@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 from codeintel.build.contracts import OutputContract, placeholder_table_schema
 from codeintel.build.parameters import EMPTY_PARAMETERS
 from codeintel.build.resources import DEFAULT_EXECUTION, DEFAULT_RESOURCES
-from codeintel.build.table_keys import validate_table_key
 from codeintel.build.targets import OutputTarget
+from codeintel.storage.helpers.table_key import validate_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

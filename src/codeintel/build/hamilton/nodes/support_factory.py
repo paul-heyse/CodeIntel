@@ -55,7 +55,6 @@ from codeintel.build.hamilton.tagging import (
     tag_loader_query,
     tag_materialize,
 )
-from codeintel.build.table_keys import split_table_key
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -161,6 +160,7 @@ def _create_dataset_node_function(
     *,
     table_key: str,
     target_name: str,
+    domain: str,
 ) -> Callable[..., DatasetRef]:
     """Create a `d__*` dataset node extracting DatasetRef from TargetRunRecord.
 
@@ -205,7 +205,6 @@ def _create_dataset_node_function(
     dataset_fn.__name__ = d_name
     dataset_fn.__doc__ = f"Extract {table_key} dataset from {target_name} target."
 
-    domain = split_table_key(table_key)[0] if "." in table_key else "main"
     return tag_dataset(domain=domain, target=target_name, table_key=table_key)(dataset_fn)
 
 
@@ -213,6 +212,7 @@ def _create_query_node_function(
     *,
     table_key: str,
     target_name: str,
+    domain: str,
 ) -> Callable[..., ir.Table]:
     """Create a `q__*` node that loads an Ibis expression for a DatasetRef.
 
@@ -247,7 +247,6 @@ def _create_query_node_function(
     query_fn.__name__ = q_name
     query_fn.__doc__ = f"Load {table_key} as Ibis expression."
 
-    domain = split_table_key(table_key)[0] if "." in table_key else "main"
     return tag_loader_query(domain=domain, target=target_name, table_key=table_key)(query_fn)
 
 
@@ -255,6 +254,7 @@ def _create_dataframe_node_function(
     *,
     table_key: str,
     target_name: str,
+    domain: str,
 ) -> Callable[..., pd.DataFrame]:
     """Create a `df__*` node that loads a pandas DataFrame for a DatasetRef.
 
@@ -289,7 +289,6 @@ def _create_dataframe_node_function(
     dataframe_fn.__name__ = df_name
     dataframe_fn.__doc__ = f"Load {table_key} as pandas DataFrame."
 
-    domain = split_table_key(table_key)[0] if "." in table_key else "main"
     return tag_loader_dataframe(domain=domain, target=target_name, table_key=table_key)(
         dataframe_fn
     )
@@ -299,6 +298,7 @@ def _create_artifact_node_function(
     *,
     artifact_name: str,
     target_name: str,
+    domain: str,
 ) -> Callable[..., ArtifactRef]:
     """Create an `a__*` node extracting artifact references from TargetRunRecord.
 
@@ -350,7 +350,6 @@ def _create_artifact_node_function(
     artifact_fn.__name__ = a_name
     artifact_fn.__doc__ = f"Access {artifact_name} artifact from {target_name} target."
 
-    domain = artifact_name.split(".", 1)[0] if "." in artifact_name else "main"
     return tag_artifact(domain=domain, target=target_name, artifact=artifact_name)(artifact_fn)
 
 
@@ -440,7 +439,11 @@ def _populate_for_target(
             attach_node(
                 module,
                 node_name=d_name,
-                fn=_create_dataset_node_function(table_key=table_key, target_name=target.name),
+                fn=_create_dataset_node_function(
+                    table_key=table_key,
+                    target_name=target.name,
+                    domain=target.module,
+                ),
             )
 
             if options.include_loader_nodes:
@@ -449,7 +452,11 @@ def _populate_for_target(
                 attach_node(
                     module,
                     node_name=q_name,
-                    fn=_create_query_node_function(table_key=table_key, target_name=target.name),
+                    fn=_create_query_node_function(
+                        table_key=table_key,
+                        target_name=target.name,
+                        domain=target.module,
+                    ),
                 )
 
                 df_name = dataframe_node(table_key)
@@ -460,6 +467,7 @@ def _populate_for_target(
                     fn=_create_dataframe_node_function(
                         table_key=table_key,
                         target_name=target.name,
+                        domain=target.module,
                     ),
                 )
 
@@ -473,6 +481,7 @@ def _populate_for_target(
                 fn=_create_artifact_node_function(
                     artifact_name=artifact_name,
                     target_name=target.name,
+                    domain=target.module,
                 ),
             )
 

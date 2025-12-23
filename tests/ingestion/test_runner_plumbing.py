@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.ingestion.adapters import DuckDBStorageAdapter
+from codeintel.config.primitives import SnapshotRef
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
@@ -18,6 +18,8 @@ from tests._helpers.ingestion import (
     closing_gateway,
     create_scan_step,
     make_scan_setup,
+    materialize_repo_scan_result,
+    materialize_rows_for_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -41,11 +43,16 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
     )
 
     with closing_gateway(setup.gateway):
-        setup.scan_step.execute(
+        scan_result = setup.scan_step.execute(
             repo="r",
             commit="c",
             repo_root=setup.repo_root,
             profile=setup.profile,
+        )
+        materialize_repo_scan_result(
+            setup.gateway,
+            scan_result,
+            snapshot=SnapshotRef(repo="r", commit="c", repo_root=setup.repo_root),
         )
 
         rows = setup.gateway.con.table("core.modules").select("path").fetchall()
@@ -65,11 +72,10 @@ def test_coverage_ingest_uses_runner(
         for report in tooling_outputs.coverage_reports
     )
 
-    storage = DuckDBStorageAdapter(gateway)
     tools = ToolRunnerAdapter(tool_service)
-    step = CoverageIngestStep(storage=storage, tools=tools)
+    step = CoverageIngestStep(tools=tools)
 
-    result = asyncio.run(
+    ingest_result = asyncio.run(
         step.execute_async(
             [],
             repo="r",
@@ -79,9 +85,20 @@ def test_coverage_ingest_uses_runner(
         )
     )
 
-    if not result.success:
-        error_message = result.error or "; ".join(result.warnings) or "unknown"
+    if not ingest_result.result.success:
+        error_message = (
+            ingest_result.result.error
+            or "; ".join(ingest_result.result.warnings)
+            or "unknown"
+        )
         pytest.fail(f"Coverage ingest failed: {error_message}")
+
+    materialize_rows_for_snapshot(
+        gateway,
+        "analytics.coverage_lines",
+        ingest_result.rows,
+        snapshot=SnapshotRef(repo="r", commit="c", repo_root=repo_root),
+    )
 
     row = gateway.con.table("analytics.coverage_lines").aggregate("count(*)").fetchone()
     count = row[0] if row is not None else 0
@@ -100,24 +117,43 @@ def test_typing_ingest_uses_shared_runner(
     tooling = tooling_outputs_session
     repo_root = tooling.context.repo_root
     profile = build_scan_profile(repo_root)
-    scan_step, storage, discovery = create_scan_step(ingestion_gateway, repo_root, tmp_path)
+    scan_step, _storage, discovery = create_scan_step(ingestion_gateway, repo_root, tmp_path)
     tools = ToolRunnerAdapter(tooling.context.service)
 
-    _, modules, _ = scan_step.execute(
+    scan_result = scan_step.execute(
         repo="r",
         commit="c",
         repo_root=repo_root,
         profile=profile,
     )
+    modules = scan_result.modules
 
-    typing_step = TypingIngestStep(storage=storage, discovery=discovery, tools=tools)
-    result = asyncio.run(
+    typing_step = TypingIngestStep(discovery=discovery, tools=tools)
+    ingest_result = asyncio.run(
         typing_step.execute_async(list(modules), repo="r", commit="c", repo_root=str(repo_root))
     )
 
-    if not result.success:
-        error_message = result.error or "; ".join(result.warnings) or "unknown"
+    if not ingest_result.result.success:
+        error_message = (
+            ingest_result.result.error
+            or "; ".join(ingest_result.result.warnings)
+            or "unknown"
+        )
         pytest.fail(f"Typing ingest failed: {error_message}")
+
+    snapshot = SnapshotRef(repo="r", commit="c", repo_root=repo_root)
+    materialize_rows_for_snapshot(
+        ingestion_gateway,
+        "analytics.typedness",
+        ingest_result.typedness_rows,
+        snapshot=snapshot,
+    )
+    materialize_rows_for_snapshot(
+        ingestion_gateway,
+        "analytics.static_diagnostics",
+        ingest_result.diagnostic_rows,
+        snapshot=snapshot,
+    )
 
     row = ingestion_gateway.con.execute("SELECT COUNT(*) FROM analytics.typedness").fetchone()
     if (row[0] if row else 0) < 1:

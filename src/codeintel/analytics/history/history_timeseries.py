@@ -8,7 +8,6 @@ The Hamilton native module is at:
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -16,6 +15,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
+from codeintel.core.hashing import sha256_short
 from codeintel.core.ibis_typing import and_predicates, eq, sort_desc
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
@@ -106,7 +106,7 @@ def make_entity_stable_id(
         Stable identifier hashed from entity coordinates.
     """
     raw = f"{repo}:{rel_path}:{language}:{kind}:{qualname}"
-    return hashlib.sha256(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:20]
+    return sha256_short(raw, length=20, used_for_security=False)
 
 
 def _safe_number(value: NumericLike | None) -> float | None:

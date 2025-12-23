@@ -58,8 +58,6 @@ class ErrorType(Enum):
     STORAGE = f"{ERROR_TYPE_BASE}/storage"
 
 
-
-
 def _exception_to_problem(exc: BaseException) -> ProblemDetail:
     """Convert an exception to RFC 9457 Problem Details.
 

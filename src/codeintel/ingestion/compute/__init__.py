@@ -5,7 +5,7 @@ for all I/O operations. Each computation follows the pattern:
 
 1. Accept ports via constructor injection
 2. Execute pure logic that uses ports for I/O
-3. Return a result with row counts and status
+3. Return row tuples and execution status
 
 This is analogous to graphs/compute/ - stateless computation with no direct
 database or filesystem dependencies.

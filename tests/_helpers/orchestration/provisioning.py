@@ -45,7 +45,6 @@ from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     GoidRow,
-    RepoMapRow,
     SubsystemModuleRow,
     SubsystemRow,
     SymbolUseEdgeRow,
@@ -67,6 +66,7 @@ from tests._helpers.configs import (
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.ingestion import materialize_repo_scan_result, materialize_rows_for_snapshot
 from tests._helpers.orchestration.repo_writers import (
     write_callgraph_alias_repo,
     write_coverage_driver,
@@ -84,6 +84,9 @@ if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
+
+
+log = logging.getLogger(__name__)
 
 
 def make_repo_context(
@@ -328,11 +331,10 @@ def _run_ingestion_steps(
     """
     if opts.include_typing:
         typing_step = TypingIngestStep(
-            storage=setup.storage,
             discovery=setup.discovery,
             tools=setup.tool_adapter,
         )
-        asyncio.run(
+        typing_result = asyncio.run(
             typing_step.execute_async(
                 list(modules),
                 repo=repo,
@@ -340,9 +342,28 @@ def _run_ingestion_steps(
                 repo_root=str(setup.ctx.repo_root),
             )
         )
+        if typing_result.result.success:
+            snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=setup.ctx.repo_root)
+            materialize_rows_for_snapshot(
+                setup.gateway,
+                "analytics.typedness",
+                typing_result.typedness_rows,
+                snapshot=snapshot,
+            )
+            materialize_rows_for_snapshot(
+                setup.gateway,
+                "analytics.static_diagnostics",
+                typing_result.diagnostic_rows,
+                snapshot=snapshot,
+            )
+        else:
+            log.warning(
+                "Typing ingest failed during provisioning: %s",
+                typing_result.result.error or "unknown",
+            )
     if opts.include_coverage:
-        coverage_step = CoverageIngestStep(storage=setup.storage, tools=setup.tool_adapter)
-        asyncio.run(
+        coverage_step = CoverageIngestStep(tools=setup.tool_adapter)
+        coverage_result = asyncio.run(
             coverage_step.execute_async(
                 [],
                 repo=repo,
@@ -351,6 +372,19 @@ def _run_ingestion_steps(
                 coverage_file=setup.coverage_file,
             )
         )
+        if coverage_result.result.success:
+            snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=setup.ctx.repo_root)
+            materialize_rows_for_snapshot(
+                setup.gateway,
+                "analytics.coverage_lines",
+                coverage_result.rows,
+                snapshot=snapshot,
+            )
+        else:
+            log.warning(
+                "Coverage ingest failed during provisioning: %s",
+                coverage_result.result.error or "unknown",
+            )
     if opts.build_graph_metrics:
         seed_cfg_dfg_for_metrics(setup.gateway, rel_path="pkg/mod.py")
         # CFG/DFG metrics computation now happens via Hamilton native modules
@@ -435,31 +469,22 @@ def provision_ingested_repo(
     code_profile = default_code_profile(repo_root)
 
     scan_step = RepoScanStep(
-        storage=setup.storage,
         discovery=setup.discovery,
         change_detection=setup.change_detection,
     )
-    _, modules, _ = scan_step.execute(
+    scan_result = scan_step.execute(
         repo=repo,
         commit=commit,
         repo_root=repo_root,
         profile=code_profile,
     )
-
-    modules_map = {mod.rel_path: mod.module_name for mod in modules}
-    insert_rows(
+    materialize_repo_scan_result(
         setup.gateway,
-        [
-            RepoMapRow(
-                repo=repo,
-                commit=commit,
-                modules=modules_map,
-                overlays={},
-            )
-        ],
+        scan_result,
+        snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=repo_root),
     )
 
-    _run_ingestion_steps(setup, list(modules), opts, repo, commit)
+    _run_ingestion_steps(setup, list(scan_result.modules), opts, repo, commit)
 
     return ProvisionedGateway(
         repo=repo,
@@ -510,18 +535,23 @@ def provision_existing_repo(
     code_profile = default_code_profile(repo_root)
 
     scan_step = RepoScanStep(
-        storage=setup.storage,
         discovery=setup.discovery,
         change_detection=setup.change_detection,
     )
-    _, modules, _ = scan_step.execute(
+    scan_result = scan_step.execute(
         repo=repo,
         commit=commit,
         repo_root=repo_root,
         profile=code_profile,
     )
 
-    _run_ingestion_steps(setup, list(modules), opts, repo, commit)
+    materialize_repo_scan_result(
+        setup.gateway,
+        scan_result,
+        snapshot=SnapshotRef(repo=repo, commit=commit, repo_root=repo_root),
+    )
+
+    _run_ingestion_steps(setup, list(scan_result.modules), opts, repo, commit)
 
     return ProvisionedGateway(
         repo=repo,
