@@ -5,8 +5,8 @@ This module contains:
 - COMPOSITE_SCHEMAS: Profile composition schema definitions.
 
 The registry is the canonical source of explicit table schemas used by
-non-Hamilton metadata tables, caches, and docs views. Output dataset schemas
-are provided by the Hamilton registry and should not be declared here.
+metadata tables, caches, docs views, and build output datasets. Output
+schemas are included here to seed OutputContracts and schema validation.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from codeintel.config.datasets.primitives import (
     Index,
     TableSchema,
 )
+from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
 
 TABLE_SCHEMAS: dict[str, TableSchema] = {
     "core.ingest_runs": TableSchema(
@@ -499,6 +500,8 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
         description="Node-level execution telemetry for fine-grained profiling",
     ),
 }
+
+TABLE_SCHEMAS.update(OUTPUT_TABLE_SCHEMAS)
 
 COMPOSITE_SCHEMAS: Final[dict[str, CompositeSchema]] = {
     "analytics.function_profile": CompositeSchema(

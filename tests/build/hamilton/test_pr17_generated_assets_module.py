@@ -1,10 +1,10 @@
 """Tests for PR-17: Assets module generation (no target nodes).
 
-This module verifies that when include_target_nodes=False:
-1. Assets module contains dataset nodes (d__*)
-2. Assets module contains loader nodes (q__*, df__*)
-3. Assets module contains artifact nodes (a__*)
-4. Assets module does NOT contain target nodes (t__*)
+This module verifies that the generated support module:
+1. Contains dataset nodes (d__*)
+2. Contains loader nodes (q__*, df__*)
+3. Contains artifact nodes (a__*)
+4. Does NOT contain target nodes (t__*)
 """
 
 from __future__ import annotations
@@ -14,15 +14,12 @@ import pytest
 from codeintel.build.hamilton.nodes.support_factory import (
     SupportGenerationOptions,
     build_support_module,
-    clear_support_module_cache,
 )
 
 
 def test_assets_module_has_dataset_nodes() -> None:
     """Verify assets module contains dataset nodes."""
-    clear_support_module_cache()
     options = SupportGenerationOptions(
-        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
@@ -43,9 +40,7 @@ def test_assets_module_has_dataset_nodes() -> None:
 
 def test_assets_module_has_loader_nodes() -> None:
     """Verify assets module contains query and dataframe loader nodes."""
-    clear_support_module_cache()
     options = SupportGenerationOptions(
-        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
@@ -75,9 +70,7 @@ def test_assets_module_has_loader_nodes() -> None:
 
 def test_assets_module_has_artifact_nodes() -> None:
     """Verify assets module contains artifact nodes for SCIP/exports."""
-    clear_support_module_cache()
     options = SupportGenerationOptions(
-        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
@@ -98,9 +91,7 @@ def test_assets_module_has_artifact_nodes() -> None:
 
 def test_assets_module_no_target_nodes() -> None:
     """Verify assets module does NOT contain target nodes."""
-    clear_support_module_cache()
     options = SupportGenerationOptions(
-        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,
@@ -122,9 +113,7 @@ def test_assets_module_no_target_nodes() -> None:
 
 def test_assets_module_all_node_types_independent() -> None:
     """Verify assets module generation works with all node types enabled."""
-    clear_support_module_cache()
     options = SupportGenerationOptions(
-        include_target_stubs=False,
         include_dataset_nodes=True,
         include_loader_nodes=True,
         include_artifact_nodes=True,

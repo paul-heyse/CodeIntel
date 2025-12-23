@@ -1,6 +1,6 @@
 """Consolidated Hamilton implementation for metrics-related analytics targets.
 
-This module consolidates metrics analytics targets using Phase 1 templates:
+This module consolidates metrics analytics targets using native materialization helpers:
 
 History Targets (Pattern B - Rows):
 - ``function_history``: Per-function creation/modification/churn metrics
@@ -50,26 +50,14 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    FUNCTION_HISTORY_OVERRIDE_TABLES,
-    HISTORY_TIMESERIES_OVERRIDE_TABLES,
-    SUBSYSTEM_AGREEMENT_OVERRIDE_TABLES,
-    SUBSYSTEM_GRAPH_METRICS_OVERRIDE_TABLES,
-    SYMBOL_GRAPH_METRICS_OVERRIDE_TABLES,
-    TEST_GRAPH_METRICS_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -110,63 +98,6 @@ TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.test_graph_metrics_functions
 TEST_GRAPH_METRICS_TABLE_KEYS = (
     TEST_GRAPH_METRICS_TESTS_TABLE_KEY,
     TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-)
-
-register_output_targets(
-    make_output_target(
-        name=FUNCTION_HISTORY_TARGET_NAME,
-        module="analytics",
-        description="Function git history and churn metrics.",
-        options=TargetSpecOptions(
-            table_keys=(FUNCTION_HISTORY_TABLE_KEY,),
-            override_tables=FUNCTION_HISTORY_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=HISTORY_TIMESERIES_TARGET_NAME,
-        module="analytics",
-        description="Historical metrics timeseries for trending.",
-        options=TargetSpecOptions(
-            table_keys=(HISTORY_TIMESERIES_TABLE_KEY,),
-            override_tables=HISTORY_TIMESERIES_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-        module="analytics",
-        description="Graph metrics for subsystems.",
-        options=TargetSpecOptions(
-            table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,),
-            override_tables=SUBSYSTEM_GRAPH_METRICS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-        module="analytics",
-        description="Graph metrics from symbol usage patterns.",
-        options=TargetSpecOptions(
-            table_keys=SYMBOL_GRAPH_METRICS_TABLE_KEYS,
-            override_tables=SYMBOL_GRAPH_METRICS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-        module="analytics",
-        description="Subsystem vs import community agreement.",
-        options=TargetSpecOptions(
-            table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,),
-            override_tables=SUBSYSTEM_AGREEMENT_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=TEST_GRAPH_METRICS_TARGET_NAME,
-        module="analytics",
-        description="Graph metrics from test-function bipartite graph.",
-        options=TargetSpecOptions(
-            table_keys=TEST_GRAPH_METRICS_TABLE_KEYS,
-            override_tables=TEST_GRAPH_METRICS_OVERRIDE_TABLES,
-        ),
-    ),
 )
 
 
@@ -266,13 +197,13 @@ def t__function_history__compute(
     )
 
 
-@tag_materialize(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
+@codeintel_target(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
 def t__function_history(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__function_history: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize function history table to DuckDB.
+    """Materialize function git history and churn metrics.
 
     Parameters
     ----------
@@ -345,13 +276,13 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
     )
 
 
-@tag_materialize(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
+@codeintel_target(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
 def t__history_timeseries(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__history_timeseries: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize history timeseries table to DuckDB.
+    """Materialize historical metrics timeseries for trending.
 
     Parameters
     ----------
@@ -480,14 +411,14 @@ def subsystem_graph_metrics__rows(
     return tuple(t__subsystem_graph_metrics__compute.rows)
 
 
-@tag_materialize(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     t__subsystem_graph_metrics__compute: SubsystemGraphMetricsComputeResult,
     m__analytics__subsystem_graph_metrics: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize subsystem graph metrics target.
+    """Materialize graph metrics for subsystems.
 
     Parameters
     ----------
@@ -675,7 +606,7 @@ def symbol_graph_metrics__functions_rows(
     return tuple(t__symbol_graph_metrics__compute.function_rows)
 
 
-@tag_materialize(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
@@ -683,7 +614,7 @@ def t__symbol_graph_metrics(
     m__analytics__symbol_graph_metrics_modules: MaterializationMetadata,
     m__analytics__symbol_graph_metrics_functions: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize symbol graph metrics target.
+    """Materialize graph metrics from symbol usage patterns.
 
     Parameters
     ----------
@@ -805,14 +736,14 @@ def subsystem_agreement__rows(
     return tuple(t__subsystem_agreement__compute.rows)
 
 
-@tag_materialize(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
+@codeintel_target(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement(
     env: BuildEnv,
     graph: TargetGraph,
     t__subsystem_agreement__compute: SubsystemAgreementComputeResult,
     m__analytics__subsystem_agreement: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize subsystem agreement target.
+    """Compute subsystem vs import community agreement.
 
     Parameters
     ----------
@@ -966,14 +897,14 @@ def test_graph_metrics__functions_rows(
     return tuple(t__test_graph_metrics__compute.function_rows)
 
 
-@tag_materialize(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
 def t__test_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__test_graph_metrics_tests: MaterializationMetadata,
     m__analytics__test_graph_metrics_functions: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize both test graph metrics tables to DuckDB.
+    """Materialize graph metrics from test-function bipartite graph.
 
     Parameters
     ----------

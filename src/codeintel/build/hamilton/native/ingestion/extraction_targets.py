@@ -27,15 +27,9 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    AST_OVERRIDE_TABLES,
-    CST_OVERRIDE_TABLES,
-    DOCSTRINGS_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
+from codeintel.build.hamilton.native.target_decorators import (
+    TargetSpecDescriptor,
+    codeintel_target,
 )
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -43,7 +37,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
@@ -80,38 +74,6 @@ CST_TABLE_KEYS = (CST_NODES_TABLE_KEY,)
 
 DOCSTRINGS_TABLE_KEY = "core.docstrings"
 DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
-
-register_output_targets(
-    make_output_target(
-        name=AST_TARGET_NAME,
-        module="ingestion",
-        description="Python AST extraction and metrics.",
-        options=TargetSpecOptions(
-            table_keys=AST_TABLE_KEYS,
-            override_tables=AST_OVERRIDE_TABLES,
-            resources=TargetResources(tracker=True, modules=True),
-            execution=CPU_INTENSIVE_EXECUTION,
-        ),
-    ),
-    make_output_target(
-        name=CST_TARGET_NAME,
-        module="ingestion",
-        description="Concrete syntax tree extraction.",
-        options=TargetSpecOptions(
-            table_keys=CST_TABLE_KEYS,
-            override_tables=CST_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=DOCSTRINGS_TARGET_NAME,
-        module="ingestion",
-        description="Docstring extraction and parsing.",
-        options=TargetSpecOptions(
-            table_keys=DOCSTRINGS_TABLE_KEYS,
-            override_tables=DOCSTRINGS_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 def _should_skip_extract(env: BuildEnv, graph: TargetGraph, target_name: str) -> bool:
@@ -211,7 +173,14 @@ def ast__metric_rows(
     return t__ast__extract.metric_rows
 
 
-@tag_materialize(domain="ingestion", target=AST_TARGET_NAME)
+@codeintel_target(
+    domain="ingestion",
+    target=AST_TARGET_NAME,
+    spec=TargetSpecDescriptor(
+        resources=TargetResources(tracker=True, modules=True),
+        execution=CPU_INTENSIVE_EXECUTION,
+    ),
+)
 def t__ast(
     env: BuildEnv,
     graph: TargetGraph,
@@ -219,7 +188,7 @@ def t__ast(
     m__core__ast_nodes: MaterializationMetadata,
     m__core__ast_metrics: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize AST target with validation.
+    """Python AST extraction and metrics.
 
     Returns
     -------
@@ -300,14 +269,14 @@ def cst__node_rows(
     return t__cst__extract.rows
 
 
-@tag_materialize(domain="ingestion", target=CST_TARGET_NAME)
+@codeintel_target(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst(
     env: BuildEnv,
     graph: TargetGraph,
     t__cst__extract: CstExtractResult,
     m__core__cst_nodes: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize CST target with validation.
+    """Concrete syntax tree extraction.
 
     Returns
     -------
@@ -387,14 +356,14 @@ def docstrings__rows(
     return t__docstrings__extract.rows
 
 
-@tag_materialize(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
+@codeintel_target(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings(
     env: BuildEnv,
     graph: TargetGraph,
     t__docstrings__extract: DocstringsExtractResult,
     m__core__docstrings: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize docstrings target with validation.
+    """Docstring extraction and parsing.
 
     Returns
     -------

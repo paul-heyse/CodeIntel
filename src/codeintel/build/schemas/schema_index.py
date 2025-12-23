@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.build.contracts import is_placeholder_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 
@@ -300,8 +299,6 @@ def build_schema_index(
     for target in system.graph.all_targets:
         for table_key in target.contract.table_keys:
             override_schema = target.contract.get_table(table_key)
-            if override_schema is not None and is_placeholder_schema(override_schema):
-                override_schema = None
             if table_key in inferable:
                 kind: SchemaDerivationKind = "inferred_ibis"
             else:

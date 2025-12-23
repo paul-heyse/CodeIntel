@@ -25,12 +25,12 @@ from codeintel.build.hamilton.introspect import (
 )
 from codeintel.build.hamilton.naming import target_node
 from codeintel.build.hamilton.native.discovery import load_native_modules
-from codeintel.build.hamilton.native.target_spec_helpers import resolve_registered_targets
 from codeintel.build.hamilton.nodes.support_factory import (
     SupportGenerationOptions,
     build_support_module,
 )
 from codeintel.build.hamilton.runtime import HamiltonRuntime
+from codeintel.build.hamilton.target_spec_compiler import compile_output_targets_from_driver
 from codeintel.build.settings import get_build_settings
 from codeintel.build.targets import TargetGraph
 
@@ -56,8 +56,7 @@ def _build_base_graph(
 ) -> tuple[TargetGraph, h_driver.Driver]:
     native_mods = load_native_modules()
     driver = h_driver.Builder().with_config(config or {}).with_modules(*native_mods).build()
-    target_names = target_names_from_nodes(driver.graph.nodes)
-    targets = resolve_registered_targets(target_names)
+    targets = compile_output_targets_from_driver(driver, strict=True)
     base_graph = TargetGraph()
     for target in targets:
         base_graph.register(target)
@@ -83,7 +82,6 @@ def _build_support_graph_and_module(
         derived_outputs = derive_target_outputs_from_savers(native_runtime)
     support_module = build_support_module(
         options=SupportGenerationOptions(
-            include_target_stubs=False,
             include_dataset_nodes=True,
             include_loader_nodes=True,
             include_artifact_nodes=True,

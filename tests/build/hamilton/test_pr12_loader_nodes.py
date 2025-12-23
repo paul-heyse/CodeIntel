@@ -15,7 +15,6 @@ from codeintel.build.hamilton.naming import dataframe_node, query_node
 from codeintel.build.hamilton.nodes.support_factory import (
     SupportGenerationOptions,
     build_support_module,
-    clear_support_module_cache,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
@@ -59,7 +58,6 @@ class TestGeneratedModuleLoaderNodes:
     @staticmethod
     def test_generated_module_has_query_nodes() -> None:
         """Verify generated module includes q__* nodes."""
-        clear_support_module_cache()
         module = build_support_module(
             options=SupportGenerationOptions(include_loader_nodes=True),
         )
@@ -74,7 +72,6 @@ class TestGeneratedModuleLoaderNodes:
     @staticmethod
     def test_generated_module_has_dataframe_nodes() -> None:
         """Verify generated module includes df__* nodes."""
-        clear_support_module_cache()
         module = build_support_module(
             options=SupportGenerationOptions(include_loader_nodes=True),
         )
@@ -89,7 +86,6 @@ class TestGeneratedModuleLoaderNodes:
     @staticmethod
     def test_loader_nodes_disabled_by_default() -> None:
         """Verify loader nodes are not generated when flag is False."""
-        clear_support_module_cache()
         module = build_support_module(
             options=SupportGenerationOptions(include_loader_nodes=False),
         )

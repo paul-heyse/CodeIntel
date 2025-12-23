@@ -11,7 +11,7 @@ from codeintel.analytics.testing.coverage.edges import (
     TestCoverageOptions,
     build_test_coverage_edges_rows,
 )
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config import SnapshotInit
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import ModulesAssertions
@@ -54,7 +54,7 @@ def create_coverage_edge_env(
     Returns
     -------
     CoverageEdgeEnv
-        Prepared environment with repo, gateway, builder, and seeded GOIDs.
+        Prepared environment with repo, gateway, snapshot, and seeded GOIDs.
     """
     seed_cfg = seed or CoverageSeedConfig()
     repo_root = tmp_path / "repo"
@@ -75,9 +75,11 @@ def create_coverage_edge_env(
             validate_schema=True,
         )
     )
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=seed_cfg.repo, commit=seed_cfg.commit, repo_root=repo_root),
-    )
+    snapshot = SnapshotInit(
+        repo=seed_cfg.repo,
+        commit=seed_cfg.commit,
+        repo_root=repo_root,
+    ).to_snapshot_ref()
     seed_coverage_rows(
         gateway=gateway,
         rel_path=rel_path.as_posix(),
@@ -87,7 +89,7 @@ def create_coverage_edge_env(
     return CoverageEdgeEnv(
         repo_root=repo_root,
         gateway=gateway,
-        builder=builder,
+        snapshot=snapshot,
         module_import=seed_cfg.module_import,
         function_name=seed_cfg.function_name,
         test_id=seed_cfg.test_id,
@@ -141,7 +143,7 @@ def compute_coverage_edges(
     coverage_loader
         Optional custom coverage loader function.
     """
-    snapshot = env.builder.snapshot
+    snapshot = env.snapshot
     options = TestCoverageOptions(
         coverage_file=coverage_file,
         coverage_loader=coverage_loader,

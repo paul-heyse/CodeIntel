@@ -28,22 +28,14 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    SEMANTIC_ROLES_OVERRIDE_TABLES,
-    TEST_PROFILE_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -63,31 +55,8 @@ TEST_PROFILE_TARGET_NAME = "test_profile"
 
 SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY = "analytics.semantic_roles_functions"
 SEMANTIC_ROLES_MODULES_TABLE_KEY = "analytics.semantic_roles_modules"
-SEMANTIC_ROLES_TABLE_KEYS = (SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY, SEMANTIC_ROLES_MODULES_TABLE_KEY)
 
 TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
-TEST_PROFILE_TABLE_KEYS = (TEST_PROFILE_TABLE_KEY,)
-
-register_output_targets(
-    make_output_target(
-        name=SEMANTIC_ROLES_TARGET_NAME,
-        module="analytics",
-        description="Semantic role classification (handler, utility, etc.).",
-        options=TargetSpecOptions(
-            table_keys=SEMANTIC_ROLES_TABLE_KEYS,
-            override_tables=SEMANTIC_ROLES_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=TEST_PROFILE_TARGET_NAME,
-        module="analytics",
-        description="Per-test profile with coverage and characteristics.",
-        options=TargetSpecOptions(
-            table_keys=TEST_PROFILE_TABLE_KEYS,
-            override_tables=TEST_PROFILE_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 @tag_compute(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
@@ -251,14 +220,14 @@ def semantic_roles__modules_rows(
     return tuple(t__semantic_roles__compute.module_rows)
 
 
-@tag_materialize(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
+@codeintel_target(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def t__semantic_roles(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__semantic_roles_functions: MaterializationMetadata,
     m__analytics__semantic_roles_modules: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize semantic roles target.
+    """Classify semantic roles (handler, utility, etc.).
 
     Combines materialization metadata from both table writes into a
     single TargetRunRecord for the semantic_roles target.
@@ -375,14 +344,14 @@ def test_profile__rows(
     )
 
 
-@tag_materialize(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
+@codeintel_target(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def t__test_profile(
     env: BuildEnv,
     graph: TargetGraph,
     t__test_profile__compute: TestProfileComputeResult,
     m__analytics__test_profile: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize test profile target.
+    """Build per-test profiles with coverage and characteristics.
 
     Returns
     -------

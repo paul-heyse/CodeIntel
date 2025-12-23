@@ -345,8 +345,6 @@ def _resolve_artifact_path_from_template(env: BuildEnv, template: str) -> Path:
     return Path(format_path_template(template, formatter=fmt))
 
 
-
-
 def _coerce_bytes(data: object) -> bytes:
     if isinstance(data, bytes):
         return data

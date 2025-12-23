@@ -57,6 +57,7 @@ from codeintel.build.hamilton.helpers import (
     get_source_root,
     is_test_path,
 )
+from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -65,18 +66,7 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions, SymbolUsesOptions
-from codeintel.build.hamilton.native.target_override_tables import (
-    CALL_GRAPH_VIEWS_OVERRIDE_TABLES,
-    GOIDS_OVERRIDE_TABLES,
-    GRAPH_METRICS_OVERRIDE_TABLES,
-    GRAPH_VALIDATION_OVERRIDE_TABLES,
-    SYMBOL_USES_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -84,8 +74,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
-from codeintel.build.hamilton.templates import executor_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
@@ -132,84 +121,18 @@ GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
 
 GOIDS_GOIDS_TABLE_KEY = "core.goids"
 GOIDS_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
-GOIDS_TABLE_KEYS = (
-    GOIDS_GOIDS_TABLE_KEY,
-    GOIDS_CROSSWALK_TABLE_KEY,
-)
-
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
-SYMBOL_USES_TABLE_KEYS = (SYMBOL_USE_EDGES_TABLE_KEY,)
 
 CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS = "graph.v_function_call_counts"
 CALL_GRAPH_VIEWS_CALL_DEPTH_STATS = "graph.v_call_depth_stats"
-CALL_GRAPH_VIEWS_TABLE_KEYS = (
-    CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS,
-    CALL_GRAPH_VIEWS_CALL_DEPTH_STATS,
-)
 
 GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
 GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY = "analytics.graph_metrics_functions_ext"
 GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.graph_metrics_modules"
 GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
-GRAPH_METRICS_TABLE_KEYS = (
-    GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
-    GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
-    GRAPH_METRICS_MODULES_TABLE_KEY,
-    GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
-    GRAPH_STATS_TABLE_KEY,
-)
 
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
-GRAPH_VALIDATION_TABLE_KEYS = (GRAPH_VALIDATION_TABLE_KEY,)
-
-register_output_targets(
-    make_output_target(
-        name=GOIDS_TARGET_NAME,
-        module="graphs",
-        description="GOID resolution and crosswalk construction.",
-        options=TargetSpecOptions(
-            table_keys=GOIDS_TABLE_KEYS,
-            override_tables=GOIDS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=SYMBOL_USES_TARGET_NAME,
-        module="graphs",
-        description="Symbol definition-to-use edge extraction.",
-        options=TargetSpecOptions(
-            table_keys=SYMBOL_USES_TABLE_KEYS,
-            override_tables=SYMBOL_USES_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=CALL_GRAPH_VIEWS_TARGET_NAME,
-        module="graphs",
-        description="Derived views over call graph for analytics.",
-        options=TargetSpecOptions(
-            table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS,
-            override_tables=CALL_GRAPH_VIEWS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=GRAPH_METRICS_TARGET_NAME,
-        module="graphs",
-        description="Graph topology metrics for functions and modules.",
-        options=TargetSpecOptions(
-            table_keys=GRAPH_METRICS_TABLE_KEYS,
-            override_tables=GRAPH_METRICS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=GRAPH_VALIDATION_TARGET_NAME,
-        module="graphs",
-        description="Graph integrity validation checks.",
-        options=TargetSpecOptions(
-            table_keys=GRAPH_VALIDATION_TABLE_KEYS,
-            override_tables=GRAPH_VALIDATION_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 @SaveToObjectMetadataDecorator(
@@ -298,6 +221,7 @@ def graph_validation__rows_marker() -> tuple[tuple[object, ...], ...] | None:
         Always ``None`` so the saver node is used only for metadata.
     """
     return None
+
 
 # ---------------------------------------------------------------------------
 # Result dataclasses for goids target
@@ -439,7 +363,7 @@ class GraphValidationResult:
         Whether validation passed (no errors).
     error_count
         Number of validation errors found.
-    errors
+    issues
         List of validation error messages.
     table_counts
         Row counts per output (validation errors).
@@ -449,7 +373,7 @@ class GraphValidationResult:
 
     success: bool
     error_count: int = 0
-    errors: list[str] = field(default_factory=list)
+    issues: list[str] = field(default_factory=list)
     table_counts: dict[str, int] = field(default_factory=dict)
     error: str | None = None
 
@@ -1110,13 +1034,13 @@ def t__goids__extract(
         )
 
 
-@tag_materialize(domain="graphs", target=GOIDS_TARGET_NAME)
+@codeintel_target(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids(
     env: BuildEnv,
     graph: TargetGraph,
     goids__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
-    """Materialize GOIDs target with validation.
+    """Resolve GOIDs and build crosswalks.
 
     This is the entry point for the goids target. It orchestrates
     GOID extraction and returns a TargetRunRecord.
@@ -1219,13 +1143,13 @@ def t__symbol_uses__extract(
         return SymbolUsesExtractResult(success=False, error=str(exc))
 
 
-@tag_materialize(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
+@codeintel_target(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses(
     env: BuildEnv,
     graph: TargetGraph,
     symbol_uses__execution_result: ExecutionResult,
 ) -> TargetRunRecord:
-    """Materialize symbol_uses target.
+    """Extract symbol definition-to-use edges.
 
     Returns
     -------
@@ -1527,14 +1451,14 @@ def call_graph_depth_stats(
     return q__graph__call_graph_edges
 
 
-@tag_materialize(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
+@codeintel_target(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
     m__graph__v_function_call_counts: MaterializationMetadata,
     m__graph__v_call_depth_stats: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize call graph view expressions to DuckDB.
+    """Materialize derived views over the call graph for analytics.
 
     Returns
     -------
@@ -1857,14 +1781,14 @@ def graph_metrics__stats_rows(
     return tuple(t__graph_metrics__compute.graph_stats_rows)
 
 
-@tag_materialize(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+@codeintel_target(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     t__graph_metrics__compute: GraphMetricsComputeResult | None,
     graph_metrics__materializations: GraphMetricsMaterializations,
 ) -> TargetRunRecord:
-    """Materialize graph metrics target from row materializations.
+    """Compute graph topology metrics for functions and modules.
 
     Returns
     -------
@@ -1982,7 +1906,7 @@ def t__graph_validation__check(
         return GraphValidationResult(
             success=len(all_errors) == 0,
             error_count=len(all_errors),
-            errors=all_errors,
+            issues=all_errors,
             table_counts={GRAPH_VALIDATION_TABLE_KEY: len(all_errors)},
         )
 
@@ -1994,13 +1918,13 @@ def t__graph_validation__check(
         )
 
 
-@tag_materialize(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
+@codeintel_target(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation(
     env: BuildEnv,
     graph: TargetGraph,
     t__graph_validation__check: GraphValidationResult,
 ) -> TargetRunRecord:
-    """Materialize graph validation target.
+    """Run graph integrity validation checks.
 
     This target requires custom error handling to join validation errors
     into a readable message, so it does not use executor_materialize.
@@ -2019,8 +1943,8 @@ def t__graph_validation(
         return executor.fail(RuntimeError(t__graph_validation__check.error))
 
     if not t__graph_validation__check.success:
-        errors_msg = "\n".join(t__graph_validation__check.errors)
-        return executor.fail(RuntimeError(f"Graph validation failed:\n{errors_msg}"))
+        issues_msg = "\n".join(t__graph_validation__check.issues)
+        return executor.fail(RuntimeError(f"Graph validation failed:\n{issues_msg}"))
 
     def compute() -> dict[str, int]:
         return dict(t__graph_validation__check.table_counts)

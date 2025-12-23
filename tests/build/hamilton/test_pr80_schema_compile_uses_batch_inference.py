@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.contracts import placeholder_table_schema
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.target_metadata import get_target_metadata_service
+from tests._helpers.contracts import table_schema_for_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -36,7 +36,7 @@ class _SpyBatchInferer:
         self.calls += 1
         keys = tuple(sorted(table_keys))
         self.seen.append(keys)
-        return {key: placeholder_table_schema(key) for key in keys}
+        return {key: table_schema_for_key(key) for key in keys}
 
 
 def test_pr80_schema_compile_uses_batch_inference() -> None:

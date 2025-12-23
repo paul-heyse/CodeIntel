@@ -17,7 +17,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from codeintel.build.hamilton.validate import validate_graph, validation_result_to_json
+from codeintel.build.hamilton.graph_validation import (
+    validate_graph,
+    validation_result_to_json,
+)
 
 BASE_DIRS: tuple[str, ...] = ("src", "tests", "tools", "scripts")
 _SELF_REL_PATH = "tools/guardrails.py"

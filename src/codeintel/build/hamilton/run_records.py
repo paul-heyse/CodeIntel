@@ -20,9 +20,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
+from codeintel.build.hamilton import run_record_utils as run_utils
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
-from codeintel.build.hash_evaluator import evaluate_hash_state
 from codeintel.build.hashing import (
     InputHashOptions,
     compute_input_hash,
@@ -42,6 +42,11 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
+
+SkipCheckRequest = run_utils.SkipCheckRequest
+options_hash_for_target = run_utils.options_hash_for_target
+should_skip = run_utils.should_skip
+should_skip_native_target = run_utils.should_skip_native_target
 
 
 def _validate_strict_row_counts(
@@ -152,127 +157,6 @@ def compute_target_input_hash_with_deps(
         settings=settings,
         options=options,
     )
-
-
-def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
-    """Compute the current configuration options hash for a target.
-
-    Parameters
-    ----------
-    env
-        Build environment with configuration.
-    target_name
-        Target name to compute the options hash for.
-
-    Returns
-    -------
-    str | None
-        16-character options hash, or None when the target has no configuration parameters.
-    """
-    params = env.config.parameters_for(target_name)
-    return compute_target_options_hash(params)
-
-
-@dataclass(frozen=True)
-class SkipCheckRequest:
-    """Input parameters for manifest skip evaluation."""
-
-    gateway: StorageGateway
-    target: str
-    repo: str
-    commit: str
-    input_hash: str
-    options_hash: str | None = None
-    manifest_index: Mapping[str, OutputManifest] | None = None
-
-
-def _resolve_manifest(request: SkipCheckRequest) -> OutputManifest | None:
-    """Resolve a manifest from request inputs.
-
-    Parameters
-    ----------
-    request
-        Skip check inputs including optional manifest index.
-
-    Returns
-    -------
-    OutputManifest | None
-        Resolved manifest when available, otherwise None.
-    """
-    if request.manifest_index is not None:
-        manifest = request.manifest_index.get(request.target)
-        if manifest is not None:
-            return manifest
-    return request.gateway.build.load_manifest(
-        target=request.target,
-        repo=request.repo,
-        commit=request.commit,
-    )
-
-
-def should_skip(request: SkipCheckRequest) -> bool:
-    """Return True if the target can be skipped based on an existing manifest.
-
-    Parameters
-    ----------
-    request
-        SkipCheckRequest containing gateway, target, repo, commit, input hash, and optional manifest
-        index.
-
-    Returns
-    -------
-    bool
-        True if the target can be skipped (output is still valid).
-    """
-    manifest = _resolve_manifest(request)
-    evaluation = evaluate_hash_state(
-        manifest=manifest,
-        input_hash=request.input_hash,
-        options_hash=request.options_hash,
-    )
-    return evaluation.status == "current"
-
-
-def should_skip_native_target(
-    env: BuildEnv,
-    target: OutputTarget,
-    input_hash: str,
-    options_hash: str | None = None,
-) -> bool:
-    """Return True if a native target can be skipped based on manifest.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and manifest index.
-    target
-        Target to check for skip eligibility.
-    input_hash
-        Current computed input hash for the target.
-    options_hash
-        Optional configuration options hash.
-
-    Returns
-    -------
-    bool
-        True if target can be skipped (manifest matches), False otherwise.
-    """
-    if target.name in env.force_targets:
-        return False
-    resolved_options_hash = options_hash
-    if resolved_options_hash is None:
-        resolved_options_hash = options_hash_for_target(env, target.name)
-
-    request = SkipCheckRequest(
-        gateway=env.gateway,
-        target=target.name,
-        repo=env.snapshot.repo,
-        commit=env.snapshot.commit,
-        input_hash=input_hash,
-        options_hash=resolved_options_hash,
-        manifest_index=env.manifest_index,
-    )
-    return should_skip(request)
 
 
 @dataclass(frozen=True)

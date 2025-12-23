@@ -6,12 +6,10 @@ and ensuring consistency.
 
 Subpackages
 -----------
-- config: Configuration accessor protocol and registry
+- config: Runtime settings dataclasses
 - execution: Runtime execution infrastructure (telemetry, retry, timing)
-- plugins: Unified plugin protocol, result types, and registry
-- recipes: Unified recipe DSL and executor
+- plugins: Unified plugin protocol, result types, and execution context
 - resources: Unified resource provider protocol and registry
-- types: Common type definitions (status types)
 
 Modules
 -------
@@ -20,20 +18,8 @@ Modules
 
 from __future__ import annotations
 
-from codeintel.core.config.accessor import ConfigAccessor
-from codeintel.core.config.registry import (
-    ConfigNotFoundError,
-    ConfigRegistry,
-    ConfigTypeError,
-    ConfigValidationError,
-)
 from codeintel.core.singleton import SingletonHolder
 
 __all__ = [
-    "ConfigAccessor",
-    "ConfigNotFoundError",
-    "ConfigRegistry",
-    "ConfigTypeError",
-    "ConfigValidationError",
     "SingletonHolder",
 ]

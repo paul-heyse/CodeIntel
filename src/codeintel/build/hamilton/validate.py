@@ -14,7 +14,6 @@ from textwrap import dedent
 from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.schemas import get_schema_provider
 from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
@@ -27,6 +26,7 @@ from codeintel.core.hamilton.tags import (
     TAG_NODE_TYPE,
     TAG_TABLE_KEY,
     TAG_TARGET,
+    TAG_TARGET_SPEC_VERSION,
 )
 
 if TYPE_CHECKING:
@@ -143,22 +143,6 @@ def validation_result_to_json(
     return json.dumps(obj, indent=indent, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def validate_graph() -> GraphValidationResult:
-    """Validate the Hamilton graph for build invariants.
-
-    Returns
-    -------
-    GraphValidationResult
-        Validation result for the constructed graph.
-    """
-    runtime = build_driver()
-    return validate_nodes(
-        runtime.dr.graph.nodes,
-        base_graph=runtime.graph,
-        enforce_compute_io_purity=True,
-    )
-
-
 def _tags_mapping(node: NodeLike) -> Mapping[str, object] | None:
     tags = node.tags
     if not isinstance(tags, dict):
@@ -203,6 +187,18 @@ def _collect_materialize_index(
                 )
             )
             continue
+
+        spec_version = tags.get(TAG_TARGET_SPEC_VERSION)
+        if spec_version != "1":
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="missing_tag",
+                    message="Materialize node missing/invalid target_spec_version tag",
+                    node=node.name,
+                    target=target,
+                )
+            )
 
         node_to_target[node.name] = target
         materialize_nodes_by_target.setdefault(target, []).append(node.name)
@@ -854,6 +850,7 @@ def validate_nodes(
     *,
     base_graph: TargetGraph | None = None,
     schema_provider: SchemaProvider | None = None,
+    validate_schema: bool = True,
     enforce_compute_io_purity: bool = False,
 ) -> GraphValidationResult:
     """Validate Hamilton FunctionGraph nodes against build invariants.
@@ -866,6 +863,8 @@ def validate_nodes(
         Optional TargetGraph used for warn-only dependency parity checks.
     schema_provider
         Optional schema provider override (defaults to canonical provider).
+    validate_schema
+        When False, skip schema provider resolution and unknown schema checks.
     enforce_compute_io_purity
         When True, validate that nodes tagged ``node_type="compute"`` do not contain direct I/O
         calls (e.g., ``.execute()``, ``.execute_scalar()``, or ``.ibis.table()``).
@@ -875,7 +874,9 @@ def validate_nodes(
     GraphValidationResult
         Validation results with deterministic ordering.
     """
-    provider = get_schema_provider() if schema_provider is None else schema_provider
+    provider = schema_provider
+    if validate_schema and provider is None:
+        provider = get_schema_provider()
 
     inputs = _collect_validation_inputs(nodes)
 
@@ -887,12 +888,13 @@ def validate_nodes(
     ]
     errors.extend(_async_node_issues(nodes))
     errors.extend(_duplicate_materialize_issues(inputs.materialize_nodes_by_target))
-    errors.extend(
-        _unknown_schema_issues(
-            provider=provider,
-            produced_table_to_target=inputs.saver_table_to_target,
+    if validate_schema and provider is not None:
+        errors.extend(
+            _unknown_schema_issues(
+                provider=provider,
+                produced_table_to_target=inputs.saver_table_to_target,
+            )
         )
-    )
 
     warnings: list[GraphValidationIssue] = []
 
@@ -1015,7 +1017,6 @@ __all__ = [
     "GraphValidationIssue",
     "GraphValidationResult",
     "NodeLike",
-    "validate_graph",
     "validate_nodes",
     "validation_result_to_json",
 ]

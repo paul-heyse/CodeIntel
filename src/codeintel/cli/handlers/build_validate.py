@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.validate import validate_graph, validation_result_to_json
+from codeintel.build.hamilton.graph_validation import (
+    validate_graph,
+    validation_result_to_json,
+)
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
 

@@ -7,15 +7,13 @@ This module generates **support nodes** that are derived mechanically from the
 - Loader nodes (`q__*`, `df__*`): load datasets as Ibis tables or pandas DataFrames.
 - Artifact nodes (`a__*`): expose artifact references from a producing target record.
 
-Optionally, it can also generate **stub target nodes** (`t__*`) that fail with a
-clear error when no native implementation is present. In normal operation, the
-native Hamilton modules provide the real `t__*` nodes and override these stubs.
+This module no longer generates `t__*` stub targets; native Hamilton modules
+are expected to provide all target nodes directly.
 """
 
 from __future__ import annotations
 
 import inspect
-import logging
 import sys
 from dataclasses import dataclass
 from types import ModuleType
@@ -29,7 +27,6 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.introspect import (
     derive_target_dependencies,
     target_graph_from_hamilton,
-    target_names_from_nodes,
 )
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
@@ -42,7 +39,6 @@ from codeintel.build.hamilton.naming import (
     target_node,
 )
 from codeintel.build.hamilton.native.discovery import load_native_modules
-from codeintel.build.hamilton.native.target_spec_helpers import resolve_registered_targets
 from codeintel.build.hamilton.nodes.mappings import SupportNodeMappings
 from codeintel.build.hamilton.nodes.module_attach import attach_node
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
@@ -53,8 +49,8 @@ from codeintel.build.hamilton.tagging import (
     tag_dataset,
     tag_loader_dataframe,
     tag_loader_query,
-    tag_materialize,
 )
+from codeintel.build.hamilton.target_spec_compiler import compile_output_targets_from_driver
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -63,98 +59,15 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.introspect import DerivedTargetOutputs
     from codeintel.build.targets import OutputTarget
 
-log = logging.getLogger(__name__)
-
-
 @dataclass(frozen=True)
 class SupportGenerationOptions:
     """Options for support-node module generation."""
 
-    include_target_stubs: bool = True
     include_dataset_nodes: bool = True
     include_loader_nodes: bool = True
     include_artifact_nodes: bool = True
     include_targets: frozenset[str] | None = None
     exclude_targets: frozenset[str] | None = None
-
-
-@dataclass
-class _SupportModuleCache:
-    module: ModuleType | None = None
-    config_key: tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]] | None = None
-
-
-_MODULE_CACHE = _SupportModuleCache()
-
-
-def _create_stub_target_node_function(
-    target: OutputTarget,
-    dep_node_names: list[str],
-    *,
-    domain: str,
-) -> Callable[..., TargetRunRecord]:
-    """Create a stub `t__*` node for a target.
-
-    The stub exists to keep the DAG complete and produce a deterministic
-    error when a target lacks a native implementation. Native modules should
-    override this node by defining a real `t__<target>` function.
-
-    Returns
-    -------
-    Callable[..., TargetRunRecord]
-        Stub node callable returning a failed TargetRunRecord.
-    """
-    target_name = target.name
-
-    def node_fn(
-        env: BuildEnv,
-        graph: TargetGraph,
-        **dependencies: TargetRunRecord,
-    ) -> TargetRunRecord:
-        _ = env, graph
-        failed_upstream = [rec.target for rec in dependencies.values() if rec.status == "failed"]
-        if failed_upstream:
-            return TargetRunRecord(
-                target=target_name,
-                plugin_name=f"template:{target_name}",
-                status="failed",
-                input_hash=None,
-                error=f"Upstream target(s) failed: {', '.join(failed_upstream)}",
-            )
-        return TargetRunRecord(
-            target=target_name,
-            plugin_name=f"template:{target_name}",
-            status="failed",
-            input_hash=None,
-            error=f"Missing native implementation for target '{target_name}'.",
-        )
-
-    params: list[inspect.Parameter] = [
-        inspect.Parameter(
-            "env",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=BuildEnv,
-        ),
-        inspect.Parameter(
-            "graph",
-            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=TargetGraph,
-        ),
-        *[
-            inspect.Parameter(
-                dep_name,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=TargetRunRecord,
-            )
-            for dep_name in dep_node_names
-        ],
-    ]
-
-    set_signature(node_fn, inspect.Signature(params, return_annotation=TargetRunRecord))
-    node_fn.__name__ = target_node(target_name)
-    node_fn.__doc__ = f"Stub target node for {target_name}. Native implementation missing."
-
-    return tag_materialize(domain=domain, target=target_name)(node_fn)
 
 
 def _create_dataset_node_function(
@@ -364,8 +277,7 @@ def _build_contract_graph() -> TargetGraph:
     """
     native_mods = load_native_modules()
     dr = h_driver.Builder().with_modules(*native_mods).build()
-    target_names = target_names_from_nodes(dr.graph.nodes)
-    targets = resolve_registered_targets(target_names)
+    targets = compile_output_targets_from_driver(dr, strict=True)
 
     base_graph = TargetGraph()
     for target in targets:
@@ -377,7 +289,7 @@ def _build_contract_graph() -> TargetGraph:
         runtime,
         base_graph=base_graph,
         derived_deps=derived,
-        strict=False,
+        strict=True,
     )
 
 
@@ -424,16 +336,6 @@ def _populate_for_target(
     derived_outputs: DerivedTargetOutputs | None,
 ) -> None:
     """Attach all enabled support nodes for a target to the module."""
-    if options.include_target_stubs:
-        dep_node_names = [target_node(dep) for dep in target.dependencies]
-        t_name = target_node(target.name)
-        mappings.target_to_node[target.name] = t_name
-        attach_node(
-            module,
-            node_name=t_name,
-            fn=_create_stub_target_node_function(target, dep_node_names, domain=target.module),
-        )
-
     if options.include_dataset_nodes:
         table_keys = (
             derived_outputs.datasets_by_target.get(target.name, target.contract.table_keys)
@@ -545,57 +447,7 @@ def build_support_module(
     return module
 
 
-def _cache_key(
-    options: SupportGenerationOptions,
-) -> tuple[bool, bool, bool, bool, frozenset[str], frozenset[str]]:
-    return (
-        options.include_target_stubs,
-        options.include_dataset_nodes,
-        options.include_loader_nodes,
-        options.include_artifact_nodes,
-        options.include_targets or frozenset(),
-        options.exclude_targets or frozenset(),
-    )
-
-
-def get_support_module(
-    *,
-    options: SupportGenerationOptions | None = None,
-    graph: TargetGraph | None = None,
-    derived_outputs: DerivedTargetOutputs | None = None,
-) -> ModuleType:
-    """Return a cached support-node module, creating it on first call.
-
-    Returns
-    -------
-    ModuleType
-        Cached module containing generated support nodes.
-    """
-    if graph is not None or derived_outputs is not None:
-        return build_support_module(options=options, graph=graph, derived_outputs=derived_outputs)
-
-    resolved = options or SupportGenerationOptions()
-    key = _cache_key(resolved)
-    if _MODULE_CACHE.module is None or _MODULE_CACHE.config_key != key:
-        _MODULE_CACHE.module = build_support_module(options=resolved)
-        _MODULE_CACHE.config_key = key
-    if _MODULE_CACHE.module is None:
-        _MODULE_CACHE.module = build_support_module(options=resolved)
-        _MODULE_CACHE.config_key = key
-    return _MODULE_CACHE.module
-
-
-def clear_support_module_cache() -> None:
-    """Clear the cached support module (useful for tests)."""
-    if _MODULE_CACHE.module is not None:
-        sys.modules.pop(_MODULE_CACHE.module.__name__, None)
-    _MODULE_CACHE.module = None
-    _MODULE_CACHE.config_key = None
-
-
 __all__ = [
     "SupportGenerationOptions",
     "build_support_module",
-    "clear_support_module_cache",
-    "get_support_module",
 ]

@@ -65,7 +65,8 @@ def _artifact_specs_for_target(
             ArtifactOutSpec(
                 name=artifact_name,
                 kind=None,
-                path_template=template or (artifact.path_template if artifact is not None else None),
+                path_template=template
+                or (artifact.path_template if artifact is not None else None),
             )
         )
     return tuple(sorted(specs, key=lambda a: a.name))

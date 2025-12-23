@@ -45,22 +45,14 @@ from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    ENTRYPOINTS_OVERRIDE_TABLES,
-    EXTERNAL_DEPS_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -92,27 +84,6 @@ EXTERNAL_DEPS_TABLE_KEYS = (
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
 ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
-
-register_output_targets(
-    make_output_target(
-        name=EXTERNAL_DEPS_TARGET_NAME,
-        module="analytics",
-        description="External library dependency analysis.",
-        options=TargetSpecOptions(
-            table_keys=EXTERNAL_DEPS_TABLE_KEYS,
-            override_tables=EXTERNAL_DEPS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=ENTRYPOINTS_TARGET_NAME,
-        module="analytics",
-        description="External entrypoint detection (HTTP, CLI, etc.).",
-        options=TargetSpecOptions(
-            table_keys=ENTRYPOINTS_TABLE_KEYS,
-            override_tables=ENTRYPOINTS_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
@@ -308,7 +279,7 @@ def external_deps__dependencies_rows(
     return tuple(result.rows)
 
 
-@tag_materialize(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
@@ -316,7 +287,7 @@ def t__external_deps(
     m__analytics__external_dependency_calls: MaterializationMetadata,
     m__analytics__external_dependencies: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize both external dependency tables to DuckDB.
+    """External library dependency analysis.
 
     This is the only side-effect boundary for this target. It writes
     the computed dependency calls first, then computes and writes the
@@ -566,14 +537,14 @@ def entrypoints__materializations(
     }
 
 
-@tag_materialize(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,
     entrypoints__upstream_error: str | None,
     entrypoints__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Materialize both entrypoint tables to DuckDB.
+    """External entrypoint detection (HTTP, CLI, etc.).
 
     Returns
     -------

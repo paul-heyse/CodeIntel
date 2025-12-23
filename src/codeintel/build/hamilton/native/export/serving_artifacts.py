@@ -26,7 +26,6 @@ import pyarrow as pa
 import sqlglot
 from hamilton.function_modifiers import source, value
 
-from codeintel.build.contracts import ArtifactSpec
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
@@ -34,15 +33,11 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tag_index import TagIndex
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
@@ -78,51 +73,6 @@ SERVING_ARTIFACT_ENVIRONMENT = "environment"
 SERVING_ARTIFACT_VIEWS_SQL = "views_sql"
 SERVING_ARTIFACT_VIEWS_SQL_DIFF = "views_sql_diff"
 
-SERVING_ARTIFACT_SPECS = (
-    ArtifactSpec(
-        SERVING_ARTIFACT_SEMANTIC_REGISTRY,
-        "{build_dir}/serving/artifacts/semantic_registry.json",
-        "Compiled semantic registry for serving",
-    ),
-    ArtifactSpec(
-        SERVING_ARTIFACT_SCHEMA_MANIFEST,
-        "{build_dir}/serving/artifacts/schema_manifest.json",
-        "Compiled schema manifest for serving",
-    ),
-    ArtifactSpec(
-        SERVING_ARTIFACT_BUILDSPEC,
-        "{build_dir}/serving/artifacts/buildspec.json",
-        "Compiled BuildSpec contract for serving",
-    ),
-    ArtifactSpec(
-        SERVING_ARTIFACT_ENVIRONMENT,
-        "{build_dir}/serving/artifacts/environment.json",
-        "Captured tool and configuration metadata for this snapshot",
-    ),
-    ArtifactSpec(
-        SERVING_ARTIFACT_VIEWS_SQL,
-        "{build_dir}/serving/artifacts/views_sql.json",
-        "Compiled SQL for all registered views",
-    ),
-    ArtifactSpec(
-        SERVING_ARTIFACT_VIEWS_SQL_DIFF,
-        "{build_dir}/serving/artifacts/views_sql_diff.json",
-        "Diff summary between previous and current view SQL maps",
-    ),
-)
-
-register_output_targets(
-    make_output_target(
-        name=SERVING_ARTIFACTS_TARGET_NAME,
-        module="export",
-        description=(
-            "Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec)."
-        ),
-        options=TargetSpecOptions(
-            artifacts=SERVING_ARTIFACT_SPECS,
-        ),
-    ),
-)
 
 
 def _package_version(name: str) -> str:
@@ -552,13 +502,13 @@ def serving_artifacts__materializations(
     return merged
 
 
-@tag_materialize(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
+@codeintel_target(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def t__serving_artifacts(
     env: BuildEnv,
     graph: TargetGraph,
     serving_artifacts__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Finalize serving artifacts materialization and persist manifest.
+    """Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec).
 
     Parameters
     ----------

@@ -35,17 +35,9 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
-from codeintel.build.hamilton.native.target_override_tables import (
-    CONFIG_INGEST_OVERRIDE_TABLES,
-    COVERAGE_INGEST_OVERRIDE_TABLES,
-    MODULES_OVERRIDE_TABLES,
-    TESTS_INGEST_OVERRIDE_TABLES,
-    TYPING_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
+from codeintel.build.hamilton.native.target_decorators import (
+    TargetSpecDescriptor,
+    codeintel_target,
 )
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
@@ -54,7 +46,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_materialize, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
@@ -107,64 +99,6 @@ TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
 TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
-
-register_output_targets(
-    make_output_target(
-        name=MODULES_TARGET_NAME,
-        module="ingestion",
-        description="Repository module and file index from scanning.",
-        options=TargetSpecOptions(
-            table_keys=MODULES_TABLE_KEYS,
-            override_tables=MODULES_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=CONFIG_INGEST_TARGET_NAME,
-        module="ingestion",
-        description="Configuration file parsing and reference tracking.",
-        options=TargetSpecOptions(
-            table_keys=(CONFIG_VALUES_TABLE_KEY,),
-            override_tables=CONFIG_INGEST_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=COVERAGE_INGEST_TARGET_NAME,
-        module="ingestion",
-        description="Line-level test coverage ingestion.",
-        options=TargetSpecOptions(
-            table_keys=(COVERAGE_LINES_TABLE_KEY,),
-            override_tables=COVERAGE_INGEST_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=TESTS_INGEST_TARGET_NAME,
-        module="ingestion",
-        description="Test catalog ingestion from pytest.",
-        options=TargetSpecOptions(
-            table_keys=(TEST_CATALOG_TABLE_KEY,),
-            override_tables=TESTS_INGEST_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=TYPING_TARGET_NAME,
-        module="ingestion",
-        description="Type annotation analysis and static diagnostics.",
-        options=TargetSpecOptions(
-            table_keys=TYPING_TABLE_KEYS,
-            override_tables=TYPING_OVERRIDE_TABLES,
-            resources=TargetResources(
-                tracker=True,
-                modules=True,
-                tools=(
-                    "pyright",
-                    "pyrefly",
-                    "ruff",
-                ),
-            ),
-            execution=TOOL_EXECUTION,
-        ),
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -437,7 +371,7 @@ def modules__materializations(
     }
 
 
-@tag_materialize(domain="ingestion", target=MODULES_TARGET_NAME)
+@codeintel_target(domain="ingestion", target=MODULES_TARGET_NAME)
 def t__modules(
     env: BuildEnv,
     graph: TargetGraph,
@@ -445,7 +379,7 @@ def t__modules(
     modules__hash_options: InputHashOptions,
     modules__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Materialize modules target with validation.
+    """Scan repository modules and file index.
 
     Returns
     -------
@@ -636,7 +570,7 @@ def config_ingest__rows(
     return t__config_ingest__ingest.rows
 
 
-@tag_materialize(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
+@codeintel_target(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest(
     env: BuildEnv,
     graph: TargetGraph,
@@ -644,7 +578,7 @@ def t__config_ingest(
     config_ingest__hash_options: InputHashOptions,
     m__analytics__config_values: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Finalize config_ingest execution and persist manifest.
+    """Parse configuration files and track references.
 
     Returns
     -------
@@ -760,14 +694,14 @@ def coverage__rows(
     return t__coverage_ingest__ingest.rows
 
 
-@tag_materialize(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
+@codeintel_target(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def t__coverage_ingest(
     env: BuildEnv,
     graph: TargetGraph,
     t__coverage_ingest__ingest: CoverageIngestResult,
     m__analytics__coverage_lines: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Finalize coverage_ingest execution and persist manifest.
+    """Ingest line-level test coverage.
 
     Returns
     -------
@@ -881,14 +815,14 @@ def tests__rows(
     return t__tests_ingest__ingest.rows
 
 
-@tag_materialize(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
+@codeintel_target(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest(
     env: BuildEnv,
     graph: TargetGraph,
     t__tests_ingest__ingest: TestsIngestResult,
     m__analytics__test_catalog: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Finalize tests_ingest execution and persist manifest.
+    """Ingest test catalog from pytest.
 
     Returns
     -------
@@ -1008,7 +942,22 @@ def typing__diagnostic_rows(
     return t__typing__ingest.diagnostic_rows
 
 
-@tag_materialize(domain="ingestion", target=TYPING_TARGET_NAME)
+@codeintel_target(
+    domain="ingestion",
+    target=TYPING_TARGET_NAME,
+    spec=TargetSpecDescriptor(
+        resources=TargetResources(
+            tracker=True,
+            modules=True,
+            tools=(
+                "pyright",
+                "pyrefly",
+                "ruff",
+            ),
+        ),
+        execution=TOOL_EXECUTION,
+    ),
+)
 def t__typing(
     env: BuildEnv,
     graph: TargetGraph,
@@ -1016,7 +965,7 @@ def t__typing(
     m__analytics__typedness: MaterializationMetadata,
     m__analytics__static_diagnostics: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Finalize typing target execution and persist manifest.
+    """Analyze type annotations and static diagnostics.
 
     Returns
     -------

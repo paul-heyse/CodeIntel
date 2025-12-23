@@ -4,13 +4,6 @@ This package provides base data types used across analytics, graphs,
 and ingestion packages. It establishes a common interface for result
 types returned by port operations.
 
-Base Types
-----------
-BaseQueryResult
-    Protocol for query result types with rows and row_count.
-BaseBatchResult
-    Protocol for batch operation result types.
-
 Unified Types
 -------------
 QueryResult
@@ -33,7 +26,6 @@ def handle_result(result: QueryResult) -> int:
 
 from __future__ import annotations
 
-from codeintel.core.ports.results import BaseBatchResult, BaseQueryResult
 from codeintel.core.ports.storage import (
     BatchResult,
     MutableQueryResult,
@@ -42,8 +34,6 @@ from codeintel.core.ports.storage import (
 )
 
 __all__ = [
-    "BaseBatchResult",
-    "BaseQueryResult",
     "BatchResult",
     "MutableQueryResult",
     "QueryResult",

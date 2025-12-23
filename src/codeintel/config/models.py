@@ -6,16 +6,16 @@ This module contains:
 
 Migration Guide
 ---------------
-For step configurations, prefer the composition-based system:
+For step configurations, prefer the composition-based system using primitives:
 
 Preferred:
-    from codeintel.config import ConfigBuilder, SnapshotInit
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="r", commit="c", repo_root=Path(".")),
-    )
-    primitives = builder.runtime_primitives()
+    from codeintel.config import SnapshotInit
+    from codeintel.config.primitives import BuildLayoutOptions
+    from codeintel.core.runtime.loader import RuntimeInputs, build_runtime_primitives
 
-See `codeintel.config.builder` for the ConfigBuilder API.
+    snapshot = SnapshotInit(repo="r", commit="c", repo_root=Path(".")).to_snapshot_ref()
+    paths = BuildLayoutOptions().materialize(snapshot.repo_root)
+    primitives = build_runtime_primitives(RuntimeInputs(snapshot=snapshot, build_paths=paths))
 """
 
 from __future__ import annotations

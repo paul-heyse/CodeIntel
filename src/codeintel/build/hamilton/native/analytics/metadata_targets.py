@@ -56,24 +56,14 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    DATA_MODEL_USAGE_OVERRIDE_TABLES,
-    DATA_MODELS_OVERRIDE_TABLES,
-    FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
-    PROFILES_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -106,45 +96,6 @@ PROFILES_TABLE_KEYS = (
     FUNCTION_PROFILE_TABLE_KEY,
     FILE_PROFILE_TABLE_KEY,
     MODULE_PROFILE_TABLE_KEY,
-)
-
-register_output_targets(
-    make_output_target(
-        name=DATA_MODELS_TARGET_NAME,
-        module="analytics",
-        description="Data model extraction (dataclasses, Pydantic, etc.).",
-        options=TargetSpecOptions(
-            table_keys=DATA_MODELS_TABLE_KEYS,
-            override_tables=DATA_MODELS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=DATA_MODEL_USAGE_TARGET_NAME,
-        module="analytics",
-        description="Function-level data model usage tracking.",
-        options=TargetSpecOptions(
-            table_keys=(DATA_MODEL_USAGE_TABLE_KEY,),
-            override_tables=DATA_MODEL_USAGE_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=FUNCTION_AST_FEATURES_TARGET_NAME,
-        module="analytics",
-        description="AST-derived semantic features for functions.",
-        options=TargetSpecOptions(
-            table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,),
-            override_tables=FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=PROFILES_TARGET_NAME,
-        module="analytics",
-        description="Denormalized profile tables for querying.",
-        options=TargetSpecOptions(
-            table_keys=PROFILES_TABLE_KEYS,
-            override_tables=PROFILES_OVERRIDE_TABLES,
-        ),
-    ),
 )
 
 LOG = logging.getLogger(__name__)
@@ -288,7 +239,7 @@ def data_models__relationship_rows(
     return tuple(t__data_models__compute.relationship_rows)
 
 
-@tag_materialize(domain="analytics", target=DATA_MODELS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
@@ -296,7 +247,7 @@ def t__data_models(
     m__analytics__data_model_fields: MaterializationMetadata,
     m__analytics__data_model_relationships: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize all 3 data model tables to DuckDB.
+    """Extract data models (dataclasses, Pydantic, etc.).
 
     This is the only side-effect boundary for this target. It writes
     the computed data models to DuckDB and returns a TargetRunRecord.
@@ -406,13 +357,13 @@ def t__data_model_usage__compute(
     )
 
 
-@tag_materialize(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
+@codeintel_target(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__data_model_usage: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize analytics.data_model_usage rows to DuckDB.
+    """Track function-level data model usage.
 
     Parameters
     ----------
@@ -484,14 +435,14 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
     return AstFeaturesResult(success=True, features_map=features_map)
 
 
-@tag_materialize(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
+@codeintel_target(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def t__function_ast_features(
     env: BuildEnv,
     graph: TargetGraph,
     t__function_ast_features__compute: AstFeaturesResult,
     m__analytics__function_ast_features: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize function AST features to DuckDB.
+    """AST-derived semantic features for functions.
 
     Returns
     -------
@@ -800,14 +751,14 @@ def module_profile__rows(
     return tuple(row_to_tuple(MODULE_PROFILE_TABLE_KEY, row) for row in rows)
 
 
-@tag_materialize(domain="analytics", target=PROFILES_TARGET_NAME)
+@codeintel_target(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles(
     env: BuildEnv,
     graph: TargetGraph,
     t__profiles__compute: ProfilesComputeResult | None,
     profiles__materializations: ProfilesMaterializations,
 ) -> TargetRunRecord:
-    """Materialize profiles target.
+    """Denormalized profile tables for querying.
 
     Returns
     -------

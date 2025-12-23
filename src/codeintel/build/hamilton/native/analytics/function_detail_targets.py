@@ -39,15 +39,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.target_override_tables import (
-    FUNCTION_CONTRACTS_OVERRIDE_TABLES,
-    FUNCTION_EFFECTS_OVERRIDE_TABLES,
-)
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -55,7 +47,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -71,27 +63,6 @@ FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 
 FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
-
-register_output_targets(
-    make_output_target(
-        name=FUNCTION_EFFECTS_TARGET_NAME,
-        module="analytics",
-        description="Function purity and side-effect analysis.",
-        options=TargetSpecOptions(
-            table_keys=(FUNCTION_EFFECTS_TABLE_KEY,),
-            override_tables=FUNCTION_EFFECTS_OVERRIDE_TABLES,
-        ),
-    ),
-    make_output_target(
-        name=FUNCTION_CONTRACTS_TARGET_NAME,
-        module="analytics",
-        description="Inferred function pre/postconditions.",
-        options=TargetSpecOptions(
-            table_keys=(FUNCTION_CONTRACTS_TABLE_KEY,),
-            override_tables=FUNCTION_CONTRACTS_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -257,13 +228,13 @@ def function_contracts__rows(
     )
 
 
-@tag_materialize(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
 def t__function_contracts(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__function_contracts: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize function contracts target.
+    """Infer function pre/postconditions.
 
     Converts materialization metadata into a TargetRunRecord for the
     function_contracts target.
@@ -429,13 +400,13 @@ def function_effects__rows(
     )
 
 
-@tag_materialize(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
 def t__function_effects(
     env: BuildEnv,
     graph: TargetGraph,
     m__analytics__function_effects: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize function effects target.
+    """Analyze function purity and side effects.
 
     Returns
     -------

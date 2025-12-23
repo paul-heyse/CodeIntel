@@ -12,7 +12,7 @@ import duckdb
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.providers import create_default_providers
-from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config import SnapshotInit
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
@@ -85,7 +85,7 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
     Returns
     -------
     SpanTestEnv
-        Prepared environment with builder, gateway, and expected GOID.
+        Prepared environment with snapshot, gateway, and expected GOID.
     """
     repo_root = tmp_path / "repo"
     _write_repo(repo_root)
@@ -94,12 +94,10 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
     ModulesAssertions(gateway, snapshot).inventory_consistent()
     _seed_test_catalog(gateway)
     _seed_symbol_use_edges(gateway)
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo=REPO, commit=COMMIT, repo_root=repo_root),
-    )
+    snapshot = SnapshotInit(repo=REPO, commit=COMMIT, repo_root=repo_root).to_snapshot_ref()
     return SpanTestEnv(
         repo_root=repo_root,
-        builder=builder,
+        snapshot=snapshot,
         gateway=gateway,
         expected_goid=None,
     )

@@ -2,20 +2,12 @@
 
 This package provides:
 - **Primitives** (`primitives.py`): Core types like `SnapshotRef`, `BuildPaths`
-- **Builder** (`builder.py`): `ConfigBuilder` for constructing pipeline contexts
 - **CLI Models** (`models.py`): Pydantic models for CLI argument parsing and validation
 - **Serving Identity** (`codeintel.serving.config`): Repo/db identity models for serving/CLI integration
   (tool configuration lives under `codeintel.core.tools`).
 
 Import Patterns
 ---------------
-For pipeline context construction:
-    from codeintel.config import ConfigBuilder, SnapshotInit
-
-    builder = ConfigBuilder.from_snapshot(
-        snapshot=SnapshotInit(repo="my-org/repo", commit="abc", repo_root=Path(".")),
-    )
-
 For primitives:
     from codeintel.config import (
         BuildLayoutOptions,
@@ -40,10 +32,8 @@ __all__ = [
     "BuildLayoutOptions",
     "BuildPathOverrides",
     "BuildPaths",
-    "BuilderDependencies",
     "CliPathsInput",
     "CodeIntelConfig",
-    "ConfigBuilder",
     "GraphBackendConfig",
     "GraphFeatureFlags",
     "RepoConfig",
@@ -53,7 +43,6 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from codeintel.config.builder import BuilderDependencies, ConfigBuilder
     from codeintel.config.models import (
         CliPathsInput,
         CodeIntelConfig,
@@ -74,10 +63,8 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BuildLayoutOptions": ("codeintel.config.primitives", "BuildLayoutOptions"),
     "BuildPathOverrides": ("codeintel.config.primitives", "BuildPathOverrides"),
     "BuildPaths": ("codeintel.config.primitives", "BuildPaths"),
-    "BuilderDependencies": ("codeintel.config.builder", "BuilderDependencies"),
     "CliPathsInput": ("codeintel.config.models", "CliPathsInput"),
     "CodeIntelConfig": ("codeintel.config.models", "CodeIntelConfig"),
-    "ConfigBuilder": ("codeintel.config.builder", "ConfigBuilder"),
     "GraphBackendConfig": ("codeintel.config.primitives", "GraphBackendConfig"),
     "GraphFeatureFlags": ("codeintel.config.primitives", "GraphFeatureFlags"),
     "RepoConfig": ("codeintel.config.models", "RepoConfig"),

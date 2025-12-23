@@ -23,19 +23,14 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
 )
-from codeintel.build.hamilton.native.target_override_tables import SUBSYSTEMS_OVERRIDE_TABLES
-from codeintel.build.hamilton.native.target_spec_helpers import (
-    TargetSpecOptions,
-    make_output_target,
-    register_output_targets,
-)
+from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_materialize
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
@@ -48,19 +43,6 @@ SUBSYSTEMS_TARGET_NAME = "subsystems"
 
 SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
-SUBSYSTEMS_TABLE_KEYS = (SUBSYSTEMS_TABLE_KEY, SUBSYSTEM_MODULES_TABLE_KEY)
-
-register_output_targets(
-    make_output_target(
-        name=SUBSYSTEMS_TARGET_NAME,
-        module="analytics",
-        description="Architectural subsystem inference.",
-        options=TargetSpecOptions(
-            table_keys=SUBSYSTEMS_TABLE_KEYS,
-            override_tables=SUBSYSTEMS_OVERRIDE_TABLES,
-        ),
-    ),
-)
 
 
 @dataclass(frozen=True)
@@ -201,7 +183,7 @@ def subsystem_modules__rows(
     return tuple(t__subsystems__compute.rows.membership_rows)
 
 
-@tag_materialize(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
+@codeintel_target(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
 def t__subsystems(
     env: BuildEnv,
     graph: TargetGraph,
@@ -209,7 +191,7 @@ def t__subsystems(
     m__analytics__subsystems: MaterializationMetadata,
     m__analytics__subsystem_modules: MaterializationMetadata,
 ) -> TargetRunRecord:
-    """Materialize a TargetRunRecord for subsystems from a compute result.
+    """Infer architectural subsystems.
 
     Parameters
     ----------

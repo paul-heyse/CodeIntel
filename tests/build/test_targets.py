@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.contracts import OutputContract
 from codeintel.build.errors import CycleDetectedError
 from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers import assert_frozen
@@ -16,6 +15,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.contracts import contract_for_keys
 
 if TYPE_CHECKING:
     from codeintel.build.targets import TargetModule
@@ -39,7 +39,7 @@ def _make_target(
     return OutputTarget(
         name=name,
         module=module,
-        contract=OutputContract.simple(table_keys=tables),
+        contract=contract_for_keys(tables),
         dependencies=dependencies,
         description=description,
     )

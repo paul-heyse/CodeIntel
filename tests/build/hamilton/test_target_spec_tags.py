@@ -1,0 +1,48 @@
+"""Tests for DAG-derived target specs and tag invariants."""
+
+from __future__ import annotations
+
+import pytest
+
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.target_spec_compiler import compile_output_targets_from_driver
+from codeintel.core.hamilton import tags as ht
+
+
+def _materialize_tags(tags: object) -> dict[str, object] | None:
+    if not isinstance(tags, dict):
+        return None
+    if tags.get(ht.TAG_NODE_TYPE) != ht.NODE_TYPE_MATERIALIZE:
+        return None
+    return tags
+
+
+def test_all_targets_compile_from_dag() -> None:
+    """Ensure DAG-derived target compilation succeeds and produces targets."""
+    runtime = build_driver()
+    targets = compile_output_targets_from_driver(runtime.dr, strict=True)
+    if not targets:
+        pytest.fail("No build targets compiled from DAG tags")
+
+
+def test_target_anchors_have_docstrings() -> None:
+    """Ensure every target anchor has a docstring summary."""
+    runtime = build_driver()
+    targets = compile_output_targets_from_driver(runtime.dr, strict=False)
+    missing = [target.name for target in targets if not target.description.strip()]
+    if missing:
+        pytest.fail("Targets missing docstring summaries:\n" + "\n".join(sorted(missing)))
+
+
+def test_target_anchors_have_spec_version() -> None:
+    """Ensure target anchors carry the canonical spec version tag."""
+    runtime = build_driver()
+    missing: list[str] = []
+    for node_name, node in runtime.dr.graph.nodes.items():
+        tags = _materialize_tags(node.tags)
+        if tags is None:
+            continue
+        if tags.get(ht.TAG_TARGET_SPEC_VERSION) != "1":
+            missing.append(node_name)
+    if missing:
+        pytest.fail("Target anchors missing spec version tag:\n" + "\n".join(sorted(missing)))

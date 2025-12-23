@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 
-from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
 from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
@@ -21,6 +20,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
 )
+from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
@@ -56,7 +56,7 @@ def _make_graph() -> TargetGraph:
         OutputTarget(
             name="modules",
             module="ingestion",
-            contract=OutputContract.simple(table_keys=("core.modules",)),
+            contract=contract_for_keys(("core.modules",)),
         )
     )
     return graph

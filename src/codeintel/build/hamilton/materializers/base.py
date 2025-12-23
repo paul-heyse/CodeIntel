@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.run_records import (
+from codeintel.build.hamilton.run_record_utils import (
     options_hash_for_target,
     should_skip_native_target,
 )

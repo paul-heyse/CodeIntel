@@ -43,7 +43,7 @@ class QueryResult:
     """Unified query result for all storage operations.
 
     This dataclass provides a consistent interface for query results across
-    the codebase, implementing the BaseQueryResult protocol.
+    the codebase.
 
     Attributes
     ----------
@@ -108,7 +108,7 @@ class BatchResult:
     """Unified batch operation result.
 
     This dataclass provides a consistent interface for batch write operation
-    results, implementing the BaseBatchResult protocol.
+    results.
 
     Attributes
     ----------

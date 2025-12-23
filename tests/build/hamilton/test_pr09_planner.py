@@ -24,6 +24,7 @@ from tests._helpers.build import (
     make_build_paths,
     make_snapshot,
 )
+from tests._helpers.contracts import table_schema_for_key
 from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
@@ -348,7 +349,9 @@ class TestPlanClosure:
                 name="with_tables",
                 module="analytics",
                 description="Has contract",
-                contract=OutputContract.simple(table_keys=("analytics.output_table",)),
+                contract=OutputContract(
+                    tables=(table_schema_for_key("analytics.output_table"),),
+                ),
             )
         )
 
