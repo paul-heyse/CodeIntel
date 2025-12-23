@@ -15,10 +15,8 @@ from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
     TAG_DEFAULT_LIMIT,
     TAG_DEFAULT_ORDER,
-    TAG_DEPRECATED,
     TAG_MCP_VISIBLE,
     TAG_OUTPUT_KIND,
-    TAG_REPLACED_BY,
     TAG_SEMANTIC_COLS,
     TAG_SEMANTIC_DESC,
     TAG_SEMANTIC_ENTITY,
@@ -123,7 +121,6 @@ def compile_semantic_registry_from_views(
 
         entity = tags.get(TAG_SEMANTIC_ENTITY) or tags.get(ht.TAG_ENTITY) or "unknown"
         grain = tags.get(TAG_SEMANTIC_GRAIN) or tags.get(ht.TAG_GRAIN) or "unknown"
-
         view_entry: dict[str, object] = {
             "id": semantic_id,
             "kind": tags.get(TAG_SEMANTIC_KIND, "view"),
@@ -139,8 +136,6 @@ def compile_semantic_registry_from_views(
                 "order_by": _split_csv(tags.get(TAG_DEFAULT_ORDER)),
             },
             "sensitivity": tags.get(TAG_SENSITIVITY, "internal"),
-            "deprecated": tags.get(TAG_DEPRECATED, "0") == "1",
-            "replaced_by": tags.get(TAG_REPLACED_BY),
         }
         views.append(view_entry)
 

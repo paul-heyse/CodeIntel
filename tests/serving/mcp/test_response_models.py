@@ -351,16 +351,16 @@ def test_export_handle_response_creation(sample_export_snapshot: ExportSnapshot)
     """Verify ExportHandleResponse model creation."""
     handle = ExportHandleResponse(
         export_id="exp123456789",
-        format="ndjson",
+        format="jsonl",
         mime_type="application/x-ndjson",
-        filename="function_metrics.ndjson",
+        filename="function_metrics.jsonl",
         uri="codeintel://exports/exp123456789",
         meta_uri="codeintel://exports/exp123456789/meta",
         created_at=datetime.now(UTC),
         snapshot=sample_export_snapshot,
     )
     expect_equal(handle.export_id, "exp123456789")
-    expect_equal(handle.format, "ndjson")
+    expect_equal(handle.format, "jsonl")
     expect_equal(handle.mime_type, "application/x-ndjson")
 
 
@@ -404,15 +404,15 @@ def test_export_meta_response_creation(sample_export_snapshot: ExportSnapshot) -
         export_id="exp123456789",
         status="ready",
         created_at=datetime.now(UTC),
-        format="ndjson",
+        format="jsonl",
         mime_type="application/x-ndjson",
-        filename="data.ndjson",
+        filename="data.jsonl",
         snapshot=sample_export_snapshot,
         uris=uris,
     )
     expect_equal(meta.export_id, "exp123456789")
     expect_equal(meta.status, "ready")
-    expect_equal(meta.format, "ndjson")
+    expect_equal(meta.format, "jsonl")
 
 
 @pytest.mark.parametrize("status", ["ready", "expired", "missing", "error"])
@@ -496,9 +496,9 @@ def test_semantic_query_tool_response_with_export(sample_export_snapshot: Export
     )
     export_handle = ExportHandleResponse(
         export_id="exp123456789",
-        format="ndjson",
+        format="jsonl",
         mime_type="application/x-ndjson",
-        filename="function_metrics.ndjson",
+        filename="function_metrics.jsonl",
         uri="codeintel://exports/exp123456789",
         meta_uri="codeintel://exports/exp123456789/meta",
         created_at=datetime.now(UTC),
@@ -658,7 +658,7 @@ def test_default_resource_templates_uris() -> None:
 # =============================================================================
 
 
-@pytest.mark.parametrize("fmt", ["ndjson", "json", "parquet", "arrow"])
+@pytest.mark.parametrize("fmt", ["jsonl", "json", "parquet", "arrow"])
 def test_export_format_values(fmt: ExportFormat, sample_export_snapshot: ExportSnapshot) -> None:
     """Verify ExportFormat accepts all valid values."""
     handle = ExportHandleResponse(
@@ -739,9 +739,9 @@ def test_export_meta_response_json_round_trip(sample_export_snapshot: ExportSnap
         export_id="exp123456789",
         status="ready",
         created_at=datetime.now(UTC),
-        format="ndjson",
+        format="jsonl",
         mime_type="application/x-ndjson",
-        filename="data.ndjson",
+        filename="data.jsonl",
         row_count=1000,
         snapshot=sample_export_snapshot,
         uris=uris,

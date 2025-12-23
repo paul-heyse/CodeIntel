@@ -153,14 +153,28 @@ class SchemaInventory:
         -------
         SchemaInventory
             Loaded inventory instance.
+
+        Raises
+        ------
+        ValueError
+            If the manifest version is unsupported.
         """
         payload = json.loads(path.read_text(encoding="utf-8"))
         obj = _expect_dict(payload, ctx="schema_manifest")
+        version = str(obj.get("version", "")).strip()
+        if version != "v2":
+            msg = f"Unsupported schema manifest version: {version or 'unknown'}"
+            raise ValueError(msg)
 
         schemas: dict[str, TableSchema] = {}
         for idx, table_raw in enumerate(_expect_list(obj.get("tables", []), ctx="tables")):
             table_obj = _expect_dict(table_raw, ctx=f"tables[{idx}]")
             schema = _parse_table(table_obj)
+            schemas[schema.table_key] = schema
+
+        for idx, view_raw in enumerate(_expect_list(obj.get("views", []), ctx="views")):
+            view_obj = _expect_dict(view_raw, ctx=f"views[{idx}]")
+            schema = _parse_table(view_obj)
             schemas[schema.table_key] = schema
 
         return cls(schemas=schemas)

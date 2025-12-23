@@ -15,32 +15,18 @@ supports_preview = core_formats.supports_preview
 supports_line_chunks = core_formats.supports_line_chunks
 supports_byte_chunks = core_formats.supports_byte_chunks
 
-_CORE_EXPORT_FORMATS = core_formats.EXPORT_FORMATS
-_NDJSON_SPEC = ExportFormatSpec(
-    format=_CORE_EXPORT_FORMATS["jsonl"].format,
-    mime_type=_CORE_EXPORT_FORMATS["jsonl"].mime_type,
-    suffix=".ndjson",
-    aliases=_CORE_EXPORT_FORMATS["jsonl"].aliases,
-)
-
-EXPORT_FORMATS: dict[ExportFormat, ExportFormatSpec] = {
-    **_CORE_EXPORT_FORMATS,
-    "ndjson": _NDJSON_SPEC,
-}
+EXPORT_FORMATS: dict[ExportFormat, ExportFormatSpec] = dict(core_formats.EXPORT_FORMATS)
 
 
 def normalize_export_format(fmt: str) -> ExportFormat:
-    """Normalize export format for serving (keep ndjson as canonical).
+    """Normalize export format for serving.
 
     Returns
     -------
     ExportFormat
         Canonical export format identifier for serving.
     """
-    normalized = core_formats.normalize_export_format(fmt)
-    if normalized == "jsonl":
-        return "ndjson"
-    return normalized
+    return core_formats.normalize_export_format(fmt)
 
 
 def default_export_format() -> ExportFormat:
@@ -51,7 +37,7 @@ def default_export_format() -> ExportFormat:
     ExportFormat
         Default export format identifier.
     """
-    return "ndjson"
+    return core_formats.default_export_format()
 
 
 def export_format_choices() -> tuple[ExportFormat, ...]:
@@ -62,7 +48,7 @@ def export_format_choices() -> tuple[ExportFormat, ...]:
     tuple[ExportFormat, ...]
         Ordered export format identifiers.
     """
-    return ("ndjson", "json", "parquet", "arrow")
+    return core_formats.export_format_choices()
 
 
 __all__ = [

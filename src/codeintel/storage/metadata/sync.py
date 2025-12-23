@@ -106,7 +106,6 @@ class _DatasetUpsert:
     family: str | None
     description: str | None
     schema_version: str | None
-    deprecated: bool
 
 
 def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
@@ -120,10 +119,9 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
             parquet_filename,
             family,
             description,
-            schema_version,
-            deprecated
+            schema_version
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(table_key) DO UPDATE SET
             name             = excluded.name,
             is_view          = excluded.is_view,
@@ -131,8 +129,7 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
             parquet_filename = excluded.parquet_filename,
             family           = excluded.family,
             description      = excluded.description,
-            schema_version   = excluded.schema_version,
-            deprecated       = excluded.deprecated;
+            schema_version   = excluded.schema_version;
         """,
         [
             payload.table_key,
@@ -143,7 +140,6 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
             payload.family,
             payload.description,
             payload.schema_version,
-            payload.deprecated,
         ],
     )
 
@@ -203,7 +199,6 @@ def bootstrap_metadata_datasets(
                 family=contract.family or schema_prefix,
                 description=contract.description,
                 schema_version=contract.schema_version,
-                deprecated=contract.deprecated,
             ),
         )
 

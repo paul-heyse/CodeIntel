@@ -31,8 +31,6 @@ def test_registry_load_lookup_and_serialize(tmp_path: Path) -> None:
                 "joins": [],
                 "defaults": {"limit": 200, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     }

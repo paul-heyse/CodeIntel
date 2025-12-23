@@ -81,7 +81,6 @@ def build_kernel_meta_payload(db: ServingDBManager) -> ServingKernelMetaResponse
         semantic_views=[
             {"id": v.id, "table_key": v.table_key, "entity": v.entity, "grain": v.grain}
             for v in registry.views
-            if not v.deprecated
         ],
         datasets=[
             {"table_key": dataset.table_key, "schema_hash": dataset.schema_hash}

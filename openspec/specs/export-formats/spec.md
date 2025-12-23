@@ -11,22 +11,25 @@ specifies supported formats, MIME types, and default file suffixes.
 - **WHEN** build or serving resolves an export format
 - **THEN** both layers use the same registry values for MIME type and suffix
 
-### Requirement: Alias normalization for line-delimited JSON
-The system SHALL treat `jsonl` and `ndjson` as aliases for the same line-delimited JSON
-format and normalize them to a canonical format ID internally.
+### Requirement: Canonical naming for line-delimited JSON
+The system SHALL treat `jsonl` as the sole line-delimited JSON format identifier.
 
-#### Scenario: Alias inputs resolve to the same format
+#### Scenario: Canonical naming
+- **WHEN** a client requests export format `jsonl`
+- **THEN** the system resolves it without alias normalization
+
+#### Scenario: Alias inputs are rejected
 - **WHEN** a client requests export format `ndjson`
-- **THEN** the system normalizes it to the canonical line-delimited JSON format
+- **THEN** the system rejects the request as an unsupported format
 
-### Requirement: NDJSON exports are UTF-8 and deterministic
-NDJSON exports SHALL be UTF-8 encoded line-delimited JSON and SHALL use msgspec encoding
+### Requirement: JSONL exports are UTF-8 and deterministic
+JSONL exports SHALL be UTF-8 encoded line-delimited JSON and SHALL use msgspec encoding
 when available with a stdlib json fallback. Unknown types MUST be stringified and JSON
 output MUST use compact separators without ASCII escaping. This applies to HTTP streaming
 responses and MCP export artifacts written by the resource store.
 
-#### Scenario: NDJSON line preserves unicode and stringifies types
-- **WHEN** a row with unicode text and datetime values is streamed as NDJSON
+#### Scenario: JSONL line preserves unicode and stringifies types
+- **WHEN** a row with unicode text and datetime values is streamed as JSONL
 - **THEN** the output line is UTF-8, preserves unicode, and stringifies non-JSON types
 
 ### Requirement: Export payload MIME types are registry-driven
@@ -37,13 +40,13 @@ both HTTP and MCP payloads.
 - **WHEN** an export payload is returned from HTTP or MCP
 - **THEN** the payload MIME type matches the canonical registry value
 
-### Requirement: NDJSON datetime encoding is RFC3339
-NDJSON exports SHALL serialize datetime values as RFC3339 UTC strings with a Z suffix and
+### Requirement: JSONL datetime encoding is RFC3339
+JSONL exports SHALL serialize datetime values as RFC3339 UTC strings with a Z suffix and
 SHALL preserve UTF-8 while stringifying non-JSON types consistently across msgspec and
 stdlib json encoders.
 
-#### Scenario: NDJSON line uses RFC3339 and preserves unicode
-- **WHEN** a row with datetime, UUID, bytes, and unicode text is encoded as NDJSON
+#### Scenario: JSONL line uses RFC3339 and preserves unicode
+- **WHEN** a row with datetime, UUID, bytes, and unicode text is encoded as JSONL
 - **THEN** the datetime is formatted as 2024-01-01T00:00:00Z, unicode is preserved, and
   non-JSON types are stringified
 
@@ -54,5 +57,4 @@ serving, and storage exports SHALL share the same coercion rules for non-JSON ty
 
 #### Scenario: Export serialization is consistent across layers
 - **WHEN** the same row is exported from build and serving
-- **THEN** both outputs apply identical JSON/NDJSON coercion rules and MIME types
-
+- **THEN** both outputs apply identical JSON/JSONL coercion rules and MIME types

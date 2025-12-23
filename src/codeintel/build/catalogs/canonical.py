@@ -6,7 +6,7 @@ import importlib
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.build.catalogs.hashing import compute_global_catalog_hash
 from codeintel.build.catalogs.target_serde import (
@@ -23,19 +23,35 @@ from codeintel.storage.metadata import (
 )
 
 if TYPE_CHECKING:
+    from duckdb import DuckDBPyConnection
+
     from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.build.schemas.service import SchemaService
     from codeintel.build.targets import OutputTarget
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.contract_service import ContractService
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway.config import StorageConfig
 
 
 CONTRACT_CATALOG_KIND = "dataset_contracts"
 TARGET_CATALOG_KIND = "output_targets"
 
 
-def _should_persist_catalog(gateway: StorageGateway) -> bool:
+class CatalogWriteGateway(Protocol):
+    """Protocol for persisting canonical catalogs."""
+
+    @property
+    def config(self) -> StorageConfig:
+        """Return the storage configuration."""
+        ...
+
+    @property
+    def con(self) -> DuckDBPyConnection:
+        """Return an open DuckDB connection."""
+        ...
+
+
+def _should_persist_catalog(gateway: CatalogWriteGateway) -> bool:
     return not gateway.config.read_only
 
 
@@ -94,7 +110,7 @@ def _build_target_catalog() -> dict[str, OutputTarget]:
 
 def load_contract_catalog(
     *,
-    gateway: StorageGateway | None = None,
+    gateway: CatalogWriteGateway | None = None,
     root: Path | None = None,
 ) -> dict[str, DatasetContract]:
     """Load or build the canonical DatasetContract catalog.
@@ -142,7 +158,7 @@ def load_contract_catalog(
 
 def load_target_catalog(
     *,
-    gateway: StorageGateway | None = None,
+    gateway: CatalogWriteGateway | None = None,
     root: Path | None = None,
 ) -> dict[str, OutputTarget]:
     """Load or build the canonical OutputTarget catalog.

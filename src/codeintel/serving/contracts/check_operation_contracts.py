@@ -109,8 +109,6 @@ class _DummyKernel:
             column_types={},
             joins=[],
             defaults=SemanticViewDefaults(),
-            deprecated=False,
-            replaced_by=None,
             snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
         )
 

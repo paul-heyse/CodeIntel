@@ -352,7 +352,7 @@ def _wizard_export_data_no_elicitation(settings: ServingSettings) -> list[Prompt
         ),
         Message(
             (
-                "Export formats: ndjson/json (text) and parquet/arrow (binary). "
+                "Export formats: jsonl/json (text) and parquet/arrow (binary). "
                 f"export_tasks_enabled={feature_set.enable_mcp_export_tasks}"
             ),
             role="assistant",

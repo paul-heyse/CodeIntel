@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
 def _make_snapshot_db(db_path: Path) -> None:
     con = duckdb.connect(str(db_path))
+    apply_metadata_ddl(con)
     con.execute("CREATE SCHEMA docs")
     con.execute("CREATE TABLE docs.demo (id INTEGER, label VARCHAR)")
     con.execute("INSERT INTO docs.demo VALUES (1, 'one'), (2, 'two'), (3, 'three')")
@@ -57,8 +58,6 @@ def _write_registry(path: Path) -> None:
                 "joins": [],
                 "defaults": {"limit": 2, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     )

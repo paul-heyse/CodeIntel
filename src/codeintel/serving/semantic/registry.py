@@ -44,11 +44,19 @@ class SemanticRegistry:
         -------
         SemanticRegistry
             Loaded registry instance.
+
+        Raises
+        ------
+        KeyError
+            If the registry payload does not include a version field.
         """
         payload = json.loads(path.read_text(encoding="utf-8"))
+        if "version" not in payload:
+            msg = "Semantic registry missing version"
+            raise KeyError(msg)
         views_raw = payload.get("views", [])
         views = tuple(SemanticViewSpec.model_validate(v) for v in views_raw)
-        return cls(version=str(payload.get("version", "v1")), views=views)
+        return cls(version=str(payload["version"]), views=views)
 
     def by_id(self, view_id: str) -> SemanticViewSpec:
         """Look up view by semantic ID.

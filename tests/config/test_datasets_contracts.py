@@ -222,33 +222,3 @@ def test_dataset_contract_without_row_binding_raises() -> None:
     )
     with pytest.raises(KeyError, match="has no row binding"):
         contract.require_row_binding()
-
-
-def test_dataset_contract_deprecation_fields_exist() -> None:
-    """Verify DatasetContract has deprecation fields."""
-    contract = DatasetContract(
-        table_key="test.table",
-        name="test_table",
-        schema=None,
-        deprecated=True,
-        deprecation_message="Use new_table instead",
-    )
-    require(condition=contract.deprecated is True, message="deprecated flag should be True")
-    require(
-        condition=contract.deprecation_message == "Use new_table instead",
-        message="deprecation_message should match provided text",
-    )
-
-
-def test_dataset_contract_deprecation_defaults() -> None:
-    """Verify DatasetContract deprecation fields have correct defaults."""
-    contract = DatasetContract(
-        table_key="test.table",
-        name="test_table",
-        schema=None,
-    )
-    require(condition=contract.deprecated is False, message="deprecated should default to False")
-    require(
-        condition=contract.deprecation_message is None,
-        message="deprecation_message should default to None",
-    )

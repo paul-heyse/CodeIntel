@@ -391,19 +391,19 @@ class SchemaManifest(ManifestBase):
     Parameters
     ----------
     version
-        Manifest version identifier (v1 or v2).
+        Manifest version identifier (v2).
     tables
         Table schemas included in this manifest.
     views
-        View schemas included in this manifest (v2 only).
+        View schemas included in this manifest.
     artifacts
-        Export artifact specifications (v2 only).
+        Export artifact specifications.
     table_provenance
-        Optional per-table provenance metadata (v2 additive).
+        Optional per-table provenance metadata.
     view_provenance
-        Optional per-view provenance metadata (v2 additive).
+        Optional per-view provenance metadata.
     artifact_provenance
-        Optional per-artifact provenance metadata (v2 additive).
+        Optional per-artifact provenance metadata.
     """
 
     version: str

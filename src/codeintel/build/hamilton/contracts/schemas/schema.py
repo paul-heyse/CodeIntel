@@ -58,10 +58,6 @@ class DatasetMetadata:
         Tuple of dataset names that consume this dataset.
     tags
         Classification tags applied to the dataset.
-    deprecated
-        Whether this dataset is deprecated.
-    deprecation_message
-        Migration guidance if the dataset is deprecated.
     """
 
     description: str | None = None
@@ -72,8 +68,6 @@ class DatasetMetadata:
     upstream_dependencies: tuple[str, ...] = ()
     downstream_consumers: tuple[str, ...] = ()
     tags: frozenset[str] = field(default_factory=frozenset)
-    deprecated: bool = False
-    deprecation_message: str | None = None
 
 
 def _default_metadata() -> DatasetMetadata:

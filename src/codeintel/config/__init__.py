@@ -21,7 +21,7 @@ For CLI boundary models:
     from codeintel.config import RepoConfig, CliPathsInput, ToolsConfig, CodeIntelConfig
 
 For analytics and graph computations, use SnapshotRef + options dataclasses
-directly from their respective modules instead of deprecated step configurations.
+directly from their respective modules instead of step-based configurations.
 """
 
 from typing import TYPE_CHECKING

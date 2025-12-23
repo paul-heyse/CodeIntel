@@ -7,19 +7,15 @@ schema hashing, and validation, but must not import `codeintel.build.*`.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
-from codeintel.core.schemas.service import get_schema_service
-from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 from codeintel.storage.contracts.catalog_state import contract_catalog_table_schemas
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
     from codeintel.core.schemas.primitives import TableSchema
-    from codeintel.core.schemas.service import SchemaService
 
 
 @lru_cache(maxsize=1)
@@ -30,32 +26,17 @@ def get_schema_provider() -> SchemaProvider:
     -------
     SchemaProvider
         Provider for table/view schemas.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when the contract catalog is not loaded.
     """
     catalog_schemas = contract_catalog_table_schemas()
-    if catalog_schemas:
-        return MappingSchemaProvider(catalog_schemas)
-    return _fallback_schema_provider()
-
-
-def _fallback_schema_provider() -> SchemaProvider:
-    """Resolve a schema provider when the contract catalog is unavailable.
-
-    Returns
-    -------
-    SchemaProvider
-        Best-effort schema provider for storage bootstrap.
-    """
-    try:
-        return get_schema_service().table_provider
-    except RuntimeError:
-        service_factory = cast(
-            "Callable[[], SchemaService]",
-            lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
-        )
-        try:
-            return service_factory().table_provider
-        except RuntimeError:
-            return MappingSchemaProvider(TABLE_SCHEMAS)
+    if not catalog_schemas:
+        msg = "Contract catalog not loaded; schema provider unavailable"
+        raise RuntimeError(msg)
+    return MappingSchemaProvider(catalog_schemas)
 
 
 def require_table_schema(table_key: str) -> TableSchema:

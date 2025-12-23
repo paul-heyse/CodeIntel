@@ -4,7 +4,7 @@ This module implements the ``serving_artifacts`` target, which compiles and
 materializes deterministic file artifacts used by serving/publishing:
 
 - ``semantic_registry.json`` (semantic view registry)
-- ``schema_manifest.json`` (table schema manifest)
+- ``schema_manifest.json`` (schema manifest v2: tables, views, artifacts)
 - ``buildspec.json`` (BuildSpec compiled from the Hamilton DAG)
 
 All artifacts are written via ``FileArtifactSaver`` so I/O is DAG-visible and
@@ -93,17 +93,18 @@ def _semantic_registry_json() -> str:
     return compiled.to_json() + "\n"
 
 
-def _schema_manifest_json() -> str:
+def _schema_manifest_json(env: BuildEnv) -> str:
     schema_provider = get_schema_provider()
     manifest = compile_schema_manifest(
         provider=schema_provider,
         request=SchemaManifestRequest(
             all_targets=True,
             stable=True,
-            version="v1",
-            include_views=False,
-            include_artifacts=False,
+            version="v2",
+            include_views=True,
+            include_artifacts=True,
         ),
+        con=env.gateway.con,
     )
     return manifest.to_json() + "\n"
 
@@ -170,6 +171,10 @@ def _views_sql_json(env: BuildEnv) -> str:
     builders = discover_view_builders(modules=(_ibis_views,))
     ibis_gateway = env.gateway.ibis
 
+    if not env.repo or not env.commit:
+        msg = "Serving artifacts require repo and commit for lineage sync"
+        raise ValueError(msg)
+
     sql_by_view: dict[str, str] = {}
     for spec in builders:
         expr = spec.builder(ibis_gateway)
@@ -183,12 +188,14 @@ def _views_sql_json(env: BuildEnv) -> str:
 
     try:
         sync_derived_lineage_edges(
-            env.gateway.con, repo=env.repo, commit=env.commit, lineage=lineage
+            env.gateway.con,
+            repo=env.repo,
+            commit=env.commit,
+            lineage=lineage,
         )
-    except DuckDBError:
-        LOG.exception(
-            "Failed to sync derived lineage edges repo=%s commit=%s", env.repo, env.commit
-        )
+    except DuckDBError as exc:
+        msg = f"Failed to sync derived lineage edges repo={env.repo} commit={env.commit}"
+        raise RuntimeError(msg) from exc
 
     try:
         sync_derived_lineage_columns(
@@ -197,10 +204,9 @@ def _views_sql_json(env: BuildEnv) -> str:
             commit=env.commit,
             lineage=column_lineage,
         )
-    except DuckDBError:
-        LOG.exception(
-            "Failed to sync derived lineage columns repo=%s commit=%s", env.repo, env.commit
-        )
+    except DuckDBError as exc:
+        msg = f"Failed to sync derived lineage columns repo={env.repo} commit={env.commit}"
+        raise RuntimeError(msg) from exc
 
     return json.dumps(sql_by_view, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
@@ -311,7 +317,7 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
     str
         Newline-terminated schema manifest JSON payload.
     """
-    return _schema_manifest_json()
+    return _schema_manifest_json(_env)
 
 
 @SaveToObjectMetadataDecorator(

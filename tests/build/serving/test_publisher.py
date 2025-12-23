@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
+import pytest
 
 from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_BUILDSPEC,
@@ -21,6 +22,7 @@ from codeintel.build.serving.publisher import (
 )
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
     assert_target_ok,
@@ -48,12 +50,32 @@ def _write_text(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> None:
+    con.execute("CREATE SCHEMA core")
+    con.execute(
+        """
+        CREATE TABLE core.modules (
+            repo VARCHAR,
+            commit VARCHAR,
+            module VARCHAR,
+            path VARCHAR
+        )
+        """
+    )
+    con.execute(
+        "INSERT INTO core.modules VALUES (?, ?, ?, ?)",
+        [repo, commit, "pkg.foo", "foo.py"],
+    )
+
+
 def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -> None:
     """Publisher checkpoints, copies artifacts, and updates current.json atomically."""
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
     con.execute("INSERT INTO t VALUES (1)")
+    _seed_modules(con, repo="demo/repo", commit="c1")
+    apply_metadata_ddl(con)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -63,7 +85,7 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     schema_manifest = tmp_path / "schema_manifest.json"
     buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
-    _write_text(schema_manifest, {"version": "v1", "tables": []})
+    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
     _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
 
     serve_dir = tmp_path / "serve"
@@ -105,6 +127,24 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
             """
         ).fetchone()
         expect_true(present is not None)
+        lineage_edges = snap_con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'metadata' AND table_name = 'derived_lineage_edges'
+            LIMIT 1
+            """
+        ).fetchone()
+        expect_true(lineage_edges is not None)
+        lineage_columns = snap_con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'metadata' AND table_name = 'derived_lineage_columns'
+            LIMIT 1
+            """
+        ).fetchone()
+        expect_true(lineage_columns is not None)
     finally:
         snap_con.close()
 
@@ -114,6 +154,8 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
+    _seed_modules(con, repo="demo/repo", commit="c1")
+    apply_metadata_ddl(con)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -123,7 +165,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     schema_manifest = tmp_path / "schema_manifest.json"
     buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
-    _write_text(schema_manifest, {"version": "v1", "tables": []})
+    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
     _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
 
     serve_dir = tmp_path / "serve"
@@ -153,6 +195,83 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
 
     snaps = sorted([p.name for p in (serve_dir / "snapshots").iterdir() if p.is_dir()])
     expect_equal(snaps, ["run-2"])
+
+
+def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> None:
+    """Publisher fails when docs.search_documents is empty."""
+    db_path = tmp_path / "build.duckdb"
+    con = duckdb.connect(str(db_path))
+    con.execute("CREATE SCHEMA core")
+    con.execute(
+        """
+        CREATE TABLE core.modules (
+            repo VARCHAR,
+            commit VARCHAR,
+            module VARCHAR,
+            path VARCHAR
+        )
+        """
+    )
+    apply_metadata_ddl(con)
+
+    gateway = _StubGateway(
+        config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
+    )
+
+    semantic_registry = tmp_path / "semantic_registry.json"
+    schema_manifest = tmp_path / "schema_manifest.json"
+    buildspec = tmp_path / "buildspec.json"
+    _write_text(semantic_registry, {"version": "v1", "views": []})
+    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
+    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+
+    serve_dir = tmp_path / "serve"
+    with pytest.raises(RuntimeError, match="Search index build failed"):
+        publish_serving_snapshot(
+            gateway=gateway,
+            request=PublishServingSnapshotRequest(
+                run_id="run-empty",
+                serve_dir=serve_dir,
+                semantic_registry_path=semantic_registry,
+                schema_manifest_path=schema_manifest,
+                buildspec_path=buildspec,
+                keep_last=10,
+            ),
+        )
+    con.close()
+
+
+def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path) -> None:
+    """Publisher fails when derived lineage tables are missing."""
+    db_path = tmp_path / "build.duckdb"
+    con = duckdb.connect(str(db_path))
+    _seed_modules(con, repo="demo/repo", commit="c1")
+
+    gateway = _StubGateway(
+        config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
+    )
+
+    semantic_registry = tmp_path / "semantic_registry.json"
+    schema_manifest = tmp_path / "schema_manifest.json"
+    buildspec = tmp_path / "buildspec.json"
+    _write_text(semantic_registry, {"version": "v1", "views": []})
+    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
+    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+
+    serve_dir = tmp_path / "serve"
+    with pytest.raises(RuntimeError, match="Lineage metadata missing"):
+        publish_serving_snapshot(
+            gateway=gateway,
+            request=PublishServingSnapshotRequest(
+                run_id="run-no-lineage",
+                serve_dir=serve_dir,
+                semantic_registry_path=semantic_registry,
+                schema_manifest_path=schema_manifest,
+                buildspec_path=buildspec,
+                keep_last=10,
+            ),
+        )
+    con.close()
 
 
 def test_serving_harness_publishes_snapshot(

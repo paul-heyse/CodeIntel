@@ -516,8 +516,6 @@ def _parse_artifacts_section(
 def _parse_manifest_from_json(obj: dict[str, object]) -> SchemaManifest:
     """Parse a SchemaManifest from a JSON object.
 
-    Supports both v1 (tables only) and v2 (tables, views, artifacts) formats.
-
     Parameters
     ----------
     obj
@@ -532,8 +530,13 @@ def _parse_manifest_from_json(obj: dict[str, object]) -> SchemaManifest:
     ------
     TypeError
         If 'tables' or 'views' is not a list.
+    ValueError
+        If the manifest version is unsupported.
     """
-    version = str(obj.get("version", "v1"))
+    version = str(obj.get("version", "")).strip() or "v2"
+    if version != "v2":
+        msg = f"Unsupported schema manifest version: {version}"
+        raise ValueError(msg)
 
     # Parse tables
     tables_raw = obj.get("tables", [])

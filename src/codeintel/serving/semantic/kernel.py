@@ -15,6 +15,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
 from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.search.engine import (
@@ -44,7 +45,6 @@ from codeintel.serving.semantic.planner import (
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
-from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
@@ -251,7 +251,6 @@ class SemanticQueryKernel:
                 column_count=len(v.columns),
             )
             for v in registry.views
-            if not v.deprecated
         ]
         return SemanticCatalogResponse(
             version=registry.version,
@@ -269,8 +268,13 @@ class SemanticQueryKernel:
 
         Returns
         -------
-        dict[str, object]
+        SemanticViewDescriptionResponse
             View description with schema details.
+
+        Raises
+        ------
+        LineageMetadataMissingError
+            If lineage metadata tables are unavailable in the snapshot database.
         """
         pointer = self.db.current_pointer()
         context = self._planner.snapshot_context(pointer)
@@ -285,32 +289,25 @@ class SemanticQueryKernel:
             column_types = {c.name: c.type for c in table_schema.columns}
 
         lineage: dict[str, list[ColumnLineageRef]] = {}
-        try:
-            with self.db.connect() as (warehouse, _):
-                if warehouse.gateway.policy.table_exists(
-                    schema="metadata",
-                    table="derived_lineage_columns",
-                ):
-                    raw_lineage = load_derived_lineage_columns(
-                        warehouse.gateway.con,
-                        repo=pointer.repo,
-                        commit=pointer.commit,
-                        downstream_table=view.table_key.lower(),
-                    )
-                    lineage = {
-                        downstream: [
-                            ColumnLineageRef(table_key=table_key, column=column)
-                            for table_key, column in refs
-                        ]
-                        for downstream, refs in raw_lineage.items()
-                    }
-        except DuckDBError:
-            LOG.debug(
-                "Unable to load lineage for view=%s repo=%s commit=%s",
-                view.table_key,
-                pointer.repo,
-                pointer.commit,
+        with self.db.connect() as (warehouse, _):
+            if not warehouse.gateway.policy.table_exists(
+                schema="metadata",
+                table="derived_lineage_columns",
+            ):
+                raise LineageMetadataMissingError(table="metadata.derived_lineage_columns")
+            raw_lineage = load_derived_lineage_columns(
+                warehouse.gateway.con,
+                repo=pointer.repo,
+                commit=pointer.commit,
+                downstream_table=view.table_key.lower(),
             )
+            lineage = {
+                downstream: [
+                    ColumnLineageRef(table_key=table_key, column=column)
+                    for table_key, column in refs
+                ]
+                for downstream, refs in raw_lineage.items()
+            }
 
         return SemanticViewDescriptionResponse(
             id=view.id,
@@ -324,8 +321,6 @@ class SemanticQueryKernel:
             column_types=column_types,
             joins=view.joins,
             defaults=view.defaults,
-            deprecated=view.deprecated,
-            replaced_by=view.replaced_by,
             snapshot=self._snapshot_dict(pointer),
             lineage=lineage,
         )
@@ -370,7 +365,6 @@ class SemanticQueryKernel:
         )
 
         sql_fingerprint = sqlglot_canonical_sha256(compiled_sql) if compiled_sql else None
-
         return SemanticQueryResponse(
             view_id=request.view_id,
             columns=inputs.columns,
@@ -410,7 +404,6 @@ class SemanticQueryKernel:
 
             raw_rows = warehouse.gateway.policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
             plan_text = _format_explain_rows(raw_rows)
-
             return SemanticExplainResponse(
                 view_id=request.view_id,
                 sql=compiled,
@@ -467,26 +460,18 @@ class SemanticQueryKernel:
         -------
         SearchQueryResponse
             Search results with stable ranking when the FTS index is available.
+
+        Raises
+        ------
+        SearchIndexMissingError
+            If the search index table is missing from the snapshot database.
         """
         engine = self.settings.result_engine.lower()
 
         with self.db.connect() as (warehouse, pointer):
             backend = warehouse.gateway.policy
             if not backend.table_exists(schema=SEARCH_TABLE_SCHEMA, table=SEARCH_TABLE_NAME):
-                return SearchQueryResponse(
-                    query=request.query,
-                    results=[],
-                    truncated=False,
-                    snapshot=self._snapshot_dict(pointer),
-                    engine=engine,
-                    query_hash=fingerprint_search(
-                        snapshot=self._snapshot_dict(pointer).model_dump(mode="json"),
-                        query=request.query,
-                        kinds=request.kinds,
-                        limit=request.limit,
-                        offset=request.offset,
-                    ),
-                )
+                raise SearchIndexMissingError
             query = build_search_query(
                 request, fts_available=is_fts_available(warehouse.gateway.con)
             )

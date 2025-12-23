@@ -59,8 +59,6 @@ OpenTelemetry is the canonical pipeline for traces and metrics across CLI, HTTP,
   - Include multiple statements (semicolon-separated) in summaries.
 - `CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK` (default: false)
   - Update DB span names to `db.query.summary` for DBAPI instrumentation.
-- `CODEINTEL_OTEL_DB_LEGACY_ATTRIBUTES` (default: false)
-  - When true, emit legacy `db.system`/`db.name` attributes in addition to new keys.
 - `CODEINTEL_OTEL_DB_QUERY_TEXT_POLICY` (default: `never`)
   - Options: `never`, `parameterized`, `redacted`, `parameterized_or_redacted`, `full`.
 - `CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN` (default: 4096)

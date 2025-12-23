@@ -73,8 +73,6 @@ def _write_registry(path: Path) -> None:
                 "joins": [],
                 "defaults": {"limit": 200, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     )
@@ -218,8 +216,8 @@ def test_resource_store_put_and_get_json(tmp_path: Path) -> None:
     expect_equal(content["rows"], [{"id": 1}, {"id": 2}])
 
 
-def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
-    """Verify NDJSON artifact storage and retrieval."""
+def test_resource_store_put_and_get_jsonl(tmp_path: Path) -> None:
+    """Verify JSONL artifact storage and retrieval."""
     store = ResourceStore(tmp_path / "exports")
 
     rows: list[dict[str, object]] = [
@@ -229,7 +227,7 @@ def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
     ]
     token, artifact, _meta = store.put_with_metadata(
         rows,
-        spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+        spec=ExportArtifactSpec(view_id="demo.view", format="jsonl"),
     )
 
     expect_true(len(token) > 0, message="Token should be non-empty")
@@ -243,7 +241,7 @@ def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
     expect_equal(retrieved.path, artifact.path)
     expect_equal(retrieved.mime_type, "application/x-ndjson")
 
-    # Verify NDJSON content (one JSON per line)
+    # Verify JSONL content (one JSON per line)
     lines = artifact.path.read_text(encoding="utf-8").strip().split("\n")
     expect_equal(len(lines), 3)
     expect_equal(json.loads(lines[0]), {"id": 1, "name": "one"})
@@ -251,8 +249,8 @@ def test_resource_store_put_and_get_ndjson(tmp_path: Path) -> None:
     expect_equal(json.loads(lines[2]), {"id": 3, "name": "three"})
 
 
-def test_resource_store_ndjson_encoding_is_utf8(tmp_path: Path) -> None:
-    """Verify NDJSON encoding preserves UTF-8 and stringifies unknown types."""
+def test_resource_store_jsonl_encoding_is_utf8(tmp_path: Path) -> None:
+    """Verify JSONL encoding preserves UTF-8 and stringifies unknown types."""
     store = ResourceStore(tmp_path / "exports")
 
     expected_ts = "2024-01-01T00:00:00Z"
@@ -264,13 +262,13 @@ def test_resource_store_ndjson_encoding_is_utf8(tmp_path: Path) -> None:
     }
     token, artifact, _meta = store.put_with_metadata(
         [row],
-        spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+        spec=ExportArtifactSpec(view_id="demo.view", format="jsonl"),
     )
 
     expect_true(len(token) > 0, message="Token should be non-empty")
 
     raw = artifact.path.read_text(encoding="utf-8").strip()
-    expect_true(bool(raw), message="Expected NDJSON output")
+    expect_true(bool(raw), message="Expected JSONL output")
     expect_equal(raw.count("\n"), 0)
     expect_true("🧪" in raw, message="Expected UTF-8 output to preserve unicode")
 
@@ -281,8 +279,8 @@ def test_resource_store_ndjson_encoding_is_utf8(tmp_path: Path) -> None:
     expect_equal(payload["bytes"], str(row["bytes"]))
 
 
-def test_resource_store_ndjson_stream_encoding_is_utf8(tmp_path: Path) -> None:
-    """Verify streaming NDJSON encoding preserves UTF-8 and stringifies types."""
+def test_resource_store_jsonl_stream_encoding_is_utf8(tmp_path: Path) -> None:
+    """Verify streaming JSONL encoding preserves UTF-8 and stringifies types."""
     store = ResourceStore(tmp_path / "exports")
 
     expected_ts = "2024-01-01T00:00:00Z"
@@ -295,13 +293,13 @@ def test_resource_store_ndjson_stream_encoding_is_utf8(tmp_path: Path) -> None:
 
     token, artifact, _meta = store.put_with_metadata_stream(
         [row],
-        spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+        spec=ExportArtifactSpec(view_id="demo.view", format="jsonl"),
     )
 
     expect_true(len(token) > 0, message="Token should be non-empty")
 
     raw = artifact.path.read_text(encoding="utf-8").strip()
-    expect_true(bool(raw), message="Expected NDJSON output")
+    expect_true(bool(raw), message="Expected JSONL output")
     expect_equal(raw.count("\n"), 0)
     expect_true("🧪" in raw, message="Expected UTF-8 output to preserve unicode")
 
@@ -360,7 +358,7 @@ def test_resource_store_put_with_metadata(tmp_path: Path) -> None:
         column_types=column_types,
         compiled_sql="SELECT * FROM demo",
         snapshot=snapshot,
-        format="ndjson",
+        format="jsonl",
     )
     token, artifact, metadata = store.put_with_metadata(rows, spec=spec)
 
@@ -393,7 +391,7 @@ def test_resource_store_get_meta(tmp_path: Path) -> None:
         columns=("id",),
         compiled_sql="SELECT id FROM test",
         snapshot={"repo": "test"},
-        format="ndjson",
+        format="jsonl",
     )
     token, _artifact, _metadata = store.put_with_metadata(rows, spec=spec)
 
@@ -418,7 +416,7 @@ def test_resource_store_get_preview(tmp_path: Path) -> None:
     store = ResourceStore(tmp_path / "exports")
 
     rows: list[dict[str, object]] = [{"id": i, "name": f"item-{i}"} for i in range(10)]
-    spec = ExportArtifactSpec(view_id="test.view", columns=("id", "name"), format="ndjson")
+    spec = ExportArtifactSpec(view_id="test.view", columns=("id", "name"), format="jsonl")
     token, _artifact, _metadata = store.put_with_metadata(rows, spec=spec)
 
     # Get preview (default 5 rows)
@@ -435,7 +433,7 @@ def test_resource_store_get_preview_small_dataset(tmp_path: Path) -> None:
     store = ResourceStore(tmp_path / "exports")
 
     rows: list[dict[str, object]] = [{"id": 1}, {"id": 2}]
-    spec = ExportArtifactSpec(view_id="test.view", columns=("id",), format="ndjson")
+    spec = ExportArtifactSpec(view_id="test.view", columns=("id",), format="jsonl")
     token, _artifact, _metadata = store.put_with_metadata(rows, spec=spec)
 
     preview = store.get_preview(token, max_rows=5)
@@ -504,7 +502,7 @@ async def test_mcp_semantic_export_returns_uri(tmp_path: Path) -> None:
             )
 
             # Verify other fields
-            expect_equal(result.get("format"), "ndjson")
+            expect_equal(result.get("format"), "jsonl")
             expect_equal(result.get("row_count"), 3)  # Demo has 3 rows
             byte_size = result.get("byte_size", 0)
             expect_true(
@@ -949,7 +947,7 @@ async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
             expect_equal(data.get("export_id"), export_id)
             expect_equal(data.get("status"), "ready")
             expect_true("created_at" in data, message="Should have created_at")
-            expect_equal(data.get("format"), "ndjson")
+            expect_equal(data.get("format"), "jsonl")
             expect_equal(data.get("row_count"), 3)  # Demo view has 3 rows
 
             # Verify snapshot info

@@ -34,15 +34,15 @@ def test_span_alignment_across_components(
     build_span_graph_components(span_env)
     rows = build_test_coverage_edges_rows(
         span_env.gateway,
-        span_env.builder.snapshot,
+        span_env.snapshot,
         options=TestCoverageOptions(coverage_file=span_coverage_artifact),
     )
     if rows:
         backend = span_env.gateway.policy
         backend.delete_for_snapshot(
             TEST_COVERAGE_EDGES_TABLE_KEY,
-            repo=span_env.builder.snapshot.repo,
-            commit=span_env.builder.snapshot.commit,
+            repo=span_env.snapshot.repo,
+            commit=span_env.snapshot.commit,
         )
         backend.bulk_insert_mappings(TEST_COVERAGE_EDGES_TABLE_KEY, rows)
 
@@ -55,7 +55,7 @@ def test_span_alignment_across_components(
         WHERE repo = ? AND commit = ? AND qualname = 'pkg.b.caller'
         LIMIT 1
         """,
-        [span_env.builder.snapshot.repo, span_env.builder.snapshot.commit],
+        [span_env.snapshot.repo, span_env.snapshot.commit],
     ).fetchone()
     if goid_row is None:
         message = "Expected GOID for pkg.b.caller to be present"

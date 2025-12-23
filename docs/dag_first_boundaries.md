@@ -37,4 +37,4 @@
 ## Export formats
 
 - Canonical registry: `codeintel.core.exports.formats`.
-- `ndjson` is treated as an alias of `jsonl`; serving defaults remain `ndjson`.
+- `jsonl` is the canonical line-delimited JSON format; serving defaults to `jsonl`.

@@ -38,6 +38,7 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
     TestRecord,
 )
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.factories import (
@@ -57,6 +58,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
+get_schema_service()
 _COLUMNS_BY_TABLE = load_columns_by_table()
 TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
 BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])

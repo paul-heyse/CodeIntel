@@ -16,7 +16,7 @@ class ExportArtifactSpec:
     column_types: dict[str, str] = field(default_factory=dict)
     compiled_sql: str | None = None
     snapshot: dict[str, str] = field(default_factory=dict)
-    format: ExportFormat = "ndjson"
+    format: ExportFormat = "jsonl"
     query_hash: str | None = None
     schema_hash: str | None = None
 

@@ -99,8 +99,6 @@ def _setup_serving_env(tmp_path: Path) -> ServingSettings:
                 "joins": [],
                 "defaults": {"limit": 200, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     )
@@ -154,15 +152,15 @@ def test_export_json_format(tmp_path: Path) -> None:
         expect_equal(len(data["rows"]), 5)
 
 
-def test_export_ndjson_format(tmp_path: Path) -> None:
-    """Export with format=ndjson returns newline-delimited JSON."""
+def test_export_jsonl_format(tmp_path: Path) -> None:
+    """Export with format=jsonl returns newline-delimited JSON."""
     settings = _setup_serving_env(tmp_path)
     app = create_serving_app(settings=settings, mount_mcp=False)
 
     with TestClient(app) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
-            json={"view_id": "export.test", "format": "ndjson", "limit": 100},
+            json={"view_id": "export.test", "format": "jsonl", "limit": 100},
         )
 
         expect_equal(response.status_code, status.HTTP_200_OK)
@@ -176,20 +174,20 @@ def test_export_ndjson_format(tmp_path: Path) -> None:
         expect_equal(first_row["name"], "alpha")
 
 
-def test_export_ndjson_content_disposition(tmp_path: Path) -> None:
-    """NDJSON export should include content-disposition header."""
+def test_export_jsonl_content_disposition(tmp_path: Path) -> None:
+    """JSONL export should include content-disposition header."""
     settings = _setup_serving_env(tmp_path)
     app = create_serving_app(settings=settings, mount_mcp=False)
 
     with TestClient(app) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
-            json={"view_id": "export.test", "format": "ndjson"},
+            json={"view_id": "export.test", "format": "jsonl"},
         )
 
         expect_equal(response.status_code, status.HTTP_200_OK)
         content_disposition = response.headers.get("content-disposition", "")
-        expect_in("export.test.ndjson", content_disposition)
+        expect_in("export.test.jsonl", content_disposition)
 
 
 def test_export_with_filters(tmp_path: Path) -> None:
@@ -202,7 +200,7 @@ def test_export_with_filters(tmp_path: Path) -> None:
             "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
-                "format": "ndjson",
+                "format": "jsonl",
                 "filters": [{"column": "id", "op": "gte", "value": 3}],
             },
         )
@@ -223,7 +221,7 @@ def test_export_with_select_columns(tmp_path: Path) -> None:
             "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
-                "format": "ndjson",
+                "format": "jsonl",
                 "select": ["id", "name"],
             },
         )
@@ -246,7 +244,7 @@ def test_export_with_order_by(tmp_path: Path) -> None:
             "/v1/export/semantic/export.test",
             json={
                 "view_id": "export.test",
-                "format": "ndjson",
+                "format": "jsonl",
                 "order_by": ["-id"],
             },
         )
@@ -324,8 +322,6 @@ def test_export_respects_api_key(tmp_path: Path) -> None:
                 "joins": [],
                 "defaults": {"limit": 200, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     )

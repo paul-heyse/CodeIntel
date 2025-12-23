@@ -2,23 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
 
+from codeintel.build.catalogs.canonical import load_contract_catalog
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.contracts.catalog_state import contract_catalog_table_schemas
+from codeintel.storage.contracts.catalog_state import (
+    contract_catalog_table_schemas,
+    get_contract_catalog,
+)
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.inference import InferenceGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.schema import assert_schema_alignment
+from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.validation import validate_contract_or_raise
 
 if TYPE_CHECKING:
@@ -43,6 +49,27 @@ def _maybe_set_schema_service_from_catalog() -> None:
             set_schema_service(service)
 
 
+@dataclass(frozen=True, slots=True)
+class _CatalogGatewayStub:
+    config: StorageConfig
+    con: duckdb.DuckDBPyConnection
+
+
+def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageConfig) -> None:
+    load_contract_catalog_from_connection(con)
+    if get_contract_catalog() is not None:
+        return
+    if config.read_only:
+        msg = "Contract catalog missing for read-only gateway"
+        raise RuntimeError(msg)
+    stub = _CatalogGatewayStub(config=config, con=con)
+    load_contract_catalog(gateway=stub)
+    load_contract_catalog_from_connection(con)
+    if get_contract_catalog() is None:
+        msg = "Contract catalog missing after bootstrap"
+        raise RuntimeError(msg)
+
+
 def open_gateway(config: StorageConfig) -> StorageGateway:
     """Create a StorageGateway bound to a DuckDB database.
 
@@ -62,16 +89,24 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
         If the database connection cannot be established.
     """
     try:
-        session = DuckDBSession(config)
+        session_config = config
+        include_views = False
+        if not config.read_only and config.apply_schema:
+            session_config = replace(config, apply_schema=False)
+        session = DuckDBSession(session_config)
         con = session.open_reader() if config.read_only else session.open()
         if not config.read_only:
+            apply_metadata_ddl(con)
             include_views = config.ensure_views and config.apply_schema
+        _ensure_contract_catalog(con, config=config)
+        if not config.read_only and config.apply_schema:
+            apply_all_schemas(con)
+        if not config.read_only:
             bootstrap_metadata_datasets(
                 con,
                 include_views=include_views,
                 validate_schema_registry=config.validate_schema,
             )
-        load_contract_catalog_from_connection(con)
         _maybe_set_schema_service_from_catalog()
         datasets = load_dataset_registry(con)
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)

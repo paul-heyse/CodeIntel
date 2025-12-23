@@ -39,10 +39,6 @@ def test_metadata_default_values() -> None:
         message="downstream_consumers should be empty",
     )
     _require(condition=metadata.tags == frozenset(), message="tags should be empty frozenset")
-    _require(condition=metadata.deprecated is False, message="deprecated should be False")
-    _require(
-        condition=metadata.deprecation_message is None, message="deprecation_message should be None"
-    )
 
 
 def test_metadata_with_values() -> None:

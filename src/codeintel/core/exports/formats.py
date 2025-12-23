@@ -1,12 +1,12 @@
-"""Canonical export format registry with alias handling."""
+"""Canonical export format registry."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Final, Literal, cast
 
-ExportFormat = Literal["jsonl", "ndjson", "json", "parquet", "arrow"]
-CanonicalExportFormat = Literal["jsonl", "json", "parquet", "arrow"]
+ExportFormat = Literal["jsonl", "json", "parquet", "arrow"]
+CanonicalExportFormat = ExportFormat
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +36,6 @@ EXPORT_FORMATS: Final[dict[CanonicalExportFormat, ExportFormatSpec]] = {
         format="jsonl",
         mime_type="application/x-ndjson",
         suffix=".jsonl",
-        aliases=("ndjson",),
     ),
     "json": ExportFormatSpec(format="json", mime_type="application/json", suffix=".json"),
     "parquet": ExportFormatSpec(
@@ -59,10 +58,6 @@ _EXPORT_FORMAT_ORDER: Final[tuple[CanonicalExportFormat, ...]] = (
 )
 _TEXT_EXPORT_FORMATS: Final[frozenset[CanonicalExportFormat]] = frozenset({"jsonl", "json"})
 _BINARY_EXPORT_FORMATS: Final[frozenset[CanonicalExportFormat]] = frozenset({"parquet", "arrow"})
-_ALIASES: Final[dict[str, CanonicalExportFormat]] = {
-    alias: fmt for fmt, spec in EXPORT_FORMATS.items() for alias in spec.aliases
-}
-_ALIAS_SUFFIXES: Final[dict[str, str]] = {"ndjson": ".ndjson"}
 
 
 def normalize_export_format(fmt: str) -> CanonicalExportFormat:
@@ -86,9 +81,6 @@ def normalize_export_format(fmt: str) -> CanonicalExportFormat:
     normalized = fmt.strip().lower()
     if normalized in EXPORT_FORMATS:
         return cast("CanonicalExportFormat", normalized)
-    alias = _ALIASES.get(normalized)
-    if alias is not None:
-        return alias
     msg = f"Unsupported export format: {fmt}"
     raise ValueError(msg)
 
@@ -123,24 +115,18 @@ def suffix_for_export_format(fmt: str) -> str:
     str
         File suffix for the export format.
     """
-    normalized = fmt.strip().lower()
-    alias_suffix = _ALIAS_SUFFIXES.get(normalized)
-    if alias_suffix is not None:
-        return alias_suffix
-    return resolve_export_format_spec(normalized).suffix
+    return resolve_export_format_spec(fmt).suffix
 
 
-def export_format_choices(*, include_aliases: bool = False) -> tuple[str, ...]:
+def export_format_choices() -> tuple[CanonicalExportFormat, ...]:
     """Return supported export formats in a stable, UX-friendly order.
 
     Returns
     -------
-    tuple[str, ...]
+    tuple[CanonicalExportFormat, ...]
         Ordered export format identifiers.
     """
-    if not include_aliases:
-        return _EXPORT_FORMAT_ORDER
-    return tuple(_ALIASES.keys()) + _EXPORT_FORMAT_ORDER
+    return _EXPORT_FORMAT_ORDER
 
 
 def default_export_format() -> CanonicalExportFormat:

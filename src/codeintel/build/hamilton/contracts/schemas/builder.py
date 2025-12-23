@@ -90,8 +90,6 @@ def build_dataset_schema(
         upstream_dependencies=contract.upstream_dependencies,
         downstream_consumers=(),
         tags=contract.tags,
-        deprecated=contract.deprecated,
-        deprecation_message=contract.deprecation_message,
     )
 
     row_model = None

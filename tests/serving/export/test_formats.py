@@ -33,7 +33,7 @@ def test_default_export_format_is_registered() -> None:
 def test_export_format_capability_classification() -> None:
     """Validate capability helpers for each export format."""
     for fmt in export_format_choices():
-        if fmt in {"json", "ndjson"}:
+        if fmt in {"json", "jsonl"}:
             expect_true(is_text_export_format(fmt))
             expect_true(supports_preview(fmt))
             expect_true(not is_binary_export_format(fmt))
@@ -42,7 +42,7 @@ def test_export_format_capability_classification() -> None:
             expect_true(not supports_preview(fmt))
             expect_true(is_binary_export_format(fmt))
 
-        if fmt == "ndjson":
+        if fmt == "jsonl":
             expect_true(supports_line_chunks(fmt))
         else:
             expect_true(not supports_line_chunks(fmt))

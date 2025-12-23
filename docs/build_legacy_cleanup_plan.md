@@ -31,6 +31,12 @@
 - Placeholder schema helpers removed from contracts and schema index; tests updated to use helpers.
 - Quality report passes (ruff/pyright/pyrefly/guardrails/contract checks).
 
+## Status Update (Scope Completed)
+- W2 template package removal completed; native helper is now `src/codeintel/build/hamilton/materialization_helpers.py`.
+- W3 stub target generation removed; support modules now emit only dataset/loader/artifact nodes.
+- W4 warnings-only migration completed; `ExecutionResultLike` no longer reads `errors`.
+- Guardrails/quality report rerun and passing post-migration.
+
 ### W0: Baseline Inventory and Impact Map
 **Objective**: Enumerate all legacy touchpoints and confirm removal scope.
 
@@ -163,23 +169,23 @@ OutputContracts.
 production code.
 
 **Implementation Steps**
-1. Extract `executor_materialize` into a non-template module.
+1. Extract `executor_materialize` into a non-template module. **Done**
    - Candidate new location: `src/codeintel/build/hamilton/materialization_helpers.py`.
    - Update native graph modules importing `executor_materialize`.
-2. Remove unused template utilities and tests:
+2. Remove unused template utilities and tests: **Done**
    - `src/codeintel/build/hamilton/templates/all_targets.py`
    - `src/codeintel/build/hamilton/templates/tool_pipeline.py`
    - `src/codeintel/build/hamilton/templates/multi_table_pipeline.py`
    - `src/codeintel/build/hamilton/templates/rows_helpers.py`
    - `src/codeintel/build/hamilton/templates/materialize_template.py` (after extraction)
    - `src/codeintel/build/hamilton/templates/__init__.py`
-3. Remove template-only tests:
+3. Remove template-only tests: **Done**
    - `tests/build/hamilton/test_executor_pipeline_template.py`
    - `tests/build/hamilton/test_phase2_ibis_pipeline_template.py`
    - `tests/build/hamilton/test_multi_table_pipeline_template.py`
    - `tests/build/hamilton/test_rows_pipeline_helpers.py`
 4. Update any native modules that were using template-only helpers to import from
-   new native helper locations.
+   new native helper locations. **Done**
 
 **Acceptance**
 - No `codeintel.build.hamilton.templates` imports exist in `src/` or `tests/`.
@@ -191,12 +197,13 @@ production code.
 **Objective**: Eliminate unused stub target nodes and fallback narratives.
 
 **Implementation Steps**
-1. Remove stub-generation logic in `src/codeintel/build/hamilton/nodes/support_factory.py`:
+1. Remove stub-generation logic in `src/codeintel/build/hamilton/nodes/support_factory.py`: **Done**
    - Delete `_create_stub_target_node_function()` and any call paths.
    - Remove `include_target_stubs` from `SupportGenerationOptions` if no longer used.
 2. Remove `get_template_module()` in `src/codeintel/build/hamilton/templates/all_targets.py` (or
-   remove entire module as part of W2).
+   remove entire module as part of W2). **Done**
 3. Update docstrings and module comments referencing Phase 1 templates or fallback overrides.
+   **Done**
    - Focus on `src/codeintel/build/hamilton/native/analytics/*.py` headers and
      `src/codeintel/build/hamilton/templates/*` (as part of removal).
 
@@ -212,13 +219,14 @@ production code.
 
 **Implementation Steps**
 1. Identify all compute result dataclasses that expose `errors` or omit `warnings`.
-   - Use the W0 inventory results to build a migration list.
+   - Use the W0 inventory results to build a migration list. **Done**
 2. For each compute result type:
    - Rename `errors` to `warnings` (or map to `warnings` with a deprecation period in code).
    - Ensure `warnings` is typed as `tuple[str, ...]` (or compatible sequence type).
+   **Done**
 3. Update `ExecutionResultLike` to remove the `errors` fallback in `_extract_warnings()` and
-   drop any compatibility branches.
-4. Update tests and fixtures to use `warnings` consistently.
+   drop any compatibility branches. **Done**
+4. Update tests and fixtures to use `warnings` consistently. **Done**
 
 **Acceptance**
 - `ExecutionResultLike` does not reference `errors`.

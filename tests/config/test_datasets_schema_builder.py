@@ -72,8 +72,6 @@ def test_build_copies_metadata_from_contract() -> None:
         retention_policy="30d",
         upstream_dependencies=("dep1", "dep2"),
         tags=frozenset({"production", "critical"}),
-        deprecated=True,
-        deprecation_message="Use new_table instead",
     )
 
     result = build_dataset_schema(
@@ -99,11 +97,6 @@ def test_build_copies_metadata_from_contract() -> None:
     _require(
         condition=result.metadata.tags == frozenset({"production", "critical"}),
         message="tags mismatch",
-    )
-    _require(condition=result.metadata.deprecated is True, message="deprecated mismatch")
-    _require(
-        condition=result.metadata.deprecation_message == "Use new_table instead",
-        message="deprecation_message mismatch",
     )
 
 

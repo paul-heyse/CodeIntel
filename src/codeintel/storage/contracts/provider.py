@@ -11,15 +11,9 @@ from dataclasses import replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from codeintel.config.datasets.composites import get_composite_schemas
-from codeintel.core.schemas.contract_factory import (
-    build_dataset_contract,
-    is_docs_view,
-)
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.contract_serde import contract_from_json_obj
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
-from codeintel.core.schemas.service import SchemaService
 from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.contracts.catalog_state import (
     get_contract_catalog,
@@ -27,16 +21,12 @@ from codeintel.storage.contracts.catalog_state import (
 from codeintel.storage.contracts.catalog_state import (
     set_contract_catalog as _set_contract_catalog,
 )
-from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
-from codeintel.storage.views.inventory import discover_derived_docs_views
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from duckdb import DuckDBPyConnection
-
-    from codeintel.config.datasets.primitives import CompositeSchema
 
 
 _CONTRACT_CATALOG_KIND = "dataset_contracts"
@@ -50,11 +40,7 @@ def is_view(table_key: str) -> bool:
     bool
         True when the table key maps to a docs view.
     """
-    return is_docs_view(table_key)
-
-
-def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
-    return get_composite_schemas().get(table_key)
+    return get_contract_for_table_key(table_key).is_view
 
 
 def _attach_row_binding(contract: DatasetContract) -> DatasetContract:
@@ -98,11 +84,6 @@ def load_contract_catalog_from_connection(con: DuckDBPyConnection) -> None:
         set_contract_catalog(None)
 
 
-@lru_cache(maxsize=1)
-def _schema_service() -> SchemaService:
-    return SchemaService(table_provider=get_schema_provider())
-
-
 @lru_cache(maxsize=512)
 def get_contract_for_table_key(table_key: str) -> DatasetContract:
     """Return the DatasetContract for a table or view.
@@ -119,29 +100,20 @@ def get_contract_for_table_key(table_key: str) -> DatasetContract:
 
     Raises
     ------
+    RuntimeError
+        Raised when the contract catalog is not loaded.
     KeyError
         Raised when the key is unknown to the schema provider and is not treated as a view.
     """
     catalog = get_contract_catalog()
-    if catalog is not None:
-        contract = catalog.get(table_key)
-        if contract is None:
-            msg = f"Unknown table key: {table_key}"
-            raise KeyError(msg)
-        return contract
-    is_view = is_docs_view(table_key)
-    schema = get_schema_provider().get_table_schema(table_key)
-    if schema is None and not is_view:
+    if catalog is None:
+        msg = "Contract catalog not loaded"
+        raise RuntimeError(msg)
+    contract = catalog.get(table_key)
+    if contract is None:
         msg = f"Unknown table key: {table_key}"
         raise KeyError(msg)
-    composition = _get_composition_for_table_key(table_key)
-    return build_dataset_contract(
-        table_key=table_key,
-        schema_service=_schema_service(),
-        overrides=None,
-        composition=composition,
-        is_view_override=is_view,
-    )
+    return contract
 
 
 def iter_contracts() -> Iterable[DatasetContract]:
@@ -151,26 +123,17 @@ def iter_contracts() -> Iterable[DatasetContract]:
     ------
     DatasetContract
         Each known dataset contract.
+
+    Raises
+    ------
+    RuntimeError
+        Raised when the contract catalog is not loaded.
     """
     catalog = get_contract_catalog()
-    if catalog is not None:
-        yield from catalog.values()
-        return
-    provider = get_schema_provider()
-    seen: set[str] = set()
-
-    for schema in provider.iter_table_schemas():
-        table_key = schema.table_key
-        if table_key in seen:
-            continue
-        seen.add(table_key)
-        yield get_contract_for_table_key(table_key)
-
-    for view_key in discover_derived_docs_views():
-        if view_key in seen:
-            continue
-        seen.add(view_key)
-        yield get_contract_for_table_key(view_key)
+    if catalog is None:
+        msg = "Contract catalog not loaded"
+        raise RuntimeError(msg)
+    yield from catalog.values()
 
 
 def iter_contracts_by_table_key() -> Iterable[tuple[str, DatasetContract]]:

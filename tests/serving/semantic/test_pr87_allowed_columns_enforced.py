@@ -84,8 +84,6 @@ async def test_strict_mode_rejects_unknown_columns(tmp_path: Path) -> None:
                     "primary_key": ["id"],
                     "description": None,
                     "sensitivity": "internal",
-                    "deprecated": False,
-                    "replaced_by": None,
                 }
             ],
         },
@@ -93,8 +91,9 @@ async def test_strict_mode_rejects_unknown_columns(tmp_path: Path) -> None:
     _write_json(
         manifest_path,
         {
-            "version": "v1",
-            "tables": [
+            "version": "v2",
+            "tables": [],
+            "views": [
                 {
                     "schema": "docs",
                     "name": "v_demo",
@@ -174,8 +173,6 @@ async def test_warn_mode_intersects_unknown_columns(tmp_path: Path) -> None:
                     "primary_key": ["id"],
                     "description": None,
                     "sensitivity": "internal",
-                    "deprecated": False,
-                    "replaced_by": None,
                 }
             ],
         },
@@ -183,8 +180,9 @@ async def test_warn_mode_intersects_unknown_columns(tmp_path: Path) -> None:
     _write_json(
         manifest_path,
         {
-            "version": "v1",
-            "tables": [
+            "version": "v2",
+            "tables": [],
+            "views": [
                 {
                     "schema": "docs",
                     "name": "v_demo",

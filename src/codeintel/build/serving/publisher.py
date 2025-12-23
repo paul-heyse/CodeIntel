@@ -100,6 +100,40 @@ def _compute_semantic_version(
     return hasher.hexdigest()[:16]
 
 
+def _table_exists(snap_con: DuckDBConnection, *, schema: str, table: str) -> bool:
+    result = snap_con.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = ? AND table_name = ?
+        LIMIT 1
+        """,
+        [schema, table],
+    ).fetchone()
+    return result is not None
+
+
+def _require_table(snap_con: DuckDBConnection, *, schema: str, table: str) -> None:
+    if _table_exists(snap_con, schema=schema, table=table):
+        return
+    msg = f"Required table missing: {schema}.{table}"
+    raise RuntimeError(msg)
+
+
+def _require_search_documents(snap_con: DuckDBConnection) -> None:
+    _require_table(snap_con, schema="docs", table="search_documents")
+    row = snap_con.execute("SELECT COUNT(*) FROM docs.search_documents").fetchone()
+    count = int(row[0]) if row is not None and row[0] is not None else 0
+    if count <= 0:
+        msg = "Search documents table is empty: docs.search_documents"
+        raise RuntimeError(msg)
+
+
+def _require_lineage_tables(snap_con: DuckDBConnection) -> None:
+    _require_table(snap_con, schema="metadata", table="derived_lineage_edges")
+    _require_table(snap_con, schema="metadata", table="derived_lineage_columns")
+
+
 def publish_serving_snapshot(
     *,
     gateway: SnapshotPublisherGateway,
@@ -123,6 +157,8 @@ def publish_serving_snapshot(
     ------
     FileNotFoundError
         If build database not found.
+    RuntimeError
+        If the search index build fails or lineage metadata is missing.
     """
     db_path = gateway.config.db_path
     if not db_path.is_file():
@@ -138,21 +174,38 @@ def publish_serving_snapshot(
     snap_db = snap_dir / "codeintel.duckdb"
     shutil.copy2(db_path, snap_db)
 
+    snap_con = DuckDBSession(StorageConfig(db_path=snap_db)).open()
     try:
-        snap_con = DuckDBSession(StorageConfig(db_path=snap_db)).open()
         try:
             build_search_documents_table(snap_con)
             ensure_fts_index(snap_con)
-        finally:
-            snap_con.commit()
-            snap_con.close()
-    except (OSError, ValueError, DuckDBError) as exc:
-        log.warning(
-            "build.serving.publisher.search_index_failed run_id=%s error=%s",
-            request.run_id,
-            exc,
-        )
+            _require_search_documents(snap_con)
+        except (OSError, ValueError, DuckDBError, RuntimeError) as exc:
+            log.exception(
+                "build.serving.publisher.search_index_failed run_id=%s",
+                request.run_id,
+            )
+            message = (
+                "Search index build failed for serving snapshot "
+                f"run_id={request.run_id}"
+            )
+            raise RuntimeError(message) from exc
 
+        try:
+            _require_lineage_tables(snap_con)
+        except RuntimeError as exc:
+            log.exception(
+                "build.serving.publisher.lineage_missing run_id=%s",
+                request.run_id,
+            )
+            message = (
+                "Lineage metadata missing for serving snapshot "
+                f"run_id={request.run_id}"
+            )
+            raise RuntimeError(message) from exc
+    finally:
+        snap_con.commit()
+        snap_con.close()
     snap_registry = snap_dir / "semantic_registry.json"
     shutil.copy2(request.semantic_registry_path, snap_registry)
 

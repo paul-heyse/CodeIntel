@@ -1,4 +1,4 @@
-"""NDJSON streaming tests."""
+"""JSONL streaming tests."""
 
 from __future__ import annotations
 

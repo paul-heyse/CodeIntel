@@ -20,7 +20,7 @@ def test_resource_store_cleanup_expired_deletes_artifacts(tmp_path: Path) -> Non
     """Delete expired exports based on metadata expires_at timestamps."""
     store = ResourceStore(tmp_path / "exports", ttl_seconds=3600)
     rows: list[dict[str, object]] = [{"id": 1}, {"id": 2}]
-    spec = ExportArtifactSpec(view_id="demo.view", format="ndjson")
+    spec = ExportArtifactSpec(view_id="demo.view", format="jsonl")
     token, _artifact, _meta = store.put_with_metadata(rows, spec=spec)
 
     meta_path = tmp_path / "exports" / f"{token}.meta.json"

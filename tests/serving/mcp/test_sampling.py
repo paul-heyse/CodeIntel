@@ -55,8 +55,6 @@ def _write_registry(path: Path) -> None:
                 "joins": [],
                 "defaults": {"limit": 200, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     )

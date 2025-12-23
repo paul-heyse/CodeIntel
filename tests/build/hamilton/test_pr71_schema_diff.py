@@ -205,11 +205,11 @@ class TestComputeManifestDiffs:
     def test_manifest_diff_detects_table_addition() -> None:
         """Detect when a table is added to the manifest."""
         expected = SchemaManifest(
-            version="v1",
+            version="v2",
             tables=(_make_schema("analytics.table_a", [("col", "VARCHAR", False)]),),
         )
         actual = SchemaManifest(
-            version="v1",
+            version="v2",
             tables=(
                 _make_schema("analytics.table_a", [("col", "VARCHAR", False)]),
                 _make_schema("analytics.table_b", [("col", "INTEGER", True)]),
@@ -227,14 +227,14 @@ class TestComputeManifestDiffs:
     def test_manifest_diff_detects_table_removal() -> None:
         """Detect when a table is removed (BREAKING)."""
         expected = SchemaManifest(
-            version="v1",
+            version="v2",
             tables=(
                 _make_schema("analytics.table_a", [("col", "VARCHAR", False)]),
                 _make_schema("analytics.table_b", [("col", "INTEGER", True)]),
             ),
         )
         actual = SchemaManifest(
-            version="v1",
+            version="v2",
             tables=(_make_schema("analytics.table_a", [("col", "VARCHAR", False)]),),
         )
 
@@ -249,11 +249,11 @@ class TestComputeManifestDiffs:
     def test_manifest_diff_tracks_per_table_changes() -> None:
         """Track schema changes within individual tables."""
         expected = SchemaManifest(
-            version="v1",
+            version="v2",
             tables=(_make_schema("analytics.table_a", [("col", "VARCHAR", False)]),),
         )
         actual = SchemaManifest(
-            version="v1",
+            version="v2",
             tables=(_make_schema("analytics.table_a", [("col", "INTEGER", False)]),),
         )
 

@@ -26,7 +26,6 @@ class DbSpanAttributeConfig:
 
     statement_mode: SQLStatementMode = "hash"
     statement_hash_len: int = 16
-    emit_legacy_attributes: bool = False
     query_summary: DbQuerySummaryConfig = field(default_factory=DbQuerySummaryConfig)
     query_text: DbQueryTextConfig = field(default_factory=DbQueryTextConfig)
     query_parameters: DbQueryParameterConfig = field(default_factory=DbQueryParameterConfig)
@@ -117,11 +116,6 @@ class DbSpanAttributeBuilder:
             attrs["codeintel.db.statement.sha256"] = redacted.statement_hash
         if redacted.display:
             attrs["db.statement"] = redacted.display
-
-        if self._config.emit_legacy_attributes:
-            attrs.setdefault("db.system", db_system_name)
-            if db_namespace:
-                attrs.setdefault("db.name", db_namespace)
 
         query_text = self._maybe_query_text(
             sql=sql,
