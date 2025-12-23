@@ -9,6 +9,8 @@ from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.graphs.engine import views as nx_views
 from codeintel.graphs.engine.cache import GraphCache
 from tests._helpers.assertions import (
+    ModulesAssertions,
+    assert_target_ok,
     expect_equal,
     expect_graph_equal,
     expect_is_none,
@@ -18,12 +20,14 @@ from tests._helpers.builders import (
     CallGraphNodeRow,
     ConfigValueRow,
     ModuleRow,
+    RepoMapRow,
     SymbolUseEdgeRow,
     insert_rows,
     insert_symbol_use_edges,
 )
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.networkx_graphs import chain_graph, empty_digraph
+from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 
 if TYPE_CHECKING:
@@ -102,6 +106,24 @@ def test_engine_matches_nx_views_for_core_graphs(test_ctx: TestContext) -> None:
             actual is engine_loader(),
             message=f"{name} was not cached on subsequent engine calls",
         )
+
+
+def test_engine_matches_harness_graph_targets(graph_target_harness: GraphTargetHarness) -> None:
+    """NxGraphEngine should match nx_views after harness graph target runs."""
+    records = graph_target_harness.run_targets()
+    assert_target_ok(records["call_graph"])
+    assert_target_ok(records["import_graph"])
+
+    snapshot = graph_target_harness.harness.ctx.snapshot
+    gateway = graph_target_harness.harness.ctx.gateway
+    engine = NxGraphEngine(
+        gateway=gateway,
+        snapshot=make_snapshot(repo=snapshot.repo, commit=snapshot.commit),
+    )
+    expected_call = nx_views.load_call_graph(gateway, snapshot.repo, snapshot.commit)
+    expected_import = nx_views.load_import_graph(gateway, snapshot.repo, snapshot.commit)
+    _assert_graph_match("call_graph", expected_call, engine.call_graph())
+    _assert_graph_match("import_graph", expected_import, engine.import_graph())
 
 
 def test_cache_seed_with_none_is_noop() -> None:
@@ -325,6 +347,7 @@ def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> 
     con = test_ctx.gateway.con
     con.execute("DELETE FROM analytics.config_values")
     con.execute("DELETE FROM core.modules")
+    con.execute("DELETE FROM core.repo_map")
 
     insert_rows(
         test_ctx.gateway,
@@ -332,6 +355,19 @@ def test_parse_reference_modules_and_config_bipartite(test_ctx: TestContext) -> 
             ModuleRow(module="allowed", path="pkg/allowed.py", repo=repo, commit=commit),
         ],
     )
+    insert_rows(
+        test_ctx.gateway,
+        [
+            RepoMapRow(
+                repo=repo,
+                commit=commit,
+                modules={"allowed": "pkg/allowed.py"},
+            )
+        ],
+    )
+    ModulesAssertions(
+        test_ctx.gateway, make_snapshot(repo=repo, commit=commit, repo_root=test_ctx.repo_root)
+    ).inventory_consistent()
     insert_rows(
         test_ctx.gateway,
         [
@@ -372,6 +408,7 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
     con = test_ctx.gateway.con
     con.execute("DELETE FROM graph.symbol_use_edges")
     con.execute("DELETE FROM core.modules")
+    con.execute("DELETE FROM core.repo_map")
 
     insert_rows(
         test_ctx.gateway,
@@ -380,6 +417,19 @@ def test_load_symbol_module_graph_weights(test_ctx: TestContext) -> None:
             ModuleRow(module="m_b", path="b.py", repo=repo, commit=commit),
         ],
     )
+    insert_rows(
+        test_ctx.gateway,
+        [
+            RepoMapRow(
+                repo=repo,
+                commit=commit,
+                modules={"m_a": "a.py", "m_b": "b.py"},
+            )
+        ],
+    )
+    ModulesAssertions(
+        test_ctx.gateway, make_snapshot(repo=repo, commit=commit, repo_root=test_ctx.repo_root)
+    ).inventory_consistent()
     insert_rows(
         test_ctx.gateway,
         [

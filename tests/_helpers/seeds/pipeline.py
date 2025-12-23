@@ -13,12 +13,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
+    RepoMapRow,
     TestCatalogRow,
     insert_rows,
 )
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.seeds.span import (
     SPAN_CALLER_END,
     SPAN_CALLER_GOID,
@@ -91,36 +94,55 @@ class PipelinePack:
         """
         now = datetime.now(UTC)
 
-        self._seed_modules(ctx)
+        module_map = self._resolve_module_map(ctx)
+        self._seed_repo_map(ctx, module_map)
+        self._seed_modules(ctx, module_map)
+        ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
 
         self._seed_goids(ctx, now)
 
         self._seed_test_catalog(ctx, now)
 
     @staticmethod
-    def _seed_modules(ctx: TestContext) -> None:
+    def _seed_repo_map(ctx: TestContext, module_map: dict[str, str]) -> None:
+        """Seed the core.repo_map table."""
+        rows = [
+            RepoMapRow(
+                repo=PIPELINE_REPO,
+                commit=PIPELINE_COMMIT,
+                modules=module_map,
+                overlays={},
+            )
+        ]
+        insert_rows(ctx.gateway, rows)
+
+    @staticmethod
+    def _seed_modules(ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed the modules table for pipeline tests.
 
         Parameters
         ----------
         ctx
             Test context with gateway.
+        module_map
+            Module map keyed by module name to repo-relative paths.
         """
         rows = [
-            ModuleRow(
-                module=SPAN_MOD_A_FQN,
-                path=SPAN_MOD_A_PATH,
-                repo=PIPELINE_REPO,
-                commit=PIPELINE_COMMIT,
-            ),
-            ModuleRow(
-                module=SPAN_MOD_B_FQN,
-                path=SPAN_MOD_B_PATH,
-                repo=PIPELINE_REPO,
-                commit=PIPELINE_COMMIT,
-            ),
+            ModuleRow(module=module, path=path, repo=PIPELINE_REPO, commit=PIPELINE_COMMIT)
+            for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
+
+    @staticmethod
+    def _resolve_module_map(ctx: TestContext) -> dict[str, str]:
+        path_map = modules_expected_from_repo_tree(ctx.repo_root)
+        module_map = {module: path for path, module in path_map.items()}
+        if not module_map:
+            module_map = {
+                SPAN_MOD_A_FQN: SPAN_MOD_A_PATH,
+                SPAN_MOD_B_FQN: SPAN_MOD_B_PATH,
+            }
+        return module_map
 
     def _seed_goids(self, ctx: TestContext, now: datetime) -> None:
         """Seed the goids table for pipeline tests.

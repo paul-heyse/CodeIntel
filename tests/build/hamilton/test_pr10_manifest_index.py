@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hamilton.run_records import SkipCheckRequest, should_skip
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
@@ -24,6 +23,7 @@ from tests._helpers.build import (
     make_snapshot,
 )
 from tests._helpers.fakes.fake_providers import FakeProviders
+from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -54,14 +54,16 @@ class TestBuildEnvManifestIndex:
         )
         manifest_index = {"modules": manifest}
 
-        env = BuildEnv(
-            gateway=fake_gateway,
-            snapshot=make_snapshot(tmp_path),
-            paths=make_build_paths(tmp_path),
-            providers=cast("Providers", FakeProviders.defaults()),
-            config=make_build_config(),
-            settings=TEST_BUILD_SETTINGS,
-            manifest_index=manifest_index,
+        env = build_test_env(
+            BuildEnvSpec(
+                gateway=fake_gateway,
+                snapshot=make_snapshot(tmp_path),
+                paths=make_build_paths(tmp_path),
+                providers=cast("Providers", FakeProviders.defaults()),
+                build_config=make_build_config(),
+                settings=TEST_BUILD_SETTINGS,
+                manifest_index=manifest_index,
+            )
         )
 
         if env.manifest_index is None:
@@ -75,13 +77,15 @@ class TestBuildEnvManifestIndex:
         tmp_path: Path,
     ) -> None:
         """Verify manifest_index defaults to None when not provided."""
-        env = BuildEnv(
-            gateway=fake_gateway,
-            snapshot=make_snapshot(tmp_path),
-            paths=make_build_paths(tmp_path),
-            providers=cast("Providers", FakeProviders.defaults()),
-            config=make_build_config(),
-            settings=TEST_BUILD_SETTINGS,
+        env = build_test_env(
+            BuildEnvSpec(
+                gateway=fake_gateway,
+                snapshot=make_snapshot(tmp_path),
+                paths=make_build_paths(tmp_path),
+                providers=cast("Providers", FakeProviders.defaults()),
+                build_config=make_build_config(),
+                settings=TEST_BUILD_SETTINGS,
+            )
         )
 
         if env.manifest_index is not None:
@@ -308,14 +312,16 @@ class TestManifestPrefetch:
         graph.register(OutputTarget(name="a", module="ingestion"))
         graph.register(OutputTarget(name="b", module="graphs", dependencies=("a",)))
 
-        env = BuildEnv(
-            gateway=fake_gateway,
-            snapshot=make_snapshot(tmp_path, repo="test/repo", commit="abc123"),
-            paths=make_build_paths(tmp_path),
-            providers=cast("Providers", FakeProviders.defaults()),
-            config=make_build_config(),
-            settings=TEST_BUILD_SETTINGS,
-            manifest_index=manifest_index,
+        env = build_test_env(
+            BuildEnvSpec(
+                gateway=fake_gateway,
+                snapshot=make_snapshot(tmp_path, repo="test/repo", commit="abc123"),
+                paths=make_build_paths(tmp_path),
+                providers=cast("Providers", FakeProviders.defaults()),
+                build_config=make_build_config(),
+                settings=TEST_BUILD_SETTINGS,
+                manifest_index=manifest_index,
+            )
         )
 
         try:

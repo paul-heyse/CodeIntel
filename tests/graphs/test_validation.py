@@ -19,11 +19,20 @@ from codeintel.graphs.validation.checks.structure import (
     SymbolGraphCheck,
 )
 from codeintel.graphs.validation.context import GraphValidationContext
-from tests._helpers import seed_graph_validation_gaps
-from tests._helpers.assertions import expect_equal, expect_in, expect_is_instance, expect_true
+from tests._helpers.assertions import (
+    ModulesAssertions,
+    expect_equal,
+    expect_in,
+    expect_is_instance,
+    expect_true,
+)
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs
 from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
+from tests._helpers.orchestration.seeding import (
+    GraphValidationGapSeed,
+    seed_graph_validation_gaps,
+)
 
 if TYPE_CHECKING:
     from _pytest.logging import LogCaptureFixture
@@ -42,10 +51,14 @@ def test_run_graph_validations_emits_warnings(
 ) -> None:
     """Graph validations should warn for common integrity gaps."""
     gateway = graph_executor_env.gateway
+    snapshot = graph_executor_env.snapshot
     repo: Final = "demo/repo"
     commit: Final = "deadbeef"
-    seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
-    snapshot = graph_executor_env.snapshot
+    seed_graph_validation_gaps(
+        gateway,
+        GraphValidationGapSeed(repo=repo, commit=commit, repo_root=snapshot.repo_root),
+    )
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
 
     with caplog.at_level("WARNING"):
         report = run_graph_validations_with_runner(
@@ -86,7 +99,11 @@ def test_run_graph_validations_hard_fail_on_error(
     snapshot = graph_executor_env.snapshot
     repo = snapshot.repo
     commit = snapshot.commit
-    seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
+    seed_graph_validation_gaps(
+        gateway,
+        GraphValidationGapSeed(repo=repo, commit=commit, repo_root=snapshot.repo_root),
+    )
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     runtime = runtime_with_graphs(gateway, snapshot)[0]
 
     with pytest.raises(RuntimeError, match="error-level findings"):
@@ -112,7 +129,11 @@ def test_run_graph_validations_caps_findings(
     snapshot = graph_executor_env.snapshot
     repo = snapshot.repo
     commit = snapshot.commit
-    seed_graph_validation_gaps(gateway, repo=repo, commit=commit)
+    seed_graph_validation_gaps(
+        gateway,
+        GraphValidationGapSeed(repo=repo, commit=commit, repo_root=snapshot.repo_root),
+    )
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     runtime = runtime_with_graphs(gateway, snapshot)[0]
 
     run_graph_validations_with_runner(

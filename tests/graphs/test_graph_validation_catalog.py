@@ -8,10 +8,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from codeintel.graphs.validation import run_graph_validations_with_runner
-from tests._helpers import seed_graph_validation_gaps
-from tests._helpers.assertions import expect_rows_equal
+from tests._helpers.assertions import ModulesAssertions, expect_rows_equal
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs
+from tests._helpers.orchestration.seeding import (
+    GraphValidationGapSeed,
+    seed_graph_validation_gaps,
+)
 
 if TYPE_CHECKING:
     from tests._helpers.fakes.graph_contexts import GraphTestEnv
@@ -23,7 +26,15 @@ def test_graph_validation_orphan_uses_catalog_map(graph_executor_env: GraphTestE
     con = gateway.con
     provider = MockFunctionCatalog(module_by_path={"pkg/a.py": "pkg.a"})
     snapshot = graph_executor_env.snapshot
-    seed_graph_validation_gaps(gateway, repo=snapshot.repo, commit=snapshot.commit)
+    seed_graph_validation_gaps(
+        gateway,
+        GraphValidationGapSeed(
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            include_modules=False,
+        ),
+    )
+    ModulesAssertions(gateway, snapshot).modules_equal({})
     run_graph_validations_with_runner(
         gateway,
         snapshot=snapshot,

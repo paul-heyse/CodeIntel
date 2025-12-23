@@ -1,0 +1,132 @@
+"""Manifest priming helpers for Hamilton build tests."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Protocol
+
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.run_records import compute_target_input_hash, options_hash_for_target
+from codeintel.build.hashing import InputHashOptions
+from codeintel.core.build_manifest import OutputManifest
+
+if TYPE_CHECKING:
+    from codeintel.build.hamilton.env import BuildEnv
+
+
+class _HarnessProtocol(Protocol):
+    """Minimal protocol for manifest priming."""
+
+    def build_env(self) -> BuildEnv: ...
+
+
+@dataclass(frozen=True)
+class ManifestPriming:
+    """Insert manifests and minimal state for skip logic tests."""
+
+    harness: _HarnessProtocol
+
+    @dataclass(frozen=True)
+    class ManifestSpec:
+        """Specification for a manifest to be written."""
+
+        target: str
+        input_hash: str
+        options_hash: str | None
+        duration_ms: float = 0.0
+        plugin: str | None = None
+        row_count: int | None = None
+        change_delta: dict[str, object] | None = None
+        computed_at: datetime | None = None
+
+    def prime_manifest(self, spec: ManifestSpec) -> OutputManifest:
+        """Insert an OutputManifest row for a target.
+
+        Parameters
+        ----------
+        spec
+            Manifest specification to persist.
+
+        Returns
+        -------
+        OutputManifest
+            Saved manifest record.
+        """
+        env = self.harness.build_env()
+        when = spec.computed_at or datetime.now(tz=UTC)
+        manifest = OutputManifest(
+            target=spec.target,
+            repo=env.repo,
+            commit=env.commit,
+            plugin=spec.plugin or f"native:{spec.target}",
+            computed_at=when,
+            duration_ms=spec.duration_ms,
+            input_hash=spec.input_hash,
+            output_hash=None,
+            row_count=spec.row_count,
+            options_hash=spec.options_hash,
+            dep_hashes=None,
+            change_delta=spec.change_delta,
+        )
+        env.gateway.build.save_manifest(manifest)
+        return manifest
+
+    def prime_modules_manifest(
+        self,
+        *,
+        file_state_hash: str,
+        row_count: int | None = None,
+        change_delta: dict[str, object] | None = None,
+    ) -> OutputManifest:
+        """Prime the modules manifest for deterministic skip behavior.
+
+        Parameters
+        ----------
+        file_state_hash
+            File state hash used to compute the modules input hash.
+        row_count
+            Optional row count to store on the manifest.
+        change_delta
+            Optional change delta payload to store.
+
+        Returns
+        -------
+        OutputManifest
+            Saved manifest record for modules.
+
+        Raises
+        ------
+        RuntimeError
+            Raised when the modules target is missing from the graph.
+        """
+        env = self.harness.build_env()
+        runtime = build_driver(config={"profile": env.profile})
+        target = runtime.graph.get("modules")
+        if target is None:
+            message = "Target 'modules' not found in target graph"
+            raise RuntimeError(message)
+
+        opts_hash = options_hash_for_target(env, "modules")
+        input_hash = compute_target_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            settings=env.settings,
+            options=InputHashOptions(
+                options_hash=opts_hash,
+                file_state_hash=file_state_hash,
+                manifests=None,
+            ),
+        )
+        spec = self.ManifestSpec(
+            target="modules",
+            input_hash=input_hash,
+            options_hash=opts_hash,
+            row_count=row_count,
+            change_delta=change_delta,
+        )
+        return self.prime_manifest(spec)
+
+
+__all__ = ["ManifestPriming"]

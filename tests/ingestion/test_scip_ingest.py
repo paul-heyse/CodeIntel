@@ -2,113 +2,76 @@
 
 from __future__ import annotations
 
+import json
 import shutil
-from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.config import BuildConfig
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.ingestion.scip import t__scip__ingest, t__scip__run
-from codeintel.build.providers import create_default_providers
-from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.config import BuildLayoutOptions, BuildPaths
-from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import SnapshotRef
-from codeintel.core.hamilton.records import TargetRunRecord
-from tests._helpers.build import TEST_BUILD_SETTINGS
-from tests._helpers.ingestion import (
-    build_scip_ingest_context,
-    closing_gateway,
-    materialize_rows_for_snapshot,
-)
-from tests._helpers.sql import count_table_rows
-
-if TYPE_CHECKING:
-    from tests._helpers.ingestion import ScipIngestContext
+from tests._helpers.assertions import assert_row_count, assert_target_ok
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
+from tests._helpers.tool_payloads import scip_json_payload
+from tests._helpers.tool_sandbox import ToolSandbox, ToolStubSpec
 
 
-def _succeeded_modules_record() -> TargetRunRecord:
-    return TargetRunRecord(
-        target="modules",
-        plugin_name="ingestion.modules",
-        status="succeeded",
-        input_hash="test",
-    )
-
-
-@pytest.fixture
-def scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
-    """Provision repo, gateway, and adapters for SCIP ingest tests.
-
-    Returns
-    -------
-    ScipIngestContext
-        Context bundle for SCIP target execution.
-    """
-    return build_scip_ingest_context(tmp_path)
-
-
-def test_scip_target_writes_tables(scip_ingest_context: ScipIngestContext) -> None:
+def test_scip_target_writes_tables(build_harness: HamiltonBuildHarness) -> None:
     """Ensure scip target writes scip tables when SCIP binaries are available."""
     if shutil.which("scip-python") is None or shutil.which("scip") is None:
         pytest.skip("scip-python or scip not available on PATH")
 
-    context = scip_ingest_context
-    repo_root = context.repo_root
-    gateway = context.gateway
-    build_dir = context.build_dir
+    result = build_harness.run_targets(["scip"])
+    record = build_harness.record("scip", result=result)
+    assert_target_ok(record)
+    assert_row_count(record.row_counts, "core.scip_symbols", min_rows=1)
+    assert_row_count(record.row_counts, "core.scip_occurrences", min_rows=1)
 
-    paths = BuildPaths.from_layout(
-        repo_root=repo_root,
-        overrides=BuildLayoutOptions(
-            build_dir=build_dir,
-            db_path=gateway.config.db_path,
-            document_output_dir=repo_root / "document_output",
+    scip_dir = build_harness.artifacts.paths.scip_dir
+    index_scip = scip_dir / "index.scip"
+    index_json = scip_dir / "index.json"
+    if not index_scip.is_file():
+        pytest.fail("index.scip was not created under build/scip")
+    if not index_json.is_file():
+        pytest.fail("index.json was not created under build/scip")
+
+
+def test_scip_target_with_stubbed_artifacts(build_harness: HamiltonBuildHarness) -> None:
+    """Ensure scip target can ingest from pre-seeded artifacts without tool binaries."""
+    artifacts = build_harness.artifacts
+    index_scip, index_json = artifacts.write_dummy_scip_artifacts()
+
+    result = build_harness.run_targets(["scip"])
+    record = build_harness.record("scip", result=result)
+    assert_target_ok(record)
+    assert_row_count(record.row_counts, "core.scip_symbols", min_rows=1)
+    assert_row_count(record.row_counts, "core.scip_occurrences", min_rows=1)
+
+    if not index_scip.is_file():
+        pytest.fail(f"Expected scip index file to exist: {index_scip}")
+    if not index_json.is_file():
+        pytest.fail(f"Expected scip json file to exist: {index_json}")
+
+
+def test_scip_target_via_harness_real_tools(
+    build_harness: HamiltonBuildHarness,
+    tool_sandbox: ToolSandbox,
+) -> None:
+    """Ensure scip target can run through the harness with stubbed tools."""
+    scip_payload = scip_json_payload()
+    tool_sandbox.install_stub(
+        "scip-python",
+        spec=ToolStubSpec(
+            creates="--output",
+            creates_payload="scip-binary",
         ),
     )
-    providers = create_default_providers(ToolsConfig.default())
-    snapshot = SnapshotRef(repo="demo/repo", commit="deadbeef", repo_root=repo_root)
-    env = BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=BuildConfig.empty(),
-        settings=TEST_BUILD_SETTINGS,
+    tool_sandbox.install_stub(
+        "scip",
+        spec=ToolStubSpec(
+            stdout=json.dumps(scip_payload),
+        ),
     )
-    graph = get_target_metadata_service().system.graph
-
-    modules_record = _succeeded_modules_record()
-
-    with closing_gateway(gateway):
-        run_result = t__scip__run(env, graph, modules_record)
-        if not run_result.success:
-            pytest.skip(run_result.error or "SCIP execution failed")
-
-        ingest_result = t__scip__ingest(env, modules_record, run_result)
-        if not ingest_result.result.success:
-            pytest.fail(ingest_result.result.error or "SCIP ingestion failed")
-
-        materialize_rows_for_snapshot(
-            gateway,
-            "core.scip_symbols",
-            ingest_result.symbol_rows,
-            snapshot=snapshot,
-        )
-        materialize_rows_for_snapshot(
-            gateway,
-            "core.scip_occurrences",
-            ingest_result.occurrence_rows,
-            snapshot=snapshot,
-        )
-
-        if run_result.index_path is None or not run_result.index_path.is_file():
-            pytest.fail("index.scip was not created under build/scip")
-        if run_result.json_path is None or not run_result.json_path.is_file():
-            pytest.fail("index.json was not created under build/scip")
-
-        count = count_table_rows(gateway.con, "core.scip_symbols")
-        if count == 0:
-            pytest.fail("core.scip_symbols is empty; expected rows after ingest")
+    with tool_sandbox.prepend_path():
+        result = build_harness.run_targets(["scip"])
+        record = build_harness.record("scip", result=result)
+    assert_target_ok(record)
+    assert_row_count(record.row_counts, "core.scip_symbols", min_rows=1)
+    assert_row_count(record.row_counts, "core.scip_occurrences", min_rows=1)

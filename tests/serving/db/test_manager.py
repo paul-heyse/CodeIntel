@@ -11,9 +11,11 @@ from typing import TYPE_CHECKING
 import duckdb
 import pytest
 
+from codeintel.config.primitives import BuildPaths
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,15 +29,27 @@ class _PointerPaths:
 
 
 def _write_registry(path: Path) -> None:
-    path.write_text('{"version": "v1", "views": []}\n', encoding="utf-8")
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_semantic_registry(path=path, views=[])
 
 
 def _write_schema_manifest(path: Path) -> None:
-    path.write_text('{"version": "v1", "tables": []}\n', encoding="utf-8")
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_schema_manifest(path=path, tables=[])
 
 
 def _write_buildspec(path: Path) -> None:
-    path.write_text('{"spec_version": 1, "targets": [], "datasets": []}\n', encoding="utf-8")
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_buildspec(path=path, datasets=[])
 
 
 def _write_pointer(

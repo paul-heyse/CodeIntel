@@ -3,11 +3,11 @@
 This module brings together all tool-related tests:
 - ToolRunner abstraction (binary resolution, error handling)
 - Tool plugins (PyrightPlugin, PresetRunner)
-- ToolService (real tooling execution)
+- ToolService (stubbed tooling execution by default)
 - Tool port data models (CoverageResult, DiagnosticResult, etc.)
 
-Uses PresetRunner as a protocol-based test double for controlled testing,
-and real tooling execution via build_tooling_context for realistic tests.
+Uses PresetRunner as a protocol-based test double for controlled testing.
+Real tooling execution via build_tooling_context remains available when needed.
 """
 
 from __future__ import annotations

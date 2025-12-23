@@ -14,11 +14,17 @@ from typing import TYPE_CHECKING
 import duckdb
 import pytest
 
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers import GatewayOptions, ProvisioningConfig, provisioned_gateway
 from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.context import create_test_context
 from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
+from tests._helpers.harnesses.graph_harness import GraphTargetHarness
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
+from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 from tests._helpers.orchestration.coverage_orchestration import (
     create_coverage_edge_env,
     generate_coverage_artifact,
@@ -33,11 +39,13 @@ from tests._helpers.orchestration.provisioning import (
 )
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
+from tests._helpers.tool_sandbox import ToolSandbox
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs import CoverageEdgeEnv, ProvisionedGateway, SpanTestEnv
     from tests._helpers.context import TestContext
@@ -154,6 +162,82 @@ def metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
         yield ctx
     finally:
         ctx.close()
+
+
+@pytest.fixture(scope="session")
+def hamilton_runtime() -> HamiltonRuntime:
+    """Provide a session-scoped Hamilton runtime for DAG execution.
+
+    Returns
+    -------
+    HamiltonRuntime
+        Runtime instance for DAG execution.
+    """
+    return build_driver(config={"profile": DEFAULT_PROFILE_NAME})
+
+
+@pytest.fixture
+def build_harness(tmp_path: Path) -> Iterator[HamiltonBuildHarness]:
+    """Provide a production-parity Hamilton build harness.
+
+    Yields
+    ------
+    HamiltonBuildHarness
+        Harness instance that is closed after the test.
+    """
+    with HamiltonBuildHarness.open(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def graph_target_harness(tmp_path: Path) -> Iterator[GraphTargetHarness]:
+    """Provide a graph target harness with a sample repo.
+
+    Yields
+    ------
+    GraphTargetHarness
+        Harness wrapper for graph targets.
+    """
+    with GraphTargetHarness.open(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def analytics_target_harness(tmp_path: Path) -> Iterator[AnalyticsTargetHarness]:
+    """Provide an analytics target harness with a sample repo.
+
+    Yields
+    ------
+    AnalyticsTargetHarness
+        Harness wrapper for analytics targets.
+    """
+    with AnalyticsTargetHarness.open(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def serving_target_harness(tmp_path: Path) -> Iterator[ServingTargetHarness]:
+    """Provide a serving target harness with a file-backed gateway.
+
+    Yields
+    ------
+    ServingTargetHarness
+        Harness wrapper for serving targets.
+    """
+    with ServingTargetHarness.open(tmp_path) as harness:
+        yield harness
+
+
+@pytest.fixture
+def tool_sandbox(tmp_path: Path) -> ToolSandbox:
+    """Provide a tool sandbox with a stubbed bin directory.
+
+    Returns
+    -------
+    ToolSandbox
+        Sandbox instance with an isolated bin directory.
+    """
+    return ToolSandbox.create(tmp_path)
 
 
 @pytest.fixture

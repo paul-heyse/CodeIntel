@@ -8,8 +8,9 @@ Hamilton's ``@subdag`` decorator and executed end-to-end.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from types import ModuleType
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 import hamilton.driver as h_driver
 import ibis.expr.types as ir
@@ -21,16 +22,9 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import materialize_template
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import assert_record_row_counts, assert_target_ok
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.build import TEST_BUILD_SETTINGS, make_build_config, make_build_paths
-from tests._helpers.fakes.fake_providers import FakeProviders
-
-if TYPE_CHECKING:
-    from pathlib import Path
-
-    from codeintel.build.providers import Providers
-    from codeintel.storage.gateway import StorageGateway
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 
 class _EphemeralModule(ModuleType):
@@ -41,19 +35,8 @@ class _EphemeralModule(ModuleType):
     t__modules: object
 
 
-def _make_env(*, gateway: StorageGateway, snapshot: SnapshotRef) -> BuildEnv:
-    paths = make_build_paths(snapshot.repo_root)
-    config = make_build_config()
-    providers = cast("Providers", FakeProviders.defaults())
-    return BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=TEST_BUILD_SETTINGS,
-        force_targets=frozenset({"modules"}),
-    )
+def _make_env(harness: HamiltonBuildHarness) -> BuildEnv:
+    return replace(harness.build_env(), force_targets=frozenset({"modules"}))
 
 
 def _make_graph() -> TargetGraph:
@@ -121,14 +104,12 @@ def _build_module() -> ModuleType:
 
 
 def test_phase2_ibis_pipeline_template_executes(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Instantiate materialize_template via @subdag and execute a simple materialization."""
-    repo = "r"
-    commit = "c"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
+    repo = env.snapshot.repo
+    commit = env.snapshot.commit
     graph = _make_graph()
     module = _build_module()
 
@@ -154,17 +135,17 @@ def test_phase2_ibis_pipeline_template_executes(
             },
         ]
     )
-    fresh_gateway.con.register("tmp_modules", df)
+    env.gateway.con.register("tmp_modules", df)
     expected_row_count = len(df)
 
     driver = h_driver.Builder().with_modules(module).build()
     results = driver.execute(["t__modules"], inputs={"env": env, "graph": graph})
     record = cast("TargetRunRecord", results["t__modules"])
 
-    expect_equal(record.status, expected="succeeded", label=f"record.error={record.error}")
-    expect_equal(record.row_counts.get("core.modules"), expected=expected_row_count)
+    assert_target_ok(record)
+    assert_record_row_counts(record, {"core.modules": expected_row_count})
 
-    row = fresh_gateway.con.execute(
+    row = env.gateway.con.execute(
         "SELECT COUNT(*) FROM core.modules WHERE repo=? AND commit=?",
         [repo, commit],
     ).fetchone()

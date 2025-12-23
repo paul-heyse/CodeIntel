@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -32,6 +33,7 @@ from tests._helpers.builders import (
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
 )
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -105,8 +107,11 @@ class DocsExportPack:
 
         self._cleanup_existing_data(ctx, repo, commit, goid)
 
-        self._seed_repo_map(ctx, repo, commit)
-        self._seed_modules(ctx, repo, commit)
+        module_map = self._resolve_module_map(ctx)
+
+        self._seed_repo_map(ctx, repo, commit, module_map)
+        self._seed_modules(ctx, repo, commit, module_map)
+        ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
         self._seed_goids(ctx, repo, commit, goid, now)
         self._seed_goid_crosswalk(ctx, repo, commit, now)
         self._seed_call_graph_nodes(ctx, goid)
@@ -153,28 +158,34 @@ class DocsExportPack:
         )
 
     @staticmethod
-    def _seed_repo_map(ctx: TestContext, repo: str, commit: str) -> None:
+    def _seed_repo_map(
+        ctx: TestContext,
+        repo: str,
+        commit: str,
+        module_map: dict[str, str],
+    ) -> None:
         """Seed the core.repo_map table."""
         rows = [
             RepoMapRow(
                 repo=repo,
                 commit=commit,
-                modules={DEFAULT_MODULE: DEFAULT_PATH},
+                modules=module_map,
                 overlays={},
             )
         ]
         insert_rows(ctx.gateway, rows)
 
     @staticmethod
-    def _seed_modules(ctx: TestContext, repo: str, commit: str) -> None:
+    def _seed_modules(
+        ctx: TestContext,
+        repo: str,
+        commit: str,
+        module_map: dict[str, str],
+    ) -> None:
         """Seed the core.modules table."""
         rows = [
-            ModuleRow(
-                module=DEFAULT_MODULE,
-                path=DEFAULT_PATH,
-                repo=repo,
-                commit=commit,
-            )
+            ModuleRow(module=module, path=path, repo=repo, commit=commit)
+            for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
 
@@ -219,6 +230,14 @@ class DocsExportPack:
             )
         ]
         insert_rows(ctx.gateway, rows)
+
+    @staticmethod
+    def _resolve_module_map(ctx: TestContext) -> dict[str, str]:
+        path_map = modules_expected_from_repo_tree(ctx.repo_root)
+        module_map = {module: path for path, module in path_map.items()}
+        if not module_map:
+            module_map = {DEFAULT_MODULE: DEFAULT_PATH}
+        return module_map
 
     @staticmethod
     def _seed_call_graph_nodes(ctx: TestContext, goid: int) -> None:

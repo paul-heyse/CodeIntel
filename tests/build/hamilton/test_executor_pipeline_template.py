@@ -9,6 +9,7 @@ success, failure, and skip scenarios.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
@@ -22,17 +23,12 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.templates import materialize_template
 from codeintel.build.hamilton.templates.materialize_template import executor_materialize
 from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import assert_record_row_counts, assert_target_ok
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.build import TEST_BUILD_SETTINGS, make_build_config, make_build_paths
-from tests._helpers.fakes.fake_providers import FakeProviders
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
-    from pathlib import Path
     from typing import Protocol
-
-    from codeintel.build.providers import Providers
-    from codeintel.storage.gateway import StorageGateway
 
     class _EphemeralExtractModule(Protocol):
         t__goids__extract: object
@@ -43,12 +39,7 @@ if TYPE_CHECKING:
 _HAMILTON_TYPE_HINTS = (TargetRunRecord,)
 
 
-def _make_env(
-    *,
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    force_targets: frozenset[str] | None = None,
-) -> BuildEnv:
+def _make_env(harness: HamiltonBuildHarness) -> BuildEnv:
     """Create a BuildEnv for testing.
 
     Returns
@@ -56,18 +47,7 @@ def _make_env(
     BuildEnv
         Build environment configured for testing.
     """
-    paths = make_build_paths(snapshot.repo_root)
-    config = make_build_config()
-    providers = cast("Providers", FakeProviders.defaults())
-    return BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot,
-        paths=paths,
-        providers=providers,
-        config=config,
-        settings=TEST_BUILD_SETTINGS,
-        force_targets=force_targets or frozenset({"goids"}),
-    )
+    return replace(harness.build_env(), force_targets=frozenset({"goids"}))
 
 
 def _make_graph() -> TargetGraph:
@@ -100,50 +80,39 @@ def test_execution_result_contract() -> None:
 
 
 def test_executor_materialize_success(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Verify executor_materialize produces succeeded record on success."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     compute_result = ExecutionResult.ok(table_counts={"core.goids": 100, "core.goid_crosswalk": 50})
 
     record = executor_materialize(env, graph, "goids", compute_result)
 
-    expect_equal(record.status, expected="succeeded", label="record.status")
+    assert_target_ok(record)
     expect_equal(record.target, expected="goids", label="record.target")
-    expect_equal(
-        record.row_counts.get("core.goids"),
-        expected=100,
-        label="record.row_counts[core.goids]",
-    )
-    expect_equal(
-        record.row_counts.get("core.goid_crosswalk"),
-        expected=50,
-        label="record.row_counts[core.goid_crosswalk]",
+    assert_record_row_counts(
+        record,
+        {
+            "core.goids": 100,
+            "core.goid_crosswalk": 50,
+        },
     )
 
 
 def test_executor_materialize_failure(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Verify executor_materialize produces failed record on failure."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     compute_result = ExecutionResult.failed("GOID extraction failed: syntax error")
 
     record = executor_materialize(env, graph, "goids", compute_result)
 
-    expect_equal(record.status, expected="failed", label="record.status")
+    assert_target_ok(record, expected_status="failed")
     expect_equal(record.target, expected="goids", label="record.target")
     expect_true(
         record.error is not None and "GOID extraction failed" in record.error,
@@ -152,21 +121,17 @@ def test_executor_materialize_failure(
 
 
 def test_executor_materialize_failure_default_error(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Verify executor_materialize uses default error message when error is None."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     compute_result = ExecutionResult(success=False)
 
     record = executor_materialize(env, graph, "goids", compute_result)
 
-    expect_equal(record.status, expected="failed", label="record.status")
+    assert_target_ok(record, expected_status="failed")
     expect_true(
         record.error is not None and "goids computation failed" in record.error,
         message=f"Expected default error message, got: {record.error}",
@@ -232,14 +197,10 @@ def _build_subdag_module(compute_result: ExecutionResult) -> ModuleType:
 
 
 def test_executor_pipeline_via_subdag_success(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Verify materialize_template works via @subdag with successful compute."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     compute_result = ExecutionResult.ok(table_counts={"core.goids": 42, "core.goid_crosswalk": 21})
@@ -249,24 +210,16 @@ def test_executor_pipeline_via_subdag_success(
     results = driver.execute(["t__goids"], inputs={"env": env, "graph": graph})
     record = cast("TargetRunRecord", results["t__goids"])
 
-    expect_equal(record.status, expected="succeeded", label=f"record.error={record.error}")
+    assert_target_ok(record)
     expect_equal(record.target, expected="goids", label="record.target")
-    expect_equal(
-        record.row_counts.get("core.goids"),
-        expected=42,
-        label="record.row_counts[core.goids]",
-    )
+    assert_record_row_counts(record, {"core.goids": 42})
 
 
 def test_executor_pipeline_via_subdag_failure(
-    fresh_gateway: StorageGateway,
-    tmp_path: Path,
+    build_harness: HamiltonBuildHarness,
 ) -> None:
     """Verify materialize_template works via @subdag with failed compute."""
-    repo = "test/repo"
-    commit = "abc123"
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path / "repo")
-    env = _make_env(gateway=fresh_gateway, snapshot=snapshot)
+    env = _make_env(build_harness)
     graph = _make_graph()
 
     compute_result = ExecutionResult.failed("Test failure")
@@ -276,7 +229,7 @@ def test_executor_pipeline_via_subdag_failure(
     results = driver.execute(["t__goids"], inputs={"env": env, "graph": graph})
     record = cast("TargetRunRecord", results["t__goids"])
 
-    expect_equal(record.status, expected="failed", label="record.status")
+    assert_target_ok(record, expected_status="failed")
     expect_true(
         record.error is not None and "Test failure" in record.error,
         message=f"Expected error to contain 'Test failure', got: {record.error}",

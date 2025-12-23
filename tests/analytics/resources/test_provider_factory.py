@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 import networkx as nx
+import pytest
 
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
@@ -29,16 +30,18 @@ from codeintel.core.resources import ResourceRegistry
 from codeintel.graphs.resources.graph_provider import GraphProvider, GraphRuntimeLike
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers.assertions import (
+    ModuleMapDiffOptions,
     expect_equal,
     expect_is_instance,
     expect_true,
+    format_module_map_diff,
+    module_map_from_path_map,
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
+from tests._helpers.builders import ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.graphs import build_graph_engine_double
 
 if TYPE_CHECKING:
-    import pytest
-
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionSpan
     from codeintel.storage.gateway import StorageGateway
@@ -532,6 +535,51 @@ def test_make_module_map_provider(test_gateway: StorageGateway, test_snapshot: S
     provider = factory.make_module_map_provider()
 
     expect_is_instance(provider, ModuleMapProvider)
+
+
+def test_module_map_provider_loads_expected_map(
+    test_gateway: StorageGateway,
+    test_snapshot: SnapshotRef,
+) -> None:
+    """Module map provider should return the expected path-to-module map."""
+    repo = test_snapshot.repo
+    commit = test_snapshot.commit
+    test_gateway.con.execute(
+        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    test_gateway.con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    insert_rows(
+        test_gateway,
+        [
+            ModuleRow(module="src.a", path="src/a.py", repo=repo, commit=commit),
+            ModuleRow(module="src.b", path="src/b.py", repo=repo, commit=commit),
+            RepoMapRow(
+                repo=repo,
+                commit=commit,
+                modules={"src.a": "src/a.py", "src.b": "src/b.py"},
+            ),
+        ],
+    )
+
+    factory = ProviderFactory(test_gateway, test_snapshot)
+    provider = factory.make_module_map_provider()
+
+    expected_path_map = {"src/a.py": "src.a", "src/b.py": "src.b"}
+    actual_path_map = provider.get()
+    if actual_path_map != expected_path_map:
+        expected_module_map = module_map_from_path_map(expected_path_map)
+        actual_module_map = module_map_from_path_map(actual_path_map)
+        pytest.fail(
+            format_module_map_diff(
+                expected_module_map,
+                actual_module_map,
+                options=ModuleMapDiffOptions(context="module_map_provider"),
+            )
+        )
 
 
 def test_make_module_map_provider_with_language(

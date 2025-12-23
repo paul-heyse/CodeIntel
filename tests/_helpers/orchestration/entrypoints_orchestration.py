@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import GoidRow, ModuleRow, insert_rows
+from codeintel.config.primitives import SnapshotRef
+from tests._helpers.assertions import ModulesAssertions
+from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageSeedConfig
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -25,13 +29,21 @@ class AppSeeds:
     commit: str
 
 
+@dataclass(frozen=True)
+class AppSeedSpec:
+    """Configuration for seeding pkg.app entrypoints."""
+
+    repo: str
+    commit: str
+    hello_goid: int = 1001
+    cli_goid: int = 1002
+    repo_root: Path | None = None
+    module_map: dict[str, str] | None = None
+
+
 def seed_app_modules_and_goids(
     gateway: StorageGateway,
-    *,
-    repo: str,
-    commit: str,
-    hello_goid: int = 1001,
-    cli_goid: int = 1002,
+    spec: AppSeedSpec,
 ) -> AppSeeds:
     """Insert modules and GOIDs for pkg.app entrypoints.
 
@@ -39,25 +51,50 @@ def seed_app_modules_and_goids(
     ----------
     gateway
         Storage gateway for database operations.
-    repo
-        Repository identifier.
-    commit
-        Commit hash.
-    hello_goid
-        GOID for the hello function.
-    cli_goid
-        GOID for the cli function.
+    spec
+        Entrypoint seed configuration.
 
     Returns
     -------
     AppSeeds
         Seed metadata including GOIDs/URNs for hello and cli.
     """
+    repo = spec.repo
+    commit = spec.commit
+    hello_goid = spec.hello_goid
+    cli_goid = spec.cli_goid
+    repo_root = spec.repo_root
+    module_map = spec.module_map
     now = datetime.now(UTC)
+    resolved_module_map = module_map
+    if resolved_module_map is None and repo_root is not None:
+        path_map = modules_expected_from_repo_tree(repo_root)
+        resolved_module_map = {module: path for path, module in path_map.items()}
+    if resolved_module_map is None:
+        resolved_module_map = {"pkg.app": "pkg/app.py"}
     insert_rows(
         gateway,
-        [ModuleRow(module="pkg.app", path="pkg/app.py", repo=repo, commit=commit)],
+        [
+            ModuleRow(module=module, path=path, repo=repo, commit=commit)
+            for module, path in sorted(resolved_module_map.items())
+        ],
     )
+    gateway.con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [repo, commit],
+    )
+    insert_rows(
+        gateway,
+        [
+            RepoMapRow(
+                repo=repo,
+                commit=commit,
+                modules=resolved_module_map,
+            )
+        ],
+    )
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     insert_rows(
         gateway,
         [

@@ -11,11 +11,13 @@ import pytest
 from fastmcp.client import Client
 from mcp import McpError
 
+from codeintel.config.primitives import BuildPaths
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,9 +34,13 @@ def _make_db(db_path: Path) -> None:
 
 
 def _write_registry(path: Path) -> None:
-    registry = {
-        "version": "v1",
-        "views": [
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_semantic_registry(
+        path=path,
+        views=[
             {
                 "id": "demo.view",
                 "kind": "view",
@@ -51,14 +57,17 @@ def _write_registry(path: Path) -> None:
                 "replaced_by": None,
             }
         ],
-    }
-    path.write_text(json.dumps(registry, indent=2, sort_keys=True), encoding="utf-8")
+    )
 
 
 def _write_schema_manifest(path: Path) -> None:
-    manifest = {
-        "version": "v1",
-        "tables": [
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_schema_manifest(
+        path=path,
+        tables=[
             {
                 "schema": "docs",
                 "name": "v_demo",
@@ -71,17 +80,18 @@ def _write_schema_manifest(path: Path) -> None:
                 ],
             }
         ],
-    }
-    path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    )
 
 
 def _write_buildspec(path: Path) -> None:
-    buildspec = {
-        "spec_version": 1,
-        "targets": [],
-        "datasets": [{"table_key": "docs.v_demo", "schema_hash": "schema_v_demo"}],
-    }
-    path.write_text(json.dumps(buildspec, indent=2, sort_keys=True), encoding="utf-8")
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_buildspec(
+        path=path,
+        datasets=[{"table_key": "docs.v_demo", "schema_hash": "schema_v_demo"}],
+    )
 
 
 def _write_pointer(

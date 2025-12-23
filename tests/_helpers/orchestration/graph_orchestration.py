@@ -11,19 +11,16 @@ from typing import TYPE_CHECKING
 import duckdb
 
 from codeintel.build.config import BuildConfig
-from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.graphs.call_graph import t__call_graph__extract
-from codeintel.build.hamilton.native.graphs.cfg_dfg import t__cfg__extract
-from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import create_default_providers
 from codeintel.config import ConfigBuilder, SnapshotInit
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
-from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.assertions import ModulesAssertions, assert_target_ok
 from tests._helpers.builders import (
     GoidRow,
     ModuleRow,
+    RepoMapRow,
     TestCatalogRow,
     insert_rows,
     insert_symbol_use_edges,
@@ -34,6 +31,9 @@ from tests._helpers.configs.graph_config import (
     SpanSnapshot,
     SpanTestEnv,
 )
+from tests._helpers.context import TestContext
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
 
 if TYPE_CHECKING:
@@ -89,7 +89,9 @@ def create_span_test_env(tmp_path: Path, gateway: StorageGateway) -> SpanTestEnv
     """
     repo_root = tmp_path / "repo"
     caller_start, caller_end = _write_repo(repo_root)
-    expected_goid = _seed_modules_and_goids(gateway, caller_start, caller_end)
+    expected_goid = _seed_modules_and_goids(gateway, caller_start, caller_end, repo_root)
+    snapshot = SnapshotRef(repo=REPO, commit=COMMIT, repo_root=repo_root)
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
     _seed_test_catalog(gateway)
     _seed_symbol_use_edges(gateway)
     builder = ConfigBuilder.from_snapshot(
@@ -128,30 +130,29 @@ def build_span_graph_components(env: SpanTestEnv) -> None:
         repo_root=env.repo_root,
     )
     providers = create_default_providers(ToolsConfig.default())
-    build_env = BuildEnv(
-        gateway=env.gateway,
+    ctx = TestContext(
         snapshot=snapshot,
-        paths=paths,
+        gateway=env.gateway,
+        build_paths=paths,
+    )
+    harness = HamiltonBuildHarness.wrap(
+        ctx,
         providers=providers,
-        config=BuildConfig.empty(),
-        settings=TEST_BUILD_SETTINGS,
+        build_config=BuildConfig.empty(),
     )
-    goids_record = TargetRunRecord(
-        target="goids",
-        plugin_name="graphs.goids",
-        status="succeeded",
-        input_hash=None,
-    )
-
-    call_graph_result = t__call_graph__extract(build_env, goids_record)
-    if not call_graph_result.success:
-        message = f"call_graph extraction failed: {call_graph_result.error}"
-        raise RuntimeError(message)
-
-    cfg_result = t__cfg__extract(build_env, goids_record)
-    if not cfg_result.success:
-        message = f"cfg extraction failed: {cfg_result.error}"
-        raise RuntimeError(message)
+    result = harness.run_targets(["call_graph", "cfg"])
+    call_graph_record = harness.record("call_graph", result=result)
+    try:
+        assert_target_ok(call_graph_record)
+    except AssertionError as exc:
+        message = f"call_graph extraction failed: {call_graph_record.error}"
+        raise RuntimeError(message) from exc
+    cfg_record = harness.record("cfg", result=result)
+    try:
+        assert_target_ok(cfg_record)
+    except AssertionError as exc:
+        message = f"cfg extraction failed: {cfg_record.error}"
+        raise RuntimeError(message) from exc
 
 
 def generate_span_coverage(repo_root: Path) -> CoverageArtifact:
@@ -235,13 +236,43 @@ def _write_repo(repo_root: Path) -> tuple[int, int]:
     return 3, 4
 
 
-def _seed_modules_and_goids(gateway: StorageGateway, caller_start: int, caller_end: int) -> int:
+def _seed_modules_and_goids(
+    gateway: StorageGateway,
+    caller_start: int,
+    caller_end: int,
+    repo_root: Path,
+) -> int:
     now = datetime.now(UTC)
+    path_map = modules_expected_from_repo_tree(repo_root)
+    module_map = {module: path for path, module in path_map.items()}
+    if not module_map:
+        module_map = {
+            "pkg.a": "pkg/a.py",
+            "pkg.b": "pkg/b.py",
+        }
+    gateway.con.execute(
+        "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
+        [REPO, COMMIT],
+    )
+    gateway.con.execute(
+        "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+        [REPO, COMMIT],
+    )
     insert_rows(
         gateway,
         [
-            ModuleRow(module="pkg.a", path="pkg/a.py", repo=REPO, commit=COMMIT),
-            ModuleRow(module="pkg.b", path="pkg/b.py", repo=REPO, commit=COMMIT),
+            ModuleRow(module=module, path=path, repo=REPO, commit=COMMIT)
+            for module, path in sorted(module_map.items())
+        ],
+    )
+    insert_rows(
+        gateway,
+        [
+            RepoMapRow(
+                repo=REPO,
+                commit=COMMIT,
+                modules=module_map,
+            )
         ],
     )
     expected_goid = 200

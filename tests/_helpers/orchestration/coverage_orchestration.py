@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,9 +12,12 @@ from codeintel.analytics.testing.coverage.edges import (
     build_test_coverage_edges_rows,
 )
 from codeintel.config import ConfigBuilder, SnapshotInit
+from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageConfig, open_gateway
-from tests._helpers.builders import GoidRow, ModuleRow, TestCatalogRow, insert_rows
+from tests._helpers.assertions import ModulesAssertions
+from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
 
 if TYPE_CHECKING:
@@ -21,9 +25,17 @@ if TYPE_CHECKING:
 
     from coverage import Coverage
 
-    from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.orchestration.tooling import CoverageArtifact
+
+
+@dataclass(frozen=True)
+class CoverageSeedOptions:
+    """Options for coverage row seeding."""
+
+    include_test_catalog: bool = True
+    repo_root: Path | None = None
+    seed_repo_map: bool = True
 
 
 def create_coverage_edge_env(
@@ -66,7 +78,12 @@ def create_coverage_edge_env(
     builder = ConfigBuilder.from_snapshot(
         snapshot=SnapshotInit(repo=seed_cfg.repo, commit=seed_cfg.commit, repo_root=repo_root),
     )
-    seed_coverage_rows(gateway=gateway, rel_path=rel_path.as_posix(), seed=seed_cfg)
+    seed_coverage_rows(
+        gateway=gateway,
+        rel_path=rel_path.as_posix(),
+        seed=seed_cfg,
+        options=CoverageSeedOptions(repo_root=repo_root),
+    )
     return CoverageEdgeEnv(
         repo_root=repo_root,
         gateway=gateway,
@@ -145,7 +162,7 @@ def seed_coverage_rows(
     gateway: StorageGateway,
     rel_path: str,
     seed: CoverageSeedConfig,
-    include_test_catalog: bool = True,
+    options: CoverageSeedOptions | None = None,
 ) -> None:
     """Seed minimal modules, GOIDs, test catalog, and coverage edges.
 
@@ -157,9 +174,10 @@ def seed_coverage_rows(
         Repository-relative path for the target module.
     seed
         Seed configuration controlling GOID/test identifiers.
-    include_test_catalog
-        When True, insert a matching row into ``analytics.test_catalog``.
+    options
+        Optional coverage seeding options.
     """
+    resolved_options = options or CoverageSeedOptions()
     now = datetime.now(UTC)
     function_urn = seed.function_urn or (
         f"goid:{seed.repo}#python:function:{seed.module_import}.{seed.function_name}"
@@ -168,18 +186,43 @@ def seed_coverage_rows(
     test_urn = seed.test_urn or f"goid:{seed.repo}#python:function:{seed.module_import}.test_func"
     test_qualname = seed.test_qualname or f"{seed.module_import}.test_func"
 
+    module_map = _resolve_module_map(
+        resolved_options.repo_root,
+        seed.module_import,
+        rel_path,
+    )
+    if resolved_options.seed_repo_map:
+        gateway.con.execute(
+            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+            [seed.repo, seed.commit],
+        )
+        insert_rows(
+            gateway,
+            [
+                RepoMapRow(
+                    repo=seed.repo,
+                    commit=seed.commit,
+                    modules=module_map,
+                    overlays={},
+                )
+            ],
+        )
+
     # Seed modules
     insert_rows(
         gateway,
         [
-            ModuleRow(
-                module=seed.module_import,
-                path=rel_path,
-                repo=seed.repo,
-                commit=seed.commit,
-            )
+            ModuleRow(module=module, path=path, repo=seed.repo, commit=seed.commit)
+            for module, path in sorted(module_map.items())
         ],
     )
+    if resolved_options.seed_repo_map:
+        snapshot = SnapshotRef(
+            repo=seed.repo,
+            commit=seed.commit,
+            repo_root=resolved_options.repo_root or Path.cwd(),
+        )
+        ModulesAssertions(gateway, snapshot).inventory_consistent()
 
     # Seed GOIDs for function and test
     insert_rows(
@@ -213,7 +256,7 @@ def seed_coverage_rows(
     )
 
     # Seed test catalog if requested
-    if include_test_catalog:
+    if resolved_options.include_test_catalog:
         insert_rows(
             gateway,
             [
@@ -228,6 +271,20 @@ def seed_coverage_rows(
                 )
             ],
         )
+
+
+def _resolve_module_map(
+    repo_root: Path | None,
+    module_import: str,
+    rel_path: str,
+) -> dict[str, str]:
+    module_map: dict[str, str] = {}
+    if repo_root is not None:
+        path_map = modules_expected_from_repo_tree(repo_root)
+        module_map = {module: path for path, module in path_map.items()}
+    if not module_map:
+        module_map = {module_import: rel_path}
+    return module_map
 
 
 __all__ = [

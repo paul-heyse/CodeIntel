@@ -27,6 +27,10 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "write_build_config",
     ),
     "tests._helpers.catalogs": ("ensure_catalog_with_goids", "seed_goids_from_catalog"),
+    "tests._helpers.build_config_overrides": (
+        "reload_build_config",
+        "write_build_config_sections",
+    ),
     "tests._helpers.cli_context": (
         "CliTestContext",
         "cli_test_context_with_seeds",
@@ -66,13 +70,30 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "star_graph",
     ),
     "tests._helpers.gateway": ("GatewayFactory", "analytics_gateway"),
+    "tests._helpers.hamilton_harness_artifacts": ("HarnessArtifacts",),
+    "tests._helpers.hamilton_manifest_priming": ("ManifestPriming",),
     "tests._helpers.hamilton_execution": (
         "HamiltonTestBuilder",
         "HamiltonTestContext",
         "execute_hamilton_target",
+        "execute_hamilton_targets",
         "execute_hamilton_target_async",
     ),
     "tests._helpers.immutability": ("assert_all_frozen", "assert_frozen"),
+    "tests._helpers.manifests": (
+        "assert_skipped",
+        "assert_succeeded",
+        "compute_input_hash",
+        "load_manifest_index",
+        "prime_manifest",
+        "prime_modules_manifest",
+        "run_twice_and_assert_skip",
+    ),
+    "tests._helpers.modules_expectations": (
+        "module_paths_expected_from_repo_tree",
+        "modules_expected_from_env",
+        "modules_expected_from_repo_tree",
+    ),
     "tests._helpers.orchestration.provisioning": (
         "build_callgraph_fixture_repo",
         "docs_views_ready_gateway",
@@ -93,6 +114,12 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "seed_docs_export_minimal",
         "seed_mcp_backend",
         "seed_profile_data",
+    ),
+    "tests._helpers.orchestration.repo_registry": (
+        "RepoFixtureEntry",
+        "build_repo_fixture",
+        "get_repo_fixture",
+        "list_repo_fixtures",
     ),
     "tests._helpers.rows": ("function_meta", "function_metrics_row", "module_row"),
     "tests._helpers.scenarios": (
@@ -117,6 +144,12 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "SUBSYSTEM_ANALYTICS_PACK",
         "SUBSYSTEM_HANDLER_PACK",
     ),
+    "tests._helpers.tool_sandbox": ("ToolSandbox",),
+    "tests._helpers.tool_payloads": (
+        "coverage_json_payload",
+        "pytest_report_payload",
+        "scip_json_payload",
+    ),
 }
 
 _EXPORT_TO_MODULE: Final[dict[str, str]] = {
@@ -136,6 +169,10 @@ if TYPE_CHECKING:
         sample_manifest,
         sample_target_graph,
         write_build_config,
+    )
+    from tests._helpers.build_config_overrides import (
+        reload_build_config,
+        write_build_config_sections,
     )
     from tests._helpers.catalogs import ensure_catalog_with_goids, seed_goids_from_catalog
     from tests._helpers.cli_context import (
@@ -182,8 +219,25 @@ if TYPE_CHECKING:
         HamiltonTestContext,
         execute_hamilton_target,
         execute_hamilton_target_async,
+        execute_hamilton_targets,
     )
+    from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+    from tests._helpers.hamilton_manifest_priming import ManifestPriming
     from tests._helpers.immutability import assert_all_frozen, assert_frozen
+    from tests._helpers.manifests import (
+        assert_skipped,
+        assert_succeeded,
+        compute_input_hash,
+        load_manifest_index,
+        prime_manifest,
+        prime_modules_manifest,
+        run_twice_and_assert_skip,
+    )
+    from tests._helpers.modules_expectations import (
+        module_paths_expected_from_repo_tree,
+        modules_expected_from_env,
+        modules_expected_from_repo_tree,
+    )
     from tests._helpers.orchestration.provisioning import (
         build_callgraph_fixture_repo,
         docs_views_ready_gateway,
@@ -192,6 +246,12 @@ if TYPE_CHECKING:
         provision_gateway_with_repo,
         provision_graph_ready_repo,
         provisioned_gateway,
+    )
+    from tests._helpers.orchestration.repo_registry import (
+        RepoFixtureEntry,
+        build_repo_fixture,
+        get_repo_fixture,
+        list_repo_fixtures,
     )
     from tests._helpers.orchestration.seeding import (
         seed_call_graph_scoping,
@@ -228,6 +288,12 @@ if TYPE_CHECKING:
         SUBSYSTEM_ANALYTICS_PACK,
         SUBSYSTEM_HANDLER_PACK,
     )
+    from tests._helpers.tool_payloads import (
+        coverage_json_payload,
+        pytest_report_payload,
+        scip_json_payload,
+    )
+    from tests._helpers.tool_sandbox import ToolSandbox
 
     _TYPE_CHECKING_EXPORTS = (
         CallgraphFixtureOptions,
@@ -244,8 +310,10 @@ if TYPE_CHECKING:
         GatewayFactory,
         GatewayOptions,
         GraphMetricsGatewayOptions,
+        HarnessArtifacts,
         HamiltonTestBuilder,
         HamiltonTestContext,
+        ManifestPriming,
         METRICS_PACK,
         ManifestParams,
         OPERATION_REGISTRY_PACK,
@@ -285,6 +353,7 @@ if TYPE_CHECKING:
         disconnected_graph,
         docs_views_ready_gateway,
         execute_hamilton_target,
+        execute_hamilton_targets,
         execute_hamilton_target_async,
         ensure_catalog_with_goids,
         full_context,
@@ -298,7 +367,10 @@ if TYPE_CHECKING:
         make_command_context,
         make_snapshot,
         minimal_context,
+        module_paths_expected_from_repo_tree,
         module_row,
+        modules_expected_from_env,
+        modules_expected_from_repo_tree,
         params,
         provision_docs_export_ready,
         provision_gateway_with_repo,
@@ -318,7 +390,24 @@ if TYPE_CHECKING:
         seed_module_graph_inputs,
         seed_profile_data,
         star_graph,
+        RepoFixtureEntry,
+        ToolSandbox,
+        build_repo_fixture,
+        coverage_json_payload,
+        get_repo_fixture,
+        list_repo_fixtures,
+        pytest_report_payload,
+        reload_build_config,
+        scip_json_payload,
+        assert_skipped,
+        assert_succeeded,
+        compute_input_hash,
+        load_manifest_index,
+        prime_manifest,
+        prime_modules_manifest,
+        run_twice_and_assert_skip,
         write_build_config,
+        write_build_config_sections,
     )
 
 

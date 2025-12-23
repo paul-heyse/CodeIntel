@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,
@@ -22,6 +23,7 @@ from tests._helpers.builders import (
     HotspotRow,
     ImportGraphEdgeRow,
     ModuleRow,
+    RepoMapRow,
     RiskFactorRow,
     StaticDiagnosticsRow,
     TestCatalogRow,
@@ -29,6 +31,7 @@ from tests._helpers.builders import (
     TypednessRow,
     insert_rows,
 )
+from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -116,7 +119,10 @@ class ProfilePack:
         self._cleanup_existing_data(ctx)
 
         # Seed all tables
-        self._seed_modules(ctx)
+        module_map = self._resolve_module_map(ctx)
+        self._seed_repo_map(ctx, module_map)
+        self._seed_modules(ctx, module_map)
+        ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
         self._seed_ast_metrics(ctx, now)
         self._seed_hotspots(ctx)
         self._seed_typedness(ctx)
@@ -148,20 +154,44 @@ class ProfilePack:
             "DELETE FROM core.modules WHERE repo = ? AND commit = ?",
             [self.repo, self.commit],
         )
+        con.execute(
+            "DELETE FROM core.repo_map WHERE repo = ? AND commit = ?",
+            [self.repo, self.commit],
+        )
 
-    def _seed_modules(self, ctx: TestContext) -> None:
+    def _seed_repo_map(self, ctx: TestContext, module_map: dict[str, str]) -> None:
+        """Seed the core.repo_map table."""
+        rows = [
+            RepoMapRow(
+                repo=self.repo,
+                commit=self.commit,
+                modules=module_map,
+                overlays={},
+            )
+        ]
+        insert_rows(ctx.gateway, rows)
+
+    def _seed_modules(self, ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed the core.modules table."""
         rows = [
             ModuleRow(
-                module=self.module,
-                path=self.rel_path,
+                module=module,
+                path=path,
                 repo=self.repo,
                 commit=self.commit,
                 tags='["server"]',
                 owners='["team@example.com"]',
             )
+            for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
+
+    def _resolve_module_map(self, ctx: TestContext) -> dict[str, str]:
+        path_map = modules_expected_from_repo_tree(ctx.repo_root)
+        module_map = {module: path for path, module in path_map.items()}
+        if not module_map:
+            module_map = {self.module: self.rel_path}
+        return module_map
 
     def _seed_ast_metrics(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.ast_metrics table."""

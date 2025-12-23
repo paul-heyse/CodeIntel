@@ -4,15 +4,16 @@ This module provides fixtures for analytics tests that need gateway and
 context infrastructure. For general test fixtures like TestContext, test_ctx,
 graph_ctx, etc., use the fixtures from the main conftest.py.
 
-**For new tests, use Hamilton-native helpers:**
+**For new tests, use Hamilton build harnesses:**
 
-    from tests._helpers.hamilton_execution import HamiltonTestBuilder
+    from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
+    from tests._helpers.assertions import assert_target_ok
 
 
-    def test_modules(analytics_gateway: StorageGateway, tmp_path: Path) -> None:
-        builder = HamiltonTestBuilder.create(analytics_gateway, tmp_path)
-        record = builder.execute_target("modules")
-        assert record.status == "succeeded"
+    def test_modules(tmp_path: Path) -> None:
+        with HamiltonBuildHarness.open(tmp_path) as harness:
+            record = harness.record("modules", result=harness.run_targets(["modules"]))
+            assert_target_ok(record)
 """
 
 from __future__ import annotations
@@ -22,9 +23,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.config.primitives import BuildPaths
 from codeintel.core.plugins.execution.context import PluginExecutionContext
 from tests._helpers.constants import DEFAULT_RUN_ID
-from tests._helpers.context import create_test_context
+from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.env import build_test_gateway
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.function_catalogs import (
@@ -43,9 +45,8 @@ from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_with_import_graph,
 )
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.graph_runtime_harness import (
-    build_graph_runtime_harness,
-)
+from tests._helpers.graph_runtime_harness import build_graph_runtime_harness
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -53,7 +54,6 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
-    from tests._helpers.context import TestContext
     from tests._helpers.graph_runtime_harness import (
         GraphRuntimeHarness,
     )
@@ -133,6 +133,48 @@ def analytics_context(
         snapshot=analytics_snapshot,
         run_id=DEFAULT_RUN_ID,
     )
+
+
+@pytest.fixture
+def hamilton_build_harness(
+    analytics_gateway: StorageGateway,
+    analytics_snapshot: SnapshotRef,
+) -> Iterator[HamiltonBuildHarness]:
+    """Provide a HamiltonBuildHarness bound to the shared analytics gateway.
+
+    Yields
+    ------
+    HamiltonBuildHarness
+        Harness bound to the shared analytics context.
+    """
+    build_paths = BuildPaths.from_repo_root(
+        analytics_snapshot.repo_root,
+        build_dir=analytics_snapshot.repo_root / "build",
+    )
+    ctx = TestContext(
+        snapshot=analytics_snapshot,
+        gateway=analytics_gateway,
+        build_paths=build_paths,
+    )
+    harness = HamiltonBuildHarness.wrap(ctx)
+    try:
+        yield harness
+    finally:
+        harness.close()
+
+
+@pytest.fixture
+def hamilton_test_builder(
+    hamilton_build_harness: HamiltonBuildHarness,
+) -> HamiltonBuildHarness:
+    """Backward-compatible alias for the Hamilton build harness.
+
+    Returns
+    -------
+    HamiltonBuildHarness
+        Harness bound to the shared analytics context.
+    """
+    return hamilton_build_harness
 
 
 @pytest.fixture

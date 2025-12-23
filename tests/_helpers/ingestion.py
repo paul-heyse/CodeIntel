@@ -10,13 +10,12 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.contracts import EMPTY_CONTRACT
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.providers import create_default_providers
 from codeintel.build.schemas import column_names_for_table_key
 from codeintel.build.targets import OutputTarget
 from codeintel.config.models import ToolsConfig
-from codeintel.config.primitives import BuildPaths
+from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -29,18 +28,25 @@ from codeintel.ingestion.engine.infrastructure import ToolRunner
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
+from tests._helpers.modules_expectations import (
+    module_paths_expected_from_repo_tree,
+    modules_expected_from_env,
+)
+from tests._helpers.tool_payloads import pytest_report_payload, scip_json_payload
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from pathlib import Path
 
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
-    from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.compute.repo_scan import RepoScanResult
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.storage.gateway import StorageGateway
@@ -247,14 +253,16 @@ def build_target_context_for_target(
 
     providers = cfg.providers or create_default_providers(ToolsConfig.default())
 
-    return BuildEnv(
-        gateway=gateway,
-        snapshot=snapshot_ref,
-        paths=build_paths,
-        providers=providers,
-        config=BuildConfig.empty(),
-        settings=TEST_BUILD_SETTINGS,
-        profile=cfg.profile,
+    return build_test_env(
+        BuildEnvSpec(
+            gateway=gateway,
+            snapshot=snapshot_ref,
+            paths=build_paths,
+            providers=providers,
+            build_config=BuildConfig.empty(),
+            settings=TEST_BUILD_SETTINGS,
+            profile=cfg.profile,
+        )
     )
 
 
@@ -381,12 +389,8 @@ def build_ingestion_context_bundle(
     storage, discovery, change_detection, tools = build_ingestion_adapters(ctx)
     if opts.module_paths is not None:
         seeded_paths = tuple(opts.module_paths)
-    elif opts.repo_structure is not None:
-        seeded_paths = tuple(path for path in opts.repo_structure if str(path).endswith(".py"))
     else:
-        seeded_paths = tuple(
-            path.relative_to(repo_root).as_posix() for path in repo_root.rglob("*.py")
-        )
+        seeded_paths = tuple(module_paths_expected_from_repo_tree(repo_root))
     if seeded_paths:
         seed_modules_and_repo_map(ctx, seeded_paths)
     return IngestionContextBundle(
@@ -474,7 +478,7 @@ def write_pytest_report(
     build_dir: Path,
     *,
     tests: list[dict[str, object]] | None = None,
-    summary: dict[str, object] | None = None,
+    summary: Mapping[str, int] | None = None,
     filename: str = "pytest-report.json",
 ) -> Path:
     """Render a pytest JSON report under the build/test-results directory.
@@ -486,7 +490,10 @@ def write_pytest_report(
     """
     report_dir = build_dir / "test-results"
     report_dir.mkdir(parents=True, exist_ok=True)
-    payload = {"tests": tests or [], "summary": summary or {}}
+    payload = pytest_report_payload(
+        tests=tests or [],
+        summary=summary or {"passed": 0, "failed": 0, "skipped": 0},
+    )
     report_path = report_dir / filename
     report_path.write_text(json.dumps(payload), encoding="utf-8")
     return report_path
@@ -519,7 +526,8 @@ def write_scip_index(
     scip_dir.mkdir(parents=True, exist_ok=True)
     index_path = scip_dir / filename
     typed_documents = [dict(doc) for doc in documents]
-    index_path.write_text(json.dumps({"documents": typed_documents}), encoding="utf-8")
+    payload = scip_json_payload(documents=typed_documents)
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
     return index_path
 
 
@@ -759,12 +767,7 @@ def module_paths_from_context(ctx: BuildEnv) -> list[str]:
     list[str]
         Module paths for the target context.
     """
-    repo_root = ctx.snapshot.repo_root
-    paths = [
-        path.relative_to(repo_root).as_posix() for path in repo_root.rglob("*.py") if path.is_file()
-    ]
-    paths.sort()
-    return paths
+    return sorted(modules_expected_from_env(ctx).keys())
 
 
 def module_records_for_paths(
@@ -884,6 +887,7 @@ def seed_modules_and_repo_map(
         """,
         [ctx.snapshot.repo, ctx.snapshot.commit, json.dumps(modules_json)],
     )
+    ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
 
 
 def seed_inventory_from_paths(
@@ -930,6 +934,8 @@ def seed_inventory_from_paths(
         """,
         [repo, commit, json.dumps(modules_json)],
     )
+    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
+    ModulesAssertions(gateway, snapshot).inventory_consistent()
 
 
 @dataclass(frozen=True)
