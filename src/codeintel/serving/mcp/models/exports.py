@@ -156,7 +156,6 @@ class ExportMetaResponse(BaseModel):
     )
 
     uris: ExportURIs = Field(..., description="Resource URIs for payload + helpers.")
-    warnings: tuple[str, ...] = Field(default_factory=tuple, description="Non-fatal warnings.")
     note: str | None = Field(default=None, description="Human/LLM-friendly note.")
 
 

@@ -166,8 +166,6 @@ class SchemaDiff:
 class ManifestDiffResult:
     """Result of comparing two schema manifests.
 
-    Supports both v1 (tables only) and v2 (tables, views, artifacts) formats.
-
     Parameters
     ----------
     diffs
@@ -185,7 +183,7 @@ class ManifestDiffResult:
     added_artifacts
         Artifact filenames that exist in actual but not expected (v2).
     removed_artifacts
-        Artifact filenames that exist in expected but not actual (v2, BREAKING).
+        Artifact filenames that exist in expected but not actual (BREAKING).
     """
 
     diffs: tuple[SchemaDiff, ...]
@@ -461,8 +459,6 @@ def compute_manifest_diffs(
     actual: SchemaManifest,
 ) -> ManifestDiffResult:
     """Compute diffs for all table schemas in manifests.
-
-    Supports both v1 (tables only) and v2 (tables, views, artifacts) formats.
 
     Parameters
     ----------

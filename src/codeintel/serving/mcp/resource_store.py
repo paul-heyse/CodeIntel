@@ -91,7 +91,7 @@ class StoredMetadata:
     snapshot
         Snapshot metadata (repo, commit, run_id, published_at).
     format
-        Export format (json, ndjson, etc.).
+        Export format (jsonl, json, etc.).
     mime_type
         MIME type of the export payload.
     size_bytes
@@ -111,8 +111,8 @@ class StoredMetadata:
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = None
     snapshot: dict[str, str] = field(default_factory=dict)
-    format: ExportFormat = "ndjson"
-    mime_type: str = field(default_factory=lambda: mime_type_for_export_format("ndjson"))
+    format: ExportFormat = "jsonl"
+    mime_type: str = field(default_factory=lambda: mime_type_for_export_format("jsonl"))
     size_bytes: int = 0
     query_hash: str | None = None
     schema_hash: str | None = None
@@ -134,7 +134,7 @@ class ResourceStore:
     >>> store = ResourceStore(Path("/tmp/exports"))
     >>> token, artifact, meta = store.put_with_metadata(
     ...     [{"id": 1}, {"id": 2}],
-    ...     spec=ExportArtifactSpec(view_id="demo.view", format="ndjson"),
+    ...     spec=ExportArtifactSpec(view_id="demo.view", format="jsonl"),
     ... )
     >>> retrieved = store.get(token)
     >>> retrieved.row_count
@@ -275,7 +275,7 @@ class ResourceStore:
         spec: ExportArtifactSpec,
         export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
-        """Store rows with rich metadata sidecar (NDJSON or JSON).
+        """Store rows with rich metadata sidecar (JSONL or JSON).
 
         Parameters
         ----------
@@ -298,8 +298,8 @@ class ResourceStore:
             If ``spec.format`` is unsupported.
         """
         normalized = normalize_export_format(spec.format)
-        if normalized not in {"ndjson", "json"}:
-            msg = "put_with_metadata only supports format='ndjson', 'jsonl', or 'json'"
+        if normalized not in {"jsonl", "json"}:
+            msg = "put_with_metadata only supports format='jsonl' or 'json'"
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
@@ -311,7 +311,7 @@ class ResourceStore:
 
         path, mime_type = self._artifact_path_for_format(token, spec.format)
         try:
-            if normalized == "ndjson":
+            if normalized == "jsonl":
                 with path.open("wb") as f:
                     for row in rows:
                         f.write(encode_ndjson_line(row))
@@ -361,14 +361,14 @@ class ResourceStore:
         spec: ExportArtifactSpec,
         export_id: str | None = None,
     ) -> tuple[str, StoredArtifact, StoredMetadata]:
-        """Stream rows to an NDJSON artifact with rich metadata sidecar.
+        """Stream rows to a JSONL artifact with rich metadata sidecar.
 
         Parameters
         ----------
         rows
             Iterable of row dictionaries.
         spec
-            Artifact metadata specification. Must use ``format="ndjson"`` or ``format="jsonl"``.
+            Artifact metadata specification. Must use ``format="jsonl"``.
         export_id
             Optional caller-supplied export identifier. When provided, enables best-effort cleanup
             on task cancellation.
@@ -383,11 +383,11 @@ class ResourceStore:
         TypeError
             If ``rows`` yields non-dictionary values.
         ValueError
-            If ``spec.format`` is not ``"ndjson"`` or ``"jsonl"``.
+            If ``spec.format`` is not ``"jsonl"``.
         """
         normalized = normalize_export_format(spec.format)
-        if normalized != "ndjson":
-            msg = "Streaming export only supports format='ndjson' or 'jsonl'"
+        if normalized != "jsonl":
+            msg = "Streaming export only supports format='jsonl'"
             raise ValueError(msg)
 
         token = export_id or secrets.token_urlsafe(16)
@@ -598,7 +598,7 @@ class ResourceStore:
             datetime.fromisoformat(expires_at_str) if isinstance(expires_at_str, str) else None
         )
 
-        raw_format = meta_dict.get("format", "ndjson")
+        raw_format = meta_dict.get("format", "jsonl")
         if not isinstance(raw_format, str):
             raise ExportCorruptError(token)
         export_format = normalize_export_format(raw_format)
@@ -658,7 +658,7 @@ class ResourceStore:
 
         # Read preview rows
         preview_rows: list[dict[str, object]] = []
-        if artifact.mime_type == mime_type_for_export_format("ndjson"):
+        if artifact.mime_type == mime_type_for_export_format("jsonl"):
             with artifact.path.open("r", encoding="utf-8") as f:
                 for i, line in enumerate(f):
                     if i >= max_rows:

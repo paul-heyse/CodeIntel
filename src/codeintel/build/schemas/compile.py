@@ -50,8 +50,8 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-DEFAULT_SCHEMA_MANIFEST_VERSION = "v1"
 V2_SCHEMA_MANIFEST_VERSION = "v2"
+DEFAULT_SCHEMA_MANIFEST_VERSION = V2_SCHEMA_MANIFEST_VERSION
 DECLARED_SOURCE_KIND = "declared_source"
 DECLARED_SOURCE_NAME = "declared"
 VIEW_DERIVATION_KIND = "view_inferred"
@@ -77,13 +77,13 @@ class SchemaManifestRequest:
     stable
         When True, produce deterministic output ordering and de-duplication.
     version
-        Manifest version identifier.
+        Manifest version identifier (v2 only).
     include_views
-        When True, include DuckDB view schemas in the manifest (v2).
+        When True, include DuckDB view schemas in the manifest.
     include_artifacts
-        When True, include export artifact specifications in the manifest (v2).
+        When True, include export artifact specifications in the manifest.
     include_provenance
-        When True, include per-entry provenance fields in the manifest (v2).
+        When True, include per-entry provenance fields in the manifest.
     """
 
     targets: tuple[str, ...] | None = None
@@ -302,6 +302,12 @@ def _apply_native_inference(
     return hamilton_provider
 
 
+def _ensure_v2(version: str) -> None:
+    if version != V2_SCHEMA_MANIFEST_VERSION:
+        msg = f"Unsupported schema manifest version: {version}"
+        raise ValueError(msg)
+
+
 def _resolve_v2_extras(
     *,
     request: SchemaManifestRequest,
@@ -337,9 +343,8 @@ def _resolve_v2_extras(
     if request.include_artifacts:
         artifacts = _collect_export_artifacts(stable=request.stable)
 
+    _ensure_v2(request.version)
     version = request.version
-    if (views or artifacts) and version == DEFAULT_SCHEMA_MANIFEST_VERSION:
-        version = V2_SCHEMA_MANIFEST_VERSION
 
     extras = V2Extras(views=views, artifacts=artifacts) if views or artifacts else None
     return extras, version
@@ -621,6 +626,7 @@ def compile_schema_manifest_for_table_keys(
     SchemaManifest
         Compiled schema manifest.
     """
+    _ensure_v2(version)
     schemas = [provider.require_table_schema(key) for key in table_keys]
     if stable:
         schemas = sorted(schemas, key=lambda s: s.table_key)
@@ -660,6 +666,7 @@ def compile_schema_manifest(
         Compiled schema manifest.
     """
     req = request or SchemaManifestRequest()
+    _ensure_v2(req.version)
     service = get_target_metadata_service()
     selection = TableKeySelection.from_request(req)
     table_keys = _table_keys_for_selection(
@@ -675,8 +682,6 @@ def compile_schema_manifest(
         batch_inferer=batch_inferer,
     )
     extras, version = _resolve_v2_extras(request=req, con=con)
-    if req.include_provenance and version == DEFAULT_SCHEMA_MANIFEST_VERSION:
-        version = V2_SCHEMA_MANIFEST_VERSION
 
     manifest = compile_schema_manifest_for_table_keys(
         table_keys,

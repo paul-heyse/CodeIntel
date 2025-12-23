@@ -11,7 +11,7 @@
 - Remove unused plugin registry abstractions and unused serialization/ports protocols.
 - Remove legacy compatibility toggles (e.g., telemetry attribute back-compat).
 - Eliminate cross-layer fallbacks (e.g., config datasets using build-owned schema service).
-- Standardize manifest versioning and deprecation semantics.
+- Standardize manifest versioning (v2-only) and remove all deprecation metadata in core/config.
 
 ## Non-goals
 - No new features unrelated to legacy/compatibility removal.
@@ -24,8 +24,15 @@
 - Legacy observability flags are removed from settings, loader, and telemetry wiring.
 - `config/datasets/columns.py` does not import build-owned modules.
 - Manifest versioning is v2-only and explicit.
-- Deprecation metadata has clear, enforced behavior (warnings or blocking).
+- No deprecation or legacy metadata surfaces remain in core/config models or schemas.
 - Quality gates pass and targeted tests are updated.
+
+## Status Snapshot (Latest)
+- W1-W8: Implemented (ConfigBuilder removal, registry/accessor removal, plugin registry removal,
+  serialization/ports cleanup, aggregator alignment, observability flag removal, schema fallback removal).
+- W9: Superseded by the new mandate to delete deprecation/legacy metadata end-to-end in core/config.
+- W10: Implemented in code (v2-only compile/parse/schema updates); remaining work is fixture coverage,
+  quality gates, and any lingering v1 references in tests/docs.
 
 ## Workstreams
 
@@ -209,22 +216,44 @@
 ---
 
 ### W9: Enforce Deprecation Metadata Semantics
-**Objective**: Make deprecation fields meaningful rather than passive metadata.
+**Objective**: Remove deprecation metadata and legacy compatibility surfaces in core/config.
 
 **Steps**
-1. Define deprecation behavior for datasets and semantic views:
-   - Emit warnings in CLI and serving responses for deprecated items.
-   - Optionally block exports/queries in strict modes.
-2. Implement warning surfacing in:
-   - CLI export/validation flows.
-   - Serving semantic query/export responses (include deprecated/replaced_by).
-3. Add validation helpers:
-   - Require `replaced_by` to exist if `deprecated=True`.
-4. Add tests for warning emission and strict-mode blocking.
+1. Delete dataset deprecation fields from core schemas:
+   - Remove `deprecated`, `deprecation_message`, and `deprecation_warning()` from
+     `src/codeintel/core/schemas/contract_primitives.py`.
+   - Remove `deprecated`/`deprecation_message` from `src/codeintel/core/schemas/contract_factory.py`.
+   - Remove deprecation serialization/deserialization from
+     `src/codeintel/core/schemas/contract_serde.py`.
+2. Remove deprecation validation in core:
+   - Delete `_validate_deprecations(...)` and its call site in
+     `src/codeintel/core/schemas/contract_validation.py`.
+3. Remove deprecation tags and semantic hints in core Hamilton tagging:
+   - Remove `TAG_DEPRECATED` and `TAG_REPLACED_BY` (and any encoding helpers) from
+     `src/codeintel/core/hamilton/semantic_tags.py`.
+4. Remove deprecation fields from config schemas:
+   - Remove `deprecated` and `replaced_by` properties from
+     `src/codeintel/config/schemas/serving/semantic_registry.json`.
+   - Ensure the schema no longer enforces `replaced_by` when deprecated.
+5. Remove remaining deprecation mentions in core/config docs and public exports:
+   - Update `src/codeintel/config/__init__.py` and any docstrings that reference
+     deprecated or legacy step configurations.
+6. Update tests/fixtures tied to core/config deprecation metadata:
+   - `tests/config/test_datasets_schema_builder.py`
+   - `tests/config/test_datasets_contracts.py`
+   - Any fixtures under `tests/_helpers/contracts.py` or other core/config helpers
+     that set `deprecated`/`deprecation_message` fields.
+7. Sweep and verify:
+   - `rg -n "deprecat|replaced_by" src/codeintel/core src/codeintel/config` returns zero results.
 
 **Acceptance**
-- Deprecation fields produce observable warnings or enforcement.
-- Tests cover both deprecated and non-deprecated behaviors.
+- No `deprecated`, `replaced_by`, or `deprecation_message` fields exist in core/config models or schemas.
+- No deprecation-related tags remain in core Hamilton metadata.
+- Core/config tests and fixtures compile and run without deprecation fields.
+
+**Follow-ups (Outside Core/Config)**
+- After removing core/config deprecation metadata, update build/serving layers that
+  referenced those fields (semantic registry compilation, serving responses, and export metadata).
 
 ---
 
@@ -248,14 +277,15 @@
 2. W3 + W4 + W5 (plugin/serialization/ports cleanup).
 3. W6 (doc + aggregator alignment).
 4. W7 + W8 (legacy toggle + schema fallback removal).
-5. W9 + W10 (deprecation enforcement + manifest standardization).
+5. W9 + W10 (deprecation removal + manifest standardization).
 
 ## Validation Checklist
 - `uv run python -m tools.quality_report --output build/quality-results/quality_report.json`
 - Targeted tests (by touched areas):
   - `tests/core/` for config/resource/serialization changes.
   - `tests/build/` for schema manifest and build pipeline changes.
-  - `tests/serving/` for deprecation/manifest behavior if touched.
+  - `tests/config/` for contract/schema updates and fixtures.
+  - `tests/serving/` only if schema manifest changes touch serving adapters.
 
 ## Notes for Implementation
 - When removing modules, delete corresponding tests and update any fixtures.

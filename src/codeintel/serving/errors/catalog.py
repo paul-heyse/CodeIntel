@@ -164,6 +164,22 @@ ERROR_CODE_CATALOG: dict[str, ErrorInfoTemplate] = {
         message="Meta SQL artifact contains unsafe SQL for view '{view_id}'.",
         hint="Rebuild the snapshot and ensure compiled SQL stays within the select-only perimeter.",
     ),
+    "CODEINTEL_SEARCH_INDEX_MISSING": ErrorInfoTemplate(
+        code="CODEINTEL_SEARCH_INDEX_MISSING",
+        error_code=SERVICE_UNAVAILABLE,
+        kind=ErrorKind.unavailable,
+        retryable=True,
+        message="Search index missing for the mounted snapshot.",
+        hint="Rebuild/publish the snapshot with search artifacts enabled.",
+    ),
+    "CODEINTEL_LINEAGE_MISSING": ErrorInfoTemplate(
+        code="CODEINTEL_LINEAGE_MISSING",
+        error_code=SERVICE_UNAVAILABLE,
+        kind=ErrorKind.unavailable,
+        retryable=True,
+        message="Lineage metadata table '{table}' missing for the mounted snapshot.",
+        hint="Rebuild/publish the snapshot with lineage artifacts enabled.",
+    ),
     # -------- Serving snapshot / DB --------
     "CODEINTEL_SERVING_SNAPSHOT_NOT_MOUNTED": ErrorInfoTemplate(
         code="CODEINTEL_SERVING_SNAPSHOT_NOT_MOUNTED",

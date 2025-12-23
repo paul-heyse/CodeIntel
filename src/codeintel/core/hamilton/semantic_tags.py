@@ -31,8 +31,6 @@ TAG_MCP_VISIBLE = "mcp_visible"
 TAG_DEFAULT_ORDER = "semantic_default_order_by"
 TAG_DEFAULT_LIMIT = "semantic_default_limit"
 TAG_SENSITIVITY = "semantic_sensitivity"
-TAG_DEPRECATED = "semantic_deprecated"
-TAG_REPLACED_BY = "semantic_replaced_by"
 
 _TFunc = TypeVar("_TFunc", bound=Callable[..., object])
 
@@ -55,8 +53,6 @@ class SemanticViewTagSpec(TypedDict, total=False):
     default_order_by: tuple[str, ...]
     default_limit: int
     sensitivity: str
-    deprecated: bool
-    replaced_by: str | None
     mcp_visible: bool
     kind: Literal["table", "view"]
 
@@ -76,7 +72,6 @@ def _build_semantic_tags(spec: SemanticViewTagSpec) -> dict[str, str]:
 
     tags: dict[str, str] = {
         TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
-        TAG_DEPRECATED: "1" if spec.get("deprecated", False) else "0",
         TAG_DEFAULT_LIMIT: str(spec.get("default_limit", 200)),
         TAG_DEFAULT_ORDER: _csv(spec.get("default_order_by", ())),
         TAG_MCP_VISIBLE: "1" if spec.get("mcp_visible", True) else "0",
@@ -97,9 +92,6 @@ def _build_semantic_tags(spec: SemanticViewTagSpec) -> dict[str, str]:
     joins = spec.get("joins")
     if joins is not None:
         tags[TAG_SEMANTIC_JOINS] = json.dumps(joins, sort_keys=True)
-    replaced_by = spec.get("replaced_by")
-    if replaced_by is not None:
-        tags[TAG_REPLACED_BY] = replaced_by
 
     return tags
 
@@ -138,10 +130,6 @@ def semantic_view(
         Default limit for queries.
     sensitivity
         Sensitivity label (internal/public/etc).
-    deprecated
-        Whether this view is deprecated.
-    replaced_by
-        Replacement semantic view ID.
     mcp_visible
         Whether to expose this view through MCP tools.
     kind
@@ -178,14 +166,11 @@ def semantic_view(
                 mcp_visible=tags[TAG_MCP_VISIBLE],
                 semantic_default_limit=tags[TAG_DEFAULT_LIMIT],
                 semantic_default_order_by=tags[TAG_DEFAULT_ORDER],
-                semantic_deprecated=tags[TAG_DEPRECATED],
                 semantic_kind=tags[TAG_SEMANTIC_KIND],
                 semantic_primary_key=tags[TAG_SEMANTIC_PK],
                 semantic_sensitivity=tags[TAG_SENSITIVITY],
             )(func),
         )
-        if TAG_REPLACED_BY in tags:
-            tagged = cast("_TFunc", h_tag(semantic_replaced_by=tags[TAG_REPLACED_BY])(tagged))
         if TAG_SEMANTIC_COLS in tags:
             tagged = cast("_TFunc", h_tag(semantic_columns=tags[TAG_SEMANTIC_COLS])(tagged))
         if TAG_SEMANTIC_DESC in tags:
@@ -219,10 +204,8 @@ __all__ = [
     "SEMANTIC_VIEW_TAG_ATTR",
     "TAG_DEFAULT_LIMIT",
     "TAG_DEFAULT_ORDER",
-    "TAG_DEPRECATED",
     "TAG_MCP_VISIBLE",
     "TAG_OUTPUT_KIND",
-    "TAG_REPLACED_BY",
     "TAG_SEMANTIC_COLS",
     "TAG_SEMANTIC_DESC",
     "TAG_SEMANTIC_ENTITY",

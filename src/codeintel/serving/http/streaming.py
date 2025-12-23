@@ -1,7 +1,7 @@
 """Streaming response utilities for large resultsets.
 
 This module provides utilities for streaming query results as newline-delimited
-JSON (NDJSON) to support efficient export of large datasets.
+JSON (JSONL) to support efficient export of large datasets.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def ndjson_response(
     filename: str | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> StreamingResponse:
-    """Create an NDJSON streaming response.
+    """Create a JSONL streaming response.
 
     Parameters
     ----------
@@ -53,7 +53,7 @@ def ndjson_response(
     Returns
     -------
     StreamingResponse
-        Streaming response with NDJSON content type.
+        Streaming response with JSONL content type.
     """
     response_headers: dict[str, str] = {}
     if filename:
@@ -62,7 +62,7 @@ def ndjson_response(
         response_headers.update({str(k): str(v) for k, v in headers.items()})
     return StreamingResponse(
         ndjson_stream(rows),
-        media_type=mime_type_for_export_format("ndjson"),
+        media_type=mime_type_for_export_format("jsonl"),
         headers=response_headers,
     )
 

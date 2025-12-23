@@ -83,8 +83,10 @@ class HarnessArtifacts:
             Path to the generated schema manifest file.
         """
         payload = {
-            "version": "v1",
+            "version": "v2",
             "tables": list(tables),
+            "views": [],
+            "artifacts": [],
         }
         out = path or (self.paths.build_dir / "serving" / "artifacts" / "schema_manifest.json")
         out.parent.mkdir(parents=True, exist_ok=True)

@@ -6,14 +6,21 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
-    from codeintel.storage.gateway import StorageGateway
-
 _JSON_PAYLOAD_TYPES = (str, bytes, bytearray)
+
+
+class CatalogGateway(Protocol):
+    """Protocol for gateway-like objects with a DuckDB connection."""
+
+    @property
+    def con(self) -> DuckDBPyConnection:
+        """Return an open DuckDB connection."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -42,7 +49,7 @@ def _coerce_json_payload(value: object) -> dict[str, Any]:
 
 
 def load_canonical_catalog(
-    gateway: StorageGateway,
+    gateway: CatalogGateway,
     *,
     catalog_kind: str,
     catalog_hash: str,
@@ -79,7 +86,7 @@ def load_canonical_catalog(
 
 
 def load_latest_canonical_catalog(
-    gateway: StorageGateway,
+    gateway: CatalogGateway,
     *,
     catalog_kind: str,
 ) -> CanonicalCatalogEntry | None:
@@ -155,7 +162,7 @@ def load_latest_canonical_catalog_from_connection(
 
 
 def upsert_canonical_catalog(
-    gateway: StorageGateway,
+    gateway: CatalogGateway,
     entry: CanonicalCatalogEntry,
 ) -> None:
     """Insert or update a canonical catalog entry."""

@@ -37,9 +37,12 @@ from tests._helpers.orchestration.provisioning import (
     provision_docs_export_ready,
     provision_graph_ready_repo,
 )
+from tests._helpers.schemas import ensure_storage_contract_catalog
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 from tests._helpers.tool_sandbox import ToolSandbox
+
+ensure_storage_contract_catalog()
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

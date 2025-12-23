@@ -10,8 +10,11 @@ from codeintel.build.schemas import (
     iter_contracts,
     iter_contracts_by_table_key,
 )
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.storage.contracts.provider import get_contract_provider
+
+get_schema_service()
 
 
 def _require(*, condition: bool, message: str) -> None:

@@ -53,10 +53,6 @@ class SemanticViewSpec(BaseModel):
         Default query parameters (limit, order_by).
     sensitivity
         Data sensitivity level.
-    deprecated
-        Whether this view is deprecated.
-    replaced_by
-        Successor view ID if deprecated.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -72,8 +68,6 @@ class SemanticViewSpec(BaseModel):
     joins: list[dict[str, object]] = Field(default_factory=list)
     defaults: SemanticViewDefaults = Field(default_factory=SemanticViewDefaults)
     sensitivity: str = "internal"
-    deprecated: bool = False
-    replaced_by: str | None = None
 
 
 class FilterSpec(BaseModel):
@@ -232,8 +226,6 @@ class SemanticViewDescriptionResponse(BaseModel):
     column_types: dict[str, str] = Field(default_factory=dict)
     joins: list[dict[str, object]] = Field(default_factory=list)
     defaults: SemanticViewDefaults = Field(default_factory=SemanticViewDefaults)
-    deprecated: bool = False
-    replaced_by: str | None = None
     snapshot: ServingSnapshotIdentity
     lineage: dict[str, list[ColumnLineageRef]] = Field(default_factory=dict)
 
@@ -242,7 +234,7 @@ class SemanticExportRequest(BaseModel):
     """Request for streaming/export of semantic view data.
 
     Supports larger result sets than the standard query endpoint,
-    with multiple output formats including NDJSON, Parquet, and Arrow.
+    with multiple output formats including JSONL, Parquet, and Arrow.
 
     Parameters
     ----------
@@ -255,7 +247,7 @@ class SemanticExportRequest(BaseModel):
     order_by
         Column ordering (prefix with "-" for DESC).
     format
-        Export format: json, ndjson, parquet, or arrow.
+        Export format: jsonl, json, parquet, or arrow.
     limit
         Maximum rows to export (higher default than query).
     offset
@@ -268,7 +260,7 @@ class SemanticExportRequest(BaseModel):
     select: list[str] | None = None
     filters: list[FilterSpec] = Field(default_factory=list)
     order_by: list[str] = Field(default_factory=list)
-    format: ExportFormat = "ndjson"
+    format: ExportFormat = "jsonl"
     limit: int = Field(default=100_000, ge=0, le=1_000_000)
     offset: int = Field(default=0, ge=0)
 

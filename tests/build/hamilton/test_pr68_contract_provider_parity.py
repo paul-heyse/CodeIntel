@@ -33,6 +33,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_not_empty,
     expect_true,
 )
+from tests._helpers.schemas import ensure_storage_contract_catalog
 
 
 @pytest.fixture(autouse=True)
@@ -232,6 +233,7 @@ class TestBuildStorageContractParity:
     def test_storage_contract_matches_build_contract() -> None:
         """Verify build and storage contracts agree on core fields."""
         clear_storage_contract_cache()
+        ensure_storage_contract_catalog()
         table_key = "analytics.function_metrics"
 
         build_contract = get_contract_for_table_key(table_key)

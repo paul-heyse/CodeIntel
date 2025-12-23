@@ -147,6 +147,20 @@ class MetaSqlUnsafeError(CodeIntelDomainError):
         super().__init__(code="CODEINTEL_META_SQL_UNSAFE", params={"view_id": view_id})
 
 
+class SearchIndexMissingError(CodeIntelDomainError):
+    """Raised when the serving search index is missing."""
+
+    def __init__(self) -> None:
+        super().__init__(code="CODEINTEL_SEARCH_INDEX_MISSING")
+
+
+class LineageMetadataMissingError(CodeIntelDomainError):
+    """Raised when derived lineage metadata is missing."""
+
+    def __init__(self, *, table: str) -> None:
+        super().__init__(code="CODEINTEL_LINEAGE_MISSING", params={"table": table})
+
+
 __all__ = [
     "AuthForbiddenError",
     "CodeIntelDomainError",
@@ -154,8 +168,10 @@ __all__ = [
     "ExportExpiredError",
     "ExportNotFoundError",
     "ExportTooLargeError",
+    "LineageMetadataMissingError",
     "MetaArtifactNotFoundError",
     "MetaSqlUnsafeError",
+    "SearchIndexMissingError",
     "SemanticColumnNotFoundError",
     "SemanticInvalidFilterError",
     "SemanticLimitExceededError",

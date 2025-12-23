@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers.factories import blank_function_profile_row
 
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     )
 
 
+get_schema_service()
 FUNCTION_PROFILE_COLUMNS = tuple(load_columns_by_table()["analytics.function_profile"])
 
 

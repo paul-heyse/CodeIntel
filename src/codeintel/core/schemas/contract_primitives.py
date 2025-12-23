@@ -62,10 +62,6 @@ class DatasetContract:
         Validation strictness level ("strict" or "lenient").
     composition
         Optional CompositeSchema for profile datasets.
-    deprecated
-        Whether this dataset is deprecated.
-    deprecation_message
-        Message explaining deprecation and migration path.
     """
 
     table_key: str
@@ -88,8 +84,6 @@ class DatasetContract:
     upstream_dependencies: tuple[str, ...] = ()
     validation_profile: Literal["strict", "lenient"] = "strict"
     composition: CompositeSchema | None = None
-    deprecated: bool = False
-    deprecation_message: str | None = None
 
     def has_row_binding(self) -> bool:
         """Return True when this dataset has a TypedDict row binding.

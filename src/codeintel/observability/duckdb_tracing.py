@@ -222,7 +222,6 @@ def _build_span_builder(obs: ObservabilityRuntime) -> DbSpanAttributeBuilder:
     span_config = DbSpanAttributeConfig(
         statement_mode=cast("SQLStatementMode", obs.duckdb_statement_mode),
         statement_hash_len=obs.duckdb_statement_hash_len,
-        emit_legacy_attributes=obs.duckdb_emit_legacy_db_attributes,
         query_summary=DbQuerySummaryConfig(
             max_len=obs.duckdb_query_summary_max_len,
             max_targets=obs.duckdb_query_summary_max_targets,

@@ -1,7 +1,7 @@
 """Schema manifest types for build-time schema products.
 
 This module defines the SchemaManifest and related types for capturing
-build-time schema state. The v2 format extends v1 with views and artifacts.
+build-time schema state (v2 format with views and artifacts).
 """
 
 from codeintel.core.manifests import (

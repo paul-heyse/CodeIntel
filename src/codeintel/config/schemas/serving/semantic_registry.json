@@ -31,12 +31,9 @@
               "order_by": { "type": "array", "items": { "type": "string" }, "default": [] }
             }
           },
-          "sensitivity": { "type": "string", "default": "internal" },
-          "deprecated": { "type": "boolean", "default": false },
-          "replaced_by": { "type": ["string", "null"] }
+          "sensitivity": { "type": "string", "default": "internal" }
         }
       }
     }
   }
 }
-

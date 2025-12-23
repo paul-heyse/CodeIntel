@@ -104,8 +104,6 @@ def contract_to_json_obj(contract: DatasetContract) -> dict[str, object]:
         "schema_version": contract.schema_version,
         "upstream_dependencies": list(contract.upstream_dependencies),
         "validation_profile": contract.validation_profile,
-        "deprecated": contract.deprecated,
-        "deprecation_message": contract.deprecation_message,
     }
     payload["schema"] = table_schema_to_json_obj(contract.schema) if contract.schema else None
     payload["composition"] = (
@@ -183,8 +181,6 @@ def contract_from_json_obj(obj: Mapping[str, object]) -> DatasetContract:
         upstream_dependencies=upstream,
         validation_profile=validation_profile,
         composition=composition,
-        deprecated=_as_bool(obj.get("deprecated"), default=False),
-        deprecation_message=_as_optional_str(obj.get("deprecation_message")),
     )
 
 

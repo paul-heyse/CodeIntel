@@ -6,6 +6,8 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from tests._helpers.assertions.expectation_assertions import expect_equal
 
@@ -35,8 +37,8 @@ def test_pointer_roundtrip(tmp_path: Path) -> None:
     expect_equal(loaded, pointer)
 
 
-def test_pointer_load_accepts_created_at_fallback(tmp_path: Path) -> None:
-    """Support legacy created_at key for compatibility."""
+def test_pointer_load_requires_published_at(tmp_path: Path) -> None:
+    """Pointer load fails when published_at is missing."""
     payload = {
         "db_path": str(tmp_path / "codeintel.duckdb"),
         "semantic_registry_path": str(tmp_path / "semantic_registry.json"),
@@ -45,11 +47,10 @@ def test_pointer_load_accepts_created_at_fallback(tmp_path: Path) -> None:
         "repo": "demo/repo",
         "commit": "deadbeef",
         "run_id": "run-1",
-        "created_at": datetime.now(tz=UTC).isoformat(),
         "semantic_layer_version": "v123",
     }
     pointer_path = tmp_path / "current.json"
     pointer_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    loaded = ServingSnapshotPointer.load(pointer_path)
-    expect_equal(loaded.run_id, "run-1")
+    with pytest.raises(KeyError, match="Pointer missing published_at"):
+        ServingSnapshotPointer.load(pointer_path)

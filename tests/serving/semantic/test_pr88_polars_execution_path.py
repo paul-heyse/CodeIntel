@@ -86,8 +86,6 @@ async def test_polars_execution_path_matches_expected_rows(tmp_path: Path) -> No
                     "joins": [],
                     "defaults": {"limit": 200, "order_by": ["id"]},
                     "sensitivity": "internal",
-                    "deprecated": False,
-                    "replaced_by": None,
                 }
             ],
         },
@@ -95,8 +93,9 @@ async def test_polars_execution_path_matches_expected_rows(tmp_path: Path) -> No
     _write_json(
         manifest_path,
         {
-            "version": "v1",
-            "tables": [
+            "version": "v2",
+            "tables": [],
+            "views": [
                 {
                     "schema": "docs",
                     "name": "v_demo",

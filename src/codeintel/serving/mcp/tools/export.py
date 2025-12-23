@@ -38,7 +38,7 @@ from codeintel.serving.mcp.tools.shared import (
     validate_semantic_export_request,
 )
 from codeintel.serving.operations.ops import ServingOperations
-from codeintel.serving.semantic.models import SemanticExportRequest
+from codeintel.serving.semantic.models import SemanticExportRequest, SemanticViewDescriptionResponse
 from codeintel.serving.uris import (
     EXPORT_META_URI_TEMPLATE,
     export_meta_uri,
@@ -74,12 +74,21 @@ class ExportOutcome:
     stored_meta: StoredMetadata
 
 
-def _safe_column_types(ops: ServingOperations, view_id: str) -> dict[str, str]:
+def _safe_view_description(
+    ops: ServingOperations, view_id: str
+) -> SemanticViewDescriptionResponse | None:
     try:
-        describe = ops.describe(view_id)
+        return ops.describe(view_id)
     except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _column_types_from_description(
+    description: SemanticViewDescriptionResponse | None,
+) -> dict[str, str]:
+    if description is None:
         return {}
-    return {str(k): str(v) for k, v in describe.column_types.items()}
+    return {str(k): str(v) for k, v in description.column_types.items()}
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,7 +129,8 @@ class ExportWorkflow:
         format_type: ExportFormat,
         snapshot_dict: dict[str, str],
     ) -> tuple[ExportArtifactSpec, str, str | None]:
-        column_types = _safe_column_types(self.ops, request.view_id)
+        description = _safe_view_description(self.ops, request.view_id)
+        column_types = _column_types_from_description(description)
         columns = tuple(column_types)
         compiled_sql = await self.limiter.run(self.ops.export_sql, request)
         query_hash, schema_hash = await self.limiter.run(self.ops.export_fingerprint, request)

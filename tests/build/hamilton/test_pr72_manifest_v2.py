@@ -185,19 +185,6 @@ class TestSchemaManifestV2:
     """Tests for v2 SchemaManifest format."""
 
     @staticmethod
-    def test_v1_manifest_tables_only(sample_table: TableSchema) -> None:
-        """Test v1 manifest with tables only."""
-        manifest = SchemaManifest(
-            version="v1",
-            tables=(sample_table,),
-        )
-        expect_equal(manifest.version, "v1")
-        expect_equal(len(manifest.tables), 1)
-        expect_equal(len(manifest.views), 0)
-        expect_equal(len(manifest.artifacts), 0)
-        expect_false(manifest.is_v2)
-
-    @staticmethod
     def test_v2_manifest_with_views(
         sample_table: TableSchema,
         sample_view: TableSchema,

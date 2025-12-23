@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from codeintel.build.targets import OutputTarget
-    from codeintel.core.exports.formats import ExportFormatSpec
+    from codeintel.core.exports.formats import ExportFormat, ExportFormatSpec
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.serving.semantic.models import SemanticViewSpec
     from codeintel.serving.semantic.registry import SemanticRegistry
@@ -185,15 +185,15 @@ class RegistryService:
         return resolve_export_format_spec(fmt)
 
     @staticmethod
-    def export_format_choices(*, include_aliases: bool = False) -> tuple[str, ...]:
+    def export_format_choices() -> tuple[ExportFormat, ...]:
         """Return supported export formats in a stable order.
 
         Returns
         -------
-        tuple[str, ...]
+        tuple[ExportFormat, ...]
             Ordered export format identifiers.
         """
-        return export_format_choices(include_aliases=include_aliases)
+        return export_format_choices()
 
 
 __all__ = ["RegistryService"]

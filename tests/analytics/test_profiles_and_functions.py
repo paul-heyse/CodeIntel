@@ -73,6 +73,7 @@ from codeintel.analytics.profiles.modules import (
 )
 from codeintel.analytics.profiles.utils import DEFAULT_MODULE_TABLE
 from codeintel.analytics.testing.profiles import rows as profile_rows
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers import METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
@@ -136,6 +137,7 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
+get_schema_service()
 _COLUMNS_BY_TABLE = load_columns_by_table()
 FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])
 FUNCTION_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.function_profile"])

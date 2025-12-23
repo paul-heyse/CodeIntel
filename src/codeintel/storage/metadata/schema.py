@@ -67,7 +67,6 @@ METADATA_TABLES: tuple[TableSchema, ...] = (
             Column("family", "VARCHAR"),
             Column("description", "VARCHAR"),
             Column("schema_version", "VARCHAR"),
-            Column("deprecated", "BOOLEAN"),
         ],
         primary_key=("table_key",),
     ),

@@ -10,7 +10,6 @@ from typing import get_args, get_origin
 
 import jsonschema
 
-from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.contracts.provider import iter_contracts
 
@@ -196,17 +195,12 @@ def export_json_schema_for_contract(
     """
     if contract.schema is None:
         return None
-    try:
-        service = get_schema_service()
-    except RuntimeError:
-        json_schema = json_schema_from_table_schema(contract.schema, schema_id=schema_id)
-    else:
-        resolved = service.get_json_schema(contract.table_key)
-        if resolved is None:
-            json_schema = json_schema_from_table_schema(contract.schema, schema_id=schema_id)
-        else:
-            json_schema = dict(resolved)
-            json_schema["$id"] = schema_id
+    service = get_schema_service()
+    resolved = service.get_json_schema(contract.table_key)
+    if resolved is None:
+        return None
+    json_schema = dict(resolved)
+    json_schema["$id"] = schema_id
     json_schema["title"] = title
     return json_schema
 

@@ -45,8 +45,6 @@ class DatasetContractOverrides:
     validation_profile: Literal["strict", "lenient"] = "strict"
     stable_id: str | None = None
     schema_version: str | None = None
-    deprecated: bool = False
-    deprecation_message: str | None = None
 
 
 def is_docs_view(table_key: str) -> bool:
@@ -158,8 +156,6 @@ def build_dataset_contract(
         upstream_dependencies=overrides.upstream_dependencies if overrides is not None else (),
         validation_profile=overrides.validation_profile if overrides is not None else "strict",
         composition=composition,
-        deprecated=overrides.deprecated if overrides is not None else False,
-        deprecation_message=overrides.deprecation_message if overrides is not None else None,
     )
 
 

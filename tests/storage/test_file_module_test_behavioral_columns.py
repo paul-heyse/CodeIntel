@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from tests._helpers.factories import (
     blank_behavioral_coverage_row,
@@ -16,6 +17,7 @@ from tests._helpers.factories import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+get_schema_service()
 _COLUMNS_BY_TABLE = load_columns_by_table()
 FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])
 MODULE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.module_profile"])

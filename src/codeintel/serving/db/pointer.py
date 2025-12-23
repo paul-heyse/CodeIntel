@@ -69,17 +69,18 @@ class ServingSnapshotPointer:
             If required fields are missing.
         """
         raw = json.loads(path.read_text(encoding="utf-8"))
-        published_at_raw = raw.get("published_at") or raw.get("created_at")
-        if published_at_raw is None:
-            msg = "Pointer missing published_at/created_at"
-            raise KeyError(msg)
+        try:
+            published_at_raw = raw["published_at"]
+        except KeyError as exc:
+            msg = "Pointer missing published_at"
+            raise KeyError(msg) from exc
 
-        buildspec_raw = raw.get("buildspec_path")
-        if buildspec_raw is None:
-            schema_manifest_path = Path(raw["schema_manifest_path"]).resolve()
-            buildspec_path = schema_manifest_path.parent / "buildspec.json"
-        else:
-            buildspec_path = Path(buildspec_raw).resolve()
+        try:
+            buildspec_raw = raw["buildspec_path"]
+        except KeyError as exc:
+            msg = "Pointer missing buildspec_path"
+            raise KeyError(msg) from exc
+        buildspec_path = Path(buildspec_raw).resolve()
 
         return cls(
             db_path=Path(raw["db_path"]).resolve(),

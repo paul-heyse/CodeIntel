@@ -1,4 +1,4 @@
-"""Shared NDJSON encoding utilities for serving exports."""
+"""Shared JSONL encoding utilities for serving exports."""
 
 from __future__ import annotations
 
@@ -21,12 +21,12 @@ except ImportError:
 
 
 def encode_ndjson_line(row: Mapping[str, object]) -> bytes:
-    """Encode a single row as a UTF-8 NDJSON line.
+    """Encode a single row as a UTF-8 JSONL line.
 
     Returns
     -------
     bytes
-        Serialized NDJSON line with a trailing newline.
+        Serialized JSONL line with a trailing newline.
     """
     payload_row = coerce_export_row(row)
     if _MSG_ENCODER is not None:
@@ -40,12 +40,12 @@ def encode_ndjson_line(row: Mapping[str, object]) -> bytes:
 
 
 def iter_ndjson_bytes(rows: Iterable[Mapping[str, object]]) -> Iterator[bytes]:
-    """Yield rows as UTF-8 NDJSON byte lines.
+    """Yield rows as UTF-8 JSONL byte lines.
 
     Yields
     ------
     bytes
-        Serialized NDJSON line with a trailing newline.
+        Serialized JSONL line with a trailing newline.
     """
     for row in rows:
         yield encode_ndjson_line(row)

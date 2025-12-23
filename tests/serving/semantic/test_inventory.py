@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 def test_inventory_load_and_lookup(tmp_path: Path) -> None:
     """Load a schema manifest and access schemas by table_key."""
     manifest = {
-        "version": "v1",
-        "tables": [
+        "version": "v2",
+        "tables": [],
+        "views": [
             {
                 "schema": "docs",
                 "name": "v_demo",
@@ -43,16 +44,8 @@ def test_inventory_load_and_lookup(tmp_path: Path) -> None:
 def test_inventory_summary_counts_docs_views(tmp_path: Path) -> None:
     """Summary differentiates docs.v_* views from other tables."""
     manifest = {
-        "version": "v1",
+        "version": "v2",
         "tables": [
-            {
-                "schema": "docs",
-                "name": "v_demo",
-                "table_key": "docs.v_demo",
-                "primary_key": [],
-                "indexes": [],
-                "columns": [{"name": "id", "type": "INTEGER", "nullable": False}],
-            },
             {
                 "schema": "analytics",
                 "name": "function_metrics",
@@ -60,7 +53,17 @@ def test_inventory_summary_counts_docs_views(tmp_path: Path) -> None:
                 "primary_key": [],
                 "indexes": [],
                 "columns": [{"name": "id", "type": "INTEGER", "nullable": False}],
-            },
+            }
+        ],
+        "views": [
+            {
+                "schema": "docs",
+                "name": "v_demo",
+                "table_key": "docs.v_demo",
+                "primary_key": [],
+                "indexes": [],
+                "columns": [{"name": "id", "type": "INTEGER", "nullable": False}],
+            }
         ],
     }
     path = tmp_path / "schema_manifest.json"

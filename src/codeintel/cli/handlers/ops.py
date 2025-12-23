@@ -186,8 +186,6 @@ def _metadata_to_dict(metadata: object) -> dict[str, object]:
         "family": metadata.family,
         "freshness_sla": metadata.freshness_sla,
         "retention_policy": metadata.retention_policy,
-        "deprecated": metadata.deprecated if metadata.deprecated else None,
-        "deprecation_message": metadata.deprecation_message,
     }
     result = {k: v for k, v in field_map.items() if v}
 

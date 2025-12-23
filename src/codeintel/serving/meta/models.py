@@ -202,7 +202,7 @@ DEFAULT_RESOURCE_TEMPLATES: tuple[ResourceTemplate, ...] = (
     ),
     ResourceTemplate(
         uri=EXPORT_LINES_URI_TEMPLATE,
-        description="Chunked line retrieval for ndjson exports (offset/limit lines).",
+        description="Chunked line retrieval for jsonl exports (offset/limit lines).",
         mime_type="text/plain",
         tags=("exports", "chunk"),
     ),

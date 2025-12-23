@@ -72,8 +72,6 @@ def _write_registry(path: Path) -> None:
                 "joins": [],
                 "defaults": {"limit": 200, "order_by": ["id"]},
                 "sensitivity": "internal",
-                "deprecated": False,
-                "replaced_by": None,
             }
         ],
     )
@@ -233,7 +231,7 @@ async def test_mcp_export_task_mode_completes(tmp_path: Path) -> None:
         async with Client(mcp) as client:
             task_or_result = await client.call_tool(
                 "semantic_export",
-                {"request": {"view_id": "demo.view", "export_format": "ndjson", "limit": 10}},
+                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 10}},
                 task=True,
             )
 
@@ -278,7 +276,7 @@ async def test_mcp_export_task_cancellation_cleans_up_artifacts(tmp_path: Path) 
         async with Client(mcp) as client:
             tool_task = await client.call_tool(
                 "semantic_export",
-                {"request": {"view_id": "demo.view", "export_format": "ndjson", "limit": 2500}},
+                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 2500}},
                 task=True,
             )
             if not hasattr(tool_task, "cancel"):

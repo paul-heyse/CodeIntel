@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table
 
 if TYPE_CHECKING:
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
         AnalyticsTestProfileRow as ProfileRowModel,
     )
 
+get_schema_service()
 _COLUMNS_BY_TABLE = load_columns_by_table()
 
 FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])

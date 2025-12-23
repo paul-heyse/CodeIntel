@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
 
 _MIME_JSON = mime_type_for_export_format("json")
-_MIME_NDJSON = mime_type_for_export_format("ndjson")
+_MIME_JSONL = mime_type_for_export_format("jsonl")
 _MIME_PARQUET = mime_type_for_export_format("parquet")
 _MIME_ARROW = mime_type_for_export_format("arrow")
 
@@ -278,7 +278,7 @@ def _register_export_chunk_resources(
         if not supports_line_chunks(meta.format):
             raise ExportChunkRequestError
         artifact = store.get(export_id)
-        if artifact.mime_type != _MIME_NDJSON:
+        if artifact.mime_type != _MIME_JSONL:
             raise ExportChunkRequestError
         return _read_text_chunk(artifact.path, offset=offset, limit=limit)
 
