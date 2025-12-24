@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.settings import ServingSettings
+from tests._helpers.assertions import assert_http_success
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.serving_snapshots import setup_demo_snapshot
 
@@ -26,13 +27,11 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
     app = create_serving_app(settings=settings, mount_mcp=False)
 
     with TestClient(app) as client:
-        views = client.get("/v1/semantic/views")
-        expect_equal(views.status_code, status.HTTP_200_OK)
-        expect_true(any(v["id"] == "demo.view" for v in views.json()["views"]))
+        views = assert_http_success(client, "/v1/semantic/views")
+        expect_true(any(v["id"] == "demo.view" for v in views["views"]))
 
-        desc = client.get("/v1/semantic/views/demo.view")
-        expect_equal(desc.status_code, status.HTTP_200_OK)
-        expect_equal(desc.json()["table_key"], "docs.v_demo")
+        desc = assert_http_success(client, "/v1/semantic/views/demo.view")
+        expect_equal(desc["table_key"], "docs.v_demo")
 
         query = client.post(
             "/v1/semantic/query",

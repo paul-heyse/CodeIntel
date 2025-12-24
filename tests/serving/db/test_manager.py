@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -13,6 +12,7 @@ import pytest
 
 from codeintel.config.primitives import BuildPaths
 from codeintel.serving.db.manager import ServingDBManager
+from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
@@ -59,18 +59,18 @@ def _write_pointer(
     run_id: str,
     paths: _PointerPaths,
 ) -> None:
-    payload = {
-        "db_path": str(db_path),
-        "semantic_registry_path": str(paths.semantic_registry_path),
-        "schema_manifest_path": str(paths.schema_manifest_path),
-        "buildspec_path": str(paths.buildspec_path),
-        "repo": "demo/repo",
-        "commit": "deadbeef",
-        "run_id": run_id,
-        "published_at": datetime.now(tz=UTC).isoformat(),
-        "semantic_layer_version": "v123",
-    }
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    pointer = ServingSnapshotPointer(
+        db_path=db_path,
+        semantic_registry_path=paths.semantic_registry_path,
+        schema_manifest_path=paths.schema_manifest_path,
+        buildspec_path=paths.buildspec_path,
+        repo="demo/repo",
+        commit="deadbeef",
+        run_id=run_id,
+        published_at=datetime.now(tz=UTC),
+        semantic_layer_version="v123",
+    )
+    path.write_text(pointer.to_json(), encoding="utf-8")
 
 
 def _make_db(path: Path, *, value: int) -> None:

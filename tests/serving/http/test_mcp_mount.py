@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import duckdb
 from fastapi.testclient import TestClient
 
+from codeintel.config.primitives import BuildPaths
+from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
 )
+from tests._helpers.gateway import GatewayFactory
+from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,47 +24,31 @@ if TYPE_CHECKING:
 
 def _write_pointer(tmp_path: Path, *, repo: str, commit: str) -> None:
     db_path = tmp_path / "codeintel.duckdb"
-    duckdb.connect(str(db_path)).close()
+    gateway = GatewayFactory().file_backed(db_path).open()
+    gateway.close()
 
-    semantic_registry_path = tmp_path / "semantic_registry.json"
-    semantic_registry_payload = {"version": "v1", "views": []}
-    semantic_registry_path.write_text(
-        json.dumps(semantic_registry_payload, indent=2, sort_keys=True),
-        encoding="utf-8",
+    artifacts = HarnessArtifacts(
+        repo_root=tmp_path,
+        paths=BuildPaths.from_explicit(build_dir=tmp_path),
     )
-    schema_manifest_path = tmp_path / "schema_manifest.json"
-    schema_manifest_payload = {
-        "version": "v2",
-        "tables": [],
-        "views": [],
-        "artifacts": [],
-    }
-    schema_manifest_path.write_text(
-        json.dumps(schema_manifest_payload, indent=2, sort_keys=True),
-        encoding="utf-8",
+    semantic_registry_path = artifacts.write_semantic_registry(
+        path=tmp_path / "semantic_registry.json"
     )
-    buildspec_path = tmp_path / "buildspec.json"
-    buildspec_payload = {"spec_version": 1, "targets": [], "datasets": []}
-    buildspec_path.write_text(
-        json.dumps(buildspec_payload, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    schema_manifest_path = artifacts.write_schema_manifest(path=tmp_path / "schema_manifest.json")
+    buildspec_path = artifacts.write_buildspec(path=tmp_path / "buildspec.json")
 
-    payload = {
-        "db_path": str(db_path),
-        "semantic_registry_path": str(semantic_registry_path),
-        "schema_manifest_path": str(schema_manifest_path),
-        "buildspec_path": str(buildspec_path),
-        "repo": repo,
-        "commit": commit,
-        "run_id": "run-1",
-        "published_at": datetime.now(tz=UTC).isoformat(),
-        "semantic_layer_version": "v1",
-    }
-    (tmp_path / "current.json").write_text(
-        json.dumps(payload, indent=2, sort_keys=True),
-        encoding="utf-8",
+    pointer = ServingSnapshotPointer(
+        db_path=db_path,
+        semantic_registry_path=semantic_registry_path,
+        schema_manifest_path=schema_manifest_path,
+        buildspec_path=buildspec_path,
+        repo=repo,
+        commit=commit,
+        run_id="run-1",
+        published_at=datetime.now(tz=UTC),
+        semantic_layer_version="v1",
     )
+    (tmp_path / "current.json").write_text(pointer.to_json(), encoding="utf-8")
 
 
 def test_mcp_health_at_mcp_path(tmp_path: Path) -> None:

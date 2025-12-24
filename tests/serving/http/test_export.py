@@ -6,11 +6,11 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import duckdb
 from fastapi import status
 from fastapi.testclient import TestClient
 
 from codeintel.config.primitives import BuildPaths
+from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import (
@@ -18,6 +18,8 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_in,
     expect_true,
 )
+from tests._helpers.assertions.http_responses import assert_problem_detail_response
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 
 if TYPE_CHECKING:
@@ -26,18 +28,24 @@ if TYPE_CHECKING:
 
 def _make_db(db_path: Path) -> None:
     """Create test database with sample data."""
-    con = duckdb.connect(str(db_path))
-    con.execute("CREATE SCHEMA docs")
-    con.execute("CREATE TABLE docs.v_export_test (id INTEGER, name VARCHAR, value DOUBLE)")
-    con.execute("""
-        INSERT INTO docs.v_export_test VALUES
-        (1, 'alpha', 1.1),
-        (2, 'beta', 2.2),
-        (3, 'gamma', 3.3),
-        (4, 'delta', 4.4),
-        (5, 'epsilon', 5.5)
-    """)
-    con.close()
+    gateway = GatewayFactory().file_backed(db_path).open()
+    try:
+        gateway.con.execute("CREATE SCHEMA docs")
+        gateway.con.execute(
+            "CREATE TABLE docs.v_export_test (id INTEGER, name VARCHAR, value DOUBLE)"
+        )
+        gateway.con.execute(
+            """
+            INSERT INTO docs.v_export_test VALUES
+            (1, 'alpha', 1.1),
+            (2, 'beta', 2.2),
+            (3, 'gamma', 3.3),
+            (4, 'delta', 4.4),
+            (5, 'epsilon', 5.5)
+            """
+        )
+    finally:
+        gateway.close()
 
 
 def _write_pointer(
@@ -49,18 +57,18 @@ def _write_pointer(
     buildspec_path: Path,
 ) -> None:
     """Write serving snapshot pointer."""
-    pointer = {
-        "db_path": str(db_path),
-        "semantic_registry_path": str(registry_path),
-        "schema_manifest_path": str(manifest_path),
-        "buildspec_path": str(buildspec_path),
-        "repo": "test/export",
-        "commit": "abc123",
-        "run_id": "run-export-1",
-        "published_at": datetime.now(tz=UTC).isoformat(),
-        "semantic_layer_version": "v100",
-    }
-    path.write_text(json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8")
+    pointer = ServingSnapshotPointer(
+        db_path=db_path,
+        semantic_registry_path=registry_path,
+        schema_manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+        repo="test/export",
+        commit="abc123",
+        run_id="run-export-1",
+        published_at=datetime.now(tz=UTC),
+        semantic_layer_version="v100",
+    )
+    path.write_text(pointer.to_json(), encoding="utf-8")
 
 
 def _setup_serving_env(tmp_path: Path) -> ServingSettings:
@@ -269,7 +277,7 @@ def test_export_view_not_found(tmp_path: Path) -> None:
             json={"view_id": "nonexistent.view", "format": "json"},
         )
 
-        expect_equal(response.status_code, status.HTTP_404_NOT_FOUND)
+        assert_problem_detail_response(response, status_code=status.HTTP_404_NOT_FOUND)
         body = response.json()
         expect_in("not found", body.get("title", "").lower())
 
@@ -289,7 +297,7 @@ def test_export_invalid_filter_column(tmp_path: Path) -> None:
             },
         )
 
-        expect_equal(response.status_code, status.HTTP_400_BAD_REQUEST)
+        assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
 def test_export_respects_api_key(tmp_path: Path) -> None:
