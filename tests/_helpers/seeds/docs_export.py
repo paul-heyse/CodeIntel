@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     CFGBlockRow,
@@ -29,6 +29,7 @@ from tests._helpers.builders import (
     SymbolEdgeOptions,
     TestCatalogRow,
     TestCoverageEdgeRow,
+    dataclass_row,
     insert_rows,
     insert_symbol_use_edges,
     make_symbol_use_edge_row,
@@ -166,7 +167,8 @@ class DocsExportPack:
     ) -> None:
         """Seed the core.repo_map table."""
         rows = [
-            RepoMapRow(
+            dataclass_row(
+                RepoMapRow,
                 repo=repo,
                 commit=commit,
                 modules=module_map,
@@ -184,7 +186,7 @@ class DocsExportPack:
     ) -> None:
         """Seed the core.modules table."""
         rows = [
-            ModuleRow(module=module, path=path, repo=repo, commit=commit)
+            dataclass_row(ModuleRow, module=module, path=path, repo=repo, commit=commit)
             for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
@@ -193,7 +195,8 @@ class DocsExportPack:
     def _seed_goids(ctx: TestContext, repo: str, commit: str, goid: int, now: datetime) -> None:
         """Seed the core.goids table."""
         rows = [
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=goid,
                 urn=DEFAULT_URN,
                 repo=repo,
@@ -212,7 +215,8 @@ class DocsExportPack:
     def _seed_goid_crosswalk(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the core.goid_crosswalk table."""
         rows = [
-            GoidCrosswalkRow(
+            dataclass_row(
+                GoidCrosswalkRow,
                 repo=repo,
                 commit=commit,
                 goid=DEFAULT_URN,
@@ -245,7 +249,8 @@ class DocsExportPack:
     def _seed_call_graph_nodes(ctx: TestContext, goid: int) -> None:
         """Seed the graph.call_graph_nodes table."""
         rows = [
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=goid,
                 language="python",
                 kind="function",
@@ -260,7 +265,8 @@ class DocsExportPack:
     def _seed_call_graph_edges(ctx: TestContext, repo: str, commit: str, goid: int) -> None:
         """Seed the graph.call_graph_edges table."""
         rows = [
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=repo,
                 commit=commit,
                 caller_goid_h128=goid,
@@ -280,7 +286,8 @@ class DocsExportPack:
     def _seed_cfg_blocks(ctx: TestContext, goid: int) -> None:
         """Seed the graph.cfg_blocks table."""
         rows = [
-            CFGBlockRow(
+            dataclass_row(
+                CFGBlockRow,
                 function_goid_h128=goid,
                 block_idx=0,
                 block_id=f"{goid}:block0",
@@ -300,7 +307,8 @@ class DocsExportPack:
     def _seed_import_graph_edges(ctx: TestContext, repo: str, commit: str) -> None:
         """Seed the graph.import_graph_edges table."""
         rows = [
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=repo,
                 commit=commit,
                 src_module=DEFAULT_MODULE,
@@ -335,7 +343,8 @@ class DocsExportPack:
     def _seed_docstrings(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the analytics.docstrings table."""
         rows = [
-            DocstringRow(
+            dataclass_row(
+                DocstringRow,
                 repo=repo,
                 commit=commit,
                 rel_path=DEFAULT_PATH,
@@ -363,7 +372,8 @@ class DocsExportPack:
     ) -> None:
         """Seed the analytics.function_metrics table."""
         rows = [
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=goid,
                 urn=DEFAULT_URN,
                 repo=repo,
@@ -403,7 +413,8 @@ class DocsExportPack:
     ) -> None:
         """Seed the analytics.function_types table."""
         rows = [
-            FunctionTypesRow(
+            dataclass_row(
+                FunctionTypesRow,
                 function_goid_h128=goid,
                 urn=DEFAULT_URN,
                 repo=repo,
@@ -439,7 +450,8 @@ class DocsExportPack:
     ) -> None:
         """Seed the coverage.functions table."""
         rows = [
-            CoverageFunctionRow(
+            dataclass_row(
+                CoverageFunctionRow,
                 function_goid_h128=goid,
                 urn=DEFAULT_URN,
                 repo=repo,
@@ -464,7 +476,8 @@ class DocsExportPack:
     def _seed_risk_factors(ctx: TestContext, repo: str, commit: str, goid: int) -> None:
         """Seed the analytics.goid_risk_factors table."""
         rows = [
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=goid,
                 repo=repo,
                 commit=commit,
@@ -482,7 +495,8 @@ class DocsExportPack:
     def _seed_test_catalog(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the analytics.test_catalog table."""
         rows = [
-            TestCatalogRow(
+            dataclass_row(
+                TestCatalogRow,
                 test_id="t1",
                 repo=repo,
                 commit=commit,
@@ -500,7 +514,8 @@ class DocsExportPack:
     ) -> None:
         """Seed the analytics.test_coverage_edges table."""
         rows = [
-            TestCoverageEdgeRow(
+            dataclass_row(
+                TestCoverageEdgeRow,
                 test_id="t1",
                 function_goid_h128=goid,
                 urn=DEFAULT_URN,

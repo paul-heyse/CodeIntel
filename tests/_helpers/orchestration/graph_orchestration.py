@@ -18,15 +18,15 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.graphs.engine import GraphKind, NxGraphEngine
 from codeintel.storage.query_results import coerce_int
 from tests._helpers.assertions import ModulesAssertions, assert_target_ok
-from tests._helpers.builders import (
+from tests._helpers.configs.graph_config import SpanSnapshot, SpanTestEnv
+from tests._helpers.context import TestContext
+from tests._helpers.fixtures.rows import (
     ModuleRow,
     RepoMapRow,
     TestCatalogRow,
     insert_rows,
     insert_symbol_use_edges,
 )
-from tests._helpers.configs.graph_config import SpanSnapshot, SpanTestEnv
-from tests._helpers.context import TestContext
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree

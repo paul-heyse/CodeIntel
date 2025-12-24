@@ -38,8 +38,8 @@ from tests._helpers.assertions import (
     module_map_from_path_map,
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
-from tests._helpers.builders import ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.fakes.graph_runtime import build_graph_engine_double
+from tests._helpers.fixtures.rows import ModuleRow, RepoMapRow, insert_rows
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

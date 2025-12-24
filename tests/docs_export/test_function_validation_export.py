@@ -10,7 +10,7 @@ import pytest
 
 from codeintel.build.exports import export_all_jsonl, export_all_parquet
 from codeintel.core.config.settings import ExportAuditSettings
-from tests._helpers.builders import FunctionValidationRow, insert_rows
+from tests._helpers.fixtures.rows import FunctionValidationRow, insert_rows
 
 if TYPE_CHECKING:
     from pathlib import Path

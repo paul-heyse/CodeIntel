@@ -11,7 +11,7 @@ from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
 from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.graphs.engine import NxGraphEngine
 from codeintel.graphs.validation import warn_graph_structure
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
     ModuleRow,

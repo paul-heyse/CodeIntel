@@ -76,6 +76,7 @@ class ModuleRow:
     path: str
     repo: str
     commit: str
+    language: str = "python"
     tags: str = "[]"
     owners: str = "[]"
 
@@ -92,7 +93,7 @@ class ModuleRow:
             self.path,
             self.repo,
             self.commit,
-            "python",
+            self.language,
             self.tags,
             self.owners,
         )

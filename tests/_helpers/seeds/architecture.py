@@ -13,23 +13,12 @@ from codeintel.analytics.utilities.datasets import (
 )
 from codeintel.analytics.utilities.persistence import DeleteScope
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
-)
-from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
-)
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.configs import CoverageSeedConfig
+from tests._helpers.fixtures.rows import RowFactory
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration import seed_coverage_rows
@@ -322,7 +311,8 @@ def seed_architecture(
         gateway,
         function_contract,
         [
-            GraphMetricsFunctionsRow(
+            RowFactory.row_for(
+                "analytics.graph_metrics_functions",
                 repo=repo,
                 commit=commit,
                 function_goid_h128=1,
@@ -346,7 +336,8 @@ def seed_architecture(
         gateway,
         module_contract,
         [
-            GraphMetricsModulesRow(
+            RowFactory.row_for(
+                "analytics.graph_metrics_modules",
                 repo=repo,
                 commit=commit,
                 module="pkg.mod",
@@ -372,7 +363,8 @@ def seed_architecture(
         gateway,
         function_ext_contract,
         [
-            GraphMetricsFunctionsExtRow(
+            RowFactory.row_for(
+                "analytics.graph_metrics_functions_ext",
                 repo=repo,
                 commit=commit,
                 function_goid_h128=1,
@@ -403,7 +395,8 @@ def seed_architecture(
         gateway,
         module_ext_contract,
         [
-            GraphMetricsModulesExtRow(
+            RowFactory.row_for(
+                "analytics.graph_metrics_modules_ext",
                 repo=repo,
                 commit=commit,
                 module="pkg.mod",

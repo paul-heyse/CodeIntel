@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import CoverageLineRow, insert_rows
+from tests._helpers.fixtures.coverage import CoverageFixtureFactory, CoverageFixtureSpec
 from tests._helpers.fixtures.repos import MOD_A_PATH, MOD_B_PATH, MOD_C_PATH, MOD_UTIL_PATH
 from tests._helpers.seeds.core import (
     CORE_PACK,
@@ -81,61 +81,23 @@ class CoverageLinesPack:
         ctx
             Test context to seed.
         """
-        rows: list[CoverageLineRow] = []
-
-        rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_A, self.full_coverage_ratio))
-        rows.extend(
-            self._coverage_lines_for_function(ctx, GOID_FUNC_B, self.partial_coverage_ratio)
-        )
-        rows.extend(self._coverage_lines_for_function(ctx, GOID_FUNC_C, self.full_coverage_ratio))
+        line_coverage: dict[int, float] = {
+            GOID_FUNC_A: self.full_coverage_ratio,
+            GOID_FUNC_B: self.partial_coverage_ratio,
+            GOID_FUNC_C: self.full_coverage_ratio,
+        }
         if self.include_uncovered_function:
-            rows.extend(
-                self._coverage_lines_for_function(ctx, GOID_HELPER, self.partial_coverage_ratio)
-            )
+            line_coverage[GOID_HELPER] = self.partial_coverage_ratio
 
-        insert_rows(ctx.gateway, rows)
-
-    @staticmethod
-    def _coverage_lines_for_function(
-        ctx: TestContext, goid: int, coverage_ratio: float
-    ) -> list[CoverageLineRow]:
-        """Create coverage line rows for a function's span.
-
-        Parameters
-        ----------
-        ctx
-            Test context for repo/commit.
-        goid
-            Canonical GOID for the target function (matches CORE_PACK).
-        coverage_ratio
-            Ratio of lines that should be marked as covered.
-
-        Returns
-        -------
-        list[CoverageLineRow]
-            List of coverage line rows.
-        """
-        rel_path, start_line, end_line = FUNCTION_SPANS[goid]
-        total_lines = max(0, end_line - start_line + 1)
-        covered_count = int(total_lines * coverage_ratio)
-
-        rows: list[CoverageLineRow] = []
-        for idx, line in enumerate(range(start_line, end_line + 1)):
-            is_covered = idx < covered_count
-            rows.append(
-                CoverageLineRow(
-                    repo=ctx.repo,
-                    commit=ctx.commit,
-                    rel_path=rel_path,
-                    line=line,
-                    is_executable=True,
-                    is_covered=is_covered,
-                    hits=1 if is_covered else 0,
-                    context_count=0,
-                )
-            )
-
-        return rows
+        spec = CoverageFixtureSpec(
+            include_catalog=False,
+            include_edges=False,
+            include_functions=False,
+            include_lines=True,
+            line_spans=FUNCTION_SPANS,
+            line_coverage=line_coverage,
+        )
+        CoverageFixtureFactory.seed(ctx, spec)
 
 
 COVERAGE_LINES_PACK = CoverageLinesPack()

@@ -22,7 +22,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.builders import ModuleRow, insert_rows
+from tests._helpers.fixtures.rows import ModuleRow, insert_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

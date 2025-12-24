@@ -13,13 +13,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     CFGBlockRow,
     CFGEdgeRow,
     DFGEdgeRow,
     ImportGraphEdgeRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.seeds.core import (
@@ -116,7 +117,8 @@ class GraphPack:
             Test context with gateway.
         """
         nodes = [
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=GOID_FUNC_A,
                 language="python",
                 kind="function",
@@ -124,7 +126,8 @@ class GraphPack:
                 is_public=True,
                 rel_path=MOD_A_PATH,
             ),
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=GOID_FUNC_B,
                 language="python",
                 kind="function",
@@ -132,7 +135,8 @@ class GraphPack:
                 is_public=True,
                 rel_path=MOD_B_PATH,
             ),
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=GOID_FUNC_C,
                 language="python",
                 kind="function",
@@ -140,7 +144,8 @@ class GraphPack:
                 is_public=False,
                 rel_path=MOD_A_PATH,
             ),
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=GOID_HELPER,
                 language="python",
                 kind="function",
@@ -152,7 +157,8 @@ class GraphPack:
         insert_rows(ctx.gateway, nodes)
 
         edges = [
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 caller_goid_h128=GOID_FUNC_A,
@@ -165,7 +171,8 @@ class GraphPack:
                 resolved_via="static",
                 confidence=1.0,
             ),
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 caller_goid_h128=GOID_FUNC_A,
@@ -178,7 +185,8 @@ class GraphPack:
                 resolved_via="static",
                 confidence=1.0,
             ),
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 caller_goid_h128=GOID_FUNC_B,
@@ -204,7 +212,8 @@ class GraphPack:
             Test context with gateway.
         """
         edges = [
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 src_module=MOD_A_FQN,
@@ -213,7 +222,8 @@ class GraphPack:
                 dst_fan_in=1,
                 cycle_group=0,
             ),
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 src_module=MOD_B_FQN,
@@ -222,7 +232,8 @@ class GraphPack:
                 dst_fan_in=1,
                 cycle_group=0,
             ),
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 src_module=MOD_B_FQN,
@@ -244,7 +255,8 @@ class GraphPack:
             Test context with gateway.
         """
         blocks = [
-            CFGBlockRow(
+            dataclass_row(
+                CFGBlockRow,
                 function_goid_h128=GOID_FUNC_A,
                 block_idx=0,
                 block_id=f"{GOID_FUNC_A}:{CFG_ENTRY}",
@@ -257,7 +269,8 @@ class GraphPack:
                 in_degree=0,
                 out_degree=1,
             ),
-            CFGBlockRow(
+            dataclass_row(
+                CFGBlockRow,
                 function_goid_h128=GOID_FUNC_A,
                 block_idx=1,
                 block_id=f"{GOID_FUNC_A}:{CFG_BODY}",
@@ -270,7 +283,8 @@ class GraphPack:
                 in_degree=1,
                 out_degree=1,
             ),
-            CFGBlockRow(
+            dataclass_row(
+                CFGBlockRow,
                 function_goid_h128=GOID_FUNC_A,
                 block_idx=2,
                 block_id=f"{GOID_FUNC_A}:{CFG_EXIT}",
@@ -287,13 +301,15 @@ class GraphPack:
         insert_rows(ctx.gateway, blocks)
 
         edges = [
-            CFGEdgeRow(
+            dataclass_row(
+                CFGEdgeRow,
                 function_goid_h128=GOID_FUNC_A,
                 src_block_id=f"{GOID_FUNC_A}:{CFG_ENTRY}",
                 dst_block_id=f"{GOID_FUNC_A}:{CFG_BODY}",
                 edge_kind="fallthrough",
             ),
-            CFGEdgeRow(
+            dataclass_row(
+                CFGEdgeRow,
                 function_goid_h128=GOID_FUNC_A,
                 src_block_id=f"{GOID_FUNC_A}:{CFG_BODY}",
                 dst_block_id=f"{GOID_FUNC_A}:{CFG_EXIT}",
@@ -312,7 +328,8 @@ class GraphPack:
             Test context with gateway.
         """
         edges = [
-            DFGEdgeRow(
+            dataclass_row(
+                DFGEdgeRow,
                 function_goid_h128=GOID_FUNC_A,
                 src_block_id=f"{GOID_FUNC_A}:{CFG_ENTRY}",
                 dst_block_id=f"{GOID_FUNC_A}:{CFG_BODY}",
@@ -322,7 +339,8 @@ class GraphPack:
                 via_phi=False,
                 use_kind="read",
             ),
-            DFGEdgeRow(
+            dataclass_row(
+                DFGEdgeRow,
                 function_goid_h128=GOID_FUNC_A,
                 src_block_id=f"{GOID_FUNC_A}:{CFG_BODY}",
                 dst_block_id=f"{GOID_FUNC_A}:{CFG_EXIT}",

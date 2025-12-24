@@ -15,8 +15,8 @@ from codeintel.config import SnapshotInit
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, TestCatalogRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
+from tests._helpers.fixtures.rows import GoidRow, ModuleRow, RepoMapRow, TestCatalogRow, insert_rows
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
 

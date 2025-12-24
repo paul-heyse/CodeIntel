@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import FunctionTypesRow, insert_rows
+from tests._helpers.fixtures.rows import FunctionTypesRow, dataclass_row, insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,
@@ -100,7 +100,8 @@ class FunctionTypesPack:
         if self.include_fully_typed:
             # func_a: fully typed with 2 parameters
             rows.append(
-                FunctionTypesRow(
+                dataclass_row(
+                    FunctionTypesRow,
                     function_goid_h128=GOID_FUNC_A,
                     urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_A_PATH}#func_a",
                     repo=ctx.repo,
@@ -131,7 +132,8 @@ class FunctionTypesPack:
 
             # helper: fully typed with 1 parameter
             rows.append(
-                FunctionTypesRow(
+                dataclass_row(
+                    FunctionTypesRow,
                     function_goid_h128=GOID_HELPER,
                     urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_UTIL_PATH}#helper",
                     repo=ctx.repo,
@@ -163,7 +165,8 @@ class FunctionTypesPack:
         if self.include_partial_typed:
             # func_b: partially typed - has return but missing param annotation
             rows.append(
-                FunctionTypesRow(
+                dataclass_row(
+                    FunctionTypesRow,
                     function_goid_h128=GOID_FUNC_B,
                     urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_B_PATH}#func_b",
                     repo=ctx.repo,
@@ -195,7 +198,8 @@ class FunctionTypesPack:
         if self.include_untyped:
             # func_c: untyped - generator with no annotations
             rows.append(
-                FunctionTypesRow(
+                dataclass_row(
+                    FunctionTypesRow,
                     function_goid_h128=GOID_FUNC_C,
                     urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_C_PATH}#func_c",
                     repo=ctx.repo,

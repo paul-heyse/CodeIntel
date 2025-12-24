@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     SymbolEdgeOptions,
     insert_symbol_use_edges,
     make_symbol_use_edge_row,

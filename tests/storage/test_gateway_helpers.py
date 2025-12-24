@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CoverageLineRow,
     insert_rows,
 )

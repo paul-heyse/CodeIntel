@@ -18,10 +18,9 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
 from tests._helpers import TestScenario
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
-from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
 from tests._helpers.fakes.graph_runtime import build_graph_engine_double
-from tests._helpers.fixtures.rows import function_meta
+from tests._helpers.fixtures.rows import CallGraphEdgeRow, function_meta, insert_rows
 
 if TYPE_CHECKING:
     from pathlib import Path

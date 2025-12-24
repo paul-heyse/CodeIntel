@@ -20,7 +20,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     GoidRow,

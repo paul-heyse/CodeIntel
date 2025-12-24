@@ -20,12 +20,12 @@ from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.env_options import EnvOptions, GatewayOptions
+from tests._helpers.fixtures.coverage import COVERAGE_PACK
 from tests._helpers.fixtures.repos import write_canonical_repo
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.schemas import ensure_schema_service
 from tests._helpers.seeds.core import CORE_PACK
-from tests._helpers.seeds.coverage import COVERAGE_PACK
 from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
 from tests._helpers.seeds.graph import GRAPH_PACK
 
@@ -607,6 +607,5 @@ __all__ = [
     "build_test_gateway",
     "coverage_and_graph_context",
     "coverage_ready_context",
-    "create_test_context",
     "graph_ready_context",
 ]

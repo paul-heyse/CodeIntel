@@ -12,13 +12,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     FunctionMetricsRow,
     FunctionValidationRow,
     RiskFactorRow,
     TestCatalogRow,
     TestCoverageEdgeRow,
+    dataclass_row,
     insert_rows,
 )
 
@@ -128,7 +129,8 @@ class McpPack:
     def _seed_risk_factors(ctx: TestContext, repo: str, commit: str) -> None:
         """Seed the analytics.goid_risk_factors table."""
         rows = [
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=DEFAULT_GOID,
                 repo=repo,
                 commit=commit,
@@ -146,7 +148,8 @@ class McpPack:
     def _seed_function_metrics(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the analytics.function_metrics table."""
         rows = [
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=DEFAULT_GOID,
                 urn=DEFAULT_URN,
                 repo=repo,
@@ -184,7 +187,8 @@ class McpPack:
     def _seed_function_validation(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the analytics.function_validation table."""
         rows = [
-            FunctionValidationRow(
+            dataclass_row(
+                FunctionValidationRow,
                 repo=repo,
                 commit=commit,
                 function_goid_h128=DEFAULT_GOID,
@@ -201,7 +205,8 @@ class McpPack:
     def _seed_call_graph_edges(ctx: TestContext, repo: str, commit: str) -> None:
         """Seed the graph.call_graph_edges table."""
         rows = [
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=repo,
                 commit=commit,
                 caller_goid_h128=DEFAULT_GOID,
@@ -214,7 +219,8 @@ class McpPack:
                 resolved_via="local_name",
                 confidence=1.0,
             ),
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=repo,
                 commit=commit,
                 caller_goid_h128=CALLER_GOID,
@@ -234,7 +240,8 @@ class McpPack:
     def _seed_test_catalog(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the analytics.test_catalog table."""
         rows = [
-            TestCatalogRow(
+            dataclass_row(
+                TestCatalogRow,
                 test_id="t1",
                 repo=repo,
                 commit=commit,
@@ -250,7 +257,8 @@ class McpPack:
     def _seed_test_coverage_edges(ctx: TestContext, repo: str, commit: str, now: datetime) -> None:
         """Seed the analytics.test_coverage_edges table."""
         rows = [
-            TestCoverageEdgeRow(
+            dataclass_row(
+                TestCoverageEdgeRow,
                 test_id="t1",
                 function_goid_h128=DEFAULT_GOID,
                 urn=DEFAULT_URN,

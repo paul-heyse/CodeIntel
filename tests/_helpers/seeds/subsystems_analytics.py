@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     FunctionMetricsRow,
     ImportGraphEdgeRow,
@@ -24,6 +24,7 @@ from tests._helpers.builders import (
     SubsystemModuleRow,
     SubsystemRow,
     SymbolUseEdgeRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.seeds.core import (
@@ -147,21 +148,24 @@ class SubsystemAnalyticsPack:
             Test context with gateway.
         """
         rows = [
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module=MOD_API_FQN,
                 path=MOD_API_PATH,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 tags='["api"]',
             ),
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module=MOD_CORE_FQN,
                 path=MOD_CORE_PATH,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 tags='["api"]',
             ),
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module=MOD_MISC_FQN,
                 path=MOD_MISC_PATH,
                 repo=ctx.repo,
@@ -180,7 +184,8 @@ class SubsystemAnalyticsPack:
             Test context with gateway.
         """
         rows = [
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 src_module=MOD_API_FQN,
@@ -189,7 +194,8 @@ class SubsystemAnalyticsPack:
                 dst_fan_in=1,
                 cycle_group=0,
             ),
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 src_module=MOD_CORE_FQN,
@@ -211,7 +217,8 @@ class SubsystemAnalyticsPack:
             Test context with gateway.
         """
         rows = [
-            SymbolUseEdgeRow(
+            dataclass_row(
+                SymbolUseEdgeRow,
                 symbol="sym_core",
                 def_path=MOD_CORE_PATH,
                 use_path=MOD_API_PATH,
@@ -231,7 +238,8 @@ class SubsystemAnalyticsPack:
             Test context with gateway.
         """
         rows = [
-            ConfigValueRow(
+            dataclass_row(
+                ConfigValueRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 config_path="cfg/app.yaml",
@@ -256,7 +264,8 @@ class SubsystemAnalyticsPack:
             Timestamp for created_at fields.
         """
         rows = [
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=GOID_API_HANDLER,
                 urn=f"goid:{ctx.repo}#python:function:{MOD_API_FQN}.handler",
                 repo=ctx.repo,
@@ -287,7 +296,8 @@ class SubsystemAnalyticsPack:
                 complexity_bucket="low",
                 created_at=now,
             ),
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=GOID_CORE_SERVICE,
                 urn=f"goid:{ctx.repo}#python:function:{MOD_CORE_FQN}.service",
                 repo=ctx.repo,
@@ -331,7 +341,8 @@ class SubsystemAnalyticsPack:
             Test context with gateway.
         """
         rows = [
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=GOID_API_HANDLER,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -342,7 +353,8 @@ class SubsystemAnalyticsPack:
                 fan_out_count=1,
                 has_tests=True,
             ),
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=GOID_CORE_SERVICE,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -366,14 +378,16 @@ class SubsystemAnalyticsPack:
             Test context with gateway.
         """
         rows = [
-            SubsystemModuleRow(
+            dataclass_row(
+                SubsystemModuleRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_API,
                 module=MOD_API_FQN,
                 role="entrypoint",
             ),
-            SubsystemModuleRow(
+            dataclass_row(
+                SubsystemModuleRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_CORE_ANALYTICS,
@@ -395,7 +409,8 @@ class SubsystemAnalyticsPack:
             Timestamp for created_at fields.
         """
         rows = [
-            SubsystemRow(
+            dataclass_row(
+                SubsystemRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_API,
@@ -415,7 +430,8 @@ class SubsystemAnalyticsPack:
                 risk_level="low",
                 created_at=now,
             ),
-            SubsystemRow(
+            dataclass_row(
+                SubsystemRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_CORE_ANALYTICS,

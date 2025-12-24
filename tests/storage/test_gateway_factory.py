@@ -24,7 +24,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.builders import ModuleRow, insert_rows
+from tests._helpers.fixtures.rows import ModuleRow, insert_rows
 
 
 def test_storage_config_creates_with_defaults() -> None:

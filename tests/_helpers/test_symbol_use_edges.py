@@ -13,7 +13,7 @@ from tests._helpers.assertions import (
     expect_false,
     expect_true,
 )
-from tests._helpers.builders import insert_symbol_use_edges, make_symbol_use_edge_row
+from tests._helpers.fixtures.rows import insert_symbol_use_edges, make_symbol_use_edge_row
 from tests._helpers.seeds.core import MOD_A_FQN, MOD_A_PATH, MOD_B_FQN, MOD_B_PATH
 
 if TYPE_CHECKING:

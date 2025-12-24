@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import MISSING, dataclass, fields as dataclass_fields, is_dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, TypedDict, cast
@@ -26,11 +27,49 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestProfileRow as ProfileRowModel,
 )
-from tests._helpers.builders import FunctionMetricsRow, ModuleRow
+from tests._helpers.builders import (
+    AstMetricsRow,
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    CFGBlockRow,
+    CFGEdgeRow,
+    ConfigValueRow,
+    CoverageFunctionRow,
+    CoverageLineRow,
+    DatasetDataflowEdgeRow,
+    DatasetDataflowNodeRow,
+    DFGEdgeRow,
+    DocstringRow,
+    FunctionContextBuilder,
+    FunctionMetricsRow,
+    FunctionTypesRow,
+    FunctionValidationRow,
+    GoidCrosswalkRow,
+    GoidRow,
+    GraphMetricsModulesExtRow,
+    HotspotRow,
+    ImportGraphEdgeRow,
+    ModuleRow,
+    RepoMapRow,
+    RiskFactorRow,
+    StaticDiagnosticsRow,
+    SubsystemModuleRow,
+    SubsystemRow,
+    SymbolEdgeOptions,
+    SymbolGraphMetricsModulesRow,
+    SymbolUseEdgeRow,
+    TestCatalogRow,
+    TestCoverageEdgeRow,
+    TypednessRow,
+    insert_rows,
+    insert_symbol_use_edges,
+    make_symbol_use_edge_row,
+)
+from tests._helpers.builders.row_protocol import InsertableRow
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 
 
 get_schema_service()
@@ -181,6 +220,49 @@ def row_list_for(
         List of row mappings.
     """
     return RowFactory.rows_for(table_key, count, **overrides)
+
+
+def _row_defaults_for(row_type: type[InsertableRow]) -> Mapping[str, object]:
+    defaults = getattr(row_type, "__row_defaults__", None)
+    if isinstance(defaults, Mapping):
+        return defaults
+    return {}
+
+
+def dataclass_row[RowType: InsertableRow](row_type: type[RowType], **fields: object) -> RowType:
+    """Create an InsertableRow dataclass from RowFactory defaults.
+
+    Returns
+    -------
+    RowType
+        Dataclass row instantiated with defaulted table values.
+    """
+    row_defaults = _row_defaults_for(row_type)
+    row = RowFactory.row_for(
+        row_type.__table__,
+        **{**row_defaults, **fields},
+    )
+    if not is_dataclass(row_type):
+        return row_type(**row)
+    field_defs = [
+        field_def
+        for field_def in dataclass_fields(row_type)
+        if field_def.init
+    ]
+    row_values: dict[str, object] = {}
+    for field_def in field_defs:
+        name = field_def.name
+        if name in fields:
+            row_values[name] = row.get(name)
+            continue
+        value = row.get(name)
+        if value is not None:
+            row_values[name] = value
+            continue
+        if field_def.default is not MISSING or field_def.default_factory is not MISSING:
+            continue
+        row_values[name] = value
+    return row_type(**row_values)
 
 
 def blank_file_profile_row() -> FileProfileRowModel:
@@ -1939,38 +2021,71 @@ def config_value_row(
 
 __all__ = [
     "AstMetricSeed",
+    "AstMetricsRow",
     "BehavioralCoverageRowModel",
+    "CFGBlockRow",
+    "CFGEdgeRow",
+    "CallGraphEdgeRow",
+    "CallGraphNodeRow",
+    "ConfigValueRow",
     "ConfigValueSeed",
+    "CoverageFunctionRow",
+    "CoverageLineRow",
     "CoverageLineSeed",
+    "DFGEdgeRow",
     "DataModelFieldSeed",
     "DataModelRelationshipSeed",
     "DataModelSeed",
     "DataModelUsagePayloadSeed",
     "DataModelUsageSeed",
+    "DatasetDataflowEdgeRow",
+    "DatasetDataflowNodeRow",
     "DependencyAggregatePayloadSeed",
     "DependencyAggregateRow",
     "DependencyAggregateSeed",
     "DependencyCallPayloadSeed",
     "DependencyCallRow",
     "DependencyCallSeed",
+    "DocstringRow",
     "EntrypointPayloadSeed",
     "EntrypointSeed",
     "EntrypointTestPayloadSeed",
     "EntrypointTestSeed",
     "FileProfileRowModel",
+    "FunctionContextBuilder",
+    "FunctionMetricsRow",
     "FunctionProfileRowModel",
+    "FunctionTypesRow",
+    "FunctionValidationRow",
+    "GoidCrosswalkRow",
+    "GoidRow",
+    "GraphMetricsModulesExtRow",
+    "HotspotRow",
+    "ImportGraphEdgeRow",
     "ModuleProfileRowModel",
+    "ModuleRow",
     "ProfileRowModel",
+    "RepoMapRow",
+    "RiskFactorRow",
     "RowCoercions",
     "RowFactory",
     "SemanticRoleFunctionSeed",
     "SemanticRoleModuleSeed",
+    "StaticDiagnosticsRow",
     "StaticDiagnosticsSeed",
     "SubsystemModulePayloadSeed",
+    "SubsystemModuleRow",
     "SubsystemModuleSeed",
     "SubsystemPayloadSeed",
+    "SubsystemRow",
     "SubsystemSeed",
+    "SymbolEdgeOptions",
+    "SymbolGraphMetricsModulesRow",
+    "SymbolUseEdgeRow",
+    "TestCatalogRow",
     "TestCatalogSeed",
+    "TestCoverageEdgeRow",
+    "TypednessRow",
     "TypednessSeed",
     "ast_metric_row",
     "blank_behavioral_coverage_row",
@@ -1987,6 +2102,7 @@ __all__ = [
     "data_model_row",
     "data_model_usage_payload",
     "data_model_usage_row",
+    "dataclass_row",
     "dependency_aggregate_payload",
     "dependency_aggregate_row",
     "dependency_aggregate_row_from_payload",
@@ -2001,7 +2117,10 @@ __all__ = [
     "function_meta",
     "function_metrics_row",
     "function_profile_row",
+    "insert_rows",
+    "insert_symbol_use_edges",
     "list_public_exports",
+    "make_symbol_use_edge_row",
     "module_profile_row",
     "module_row",
     "row_for",

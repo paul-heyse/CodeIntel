@@ -246,7 +246,7 @@ class ServingDBManager:
         if cached is not None and cached.pointer == pointer:
             return cached
 
-        context = _load_snapshot_context(pointer)
+        context = _load_snapshot_context(pointer, pointer_path=self.pointer_path)
         self._snapshot_cache[pointer.db_path] = context
         return context
 
@@ -271,7 +271,7 @@ class ServingDBManager:
         # Skip if same DB path (metadata-only update)
         if self._pointer is not None and new_ptr.db_path == self._pointer.db_path:
             self._pointer = new_ptr
-            context = _load_snapshot_context(new_ptr)
+            context = _load_snapshot_context(new_ptr, pointer_path=self.pointer_path)
             self._snapshot_cache[new_ptr.db_path] = context
             self._summary = dict(context.summary)
             self._ready_event.set()
@@ -281,7 +281,7 @@ class ServingDBManager:
         new_export_pool = ReadPoolWarehouse(new_ptr.db_path, self.export_pool_cfg)
         old_pool = self._pool
         old_export_pool = self._export_pool
-        context = _load_snapshot_context(new_ptr)
+        context = _load_snapshot_context(new_ptr, pointer_path=self.pointer_path)
         self._pool = new_pool
         self._export_pool = new_export_pool
         self._pointer = new_ptr
@@ -361,7 +361,27 @@ def _build_execution_context(pointer: ServingSnapshotPointer) -> ExecutionContex
     return load_execution_context(primitives=primitives, run=run_context)
 
 
-def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotContext:
+def _resolve_environment_path(
+    pointer: ServingSnapshotPointer,
+    *,
+    pointer_path: Path,
+) -> Path | None:
+    candidates = (
+        pointer_path.parent / "environment.json",
+        pointer.schema_manifest_path.parent / "environment.json",
+        pointer_path.parent / "artifacts" / "environment.json",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _load_snapshot_context(
+    pointer: ServingSnapshotPointer,
+    *,
+    pointer_path: Path,
+) -> ServingSnapshotContext:
     registry_service = RegistryService.from_semantic_registry_path(pointer.semantic_registry_path)
     registry = registry_service.semantic_registry
     if registry is None:
@@ -370,9 +390,9 @@ def _load_snapshot_context(pointer: ServingSnapshotPointer) -> ServingSnapshotCo
     inventory = SchemaInventory.load(pointer.schema_manifest_path)
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
-    env_path = pointer.schema_manifest_path.parent / "environment.json"
+    env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
     environment: dict[str, object] | None = None
-    if env_path.is_file():
+    if env_path is not None:
         try:
             raw = json.loads(env_path.read_text(encoding="utf-8"))
         except ValueError:

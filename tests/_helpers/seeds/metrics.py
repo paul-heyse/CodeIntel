@@ -14,12 +14,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     FunctionMetricsRow,
     GraphMetricsModulesExtRow,
     RiskFactorRow,
     StaticDiagnosticsRow,
     TypednessRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.seeds.core import (
@@ -129,7 +130,8 @@ class MetricsPack:
             Timestamp for created_at fields.
         """
         rows = [
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=GOID_FUNC_A,
                 urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_A_PATH}#func_a",
                 repo=ctx.repo,
@@ -160,7 +162,8 @@ class MetricsPack:
                 complexity_bucket="low",
                 created_at=now,
             ),
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=GOID_FUNC_B,
                 urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_B_PATH}#func_b",
                 repo=ctx.repo,
@@ -191,7 +194,8 @@ class MetricsPack:
                 complexity_bucket="medium",
                 created_at=now,
             ),
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=GOID_FUNC_C,
                 urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_C_PATH}#func_c",
                 repo=ctx.repo,
@@ -222,7 +226,8 @@ class MetricsPack:
                 complexity_bucket="low",
                 created_at=now,
             ),
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=GOID_HELPER,
                 urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{MOD_UTIL_PATH}#helper",
                 repo=ctx.repo,
@@ -266,7 +271,8 @@ class MetricsPack:
             Test context with gateway.
         """
         rows = [
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=GOID_FUNC_A,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -277,7 +283,8 @@ class MetricsPack:
                 fan_out_count=2,
                 has_tests=True,
             ),
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=GOID_FUNC_B,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -288,7 +295,8 @@ class MetricsPack:
                 fan_out_count=4,
                 has_tests=True,
             ),
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=GOID_FUNC_C,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -299,7 +307,8 @@ class MetricsPack:
                 fan_out_count=1,
                 has_tests=True,
             ),
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=GOID_HELPER,
                 repo=ctx.repo,
                 commit=ctx.commit,
@@ -323,7 +332,8 @@ class MetricsPack:
             Test context with gateway.
         """
         rows = [
-            TypednessRow(
+            dataclass_row(
+                TypednessRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 path=MOD_A_PATH,
@@ -332,7 +342,8 @@ class MetricsPack:
                 untyped_defs=1,
                 overlay_needed=False,
             ),
-            TypednessRow(
+            dataclass_row(
+                TypednessRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 path=MOD_B_PATH,
@@ -341,7 +352,8 @@ class MetricsPack:
                 untyped_defs=2,
                 overlay_needed=True,
             ),
-            TypednessRow(
+            dataclass_row(
+                TypednessRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 path=MOD_C_PATH,
@@ -350,7 +362,8 @@ class MetricsPack:
                 untyped_defs=3,
                 overlay_needed=True,
             ),
-            TypednessRow(
+            dataclass_row(
+                TypednessRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 path=MOD_UTIL_PATH,
@@ -372,7 +385,8 @@ class MetricsPack:
             Test context with gateway.
         """
         rows = [
-            StaticDiagnosticsRow(
+            dataclass_row(
+                StaticDiagnosticsRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_A_PATH,
@@ -382,7 +396,8 @@ class MetricsPack:
                 total_errors=0,
                 has_errors=False,
             ),
-            StaticDiagnosticsRow(
+            dataclass_row(
+                StaticDiagnosticsRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_B_PATH,
@@ -392,7 +407,8 @@ class MetricsPack:
                 total_errors=1,
                 has_errors=True,
             ),
-            StaticDiagnosticsRow(
+            dataclass_row(
+                StaticDiagnosticsRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_C_PATH,
@@ -402,7 +418,8 @@ class MetricsPack:
                 total_errors=2,
                 has_errors=True,
             ),
-            StaticDiagnosticsRow(
+            dataclass_row(
+                StaticDiagnosticsRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_UTIL_PATH,
@@ -427,7 +444,8 @@ class MetricsPack:
             Timestamp for created_at fields.
         """
         rows = [
-            GraphMetricsModulesExtRow(
+            dataclass_row(
+                GraphMetricsModulesExtRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 module=MOD_A_FQN,
@@ -445,7 +463,8 @@ class MetricsPack:
                 import_scc_size=1,
                 created_at=now,
             ),
-            GraphMetricsModulesExtRow(
+            dataclass_row(
+                GraphMetricsModulesExtRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 module=MOD_B_FQN,
@@ -463,7 +482,8 @@ class MetricsPack:
                 import_scc_size=1,
                 created_at=now,
             ),
-            GraphMetricsModulesExtRow(
+            dataclass_row(
+                GraphMetricsModulesExtRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 module=MOD_C_FQN,
@@ -481,7 +501,8 @@ class MetricsPack:
                 import_scc_size=1,
                 created_at=now,
             ),
-            GraphMetricsModulesExtRow(
+            dataclass_row(
+                GraphMetricsModulesExtRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 module=MOD_UTIL_FQN,

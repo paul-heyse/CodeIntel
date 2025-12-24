@@ -14,7 +14,6 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.fixtures.repos import (
     GOID_CALLEE,
     GOID_CALLER,
@@ -31,6 +30,7 @@ from tests._helpers.fixtures.repos import (
     MOD_UTIL_FQN,
     MOD_UTIL_PATH,
 )
+from tests._helpers.fixtures.rows import GoidRow, ModuleRow, RepoMapRow, dataclass_row, insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -136,7 +136,8 @@ class CorePack:
         insert_rows(
             ctx.gateway,
             [
-                RepoMapRow(
+                dataclass_row(
+                    RepoMapRow,
                     repo=ctx.repo,
                     commit=ctx.commit,
                     modules=modules_dict,
@@ -158,7 +159,7 @@ class CorePack:
             Selected (module, path) pairs to insert into core.modules.
         """
         rows = [
-            ModuleRow(module=module, path=path, repo=ctx.repo, commit=ctx.commit)
+            dataclass_row(ModuleRow, module=module, path=path, repo=ctx.repo, commit=ctx.commit)
             for module, path in selected_modules
         ]
 
@@ -182,7 +183,8 @@ class CorePack:
                 continue
             meta = canonical.functions[qualname]
             goid_rows.append(
-                GoidRow(
+                dataclass_row(
+                    GoidRow,
                     goid_h128=meta.goid,
                     urn=f"urn:codeintel:{ctx.repo}:{ctx.commit}:{meta.rel_path}#{meta.qualname}",
                     repo=ctx.repo,
