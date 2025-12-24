@@ -74,7 +74,6 @@ SERVING_ARTIFACT_VIEWS_SQL = "views_sql"
 SERVING_ARTIFACT_VIEWS_SQL_DIFF = "views_sql_diff"
 
 
-
 def _package_version(name: str) -> str:
     try:
         return version(name)

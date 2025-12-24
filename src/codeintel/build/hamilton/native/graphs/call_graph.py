@@ -71,6 +71,7 @@ CALL_GRAPH_TABLE_KEYS = (
     CALL_GRAPH_EDGES_TABLE_KEY,
 )
 
+
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(CALL_GRAPH_NODES_TABLE_KEY),

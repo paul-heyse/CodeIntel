@@ -16,6 +16,7 @@ from fastmcp.prompts import Message
 from mcp import McpError
 from mcp.types import PromptMessage
 
+from codeintel.serving.errors import CodeIntelDomainError
 from codeintel.serving.export.formats import default_export_format, export_format_choices
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.operations.ops import ServingOperations
@@ -377,7 +378,7 @@ def _maybe_get_columns(kernel: ServingOperations | None, *, view_id: str) -> lis
         return None
     try:
         desc = kernel.describe(view_id)
-    except (KeyError, TypeError, ValueError):
+    except (CodeIntelDomainError, KeyError, TypeError, ValueError):
         return None
     columns = [col for col in desc.columns if isinstance(col, str) and col]
     return columns or None
@@ -454,7 +455,7 @@ def _maybe_get_column_types(
         return None
     try:
         desc = kernel.describe(view_id)
-    except (KeyError, TypeError, ValueError):
+    except (CodeIntelDomainError, KeyError, TypeError, ValueError):
         return None
     return {str(k): str(v) for k, v in desc.column_types.items()}
 

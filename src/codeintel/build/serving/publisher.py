@@ -185,10 +185,7 @@ def publish_serving_snapshot(
                 "build.serving.publisher.search_index_failed run_id=%s",
                 request.run_id,
             )
-            message = (
-                "Search index build failed for serving snapshot "
-                f"run_id={request.run_id}"
-            )
+            message = f"Search index build failed for serving snapshot run_id={request.run_id}"
             raise RuntimeError(message) from exc
 
         try:
@@ -198,10 +195,7 @@ def publish_serving_snapshot(
                 "build.serving.publisher.lineage_missing run_id=%s",
                 request.run_id,
             )
-            message = (
-                "Lineage metadata missing for serving snapshot "
-                f"run_id={request.run_id}"
-            )
+            message = f"Lineage metadata missing for serving snapshot run_id={request.run_id}"
             raise RuntimeError(message) from exc
     finally:
         snap_con.commit()

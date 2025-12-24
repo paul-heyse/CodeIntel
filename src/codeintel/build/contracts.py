@@ -239,4 +239,5 @@ class OutputContract:
 
         return errors
 
+
 EMPTY_CONTRACT: OutputContract = OutputContract()

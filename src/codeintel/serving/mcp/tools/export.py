@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, get_type_hints
 import anyio
 from fastmcp import Context, FastMCP
 
+from codeintel.serving.errors import CodeIntelDomainError
 from codeintel.serving.export.formats import suffix_for_export_format, supports_preview
 from codeintel.serving.export.meta import (
     ExportArtifactInputs,
@@ -79,7 +80,7 @@ def _safe_view_description(
 ) -> SemanticViewDescriptionResponse | None:
     try:
         return ops.describe(view_id)
-    except (KeyError, TypeError, ValueError):
+    except (CodeIntelDomainError, KeyError, TypeError, ValueError):
         return None
 
 

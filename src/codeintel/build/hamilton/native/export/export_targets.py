@@ -51,7 +51,6 @@ DEFAULT_JSONL_DATASETS: tuple[str, ...] = ("modules", "function_metrics")
 DEFAULT_PARQUET_DATASETS: tuple[str, ...] = ("function_metrics",)
 
 
-
 @dataclass(frozen=True)
 class ExportManifestRequest:
     """Configuration for producing a dataset export manifest."""

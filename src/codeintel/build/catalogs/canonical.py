@@ -23,14 +23,13 @@ from codeintel.storage.metadata import (
 )
 
 if TYPE_CHECKING:
-    from duckdb import DuckDBPyConnection
-
     from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.build.schemas.service import SchemaService
     from codeintel.build.targets import OutputTarget
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.core.schemas.contract_service import ContractService
     from codeintel.storage.gateway.config import StorageConfig
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 CONTRACT_CATALOG_KIND = "dataset_contracts"
@@ -46,7 +45,7 @@ class CatalogWriteGateway(Protocol):
         ...
 
     @property
-    def con(self) -> DuckDBPyConnection:
+    def con(self) -> DuckDBConnection:
         """Return an open DuckDB connection."""
         ...
 

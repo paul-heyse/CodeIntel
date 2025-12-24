@@ -6,15 +6,11 @@ with proper structure and content.
 
 from __future__ import annotations
 
-import json
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import duckdb
 import pytest
 from fastmcp.client import Client
 
-from codeintel.config.primitives import BuildPaths
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
@@ -25,100 +21,11 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 from tests._helpers.mcp_payloads import extract_payload
+from tests._helpers.serving_snapshots import setup_demo_snapshot
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def _make_db(db_path: Path) -> None:
-    con = duckdb.connect(str(db_path))
-    con.execute("CREATE SCHEMA docs")
-    con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
-    con.execute("INSERT INTO docs.v_demo VALUES (1, 'one'), (2, 'two'), (3, 'three')")
-    con.close()
-
-
-def _write_registry(path: Path) -> None:
-    artifacts = HarnessArtifacts(
-        repo_root=path.parent,
-        paths=BuildPaths.from_explicit(build_dir=path.parent),
-    )
-    artifacts.write_semantic_registry(
-        path=path,
-        views=[
-            {
-                "id": "demo.view",
-                "kind": "view",
-                "table_key": "docs.v_demo",
-                "entity": "demo",
-                "grain": "per_row",
-                "description": "Demo view",
-                "primary_key": ["id"],
-                "columns": ["id", "label"],
-                "joins": [],
-                "defaults": {"limit": 200, "order_by": ["id"]},
-                "sensitivity": "internal",
-            }
-        ],
-    )
-
-
-def _write_schema_manifest(path: Path) -> None:
-    artifacts = HarnessArtifacts(
-        repo_root=path.parent,
-        paths=BuildPaths.from_explicit(build_dir=path.parent),
-    )
-    artifacts.write_schema_manifest(
-        path=path,
-        tables=[
-            {
-                "schema": "docs",
-                "name": "v_demo",
-                "table_key": "docs.v_demo",
-                "primary_key": ["id"],
-                "indexes": [],
-                "columns": [
-                    {"name": "id", "type": "INTEGER", "nullable": False},
-                    {"name": "label", "type": "VARCHAR", "nullable": True},
-                ],
-            }
-        ],
-    )
-
-
-def _write_buildspec(path: Path) -> None:
-    artifacts = HarnessArtifacts(
-        repo_root=path.parent,
-        paths=BuildPaths.from_explicit(build_dir=path.parent),
-    )
-    artifacts.write_buildspec(
-        path=path,
-        datasets=[{"table_key": "docs.v_demo", "schema_hash": "schema_v_demo"}],
-    )
-
-
-def _write_pointer(
-    path: Path,
-    *,
-    db_path: Path,
-    registry_path: Path,
-    manifest_path: Path,
-    buildspec_path: Path,
-) -> None:
-    pointer = {
-        "db_path": str(db_path),
-        "semantic_registry_path": str(registry_path),
-        "schema_manifest_path": str(manifest_path),
-        "buildspec_path": str(buildspec_path),
-        "repo": "demo/repo",
-        "commit": "deadbeef",
-        "run_id": "run-1",
-        "published_at": datetime.now(tz=UTC).isoformat(),
-        "semantic_layer_version": "v123",
-    }
-    path.write_text(json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _setup_test_snapshot(tmp_path: Path) -> Path:
@@ -134,24 +41,8 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
     Path
         Path to the pointer JSON file.
     """
-    db_path = tmp_path / "codeintel.duckdb"
-    registry_path = tmp_path / "semantic_registry.json"
-    manifest_path = tmp_path / "schema_manifest.json"
-    buildspec_path = tmp_path / "buildspec.json"
-    pointer_path = tmp_path / "current.json"
-
-    _make_db(db_path)
-    _write_registry(registry_path)
-    _write_schema_manifest(manifest_path)
-    _write_buildspec(buildspec_path)
-    _write_pointer(
-        pointer_path,
-        db_path=db_path,
-        registry_path=registry_path,
-        manifest_path=manifest_path,
-        buildspec_path=buildspec_path,
-    )
-    return pointer_path
+    snapshot = setup_demo_snapshot(tmp_path)
+    return snapshot.pointer_path
 
 
 @pytest.mark.anyio
