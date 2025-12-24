@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 from typing import TYPE_CHECKING
+
+import pytest
 
 from codeintel.serving.settings import ServingSettings, get_serving_settings
 from tests._helpers.assertions.expectation_assertions import (
@@ -15,7 +16,6 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
 # Test constants
@@ -33,31 +33,7 @@ PRODUCTION_LIMIT_MAX_REQUESTS = 10000
 PRODUCTION_TIMEOUT_KEEP_ALIVE = 60
 PRODUCTION_BACKLOG = 4096
 
-
-@contextlib.contextmanager
-def _set_env(env: dict[str, str]) -> Iterator[None]:
-    """Temporarily set environment variables.
-
-    Parameters
-    ----------
-    env
-        Environment variables to set.
-
-    Yields
-    ------
-    None
-        Context manager scope.
-    """
-    previous: dict[str, str | None] = {key: os.environ.get(key) for key in env}
-    os.environ.update(env)
-    try:
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+pytestmark = pytest.mark.usefixtures("codeintel_env")
 
 
 def test_uvicorn_workers_default(tmp_path: Path) -> None:
@@ -128,145 +104,145 @@ def test_uvicorn_forwarded_allow_ips_default(tmp_path: Path) -> None:
 
 def test_uvicorn_workers_from_env(tmp_path: Path) -> None:
     """Verify workers setting loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_WORKERS": str(OVERRIDE_WORKERS),
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_workers, OVERRIDE_WORKERS)
 
 
 def test_uvicorn_loop_from_env(tmp_path: Path) -> None:
     """Verify event loop setting loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_LOOP": "uvloop",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_loop, "uvloop")
 
 
 def test_uvicorn_http_from_env(tmp_path: Path) -> None:
     """Verify HTTP implementation setting loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_HTTP": "httptools",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_http, "httptools")
 
 
 def test_uvicorn_limit_concurrency_from_env(tmp_path: Path) -> None:
     """Verify concurrency limit loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_LIMIT_CONCURRENCY": str(OVERRIDE_LIMIT_CONCURRENCY),
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_limit_concurrency, OVERRIDE_LIMIT_CONCURRENCY)
 
 
 def test_uvicorn_limit_concurrency_empty_is_none(tmp_path: Path) -> None:
     """Verify empty concurrency limit string becomes None."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_LIMIT_CONCURRENCY": "",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_is_none(settings.uvicorn_limit_concurrency)
 
 
 def test_uvicorn_limit_max_requests_from_env(tmp_path: Path) -> None:
     """Verify max requests loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_LIMIT_MAX_REQUESTS": str(OVERRIDE_LIMIT_MAX_REQUESTS),
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_limit_max_requests, OVERRIDE_LIMIT_MAX_REQUESTS)
 
 
 def test_uvicorn_timeout_keep_alive_from_env(tmp_path: Path) -> None:
     """Verify keep-alive timeout loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_TIMEOUT_KEEP_ALIVE": str(OVERRIDE_TIMEOUT_KEEP_ALIVE),
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_timeout_keep_alive, OVERRIDE_TIMEOUT_KEEP_ALIVE)
 
 
 def test_uvicorn_backlog_from_env(tmp_path: Path) -> None:
     """Verify backlog loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_BACKLOG": str(OVERRIDE_BACKLOG),
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_backlog, OVERRIDE_BACKLOG)
 
 
 def test_uvicorn_access_log_disabled_from_env(tmp_path: Path) -> None:
     """Verify access log can be disabled via environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_ACCESS_LOG": "0",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_false(settings.uvicorn_access_log)
 
 
 def test_uvicorn_server_header_enabled_from_env(tmp_path: Path) -> None:
     """Verify server header can be enabled via environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_SERVER_HEADER": "1",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_true(settings.uvicorn_server_header)
 
 
 def test_uvicorn_proxy_headers_enabled_from_env(tmp_path: Path) -> None:
     """Verify proxy headers can be enabled via environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_PROXY_HEADERS": "1",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_true(settings.uvicorn_proxy_headers)
 
 
 def test_uvicorn_forwarded_allow_ips_from_env(tmp_path: Path) -> None:
     """Verify forwarded allow IPs loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_UVICORN_FORWARDED_ALLOW_IPS": "10.0.0.0/8",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_equal(settings.uvicorn_forwarded_allow_ips, "10.0.0.0/8")
 
 

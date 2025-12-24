@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
-import os
-from typing import TYPE_CHECKING
 
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 from tests._helpers.assertions.expectation_assertions import (
@@ -15,35 +12,6 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_not_none,
     expect_true,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
-
-
-@contextlib.contextmanager
-def _set_env(env: dict[str, str]) -> Iterator[None]:
-    """Temporarily set environment variables.
-
-    Parameters
-    ----------
-    env
-        Environment variables to set.
-
-    Yields
-    ------
-    None
-        Context manager scope.
-    """
-    previous: dict[str, str | None] = {key: os.environ.get(key) for key in env}
-    os.environ.update(env)
-    try:
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 class LogCapture(logging.Handler):

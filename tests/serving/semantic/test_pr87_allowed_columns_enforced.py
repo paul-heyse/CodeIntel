@@ -6,15 +6,16 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import duckdb
 import pytest
 
 from codeintel.serving.db.manager import ServingDBManager
+from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticQueryRequest
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal
+from tests._helpers.gateway import GatewayFactory
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -22,12 +23,14 @@ if TYPE_CHECKING:
 
 
 def _make_snapshot_db(db_path: Path) -> None:
-    con = duckdb.connect(str(db_path))
-    con.execute("CREATE SCHEMA docs")
-    con.execute("CREATE TABLE docs.demo (id INTEGER, label VARCHAR)")
-    con.execute("INSERT INTO docs.demo VALUES (1, 'one'), (2, 'two')")
-    con.execute("CREATE VIEW docs.v_demo AS SELECT * FROM docs.demo")
-    con.close()
+    gateway = GatewayFactory().file_backed(db_path).open()
+    try:
+        gateway.con.execute("CREATE SCHEMA docs")
+        gateway.con.execute("CREATE TABLE docs.demo (id INTEGER, label VARCHAR)")
+        gateway.con.execute("INSERT INTO docs.demo VALUES (1, 'one'), (2, 'two')")
+        gateway.con.execute("CREATE VIEW docs.v_demo AS SELECT * FROM docs.demo")
+    finally:
+        gateway.close()
 
 
 def _write_json(path: Path, payload: Mapping[str, object]) -> None:
@@ -42,18 +45,18 @@ def _write_pointer(
     manifest_path: Path,
     buildspec_path: Path,
 ) -> None:
-    payload = {
-        "db_path": str(db_path),
-        "semantic_registry_path": str(registry_path),
-        "schema_manifest_path": str(manifest_path),
-        "buildspec_path": str(buildspec_path),
-        "repo": "demo/repo",
-        "commit": "deadbeef",
-        "run_id": "run-1",
-        "published_at": datetime.now(tz=UTC).isoformat(),
-        "semantic_layer_version": "v123",
-    }
-    _write_json(path, payload)
+    pointer = ServingSnapshotPointer(
+        db_path=db_path,
+        semantic_registry_path=registry_path,
+        schema_manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+        repo="demo/repo",
+        commit="deadbeef",
+        run_id="run-1",
+        published_at=datetime.now(tz=UTC),
+        semantic_layer_version="v123",
+    )
+    path.write_text(pointer.to_json(), encoding="utf-8")
 
 
 @pytest.mark.anyio

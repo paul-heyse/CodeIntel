@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -10,6 +9,7 @@ from typing import TYPE_CHECKING
 import duckdb
 
 from codeintel.config.primitives import BuildPaths
+from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
@@ -107,18 +107,18 @@ def _write_pointer(
     manifest_path: Path,
     buildspec_path: Path,
 ) -> None:
-    pointer = {
-        "db_path": str(db_path),
-        "semantic_registry_path": str(registry_path),
-        "schema_manifest_path": str(manifest_path),
-        "buildspec_path": str(buildspec_path),
-        "repo": "demo/repo",
-        "commit": "deadbeef",
-        "run_id": "run-1",
-        "published_at": datetime.now(tz=UTC).isoformat(),
-        "semantic_layer_version": "v123",
-    }
-    path.write_text(json.dumps(pointer, indent=2, sort_keys=True), encoding="utf-8")
+    pointer = ServingSnapshotPointer(
+        db_path=db_path,
+        semantic_registry_path=registry_path,
+        schema_manifest_path=manifest_path,
+        buildspec_path=buildspec_path,
+        repo="demo/repo",
+        commit="deadbeef",
+        run_id="run-1",
+        published_at=datetime.now(tz=UTC),
+        semantic_layer_version="v123",
+    )
+    path.write_text(pointer.to_json(), encoding="utf-8")
 
 
 def setup_demo_snapshot(

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import os
 from typing import TYPE_CHECKING
 
@@ -16,34 +15,9 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.security_fixtures import PUBLIC_BIND_HOST, api_key, auth_token
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
-
-@contextlib.contextmanager
-def _set_env(env: dict[str, str]) -> Iterator[None]:
-    """Temporarily set environment variables.
-
-    Parameters
-    ----------
-    env
-        Environment variables to set.
-
-    Yields
-    ------
-    None
-        Context manager scope.
-    """
-    previous: dict[str, str | None] = {key: os.environ.get(key) for key in env}
-    os.environ.update(env)
-    try:
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+pytestmark = pytest.mark.usefixtures("codeintel_env")
 
 
 def test_fails_without_auth_on_0000(tmp_path: Path) -> None:
@@ -156,14 +130,14 @@ def test_disabled_allows_public_bind_without_auth(tmp_path: Path) -> None:
 
 def test_disabled_via_env_var(tmp_path: Path) -> None:
     """Verify auth enforcement can be disabled via environment variable."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_AUTH_REQUIRED_FOR_REMOTE": "0",
             "CODEINTEL_HOST": PUBLIC_BIND_HOST,
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_false(settings.auth_required_for_remote)
     # Should not raise
     settings.validate_auth_for_host()
@@ -177,11 +151,11 @@ def test_auth_required_for_remote_default_true(tmp_path: Path) -> None:
 
 def test_auth_required_for_remote_from_env(tmp_path: Path) -> None:
     """Verify auth_required_for_remote loads from environment."""
-    with _set_env(
+    os.environ.update(
         {
             "CODEINTEL_AUTH_REQUIRED_FOR_REMOTE": "1",
             "CODEINTEL_SERVE_DIR": str(tmp_path),
         }
-    ):
-        settings = get_serving_settings()
+    )
+    settings = get_serving_settings()
     expect_true(settings.auth_required_for_remote)
