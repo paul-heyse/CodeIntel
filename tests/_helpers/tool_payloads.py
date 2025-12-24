@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -72,40 +72,7 @@ def coverage_json_payload(
     }
 
 
-def scip_json_payload(*, documents: Iterable[Mapping[str, Any]] | None = None) -> dict[str, Any]:
-    """Build a minimal SCIP JSON payload.
-
-    Parameters
-    ----------
-    documents
-        SCIP document payloads.
-
-    Returns
-    -------
-    dict[str, Any]
-        SCIP JSON payload with documents.
-    """
-    return {
-        "documents": list(
-            documents
-            or [
-                {
-                    "relativePath": "src/example.py",
-                    "symbols": [{"symbol": "scip-python python src/example foo()."}],
-                    "occurrences": [
-                        {
-                            "symbol": "scip-python python src/example foo().",
-                            "range": [1, 0, 1, 1],
-                        }
-                    ],
-                }
-            ]
-        )
-    }
-
-
 __all__ = [
     "coverage_json_payload",
     "pytest_report_payload",
-    "scip_json_payload",
 ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -75,11 +76,11 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
     for doc in index.documents:
         rel_path = doc.relative_path
         for sym_info in doc.symbols:
-            symbol_infos.append(_parse_symbol_info(module, sym_info))
+            symbol_infos.append(_parse_symbol_info(sym_info))
             relationships.extend(_parse_relationships(sym_info))
         diagnostics.extend(_parse_document_diagnostics(module, doc, rel_path))
 
-    external_symbols = tuple(_parse_external_symbol(module, sym) for sym in index.external_symbols)
+    external_symbols = tuple(_parse_external_symbol(sym) for sym in index.external_symbols)
 
     return ScipParsedIndex(
         documents=documents,
@@ -92,11 +93,15 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
 
 def _parse_document(doc: object) -> ScipDocument:
     symbols = tuple(_parse_symbol(sym) for sym in doc.symbols)
-    occurrences = tuple(_parse_occurrence(occ) for occ in doc.occurrences)
+    occurrences_list: list[ScipOccurrence] = []
+    for occ in doc.occurrences:
+        parsed = _parse_occurrence(occ)
+        if parsed is not None:
+            occurrences_list.append(parsed)
     return ScipDocument(
         relative_path=doc.relative_path,
         symbols=symbols,
-        occurrences=occurrences,
+        occurrences=tuple(occurrences_list),
     )
 
 
@@ -105,10 +110,10 @@ def _parse_symbol(sym: object) -> ScipSymbol:
     return ScipSymbol(symbol=sym.symbol, documentation=documentation)
 
 
-def _parse_occurrence(occ: object) -> ScipOccurrence:
+def _parse_occurrence(occ: object) -> ScipOccurrence | None:
     range_tuple = _parse_range(occ.range)
     if range_tuple is None:
-        range_tuple = (0, 0, 0, 0)
+        return None
     return ScipOccurrence(
         symbol=occ.symbol,
         range_start_line=range_tuple[0],
@@ -120,16 +125,17 @@ def _parse_occurrence(occ: object) -> ScipOccurrence:
 
 
 def _parse_range(rng: object) -> tuple[int, int, int, int] | None:
-    if not isinstance(rng, list):
+    if not isinstance(rng, Sequence):
         return None
-    if len(rng) == 3:
+    length = len(rng)
+    if length == 3:
         return (int(rng[0]), int(rng[1]), int(rng[0]), int(rng[2]))
-    if len(rng) == 4:
+    if length == 4:
         return (int(rng[0]), int(rng[1]), int(rng[2]), int(rng[3]))
     return None
 
 
-def _parse_symbol_info(module: ModuleType, sym: object) -> ScipSymbolInfo:
+def _parse_symbol_info(sym: object) -> ScipSymbolInfo:
     documentation = "\n".join(sym.documentation) if sym.documentation else None
     signature = _signature_text(sym)
     return ScipSymbolInfo(
@@ -219,11 +225,11 @@ def _parse_document_diagnostics(
 def _severity_name(module: ModuleType, value: int) -> str:
     try:
         return module.Severity.Name(value)
-    except Exception:
+    except (AttributeError, ValueError):
         return "Unspecified"
 
 
-def _parse_external_symbol(module: ModuleType, sym: object) -> ScipExternalSymbol:
+def _parse_external_symbol(sym: object) -> ScipExternalSymbol:
     manager, name, version = _parse_package_triple(sym.symbol)
     return ScipExternalSymbol(
         symbol=sym.symbol,

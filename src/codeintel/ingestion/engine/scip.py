@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from numbers import Real
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ from codeintel.ingestion.engine.plugins import (
     ToolStatus,
 )
 from codeintel.ingestion.engine.results import ScipDocument, ScipIndexResult, ScipOccurrence
+from codeintel.ingestion.scip.cli import build_scip_python_args
+from codeintel.ingestion.scip.paths import resolve_target_base
 from codeintel.ingestion.scip.protobuf_parser import parse_index
 
 if TYPE_CHECKING:
@@ -37,17 +40,6 @@ log = logging.getLogger(__name__)
 
 def _mkdir_parents(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-
-
-def _path_is_file(path: Path) -> bool:
-    return path.is_file()
-
-
-def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
-    if target_dir is not None:
-        return target_dir
-    src_dir = repo_root / "src"
-    return src_dir if src_dir.is_dir() else repo_root
 
 
 def _parse_scip_index(
@@ -89,7 +81,7 @@ def _parse_scip_index(
 
 @dataclass
 class ScipPlugin(ToolPlugin):
-    """Plugin for SCIP indexing via scip-python + scip CLI."""
+    """Plugin for SCIP indexing via scip-python."""
 
     runner: ToolRunner
     tools_config: ToolsConfig
@@ -105,7 +97,7 @@ class ScipPlugin(ToolPlugin):
     def _validate_kwargs(
         self,
         kwargs: dict[str, object],
-    ) -> tuple[Path, Path, Path | None, tuple[str, ...] | None]:
+    ) -> tuple[Path, Path, Path | None, tuple[str, ...] | None, float | None]:
         """Validate and extract keyword arguments for run method.
 
         Parameters
@@ -115,8 +107,8 @@ class ScipPlugin(ToolPlugin):
 
         Returns
         -------
-        tuple[Path, Path, Path | None, tuple[str, ...] | None]
-            Tuple of (output_scip, proto_module_path, target_dir, rel_paths).
+        tuple[Path, Path, Path | None, tuple[str, ...] | None, float | None]
+            Tuple of (output_scip, proto_module_path, target_dir, rel_paths, timeout_s).
 
         Raises
         ------
@@ -128,6 +120,7 @@ class ScipPlugin(ToolPlugin):
         target_dir_obj = kwargs.get("target_dir")
         rel_paths_obj = kwargs.get("rel_paths")
         proto_module_obj = kwargs.get("proto_module_path")
+        timeout_obj = kwargs.get("timeout_s")
 
         if not isinstance(output_scip_obj, Path):
             message = "scip plugin requires output_scip of type Path"
@@ -141,9 +134,13 @@ class ScipPlugin(ToolPlugin):
         if not isinstance(proto_module_obj, Path):
             message = "scip plugin requires proto_module_path of type Path"
             raise TypeError(message)
+        if timeout_obj is not None and not isinstance(timeout_obj, Real):
+            message = "scip plugin requires timeout_s to be a number or None"
+            raise TypeError(message)
 
         rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
-        return output_scip_obj, proto_module_obj, target_dir_obj, rel_paths
+        timeout_s = float(timeout_obj) if isinstance(timeout_obj, Real) else None
+        return output_scip_obj, proto_module_obj, target_dir_obj, rel_paths, timeout_s
 
     async def run(
         self,
@@ -152,49 +149,48 @@ class ScipPlugin(ToolPlugin):
         **kwargs: object,
     ) -> ToolPluginResult:
         """
-        Run scip-python index and scip print to produce parsed index.
+        Run scip-python index to produce a parsed index.
 
         When rel_paths is provided, only those paths are targeted; otherwise
         the full repo (or target_dir/src) is indexed.
-
-        If the output files already exist, the plugin will skip execution and
-        parse the existing index.scip via protobuf.
 
         Returns
         -------
         ToolPluginResult
             Normalized execution result with parsed ScipIndexResult.
         """
-        output_scip, proto_module_path, target_dir, rel_paths = self._validate_kwargs(dict(kwargs))
+        output_scip, proto_module_path, target_dir, rel_paths, timeout_s = self._validate_kwargs(
+            dict(kwargs)
+        )
 
-        result = await self._try_use_existing(output_scip, proto_module_path)
-        if result is None:
-            try:
-                await self._run_scip_python(
-                    repo_root,
-                    output_scip=output_scip,
-                    target_dir=target_dir,
-                    rel_paths=rel_paths,
-                )
-            except ToolNotFoundError as exc:
-                log.warning("scip-python binary not found; SCIP index cannot be built")
-                result = ToolPluginResult(
-                    tool=ToolName.SCIP_PYTHON,
-                    status=ToolStatus.NOT_FOUND,
-                    artifacts={},
-                    run=None,
-                    error=exc,
-                    parsed=ScipIndexResult.empty(),
-                )
-            except ToolExecutionError as exc:
-                result = ToolPluginResult(
-                    tool=ToolName.SCIP_PYTHON,
-                    status=ToolStatus.FAILED,
-                    artifacts={"index_scip": output_scip},
-                    run=exc.result,
-                    error=exc,
-                    parsed=ScipIndexResult.empty(),
-                )
+        result: ToolPluginResult | None = None
+        try:
+            await self._run_scip_python(
+                repo_root,
+                output_scip=output_scip,
+                target_dir=target_dir,
+                rel_paths=rel_paths,
+                timeout_s=timeout_s,
+            )
+        except ToolNotFoundError as exc:
+            log.warning("scip-python binary not found; SCIP index cannot be built")
+            result = ToolPluginResult(
+                tool=ToolName.SCIP_PYTHON,
+                status=ToolStatus.NOT_FOUND,
+                artifacts={},
+                run=None,
+                error=exc,
+                parsed=ScipIndexResult.empty(),
+            )
+        except ToolExecutionError as exc:
+            result = ToolPluginResult(
+                tool=ToolName.SCIP_PYTHON,
+                status=ToolStatus.FAILED,
+                artifacts={"index_scip": output_scip},
+                run=exc.result,
+                error=exc,
+                parsed=ScipIndexResult.empty(),
+            )
 
         if result is None:
             parsed = await to_thread.run_sync(
@@ -213,45 +209,6 @@ class ScipPlugin(ToolPlugin):
 
         return result
 
-    async def _try_use_existing(
-        self,
-        output_scip: Path,
-        proto_module_path: Path,
-    ) -> ToolPluginResult | None:
-        """Check for existing SCIP output and return parsed result if found.
-
-        Parameters
-        ----------
-        output_scip
-            Path to expected SCIP index file.
-        proto_module_path
-            Path to generated scip_pb2 module.
-
-        Returns
-        -------
-        ToolPluginResult | None
-            Parsed result if existing files found, None otherwise.
-        """
-        _ = self
-        scip_exists = await to_thread.run_sync(_path_is_file, output_scip)
-        if not scip_exists:
-            return None
-
-        log.info("SCIP index exists at %s; reusing", output_scip)
-
-        def _parse_existing() -> ScipIndexResult:
-            return _parse_scip_index(output_scip, proto_module_path)
-
-        parsed = await to_thread.run_sync(_parse_existing)
-        return ToolPluginResult(
-            tool=ToolName.SCIP_PYTHON,
-            status=ToolStatus.OK,
-            artifacts={"index_scip": output_scip},
-            run=None,
-            error=None,
-            parsed=parsed,
-        )
-
     async def _run_scip_python(
         self,
         repo_root: Path,
@@ -259,13 +216,17 @@ class ScipPlugin(ToolPlugin):
         output_scip: Path,
         target_dir: Path | None,
         rel_paths: Sequence[str] | None,
+        timeout_s: float | None,
     ) -> ToolRunResult:
-        target_base = await to_thread.run_sync(_resolve_target_base, repo_root, target_dir)
+        target_base = await to_thread.run_sync(resolve_target_base, repo_root, target_dir)
         await to_thread.run_sync(_mkdir_parents, output_scip.parent)
 
-        args: list[str] = ["index", str(target_base), "--output", str(output_scip)]
-        for rel_path in rel_paths or ():
-            args.extend(["--target-only", rel_path])
+        args = build_scip_python_args(
+            target_base=target_base,
+            output_scip=output_scip,
+            project_name=self.tools_config.scip_project_name,
+            rel_paths=rel_paths,
+        )
 
         result = await self.runner.run_async(
             ToolName.SCIP_PYTHON,
@@ -273,7 +234,7 @@ class ScipPlugin(ToolPlugin):
             options=ToolRunOptions(
                 cwd=repo_root,
                 output_path=output_scip,
-                timeout_s=self.tools_config.default_timeout_s,
+                timeout_s=timeout_s if timeout_s is not None else self.tools_config.default_timeout_s,
             ),
         )
         if not result.ok:

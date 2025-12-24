@@ -28,7 +28,7 @@ from codeintel.ingestion.engine.results import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.config.models import ToolsConfig
@@ -371,6 +371,9 @@ class ToolService:
         *,
         output_scip: Path,
         proto_module_path: Path,
+        target_dir: Path | None = None,
+        rel_paths: Sequence[str] | None = None,
+        timeout_s: float | None = None,
     ) -> ScipIndexResult:
         """
         Run scip-python for a full index and parse via protobuf.
@@ -393,9 +396,10 @@ class ToolService:
             "scip",
             repo_root=repo_root,
             output_scip=output_scip,
-            target_dir=None,
-            rel_paths=None,
+            target_dir=target_dir,
+            rel_paths=rel_paths,
             proto_module_path=proto_module_path,
+            timeout_s=timeout_s,
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:

@@ -176,7 +176,6 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     "tests._helpers.tool_payloads": (
         "coverage_json_payload",
         "pytest_report_payload",
-        "scip_json_payload",
     ),
 }
 
@@ -334,7 +333,6 @@ if TYPE_CHECKING:
     from tests._helpers.tool_payloads import (
         coverage_json_payload,
         pytest_report_payload,
-        scip_json_payload,
     )
     from tests._helpers.tooling_audit import (
         ToolCall,
@@ -460,7 +458,6 @@ if TYPE_CHECKING:
         list_repo_fixtures,
         pytest_report_payload,
         reload_build_config,
-        scip_json_payload,
         assert_skipped,
         assert_succeeded,
         compute_input_hash,

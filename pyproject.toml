@@ -118,6 +118,7 @@ dependencies = [
     "protobuf>=6.33.2",
     "grpcio-tools>=1.76.0",
     "grpcio>=1.76.0",
+    "grpcio-observability>=1.76.0",
 ]
 
 [project.scripts]

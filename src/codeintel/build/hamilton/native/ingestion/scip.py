@@ -3,13 +3,12 @@
 This target produces the SCIP artifacts declared in the build contract:
 - ``scip_index``: ``{scip_dir}/index.scip``
 
-Tool execution is delegated to the ingestion tool runtime (ToolService),
+Tool execution is delegated to the ingestion tool runtime (ToolRunner),
 while persistence is DAG-visible via ``FileArtifactSaver``.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,25 +23,37 @@ from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifact
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleScanResult
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materializations,
 )
+from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
     codeintel_target,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.options_loading import load_target_options
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.ingestion.ports.change_detection import ChangeSet
 from codeintel.ingestion.scip import (
+    ScipParsedIndex,
+    build_diagnostic_rows,
+    build_external_symbol_rows,
     build_occurrence_rows,
+    build_symbol_information_rows,
+    build_symbol_relationship_rows,
     build_symbol_rows,
+    parse_index,
 )
+from codeintel.ingestion.scip.incremental import update_index_incremental
 
 log = logging.getLogger(__name__)
 
@@ -130,14 +141,37 @@ class ScipMaterializationInputs:
     table_materializations: dict[str, MaterializationMetadata]
 
 
+@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
+def scip__options(env: BuildEnv) -> ScipIngestOptions:
+    """Load SCIP ingestion options for the target."""
+    return load_target_options(env, target_name=SCIP_TARGET_NAME, options_type=ScipIngestOptions)
+
+
+@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
+def scip__hash_options(
+    env: BuildEnv,
+    t__modules__scan: ModuleScanResult,
+) -> InputHashOptions:
+    """Build input hash options for SCIP execution."""
+    options_hash = options_hash_for_target(env, SCIP_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=t__modules__scan.file_state_hash,
+    )
+
+
 @tag_tool(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip__run(
     env: BuildEnv,
     graph: TargetGraph,
     t__modules: TargetRunRecord,
+    t__modules__scan: ModuleScanResult,
     scip__proto_module_path: Path | None,
+    scip__options: ScipIngestOptions,
+    scip__hash_options: InputHashOptions,
 ) -> ScipRunResult:
-    """Execute scip-python + scip print to produce SCIP artifacts.
+    """Execute scip-python to produce SCIP artifacts.
 
     Returns
     -------
@@ -149,17 +183,24 @@ def t__scip__run(
             success=False,
             error=f"Upstream modules target failed: {t__modules.error}",
         )
-
-    executor = NativeTargetExecutor.for_target(env, graph, SCIP_TARGET_NAME)
-    if executor.should_skip():
-        return ScipRunResult(success=True, skipped=True)
-
-    output_scip = env.paths.scip_dir / "index.scip"
-    if output_scip.exists():
+    if not t__modules__scan.success:
         return ScipRunResult(
-            success=True,
-            index_path=output_scip,
+            success=False,
+            error=t__modules__scan.error or "Module scan failed",
         )
+
+    output_dir = scip__options.scip_output_dir or env.paths.scip_dir
+    output_scip = output_dir / "index.scip"
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SCIP_TARGET_NAME,
+        hash_options=scip__hash_options,
+    )
+    if executor.should_skip():
+        if output_scip.is_file():
+            return ScipRunResult(success=True, skipped=True, index_path=output_scip)
+        log.warning("SCIP target marked up-to-date but index.scip is missing; rebuilding")
 
     try:
         if scip__proto_module_path is None:
@@ -167,17 +208,36 @@ def t__scip__run(
                 success=False,
                 error="SCIP proto module path is missing",
             )
-        result = asyncio.run(
-            env.providers.tool_service.run_scip_full(
-                env.snapshot.repo_root,
-                output_scip=output_scip,
-                proto_module_path=scip__proto_module_path,
-            )
+        change_set = t__modules__scan.change_set
+        if change_set is None:
+            log.warning("Module change set missing; forcing full SCIP rebuild")
+            change_set = ChangeSet()
+            force_full_rebuild = True
+        else:
+            force_full_rebuild = False
+
+        result = update_index_incremental(
+            repo_root=env.snapshot.repo_root,
+            output_scip=output_scip,
+            proto_module_path=scip__proto_module_path,
+            change_set=change_set,
+            options_hash=scip__hash_options.options_hash,
+            tools_config=env.providers.tool_runner.tools_config,
+            tool_runner=env.providers.tool_runner,
+            scope_paths=scip__options.scope_paths,
+            max_file_size_kb=scip__options.max_file_size_kb,
+            timeout_seconds=scip__options.timeout_seconds,
+            target_dir=None,
+            force_full_rebuild=force_full_rebuild,
         )
-        index_path = result.index_scip_path or output_scip
+        if not result.success:
+            return ScipRunResult(
+                success=False,
+                error=result.error or "SCIP indexing failed",
+            )
         return ScipRunResult(
             success=True,
-            index_path=index_path,
+            index_path=result.index_path or output_scip,
         )
     except Exception as exc:
         log.exception("SCIP execution failed")
@@ -404,7 +464,13 @@ def scip__occurrence_rows(
 def scip__symbol_info_rows(
     t__scip__ingest: ScipIngestResult,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_symbol_information."""
+    """Return rows for core.scip_symbol_information.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for scip_symbol_information, or None when ingestion skipped or failed.
+    """
     if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
         return None
     return t__scip__ingest.symbol_info_rows
@@ -427,7 +493,13 @@ def scip__symbol_info_rows(
 def scip__relationship_rows(
     t__scip__ingest: ScipIngestResult,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_symbol_relationships."""
+    """Return rows for core.scip_symbol_relationships.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for scip_symbol_relationships, or None when ingestion skipped or failed.
+    """
     if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
         return None
     return t__scip__ingest.relationship_rows
@@ -450,7 +522,13 @@ def scip__relationship_rows(
 def scip__diagnostic_rows(
     t__scip__ingest: ScipIngestResult,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_diagnostics."""
+    """Return rows for core.scip_diagnostics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for scip_diagnostics, or None when ingestion skipped or failed.
+    """
     if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
         return None
     return t__scip__ingest.diagnostic_rows
@@ -473,7 +551,13 @@ def scip__diagnostic_rows(
 def scip__external_symbol_rows(
     t__scip__ingest: ScipIngestResult,
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_external_symbols."""
+    """Return rows for core.scip_external_symbols.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for scip_external_symbols, or None when ingestion skipped or failed.
+    """
     if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
         return None
     return t__scip__ingest.external_symbol_rows
@@ -618,6 +702,7 @@ def t__scip(
     graph: TargetGraph,
     t__modules: TargetRunRecord,
     scip__inputs: ScipMaterializationInputs,
+    scip__hash_options: InputHashOptions,
 ) -> TargetRunRecord:
     """SCIP index ingestion and GOID generation.
 
@@ -626,7 +711,12 @@ def t__scip(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, SCIP_TARGET_NAME)
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SCIP_TARGET_NAME,
+        hash_options=scip__hash_options,
+    )
     if t__modules.status != "succeeded":
         return executor.fail(RuntimeError(t__modules.error or "Upstream modules target failed"))
     if not scip__inputs.run.success:

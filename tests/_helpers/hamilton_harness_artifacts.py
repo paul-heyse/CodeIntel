@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.config.primitives import BuildPaths
-from tests._helpers.tool_payloads import pytest_report_payload, scip_json_payload
+from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
+from tests._helpers.tool_payloads import pytest_report_payload
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -170,30 +171,33 @@ class HarnessArtifacts:
         Returns
         -------
         tuple[Path, Path]
-            Paths to index.scip and index.json.
+            Paths to index.scip and scip_pb2.py.
         """
         out_dir = scip_dir or self.paths.scip_dir
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        index_json = out_dir / "index.json"
         index_scip = out_dir / "index.scip"
+        proto_dir = out_dir / "proto"
+        proto_dir.mkdir(parents=True, exist_ok=True)
+        proto_source = ensure_proto_module()
+        proto_dest = proto_dir / "scip_pb2.py"
+        proto_dest.write_text(proto_source.read_text(encoding="utf-8"), encoding="utf-8")
 
         docs = documents or [
             {
-                "relativePath": "pkg/mod_a.py",
+                "relative_path": "pkg/mod_a.py",
                 "symbols": [{"symbol": "scip-python python pkg/mod_a foo()."}],
                 "occurrences": [
                     {
                         "symbol": "scip-python python pkg/mod_a foo().",
                         "range": [1, 0, 1, 1],
+                        "symbol_roles": 1,
                     }
                 ],
             }
         ]
-        payload = scip_json_payload(documents=docs)
-        index_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        index_scip.write_bytes(b"SCIP")
-        return index_scip, index_json
+        write_scip_index(index_scip, proto_module_path=proto_dest, documents=docs)
+        return index_scip, proto_dest
 
     def touch_coverage_file(self, *, prefer: str = "repo_root") -> Path:
         """Create a coverage artifact where ingestion searches.

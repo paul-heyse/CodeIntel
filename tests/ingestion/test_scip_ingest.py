@@ -16,12 +16,12 @@ def test_scip_target_writes_tables(build_harness: HamiltonBuildHarness) -> None:
 
     scip_dir = build_harness.artifacts.paths.scip_dir
     index_scip = scip_dir / "index.scip"
-    index_json = scip_dir / "index.json"
+    proto_module = scip_dir / "proto" / "scip_pb2.py"
     expect_true(
         index_scip.is_file(),
         message="index.scip was not created under build/scip",
     )
     expect_true(
-        index_json.is_file(),
-        message="index.json was not created under build/scip",
+        proto_module.is_file(),
+        message="scip_pb2.py was not created under build/scip/proto",
     )

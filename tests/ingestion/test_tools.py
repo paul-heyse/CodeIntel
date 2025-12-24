@@ -35,13 +35,12 @@ from codeintel.ingestion.engine.results import (
     ScipIndexResult,
     ScipOccurrence,
     TestReport,
-    parse_scip_occurrence,
-    parse_scip_range,
     parse_test_duration,
     parse_test_markers,
 )
 from codeintel.ingestion.engine.scip import ScipPlugin
 from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.scip.protobuf_parser import parse_index
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
@@ -74,6 +73,7 @@ from tests._helpers.ingestion import write_pytest_report
 from tests._helpers.orchestration.tooling import (
     build_tooling_artifacts,
 )
+from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
 
 if TYPE_CHECKING:
     from tests._helpers.orchestration.tooling import (
@@ -744,6 +744,7 @@ def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
             service.run_scip_full(
                 tmp_path,
                 output_scip=tmp_path / "index.scip",
+                proto_module_path=tmp_path / "scip_pb2.py",
             )
         )
 
@@ -890,7 +891,7 @@ def test_test_report_empty() -> None:
 
 def test_results_scip_occurrence_attributes() -> None:
     """ScipOccurrence from results.py should store symbol and range."""
-    occ = ScipOccurrence(symbol="pkg.mod#func", range_=(10, 0, 10, 5), is_definition=True)
+    occ = ScipOccurrence(symbol="pkg.mod#func", range_=(10, 0, 10, 5), symbol_roles=1)
     expect_true(occ.symbol == "pkg.mod#func")
     expect_true(occ.range_ == (LINE_10, 0, LINE_10, COLUMN_5))
     expect_true(occ.is_definition is True)
@@ -904,76 +905,96 @@ def test_results_scip_document_attributes() -> None:
     expect_equal(len(doc.occurrences), 1)
 
 
-def test_parse_scip_range_three_elements() -> None:
-    """parse_scip_range should handle 3-element ranges (single line)."""
-    result = parse_scip_range([10, 5, 15])
-    expect_true(result == (LINE_10, COLUMN_5, LINE_10, COLUMN_15))
+def test_parse_scip_range_three_elements(tmp_path: Path) -> None:
+    """parse_index should handle 3-element ranges (single line)."""
+    proto_module_path = ensure_proto_module(tmp_path)
+    index_path = tmp_path / "index.scip"
+    write_scip_index(
+        index_path,
+        proto_module_path=proto_module_path,
+        documents=[
+            {
+                "relative_path": "mod.py",
+                "occurrences": [
+                    {"symbol": "pkg#func", "range": [10, 5, 15], "symbol_roles": 1}
+                ],
+            }
+        ],
+    )
+    parsed = parse_index(index_path, proto_module_path)
+    occurrence = parsed.documents[0].occurrences[0]
+    expect_true(
+        (
+            occurrence.range_start_line,
+            occurrence.range_start_col,
+            occurrence.range_end_line,
+            occurrence.range_end_col,
+        )
+        == (LINE_10, COLUMN_5, LINE_10, COLUMN_15)
+    )
+    expect_true(occurrence.symbol_roles == 1)
 
 
-def test_parse_scip_range_four_elements() -> None:
-    """parse_scip_range should handle 4-element ranges."""
-    result = parse_scip_range([10, 5, 12, 8])
-    expected = (10, 5, 12, 8)
-    expect_true(result == expected)
+def test_parse_scip_range_four_elements(tmp_path: Path) -> None:
+    """parse_index should handle 4-element ranges."""
+    proto_module_path = ensure_proto_module(tmp_path)
+    index_path = tmp_path / "index.scip"
+    write_scip_index(
+        index_path,
+        proto_module_path=proto_module_path,
+        documents=[
+            {
+                "relative_path": "mod.py",
+                "occurrences": [
+                    {"symbol": "pkg#func", "range": [10, 5, 12, 8], "symbol_roles": 0}
+                ],
+            }
+        ],
+    )
+    parsed = parse_index(index_path, proto_module_path)
+    occurrence = parsed.documents[0].occurrences[0]
+    expect_true(
+        (
+            occurrence.range_start_line,
+            occurrence.range_start_col,
+            occurrence.range_end_line,
+            occurrence.range_end_col,
+        )
+        == (10, 5, 12, 8)
+    )
 
 
-def test_parse_scip_range_invalid() -> None:
-    """parse_scip_range should return None for invalid ranges."""
-    expect_true(parse_scip_range([1]) is None)
-    expect_true(parse_scip_range([1, 2]) is None)
-    expect_true(parse_scip_range([]) is None)
+def test_parse_scip_range_invalid_skips_occurrence(tmp_path: Path) -> None:
+    """parse_index should skip occurrences with invalid ranges."""
+    proto_module_path = ensure_proto_module(tmp_path)
+    index_path = tmp_path / "index.scip"
+    write_scip_index(
+        index_path,
+        proto_module_path=proto_module_path,
+        documents=[
+            {
+                "relative_path": "mod.py",
+                "occurrences": [{"symbol": "pkg#func", "range": [1], "symbol_roles": 0}],
+            }
+        ],
+    )
+    parsed = parse_index(index_path, proto_module_path)
+    expect_equal(len(parsed.documents[0].occurrences), 0)
 
 
-def test_parse_scip_occurrence_valid() -> None:
-    """parse_scip_occurrence should parse valid occurrence."""
-    occ = {"symbol": "pkg#func", "range": [10, 5, 15], "symbol_roles": 1}
-    result = parse_scip_occurrence(occ)
-    expect_is_not_none(result)
-    if result is None:
-        return
-    parsed, is_def = result
-    expect_true(parsed.symbol == "pkg#func")
-    expect_true(is_def is True)
-
-
-def test_parse_scip_occurrence_invalid_symbol() -> None:
-    """parse_scip_occurrence should return None for missing symbol."""
-    expect_true(parse_scip_occurrence({"range": [1, 0, 5]}) is None)
-    expect_true(parse_scip_occurrence({"symbol": 123, "range": [1, 0, 5]}) is None)
-
-
-def test_parse_scip_occurrence_invalid_range() -> None:
-    """parse_scip_occurrence should return None for invalid range."""
-    expect_true(parse_scip_occurrence({"symbol": "s", "range": [1]}) is None)
-    expect_true(parse_scip_occurrence({"symbol": "s", "range": "bad"}) is None)
-
-
-def test_scip_index_result_from_json_documents() -> None:
-    """ScipIndexResult.from_json_documents should build result."""
-    docs = [
-        {
-            "relative_path": "mod.py",
-            "occurrences": [
-                {"symbol": "s1", "range": [1, 0, 5], "symbol_roles": 1},
-                {"symbol": "s2", "range": [2, 0, 10], "symbol_roles": 0},
-            ],
-        },
-    ]
-    result = ScipIndexResult.from_json_documents(docs)
+def test_scip_index_result_from_documents() -> None:
+    """ScipIndexResult.from_documents should build counts."""
+    doc = ScipDocument(
+        relative_path="mod.py",
+        occurrences=(
+            ScipOccurrence(symbol="s1", range_=(1, 0, 1, 5), symbol_roles=1),
+            ScipOccurrence(symbol="s2", range_=(2, 0, 2, 10), symbol_roles=0),
+        ),
+    )
+    result = ScipIndexResult.from_documents((doc,))
     expect_equal(len(result.documents), 1)
     expect_true(result.definition_count == 1)
     expect_true(result.reference_count == 1)
-
-
-def test_scip_index_result_skips_invalid_docs() -> None:
-    """ScipIndexResult.from_json_documents should skip invalid docs."""
-    docs = [
-        {"relative_path": 123},  # Invalid path
-        {"other": "data"},  # Missing path
-        {"relative_path": "valid.py", "occurrences": []},
-    ]
-    result = ScipIndexResult.from_json_documents(docs)
-    expect_equal(len(result.documents), 1)
 
 
 def test_scip_index_result_empty() -> None:
@@ -999,7 +1020,7 @@ def test_scip_plugin_not_found_during_scip_python() -> None:
         plugin.run(
             repo_root=Path(),
             output_scip=Path("index.scip"),
-            output_json=Path("index.json"),
+            proto_module_path=Path("scip_pb2.py"),
         )
     )
 
@@ -1019,11 +1040,11 @@ def test_scip_plugin_type_error_on_missing_output_scip() -> None:
     plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
 
     with pytest.raises(TypeError, match="output_scip"):
-        asyncio.run(plugin.run(repo_root=Path(), output_json=Path("index.json")))
+        asyncio.run(plugin.run(repo_root=Path(), proto_module_path=Path("scip_pb2.py")))
 
 
-def test_scip_plugin_type_error_on_missing_output_json() -> None:
-    """ScipPlugin.run() should raise TypeError when output_json is missing."""
+def test_scip_plugin_type_error_on_missing_proto_module_path() -> None:
+    """ScipPlugin.run() should raise TypeError when proto_module_path is missing."""
     tools_cfg = ToolsConfig.default()
     run = make_tool_run_result(
         ToolName.SCIP_PYTHON,
@@ -1032,7 +1053,7 @@ def test_scip_plugin_type_error_on_missing_output_json() -> None:
     runner = PresetRunner(run)
     plugin = ScipPlugin(runner=runner, tools_config=tools_cfg)
 
-    with pytest.raises(TypeError, match="output_json"):
+    with pytest.raises(TypeError, match="proto_module_path"):
         asyncio.run(plugin.run(repo_root=Path(), output_scip=Path("index.scip")))
 
 
@@ -1051,7 +1072,7 @@ def test_scip_plugin_type_error_on_invalid_target_dir() -> None:
             plugin.run(
                 repo_root=Path(),
                 output_scip=Path("index.scip"),
-                output_json=Path("index.json"),
+                proto_module_path=Path("scip_pb2.py"),
                 target_dir="not-a-path",
             )
         )
@@ -1073,7 +1094,7 @@ def test_scip_plugin_type_error_on_invalid_rel_paths() -> None:
             plugin.run(
                 repo_root=Path(),
                 output_scip=Path("index.scip"),
-                output_json=Path("index.json"),
+                proto_module_path=Path("scip_pb2.py"),
                 rel_paths=123,
             )
         )
@@ -1200,7 +1221,6 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
     "ruff",
     "coverage",
     "pytest",
-    "scip",
     "scip-python",
 )
 def test_tool_service_run_coverage_report_with_data(
@@ -1295,6 +1315,7 @@ def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:
             service.run_scip_full(
                 tmp_path,
                 output_scip=tmp_path / "index.scip",
+                proto_module_path=tmp_path / "scip_pb2.py",
             )
         )
 
@@ -1309,6 +1330,7 @@ def test_tool_service_run_scip_full_execution_error(tmp_path: Path) -> None:
             service.run_scip_full(
                 tmp_path,
                 output_scip=tmp_path / "index.scip",
+                proto_module_path=tmp_path / "scip_pb2.py",
             )
         )
 
