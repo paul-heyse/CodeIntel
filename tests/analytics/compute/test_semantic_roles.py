@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import replace
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -51,20 +50,83 @@ CONFIDENCE_ZERO = 0.0
 LARGE_LOC = 200
 
 
+def _apply_int_override(base: FunctionContextBuilder, key: str, value: object) -> bool:
+    if key == "goid" and isinstance(value, int):
+        base.with_goid(value)
+        return True
+    return False
+
+
+def _apply_str_override(base: FunctionContextBuilder, key: str, value: object) -> bool:
+    if key == "rel_path" and isinstance(value, str):
+        base.with_rel_path(value)
+        return True
+    if key == "qualname" and isinstance(value, str):
+        base.with_qualname(value)
+        return True
+    return False
+
+
+def _apply_optional_str_override(base: FunctionContextBuilder, key: str, value: object) -> bool:
+    if key == "module_name" and (value is None or isinstance(value, str)):
+        base.with_module_name(value)
+        return True
+    return False
+
+
+def _apply_loc_override(base: FunctionContextBuilder, key: str, value: object) -> bool:
+    if key == "loc" and (value is None or isinstance(value, int)):
+        base.loc = value
+        return True
+    return False
+
+
+def _apply_list_override(base: FunctionContextBuilder, key: str, value: object) -> bool:
+    if key == "decorators" and isinstance(value, (list, tuple)):
+        decorators = list(value)
+        if all(isinstance(item, str) for item in decorators):
+            base.decorators = decorators
+        return True
+    if key == "module_tags" and isinstance(value, (list, tuple)):
+        tags = list(value)
+        if all(isinstance(item, str) for item in tags):
+            base.module_tags = tags
+        return True
+    return False
+
+
+def _apply_dict_override(base: FunctionContextBuilder, key: str, value: object) -> bool:
+    if key == "effects" and isinstance(value, dict):
+        base.with_effects(value)
+        return True
+    if key == "contracts" and isinstance(value, dict):
+        base.with_contracts(value)
+        return True
+    if key == "graph" and isinstance(value, dict):
+        graph_metrics = {str(k): int(v) for k, v in value.items()}
+        base.with_graph(graph_metrics)
+        return True
+    return False
+
+
 def _make_context(
     builder: FunctionContextBuilder | None = None, **overrides: object
 ) -> FunctionContext:
     base = builder or FunctionContextBuilder()
-    kwargs: dict[str, object] = {}
     for key, value in overrides.items():
-        if key in {"decorators", "module_tags"} and isinstance(value, tuple):
-            kwargs[key] = list(value)
-        elif key == "graph" and isinstance(value, dict):
-            kwargs[key] = {str(k): int(v) for k, v in value.items()}
-        else:
-            kwargs[key] = value
-    updated = replace(base, **kwargs)
-    return updated.build()
+        if _apply_int_override(base, key, value):
+            continue
+        if _apply_str_override(base, key, value):
+            continue
+        if _apply_optional_str_override(base, key, value):
+            continue
+        if _apply_list_override(base, key, value):
+            continue
+        if _apply_dict_override(base, key, value):
+            continue
+        if _apply_loc_override(base, key, value):
+            continue
+    return base.build()
 
 
 def _get_now() -> datetime:

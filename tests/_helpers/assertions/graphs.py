@@ -14,7 +14,7 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Collection, Iterable
 
     from duckdb import DuckDBPyConnection
 
@@ -106,13 +106,15 @@ def assert_cycle_membership(graph: nx.DiGraph, expected: Iterable[Iterable[objec
 def assert_filtered_graph(
     graph: nx.DiGraph,
     *,
-    expected_nodes: set[object],
-    expected_edges: set[tuple[object, object]],
+    expected_nodes: Collection[object],
+    expected_edges: Collection[tuple[object, object]],
 ) -> None:
     """Assert nodes and edges on a filtered directed graph."""
-    expect_equal(set(graph.nodes), expected_nodes)
-    expect_equal(set(graph.edges), expected_edges)
-    expect_true(expected_edges <= set(graph.edges))
+    node_set = set(expected_nodes)
+    edge_set = set(expected_edges)
+    expect_equal(set(graph.nodes), node_set)
+    expect_equal(set(graph.edges), edge_set)
+    expect_true(edge_set <= set(graph.edges))
 
 
 def assert_graph_metrics_for_goids(ctx: TestContext, goids: Iterable[int]) -> None:

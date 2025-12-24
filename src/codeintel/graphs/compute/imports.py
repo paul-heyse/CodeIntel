@@ -106,7 +106,7 @@ def compute_scc(
         graph.add_edge(edge.src_module, edge.dst_module)
 
     components = list(nx.strongly_connected_components(graph))
-    return {node: idx for idx, comp in enumerate(components) for node in comp}
+    return {str(node): idx for idx, comp in enumerate(components) for node in comp}
 
 
 def compute_layers(
@@ -144,12 +144,14 @@ def compute_layers(
         return {}
 
     comp_layers: dict[int, int] = {
-        node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
+        int(str(node)): 0 for node in condensation.nodes if condensation.in_degree(node) == 0
     }
     for node in nx.topological_sort(condensation):
-        base = comp_layers.get(node, 0)
+        node_idx = int(str(node))
+        base = comp_layers.get(node_idx, 0)
         for succ in condensation.successors(node):
-            comp_layers[succ] = max(comp_layers.get(succ, 0), base + 1)
+            succ_idx = int(str(succ))
+            comp_layers[succ_idx] = max(comp_layers.get(succ_idx, 0), base + 1)
 
     return {node: comp_layers.get(scc_map.get(node, -1), 0) for node in modules}
 

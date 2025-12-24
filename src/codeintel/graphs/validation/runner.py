@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
 
+import pandas as pd
+
 from codeintel.core.catalog import load_function_catalog
 from codeintel.core.ibis_typing import ibis_bool, isin_values
 from codeintel.core.validation.runner import ValidationRunner
@@ -318,8 +320,10 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
         try:
             expr = table_expr if not predicates else table_expr.filter(list(predicates))
             result = expr.count().execute()
-            if hasattr(result, "iloc"):
+            if isinstance(result, pd.DataFrame):
                 return int(cast("SupportsInt", result.iloc[0, 0]))
+            if isinstance(result, pd.Series):
+                return int(cast("SupportsInt", result.iloc[0]))
             return int(cast("SupportsInt", result))
         except DuckDBError as exc:
             log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)

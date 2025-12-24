@@ -1,0 +1,6 @@
+from collections.abc import Mapping
+
+from networkx import DiGraph, Graph
+
+def node_link_graph(data: Mapping[str, object]) -> Graph | DiGraph: ...
+def node_link_data(graph: Graph | DiGraph) -> dict[str, object]: ...

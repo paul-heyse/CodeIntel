@@ -15,9 +15,11 @@ DataFrameSchema definitions for interoperability with validation boundaries.
 from __future__ import annotations
 
 import datetime as dt
+import math
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, make_dataclass
+from decimal import Decimal
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, cast
 
@@ -111,10 +113,18 @@ def _is_missing_value(value: object) -> bool:
         return False
     if isinstance(value, _ROW_VALUE_BINARY):
         return False
-    try:
-        return bool(pd.isna(value))
-    except (TypeError, ValueError):
-        return False
+    is_missing = False
+    if value is pd.NA or value is pd.NaT:
+        is_missing = True
+    elif isinstance(value, float):
+        is_missing = math.isnan(value)
+    elif isinstance(value, Decimal):
+        is_missing = value.is_nan()
+    elif isinstance(value, np.floating):
+        is_missing = bool(np.isnan(value))
+    elif isinstance(value, (np.datetime64, np.timedelta64)):
+        is_missing = bool(np.isnat(value))
+    return is_missing
 
 
 def normalize_row_value(value: object) -> object:

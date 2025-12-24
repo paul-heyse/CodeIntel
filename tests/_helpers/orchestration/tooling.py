@@ -1,15 +1,9 @@
-"""Helpers that exercise the tooling stack for tests.
-
-This module provides utilities for testing the tooling stack, including
-ToolRunner, ToolService, coverage generation, and git history. Stubbed
-tooling outputs are used by default for deterministic tests.
-"""
+"""Helpers that exercise the tooling stack for tests."""
 
 from __future__ import annotations
 
 import asyncio
 import importlib.util
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,10 +20,9 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunOptions,
 )
 from codeintel.ingestion.engine.service import ToolService
-from tests._helpers.fakes.tools import write_dummy_scip_files
-from tests._helpers.ingestion import write_coverage_file, write_pytest_report
-from tests._helpers.tool_payloads import coverage_json_payload, pytest_report_payload
-from tests._helpers.tool_sandbox import ToolSandbox, ToolStubSpec
+from tests._helpers.ingestion import write_coverage_file
+from tests._helpers.tool_payloads import coverage_json_payload
+from tests._helpers.tooling_audit import require_tooling
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -46,62 +39,6 @@ def _ensure_ok(result: ToolRunResult, *, action: str) -> None:
         return
     message = f"{action} failed: code={result.returncode} stderr={result.stderr}"
     raise RuntimeError(message)
-
-
-def _tool_stub_specs(repo_root: Path) -> dict[str, ToolStubSpec]:
-    mod_path = repo_root / "pkg" / "mod.py"
-    coverage_payload = coverage_json_payload(
-        files={
-            str(mod_path): {
-                "executed_lines": [1, 2],
-                "missing_lines": [],
-            }
-        }
-    )
-    pyright_payload = {
-        "generalDiagnostics": [
-            {
-                "file": str(mod_path),
-                "severity": "error",
-                "message": "stub error",
-            }
-        ]
-    }
-    pyrefly_payload = {
-        "errors": [
-            {
-                "path": str(mod_path),
-                "severity": "error",
-                "message": "stub error",
-            }
-        ]
-    }
-    ruff_payload = [
-        {
-            "filename": str(mod_path),
-            "code": "F401",
-            "message": "stub error",
-        }
-    ]
-    pytest_payload = pytest_report_payload(
-        tests=[], summary={"passed": 0, "failed": 0, "skipped": 0}
-    )
-    return {
-        "coverage": ToolStubSpec(
-            writes="-o",
-            writes_payload=json.dumps(coverage_payload),
-        ),
-        "pyright": ToolStubSpec(stdout=json.dumps(pyright_payload)),
-        "pyrefly": ToolStubSpec(
-            writes="--output",
-            writes_payload=json.dumps(pyrefly_payload),
-        ),
-        "ruff": ToolStubSpec(stdout=json.dumps(ruff_payload)),
-        "pytest": ToolStubSpec(
-            writes="--json-report-file",
-            writes_payload=json.dumps(pytest_payload),
-        ),
-    }
 
 
 def _write_tooling_repo(repo_root: Path) -> Path:
@@ -146,6 +83,21 @@ def _write_tooling_repo(repo_root: Path) -> Path:
                 "mod.add(1, 2)",
                 "with suppress(Exception):",
                 "    mod.bad_type(1)",
+            ]
+        ),
+        encoding="utf8",
+    )
+    tests_dir = repo_root / "tests"
+    tests_dir.mkdir(parents=True, exist_ok=True)
+    (tests_dir / "test_tooling_repo.py").write_text(
+        "\n".join(
+            [
+                '"""Smoke tests for tooling fixtures."""',
+                "",
+                "from pkg import mod",
+                "",
+                "def test_add() -> None:",
+                "    assert mod.add(1, 2) == 3",
             ]
         ),
         encoding="utf8",
@@ -205,7 +157,11 @@ class ToolingArtifacts:
 def build_tooling_context(base_dir: Path) -> ToolingContext:
     repo_root = base_dir / "repo"
     driver_path = _write_tooling_repo(repo_root)
-    tools_cfg = make_tools_config(coverage_file=repo_root / ".coverage")
+    tools_cfg = make_tools_config(
+        coverage_file=repo_root / ".coverage",
+        pytest_report_path=repo_root / "build" / "test-results" / "pytest-report.json",
+    )
+    require_tooling(tools_cfg)
     runner = ToolRunner(cache_dir=base_dir / ".tool_cache", tools_config=tools_cfg)
     service = ToolService(runner, tools_cfg)
     return ToolingContext(
@@ -214,34 +170,6 @@ def build_tooling_context(base_dir: Path) -> ToolingContext:
         runner=runner,
         service=service,
         coverage_file=tools_cfg.coverage_file or repo_root / ".coverage",
-        driver_path=driver_path,
-    )
-
-
-def build_stub_tooling_context(base_dir: Path) -> ToolingContext:
-    repo_root = base_dir / "repo"
-    driver_path = _write_tooling_repo(repo_root)
-    sandbox = ToolSandbox.create(base_dir)
-    for name, spec in _tool_stub_specs(repo_root).items():
-        sandbox.install_stub(name, spec=spec)
-    tools_cfg = sandbox.tools_config().model_copy(
-        update={
-            "coverage_file": repo_root / ".coverage",
-            "pytest_report_path": repo_root / "pytest-report.json",
-        }
-    )
-    coverage_file = tools_cfg.coverage_file or repo_root / ".coverage"
-    coverage_file.parent.mkdir(parents=True, exist_ok=True)
-    if not coverage_file.exists():
-        coverage_file.write_text("", encoding="utf-8")
-    runner = ToolRunner(cache_dir=base_dir / ".tool_cache", tools_config=tools_cfg)
-    service = ToolService(runner, tools_cfg)
-    return ToolingContext(
-        repo_root=repo_root,
-        tools_config=tools_cfg,
-        runner=runner,
-        service=service,
-        coverage_file=coverage_file,
         driver_path=driver_path,
     )
 
@@ -289,25 +217,6 @@ def run_static_tooling(context: ToolingContext) -> ToolingOutputs:
     )
 
 
-def run_stub_tooling(context: ToolingContext) -> ToolingOutputs:
-    pyright_errors = asyncio.run(context.service.run_pyright(context.repo_root))
-    pyrefly_errors = asyncio.run(context.service.run_pyrefly(context.repo_root))
-    ruff_errors = asyncio.run(context.service.run_ruff(context.repo_root))
-    coverage_report = asyncio.run(
-        context.service.run_coverage_report(
-            context.repo_root,
-            coverage_file=context.coverage_file,
-        )
-    )
-    return ToolingOutputs(
-        pyright_errors=dict(pyright_errors),
-        pyrefly_errors=dict(pyrefly_errors),
-        ruff_errors=dict(ruff_errors),
-        coverage_reports=coverage_report.files,
-        context=context,
-    )
-
-
 def build_tooling_artifacts(
     tmp_path: Path,
     *,
@@ -320,7 +229,7 @@ def build_tooling_artifacts(
     ToolingArtifacts
         Bundle containing artifact paths plus a configured service/adapter pair.
     """
-    outputs = tooling_outputs or run_stub_tooling(build_stub_tooling_context(tmp_path))
+    outputs = tooling_outputs or run_static_tooling(build_tooling_context(tmp_path))
     build_dir = tmp_path / "artifacts"
     coverage_json = coverage_json_payload(
         files={
@@ -332,15 +241,8 @@ def build_tooling_artifacts(
         }
     )
     coverage_file = write_coverage_file(build_dir, content=coverage_json)
-    pytest_report = write_pytest_report(
-        build_dir,
-        tests=[
-            {"nodeid": f"test_{idx}", "outcome": "passed", "duration": 0.01}
-            for idx, _ in enumerate(outputs.pyright_errors.items(), start=1)
-        ],
-        summary={"passed": len(outputs.pyright_errors)},
-    )
-    scip_index, scip_index_json = write_dummy_scip_files(build_dir)
+    pytest_report = _run_pytest_report(outputs.context, build_dir)
+    scip_index, scip_index_json = _run_scip_index(outputs.context, build_dir)
     adapter = ToolRunnerAdapter(outputs.context.service)
     return ToolingArtifacts(
         coverage_file=coverage_file,
@@ -353,22 +255,44 @@ def build_tooling_artifacts(
     )
 
 
+def _run_pytest_report(context: ToolingContext, build_dir: Path) -> Path:
+    report_path = context.tools_config.pytest_report_path or (
+        build_dir / "test-results" / "pytest-report.json"
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    asyncio.run(context.service.run_pytest_report(context.repo_root, json_report_path=report_path))
+    return report_path
+
+
+def _run_scip_index(context: ToolingContext, build_dir: Path) -> tuple[Path, Path]:
+    scip_dir = build_dir / "scip"
+    scip_dir.mkdir(parents=True, exist_ok=True)
+    output_scip = scip_dir / "index.scip"
+    result = asyncio.run(context.service.run_scip_full(context.repo_root, output_scip=output_scip))
+    scip_index = result.index_scip_path or output_scip
+    scip_json = result.index_json_path or output_scip.with_suffix(".json")
+    if not scip_index.is_file() or not scip_json.is_file():
+        message = f"SCIP artifacts missing at {scip_index} or {scip_json}"
+        raise RuntimeError(message)
+    return scip_index, scip_json
+
+
 @pytest.fixture
 def tooling_outputs(tmp_path: Path) -> ToolingOutputs:
-    """Fixture that runs stubbed tooling outputs against a minimal repo.
+    """Fixture that runs real tooling outputs against a minimal repo.
 
     Returns
     -------
     ToolingOutputs
         Aggregated diagnostics and coverage results.
     """
-    context = build_stub_tooling_context(tmp_path)
-    return run_stub_tooling(context)
+    context = build_tooling_context(tmp_path)
+    return run_static_tooling(context)
 
 
 @pytest.fixture(scope="session")
 def tooling_outputs_session(tmp_path_factory: pytest.TempPathFactory) -> ToolingOutputs:
-    """Session-scoped stub tooling outputs.
+    """Session-scoped tooling outputs.
 
     Returns
     -------
@@ -376,8 +300,8 @@ def tooling_outputs_session(tmp_path_factory: pytest.TempPathFactory) -> Tooling
         Aggregated diagnostics and coverage results.
     """
     base_dir = tmp_path_factory.mktemp("tooling-session")
-    context = build_stub_tooling_context(base_dir)
-    return run_stub_tooling(context)
+    context = build_tooling_context(base_dir)
+    return run_static_tooling(context)
 
 
 @dataclass(frozen=True)

@@ -101,6 +101,7 @@ __all__ = [
     "provision_existing_repo",
     "provision_gateway_with_repo",
     "provision_graph_ready_repo",
+    "provision_hamilton_repo",
     "provision_ingested_repo",
     "provisioned_gateway",
     "run_static_tooling",
@@ -133,6 +134,7 @@ if TYPE_CHECKING:
         provision_existing_repo,
         provision_gateway_with_repo,
         provision_graph_ready_repo,
+        provision_hamilton_repo,
         provision_ingested_repo,
         provisioned_gateway,
     )
@@ -146,6 +148,7 @@ _LAZY_PROVISIONING = {
     "provision_existing_repo": "tests._helpers.orchestration.provisioning",
     "provision_gateway_with_repo": "tests._helpers.orchestration.provisioning",
     "provision_graph_ready_repo": "tests._helpers.orchestration.provisioning",
+    "provision_hamilton_repo": "tests._helpers.orchestration.provisioning",
     "provision_ingested_repo": "tests._helpers.orchestration.provisioning",
     "provisioned_gateway": "tests._helpers.orchestration.provisioning",
 }
@@ -161,6 +164,7 @@ if TYPE_CHECKING:
     provision_existing_repo = _provisioning.provision_existing_repo
     provision_gateway_with_repo = _provisioning.provision_gateway_with_repo
     provision_graph_ready_repo = _provisioning.provision_graph_ready_repo
+    provision_hamilton_repo = _provisioning.provision_hamilton_repo
     provision_ingested_repo = _provisioning.provision_ingested_repo
     provisioned_gateway = _provisioning.provisioned_gateway
 

@@ -55,6 +55,36 @@ def _maybe_to_gpu_graph(graph: nx.Graph, *, use_gpu: bool) -> nx.Graph:
     return graph
 
 
+def _coerce_edge_weight_int(value: object, *, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return default
+    return default
+
+
+def _coerce_edge_weight_float(value: object, *, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    return default
+
+
 def module_attrs_from_row(
     module: object,
     scc_id: int | Decimal | str | bytes | bytearray | None,
@@ -140,7 +170,8 @@ def load_call_graph(
         if caller is None or callee is None:
             continue
         if graph.has_edge(caller, callee):
-            graph[caller][callee]["weight"] += 1
+            attrs = graph[caller][callee]
+            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
         else:
             graph.add_edge(caller, callee, weight=1)
 
@@ -212,8 +243,8 @@ def load_import_graph(
         if layer is not None:
             fallback_layer_by_module[source] = int(layer)
         edge_data = graph.get_edge_data(source, target)
-        weight = int(edge_data.get("weight", 0)) + 1 if edge_data is not None else 1
-        graph.add_edge(source, target, weight=weight)
+        weight = _coerce_edge_weight_int(edge_data.get("weight") if edge_data is not None else None)
+        graph.add_edge(source, target, weight=weight + 1)
 
     try:
         module_rows = con.execute(
@@ -289,7 +320,8 @@ def load_test_function_bipartite(
             graph.add_node(func_node, bipartite=1)
         weight = float(coverage_ratio or 0.0)
         if graph.has_edge(test_node, func_node):
-            graph[test_node][func_node]["weight"] += weight
+            attrs = graph[test_node][func_node]
+            attrs["weight"] = _coerce_edge_weight_float(attrs.get("weight")) + weight
         else:
             graph.add_edge(test_node, func_node, weight=weight)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
@@ -396,7 +428,8 @@ def load_config_module_bipartite(
             if not graph.has_node(module_node):
                 graph.add_node(module_node, bipartite=1)
             if graph.has_edge(key_node, module_node):
-                graph[key_node][module_node]["weight"] += 1
+                attrs = graph[key_node][module_node]
+                attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
             else:
                 graph.add_edge(key_node, module_node, weight=1)
     log.info(
@@ -467,7 +500,8 @@ def load_symbol_module_graph(
         if left == right:
             continue
         if graph.has_edge(left, right):
-            graph[left][right]["weight"] += 1
+            attrs = graph[left][right]
+            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
         else:
             graph.add_edge(left, right, weight=1)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)
@@ -517,7 +551,8 @@ def load_symbol_function_graph(
         if left is None or right is None or left == right:
             continue
         if graph.has_edge(left, right):
-            graph[left][right]["weight"] += 1
+            attrs = graph[left][right]
+            attrs["weight"] = _coerce_edge_weight_int(attrs.get("weight"), default=0) + 1
         else:
             graph.add_edge(left, right, weight=1)
     return _maybe_to_gpu_graph(graph, use_gpu=use_gpu)

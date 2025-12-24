@@ -13,6 +13,7 @@ codeintel.graphs.resources.graphs : GraphResource for graph access
 
 from __future__ import annotations
 
+from collections.abc import Hashable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
@@ -38,10 +39,10 @@ class GraphData:
         Mapping of (source, target) to attribute dict.
     """
 
-    nodes: tuple[int | str, ...]
-    edges: tuple[tuple[int | str, int | str], ...]
-    node_attrs: Mapping[int | str, Mapping[str, object]] | None = None
-    edge_attrs: Mapping[tuple[int | str, int | str], Mapping[str, object]] | None = None
+    nodes: tuple[Hashable, ...]
+    edges: tuple[tuple[Hashable, Hashable], ...]
+    node_attrs: Mapping[Hashable, Mapping[str, object]] | None = None
+    edge_attrs: Mapping[tuple[Hashable, Hashable], Mapping[str, object]] | None = None
 
     @property
     def node_count(self) -> int:
@@ -95,7 +96,7 @@ class GraphData:
         edges_list = cast("list[tuple[Any, Any]]", list(graph.edges()))
         edges = tuple(edges_list)
         node_attrs = {node: dict(graph.nodes[node]) for node in graph.nodes()}
-        edge_attrs_dict: dict[tuple[int | str, int | str], Mapping[str, object]] = {}
+        edge_attrs_dict: dict[tuple[Hashable, Hashable], Mapping[str, object]] = {}
         for src, dst in edges_list:
             edge_attrs_dict[src, dst] = dict(graph.edges[src, dst])
         return cls(

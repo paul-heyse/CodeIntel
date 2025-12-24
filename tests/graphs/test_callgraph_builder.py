@@ -12,6 +12,7 @@ from tests._helpers.fixtures.rows import insert_symbol_use_edges
 from tests._helpers.fixtures.snapshots import SnapshotVariant
 
 if TYPE_CHECKING:
+    from collections.abc import Hashable, Iterable, Mapping
     from pathlib import Path
 
 
@@ -21,6 +22,10 @@ def _normalize_callee(value: object) -> int | None:
     if isinstance(value, float) and math.isnan(value):
         return None
     return cast("int", value)
+
+
+def _normalize_records(records: Iterable[Mapping[Hashable, object]]) -> list[dict[str, object]]:
+    return [{str(key): value for key, value in record.items()} for record in records]
 
 
 def _edge_to(
@@ -158,7 +163,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
         message = "expected call graph edges to be produced"
         raise AssertionError(message)
 
-    edge_records = df_edges.to_dict("records")
+    edge_records = _normalize_records(df_edges.to_dict("records"))
 
     _assert_resolved_edge(
         edge_records=edge_records,

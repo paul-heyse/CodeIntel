@@ -17,6 +17,7 @@ from codeintel.analytics.history.git_history import iter_file_history
 from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.query_results import coerce_int, coerce_optional_int
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -287,7 +288,7 @@ def _load_function_spans(
 
     spans_by_path: dict[str, list[FuncSpan]] = {}
     for row in rows:
-        goid = int(row["function_goid_h128"])
+        goid = coerce_int(row["function_goid_h128"], ctx="function_goid_h128")
         module_name = row.get("module") or ""
         rel_path = str(row["rel_path"])
         spans_by_path.setdefault(rel_path, []).append(
@@ -297,9 +298,9 @@ def _load_function_spans(
                 module=str(module_name),
                 qualname=str(row["qualname"]),
                 rel_path=rel_path,
-                start=int(row["start_line"] or 0),
-                end=int(row["end_line"] or 0),
-                loc=int(row["loc"] or 0),
+                start=coerce_optional_int(row["start_line"], ctx="start_line") or 0,
+                end=coerce_optional_int(row["end_line"], ctx="end_line") or 0,
+                loc=coerce_optional_int(row["loc"], ctx="loc") or 0,
                 repo=str(row["repo"]),
                 commit=str(row["commit"]),
             )

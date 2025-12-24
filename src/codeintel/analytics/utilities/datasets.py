@@ -295,10 +295,10 @@ def validate_contract_rows(
     if not rows:
         return []
     df = validate_df(table_key, pd.DataFrame(rows))
-    normalized = df.where(pd.notna(df), None)
-    records = normalized.to_dict(orient="records")
+    records = df.to_dict(orient="records")
     return [
-        {key: normalize_row_value(value) for key, value in record.items()} for record in records
+        {str(key): normalize_row_value(value) for key, value in record.items()}
+        for record in records
     ]
 
 
@@ -366,8 +366,7 @@ def validate_tuple_rows(
         df = pd.DataFrame(tuple_rows, columns=columns_index)
 
     validated = validate_df(table_key, df)
-    normalized = validated.where(pd.notna(validated), None)
-    ordered = normalized.loc[:, columns_index].astype("object")
+    ordered = validated.loc[:, columns_index].astype("object")
     return [
         tuple(normalize_row_value(value) for value in row)
         for row in ordered.itertuples(index=False, name=None)

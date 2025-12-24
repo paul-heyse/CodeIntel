@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Mapping
-from dataclasses import MISSING, dataclass, fields as dataclass_fields, is_dataclass
+from dataclasses import MISSING, dataclass, is_dataclass
+from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, TypedDict, cast
@@ -244,11 +245,7 @@ def dataclass_row[RowType: InsertableRow](row_type: type[RowType], **fields: obj
     )
     if not is_dataclass(row_type):
         return row_type(**row)
-    field_defs = [
-        field_def
-        for field_def in dataclass_fields(row_type)
-        if field_def.init
-    ]
+    field_defs = [field_def for field_def in dataclass_fields(row_type) if field_def.init]
     row_values: dict[str, object] = {}
     for field_def in field_defs:
         name = field_def.name

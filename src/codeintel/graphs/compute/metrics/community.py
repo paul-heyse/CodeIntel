@@ -11,6 +11,7 @@ from typing import Any
 
 import networkx as nx
 from networkx.algorithms import community as nx_community
+from networkx.exception import NetworkXError
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def detect_communities_greedy(
             weight=weight,
             resolution=resolution,
         )
-    except nx.NetworkXError as exc:
+    except NetworkXError as exc:
         log.warning("Community detection failed: %s", exc)
 
         return {node: idx for idx, node in enumerate(graph.nodes())}
@@ -101,7 +102,7 @@ def detect_communities_louvain(
             resolution=resolution,
             seed=seed,
         )
-    except nx.NetworkXError as exc:
+    except NetworkXError as exc:
         log.warning("Louvain community detection failed: %s", exc)
         return {node: idx for idx, node in enumerate(graph.nodes())}
 
@@ -138,7 +139,7 @@ def detect_communities_label_propagation(
 
     try:
         communities = nx_community.label_propagation_communities(work_graph)
-    except nx.NetworkXError as exc:
+    except NetworkXError as exc:
         log.warning("Label propagation failed: %s", exc)
         return {node: idx for idx, node in enumerate(graph.nodes())}
 
@@ -196,7 +197,7 @@ def compute_modularity(
                 resolution=resolution,
             )
         )
-    except (nx.NetworkXError, ZeroDivisionError):
+    except (NetworkXError, ZeroDivisionError):
         return 0.0
 
 

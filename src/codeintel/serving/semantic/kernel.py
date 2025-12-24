@@ -11,7 +11,6 @@ import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -142,8 +141,11 @@ class SemanticQueryKernel:
             LOG.warning("polars not installed; falling back to pandas result extraction")
 
         df_pd = result.df()
-        sanitized = df_pd.astype("object").where(pd.notna(df_pd), None)
-        return sanitized.to_dict(orient="records")
+        records = [
+            {str(key): value for key, value in record.items()}
+            for record in df_pd.astype("object").to_dict(orient="records")
+        ]
+        return _sanitize_rows(records)
 
     @staticmethod
     def _snapshot_dict(pointer: ServingSnapshotPointer) -> ServingSnapshotIdentity:

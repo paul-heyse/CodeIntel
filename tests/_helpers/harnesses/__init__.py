@@ -50,6 +50,9 @@ from tests._helpers.harnesses.plan_status import (
     compute_status_summary,
     format_plan_diff,
 )
+from tests._helpers.harnesses.serving_app import (
+    ServingAppHarness,
+)
 from tests._helpers.harnesses.serving_harness import (
     ServingTargetHarness,
 )
@@ -72,6 +75,7 @@ __all__ = [
     "RepoStrategy",
     "RepoWriter",
     "ResultLike",
+    "ServingAppHarness",
     "ServingTargetHarness",
     "StorageHandlerHarness",
     "cli_handler_harness",

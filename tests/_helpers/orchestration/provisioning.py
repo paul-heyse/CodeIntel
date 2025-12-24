@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
@@ -29,12 +30,10 @@ from codeintel.ingestion.adapters import (
 )
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
 from codeintel.ingestion.compute.coverage_ingest import CoverageIngestStep
-from codeintel.ingestion.compute.repo_scan import RepoScanStep
 from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunOptions
 from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService
-from codeintel.ingestion.infrastructure.scanning import default_code_profile
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.assertions import assert_target_ok
@@ -51,7 +50,8 @@ from tests._helpers.configs import (
     RepoContext,
     provisioning_gateway_options,
 )
-from tests._helpers.context import TestContext
+from tests._helpers.context import TestContext, create_test_context
+from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes import utcnow
 from tests._helpers.fixtures.repos import (
     write_callgraph_alias_repo,
@@ -68,10 +68,13 @@ from tests._helpers.fixtures.rows import (
     SymbolUseEdgeRow,
     insert_rows,
 )
+from tests._helpers.fixtures.snapshots import SnapshotVariant
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
-from tests._helpers.ingestion import materialize_repo_scan_result, materialize_rows_for_snapshot
-from tests._helpers.modules_expectations import module_paths_expected_from_repo_tree
+from tests._helpers.harnesses.hamilton_build import (
+    HamiltonBuildHarness,
+    HarnessConfig,
+)
+from tests._helpers.ingestion import materialize_rows_for_snapshot
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
@@ -413,7 +416,7 @@ def provisioned_gateway(
     cfg = config or ProvisioningConfig()
     variant = cfg.snapshot_variant
     if cfg.run_ingestion:
-        ctx = provision_ingested_repo(
+        ctx = provision_hamilton_repo(
             repo_root,
             repo=variant.repo,
             commit=variant.commit,
@@ -432,6 +435,103 @@ def provisioned_gateway(
         ctx.close()
 
 
+def _collect_repo_files(repo_root: Path) -> list[Path]:
+    return sorted([path for path in repo_root.rglob("*.py") if path.is_file()])
+
+
+def provision_hamilton_repo(
+    repo_root: Path,
+    *,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
+    options: ProvisionOptions | None = None,
+    repo_writer: Callable[[Path], list[Path]] | None = None,
+) -> ProvisionedGateway:
+    """Provision a repo by running Hamilton ingestion targets.
+
+    Parameters
+    ----------
+    repo_root
+        Root directory for the repository.
+    repo
+        Repository identifier.
+    commit
+        Commit hash.
+    options
+        Provisioning options.
+    repo_writer
+        Optional callback to populate repo_root.
+
+    Returns
+    -------
+    ProvisionedGateway
+        Provisioned gateway with filesystem context.
+    """
+    opts = options or ProvisionOptions()
+    repo_root.mkdir(parents=True, exist_ok=True)
+    files = repo_writer(repo_root) if repo_writer is not None else _collect_repo_files(repo_root)
+
+    db_path = opts.db_path or (repo_root / "build" / "db" / "codeintel.duckdb")
+    coverage_file = repo_root / ".coverage"
+    tools_cfg = make_tools_config(coverage_file=coverage_file)
+    runner = _make_runner(
+        repo_root,
+        files,
+        coverage_file=coverage_file,
+        tools_cfg=tools_cfg,
+    )
+
+    env_opts = EnvOptions(
+        file_backed=opts.file_backed,
+        repo_root=repo_root,
+        build_dir=repo_root / "build",
+        db_path=db_path,
+        snapshot_variant=SnapshotVariant(repo=repo, commit=commit, run_id=DEFAULT_VARIANT.run_id),
+    )
+    gateway_opts = GatewayOptions(
+        file_backed=opts.file_backed,
+        db_path=db_path,
+        apply_schema=True,
+        ensure_views=True,
+        validate_schema=True,
+        strict_schema=True,
+        repo=repo,
+        commit=commit,
+    )
+    ctx = create_test_context(repo_root.parent, options=env_opts, gateway_options=gateway_opts)
+
+    harness = HamiltonBuildHarness.wrap(
+        ctx,
+        harness=HarnessConfig(repo=repo, commit=commit, file_backed_db=opts.file_backed),
+        tools_config=tools_cfg,
+    )
+    targets = ["modules"]
+    if opts.include_typing:
+        targets.append("typing")
+    if opts.include_coverage:
+        targets.append("coverage_ingest")
+
+    result = harness.run_targets(targets)
+    for target in targets:
+        assert_target_ok(harness.record(target, result=result))
+    ModulesAssertions(ctx.gateway, ctx.snapshot).inventory_consistent()
+
+    if opts.build_graph_metrics:
+        seed_cfg_dfg_for_metrics(ctx.gateway, rel_path="pkg/mod.py")
+
+    return ProvisionedGateway(
+        repo=repo,
+        commit=commit,
+        repo_root=repo_root,
+        build_dir=ctx.build_paths.build_dir,
+        db_path=ctx.build_paths.db_path,
+        document_output_dir=ctx.build_paths.document_output_dir,
+        coverage_file=coverage_file,
+        gateway=ctx.gateway,
+        runner=runner,
+    )
+
+
 def provision_ingested_repo(
     repo_root: Path,
     *,
@@ -439,12 +539,7 @@ def provision_ingested_repo(
     commit: str = DEFAULT_VARIANT.commit,
     options: ProvisionOptions | None = None,
 ) -> ProvisionedGateway:
-    """Build a sample repo, run ingestion steps, and return a provisioned gateway.
-
-    The gateway uses real schemas/views and populates:
-    - core.modules/core.repo_map via ingest_repo
-    - analytics.typedness/static_diagnostics via ingest_typing_signals
-    - analytics.coverage_lines via ingest_coverage_lines
+    """Build a sample repo, run Hamilton ingestion, and return a provisioned gateway.
 
     Parameters
     ----------
@@ -460,45 +555,14 @@ def provision_ingested_repo(
     Returns
     -------
     ProvisionedGateway
-        Provisioned gateway plus filesystem context for tests.
+        Provisioned gateway plus repo context.
     """
-    opts = options or ProvisionOptions()
-    repo_root.mkdir(parents=True, exist_ok=True)
-
-    files = write_sample_repo(repo_root)
-    setup = _build_provisioning_setup(repo_root, files, opts, repo, commit)
-    code_profile = default_code_profile(repo_root)
-
-    scan_step = RepoScanStep(
-        discovery=setup.discovery,
-        change_detection=setup.change_detection,
-    )
-    scan_result = scan_step.execute(
+    return provision_hamilton_repo(
+        repo_root,
         repo=repo,
         commit=commit,
-        repo_root=repo_root,
-        profile=code_profile,
-    )
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
-    materialize_repo_scan_result(
-        setup.gateway,
-        scan_result,
-        snapshot=snapshot,
-    )
-    ModulesAssertions(setup.gateway, snapshot).inventory_consistent()
-
-    _run_ingestion_steps(setup, list(scan_result.modules), opts, repo, commit)
-
-    return ProvisionedGateway(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        build_dir=setup.ctx.build_dir,
-        db_path=setup.ctx.db_path,
-        document_output_dir=setup.ctx.document_output_dir,
-        coverage_file=setup.coverage_file,
-        gateway=setup.gateway,
-        runner=setup.runner,
+        options=options,
+        repo_writer=write_sample_repo,
     )
 
 
@@ -530,45 +594,12 @@ def provision_existing_repo(
     ProvisionedGateway
         Provisioned gateway plus repo context.
     """
-    opts = options or ProvisionOptions()
-    repo_root.mkdir(parents=True, exist_ok=True)
-
-    module_paths = module_paths_expected_from_repo_tree(repo_root)
-    files = [repo_root / path for path in module_paths]
-    setup = _build_provisioning_setup(repo_root, files, opts, repo, commit)
-    code_profile = default_code_profile(repo_root)
-
-    scan_step = RepoScanStep(
-        discovery=setup.discovery,
-        change_detection=setup.change_detection,
-    )
-    scan_result = scan_step.execute(
+    return provision_hamilton_repo(
+        repo_root,
         repo=repo,
         commit=commit,
-        repo_root=repo_root,
-        profile=code_profile,
-    )
-
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root)
-    materialize_repo_scan_result(
-        setup.gateway,
-        scan_result,
-        snapshot=snapshot,
-    )
-    ModulesAssertions(setup.gateway, snapshot).inventory_consistent()
-
-    _run_ingestion_steps(setup, list(scan_result.modules), opts, repo, commit)
-
-    return ProvisionedGateway(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-        build_dir=setup.ctx.build_dir,
-        db_path=setup.ctx.db_path,
-        document_output_dir=setup.ctx.document_output_dir,
-        coverage_file=setup.coverage_file,
-        gateway=setup.gateway,
-        runner=setup.runner,
+        options=options,
+        repo_writer=None,
     )
 
 
@@ -1276,6 +1307,7 @@ __all__ = [
     "provision_existing_repo",
     "provision_gateway_with_repo",
     "provision_graph_ready_repo",
+    "provision_hamilton_repo",
     "provision_ingested_repo",
     "provisioned_gateway",
 ]

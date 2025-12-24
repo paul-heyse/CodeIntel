@@ -70,10 +70,12 @@ def _bridge_endpoint_counts(graph: nx.Graph) -> dict[int, int]:
     dict[int, int]
         Mapping of node to count of incident bridges.
     """
-    counts: dict[int, int] = dict.fromkeys(graph.nodes, 0)
+    counts: dict[int, int] = {int(str(node)): 0 for node in graph.nodes}
     for left, right in nx.bridges(graph):
-        counts[left] += 1
-        counts[right] += 1
+        left_idx = int(str(left))
+        right_idx = int(str(right))
+        counts[left_idx] += 1
+        counts[right_idx] += 1
     return counts
 
 
@@ -132,7 +134,7 @@ def _function_metric_slices(views: GraphViews, ctx: GraphContext) -> FunctionGra
     )
     components = component_metadata(views.simple_graph)
     articulations = (
-        set(nx.articulation_points(views.undirected))
+        {int(str(node)) for node in nx.articulation_points(views.undirected)}
         if views.undirected.number_of_nodes() > 0
         else set()
     )
@@ -175,11 +177,11 @@ def _function_metric_rows(
     """
     node_count = views.graph.number_of_nodes()
     ancestor_count = {
-        node: len(nx.ancestors(views.graph, node)) if node_count else 0
+        int(str(node)): len(nx.ancestors(views.graph, node)) if node_count else 0
         for node in views.simple_graph.nodes
     }
     descendant_count = {
-        node: len(nx.descendants(views.graph, node)) if node_count else 0
+        int(str(node)): len(nx.descendants(views.graph, node)) if node_count else 0
         for node in views.simple_graph.nodes
     }
     centralities = {

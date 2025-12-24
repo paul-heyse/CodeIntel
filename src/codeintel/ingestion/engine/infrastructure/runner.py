@@ -10,11 +10,15 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import json
 import logging
+import os
 import shutil
+import threading
 import time
 from asyncio.subprocess import PIPE
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +29,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 log = logging.getLogger(__name__)
+_TOOL_CALL_LOG_ENV = "CODEINTEL_TOOL_CALL_LOG"
+_TOOL_CALL_LOG_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -53,6 +59,18 @@ class ToolRunOptions:
     output_path: Path | None = None
     timeout_s: float | None = None
     env: Mapping[str, str] | None = None
+
+
+@dataclass(frozen=True)
+class ToolCallRecord:
+    """Captured context for a tool invocation."""
+
+    tool: ToolName
+    args: Sequence[str]
+    options: ToolRunOptions
+    env: Mapping[str, str] | None
+    result: ToolRunResult
+    started_at: datetime
 
 
 class ToolNotFoundError(RuntimeError):
@@ -161,15 +179,17 @@ class ToolRunner:
         run_options = options or ToolRunOptions()
         tool_enum = self._coerce_tool(tool)
         try:
-            executable = self._resolve_executable(tool_enum)
+            cmd = self._build_command(
+                tool_enum,
+                args,
+                executable=self._resolve_executable(tool_enum),
+            )
         except ToolNotFoundError as exc:
             raise ToolNotFoundError(exc.tool, exc.configured_path) from exc
-        cmd = self._build_command(tool_enum, args, executable=executable)
         tool_env = self.tools_config.build_env(tool_enum, base_env=self.base_env)
         if run_options.env:
-            merged = dict(tool_env or {})
-            merged.update(run_options.env)
-            tool_env = merged
+            tool_env = {**(tool_env or {}), **run_options.env}
+        started_at = datetime.now(UTC)
         start_ts = time.perf_counter()
 
         proc = await asyncio.create_subprocess_exec(
@@ -187,30 +207,45 @@ class ToolRunner:
         except TimeoutError as exc:
             proc.kill()
             await proc.communicate()
-            duration = time.perf_counter() - start_ts
             result = ToolRunResult(
                 tool=tool_enum,
                 args=tuple(cmd[1:]),
                 returncode=proc.returncode or 1,
                 stdout="",
                 stderr="timed out",
-                duration_s=duration,
+                duration_s=time.perf_counter() - start_ts,
                 output_path=run_options.output_path,
             )
+            record = ToolCallRecord(
+                tool=tool_enum,
+                args=tuple(cmd[1:]),
+                options=run_options,
+                env=tool_env,
+                result=result,
+                started_at=started_at,
+            )
+            _record_tool_call(record)
             raise ToolExecutionError(result) from exc
 
-        duration = time.perf_counter() - start_ts
-        stdout = stdout_b.decode(errors="replace")
-        stderr = stderr_b.decode(errors="replace")
-        return ToolRunResult(
+        result = ToolRunResult(
             tool=tool_enum,
             args=tuple(cmd[1:]),
             returncode=proc.returncode if proc.returncode is not None else 1,
-            stdout=stdout,
-            stderr=stderr,
-            duration_s=duration,
+            stdout=stdout_b.decode(errors="replace"),
+            stderr=stderr_b.decode(errors="replace"),
+            duration_s=time.perf_counter() - start_ts,
             output_path=run_options.output_path,
         )
+        record = ToolCallRecord(
+            tool=tool_enum,
+            args=tuple(cmd[1:]),
+            options=run_options,
+            env=tool_env,
+            result=result,
+            started_at=started_at,
+        )
+        _record_tool_call(record)
+        return result
 
     def run(
         self,
@@ -252,3 +287,33 @@ class ToolRunner:
                     options=run_options,
                 )
             )
+
+
+def _record_tool_call(record: ToolCallRecord) -> None:
+    path = os.environ.get(_TOOL_CALL_LOG_ENV, "").strip()
+    if not path:
+        return
+    payload = {
+        "tool": record.tool.value,
+        "argv": list(record.args),
+        "cwd": str(record.options.cwd) if record.options.cwd is not None else None,
+        "env_keys": sorted(record.env.keys()) if record.env else [],
+        "started_at": record.started_at.isoformat(),
+        "duration_s": record.result.duration_s,
+        "returncode": record.result.returncode,
+        "version": _extract_version(record.args, record.result.stdout),
+    }
+    _append_json_line(Path(path), payload)
+
+
+def _extract_version(args: Sequence[str], stdout: str) -> str | None:
+    if "--version" in args or "-V" in args:
+        return stdout.strip().splitlines()[0][:200] if stdout else ""
+    return None
+
+
+def _append_json_line(path: Path, payload: Mapping[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(payload, ensure_ascii=True)
+    with _TOOL_CALL_LOG_LOCK, path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")

@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.analytics.compute.graphs import bipartite_degrees
 from codeintel.analytics.testing.graph_metrics import (
@@ -112,8 +112,12 @@ def compute_test_graph_metrics_pure(
     )
     now = graph_ctx.resolved_now()
 
-    tests = {node for node, data in graph.nodes(data=True) if data.get("bipartite") == 0}
-    funcs = set(graph) - tests
+    tests = {
+        cast("tuple[str, object]", node)
+        for node, data in graph.nodes(data=True)
+        if data.get("bipartite") == 0
+    }
+    funcs = {cast("tuple[str, object]", node) for node in set(graph) - tests}
     degrees = bipartite_degrees(
         graph,
         tests,

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, TypeVar, cast
 
 import networkx as nx
+from networkx.exception import NetworkXError
 
 NodeT = TypeVar("NodeT", bound=Hashable)
 
@@ -200,7 +201,7 @@ def compute_diameter_estimate(graph: nx.Graph) -> float | None:
     largest = undirected.subgraph(max(components, key=len)).copy()
     try:
         return float(nx.approximation.diameter(largest))
-    except nx.NetworkXError:
+    except NetworkXError:
         return None
 
 
@@ -232,7 +233,7 @@ def compute_avg_shortest_path_length(graph: nx.Graph) -> float | None:
     largest = undirected.subgraph(max(components, key=len)).copy()
     try:
         return float(nx.average_shortest_path_length(largest))
-    except nx.NetworkXError:
+    except NetworkXError:
         return None
 
 
@@ -267,12 +268,14 @@ def compute_condensation_layer_count(graph: nx.DiGraph) -> int | None:
         return 0
 
     layers: dict[int, int] = {
-        node: 0 for node in condensation.nodes if condensation.in_degree(node) == 0
+        int(str(node)): 0 for node in condensation.nodes if condensation.in_degree(node) == 0
     }
     for node in nx.topological_sort(condensation):
-        base = layers.get(node, 0)
+        node_idx = int(str(node))
+        base = layers.get(node_idx, 0)
         for succ in condensation.successors(node):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
+            succ_idx = int(str(succ))
+            layers[succ_idx] = max(layers.get(succ_idx, 0), base + 1)
     return max(layers.values(), default=0) + 1
 
 

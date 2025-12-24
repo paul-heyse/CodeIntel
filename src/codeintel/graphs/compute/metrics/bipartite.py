@@ -11,6 +11,7 @@ from typing import Any
 
 import networkx as nx
 from networkx.algorithms import bipartite as nx_bipartite
+from networkx.exception import NetworkXAlgorithmError
 
 
 @dataclass(frozen=True)
@@ -143,7 +144,7 @@ def compute_weighted_projection(
         return None
     try:
         return nx_bipartite.weighted_projected_graph(bipartite_graph, nodes)
-    except nx.NetworkXAlgorithmError:
+    except NetworkXAlgorithmError:
         return None
 
 

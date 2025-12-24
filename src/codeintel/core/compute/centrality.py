@@ -32,9 +32,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import networkx as nx
+from networkx.exception import PowerIterationFailedConvergence
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -119,7 +120,7 @@ def compute_pagerank(
                 graph, alpha=alpha, max_iter=max_iter, tol=tol, weight=weight
             ).items()
         }
-    except nx.PowerIterationFailedConvergence:
+    except PowerIterationFailedConvergence:
         n = graph.number_of_nodes()
         return dict.fromkeys(graph.nodes(), 1.0 / n)
 
@@ -308,7 +309,7 @@ def compute_eigenvector_centrality(
                 weight=weight,
             ).items()
         }
-    except nx.PowerIterationFailedConvergence:
+    except PowerIterationFailedConvergence:
         log.warning("Eigenvector centrality did not converge; returning zeros")
         return dict.fromkeys(graph.nodes(), 0.0)
 
@@ -354,8 +355,8 @@ def compute_all_centralities(
 
     result: dict[Any, CentralityMetrics] = {}
     for node in graph.nodes():
-        in_degree = cast("int", graph.in_degree(node))
-        out_degree = cast("int", graph.out_degree(node))
+        in_degree = graph.in_degree(node)
+        out_degree = graph.out_degree(node)
         result[node] = CentralityMetrics(
             pagerank=pagerank.get(node, 0.0),
             betweenness=betweenness.get(node, 0.0),

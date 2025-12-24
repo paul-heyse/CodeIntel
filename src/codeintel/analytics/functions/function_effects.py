@@ -23,6 +23,7 @@ from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.core.ibis_typing import and_predicates, eq, is_null, or_predicates
 from codeintel.graphs.runtime import resolve_graph_runtime
 from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -366,7 +367,8 @@ def _compute_transitive_effects(
     call_graph: nx.DiGraph, direct_flags: dict[int, bool], *, max_depth: int
 ) -> dict[int, set[int]]:
     transitive: dict[int, set[int]] = {}
-    for node in call_graph.nodes:
+    for node_value in call_graph.nodes:
+        node = cast("int", node_value)
         if direct_flags.get(node):
             continue
         hits: set[int] = set()
@@ -376,7 +378,8 @@ def _compute_transitive_effects(
             current, depth = queue.popleft()
             if depth >= max_depth:
                 continue
-            for succ in call_graph.successors(current):
+            for succ_value in call_graph.successors(current):
+                succ = cast("int", succ_value)
                 if succ in visited:
                     continue
                 visited.add(succ)
@@ -416,7 +419,7 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
         goid = normalize_decimal_id(row["caller_goid_h128"])
         if goid is None:
             continue
-        counts[goid] = int(row["unresolved_count"])
+        counts[goid] = coerce_int(row["unresolved_count"], ctx="unresolved_count")
     return counts
 
 

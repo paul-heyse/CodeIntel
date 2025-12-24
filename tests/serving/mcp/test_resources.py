@@ -25,7 +25,7 @@ from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.mcp_payloads import extract_payload
-from tests._helpers.serving_snapshots import setup_demo_snapshot
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,7 +49,7 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
     Path
         Path to the pointer JSON file.
     """
-    snapshot = setup_demo_snapshot(tmp_path)
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot()
     return snapshot.pointer_path
 
 
@@ -1014,7 +1014,10 @@ async def test_mcp_resource_export_meta_row_count_for_parquet(tmp_path: Path) ->
 
 @pytest.mark.anyio
 async def test_mcp_resource_export_bytes_chunk_for_arrow(tmp_path: Path) -> None:
-    """Verify codeintel://exports/{export_id}/bytes supports chunked bytes reads for arrow exports."""
+    """Verify codeintel://exports/{export_id}/bytes supports chunked bytes reads.
+
+    Uses arrow exports for coverage.
+    """
     pointer_path = _setup_test_snapshot(tmp_path)
 
     manager = ServingDBManager(
