@@ -370,9 +370,10 @@ class ToolService:
         repo_root: Path,
         *,
         output_scip: Path,
+        proto_module_path: Path,
     ) -> ScipIndexResult:
         """
-        Run scip-python for a full index and export to JSON.
+        Run scip-python for a full index and parse via protobuf.
 
         Returns
         -------
@@ -388,14 +389,13 @@ class ToolService:
         RuntimeError
             Raised when plugin results are missing required metadata.
         """
-        output_json = output_scip.with_suffix(".json")
         plugin_result = await self.run_plugin(
             "scip",
             repo_root=repo_root,
             output_scip=output_scip,
-            output_json=output_json,
             target_dir=None,
             rel_paths=None,
+            proto_module_path=proto_module_path,
         )
 
         if plugin_result.status is ToolStatus.NOT_FOUND:

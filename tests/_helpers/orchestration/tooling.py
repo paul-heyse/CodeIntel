@@ -161,7 +161,16 @@ def build_tooling_context(base_dir: Path) -> ToolingContext:
         coverage_file=repo_root / ".coverage",
         pytest_report_path=repo_root / "build" / "test-results" / "pytest-report.json",
     )
-    require_tooling(tools_cfg)
+    require_tooling(
+        tools_cfg,
+        required_tools=(
+            ToolName.COVERAGE,
+            ToolName.PYRIGHT,
+            ToolName.PYREFLY,
+            ToolName.RUFF,
+        ),
+        repo_root=repo_root,
+    )
     runner = ToolRunner(cache_dir=base_dir / ".tool_cache", tools_config=tools_cfg)
     service = ToolService(runner, tools_cfg)
     return ToolingContext(
@@ -229,6 +238,23 @@ def build_tooling_artifacts(
     ToolingArtifacts
         Bundle containing artifact paths plus a configured service/adapter pair.
     """
+    tooling_config = (
+        tooling_outputs.context.tools_config if tooling_outputs else ToolsConfig.default()
+    )
+    tooling_repo_root = tooling_outputs.context.repo_root if tooling_outputs else tmp_path
+    require_tooling(
+        tooling_config,
+        required_tools=(
+            ToolName.COVERAGE,
+            ToolName.PYRIGHT,
+            ToolName.PYREFLY,
+            ToolName.RUFF,
+            ToolName.PYTEST,
+            ToolName.SCIP,
+            ToolName.SCIP_PYTHON,
+        ),
+        repo_root=tooling_repo_root,
+    )
     outputs = tooling_outputs or run_static_tooling(build_tooling_context(tmp_path))
     build_dir = tmp_path / "artifacts"
     coverage_json = coverage_json_payload(

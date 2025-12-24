@@ -13,7 +13,6 @@ import concurrent.futures
 import json
 import logging
 import os
-import shutil
 import threading
 import time
 from asyncio.subprocess import PIPE
@@ -24,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.models import ToolsConfig
 from codeintel.core.tools import ToolName
+from codeintel.core.tools.resolver import ToolResolveConfig, resolve_tool
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -122,14 +122,11 @@ class ToolRunner:
             raise ValueError(message) from exc
 
     def _resolve_executable(self, tool: ToolName) -> str:
-        configured = self.tools_config.resolve_path(tool)
-        candidate_path = Path(configured)
-        if candidate_path.is_file():
-            return str(candidate_path)
-        discovered = shutil.which(configured)
-        if discovered is None:
-            raise ToolNotFoundError(tool, configured)
-        return discovered
+        resolve_cfg = ToolResolveConfig.from_env()
+        resolution = resolve_tool(tool, config=self.tools_config, resolve_cfg=resolve_cfg)
+        if resolution.resolved is None:
+            raise ToolNotFoundError(tool, resolution.configured)
+        return str(resolution.resolved)
 
     def _build_command(
         self,

@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeintel.config.models import ToolsConfig
 from codeintel.core.tools import ToolName
+from codeintel.core.tools.resolver import (
+    ToolResolution,
+    ToolResolveConfig,
+    resolve_tools,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -51,13 +57,25 @@ class ToolCallLog:
         return [_parse_tool_call(line) for line in lines]
 
 
-def require_tooling(tools_config: ToolsConfig | None = None) -> dict[ToolName, Path]:
+def require_tooling(
+    tools_config: ToolsConfig | None = None,
+    required_tools: Sequence[ToolName | str] | None = None,
+    *,
+    strict: bool | None = None,
+    repo_root: Path | None = None,
+) -> dict[ToolName, Path]:
     """Verify configured tool binaries exist and are executable.
 
     Parameters
     ----------
     tools_config
         Optional explicit ToolsConfig; defaults to ToolsConfig.default().
+    required_tools
+        Optional subset of tools to validate; defaults to all ToolName values.
+    strict
+        When True, missing tooling raises; when False, tests are skipped.
+    repo_root
+        Optional repo root for node_modules/.bin lookup overrides.
 
     Returns
     -------
@@ -70,23 +88,22 @@ def require_tooling(tools_config: ToolsConfig | None = None) -> dict[ToolName, P
         If any required tool binary is missing or not executable.
     """
     config = tools_config or ToolsConfig.default()
+    tools = _coerce_required_tools(required_tools)
+    resolve_cfg = ToolResolveConfig.from_env().with_repo_root(repo_root)
+    resolutions = resolve_tools(tools, config=config, resolve_cfg=resolve_cfg)
     resolved: dict[ToolName, Path] = {}
     missing: list[str] = []
-    for tool in ToolName:
-        configured = config.resolve_path(tool)
-        candidate = Path(configured)
-        if candidate.is_file():
-            resolved_path = candidate
-        else:
-            discovered = shutil.which(configured)
-            resolved_path = Path(discovered) if discovered else None
-        if resolved_path is None or not os.access(resolved_path, os.X_OK):
-            missing.append(f"{tool.value}={configured!r}")
+    for tool, resolution in resolutions.items():
+        if resolution.resolved is None:
+            missing.append(_format_missing_tool(resolution))
             continue
-        resolved[tool] = resolved_path
+        resolved[tool] = resolution.resolved
     if missing:
         message = "Missing tool binaries: " + ", ".join(missing)
-        raise RuntimeError(message)
+        should_fail = strict if strict is not None else _strict_tooling_required()
+        if should_fail:
+            raise RuntimeError(message)
+        pytest.skip(message)
     return resolved
 
 
@@ -165,6 +182,32 @@ def _parse_started_at(value: object) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+def _coerce_required_tools(
+    required_tools: Sequence[ToolName | str] | None,
+) -> tuple[ToolName, ...]:
+    if required_tools is None:
+        return tuple(ToolName)
+    return tuple(_coerce_tool(tool) for tool in required_tools)
+
+
+def _coerce_tool(tool: ToolName | str) -> ToolName:
+    if isinstance(tool, ToolName):
+        return tool
+    return ToolName(str(tool))
+
+
+def _format_missing_tool(resolution: ToolResolution) -> str:
+    searched = " -> ".join(resolution.searched)
+    return f"{resolution.tool.value}={resolution.configured!r} (searched {searched})"
+
+
+def _strict_tooling_required() -> bool:
+    value = os.environ.get("CODEINTEL_STRICT_TOOLING", "")
+    if value.lower() in {"1", "true", "yes"}:
+        return True
+    return bool(os.environ.get("CI"))
 
 
 __all__ = [

@@ -16,11 +16,13 @@ from codeintel.serving.settings import ServingSettings
 from tests._helpers.serving_snapshot_factory import ServingSnapshot
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Iterator, Mapping
+    from collections.abc import AsyncIterator, Callable, Iterator, Mapping
     from pathlib import Path
 
     from fastmcp import FastMCP
     from fastmcp.client import FastMCPTransport
+
+    from codeintel.serving.mcp.protocols import SemanticKernelProtocol
 
 
 class ServingSettingsOverrides(TypedDict, total=False):
@@ -143,12 +145,33 @@ class ServingAppHarness:
         with TestClient(app) as client:
             yield client
 
+    def build_runtime(
+        self,
+        *,
+        settings_overrides: ServingSettingsOverrides | None = None,
+    ) -> ServingRuntime:
+        """Build a serving runtime for the configured snapshot.
+
+        Parameters
+        ----------
+        settings_overrides
+            Optional ServingSettings overrides.
+
+        Returns
+        -------
+        ServingRuntime
+            Runtime with a DB manager and semantic kernel.
+        """
+        settings = _apply_overrides(self.settings, settings_overrides)
+        return build_runtime(settings)
+
     @asynccontextmanager
     async def mcp_client(
         self,
         *,
         settings_overrides: ServingSettingsOverrides | None = None,
         client_kwargs: Mapping[str, Any] | None = None,
+        kernel_builder: Callable[[ServingRuntime], SemanticKernelProtocol] | None = None,
     ) -> AsyncIterator[Client[FastMCPTransport]]:
         """Create a FastMCP client bound to the serving MCP server.
 
@@ -158,6 +181,8 @@ class ServingAppHarness:
             Optional ServingSettings overrides.
         client_kwargs
             Optional keyword arguments passed to fastmcp.client.Client.
+        kernel_builder
+            Optional callback to build a kernel from the runtime.
 
         Yields
         ------
@@ -166,12 +191,17 @@ class ServingAppHarness:
         """
         settings = _apply_overrides(self.settings, settings_overrides)
         runtime = build_runtime(settings)
-        mcp_app = _build_mcp_app(runtime, settings)
+        kernel = kernel_builder(runtime) if kernel_builder is not None else runtime.kernel
+        mcp_app = _build_mcp_app(runtime, settings, kernel)
         async with Client(mcp_app, **dict(client_kwargs or {})) as client:
             yield client
 
 
-def _build_mcp_app(runtime: ServingRuntime, settings: ServingSettings) -> FastMCP:
+def _build_mcp_app(
+    runtime: ServingRuntime,
+    settings: ServingSettings,
+    kernel: SemanticKernelProtocol,
+) -> FastMCP:
     @asynccontextmanager
     async def lifespan(_server: FastMCP) -> AsyncIterator[object]:
         await runtime.db_manager.start()
@@ -180,7 +210,7 @@ def _build_mcp_app(runtime: ServingRuntime, settings: ServingSettings) -> FastMC
         finally:
             await runtime.db_manager.stop()
 
-    return build_mcp_app(kernel=runtime.kernel, settings=settings, lifespan=lifespan)
+    return build_mcp_app(kernel=kernel, settings=settings, lifespan=lifespan)
 
 
 def _apply_overrides(

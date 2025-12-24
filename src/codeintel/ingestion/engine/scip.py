@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from anyio import to_thread
 
@@ -23,11 +22,10 @@ from codeintel.ingestion.engine.plugins import (
     ToolPluginResult,
     ToolStatus,
 )
-from codeintel.ingestion.engine.results import ScipIndexResult
+from codeintel.ingestion.engine.results import ScipDocument, ScipIndexResult, ScipOccurrence
+from codeintel.ingestion.scip.protobuf_parser import parse_index
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import (
         ToolRunner,
@@ -41,39 +39,8 @@ def _mkdir_parents(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
-def _write_text(path: Path, content: str) -> None:
-    path.write_text(content, encoding="utf8")
-
-
 def _path_is_file(path: Path) -> bool:
     return path.is_file()
-
-
-def _find_existing_json(output_scip: Path, output_json: Path) -> Path | None:
-    """Find existing SCIP JSON file at expected or alternate location.
-
-    Only returns a path if the file exists AND has non-zero size.
-    Empty files (e.g., from interrupted runs) are not considered valid.
-
-    Parameters
-    ----------
-    output_scip
-        Path to SCIP index file (used to derive alternate JSON path).
-    output_json
-        Primary path to check for JSON output.
-
-    Returns
-    -------
-    Path | None
-        Path to existing non-empty JSON file, or None if not found.
-    """
-    if output_json.is_file() and output_json.stat().st_size > 0:
-        return output_json
-
-    alt_json = output_scip.with_suffix(".scip.json")
-    if alt_json.is_file() and alt_json.stat().st_size > 0:
-        return alt_json
-    return None
 
 
 def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
@@ -83,44 +50,41 @@ def _resolve_target_base(repo_root: Path, target_dir: Path | None) -> Path:
     return src_dir if src_dir.is_dir() else repo_root
 
 
-def _parse_scip_json(
-    json_path: Path,
-    scip_path: Path | None = None,
+def _parse_scip_index(
+    scip_path: Path,
+    proto_module_path: Path,
 ) -> ScipIndexResult:
-    """
-    Parse SCIP JSON export into a ScipIndexResult.
-
-    Parameters
-    ----------
-    json_path
-        Path to the JSON file from scip print --json.
-    scip_path
-        Path to the .scip binary file.
+    """Parse index.scip via protobuf into a ScipIndexResult.
 
     Returns
     -------
     ScipIndexResult
-        Parsed SCIP index with documents and symbols.
+        Parsed index result with documents and occurrences.
     """
-    try:
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("Failed to parse SCIP JSON: %s", exc)
-        return ScipIndexResult.empty()
-
-    docs: list[Mapping[str, Any]] = []
-    if isinstance(payload, dict):
-        docs_field = payload.get("documents", [])
-        if isinstance(docs_field, list):
-            docs = docs_field
-    elif isinstance(payload, list):
-        docs = payload
-
-    return ScipIndexResult.from_json_documents(
-        docs,
-        index_scip_path=scip_path,
-        index_json_path=json_path,
-    )
+    parsed = parse_index(scip_path, proto_module_path)
+    documents = []
+    for doc in parsed.documents:
+        occurrences = tuple(
+            ScipOccurrence(
+                symbol=occ.symbol,
+                range_=(
+                    occ.range_start_line,
+                    occ.range_start_col,
+                    occ.range_end_line,
+                    occ.range_end_col,
+                ),
+                symbol_roles=occ.symbol_roles,
+            )
+            for occ in doc.occurrences
+        )
+        documents.append(
+            ScipDocument(
+                relative_path=doc.relative_path,
+                symbols=doc.symbols,
+                occurrences=occurrences,
+            )
+        )
+    return ScipIndexResult.from_documents(tuple(documents), index_scip_path=scip_path)
 
 
 @dataclass
@@ -132,8 +96,8 @@ class ScipPlugin(ToolPlugin):
     metadata: ToolPluginMetadata = field(
         default_factory=lambda: ToolPluginMetadata(
             name="scip",
-            produces_artifacts=("index_scip", "index_json"),
-            consumes_configs=("scip_python_bin", "scip_bin"),
+            produces_artifacts=("index_scip",),
+            consumes_configs=("scip_python_bin",),
             datasets=("core.scip_symbols", "core.goid_crosswalk"),
         )
     )
@@ -152,7 +116,7 @@ class ScipPlugin(ToolPlugin):
         Returns
         -------
         tuple[Path, Path, Path | None, tuple[str, ...] | None]
-            Tuple of (output_scip, output_json, target_dir, rel_paths).
+            Tuple of (output_scip, proto_module_path, target_dir, rel_paths).
 
         Raises
         ------
@@ -161,15 +125,12 @@ class ScipPlugin(ToolPlugin):
         """
         _ = self
         output_scip_obj = kwargs.get("output_scip")
-        output_json_obj = kwargs.get("output_json")
         target_dir_obj = kwargs.get("target_dir")
         rel_paths_obj = kwargs.get("rel_paths")
+        proto_module_obj = kwargs.get("proto_module_path")
 
         if not isinstance(output_scip_obj, Path):
             message = "scip plugin requires output_scip of type Path"
-            raise TypeError(message)
-        if not isinstance(output_json_obj, Path):
-            message = "scip plugin requires output_json of type Path"
             raise TypeError(message)
         if target_dir_obj is not None and not isinstance(target_dir_obj, Path):
             message = "scip plugin requires target_dir to be Path or None"
@@ -177,9 +138,12 @@ class ScipPlugin(ToolPlugin):
         if rel_paths_obj is not None and not isinstance(rel_paths_obj, Sequence):
             message = "scip plugin requires rel_paths to be a sequence of strings"
             raise TypeError(message)
+        if not isinstance(proto_module_obj, Path):
+            message = "scip plugin requires proto_module_path of type Path"
+            raise TypeError(message)
 
         rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None
-        return output_scip_obj, output_json_obj, target_dir_obj, rel_paths
+        return output_scip_obj, proto_module_obj, target_dir_obj, rel_paths
 
     async def run(
         self,
@@ -194,90 +158,65 @@ class ScipPlugin(ToolPlugin):
         the full repo (or target_dir/src) is indexed.
 
         If the output files already exist, the plugin will skip execution and
-        just parse the existing JSON file to return results.
+        parse the existing index.scip via protobuf.
 
         Returns
         -------
         ToolPluginResult
             Normalized execution result with parsed ScipIndexResult.
         """
-        output_scip, output_json, target_dir, rel_paths = self._validate_kwargs(dict(kwargs))
+        output_scip, proto_module_path, target_dir, rel_paths = self._validate_kwargs(dict(kwargs))
 
-        existing_result = await self._try_use_existing(output_scip, output_json)
-        if existing_result is not None:
-            return existing_result
+        result = await self._try_use_existing(output_scip, proto_module_path)
+        if result is None:
+            try:
+                await self._run_scip_python(
+                    repo_root,
+                    output_scip=output_scip,
+                    target_dir=target_dir,
+                    rel_paths=rel_paths,
+                )
+            except ToolNotFoundError as exc:
+                log.warning("scip-python binary not found; SCIP index cannot be built")
+                result = ToolPluginResult(
+                    tool=ToolName.SCIP_PYTHON,
+                    status=ToolStatus.NOT_FOUND,
+                    artifacts={},
+                    run=None,
+                    error=exc,
+                    parsed=ScipIndexResult.empty(),
+                )
+            except ToolExecutionError as exc:
+                result = ToolPluginResult(
+                    tool=ToolName.SCIP_PYTHON,
+                    status=ToolStatus.FAILED,
+                    artifacts={"index_scip": output_scip},
+                    run=exc.result,
+                    error=exc,
+                    parsed=ScipIndexResult.empty(),
+                )
 
-        try:
-            await self._run_scip_python(
-                repo_root,
-                output_scip=output_scip,
-                target_dir=target_dir,
-                rel_paths=rel_paths,
+        if result is None:
+            parsed = await to_thread.run_sync(
+                _parse_scip_index,
+                output_scip,
+                proto_module_path,
             )
-        except ToolNotFoundError as exc:
-            log.warning("scip-python binary not found; SCIP index cannot be built")
-            return ToolPluginResult(
+            result = ToolPluginResult(
                 tool=ToolName.SCIP_PYTHON,
-                status=ToolStatus.NOT_FOUND,
-                artifacts={},
-                run=None,
-                error=exc,
-                parsed=ScipIndexResult.empty(),
-            )
-        except ToolExecutionError as exc:
-            return ToolPluginResult(
-                tool=ToolName.SCIP_PYTHON,
-                status=ToolStatus.FAILED,
-                artifacts={"index_scip": output_scip},
-                run=exc.result,
-                error=exc,
-                parsed=ScipIndexResult.empty(),
-            )
-
-        try:
-            print_result = await self._run_scip_print(output_scip, output_json)
-        except ToolNotFoundError as exc:
-            log.warning("scip binary not found; JSON export cannot be built")
-            return ToolPluginResult(
-                tool=ToolName.SCIP,
-                status=ToolStatus.NOT_FOUND,
+                status=ToolStatus.OK,
                 artifacts={"index_scip": output_scip},
                 run=None,
-                error=exc,
-                parsed=ScipIndexResult.empty(),
-            )
-        except ToolExecutionError as exc:
-            return ToolPluginResult(
-                tool=ToolName.SCIP,
-                status=ToolStatus.FAILED,
-                artifacts={"index_scip": output_scip, "index_json": output_json},
-                run=exc.result,
-                error=exc,
-                parsed=ScipIndexResult.empty(),
+                error=None,
+                parsed=parsed,
             )
 
-        def _parse() -> ScipIndexResult:
-            return _parse_scip_json(output_json, output_scip)
-
-        parsed = await to_thread.run_sync(_parse)
-
-        artifacts = {
-            "index_scip": output_scip,
-            "index_json": output_json,
-        }
-        return ToolPluginResult(
-            tool=ToolName.SCIP,
-            status=ToolStatus.OK,
-            artifacts=artifacts,
-            run=print_result,
-            error=None,
-            parsed=parsed,
-        )
+        return result
 
     async def _try_use_existing(
         self,
         output_scip: Path,
-        output_json: Path,
+        proto_module_path: Path,
     ) -> ToolPluginResult | None:
         """Check for existing SCIP output and return parsed result if found.
 
@@ -285,8 +224,8 @@ class ScipPlugin(ToolPlugin):
         ----------
         output_scip
             Path to expected SCIP index file.
-        output_json
-            Path to expected JSON output file.
+        proto_module_path
+            Path to generated scip_pb2 module.
 
         Returns
         -------
@@ -294,26 +233,20 @@ class ScipPlugin(ToolPlugin):
             Parsed result if existing files found, None otherwise.
         """
         _ = self
-        existing_json = await to_thread.run_sync(_find_existing_json, output_scip, output_json)
-        if existing_json is None:
-            return None
-
         scip_exists = await to_thread.run_sync(_path_is_file, output_scip)
         if not scip_exists:
             return None
 
-        log.info("SCIP JSON exists at %s; reusing", existing_json)
-
-        json_path: Path = existing_json
+        log.info("SCIP index exists at %s; reusing", output_scip)
 
         def _parse_existing() -> ScipIndexResult:
-            return _parse_scip_json(json_path, output_scip)
+            return _parse_scip_index(output_scip, proto_module_path)
 
         parsed = await to_thread.run_sync(_parse_existing)
         return ToolPluginResult(
-            tool=ToolName.SCIP,
+            tool=ToolName.SCIP_PYTHON,
             status=ToolStatus.OK,
-            artifacts={"index_scip": output_scip, "index_json": existing_json},
+            artifacts={"index_scip": output_scip},
             run=None,
             error=None,
             parsed=parsed,
@@ -345,21 +278,4 @@ class ScipPlugin(ToolPlugin):
         )
         if not result.ok:
             raise ToolExecutionError(result)
-        return result
-
-    async def _run_scip_print(self, scip_path: Path, output_json: Path) -> ToolRunResult:
-        args = ["print", "--json", str(scip_path)]
-        await to_thread.run_sync(_mkdir_parents, output_json.parent)
-        result = await self.runner.run_async(
-            ToolName.SCIP,
-            args,
-            options=ToolRunOptions(
-                cwd=scip_path.parent,
-                output_path=output_json,
-                timeout_s=self.tools_config.default_timeout_s,
-            ),
-        )
-        if not result.ok:
-            raise ToolExecutionError(result)
-        await to_thread.run_sync(_write_text, output_json, result.stdout or "")
         return result

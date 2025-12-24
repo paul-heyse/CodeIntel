@@ -5,12 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import status
-from fastapi.testclient import TestClient
 
-from codeintel.serving.http.app import create_serving_app
-from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions import assert_http_success
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.harnesses.serving_app import ServingAppHarness
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
@@ -20,13 +18,10 @@ if TYPE_CHECKING:
 def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
     """Serve semantic endpoints from a snapshot and query results."""
     serve_dir = tmp_path / "serve"
-    serve_dir.mkdir(parents=True, exist_ok=True)
-    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=serve_dir).demo_snapshot()
+    harness = ServingAppHarness.from_snapshot(snapshot)
 
-    settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    with harness.http_client(mount_mcp=False) as client:
         views = assert_http_success(client, "/v1/semantic/views")
         expect_true(any(v["id"] == "demo.view" for v in views["views"]))
 
@@ -51,13 +46,10 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
 def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
     """Bad filters map to 400 rather than a server error."""
     serve_dir = tmp_path / "serve"
-    serve_dir.mkdir(parents=True, exist_ok=True)
-    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=serve_dir).demo_snapshot()
+    harness = ServingAppHarness.from_snapshot(snapshot)
 
-    settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    with harness.http_client(mount_mcp=False) as client:
         query = client.post(
             "/v1/semantic/query",
             json={
@@ -73,13 +65,10 @@ def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
 def test_semantic_routes_support_correlation_id(tmp_path: Path) -> None:
     """All semantic routes include correlation IDs."""
     serve_dir = tmp_path / "serve"
-    serve_dir.mkdir(parents=True, exist_ok=True)
-    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=serve_dir).demo_snapshot()
+    harness = ServingAppHarness.from_snapshot(snapshot)
 
-    settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    with harness.http_client(mount_mcp=False) as client:
         correlation_id = "cid-test-123"
         views = client.get("/v1/semantic/views", headers={"X-Correlation-ID": correlation_id})
         expect_equal(views.status_code, status.HTTP_200_OK)
@@ -96,18 +85,13 @@ def test_semantic_routes_support_correlation_id(tmp_path: Path) -> None:
 def test_semantic_routes_support_optional_api_key(tmp_path: Path) -> None:
     """When an API key is configured, routes require it."""
     serve_dir = tmp_path / "serve"
-    serve_dir.mkdir(parents=True, exist_ok=True)
-    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=serve_dir).demo_snapshot()
+    harness = ServingAppHarness.from_snapshot(snapshot)
 
-    settings = ServingSettings(
-        serve_dir=serve_dir,
-        pool_size=1,
-        poll_interval_s=0.01,
-        api_key="secret-key",
-    )
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    with harness.http_client(
+        mount_mcp=False,
+        settings_overrides={"api_key": "secret-key"},
+    ) as client:
         denied = client.get("/v1/semantic/views")
         expect_equal(denied.status_code, status.HTTP_401_UNAUTHORIZED)
 

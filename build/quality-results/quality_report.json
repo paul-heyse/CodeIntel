@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-24T16:40:16.500258+00:00",
-  "overall_status": "passed",
-  "duration_seconds": 31.810573,
+  "generated_at": "2025-12-24T18:59:39.388755+00:00",
+  "overall_status": "failed",
+  "duration_seconds": 27.787609,
   "results": [
     {
       "name": "guardrails",
@@ -15,9 +15,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-24T16:39:44.689039+00:00",
-      "ended_at": "2025-12-24T16:39:50.204679+00:00",
-      "duration_seconds": 5.51564,
+      "started_at": "2025-12-24T18:59:11.600748+00:00",
+      "ended_at": "2025-12-24T18:59:16.361950+00:00",
+      "duration_seconds": 4.761202,
       "stdout": [],
       "stderr": []
     },
@@ -30,13 +30,21 @@
         "check",
         "--fix"
       ],
-      "status": "passed",
-      "return_code": 0,
-      "started_at": "2025-12-24T16:39:50.204734+00:00",
-      "ended_at": "2025-12-24T16:39:50.262441+00:00",
-      "duration_seconds": 0.057707,
+      "status": "failed",
+      "return_code": 1,
+      "started_at": "2025-12-24T18:59:16.362011+00:00",
+      "ended_at": "2025-12-24T18:59:16.416936+00:00",
+      "duration_seconds": 0.054925,
       "stdout": [
-        "All checks passed!"
+        "tests/_helpers/goldens/artifact_goldens.py:",
+        "  12:39 ANN401 Dynamically typed expressions (typing.Any) are disallowed in `load_json_artifact`",
+        "  33:6  ANN401 Dynamically typed expressions (typing.Any) are disallowed in `assert_json_artifact_matches_golden`",
+        "  80:27 ANN401 Dynamically typed expressions (typing.Any) are disallowed in `payload`",
+        "",
+        "tests/conftest.py:",
+        "  331:5 F811 Redefinition of unused `pytest_configure` from line 65",
+        "",
+        "Found 4 errors."
       ],
       "stderr": []
     },
@@ -51,9 +59,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-24T16:39:50.262483+00:00",
-      "ended_at": "2025-12-24T16:39:53.421805+00:00",
-      "duration_seconds": 3.159322,
+      "started_at": "2025-12-24T18:59:16.416964+00:00",
+      "ended_at": "2025-12-24T18:59:19.319234+00:00",
+      "duration_seconds": 2.90227,
       "stdout": [],
       "stderr": []
     },
@@ -68,9 +76,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-24T16:39:53.421854+00:00",
-      "ended_at": "2025-12-24T16:39:56.098153+00:00",
-      "duration_seconds": 2.676299,
+      "started_at": "2025-12-24T18:59:19.319266+00:00",
+      "ended_at": "2025-12-24T18:59:21.599064+00:00",
+      "duration_seconds": 2.279798,
       "stdout": [],
       "stderr": []
     },
@@ -83,13 +91,15 @@
         "--warnings",
         "--pythonversion=3.13"
       ],
-      "status": "passed",
-      "return_code": 0,
-      "started_at": "2025-12-24T16:39:56.098193+00:00",
-      "ended_at": "2025-12-24T16:40:14.446009+00:00",
-      "duration_seconds": 18.347816,
+      "status": "failed",
+      "return_code": 1,
+      "started_at": "2025-12-24T18:59:21.599099+00:00",
+      "ended_at": "2025-12-24T18:59:37.585867+00:00",
+      "duration_seconds": 15.986768,
       "stdout": [
-        "0 errors, 0 warnings, 0 informations"
+        "/Users/paulheyse/CodeIntel/CodeIntel/tests/conftest.py",
+        "  /Users/paulheyse/CodeIntel/CodeIntel/tests/conftest.py:65:5 - error: Function declaration \"pytest_configure\" is obscured by a declaration of the same name (reportRedeclaration)",
+        "1 error, 0 warnings, 0 informations"
       ],
       "stderr": []
     },
@@ -103,9 +113,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-24T16:40:14.446083+00:00",
-      "ended_at": "2025-12-24T16:40:16.499612+00:00",
-      "duration_seconds": 2.053529,
+      "started_at": "2025-12-24T18:59:37.585961+00:00",
+      "ended_at": "2025-12-24T18:59:39.388357+00:00",
+      "duration_seconds": 1.802396,
       "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/Users/paulheyse/CodeIntel/CodeIntel/pyrefly.toml`",

@@ -2,7 +2,6 @@
 
 This target produces the SCIP artifacts declared in the build contract:
 - ``scip_index``: ``{scip_dir}/index.scip``
-- ``scip_json``: ``{scip_dir}/index.json``
 
 Tool execution is delegated to the ingestion tool runtime (ToolService),
 while persistence is DAG-visible via ``FileArtifactSaver``.
@@ -15,7 +14,6 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
 
@@ -44,11 +42,7 @@ from codeintel.core.schemas.row_serialization import row_serializer_for_table_ke
 from codeintel.ingestion.scip import (
     build_occurrence_rows,
     build_symbol_rows,
-    parse_scip_json_file,
 )
-
-if TYPE_CHECKING:
-    from codeintel.ingestion.ports.tools import ScipDocument
 
 log = logging.getLogger(__name__)
 
@@ -56,11 +50,21 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, Path, TargetRunRecord)
 
 SCIP_TARGET_NAME = "scip"
 SCIP_ARTIFACT_INDEX = "scip_index"
-SCIP_ARTIFACT_JSON = "scip_json"
 
 SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbols"
 SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
-SCIP_TABLE_KEYS = (SCIP_SYMBOLS_TABLE_KEY, SCIP_OCCURRENCES_TABLE_KEY)
+SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
+SCIP_RELATIONSHIPS_TABLE_KEY = "core.scip_symbol_relationships"
+SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
+SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
+SCIP_TABLE_KEYS = (
+    SCIP_SYMBOLS_TABLE_KEY,
+    SCIP_OCCURRENCES_TABLE_KEY,
+    SCIP_SYMBOL_INFO_TABLE_KEY,
+    SCIP_RELATIONSHIPS_TABLE_KEY,
+    SCIP_DIAGNOSTICS_TABLE_KEY,
+    SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+)
 
 
 @dataclass(frozen=True)
@@ -73,21 +77,15 @@ class ScipRunResult:
         Whether execution completed successfully.
     skipped
         Whether execution was skipped due to manifest match.
-    documents
-        Parsed SCIP documents, if available.
     index_path
         Path to the generated index.scip.
-    json_path
-        Path to the generated index.json.
     error
         Error message on failure.
     """
 
     success: bool
     skipped: bool = False
-    documents: tuple[ScipDocument, ...] = ()
     index_path: Path | None = None
-    json_path: Path | None = None
     error: str | None = None
 
 
@@ -103,11 +101,23 @@ class ScipIngestResult:
         Row tuples for core.scip_symbols.
     occurrence_rows
         Row tuples for core.scip_occurrences.
+    symbol_info_rows
+        Row tuples for core.scip_symbol_information.
+    relationship_rows
+        Row tuples for core.scip_symbol_relationships.
+    diagnostic_rows
+        Row tuples for core.scip_diagnostics.
+    external_symbol_rows
+        Row tuples for core.scip_external_symbols.
     """
 
     result: ExecutionResult
     symbol_rows: tuple[tuple[object, ...], ...] = ()
     occurrence_rows: tuple[tuple[object, ...], ...] = ()
+    symbol_info_rows: tuple[tuple[object, ...], ...] = ()
+    relationship_rows: tuple[tuple[object, ...], ...] = ()
+    diagnostic_rows: tuple[tuple[object, ...], ...] = ()
+    external_symbol_rows: tuple[tuple[object, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -125,6 +135,7 @@ def t__scip__run(
     env: BuildEnv,
     graph: TargetGraph,
     t__modules: TargetRunRecord,
+    scip__proto_module_path: Path | None,
 ) -> ScipRunResult:
     """Execute scip-python + scip print to produce SCIP artifacts.
 
@@ -144,30 +155,29 @@ def t__scip__run(
         return ScipRunResult(success=True, skipped=True)
 
     output_scip = env.paths.scip_dir / "index.scip"
-    output_json = env.paths.scip_dir / "index.json"
-
-    if output_scip.exists() and output_json.exists():
+    if output_scip.exists():
         return ScipRunResult(
             success=True,
             index_path=output_scip,
-            json_path=output_json,
         )
 
     try:
+        if scip__proto_module_path is None:
+            return ScipRunResult(
+                success=False,
+                error="SCIP proto module path is missing",
+            )
         result = asyncio.run(
             env.providers.tool_service.run_scip_full(
                 env.snapshot.repo_root,
                 output_scip=output_scip,
+                proto_module_path=scip__proto_module_path,
             )
         )
         index_path = result.index_scip_path or output_scip
-        json_path = result.index_json_path or output_json
-        documents = tuple(doc.to_port_document() for doc in result.documents)
         return ScipRunResult(
             success=True,
-            documents=documents,
             index_path=index_path,
-            json_path=json_path,
         )
     except Exception as exc:
         log.exception("SCIP execution failed")
@@ -201,38 +211,12 @@ def scip__index_artifact(t__scip__run: ScipRunResult) -> Path | None:
     return t__scip__run.index_path
 
 
-@SaveToObjectMetadataDecorator(
-    [FileArtifactSaver],
-    output_name_=materialize_node("artifact.scip_json"),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SCIP_TARGET_NAME),
-    artifact_name=value(SCIP_ARTIFACT_JSON),
-    path_template=value("{scip_dir}/index.json"),
-)
-@tag_compute(
-    domain="ingestion",
-    target=SCIP_TARGET_NAME,
-    target_="scip__json_artifact",
-)
-def scip__json_artifact(t__scip__run: ScipRunResult) -> Path | None:
-    """Return the Path to index.json for materialization.
-
-    Returns
-    -------
-    Path | None
-        Artifact path, or None when the run was skipped/failed.
-    """
-    if not t__scip__run.success or t__scip__run.skipped:
-        return None
-    return t__scip__run.json_path
-
-
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip__ingest(
     env: BuildEnv,
     t__modules: TargetRunRecord,
     t__scip__run: ScipRunResult,
+    scip__proto_module_path: Path | None,
 ) -> ScipIngestResult:
     """Build SCIP row payloads for core.scip_* tables.
 
@@ -253,18 +237,26 @@ def t__scip__ingest(
         return ScipIngestResult(result=ExecutionResult.skip("SCIP target skipped"))
 
     try:
+        if scip__proto_module_path is None:
+            return ScipIngestResult(
+                result=ExecutionResult.failed("SCIP proto module path is missing")
+            )
         output_scip = t__scip__run.index_path or (env.paths.scip_dir / "index.scip")
-        documents = list(t__scip__run.documents)
-        if not documents:
-            documents = parse_scip_json_file(t__scip__run.json_path, output_scip)
+        parsed: ScipParsedIndex = parse_index(output_scip, scip__proto_module_path)
 
         created_at = datetime.now(tz=UTC)
         symbol_serializer = row_serializer_for_table_key(SCIP_SYMBOLS_TABLE_KEY)
         occurrence_serializer = row_serializer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)
+        symbol_info_serializer = row_serializer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY)
+        relationship_serializer = row_serializer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY)
+        diagnostic_serializer = row_serializer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)
+        external_symbol_serializer = row_serializer_for_table_key(
+            SCIP_EXTERNAL_SYMBOLS_TABLE_KEY
+        )
 
         symbol_rows = tuple(
             build_symbol_rows(
-                documents,
+                parsed.documents,
                 env.snapshot.repo,
                 env.snapshot.commit,
                 created_at,
@@ -273,11 +265,47 @@ def t__scip__ingest(
         )
         occurrence_rows = tuple(
             build_occurrence_rows(
-                documents,
+                parsed.documents,
                 env.snapshot.repo,
                 env.snapshot.commit,
                 created_at,
                 serializer=occurrence_serializer,
+            )
+        )
+        symbol_info_rows = tuple(
+            build_symbol_information_rows(
+                parsed.symbol_infos,
+                env.snapshot.repo,
+                env.snapshot.commit,
+                created_at,
+                serializer=symbol_info_serializer,
+            )
+        )
+        relationship_rows = tuple(
+            build_symbol_relationship_rows(
+                parsed.relationships,
+                env.snapshot.repo,
+                env.snapshot.commit,
+                created_at,
+                serializer=relationship_serializer,
+            )
+        )
+        diagnostic_rows = tuple(
+            build_diagnostic_rows(
+                parsed.diagnostics,
+                env.snapshot.repo,
+                env.snapshot.commit,
+                created_at,
+                serializer=diagnostic_serializer,
+            )
+        )
+        external_symbol_rows = tuple(
+            build_external_symbol_rows(
+                parsed.external_symbols,
+                env.snapshot.repo,
+                env.snapshot.commit,
+                created_at,
+                serializer=external_symbol_serializer,
             )
         )
         if not symbol_rows or not occurrence_rows:
@@ -290,6 +318,10 @@ def t__scip__ingest(
         table_counts = {
             SCIP_SYMBOLS_TABLE_KEY: len(symbol_rows),
             SCIP_OCCURRENCES_TABLE_KEY: len(occurrence_rows),
+            SCIP_SYMBOL_INFO_TABLE_KEY: len(symbol_info_rows),
+            SCIP_RELATIONSHIPS_TABLE_KEY: len(relationship_rows),
+            SCIP_DIAGNOSTICS_TABLE_KEY: len(diagnostic_rows),
+            SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: len(external_symbol_rows),
         }
         return ScipIngestResult(
             result=ExecutionResult.ok(
@@ -297,6 +329,10 @@ def t__scip__ingest(
             ),
             symbol_rows=symbol_rows,
             occurrence_rows=occurrence_rows,
+            symbol_info_rows=symbol_info_rows,
+            relationship_rows=relationship_rows,
+            diagnostic_rows=diagnostic_rows,
+            external_symbol_rows=external_symbol_rows,
         )
     except Exception:
         log.exception("SCIP ingestion failed")
@@ -355,10 +391,97 @@ def scip__occurrence_rows(
     return t__scip__ingest.occurrence_rows
 
 
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCIP_SYMBOL_INFO_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SCIP_TARGET_NAME),
+    table_key=value(SCIP_SYMBOL_INFO_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY)),
+)
+@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_info_rows")
+def scip__symbol_info_rows(
+    t__scip__ingest: ScipIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return rows for core.scip_symbol_information."""
+    if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
+        return None
+    return t__scip__ingest.symbol_info_rows
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCIP_RELATIONSHIPS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SCIP_TARGET_NAME),
+    table_key=value(SCIP_RELATIONSHIPS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="ingestion",
+    target=SCIP_TARGET_NAME,
+    target_="scip__relationship_rows",
+)
+def scip__relationship_rows(
+    t__scip__ingest: ScipIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return rows for core.scip_symbol_relationships."""
+    if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
+        return None
+    return t__scip__ingest.relationship_rows
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCIP_DIAGNOSTICS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SCIP_TARGET_NAME),
+    table_key=value(SCIP_DIAGNOSTICS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="ingestion",
+    target=SCIP_TARGET_NAME,
+    target_="scip__diagnostic_rows",
+)
+def scip__diagnostic_rows(
+    t__scip__ingest: ScipIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return rows for core.scip_diagnostics."""
+    if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
+        return None
+    return t__scip__ingest.diagnostic_rows
+
+
+@SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SCIP_TARGET_NAME),
+    table_key=value(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="ingestion",
+    target=SCIP_TARGET_NAME,
+    target_="scip__external_symbol_rows",
+)
+def scip__external_symbol_rows(
+    t__scip__ingest: ScipIngestResult,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return rows for core.scip_external_symbols."""
+    if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
+        return None
+    return t__scip__ingest.external_symbol_rows
+
+
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__materializations(
     m__artifact__scip_index: MaterializationMetadata,
-    m__artifact__scip_json: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
     """Collect scip artifact materialization payloads into a single mapping.
 
@@ -369,7 +492,6 @@ def scip__materializations(
     """
     return {
         SCIP_ARTIFACT_INDEX: m__artifact__scip_index,
-        SCIP_ARTIFACT_JSON: m__artifact__scip_json,
     }
 
 
@@ -377,6 +499,10 @@ def scip__materializations(
 def scip__table_materializations(
     m__core__scip_symbols: MaterializationMetadata,
     m__core__scip_occurrences: MaterializationMetadata,
+    m__core__scip_symbol_information: MaterializationMetadata,
+    m__core__scip_symbol_relationships: MaterializationMetadata,
+    m__core__scip_diagnostics: MaterializationMetadata,
+    m__core__scip_external_symbols: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
     """Collect scip table materialization payloads into a single mapping.
 
@@ -388,6 +514,10 @@ def scip__table_materializations(
     return {
         SCIP_SYMBOLS_TABLE_KEY: m__core__scip_symbols,
         SCIP_OCCURRENCES_TABLE_KEY: m__core__scip_occurrences,
+        SCIP_SYMBOL_INFO_TABLE_KEY: m__core__scip_symbol_information,
+        SCIP_RELATIONSHIPS_TABLE_KEY: m__core__scip_symbol_relationships,
+        SCIP_DIAGNOSTICS_TABLE_KEY: m__core__scip_diagnostics,
+        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: m__core__scip_external_symbols,
     }
 
 
@@ -478,7 +608,6 @@ def _summarize_scip_table_materializations(
             modules=True,
             tools=(
                 "scip-python",
-                "scip",
             ),
         ),
         execution=TOOL_EXECUTION,

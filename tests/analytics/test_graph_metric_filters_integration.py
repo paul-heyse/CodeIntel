@@ -110,7 +110,7 @@ def test_filter_import_graph_noop_without_modules() -> None:
 
 def test_build_filters_safe_when_repos_empty(tmp_path: Path) -> None:
     """Building filters from empty repositories should yield no-op filters."""
-    ctx = TestScenario.minimal().build(tmp_path)
+    ctx = TestScenario.empty().build(tmp_path)
     snapshot = make_snapshot(repo=ctx.repo, commit=ctx.commit, repo_root=ctx.repo_root)
     filters = build_graph_metric_filters(ctx.gateway, snapshot)
     expect_equal(filters.function_goids, None)

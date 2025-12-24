@@ -44,6 +44,17 @@ class TestScenario:
     config: ScenarioConfig = field(default_factory=ScenarioConfig)
 
     @classmethod
+    def empty(cls) -> TestScenario:
+        """Create scenario without any seed packs applied.
+
+        Returns
+        -------
+        TestScenario
+            Scenario configured with no seed packs.
+        """
+        return cls()
+
+    @classmethod
     def minimal(cls) -> TestScenario:
         """Create scenario with minimal core data only.
 

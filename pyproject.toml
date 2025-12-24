@@ -115,6 +115,9 @@ dependencies = [
     "types-pyyaml>=6.0.12.20250915",
     "types-jsonschema>=4.25.1.20251009",
     "types-networkx>=3.6.1.20251220",
+    "protobuf>=6.33.2",
+    "grpcio-tools>=1.76.0",
+    "grpcio>=1.76.0",
 ]
 
 [project.scripts]

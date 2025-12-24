@@ -27,10 +27,10 @@ if TYPE_CHECKING:
 
 
 FUNCTION_SPANS = {
-    GOID_FUNC_A: (MOD_A_PATH, 1, 3),
-    GOID_FUNC_B: (MOD_B_PATH, 1, 6),
-    GOID_FUNC_C: (MOD_C_PATH, 1, 2),
-    GOID_HELPER: (MOD_UTIL_PATH, 1, 2),
+    GOID_FUNC_A: (MOD_A_PATH, 1, 10),
+    GOID_FUNC_B: (MOD_B_PATH, 1, 15),
+    GOID_FUNC_C: (MOD_C_PATH, 1, 8),
+    GOID_HELPER: (MOD_UTIL_PATH, 1, 5),
 }
 
 
@@ -56,8 +56,8 @@ class CoverageLinesPack:
     """
 
     name: str = "coverage_lines"
-    full_coverage_ratio: float = 1.0
-    partial_coverage_ratio: float = 0.6
+    full_coverage_ratio: float = 0.8
+    partial_coverage_ratio: float = 0.75
     include_uncovered_function: bool = True
 
     @property
@@ -83,8 +83,8 @@ class CoverageLinesPack:
         """
         line_coverage: dict[int, float] = {
             GOID_FUNC_A: self.full_coverage_ratio,
-            GOID_FUNC_B: self.partial_coverage_ratio,
-            GOID_FUNC_C: self.full_coverage_ratio,
+            GOID_FUNC_B: self.full_coverage_ratio,
+            GOID_FUNC_C: self.partial_coverage_ratio,
         }
         if self.include_uncovered_function:
             line_coverage[GOID_HELPER] = self.partial_coverage_ratio

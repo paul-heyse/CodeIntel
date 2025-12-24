@@ -2,29 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import pytest
-from fastmcp.client import Client
 
-from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.semantic.kernel import SemanticQueryKernel
-from codeintel.serving.settings import ServingSettings
-from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.harnesses.serving_app import ServingAppHarness, ServingSettingsOverrides
 from tests._helpers.mcp_payloads import extract_payload
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-
 _SHA256_HEX_LENGTH = 64
-
-
-def _setup_demo_snapshot(tmp_path: Path) -> Path:
-    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot()
-    return snapshot.pointer_path
 
 
 def _is_sha256_hex(value: object) -> bool:
@@ -36,97 +20,71 @@ def _is_sha256_hex(value: object) -> bool:
 
 
 @pytest.mark.anyio
-async def test_mcp_sql_fingerprint_is_stable_for_same_request(tmp_path: Path) -> None:
+async def test_mcp_sql_fingerprint_is_stable_for_same_request(
+    serving_snapshot_factory: ServingSnapshotFactory,
+) -> None:
     """Return stable fingerprint for identical semantic_query inputs."""
-    pointer_path = _setup_demo_snapshot(tmp_path)
+    snapshot = serving_snapshot_factory.demo_snapshot()
+    harness = ServingAppHarness.from_snapshot(snapshot)
+    settings_overrides: ServingSettingsOverrides = {
+        "hot_swap": False,
+        "result_engine": "pandas",
+        "schema_enforcement": "strict",
+        "mcp_mask_errors": False,
+    }
+    async with harness.mcp_client(settings_overrides=settings_overrides) as client:
+        args = {"request": {"view_id": "demo.view", "pagination": {"limit": 2, "offset": 0}}}
+        first = extract_payload(await client.call_tool("semantic_query", args))
+        second = extract_payload(await client.call_tool("semantic_query", args))
 
-    manager = ServingDBManager(
-        pointer_path=pointer_path,
-        pool_cfg=PoolConfig(size=1),
-        poll_interval_s=0.01,
-    )
-    await manager.start()
-    try:
-        settings = ServingSettings(
-            serve_dir=tmp_path,
-            hot_swap=False,
-            pool_size=1,
-            poll_interval_s=0.01,
-            result_engine="pandas",
-            schema_enforcement="strict",
-            mcp_mask_errors=False,
-        )
-        kernel = SemanticQueryKernel(db=manager, settings=settings)
-        mcp = build_mcp_app(kernel=kernel, settings=settings)
-
-        async with Client(mcp) as client:
-            args = {"request": {"view_id": "demo.view", "pagination": {"limit": 2, "offset": 0}}}
-            first = extract_payload(await client.call_tool("semantic_query", args))
-            second = extract_payload(await client.call_tool("semantic_query", args))
-
-            fp1 = first.get("sql_fingerprint")
-            fp2 = second.get("sql_fingerprint")
-            if not _is_sha256_hex(fp1) or not _is_sha256_hex(fp2):
-                pytest.fail("Expected semantic_query.sql_fingerprint to be a SHA256 hex digest")
-            if fp1 != fp2:
-                pytest.fail("Expected sql_fingerprint to be stable for identical requests")
-    finally:
-        await manager.stop()
+        fp1 = first.get("sql_fingerprint")
+        fp2 = second.get("sql_fingerprint")
+        if not _is_sha256_hex(fp1) or not _is_sha256_hex(fp2):
+            pytest.fail("Expected semantic_query.sql_fingerprint to be a SHA256 hex digest")
+        if fp1 != fp2:
+            pytest.fail("Expected sql_fingerprint to be stable for identical requests")
 
 
 @pytest.mark.anyio
-async def test_mcp_sql_fingerprint_changes_when_limit_changes(tmp_path: Path) -> None:
+async def test_mcp_sql_fingerprint_changes_when_limit_changes(
+    serving_snapshot_factory: ServingSnapshotFactory,
+) -> None:
     """Change fingerprint when compiled SQL changes (e.g., different LIMIT)."""
-    pointer_path = _setup_demo_snapshot(tmp_path)
-
-    manager = ServingDBManager(
-        pointer_path=pointer_path,
-        pool_cfg=PoolConfig(size=1),
-        poll_interval_s=0.01,
-    )
-    await manager.start()
-    try:
-        settings = ServingSettings(
-            serve_dir=tmp_path,
-            hot_swap=False,
-            pool_size=1,
-            poll_interval_s=0.01,
-            result_engine="pandas",
-            schema_enforcement="strict",
-            mcp_mask_errors=False,
+    snapshot = serving_snapshot_factory.demo_snapshot()
+    harness = ServingAppHarness.from_snapshot(snapshot)
+    settings_overrides: ServingSettingsOverrides = {
+        "hot_swap": False,
+        "result_engine": "pandas",
+        "schema_enforcement": "strict",
+        "mcp_mask_errors": False,
+    }
+    async with harness.mcp_client(settings_overrides=settings_overrides) as client:
+        first = extract_payload(
+            await client.call_tool(
+                "semantic_query",
+                {
+                    "request": {
+                        "view_id": "demo.view",
+                        "pagination": {"limit": 2, "offset": 0},
+                    }
+                },
+            )
         )
-        kernel = SemanticQueryKernel(db=manager, settings=settings)
-        mcp = build_mcp_app(kernel=kernel, settings=settings)
-
-        async with Client(mcp) as client:
-            first = extract_payload(
-                await client.call_tool(
-                    "semantic_query",
-                    {
-                        "request": {
-                            "view_id": "demo.view",
-                            "pagination": {"limit": 2, "offset": 0},
-                        }
-                    },
-                )
+        second = extract_payload(
+            await client.call_tool(
+                "semantic_query",
+                {
+                    "request": {
+                        "view_id": "demo.view",
+                        "pagination": {"limit": 3, "offset": 0},
+                    }
+                },
             )
-            second = extract_payload(
-                await client.call_tool(
-                    "semantic_query",
-                    {
-                        "request": {
-                            "view_id": "demo.view",
-                            "pagination": {"limit": 3, "offset": 0},
-                        }
-                    },
-                )
-            )
+        )
 
-            fp1 = first.get("sql_fingerprint")
-            fp2 = second.get("sql_fingerprint")
-            if not _is_sha256_hex(fp1) or not _is_sha256_hex(fp2):
-                pytest.fail("Expected sql_fingerprint to be present for both queries")
-            if fp1 == fp2:
-                pytest.fail("Expected sql_fingerprint to differ when SQL changes")
-    finally:
-        await manager.stop()
+        fp1 = first.get("sql_fingerprint")
+        fp2 = second.get("sql_fingerprint")
+        if not _is_sha256_hex(fp1) or not _is_sha256_hex(fp2):
+            pytest.fail("Expected sql_fingerprint to be present for both queries")
+        if fp1 == fp2:
+            pytest.fail("Expected sql_fingerprint to differ when SQL changes")
