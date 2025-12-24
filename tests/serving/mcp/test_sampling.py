@@ -7,25 +7,13 @@ from importlib.metadata import version as get_package_version
 from typing import TYPE_CHECKING
 
 import pytest
-from fastmcp.client import Client
 
-from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.semantic.kernel import SemanticQueryKernel
-from codeintel.serving.settings import ServingSettings
-from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.harnesses.serving_app import ServingAppHarness, ServingSettingsOverrides
 from tests._helpers.mcp_payloads import extract_payload
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from mcp.types import CreateMessageRequestParams, SamplingMessage
-
-
-def _setup_demo_snapshot(tmp_path: Path) -> Path:
-    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot(row_count=30)
-    return snapshot.pointer_path
 
 
 def _runtime_version(name: str) -> str:
@@ -36,92 +24,74 @@ def _runtime_version(name: str) -> str:
 
 
 @pytest.mark.anyio
-async def test_mcp_sampling_opt_in_adds_summary(tmp_path: Path) -> None:
+async def test_mcp_sampling_opt_in_adds_summary(
+    serving_snapshot_factory: ServingSnapshotFactory,
+) -> None:
     """Include a summary only when sampling is enabled and supported."""
-    pointer_path = _setup_demo_snapshot(tmp_path)
+    snapshot = serving_snapshot_factory.demo_snapshot(row_count=30)
+    harness = ServingAppHarness.from_snapshot(snapshot)
+    settings_overrides: ServingSettingsOverrides = {
+        "hot_swap": False,
+        "result_engine": "pandas",
+        "schema_enforcement": "strict",
+        "mcp_mask_errors": False,
+        "mcp_enable_sampling": True,
+        "mcp_sample_threshold": 1,
+    }
 
-    manager = ServingDBManager(
-        pointer_path=pointer_path,
-        pool_cfg=PoolConfig(size=1),
-        poll_interval_s=0.01,
-    )
-    await manager.start()
-    try:
-        settings = ServingSettings(
-            serve_dir=tmp_path,
-            hot_swap=False,
-            pool_size=1,
-            poll_interval_s=0.01,
-            result_engine="pandas",
-            schema_enforcement="strict",
-            mcp_mask_errors=False,
-            mcp_enable_sampling=True,
-            mcp_sample_threshold=1,
-        )
-        kernel = SemanticQueryKernel(db=manager, settings=settings)
-        mcp = build_mcp_app(kernel=kernel, settings=settings)
+    def sampling_handler(
+        _messages: list[SamplingMessage],
+        _params: CreateMessageRequestParams,
+        _context: object,
+    ) -> str:
+        return f"summary(runtime_sqlglot={_runtime_version('sqlglot')})"
 
-        def sampling_handler(
-            _messages: list[SamplingMessage],
-            _params: CreateMessageRequestParams,
-            _context: object,
-        ) -> str:
-            return f"summary(runtime_sqlglot={_runtime_version('sqlglot')})"
-
-        async with Client(mcp, sampling_handler=sampling_handler) as client:
-            payload = extract_payload(
-                await client.call_tool(
-                    "semantic_query",
-                    {"request": {"view_id": "demo.view"}},
-                )
+    async with harness.mcp_client(
+        settings_overrides=settings_overrides,
+        client_kwargs={"sampling_handler": sampling_handler},
+    ) as client:
+        payload = extract_payload(
+            await client.call_tool(
+                "semantic_query",
+                {"request": {"view_id": "demo.view"}},
             )
-            summary = payload.get("summary")
-            if not isinstance(summary, str) or "summary(" not in summary:
-                pytest.fail("Expected semantic_query to include sampling summary when enabled")
-    finally:
-        await manager.stop()
+        )
+        summary = payload.get("summary")
+        if not isinstance(summary, str) or "summary(" not in summary:
+            pytest.fail("Expected semantic_query to include sampling summary when enabled")
 
 
 @pytest.mark.anyio
-async def test_mcp_sampling_disabled_does_not_sample(tmp_path: Path) -> None:
+async def test_mcp_sampling_disabled_does_not_sample(
+    serving_snapshot_factory: ServingSnapshotFactory,
+) -> None:
     """Avoid calling ctx.sample when server-side sampling is disabled."""
-    pointer_path = _setup_demo_snapshot(tmp_path)
+    snapshot = serving_snapshot_factory.demo_snapshot(row_count=30)
+    harness = ServingAppHarness.from_snapshot(snapshot)
+    settings_overrides: ServingSettingsOverrides = {
+        "hot_swap": False,
+        "result_engine": "pandas",
+        "schema_enforcement": "strict",
+        "mcp_mask_errors": False,
+        "mcp_enable_sampling": False,
+    }
 
-    manager = ServingDBManager(
-        pointer_path=pointer_path,
-        pool_cfg=PoolConfig(size=1),
-        poll_interval_s=0.01,
-    )
-    await manager.start()
-    try:
-        settings = ServingSettings(
-            serve_dir=tmp_path,
-            hot_swap=False,
-            pool_size=1,
-            poll_interval_s=0.01,
-            result_engine="pandas",
-            schema_enforcement="strict",
-            mcp_mask_errors=False,
-            mcp_enable_sampling=False,
-        )
-        kernel = SemanticQueryKernel(db=manager, settings=settings)
-        mcp = build_mcp_app(kernel=kernel, settings=settings)
+    def sampling_handler(
+        _messages: list[SamplingMessage],
+        _params: CreateMessageRequestParams,
+        _context: object,
+    ) -> str:
+        return "summary(should_not_be_used)"
 
-        def sampling_handler(
-            _messages: list[SamplingMessage],
-            _params: CreateMessageRequestParams,
-            _context: object,
-        ) -> str:
-            return "summary(should_not_be_used)"
-
-        async with Client(mcp, sampling_handler=sampling_handler) as client:
-            payload = extract_payload(
-                await client.call_tool(
-                    "semantic_query",
-                    {"request": {"view_id": "demo.view"}},
-                )
+    async with harness.mcp_client(
+        settings_overrides=settings_overrides,
+        client_kwargs={"sampling_handler": sampling_handler},
+    ) as client:
+        payload = extract_payload(
+            await client.call_tool(
+                "semantic_query",
+                {"request": {"view_id": "demo.view"}},
             )
-            if payload.get("summary") is not None:
-                pytest.fail("Expected semantic_query to omit summary when sampling is disabled")
-    finally:
-        await manager.stop()
+        )
+        if payload.get("summary") is not None:
+            pytest.fail("Expected semantic_query to omit summary when sampling is disabled")

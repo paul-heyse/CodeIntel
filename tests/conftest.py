@@ -22,7 +22,7 @@ from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
-from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
 from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 from tests._helpers.orchestration.coverage_orchestration import (
     create_coverage_edge_env,
@@ -36,21 +36,99 @@ from tests._helpers.orchestration.provisioning import (
     provision_docs_export_ready,
     provision_graph_ready_repo,
 )
+from tests._helpers.pytest_options import apply_pytest_options, register_pytest_options
 from tests._helpers.schemas import ensure_storage_contract_catalog
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
+from tests._helpers.serving_snapshot_factory import ServingSnapshot, ServingSnapshotFactory
 from tests._helpers.tooling_audit import ToolCallLog
 from tests._helpers.tooling_audit import require_tooling as _require_tooling
+from tests._helpers.waiting import eventually as eventually_fn
+from tests._helpers.waiting import eventually_async as eventually_async_fn
 
 ensure_storage_contract_catalog()
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
     from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs import CoverageEdgeEnv, ProvisionedGateway, SpanTestEnv
     from tests._helpers.context import TestContext
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register CLI options for the pytest session."""
+    register_pytest_options(parser)
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Apply configured pytest options and register markers at session startup."""
+    apply_pytest_options(config)
+    config.addinivalue_line(
+        "markers",
+        "requires_tools(*names): mark tests that need external tool binaries",
+    )
+
+
+@pytest.fixture
+def parity_harness_config() -> HarnessConfig:
+    """Provide production-parity HarnessConfig defaults.
+
+    Returns
+    -------
+    HarnessConfig
+        Default harness configuration for parity tests.
+    """
+    return HarnessConfig(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
+
+
+@pytest.fixture
+def serving_snapshot_factory(tmp_path: Path) -> ServingSnapshotFactory:
+    """Provide a ServingSnapshotFactory bound to the test temp directory.
+
+    Returns
+    -------
+    ServingSnapshotFactory
+        Factory rooted at the temporary directory.
+    """
+    return ServingSnapshotFactory(tmp_path)
+
+
+@pytest.fixture
+def serving_snapshot(serving_snapshot_factory: ServingSnapshotFactory) -> ServingSnapshot:
+    """Provide a demo serving snapshot on disk.
+
+    Returns
+    -------
+    ServingSnapshot
+        Snapshot pointing to demo data on disk.
+    """
+    return serving_snapshot_factory.demo_snapshot()
+
+
+@pytest.fixture
+def eventually() -> Callable[..., object]:
+    """Provide the eventually helper as a fixture.
+
+    Returns
+    -------
+    Callable[..., object]
+        Synchronous eventually helper.
+    """
+    return eventually_fn
+
+
+@pytest.fixture
+def eventually_async() -> Callable[..., object]:
+    """Provide the async eventually helper as a fixture.
+
+    Returns
+    -------
+    Callable[..., object]
+        Asynchronous eventually helper.
+    """
+    return eventually_async_fn
 
 
 @pytest.fixture
@@ -227,23 +305,42 @@ def serving_target_harness(tmp_path: Path) -> Iterator[ServingTargetHarness]:
 
 
 @pytest.fixture
-def tool_call_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ToolCallLog:
+def tool_call_log(tmp_path: Path) -> Iterator[ToolCallLog]:
     """Provide a per-test tool invocation log file.
 
-    Returns
-    -------
+    Yields
+    ------
     ToolCallLog
         Log wrapper for recorded tool calls.
     """
     path = tmp_path / "tool_calls.jsonl"
-    monkeypatch.setenv("CODEINTEL_TOOL_CALL_LOG", str(path))
-    return ToolCallLog(path)
+    env_key = "CODEINTEL_TOOL_CALL_LOG"
+    previous = os.environ.get(env_key)
+    os.environ[env_key] = str(path)
+    try:
+        yield ToolCallLog(path)
+    finally:
+        if previous is None:
+            os.environ.pop(env_key, None)
+        else:
+            os.environ[env_key] = previous
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def require_tooling() -> None:
-    """Fail fast if required tool binaries are missing."""
+    """Explicitly verify tool binaries for tests that opt in."""
     _require_tooling()
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """Skip or fail tests when required tool binaries are missing."""
+    marker = item.get_closest_marker("requires_tools")
+    if marker is None:
+        return
+    tools = tuple(str(arg) for arg in marker.args)
+    if not tools:
+        return
+    _require_tooling(required_tools=tools)
 
 
 @pytest.fixture

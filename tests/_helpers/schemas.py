@@ -14,7 +14,7 @@ from codeintel.storage.contracts.schema_provider import (
     get_schema_provider,
 )
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
-from codeintel.storage.schema import create_schemas
+from codeintel.storage.schema import ensure_schemas_preserve
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -49,7 +49,7 @@ def ensure_schema_service() -> SchemaService:
 
 
 def ensure_production_schemas(con: DuckDBPyConnection) -> None:
-    """Ensure production schemas and metadata tables exist in a test database.
+    """Ensure production schemas, tables, and metadata exist in a test database.
 
     Parameters
     ----------
@@ -57,7 +57,7 @@ def ensure_production_schemas(con: DuckDBPyConnection) -> None:
         DuckDB connection to seed with production schemas.
     """
     ensure_storage_contract_catalog()
-    create_schemas(con)
+    ensure_schemas_preserve(con)
     apply_metadata_ddl(con)
 
 

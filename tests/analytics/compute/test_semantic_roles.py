@@ -88,9 +88,8 @@ def _apply_list_override(base: FunctionContextBuilder, key: str, value: object) 
             base.decorators = decorators
         return True
     if key == "module_tags" and isinstance(value, (list, tuple)):
-        tags = list(value)
-        if all(isinstance(item, str) for item in tags):
-            base.module_tags = tags
+        tags = [item for item in value if isinstance(item, str)]
+        base.module_tags = tags
         return True
     return False
 

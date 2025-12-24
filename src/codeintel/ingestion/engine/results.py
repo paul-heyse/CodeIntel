@@ -9,7 +9,7 @@ Architecture Note
 These "Report" types (DiagnosticReport, CoverageReport, TestReport, ScipIndexResult)
 are **rich domain objects** used internally by tool plugins. They include:
 - Aggregated counts (total_errors, total_warnings, definition_count, etc.)
-- Factory methods for construction from raw data (from_error_counts, from_json_documents)
+- Factory methods for construction from raw data (from_error_counts, from_documents)
 - Helper methods for common access patterns (errors_by_path, by_path, definitions_by_location)
 
 In contrast, the "Result" types in ``ports/tools.py`` (DiagnosticResult, CoverageResult,
@@ -34,11 +34,8 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.ingestion.ports import tools as port_types
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
     from pathlib import Path
-
-MIN_SCIP_RANGE_FIELDS = 3
-FULL_SCIP_RANGE_FIELDS = 4
 
 
 class ReportProtocol(Protocol):
@@ -493,13 +490,18 @@ class ScipOccurrence:
         SCIP symbol string.
     range_
         Line/column range as a tuple (start_line, start_col, end_line, end_col).
-    is_definition
-        Whether this occurrence is a definition.
+    symbol_roles
+        Bitmask of symbol roles for this occurrence.
     """
 
     symbol: str
     range_: tuple[int, int, int, int]
-    is_definition: bool = False
+    symbol_roles: int = 0
+
+    @property
+    def is_definition(self) -> bool:
+        """Return True if the definition role is set."""
+        return bool(self.symbol_roles & 1)
 
     def to_port_occurrence(self) -> port_types.ScipOccurrence:
         """Convert to port interface type.
@@ -515,7 +517,7 @@ class ScipOccurrence:
             range_start_col=self.range_[1],
             range_end_line=self.range_[2],
             range_end_col=self.range_[3],
-            symbol_roles=1 if self.is_definition else 0,
+            symbol_roles=self.symbol_roles,
         )
 
 
@@ -527,11 +529,14 @@ class ScipDocument:
     ----------
     relative_path
         Repository-relative path to the document.
+    symbols
+        Symbols defined in this document.
     occurrences
         Sequence of symbol occurrences in this document.
     """
 
     relative_path: str
+    symbols: Sequence[port_types.ScipSymbol] = ()
     occurrences: Sequence[ScipOccurrence] = ()
 
     def to_port_document(self) -> port_types.ScipDocument:
@@ -544,72 +549,9 @@ class ScipDocument:
         """
         return port_types.ScipDocument(
             relative_path=self.relative_path,
-            symbols=[],  # Domain type doesn't track symbols separately
+            symbols=list(self.symbols),
             occurrences=[occ.to_port_occurrence() for occ in self.occurrences],
         )
-
-
-def parse_scip_range(rng: Sequence[object]) -> tuple[int, int, int, int] | None:
-    """Parse SCIP range from list to tuple.
-
-    SCIP ranges have 3 or 4 elements. Three-element ranges represent
-    occurrences on a single line with start_col and end_col.
-
-    Parameters
-    ----------
-    rng
-        Range sequence from SCIP output.
-
-    Returns
-    -------
-    tuple[int, int, int, int] | None
-        Normalized (start_line, start_col, end_line, end_col) or None.
-    """
-    try:
-        int_values = [int(x) for x in rng if isinstance(x, (int, float, str))]
-    except (ValueError, TypeError):
-        return None
-    if len(int_values) != len(rng):
-        return None
-    if len(int_values) == MIN_SCIP_RANGE_FIELDS:
-        return (int_values[0], int_values[1], int_values[0], int_values[2])
-    if len(int_values) == FULL_SCIP_RANGE_FIELDS:
-        return (int_values[0], int_values[1], int_values[2], int_values[3])
-    return None
-
-
-def parse_scip_occurrence(occ: Mapping[str, object]) -> tuple[ScipOccurrence, bool] | None:
-    """Parse a single SCIP occurrence from a dict.
-
-    Parameters
-    ----------
-    occ
-        Occurrence dict from SCIP JSON.
-
-    Returns
-    -------
-    tuple[ScipOccurrence, bool] | None
-        Tuple of (occurrence, is_definition) or None if invalid.
-    """
-    symbol = occ.get("symbol")
-    if not isinstance(symbol, str):
-        return None
-
-    rng = occ.get("range", [])
-    if not isinstance(rng, list) or len(rng) < MIN_SCIP_RANGE_FIELDS:
-        return None
-
-    range_tuple = parse_scip_range(rng)
-    if range_tuple is None:
-        return None
-
-    roles = occ.get("symbol_roles", 0)
-    is_def = bool(roles & 1) if isinstance(roles, int) else False
-
-    return (
-        ScipOccurrence(symbol=symbol, range_=range_tuple, is_definition=is_def),
-        is_def,
-    )
 
 
 @dataclass(frozen=True)
@@ -623,7 +565,7 @@ class ScipIndexResult:
     index_scip_path
         Path to the .scip binary index file.
     index_json_path
-        Path to the JSON export of the index.
+        Optional legacy JSON export path (unused in protobuf flow).
     definition_count
         Total number of definitions across all documents.
     reference_count
@@ -637,61 +579,32 @@ class ScipIndexResult:
     reference_count: int = 0
 
     @classmethod
-    def from_json_documents(
+    def from_documents(
         cls,
-        docs: Sequence[Mapping[str, object]],
+        documents: Sequence[ScipDocument],
         *,
         index_scip_path: Path | None = None,
-        index_json_path: Path | None = None,
     ) -> ScipIndexResult:
-        """Build a ScipIndexResult from parsed JSON documents.
-
-        Parameters
-        ----------
-        docs
-            Sequence of document mappings from SCIP JSON export.
-        index_scip_path
-            Optional path to the .scip binary file.
-        index_json_path
-            Optional path to the JSON export.
+        """Build a ScipIndexResult from parsed protobuf documents.
 
         Returns
         -------
         ScipIndexResult
-            Constructed result with aggregated counts.
+            Aggregated result with definition/reference counts.
         """
-        documents: list[ScipDocument] = []
         total_defs = 0
         total_refs = 0
-
-        for doc in docs:
-            rel_path = doc.get("relative_path")
-            if not isinstance(rel_path, str):
-                continue
-
-            occurrences_raw = doc.get("occurrences", [])
-            occurrences: list[ScipOccurrence] = []
-
-            if isinstance(occurrences_raw, list):
-                for occ in occurrences_raw:
-                    if not isinstance(occ, dict):
-                        continue
-                    parsed = parse_scip_occurrence(occ)
-                    if parsed is None:
-                        continue
-                    occurrence, is_def = parsed
-                    occurrences.append(occurrence)
-                    if is_def:
-                        total_defs += 1
-                    else:
-                        total_refs += 1
-
-            documents.append(ScipDocument(relative_path=rel_path, occurrences=tuple(occurrences)))
+        for doc in documents:
+            for occ in doc.occurrences:
+                if occ.is_definition:
+                    total_defs += 1
+                else:
+                    total_refs += 1
 
         return cls(
             documents=tuple(documents),
             index_scip_path=index_scip_path,
-            index_json_path=index_json_path,
+            index_json_path=None,
             definition_count=total_defs,
             reference_count=total_refs,
         )
@@ -724,8 +637,6 @@ __all__ = [
     "ScipOccurrence",
     "TestCaseResult",
     "TestReport",
-    "parse_scip_occurrence",
-    "parse_scip_range",
     "parse_test_duration",
     "parse_test_markers",
 ]

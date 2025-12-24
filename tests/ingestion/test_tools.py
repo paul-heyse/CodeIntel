@@ -211,6 +211,7 @@ def test_default_registry_contains_expected_plugins() -> None:
 # =============================================================================
 
 
+@pytest.mark.requires_tools("pyright", "pyrefly", "ruff", "coverage")
 def test_tool_service_pyright_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyright diagnostics per file."""
     errors = tooling_outputs.pyright_errors
@@ -220,6 +221,7 @@ def test_tool_service_pyright_parses_errors(tooling_outputs: ToolingOutputs) -> 
     )
 
 
+@pytest.mark.requires_tools("pyright", "pyrefly", "ruff", "coverage")
 def test_tool_service_pyrefly_parses_errors(tooling_outputs: ToolingOutputs) -> None:
     """ToolService aggregates pyrefly diagnostics per file."""
     errors = tooling_outputs.pyrefly_errors
@@ -229,6 +231,7 @@ def test_tool_service_pyrefly_parses_errors(tooling_outputs: ToolingOutputs) -> 
     )
 
 
+@pytest.mark.requires_tools("pyright", "pyrefly", "ruff", "coverage")
 def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOutputs) -> None:
     """ToolService normalizes coverage.json payloads."""
     reports = {report.rel_path: report for report in tooling_outputs.coverage_reports}
@@ -1191,6 +1194,15 @@ def test_tool_service_run_pyrefly_failure_returns_empty(tmp_path: Path) -> None:
     expect_true(errors == {})
 
 
+@pytest.mark.requires_tools(
+    "pyright",
+    "pyrefly",
+    "ruff",
+    "coverage",
+    "pytest",
+    "scip",
+    "scip-python",
+)
 def test_tool_service_run_coverage_report_with_data(
     tooling_artifacts: ToolingArtifacts,
 ) -> None:

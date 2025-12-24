@@ -145,7 +145,7 @@ def _prepare_harness_context(
         ctx.ensure_canonical_repo()
 
     resolved_tools = options.tools_config or ToolsConfig.default()
-    require_tooling(resolved_tools)
+    require_tooling(resolved_tools, repo_root=ctx.repo_root)
     resolved_providers = options.providers or create_default_providers(resolved_tools)
     resolved_build_config = options.build_config or load_build_config(ctx.repo_root)
     return ctx, written, resolved_providers, resolved_build_config
@@ -300,7 +300,7 @@ class HamiltonBuildHarness:
         if cfg.enable_hamilton_cache and cfg.cache_dir is None:
             cfg = replace(cfg, cache_dir=ctx.build_paths.build_dir / "hamilton_cache")
         resolved_tools = tools_config or ToolsConfig.default()
-        require_tooling(resolved_tools)
+        require_tooling(resolved_tools, repo_root=ctx.repo_root)
         resolved_providers = providers or create_default_providers(resolved_tools)
         resolved_build_config = build_config or load_build_config(ctx.repo_root)
         env = BuildEnv(

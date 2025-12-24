@@ -1,0 +1,11 @@
+[
+  {
+    "commit": "deadbeef",
+    "language": "python",
+    "module": "pkg.mod",
+    "owners": null,
+    "path": "pkg/mod.py",
+    "repo": "demo/repo",
+    "tags": null
+  }
+]

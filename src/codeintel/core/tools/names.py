@@ -16,6 +16,7 @@ class ToolName(StrEnum):
     GIT = "git"
     SCIP_PYTHON = "scip-python"
     SCIP = "scip"
+    PROTOC = "protoc"
 
 
 __all__ = ["ToolName"]

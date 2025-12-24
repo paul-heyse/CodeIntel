@@ -249,6 +249,10 @@ class ToolsConfig(BaseModel):
 
     scip_python_bin: str = Field("scip-python", description="Path to scip-python binary")
     scip_bin: str = Field("scip", description="Path to scip binary")
+    protoc_bin: str = Field(
+        "python",
+        description="Python executable for grpc_tools.protoc",
+    )
     pyright_bin: str = Field("pyright", description="Path to pyright binary")
     pyrefly_bin: str = Field("pyrefly", description="Path to pyrefly binary")
     ruff_bin: str = Field("ruff", description="Path to ruff binary")
@@ -334,6 +338,7 @@ class ToolsConfig(BaseModel):
         return ToolBinaries(
             scip_python_bin=self.scip_python_bin,
             scip_bin=self.scip_bin,
+            protoc_bin=self.protoc_bin,
             pyright_bin=self.pyright_bin,
             pyrefly_bin=self.pyrefly_bin,
             ruff_bin=self.ruff_bin,

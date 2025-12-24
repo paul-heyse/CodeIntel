@@ -8,14 +8,9 @@ from typing import TYPE_CHECKING
 
 import anyio
 import pytest
-from fastmcp.client import Client
 from mcp import McpError
 
-from codeintel.serving.db.manager import ServingDBManager
-from codeintel.serving.mcp.app import build_mcp_app
-from codeintel.serving.semantic.kernel import SemanticQueryKernel
-from codeintel.serving.settings import ServingSettings
-from codeintel.storage.gateway.pool import PoolConfig
+from tests._helpers.harnesses.serving_app import ServingAppHarness, ServingSettingsOverrides
 from tests._helpers.mcp_payloads import extract_payload
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
@@ -26,6 +21,7 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
     from codeintel.serving.mcp.protocols import ServingDBManagerProtocol
     from codeintel.serving.meta.models import ServingKernelMetaResponse
+    from codeintel.serving.runtime import ServingRuntime
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
         SemanticCatalogResponse,
@@ -35,13 +31,6 @@ if TYPE_CHECKING:
         SemanticQueryResponse,
         SemanticViewDescriptionResponse,
     )
-
-
-def _setup_test_snapshot(tmp_path: Path, *, row_count: int) -> Path:
-    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot(
-        row_count=row_count
-    )
-    return snapshot.pointer_path
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,102 +83,80 @@ class _SlowExportKernel:
 
 
 @pytest.mark.anyio
-async def test_mcp_export_task_mode_completes(tmp_path: Path) -> None:
+async def test_mcp_export_task_mode_completes(
+    serving_snapshot_factory: ServingSnapshotFactory,
+) -> None:
     """Allow calling semantic_export as a background task and awaiting completion."""
-    pointer_path = _setup_test_snapshot(tmp_path, row_count=10)
-
-    manager = ServingDBManager(
-        pointer_path=pointer_path,
-        pool_cfg=PoolConfig(size=1),
-        poll_interval_s=0.01,
-    )
-    await manager.start()
-    try:
-        settings = ServingSettings(
-            serve_dir=tmp_path,
-            hot_swap=False,
-            pool_size=1,
-            poll_interval_s=0.01,
-            result_engine="pandas",
-            schema_enforcement="strict",
-            mcp_mask_errors=False,
-            mcp_export_enable_tasks=True,
+    snapshot = serving_snapshot_factory.demo_snapshot(row_count=10)
+    harness = ServingAppHarness.from_snapshot(snapshot)
+    settings_overrides: ServingSettingsOverrides = {
+        "hot_swap": False,
+        "result_engine": "pandas",
+        "schema_enforcement": "strict",
+        "mcp_mask_errors": False,
+        "mcp_export_enable_tasks": True,
+    }
+    async with harness.mcp_client(settings_overrides=settings_overrides) as client:
+        task_or_result = await client.call_tool(
+            "semantic_export",
+            {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 10}},
+            task=True,
         )
-        kernel = SemanticQueryKernel(db=manager, settings=settings)
-        mcp = build_mcp_app(kernel=kernel, settings=settings)
 
-        async with Client(mcp) as client:
-            task_or_result = await client.call_tool(
-                "semantic_export",
-                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 10}},
-                task=True,
-            )
+        result_obj = task_or_result
+        if hasattr(task_or_result, "result"):
+            result_obj = await task_or_result.result()
 
-            result_obj = task_or_result
-            if hasattr(task_or_result, "result"):
-                result_obj = await task_or_result.result()
-
-            payload = extract_payload(result_obj)
-            export_id = payload.get("export_id")
-            if not isinstance(export_id, str) or not export_id:
-                pytest.fail("Expected semantic_export task result to include export_id")
-    finally:
-        await manager.stop()
+        payload = extract_payload(result_obj)
+        export_id = payload.get("export_id")
+        if not isinstance(export_id, str) or not export_id:
+            pytest.fail("Expected semantic_export task result to include export_id")
 
 
 @pytest.mark.anyio
-async def test_mcp_export_task_cancellation_cleans_up_artifacts(tmp_path: Path) -> None:
+async def test_mcp_export_task_cancellation_cleans_up_artifacts(
+    serving_snapshot_factory: ServingSnapshotFactory,
+) -> None:
     """Cancel a running export task and ensure partial artifacts are cleaned up."""
-    pointer_path = _setup_test_snapshot(tmp_path, row_count=2500)
+    snapshot = serving_snapshot_factory.demo_snapshot(row_count=2500)
+    harness = ServingAppHarness.from_snapshot(snapshot)
+    settings_overrides: ServingSettingsOverrides = {
+        "hot_swap": False,
+        "result_engine": "pandas",
+        "schema_enforcement": "strict",
+        "mcp_mask_errors": False,
+        "mcp_export_enable_tasks": True,
+    }
 
-    manager = ServingDBManager(
-        pointer_path=pointer_path,
-        pool_cfg=PoolConfig(size=1),
-        poll_interval_s=0.01,
-    )
-    await manager.start()
-    try:
-        settings = ServingSettings(
-            serve_dir=tmp_path,
-            hot_swap=False,
-            pool_size=1,
-            poll_interval_s=0.01,
-            result_engine="pandas",
-            schema_enforcement="strict",
-            mcp_mask_errors=False,
-            mcp_export_enable_tasks=True,
+    def _slow_kernel(runtime: ServingRuntime) -> SemanticKernel:
+        return _SlowExportKernel(inner=runtime.kernel, delay_s=0.001)
+
+    async with harness.mcp_client(
+        settings_overrides=settings_overrides,
+        kernel_builder=_slow_kernel,
+    ) as client:
+        tool_task = await client.call_tool(
+            "semantic_export",
+            {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 2500}},
+            task=True,
         )
-        inner_kernel = SemanticQueryKernel(db=manager, settings=settings)
-        kernel = _SlowExportKernel(inner=inner_kernel, delay_s=0.001)
-        mcp = build_mcp_app(kernel=kernel, settings=settings)
+        if not hasattr(tool_task, "cancel"):
+            pytest.fail("Expected task-capable client to return a ToolTask")
 
-        async with Client(mcp) as client:
-            tool_task = await client.call_tool(
-                "semantic_export",
-                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 2500}},
-                task=True,
-            )
-            if not hasattr(tool_task, "cancel"):
-                pytest.fail("Expected task-capable client to return a ToolTask")
+        await tool_task.cancel()
 
-            await tool_task.cancel()
+        exports_dir = snapshot.serve_dir / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        leftovers: list[str] = []
+        for _ in range(200):
+            leftovers = [
+                path.name for path in exports_dir.iterdir() if not path.name.endswith(".cancelled")
+            ]
+            if not leftovers:
+                break
+            await anyio.sleep(0.02)
+        else:
+            pytest.fail(f"Expected export artifacts to be cleaned up, found: {leftovers}")
 
-            exports_dir = tmp_path / "exports"
-            exports_dir.mkdir(parents=True, exist_ok=True)
-            leftovers: list[str] = []
-            for _ in range(200):
-                leftovers = [
-                    path.name
-                    for path in exports_dir.iterdir()
-                    if not path.name.endswith(".cancelled")
-                ]
-                if not leftovers:
-                    break
-                await anyio.sleep(0.02)
-            else:
-                pytest.fail(f"Expected export artifacts to be cleaned up, found: {leftovers}")
-
-            with pytest.raises(McpError):
-                await tool_task.result()
-    finally:
-        await manager.stop()
+        with pytest.raises(McpError):
+            await tool_task.result()

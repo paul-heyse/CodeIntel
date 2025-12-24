@@ -1,172 +1,22 @@
-"""Helpers for parsing SCIP JSON and building row payloads."""
+"""Helpers for building SCIP row payloads."""
 
 from __future__ import annotations
 
-import json
-import logging
 from datetime import datetime
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence, ScipSymbol
+from codeintel.ingestion.ports.tools import ScipDocument
+from codeintel.ingestion.scip.models import (
+    ScipDiagnostic,
+    ScipExternalSymbol,
+    ScipSymbolInfo,
+    ScipSymbolRelationship,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from codeintel.core.schemas.row_models import RowSerializer
-
-log = logging.getLogger(__name__)
-
-_SCIP_RANGE_END_CHAR_IDX = 3
-
-
-def find_scip_json(index_json_path: Path | None, output_scip: Path) -> Path | None:
-    """Find the SCIP JSON file from multiple candidate locations.
-
-    Returns
-    -------
-    Path | None
-        Path to existing JSON file or None if not found.
-    """
-    candidates: list[Path] = []
-    if index_json_path is not None:
-        candidates.append(index_json_path)
-    candidates.extend(
-        [
-            output_scip.with_suffix(".scip.json"),
-            output_scip.parent / "index.scip.json",
-            output_scip.parent / "index.json",
-        ]
-    )
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def parse_scip_symbols(raw_symbols: list[Any]) -> list[ScipSymbol]:
-    """Parse symbols from raw JSON data.
-
-    Returns
-    -------
-    list[ScipSymbol]
-        Parsed symbol objects.
-    """
-    symbols: list[ScipSymbol] = []
-    for sym in raw_symbols:
-        if not isinstance(sym, dict):
-            continue
-        symbol_str = sym.get("symbol", "")
-        documentation = sym.get("documentation", [])
-        doc_str = "\n".join(documentation) if isinstance(documentation, list) else ""
-        symbols.append(ScipSymbol(symbol=symbol_str, documentation=doc_str))
-    return symbols
-
-
-def parse_scip_occurrences(raw_occurrences: list[Any]) -> list[ScipOccurrence]:
-    """Parse occurrences from raw JSON data.
-
-    Returns
-    -------
-    list[ScipOccurrence]
-        Parsed occurrence objects.
-    """
-    occurrences: list[ScipOccurrence] = []
-    for occ in raw_occurrences:
-        if not isinstance(occ, dict):
-            continue
-        rng = occ.get("range", [])
-        if not isinstance(rng, list) or not rng:
-            continue
-
-        roles = occ.get("symbolRoles") or occ.get("symbol_roles", 0)
-        role_int = roles if isinstance(roles, int) else 0
-        occurrences.append(
-            ScipOccurrence(
-                symbol=occ.get("symbol", ""),
-                range_start_line=int(rng[0]),
-                range_start_col=int(rng[1]) if len(rng) > 1 else 0,
-                range_end_line=int(rng[0]),
-                range_end_col=int(rng[_SCIP_RANGE_END_CHAR_IDX])
-                if len(rng) > _SCIP_RANGE_END_CHAR_IDX
-                else 0,
-                symbol_roles=role_int,
-            )
-        )
-    return occurrences
-
-
-def parse_scip_document(doc: dict[str, Any]) -> ScipDocument | None:
-    """Parse a single SCIP document from JSON.
-
-    Returns
-    -------
-    ScipDocument | None
-        Parsed document or None if invalid.
-    """
-    rel_path = doc.get("relativePath") or doc.get("relative_path", "")
-    if not rel_path:
-        return None
-    raw_symbols = doc.get("symbols", [])
-    symbols = parse_scip_symbols(raw_symbols) if isinstance(raw_symbols, list) else []
-    raw_occurrences = doc.get("occurrences", [])
-    occurrences = (
-        parse_scip_occurrences(raw_occurrences) if isinstance(raw_occurrences, list) else []
-    )
-    return ScipDocument(
-        relative_path=str(rel_path),
-        symbols=tuple(symbols),
-        occurrences=tuple(occurrences),
-    )
-
-
-def parse_scip_json_file(
-    index_json_path: Path | None,
-    output_scip: Path,
-) -> list[ScipDocument]:
-    """Parse SCIP documents from JSON file.
-
-    Try multiple JSON file locations and parse documents with symbols/occurrences.
-
-    Parameters
-    ----------
-    index_json_path
-        Optional JSON file path to check first.
-    output_scip
-        SCIP binary file path (used to find alternate JSON locations).
-
-    Returns
-    -------
-    list[ScipDocument]
-        Parsed SCIP documents.
-    """
-    json_path = find_scip_json(index_json_path, output_scip)
-    if json_path is None:
-        log.debug("No SCIP JSON file found")
-        return []
-
-    try:
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        log.warning("Failed to parse SCIP JSON file %s: %s", json_path, exc)
-        return []
-
-    docs: list[Any] = []
-    if isinstance(payload, dict):
-        docs_field = payload.get("documents", [])
-        docs = docs_field if isinstance(docs_field, list) else []
-    elif isinstance(payload, list):
-        docs = payload
-
-    documents: list[ScipDocument] = []
-    for doc in docs:
-        if isinstance(doc, dict):
-            parsed = parse_scip_document(doc)
-            if parsed is not None:
-                documents.append(parsed)
-
-    log.debug("Parsed %d SCIP documents from %s", len(documents), json_path)
-    return documents
 
 
 def build_symbol_rows(
@@ -302,12 +152,195 @@ def build_occurrence_rows(
     return rows
 
 
+def build_symbol_information_rows(
+    symbol_infos: Sequence[ScipSymbolInfo],
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    *,
+    serializer: RowSerializer | None = None,
+) -> list[tuple[object, ...]]:
+    """Build rows for core.scip_symbol_information.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Serialized row tuples for symbol information.
+    """
+    rows: list[tuple[object, ...]] = []
+    for info in symbol_infos:
+        payload = {
+            "repo": repo,
+            "commit": commit,
+            "symbol": info.symbol,
+            "documentation": info.documentation,
+            "kind": info.kind,
+            "display_name": info.display_name,
+            "signature": info.signature,
+            "enclosing_symbol": info.enclosing_symbol,
+            "created_at": created_at,
+        }
+        if serializer is not None:
+            rows.append(serializer(payload))
+        else:
+            rows.append(
+                (
+                    payload["repo"],
+                    payload["commit"],
+                    payload["symbol"],
+                    payload["documentation"],
+                    payload["kind"],
+                    payload["display_name"],
+                    payload["signature"],
+                    payload["enclosing_symbol"],
+                    payload["created_at"],
+                )
+            )
+    return rows
+
+
+def build_symbol_relationship_rows(
+    relationships: Sequence[ScipSymbolRelationship],
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    *,
+    serializer: RowSerializer | None = None,
+) -> list[tuple[object, ...]]:
+    """Build rows for core.scip_symbol_relationships.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Serialized row tuples for symbol relationships.
+    """
+    rows: list[tuple[object, ...]] = []
+    for rel in relationships:
+        payload = {
+            "repo": repo,
+            "commit": commit,
+            "symbol": rel.symbol,
+            "related_symbol": rel.related_symbol,
+            "relationship_kind": rel.relationship_kind,
+            "created_at": created_at,
+        }
+        if serializer is not None:
+            rows.append(serializer(payload))
+        else:
+            rows.append(
+                (
+                    payload["repo"],
+                    payload["commit"],
+                    payload["symbol"],
+                    payload["related_symbol"],
+                    payload["relationship_kind"],
+                    payload["created_at"],
+                )
+            )
+    return rows
+
+
+def build_diagnostic_rows(
+    diagnostics: Sequence[ScipDiagnostic],
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    *,
+    serializer: RowSerializer | None = None,
+) -> list[tuple[object, ...]]:
+    """Build rows for core.scip_diagnostics.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Serialized row tuples for diagnostics.
+    """
+    rows: list[tuple[object, ...]] = []
+    for diag in diagnostics:
+        payload = {
+            "repo": repo,
+            "commit": commit,
+            "rel_path": diag.rel_path,
+            "start_line": diag.start_line,
+            "start_col": diag.start_col,
+            "end_line": diag.end_line,
+            "end_col": diag.end_col,
+            "severity": diag.severity,
+            "code": diag.code,
+            "message": diag.message,
+            "source": diag.source,
+            "created_at": created_at,
+        }
+        if serializer is not None:
+            rows.append(serializer(payload))
+        else:
+            rows.append(
+                (
+                    payload["repo"],
+                    payload["commit"],
+                    payload["rel_path"],
+                    payload["start_line"],
+                    payload["start_col"],
+                    payload["end_line"],
+                    payload["end_col"],
+                    payload["severity"],
+                    payload["code"],
+                    payload["message"],
+                    payload["source"],
+                    payload["created_at"],
+                )
+            )
+    return rows
+
+
+def build_external_symbol_rows(
+    external_symbols: Sequence[ScipExternalSymbol],
+    repo: str,
+    commit: str,
+    created_at: datetime,
+    *,
+    serializer: RowSerializer | None = None,
+) -> list[tuple[object, ...]]:
+    """Build rows for core.scip_external_symbols.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Serialized row tuples for external symbols.
+    """
+    rows: list[tuple[object, ...]] = []
+    for sym in external_symbols:
+        payload = {
+            "repo": repo,
+            "commit": commit,
+            "symbol": sym.symbol,
+            "package_manager": sym.package_manager,
+            "package_name": sym.package_name,
+            "package_version": sym.package_version,
+            "created_at": created_at,
+        }
+        if serializer is not None:
+            rows.append(serializer(payload))
+        else:
+            rows.append(
+                (
+                    payload["repo"],
+                    payload["commit"],
+                    payload["symbol"],
+                    payload["package_manager"],
+                    payload["package_name"],
+                    payload["package_version"],
+                    payload["created_at"],
+                )
+            )
+    return rows
+
+
 __all__ = [
+    "build_diagnostic_rows",
+    "build_external_symbol_rows",
     "build_occurrence_rows",
+    "build_symbol_information_rows",
+    "build_symbol_relationship_rows",
     "build_symbol_rows",
-    "find_scip_json",
-    "parse_scip_document",
-    "parse_scip_json_file",
-    "parse_scip_occurrences",
-    "parse_scip_symbols",
 ]

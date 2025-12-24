@@ -44,6 +44,9 @@ from tests._helpers.harnesses.hamilton_build import (
     RepoStrategy,
     RepoWriter,
 )
+from tests._helpers.harnesses.mcp_app import (
+    McpAppHarness,
+)
 from tests._helpers.harnesses.plan_status import (
     PlanSummary,
     compute_plan_summary,
@@ -71,6 +74,7 @@ __all__ = [
     "HamiltonBuildHarness",
     "HarnessConfig",
     "HarnessOpenOptions",
+    "McpAppHarness",
     "PlanSummary",
     "RepoStrategy",
     "RepoWriter",

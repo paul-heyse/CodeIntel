@@ -3,16 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from fastapi import status
-from fastapi.testclient import TestClient
 
-from codeintel.config.primitives import BuildPaths
-from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.serving.http.app import create_serving_app
-from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
@@ -20,11 +14,14 @@ from tests._helpers.assertions.expectation_assertions import (
 )
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+from tests._helpers.harnesses.serving_app import ServingAppHarness
 from tests._helpers.schemas import ensure_production_schemas
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory, SnapshotArtifacts
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from tests._helpers.serving_snapshot_factory import ServingSnapshot
 
 
 def _make_db(db_path: Path) -> None:
@@ -49,106 +46,59 @@ def _make_db(db_path: Path) -> None:
         gateway.close()
 
 
-def _write_pointer(
-    path: Path,
-    *,
-    db_path: Path,
-    registry_path: Path,
-    manifest_path: Path,
-    buildspec_path: Path,
-) -> None:
-    """Write serving snapshot pointer."""
-    pointer = ServingSnapshotPointer(
-        db_path=db_path,
-        semantic_registry_path=registry_path,
-        schema_manifest_path=manifest_path,
-        buildspec_path=buildspec_path,
-        repo="test/export",
-        commit="abc123",
-        run_id="run-export-1",
-        published_at=datetime.now(tz=UTC),
-        semantic_layer_version="v100",
+def _export_views() -> list[dict[str, object]]:
+    return [
+        {
+            "id": "export.test",
+            "kind": "view",
+            "table_key": "docs.v_export_test",
+            "entity": "test",
+            "grain": "per_row",
+            "description": "Export test view",
+            "primary_key": ["id"],
+            "columns": ["id", "name", "value"],
+            "joins": [],
+            "defaults": {"limit": 200, "order_by": ["id"]},
+            "sensitivity": "internal",
+        }
+    ]
+
+
+def _export_tables() -> list[dict[str, object]]:
+    return [
+        {
+            "schema": "docs",
+            "name": "v_export_test",
+            "table_key": "docs.v_export_test",
+            "primary_key": ["id"],
+            "indexes": [],
+            "columns": [
+                {"name": "id", "type": "INTEGER", "nullable": False},
+                {"name": "name", "type": "VARCHAR", "nullable": True},
+                {"name": "value", "type": "DOUBLE", "nullable": True},
+            ],
+        }
+    ]
+
+
+def _make_snapshot(factory: ServingSnapshotFactory) -> ServingSnapshot:
+    artifacts = SnapshotArtifacts(
+        views=_export_views(),
+        tables=_export_tables(),
+        db_setup=_make_db,
     )
-    path.write_text(pointer.to_json(), encoding="utf-8")
+    return factory.make_snapshot(artifacts=artifacts)
 
 
-def _setup_serving_env(tmp_path: Path) -> ServingSettings:
-    """Create serving environment.
-
-    Returns
-    -------
-    ServingSettings
-        Configured settings for test serving.
-    """
-    serve_dir = tmp_path / "serve"
-    serve_dir.mkdir(parents=True, exist_ok=True)
-
-    db_path = tmp_path / "export_test.duckdb"
-    registry_path = tmp_path / "semantic_registry.json"
-    manifest_path = tmp_path / "schema_manifest.json"
-    buildspec_path = tmp_path / "buildspec.json"
-
-    _make_db(db_path)
-    artifacts = HarnessArtifacts(
-        repo_root=tmp_path,
-        paths=BuildPaths.from_explicit(build_dir=tmp_path / "build"),
-    )
-    artifacts.write_semantic_registry(
-        path=registry_path,
-        views=[
-            {
-                "id": "export.test",
-                "kind": "view",
-                "table_key": "docs.v_export_test",
-                "entity": "test",
-                "grain": "per_row",
-                "description": "Export test view",
-                "primary_key": ["id"],
-                "columns": ["id", "name", "value"],
-                "joins": [],
-                "defaults": {"limit": 200, "order_by": ["id"]},
-                "sensitivity": "internal",
-            }
-        ],
-    )
-    artifacts.write_schema_manifest(
-        path=manifest_path,
-        tables=[
-            {
-                "schema": "docs",
-                "name": "v_export_test",
-                "table_key": "docs.v_export_test",
-                "primary_key": ["id"],
-                "indexes": [],
-                "columns": [
-                    {"name": "id", "type": "INTEGER", "nullable": False},
-                    {"name": "name", "type": "VARCHAR", "nullable": True},
-                    {"name": "value", "type": "DOUBLE", "nullable": True},
-                ],
-            }
-        ],
-    )
-    artifacts.write_buildspec(
-        path=buildspec_path,
-        datasets=[{"table_key": "docs.v_export_test", "schema_hash": "schema_export_test"}],
-    )
-    _write_pointer(
-        serve_dir / "current.json",
-        db_path=db_path,
-        registry_path=registry_path,
-        manifest_path=manifest_path,
-        buildspec_path=buildspec_path,
-    )
-
-    return ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
+def _make_harness(factory: ServingSnapshotFactory) -> ServingAppHarness:
+    snapshot = _make_snapshot(factory)
+    return ServingAppHarness.from_snapshot(snapshot)
 
 
-def test_export_json_format(tmp_path: Path) -> None:
+def test_export_json_format(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export with format=json returns JSON response with rows."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "json", "limit": 100},
@@ -161,12 +111,10 @@ def test_export_json_format(tmp_path: Path) -> None:
         expect_equal(len(data["rows"]), 5)
 
 
-def test_export_jsonl_format(tmp_path: Path) -> None:
+def test_export_jsonl_format(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export with format=jsonl returns newline-delimited JSON."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "jsonl", "limit": 100},
@@ -183,12 +131,10 @@ def test_export_jsonl_format(tmp_path: Path) -> None:
         expect_equal(first_row["name"], "alpha")
 
 
-def test_export_jsonl_content_disposition(tmp_path: Path) -> None:
+def test_export_jsonl_content_disposition(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """JSONL export should include content-disposition header."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "jsonl"},
@@ -199,12 +145,10 @@ def test_export_jsonl_content_disposition(tmp_path: Path) -> None:
         expect_in("export.test.jsonl", content_disposition)
 
 
-def test_export_with_filters(tmp_path: Path) -> None:
+def test_export_with_filters(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export should support filtering."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={
@@ -220,12 +164,10 @@ def test_export_with_filters(tmp_path: Path) -> None:
         expect_equal(len(lines), 3)
 
 
-def test_export_with_select_columns(tmp_path: Path) -> None:
+def test_export_with_select_columns(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export should support column selection."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={
@@ -243,12 +185,10 @@ def test_export_with_select_columns(tmp_path: Path) -> None:
         expect_true("value" not in first_row)
 
 
-def test_export_with_order_by(tmp_path: Path) -> None:
+def test_export_with_order_by(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export should support ordering."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={
@@ -267,12 +207,10 @@ def test_export_with_order_by(tmp_path: Path) -> None:
         expect_equal(last_row["id"], 1)
 
 
-def test_export_view_not_found(tmp_path: Path) -> None:
+def test_export_view_not_found(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export with unknown view returns 404."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/nonexistent.view",
             json={"view_id": "nonexistent.view", "format": "json"},
@@ -283,12 +221,10 @@ def test_export_view_not_found(tmp_path: Path) -> None:
         expect_in("not found", body.get("title", "").lower())
 
 
-def test_export_invalid_filter_column(tmp_path: Path) -> None:
+def test_export_invalid_filter_column(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export with invalid filter column returns 400."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={
@@ -301,77 +237,13 @@ def test_export_invalid_filter_column(tmp_path: Path) -> None:
         assert_problem_detail_response(response, status_code=status.HTTP_400_BAD_REQUEST)
 
 
-def test_export_respects_api_key(tmp_path: Path) -> None:
+def test_export_respects_api_key(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export endpoints should require API key when configured."""
-    serve_dir = tmp_path / "serve"
-    serve_dir.mkdir(parents=True, exist_ok=True)
-
-    db_path = tmp_path / "export_test.duckdb"
-    registry_path = tmp_path / "semantic_registry.json"
-    manifest_path = tmp_path / "schema_manifest.json"
-    buildspec_path = tmp_path / "buildspec.json"
-
-    _make_db(db_path)
-    artifacts = HarnessArtifacts(
-        repo_root=tmp_path,
-        paths=BuildPaths.from_explicit(build_dir=tmp_path / "build"),
-    )
-    artifacts.write_semantic_registry(
-        path=registry_path,
-        views=[
-            {
-                "id": "export.test",
-                "kind": "view",
-                "table_key": "docs.v_export_test",
-                "entity": "test",
-                "grain": "per_row",
-                "description": "Export test view",
-                "primary_key": ["id"],
-                "columns": ["id", "name", "value"],
-                "joins": [],
-                "defaults": {"limit": 200, "order_by": ["id"]},
-                "sensitivity": "internal",
-            }
-        ],
-    )
-    artifacts.write_schema_manifest(
-        path=manifest_path,
-        tables=[
-            {
-                "schema": "docs",
-                "name": "v_export_test",
-                "table_key": "docs.v_export_test",
-                "primary_key": ["id"],
-                "indexes": [],
-                "columns": [
-                    {"name": "id", "type": "INTEGER", "nullable": False},
-                    {"name": "name", "type": "VARCHAR", "nullable": True},
-                    {"name": "value", "type": "DOUBLE", "nullable": True},
-                ],
-            }
-        ],
-    )
-    artifacts.write_buildspec(
-        path=buildspec_path,
-        datasets=[{"table_key": "docs.v_export_test", "schema_hash": "schema_export_test"}],
-    )
-    _write_pointer(
-        serve_dir / "current.json",
-        db_path=db_path,
-        registry_path=registry_path,
-        manifest_path=manifest_path,
-        buildspec_path=buildspec_path,
-    )
-
-    settings = ServingSettings(
-        serve_dir=serve_dir,
-        pool_size=1,
-        poll_interval_s=0.01,
-        api_key="export-secret",
-    )
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(
+        mount_mcp=False,
+        settings_overrides={"api_key": "export-secret"},
+    ) as client:
         denied = client.post(
             "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "json"},
@@ -386,12 +258,10 @@ def test_export_respects_api_key(tmp_path: Path) -> None:
         expect_equal(allowed.status_code, status.HTTP_200_OK)
 
 
-def test_export_v1_route(tmp_path: Path) -> None:
+def test_export_v1_route(serving_snapshot_factory: ServingSnapshotFactory) -> None:
     """Export endpoints are versioned under /v1."""
-    settings = _setup_serving_env(tmp_path)
-    app = create_serving_app(settings=settings, mount_mcp=False)
-
-    with TestClient(app) as client:
+    harness = _make_harness(serving_snapshot_factory)
+    with harness.http_client(mount_mcp=False) as client:
         response = client.post(
             "/v1/export/semantic/export.test",
             json={"view_id": "export.test", "format": "json"},

@@ -22,11 +22,12 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
-from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+
+    from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 
 
 @dataclass(frozen=True, slots=True)

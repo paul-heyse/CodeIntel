@@ -1,0 +1,28 @@
+{
+  "version": "v1",
+  "views": [
+    {
+      "columns": [
+        "id",
+        "label"
+      ],
+      "defaults": {
+        "limit": 200,
+        "order_by": [
+          "id"
+        ]
+      },
+      "description": "Demo view",
+      "entity": "demo",
+      "grain": "per_row",
+      "id": "demo.view",
+      "joins": [],
+      "kind": "view",
+      "primary_key": [
+        "id"
+      ],
+      "sensitivity": "internal",
+      "table_key": "docs.v_demo"
+    }
+  ]
+}

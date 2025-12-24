@@ -276,6 +276,7 @@ class ToolRunnerAdapter:
         repo_root: Path,
         *,
         output_scip: Path,
+        proto_module_path: Path,
     ) -> ScipResult:
         """Run SCIP indexing.
 
@@ -296,6 +297,7 @@ class ToolRunnerAdapter:
             scip_result = await self._service.run_scip_full(
                 repo_root,
                 output_scip=output_scip,
+                proto_module_path=proto_module_path,
             )
 
             duration = time.perf_counter() - start
@@ -303,15 +305,13 @@ class ToolRunnerAdapter:
             documents = _convert_scip_documents(scip_result.documents or [])
 
             scip_path = scip_result.index_scip_path or output_scip
-            json_path = scip_result.index_json_path
             scip_exists = _check_file_exists(scip_path)
-            json_exists = _check_file_exists(json_path) if json_path is not None else False
 
             return ScipResult(
                 status=ToolStatus.OK,
                 documents=documents,
                 index_scip_path=scip_path if scip_exists else None,
-                index_json_path=json_path if json_exists else None,
+                index_json_path=None,
                 duration_s=duration,
             )
         except (OSError, RuntimeError, ValueError) as exc:
@@ -368,14 +368,19 @@ def _convert_scip_occurrence(occ: object) -> ScipOccurrence:
     ScipOccurrence
         Converted occurrence.
     """
-    occ_range = getattr(occ, "range", None) or []
-
-    start_line = occ_range[_RANGE_START_LINE] if occ_range else 0
-    start_col = occ_range[_RANGE_START_COL] if len(occ_range) >= _MIN_RANGE_LEN_COL else 0
-    end_line = (
-        occ_range[_RANGE_END_LINE] if len(occ_range) >= _MIN_RANGE_LEN_END_LINE else start_line
-    )
-    end_col = occ_range[_RANGE_END_COL] if len(occ_range) >= _MIN_RANGE_LEN_END_COL else start_col
+    occ_range = getattr(occ, "range_", None)
+    if isinstance(occ_range, tuple):
+        start_line, start_col, end_line, end_col = occ_range
+    else:
+        raw_range = getattr(occ, "range", None) or []
+        start_line = raw_range[_RANGE_START_LINE] if raw_range else 0
+        start_col = raw_range[_RANGE_START_COL] if len(raw_range) >= _MIN_RANGE_LEN_COL else 0
+        end_line = (
+            raw_range[_RANGE_END_LINE] if len(raw_range) >= _MIN_RANGE_LEN_END_LINE else start_line
+        )
+        end_col = (
+            raw_range[_RANGE_END_COL] if len(raw_range) >= _MIN_RANGE_LEN_END_COL else start_col
+        )
 
     return ScipOccurrence(
         symbol=getattr(occ, "symbol", ""),
