@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from tests._helpers.fixtures.snapshots import METRICS_VARIANT, SnapshotVariant
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -13,9 +15,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
-
-REPO = "demo/repo"
-COMMIT = "deadbeef"
 
 
 @dataclass(frozen=True)
@@ -42,16 +41,13 @@ class SpanTestEnv:
 class GraphEngineSeed:
     """Configuration for seeding an NxGraphEngine in tests."""
 
-    repo: str = "test/metrics"
-    commit: str = "metrics123"
+    snapshot_variant: SnapshotVariant = METRICS_VARIANT
     repo_root: Path | None = None
     call_graph: nx.DiGraph | None = None
     import_graph: nx.DiGraph | None = None
 
 
 __all__ = [
-    "COMMIT",
-    "REPO",
     "GraphEngineSeed",
     "SpanSnapshot",
     "SpanTestEnv",

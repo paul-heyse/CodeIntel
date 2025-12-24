@@ -37,7 +37,7 @@ from tests._helpers.orchestration.history import (
     create_snapshot_db,
     insert_function_history_row,
 )
-from tests._helpers.orchestration.repo_writers import (
+from tests._helpers.fixtures.repos import (
     write_callgraph_alias_repo,
     write_coverage_driver,
     write_graph_metrics_repo,

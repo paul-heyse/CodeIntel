@@ -18,15 +18,16 @@ Example
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, cast
 
 import networkx as nx
+
+from tests._helpers.fixtures.graphs import GraphFixtureFactory, GraphFixtureSpec
 
 DEFAULT_CHAIN_LENGTH: Final[int] = 4
 DEFAULT_SPOKES: Final[int] = 3
 DEFAULT_CYCLE_SIZE: Final[int] = 3
 DEFAULT_COMPLETE_SIZE: Final[int] = 5
-
 
 _ALPHABET_SIZE: Final[int] = 26
 _MIN_CYCLE_SIZE: Final[int] = 2
@@ -97,20 +98,8 @@ def chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> nx.DiGraph:
     >>> list(g.edges())
     [('A', 'B'), ('B', 'C'), ('C', 'D')]
     """
-    g = nx.DiGraph()
-    if length < 1:
-        return g
-
-    def node_label(i: int) -> str:
-        return chr(ord("A") + i % _ALPHABET_SIZE) if i < _ALPHABET_SIZE else f"N{i}"
-
-    nodes = [node_label(i) for i in range(length)]
-    g.add_nodes_from(nodes)
-
-    for i in range(length - 1):
-        g.add_edge(nodes[i], nodes[i + 1])
-
-    return g
+    spec = GraphFixtureSpec(kind="chain", directed=True, nodes=length)
+    return cast("nx.DiGraph", GraphFixtureFactory.build(spec))
 
 
 def star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx.DiGraph:
@@ -142,20 +131,9 @@ def star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx.DiGr
     >>> list(g.edges())
     [('spoke1', 'hub'), ('spoke2', 'hub'), ('spoke3', 'hub')]
     """
-    g = nx.DiGraph()
-    hub = "hub"
-    spoke_nodes = [f"spoke{i + 1}" for i in range(spokes)]
-
-    g.add_node(hub)
-    g.add_nodes_from(spoke_nodes)
-
-    for spoke in spoke_nodes:
-        if inward:
-            g.add_edge(spoke, hub)
-        else:
-            g.add_edge(hub, spoke)
-
-    return g
+    spec = GraphFixtureSpec(kind="star", directed=True, spokes=spokes)
+    graph = cast("nx.DiGraph", GraphFixtureFactory.build(spec))
+    return graph.reverse(copy=True) if inward else graph
 
 
 def weighted_star_graph(

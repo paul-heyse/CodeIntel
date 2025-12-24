@@ -17,6 +17,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_in,
     expect_is_not_none,
 )
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
@@ -58,7 +59,7 @@ class _RecordingGateway:
 
 
 def _seed_export_table(con: DuckDBPyConnection) -> None:
-    con.execute("CREATE SCHEMA analytics")
+    ensure_production_schemas(con)
     con.execute("CREATE TABLE analytics.function_metrics (id INTEGER)")
     con.execute("INSERT INTO analytics.function_metrics VALUES (1)")
 

@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.orchestration.repo_writers import (
+from tests._helpers.fixtures.repos import (
     RepoFixture,
     write_generated_noise_fixture,
     write_large_file_fixture,

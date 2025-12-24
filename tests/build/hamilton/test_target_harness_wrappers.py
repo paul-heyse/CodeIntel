@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests._helpers.assertions import assert_target_ok, expect_true
+import pytest
+
+from codeintel.build.hamilton.executor import HamiltonBuildResult
+from tests._helpers.assertions import assert_target_ok, expect_in, expect_true
 from tests._helpers.hamilton_manifest_priming import ManifestPriming
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
@@ -101,3 +104,21 @@ def test_serving_target_harness_skips_with_primed_manifest(
     records = harness.run_targets(["serving_artifacts"])
     record = harness.record("serving_artifacts", result=records)
     assert_skipped(record)
+
+
+def test_harness_record_missing_includes_error_context(tmp_path: Path) -> None:
+    """Missing target records should surface build error context."""
+    with ServingTargetHarness.open(tmp_path) as harness:
+        result = HamiltonBuildResult(
+            requested=("serving_artifacts",),
+            failed_targets=("serving_artifacts",),
+            error="boom",
+        )
+
+        with pytest.raises(RuntimeError) as exc_info:
+            harness.harness.record("serving_artifacts", result=result)
+
+        message = str(exc_info.value)
+        expect_in("No TargetRunRecord found for target serving_artifacts.", message)
+        expect_in("build_error=boom", message)
+        expect_in("failed_targets=('serving_artifacts',)", message)

@@ -10,9 +10,9 @@ import duckdb
 
 from codeintel.config.primitives import BuildPaths
 from codeintel.serving.db.pointer import ServingSnapshotPointer
-from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -29,13 +29,12 @@ class DemoSnapshotPaths:
 
 def _write_demo_db(db_path: Path, *, row_count: int) -> None:
     con = duckdb.connect(str(db_path))
-    con.execute("CREATE SCHEMA docs")
+    ensure_production_schemas(con)
     con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
     con.execute(
         "INSERT INTO docs.v_demo SELECT i, 'label-' || i::VARCHAR FROM range(1, ?) t(i)",
         [row_count + 1],
     )
-    apply_metadata_ddl(con)
     build_search_documents_table(con)
     con.close()
 

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.core.catalog import FunctionCatalog
+from tests._helpers.fixtures.graphs import GraphFixtureFactory, GraphFixtureSpec
 from tests._helpers.builders import (
     ConfigValueRow,
     ModuleRow,
@@ -28,15 +29,8 @@ from tests._helpers.fakes.graph_runtime import (
 from tests._helpers.fakes.graph_runtime import (
     GraphRuntimeDouble as GraphStubEngine,
 )
-from tests._helpers.fakes.networkx_graphs import (
-    DEFAULT_CHAIN_LENGTH,
-    DEFAULT_CYCLE_SIZE,
-    DEFAULT_SPOKES,
-    chain_graph,
-    cyclic_graph,
-    star_graph,
-)
-from tests._helpers.repo import (
+from tests._helpers.fakes.networkx_graphs import DEFAULT_CHAIN_LENGTH, DEFAULT_CYCLE_SIZE, DEFAULT_SPOKES
+from tests._helpers.fixtures.repos import (
     GOID_FUNC_A,
     GOID_FUNC_B,
     GOID_FUNC_C,
@@ -84,7 +78,8 @@ def call_chain_graph(length: int = DEFAULT_CHAIN_LENGTH) -> nx.DiGraph:
     nx.DiGraph
         Directed chain graph.
     """
-    return chain_graph(length)
+    spec = GraphFixtureSpec(kind="chain", directed=True, nodes=length)
+    return cast("nx.DiGraph", GraphFixtureFactory.build(spec))
 
 
 def call_star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx.DiGraph:
@@ -95,7 +90,11 @@ def call_star_graph(spokes: int = DEFAULT_SPOKES, *, inward: bool = False) -> nx
     nx.DiGraph
         Directed star graph.
     """
-    return star_graph(spokes, inward=inward)
+    spec = GraphFixtureSpec(kind="star", directed=True, spokes=spokes)
+    graph = cast("nx.DiGraph", GraphFixtureFactory.build(spec))
+    if inward:
+        return graph.reverse(copy=True)  # type: ignore[return-value]
+    return graph  # type: ignore[return-value]
 
 
 def import_cycle_graph(size: int = DEFAULT_CYCLE_SIZE) -> nx.DiGraph:
@@ -106,7 +105,8 @@ def import_cycle_graph(size: int = DEFAULT_CYCLE_SIZE) -> nx.DiGraph:
     nx.DiGraph
         Directed cycle graph.
     """
-    return cyclic_graph(size)
+    spec = GraphFixtureSpec(kind="cycle", directed=True, cycle_size=size)
+    return cast("nx.DiGraph", GraphFixtureFactory.build(spec))
 
 
 def symbol_star_graph(spokes: int = DEFAULT_SPOKES) -> nx.Graph:
@@ -117,7 +117,8 @@ def symbol_star_graph(spokes: int = DEFAULT_SPOKES) -> nx.Graph:
     nx.Graph
         Undirected star graph.
     """
-    return nx.Graph(star_graph(spokes, inward=False))
+    spec = GraphFixtureSpec(kind="star", directed=False, spokes=spokes)
+    return cast("nx.Graph", GraphFixtureFactory.build(spec))
 
 
 def call_graph_fixture(edges: Sequence[tuple[str, str]] | None = None) -> nx.DiGraph:
@@ -148,12 +149,15 @@ def standard_graph_fixtures(
     GraphFixtures
         Fixture bundle with call/import/symbol/config graphs.
     """
+    call_spec = GraphFixtureSpec(kind="chain", directed=True, nodes=chain_length)
+    import_spec = GraphFixtureSpec(kind="cycle", directed=True, cycle_size=cycle_size)
+    symbol_spec = GraphFixtureSpec(kind="star", directed=False, spokes=star_spokes)
     return GraphFixtures(
-        call_graph=call_chain_graph(chain_length),
-        import_graph=import_cycle_graph(cycle_size),
+        call_graph=cast("nx.DiGraph", GraphFixtureFactory.build(call_spec)),
+        import_graph=cast("nx.DiGraph", GraphFixtureFactory.build(import_spec)),
         config_graph=nx.Graph(),
-        symbol_module_graph=symbol_star_graph(star_spokes),
-        symbol_function_graph=symbol_star_graph(star_spokes),
+        symbol_module_graph=cast("nx.Graph", GraphFixtureFactory.build(symbol_spec)),
+        symbol_function_graph=cast("nx.Graph", GraphFixtureFactory.build(symbol_spec)),
         cfg_graph=nx.DiGraph(),
     )
 

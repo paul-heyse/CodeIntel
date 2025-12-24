@@ -22,7 +22,6 @@ from codeintel.build.serving.publisher import (
 )
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
     assert_target_ok,
@@ -30,6 +29,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.harnesses.serving_harness import ServingTargetHarness
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -51,7 +51,7 @@ def _write_text(path: Path, payload: dict[str, object]) -> None:
 
 
 def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> None:
-    con.execute("CREATE SCHEMA core")
+    ensure_production_schemas(con)
     con.execute(
         """
         CREATE TABLE core.modules (
@@ -75,7 +75,6 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     con.execute("CREATE TABLE t (id INTEGER)")
     con.execute("INSERT INTO t VALUES (1)")
     _seed_modules(con, repo="demo/repo", commit="c1")
-    apply_metadata_ddl(con)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -155,7 +154,6 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
     _seed_modules(con, repo="demo/repo", commit="c1")
-    apply_metadata_ddl(con)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -201,7 +199,7 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
     """Publisher fails when docs.search_documents is empty."""
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
-    con.execute("CREATE SCHEMA core")
+    ensure_production_schemas(con)
     con.execute(
         """
         CREATE TABLE core.modules (
@@ -212,7 +210,6 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
         )
         """
     )
-    apply_metadata_ddl(con)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con

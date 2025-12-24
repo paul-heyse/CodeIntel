@@ -13,6 +13,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_is_instance,
 )
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,7 +32,7 @@ def write_gateway(tmp_path: Path) -> StorageGateway:
     """
     gateway = GatewayFactory().file_backed(tmp_path / "write.duckdb").with_schema().open()
 
-    gateway.con.execute("CREATE SCHEMA IF NOT EXISTS analytics")
+    ensure_production_schemas(gateway.con)
     gateway.con.execute(
         """
         CREATE TABLE IF NOT EXISTS analytics.write_test (

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from tests._helpers.builders import CoverageLineRow, insert_rows
-from tests._helpers.repo import MOD_A_PATH, MOD_B_PATH, MOD_C_PATH, MOD_UTIL_PATH
+from tests._helpers.fixtures.repos import MOD_A_PATH, MOD_B_PATH, MOD_C_PATH, MOD_UTIL_PATH
 from tests._helpers.seeds.core import (
     CORE_PACK,
     GOID_FUNC_A,

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,12 +53,11 @@ class GatewayOptions:
 class EnvOptions:
     """Configuration for building a full TestContext."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
     file_backed: bool = False
     repo_root: Path | None = None
     build_dir: Path | None = None
     db_path: Path | None = None
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
 
 
 __all__ = [

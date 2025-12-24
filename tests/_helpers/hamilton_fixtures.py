@@ -20,6 +20,7 @@ from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers.context import TestContext
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class BuildEnvOptions:
     """Optional overrides for building a BuildEnv in tests."""
 
     build_dir: Path | None = None
-    snapshot_info: tuple[str, str] = ("test/repo", "abc123")
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     tools_config: ToolsConfig | None = None
     providers: Providers | None = None
     config: BuildConfig | None = None
@@ -68,14 +69,10 @@ def make_build_harness(
         Configured build harness.
     """
     resolved_options = options or BuildEnvOptions()
-    repo, commit = resolved_options.snapshot_info
+    variant = resolved_options.snapshot_variant
     resolved_build = resolved_options.build_dir or (repo_root / "build")
 
-    snapshot = SnapshotRef(
-        repo=repo,
-        commit=commit,
-        repo_root=repo_root,
-    )
+    snapshot = variant.to_snapshot(repo_root=repo_root)
 
     paths = BuildPaths.from_explicit(build_dir=resolved_build)
 
@@ -86,7 +83,11 @@ def make_build_harness(
     ctx = TestContext(snapshot=snapshot, gateway=gateway, build_paths=paths)
     return HamiltonBuildHarness.wrap(
         ctx,
-        harness=HarnessConfig(repo=repo, commit=commit, profile=resolved_options.profile),
+        harness=HarnessConfig(
+            repo=variant.repo,
+            commit=variant.commit,
+            profile=resolved_options.profile,
+        ),
         providers=resolved_providers,
         build_config=resolved_config,
     )

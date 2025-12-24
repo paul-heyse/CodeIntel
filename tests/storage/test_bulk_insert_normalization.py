@@ -9,6 +9,7 @@ import numpy as np
 
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.gateway import GatewayFactory
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -19,7 +20,7 @@ def test_bulk_insert_normalizes_numpy_scalars(tmp_path: Path) -> None:
     db_path = tmp_path / "insert.duckdb"
     gateway = GatewayFactory().file_backed(db_path).with_schema().open()
     try:
-        gateway.con.execute("CREATE SCHEMA IF NOT EXISTS analytics")
+        ensure_production_schemas(gateway.con)
         gateway.con.execute(
             """
             CREATE TABLE IF NOT EXISTS analytics.numpy_insert_test (

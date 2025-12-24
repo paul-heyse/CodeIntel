@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 from codeintel.core.catalog import FunctionSpan
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -71,7 +71,7 @@ def function_meta(
     goid: int,
     rel_path: str,
     qualname: str,
-    snapshot: tuple[str, str] = (DEFAULT_REPO, DEFAULT_COMMIT),
+    snapshot: tuple[str, str] = (DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit),
     line_span: tuple[int, int] = (1, 1),
 ) -> FunctionSpan:
     """Build a FunctionSpan with consistent URN formatting.
@@ -98,7 +98,7 @@ def module_row(
     *,
     module: str,
     path: str,
-    snapshot: tuple[str, str] = (DEFAULT_REPO, DEFAULT_COMMIT),
+    snapshot: tuple[str, str] = (DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit),
 ) -> ModuleRow:
     """Create a ModuleRow for analytics modules.
 
@@ -116,7 +116,7 @@ def function_metrics_row(
     goid: int,
     rel_path: str,
     qualname: str,
-    snapshot: tuple[str, str] = (DEFAULT_REPO, DEFAULT_COMMIT),
+    snapshot: tuple[str, str] = (DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit),
     metrics: Mapping[str, int | str | bool | datetime | float | None] | None = None,
 ) -> FunctionMetricsRow:
     """Create a FunctionMetricsRow with sensible defaults and override support.
@@ -214,8 +214,8 @@ class DependencyCallSeed:
     service_name: str
     qualname: str
     callsite_count: int
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def dependency_call_row(seed: DependencyCallSeed) -> tuple[object, ...]:
@@ -301,8 +301,8 @@ class DependencyCallPayloadSeed:
     callsite_count: int
     function_goid: int
     modes: Sequence[str] = ()
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     evidence_json: list[dict[str, object]] | None = None
 
 
@@ -360,8 +360,8 @@ class DependencyAggregateSeed:
     risk_score: float | None
     function_count: int
     callsite_count: int
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def dependency_aggregate_row(seed: DependencyAggregateSeed) -> tuple[object, ...]:
@@ -397,8 +397,8 @@ class DependencyAggregatePayloadSeed:
     function_count: int
     callsite_count: int
     risk_level: str
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     modules_json: list[str] | None = None
     usage_modes: list[str] | None = None
     config_keys: list[str] | None = None
@@ -531,8 +531,8 @@ class EntrypointSeed:
     command_name: str | None = None
     http_method: str | None = "GET"
     path: str | None = "/"
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def entrypoint_row(seed: EntrypointSeed) -> tuple[object, ...]:
@@ -564,8 +564,8 @@ class EntrypointPayloadSeed:
     handler_goid_h128: Decimal | int = Decimal(0)
     handler_rel_path: str = "src/api.py"
     handler_module: str = "api"
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     http_method: str | None = "GET"
     route_path: str | None = "/"
     status_codes: list[int] | None = None
@@ -636,8 +636,8 @@ class EntrypointTestPayloadSeed:
     entrypoint_id: str
     test_id: str
     test_goid_h128: Decimal | int
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     coverage_ratio: float = 0.0
     status: str = "passed"
     duration_ms: float = 0.0
@@ -672,8 +672,8 @@ class EntrypointTestSeed:
     test_qualname: str
     status: str
     coverage_ratio: float
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def entrypoint_test_row(seed: EntrypointTestSeed) -> tuple[object, ...]:
@@ -699,8 +699,8 @@ class SemanticRoleFunctionSeed:
     goid: int
     role: str
     confidence: float
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def semantic_role_function_row(seed: SemanticRoleFunctionSeed) -> tuple[object, ...]:
@@ -719,8 +719,8 @@ class SemanticRoleModuleSeed:
     module: str
     role: str
     confidence: float
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def semantic_role_module_row(seed: SemanticRoleModuleSeed) -> tuple[object, ...]:
@@ -748,8 +748,8 @@ class SubsystemPayloadSeed:
     fan_out: int
     function_count: int
     risk_level: str
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     avg_risk_score: float | None = None
     max_risk_score: float | None = None
     high_risk_function_count: int = 0
@@ -792,8 +792,8 @@ class SubsystemModulePayloadSeed:
     subsystem_id: str
     module: str
     role: str | None = None
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def subsystem_module_payload(seed: SubsystemModulePayloadSeed) -> dict[str, object]:
@@ -819,8 +819,8 @@ class SubsystemSeed:
     name: str
     risk_level: str
     function_count: int
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     description: str | None = None
     module_count: int = 0
     entrypoints_json: str | None = None
@@ -891,8 +891,8 @@ class SubsystemModuleSeed:
     subsystem_id: str
     module: str
     role: str | None = None
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def subsystem_module_row(seed: SubsystemModuleSeed) -> tuple[str, str, str, str, str | None]:
@@ -911,8 +911,8 @@ class DataModelUsagePayloadSeed:
     model_id: str
     goid: Decimal | int
     usage_kinds: Sequence[str]
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     evidence_json: list[dict[str, object]] | None = None
     context_json: dict[str, object] | None = None
     created_at: datetime | None = None
@@ -946,8 +946,8 @@ class DataModelUsageSeed:
     model_id: str
     goid: int
     usage_kinds: Sequence[str]
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
 
 
 def data_model_usage_row(seed: DataModelUsageSeed) -> tuple[object, ...]:
@@ -968,8 +968,8 @@ class DataModelSeed:
     module: str
     rel_path: str
     model_kind: str
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     goid: int | None = None
     base_classes_json: list[dict[str, str]] | list[str] | None = None
     doc_short: str | None = None
@@ -1008,8 +1008,8 @@ class DataModelFieldSeed:
     field_type: str | None
     required: bool
     has_default: bool
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     default_expr: str | None = None
     constraints_json: dict[str, object] | None = None
     source: str = "tests"
@@ -1049,8 +1049,8 @@ class DataModelRelationshipSeed:
     target_model_id: str
     field_name: str
     relationship_kind: str
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     target_module: str | None = None
     target_model_name: str | None = None
     multiplicity: str | None = None
@@ -1290,8 +1290,8 @@ def function_profile_row(
     goid: Decimal = Decimal(12345),
     qualname: str = "module.function_name",
     rel_path: str = "src/module.py",
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     **overrides: object,
 ) -> dict[str, Any]:
     """Build a function_profile row mapping with sensible defaults.
@@ -1409,8 +1409,8 @@ def function_profile_row(
 def file_profile_row(
     *,
     rel_path: str = "src/services/api.py",
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     **overrides: object,
 ) -> dict[str, Any]:
     """Build a file_profile row mapping with sensible defaults.
@@ -1467,8 +1467,8 @@ def file_profile_row(
 def module_profile_row(
     *,
     module: str = "services.api",
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     **overrides: object,
 ) -> dict[str, Any]:
     """Build a module_profile row mapping with sensible defaults.

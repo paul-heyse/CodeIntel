@@ -15,6 +15,7 @@ from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.schema_roundtrip import create_table_ast
 from codeintel.storage.sqlglot_tools import semantic_diff_sql_duckdb
 from tests._helpers.assertions.expectation_assertions import expect_true
+from tests._helpers.schemas import ensure_production_schemas
 
 _MIN_EXPECTED_COLUMNS = 2
 
@@ -82,7 +83,7 @@ def test_compiler_upgrade_gate_create_table_executes() -> None:
     sql = create_table_ast(schema, if_not_exists=True).sql(dialect=DUCKDB_DIALECT)
 
     con = duckdb.connect()
-    con.execute("CREATE SCHEMA core")
+    ensure_production_schemas(con)
     con.execute(sql)
     rows = con.execute("PRAGMA table_info('core.demo_types')").fetchall()
     con.close()

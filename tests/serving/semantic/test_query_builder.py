@@ -16,6 +16,7 @@ from codeintel.serving.semantic.query_builder import (
     build_query,
 )
 from tests._helpers.assertions.expectation_assertions import expect_equal
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,7 +24,7 @@ if TYPE_CHECKING:
 
 def _make_db(db_path: Path) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(str(db_path))
-    con.execute("CREATE SCHEMA docs")
+    ensure_production_schemas(con)
     con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
     con.execute("INSERT INTO docs.v_demo VALUES (1, 'one'), (2, 'two'), (3, 'three')")
     return con

@@ -46,7 +46,13 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "ProvisioningConfig",
         "provisioning_gateway_options",
     ),
-    "tests._helpers.constants": ("DEFAULT_COMMIT", "DEFAULT_REPO", "DEFAULT_RUN_ID"),
+    "tests._helpers.fixtures.snapshots": (
+        "DEFAULT_VARIANT",
+        "GOLDEN_VARIANT",
+        "METRICS_VARIANT",
+        "SPAN_VARIANT",
+        "SnapshotVariant",
+    ),
     "tests._helpers.context": (
         "QueryRow",
         "SeedPack",
@@ -56,7 +62,11 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "create_test_context",
         "graph_ready_context",
     ),
-    "tests._helpers.coverage": ("build_fake_coverage", "seed_coverage_pack"),
+    "tests._helpers.fixtures.coverage": (
+        "CoverageFixtureFactory",
+        "CoverageFixtureSpec",
+        "synthesize_coverage_edges",
+    ),
     "tests._helpers.env": ("build_test_gateway", "create_provisioned_test_env", "create_test_env"),
     "tests._helpers.evidence": ("build_entrypoint_evidence",),
     "tests._helpers.fakes.httpx_clients": ("RecordingAsyncClient",),
@@ -190,7 +200,7 @@ if TYPE_CHECKING:
         ProvisioningConfig,
         provisioning_gateway_options,
     )
-    from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
+    from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, DEFAULT_RUN_ID
     from tests._helpers.context import (
         QueryRow,
         SeedPack,
@@ -300,8 +310,8 @@ if TYPE_CHECKING:
         CLI_CORE_PACK,
         CORE_PACK,
         COVERAGE_PACK,
-        DEFAULT_COMMIT,
-        DEFAULT_REPO,
+        DEFAULT_VARIANT.commit,
+        DEFAULT_VARIANT.repo,
         DEFAULT_RUN_ID,
         DATA_MODELS_PACK,
         FUNCTION_TYPES_PACK,

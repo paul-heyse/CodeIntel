@@ -49,8 +49,8 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.configs import (
-    DEFAULT_COMMIT,
-    DEFAULT_REPO,
+    DEFAULT_VARIANT.commit,
+    DEFAULT_VARIANT.repo,
     CallgraphFixtureOptions,
     GatewayOptions,
     GraphMetricsGatewayOptions,
@@ -67,7 +67,7 @@ from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 from tests._helpers.ingestion import materialize_repo_scan_result, materialize_rows_for_snapshot
 from tests._helpers.modules_expectations import module_paths_expected_from_repo_tree
-from tests._helpers.orchestration.repo_writers import (
+from tests._helpers.fixtures.repos import (
     write_callgraph_alias_repo,
     write_coverage_driver,
     write_graph_metrics_repo,
@@ -93,8 +93,8 @@ log = logging.getLogger(__name__)
 def make_repo_context(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     db_path: Path | None = None,
 ) -> RepoContext:
     """Build a RepoContext with derived build/document paths.
@@ -435,8 +435,8 @@ def provisioned_gateway(
 def provision_ingested_repo(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     options: ProvisionOptions | None = None,
 ) -> ProvisionedGateway:
     """Build a sample repo, run ingestion steps, and return a provisioned gateway.
@@ -505,8 +505,8 @@ def provision_ingested_repo(
 def provision_existing_repo(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     options: ProvisionOptions | None = None,
 ) -> ProvisionedGateway:
     """Run ingestion over an existing repo tree using production entry points.
@@ -575,8 +575,8 @@ def provision_existing_repo(
 def provision_gateway_with_repo(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     options: GatewayOptions | None = None,
 ) -> ProvisionedGateway:
     """Open a gateway anchored to repo paths without running ingestion.
@@ -631,8 +631,8 @@ def provision_gateway_with_repo(
 def provision_docs_export_ready(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     db_path: Path | None = None,
     file_backed: bool = True,
 ) -> ProvisionedGateway:
@@ -676,8 +676,8 @@ def provision_docs_export_ready(
 def provision_graph_ready_repo(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     options: ProvisionOptions | None = None,
 ) -> ProvisionedGateway:
     """Provision a repo with graph metrics ready (modules + CFG/DFG metrics seeded).
@@ -933,8 +933,8 @@ def graph_metrics_ready_gateway(
 def docs_views_ready_gateway(
     repo_root: Path,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     file_backed: bool = False,
     db_path: Path | None = None,
 ) -> ProvisionedGateway:
@@ -1147,8 +1147,8 @@ class ProvisioningBuilder:
         self,
         repo_root: Path,
         *,
-        repo: str = DEFAULT_REPO,
-        commit: str = DEFAULT_COMMIT,
+        repo: str = DEFAULT_VARIANT.repo,
+        commit: str = DEFAULT_VARIANT.commit,
     ) -> None:
         """Initialize builder with repository paths.
 

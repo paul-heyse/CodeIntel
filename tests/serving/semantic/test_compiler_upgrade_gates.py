@@ -25,6 +25,7 @@ from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,7 +50,7 @@ def _canonical_duckdb_sql(sql: str) -> str:
 def _make_snapshot_db(db_path: Path) -> None:
     gateway = GatewayFactory().file_backed(db_path).open()
     try:
-        gateway.con.execute("CREATE SCHEMA docs")
+        ensure_production_schemas(gateway.con)
         gateway.con.execute("CREATE TABLE docs.demo (id INTEGER, label VARCHAR)")
         gateway.con.execute("INSERT INTO docs.demo VALUES (1, 'one'), (2, 'two'), (3, 'three')")
         gateway.con.execute("CREATE VIEW docs.v_demo AS SELECT * FROM docs.demo")

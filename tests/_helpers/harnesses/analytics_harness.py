@@ -13,7 +13,7 @@ from tests._helpers.harnesses.hamilton_build import (
     HarnessConfig,
     HarnessOpenOptions,
 )
-from tests._helpers.orchestration.repo_writers import write_graph_metrics_repo
+from tests._helpers.fixtures.repos import write_graph_metrics_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

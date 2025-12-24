@@ -38,7 +38,7 @@ from codeintel.build.providers import create_default_providers
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.context import TestContext
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig
 
@@ -112,10 +112,8 @@ class HamiltonTestBuilder:
         Root path of the repository (defaults to tmp_path/repo).
     build_dir
         Build output directory (defaults to tmp_path/build).
-    repo_slug
-        Repository identifier for snapshot.
-    commit_sha
-        Commit identifier for snapshot.
+    snapshot_variant
+        Snapshot variant for repo/commit identifiers.
     providers
         DI providers (created from default if not specified).
     config
@@ -138,7 +136,7 @@ class HamiltonTestBuilder:
 
     >>> builder = (
     ...     HamiltonTestBuilder.create(gateway, tmp_path)
-    ...     .with_repo_info("my/repo", "abc123")
+    ...     .with_snapshot_variant(DEFAULT_VARIANT)
     ...     .with_force_targets({"modules"})
     ... )
     >>> record = builder.execute_target("modules")
@@ -148,8 +146,7 @@ class HamiltonTestBuilder:
     tmp_path: Path
     repo_root: Path | None = None
     build_dir: Path | None = None
-    repo_slug: str = DEFAULT_REPO
-    commit_sha: str = DEFAULT_COMMIT
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     providers: Providers | None = None
     config: BuildConfig | None = None
     profile: str = DEFAULT_PROFILE_NAME
@@ -222,23 +219,15 @@ class HamiltonTestBuilder:
         self.build_dir = build_dir
         return self
 
-    def with_repo_info(self, repo: str, commit: str) -> HamiltonTestBuilder:
-        """Set repository and commit identifiers.
-
-        Parameters
-        ----------
-        repo
-            Repository slug (e.g., "org/repo").
-        commit
-            Commit SHA.
+    def with_snapshot_variant(self, variant: SnapshotVariant) -> HamiltonTestBuilder:
+        """Set repository snapshot variant.
 
         Returns
         -------
         HamiltonTestBuilder
             Self for method chaining.
         """
-        self.repo_slug = repo
-        self.commit_sha = commit
+        self.snapshot_variant = variant
         return self
 
     def with_providers(self, providers: Providers) -> HamiltonTestBuilder:
@@ -427,18 +416,14 @@ class HamiltonTestBuilder:
         """
         repo_root = self._resolve_repo_root()
         build_dir = self._resolve_build_dir()
-        snapshot = SnapshotRef(
-            repo=self.repo_slug,
-            commit=self.commit_sha,
-            repo_root=repo_root,
-        )
+        snapshot = self.snapshot_variant.to_snapshot(repo_root=repo_root)
         paths = BuildPaths.from_explicit(build_dir=build_dir)
         ctx = TestContext(snapshot=snapshot, gateway=self.gateway, build_paths=paths)
         harness = HamiltonBuildHarness.wrap(
             ctx,
             harness=HarnessConfig(
-                repo=self.repo_slug,
-                commit=self.commit_sha,
+                repo=self.snapshot_variant.repo,
+                commit=self.snapshot_variant.commit,
                 profile=self.profile,
                 validate_outputs=self.validate_outputs,
             ),

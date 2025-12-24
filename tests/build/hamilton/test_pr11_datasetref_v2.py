@@ -14,7 +14,7 @@ from codeintel.build.hamilton.io.dataset_ref import DatasetRef, refs_from_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import assert_record_has_artifacts, assert_record_has_datasets
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 EXPECTED_DUAL_OUTPUT_REFS = 2
 
@@ -73,8 +73,8 @@ class TestRefsFromTargetResult:
     def test_refs_from_target_result_includes_snapshot() -> None:
         """Verify refs_from_target_result populates repo/commit from snapshot."""
         snapshot = SnapshotRef(
-            repo=DEFAULT_REPO,
-            commit=DEFAULT_COMMIT,
+            repo=DEFAULT_VARIANT.repo,
+            commit=DEFAULT_VARIANT.commit,
             repo_root=Path.cwd(),
         )
 
@@ -87,10 +87,10 @@ class TestRefsFromTargetResult:
         ref = refs.get("analytics.function_metrics")
         if ref is None:
             pytest.fail("refs_from_target_result should return ref")
-        if ref.repo != DEFAULT_REPO:
-            pytest.fail(f"Expected repo='{DEFAULT_REPO}', got '{ref.repo}'")
-        if ref.commit != DEFAULT_COMMIT:
-            pytest.fail(f"Expected commit='{DEFAULT_COMMIT}', got '{ref.commit}'")
+        if ref.repo != DEFAULT_VARIANT.repo:
+            pytest.fail(f"Expected repo='{DEFAULT_VARIANT.repo}', got '{ref.repo}'")
+        if ref.commit != DEFAULT_VARIANT.commit:
+            pytest.fail(f"Expected commit='{DEFAULT_VARIANT.commit}', got '{ref.commit}'")
 
     @staticmethod
     def test_refs_from_target_result_without_snapshot() -> None:
@@ -250,8 +250,8 @@ class TestSkippedTargetsDatasetRef:
     def test_refs_from_target_result_multiple_tables() -> None:
         """Verify refs_from_target_result handles multiple table_keys."""
         snapshot = SnapshotRef(
-            repo=DEFAULT_REPO,
-            commit=DEFAULT_COMMIT,
+            repo=DEFAULT_VARIANT.repo,
+            commit=DEFAULT_VARIANT.commit,
             repo_root=Path.cwd(),
         )
 
@@ -269,9 +269,9 @@ class TestSkippedTargetsDatasetRef:
             pytest.fail("Missing ref for metrics_b")
 
         for key, ref in refs.items():
-            if ref.repo != DEFAULT_REPO:
+            if ref.repo != DEFAULT_VARIANT.repo:
                 pytest.fail(f"{key} should have repo from snapshot")
-            if ref.commit != DEFAULT_COMMIT:
+            if ref.commit != DEFAULT_VARIANT.commit:
                 pytest.fail(f"{key} should have commit from snapshot")
 
     @staticmethod

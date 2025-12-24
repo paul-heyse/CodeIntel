@@ -7,13 +7,14 @@ import ibis
 import pytest
 
 from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
+from tests._helpers.schemas import ensure_production_schemas
 
 
 def test_pr60_infer_schema_describe_preserves_decimal_and_timestamptz() -> None:
     """Inferred schemas should preserve DECIMAL(38,0) and TIMESTAMPTZ."""
     con = duckdb.connect(":memory:")
     try:
-        con.execute("CREATE SCHEMA IF NOT EXISTS analytics")
+        ensure_production_schemas(con)
         con.execute(
             """
             CREATE TABLE analytics.input (

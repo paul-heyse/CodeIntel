@@ -16,7 +16,7 @@ from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
@@ -58,8 +58,8 @@ def make_build_settings(engine_version: str = "test") -> BuildSettings:
 def make_snapshot(
     tmp_path: Path | None = None,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
 ) -> SnapshotRef:
     """Create a SnapshotRef with sensible defaults.
 
@@ -156,8 +156,8 @@ def sample_target_graph(
 class ManifestParams:
     """Parameters for constructing manifest fixtures."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     plugin: str = "test_plugin"
     input_hash: str = "input-hash"
     computed_at: datetime | None = None
