@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true
 from tests._helpers.builders import insert_symbol_use_edges
+from tests._helpers.fixtures.snapshots import SnapshotVariant
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -95,7 +96,10 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     repo_root = tmp_path / "repo"
     repo = "demo/repo"
     commit = "deadbeef"
-    ctx = build_callgraph_fixture_repo(repo_root, CallgraphFixtureOptions(repo=repo, commit=commit))
+    ctx = build_callgraph_fixture_repo(
+        repo_root,
+        CallgraphFixtureOptions(snapshot_variant=SnapshotVariant(repo=repo, commit=commit)),
+    )
     gateway = ctx.gateway
     con = gateway.con
     insert_symbol_use_edges(gateway, [("sym", "pkg/a.py", "pkg/b.py", False, False)])

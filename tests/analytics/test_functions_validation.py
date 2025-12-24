@@ -12,9 +12,8 @@ from codeintel.analytics.functions.metrics import (
     compute_function_analytics_result,
 )
 from codeintel.config.primitives import SnapshotRef
+from tests._helpers import TestScenario
 from tests._helpers.builders import GoidRow, insert_rows
-from tests._helpers.context import create_test_context
-from tests._helpers.env_options import EnvOptions
 from tests._helpers.sql import run_query
 
 if TYPE_CHECKING:
@@ -94,8 +93,7 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context configured for function validation tests.
     """
-    options = EnvOptions(repo="demo/repo", commit="deadbeef")
-    context = create_test_context(tmp_path, options=options)
+    context = TestScenario().build(tmp_path)
     try:
         yield context
     finally:

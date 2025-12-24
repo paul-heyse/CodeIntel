@@ -18,7 +18,7 @@ from codeintel.storage.repositories import (
     TestRepository,
 )
 from codeintel.storage.warehouse import Warehouse
-from tests._helpers.rows import (
+from tests._helpers.fixtures.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
     DataModelSeed,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, Literal
 
@@ -10,7 +11,7 @@ from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOption
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
 
@@ -63,7 +64,13 @@ class RepoFixture:
     module_map: dict[str, str]
 
     def module_paths(self) -> list[str]:
-        """Return sorted module paths from the expected module map."""
+        """Return sorted module paths from the expected module map.
+
+        Returns
+        -------
+        list[str]
+            Sorted module paths.
+        """
         return sorted(self.module_map.keys())
 
 
@@ -82,6 +89,18 @@ class RepoFixtureWriter:
 
     @staticmethod
     def write(spec: RepoFixtureSpec) -> RepoFixture:
+        """Write a repo fixture from a specification.
+
+        Returns
+        -------
+        RepoFixture
+            Written fixture metadata.
+
+        Raises
+        ------
+        ValueError
+            If the fixture kind is unsupported.
+        """
         if spec.kind == "canonical":
             fixture = write_canonical_repo(spec.repo_root)
             return RepoFixture(
@@ -101,10 +120,24 @@ class RepoFixtureWriter:
 
     @staticmethod
     def write_tree(root: Path, files: Mapping[str, str]) -> RepoFixture:
+        """Write a custom repo tree from path/content pairs.
+
+        Returns
+        -------
+        RepoFixture
+            Written fixture metadata.
+        """
         return write_tree(root, files)
 
 
 def write_tree(root: Path, files: Mapping[str, str]) -> RepoFixture:
+    """Write a repo tree and return fixture metadata.
+
+    Returns
+    -------
+    RepoFixture
+        Written fixture metadata.
+    """
     root.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
     for rel_path, content in files.items():
@@ -123,7 +156,13 @@ def _write_file(path: Path, content: str) -> Path:
 
 
 def write_canonical_repo(repo_root: Path) -> CanonicalRepo:
-    """Write canonical pkg/ modules and return metadata."""
+    """Write canonical pkg/ modules and return metadata.
+
+    Returns
+    -------
+    CanonicalRepo
+        Canonical repo metadata and module paths.
+    """
     pkg_dir = repo_root / "pkg"
     pkg_dir.mkdir(parents=True, exist_ok=True)
     module_sources = {
@@ -342,8 +381,47 @@ def _write_graph_metrics_repo(repo_root: Path) -> RepoFixture:
     return RepoFixture(files=tuple(files), module_map=module_map)
 
 
+def write_sample_repo(repo_root: Path) -> list[Path]:
+    """Create a minimal but realistic Python package for ingestion.
+
+    Returns
+    -------
+    list[Path]
+        Paths written to the repository root.
+    """
+    return list(_write_sample_repo(repo_root).files)
+
+
+def write_callgraph_alias_repo(repo_root: Path) -> list[Path]:
+    """Create a repo exercising alias/relative-import callgraph paths.
+
+    Returns
+    -------
+    list[Path]
+        Paths written to the repository root.
+    """
+    return list(_write_callgraph_alias_repo(repo_root).files)
+
+
+def write_graph_metrics_repo(repo_root: Path) -> list[Path]:
+    """Write a simple repo suitable for graph metrics computation.
+
+    Returns
+    -------
+    list[Path]
+        Paths written to the repository root.
+    """
+    return list(_write_graph_metrics_repo(repo_root).files)
+
+
 def write_coverage_driver(repo_root: Path, files: list[Path]) -> Path:
-    """Write a driver that imports repo modules to generate real coverage data."""
+    """Write a driver that imports repo modules to generate real coverage data.
+
+    Returns
+    -------
+    Path
+        Driver file path.
+    """
     driver_path = repo_root / "_coverage_driver.py"
     module_names: list[str] = []
     for path in files:
@@ -351,19 +429,241 @@ def write_coverage_driver(repo_root: Path, files: list[Path]) -> Path:
             rel = path.relative_to(repo_root)
         except ValueError:
             continue
-        module = rel.with_suffix(\"\").as_posix().replace(\"/\", \".\")
-        if module.endswith(\".__init__\"):\n            module = module.rsplit(\".\", 1)[0]
-        if module:\n            module_names.append(module)\n    module_names = sorted(set(module_names))
+        module = rel.with_suffix("").as_posix().replace("/", ".")
+        if module.endswith(".__init__"):
+            module = module.rsplit(".", 1)[0]
+        if module:
+            module_names.append(module)
+    module_names = sorted(set(module_names))
 
-    lines: list[str] = [\"import importlib\", \"from contextlib import suppress\"]\n    if module_names:\n        lines.append(f\"MODULES = {module_names!r}\")\n        lines.append(\"for name in MODULES:\")\n        lines.append(\"    with suppress(Exception):\")\n        lines.append(\"        importlib.import_module(name)\")\n    else:\n        lines.append(\"pass\")\n\n    driver_path.write_text(\"\\n\".join(lines), encoding=\"utf-8\")\n    return driver_path
+    lines: list[str] = ["import importlib", "from contextlib import suppress"]
+    if module_names:
+        lines.append(f"MODULES = {module_names!r}")
+        lines.append("for name in MODULES:")
+        lines.append("    with suppress(Exception):")
+        lines.append("        importlib.import_module(name)")
+    else:
+        lines.append("pass")
+
+    driver_path.write_text("\n".join(lines), encoding="utf-8")
+    return driver_path
 
 
-def write_monorepo_fixture(\n    repo_root: Path,\n    *,\n    include_tests: bool = True,\n) -> RepoFixture:\n    \"\"\"Create a multi-language monorepo with deterministic Python modules.\"\"\"\n    files: list[Path] = []\n    files.append(\n        _write_file(\n            repo_root / \"services\" / \"py_service\" / \"src\" / \"app.py\",\n            \"\\n\".join(\n                [\n                    \"def run() -> int:\",\n                    \"    return 42\",\n                ]\n            ),\n        )\n    )\n    files.append(\n        _write_file(\n            repo_root / \"services\" / \"py_service\" / \"src\" / \"__init__.py\",\n            \"\",\n        )\n    )\n    files.append(\n        _write_file(\n            repo_root / \"libs\" / \"shared\" / \"util.py\",\n            \"\\n\".join(\n                [\n                    \"def greet(name: str) -> str:\",\n                    '    return f\"hi {name}\"',\n                ]\n            ),\n        )\n    )\n    files.append(\n        _write_file(\n            repo_root / \"apps\" / \"web\" / \"index.ts\",\n            \"export const value = 1;\",\n        )\n    )\n    if include_tests:\n        files.append(\n            _write_file(\n                repo_root / \"services\" / \"py_service\" / \"tests\" / \"test_app.py\",\n                \"\\n\".join(\n                    [\n                        \"from services.py_service.src.app import run\",\n                        \"\",\n                        \"def test_run() -> None:\",\n                        \"    assert run() == 42\",\n                    ]\n                ),\n            )\n        )\n\n    options = ModuleIngestOptions(include_tests=include_tests)\n    module_map = modules_expected_from_repo_tree(repo_root, options=options)\n    return RepoFixture(files=tuple(files), module_map=module_map)\n+\n+\n+def write_generated_noise_fixture(\n+    repo_root: Path,\n+    *,\n+    include_generated: bool = False,\n+) -> RepoFixture:\n+    \"\"\"Create a repo with generated file noise.\"\"\"\n+    files: list[Path] = []\n+    files.append(\n+        _write_file(\n+            repo_root / \"src\" / \"main.py\",\n+            \"\\n\".join(\n+                [\n+                    \"def main() -> int:\",\n+                    \"    return 0\",\n+                ]\n+            ),\n+        )\n+    )\n+    files.append(\n+        _write_file(\n+            repo_root / \"src\" / \"__init__.py\",\n+            \"\",\n+        )\n+    )\n+    if include_generated:\n+        files.append(\n+            _write_file(\n+                repo_root / \"src\" / \"generated\" / \"gen.py\",\n+                \"# generated file\\n\",\n+            )\n+        )\n+    module_map = modules_expected_from_repo_tree(repo_root)\n+    return RepoFixture(files=tuple(files), module_map=module_map)
+def write_monorepo_fixture(
+    repo_root: Path,
+    *,
+    include_tests: bool = True,
+) -> RepoFixture:
+    """Create a multi-language monorepo with deterministic Python modules.
+
+    Returns
+    -------
+    RepoFixture
+        Written fixture metadata.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "services" / "py_service" / "src" / "app.py",
+            "\n".join(
+                [
+                    "def run() -> int:",
+                    "    return 42",
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "services" / "py_service" / "src" / "__init__.py",
+            "",
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "libs" / "shared" / "util.py",
+            "\n".join(
+                [
+                    "def greet(name: str) -> str:",
+                    '    return f"hi {name}"',
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "apps" / "web" / "index.ts",
+            "export const value = 1;",
+        )
+    )
+    if include_tests:
+        files.append(
+            _write_file(
+                repo_root / "services" / "py_service" / "tests" / "test_app.py",
+                "\n".join(
+                    [
+                        "from services.py_service.src.app import run",
+                        "",
+                        "def test_run() -> None:",
+                        "    assert run() == 42",
+                    ]
+                ),
+            )
+        )
+
+    options = ModuleIngestOptions(include_tests=include_tests)
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def write_generated_noise_fixture(
+    repo_root: Path,
+    *,
+    include_generated: bool = False,
+) -> RepoFixture:
+    """Create a repo with generated file noise.
+
+    Returns
+    -------
+    RepoFixture
+        Written fixture metadata.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "src" / "main.py",
+            "\n".join(
+                [
+                    "def main() -> int:",
+                    "    return 0",
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "src" / "__init__.py",
+            "",
+        )
+    )
+    if include_generated:
+        files.append(
+            _write_file(
+                repo_root / "src" / "generated" / "gen.py",
+                "# generated file\n",
+            )
+        )
+    module_map = modules_expected_from_repo_tree(repo_root)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def write_large_file_fixture(
+    repo_root: Path,
+    *,
+    max_bytes: int,
+) -> RepoFixture:
+    """Create a repo with files above and below a size threshold.
+
+    Returns
+    -------
+    RepoFixture
+        Written fixture metadata.
+
+    Raises
+    ------
+    ValueError
+        If ``max_bytes`` is not positive.
+    """
+    if max_bytes <= 0:
+        message = "max_bytes must be positive"
+        raise ValueError(message)
+    limit_kb = max(1, math.ceil(max_bytes / 1024))
+    max_bytes_limit = limit_kb * 1024
+    small_target = max(1, min(128, max_bytes_limit - 1))
+
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "src" / "small_module.py",
+            _pad_source(["def keep() -> int:", "    return 1"], small_target),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "src" / "large_module.py",
+            _pad_source(["def big() -> int:", "    return 1"], max_bytes_limit + 1),
+        )
+    )
+
+    options = ModuleIngestOptions(max_file_size_kb=limit_kb)
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def write_scoped_paths_fixture(
+    repo_root: Path,
+    *,
+    scope_paths: Sequence[str],
+) -> RepoFixture:
+    """Create a repo that exercises scoped path filtering.
+
+    Returns
+    -------
+    RepoFixture
+        Written fixture metadata.
+    """
+    files: list[Path] = []
+    files.append(
+        _write_file(
+            repo_root / "src" / "core" / "alpha.py",
+            "\n".join(
+                [
+                    "def alpha() -> int:",
+                    "    return 1",
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "src" / "extras" / "beta.py",
+            "\n".join(
+                [
+                    "def beta() -> int:",
+                    "    return 2",
+                ]
+            ),
+        )
+    )
+    files.append(
+        _write_file(
+            repo_root / "tools" / "gamma.py",
+            "\n".join(
+                [
+                    "def gamma() -> int:",
+                    "    return 3",
+                ]
+            ),
+        )
+    )
+
+    options = ModuleIngestOptions(scope_paths=list(scope_paths))
+    module_map = modules_expected_from_repo_tree(repo_root, options=options)
+    return RepoFixture(files=tuple(files), module_map=module_map)
+
+
+def _pad_source(lines: list[str], target_bytes: int) -> str:
+    base = "\n".join(lines) + "\n"
+    if len(base) >= target_bytes:
+        return base
+    pad_line = "# padding"
+    pad_len = len(pad_line) + 1
+    remaining = target_bytes - len(base)
+    pad_count = math.ceil(remaining / pad_len)
+    return base + ("\n".join([pad_line] * pad_count)) + "\n"
 
 
 __all__ = [
-    "CanonicalFunction",
-    "CanonicalRepo",
     "GOID_CALLEE",
     "GOID_CALLER",
     "GOID_FUNC_A",
@@ -378,12 +678,19 @@ __all__ = [
     "MOD_C_PATH",
     "MOD_UTIL_FQN",
     "MOD_UTIL_PATH",
+    "CanonicalFunction",
+    "CanonicalRepo",
     "RepoFixture",
     "RepoFixtureSpec",
     "RepoFixtureWriter",
-    "write_coverage_driver",
+    "write_callgraph_alias_repo",
     "write_canonical_repo",
+    "write_coverage_driver",
     "write_generated_noise_fixture",
+    "write_graph_metrics_repo",
+    "write_large_file_fixture",
     "write_monorepo_fixture",
+    "write_sample_repo",
+    "write_scoped_paths_fixture",
     "write_tree",
 ]

@@ -9,12 +9,12 @@ from codeintel.build.hamilton.native.graphs.call_graph import CALL_GRAPH_TABLE_K
 from codeintel.build.hamilton.native.graphs.import_graph import IMPORT_GRAPH_TABLE_KEYS
 from tests._helpers.assertions.table_assertions import assert_table_has_rows
 from tests._helpers.assertions.target_record_assertions import assert_record_has_datasets
+from tests._helpers.fixtures.repos import write_callgraph_alias_repo
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
     HarnessOpenOptions,
 )
-from tests._helpers.fixtures.repos import write_callgraph_alias_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

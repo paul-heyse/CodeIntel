@@ -16,12 +16,12 @@ from codeintel.analytics.functions.function_effects import (
 )
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
-from tests._helpers import CORE_PACK, create_test_context
+from tests._helpers import TestScenario
 from tests._helpers.assertions import assert_logged, expect_equal, expect_false, expect_true
 from tests._helpers.builders import CallGraphEdgeRow, insert_rows
 from tests._helpers.fakes.function_catalogs import MockFunctionCatalog
-from tests._helpers.graphs import build_graph_engine_double
-from tests._helpers.rows import function_meta
+from tests._helpers.fakes.graph_runtime import build_graph_engine_double
+from tests._helpers.fixtures.rows import function_meta
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,8 +59,7 @@ def test_build_function_effects_with_transitive_and_missing(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     """build_function_effects_rows records direct, transitive, and missing AST effects."""
-    ctx = create_test_context(tmp_path)
-    ctx.require(CORE_PACK)
+    ctx = TestScenario.minimal().build(tmp_path)
     source = """
     import os
     import random

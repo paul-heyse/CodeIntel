@@ -11,6 +11,7 @@ import duckdb
 from codeintel.config.primitives import BuildPaths
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.serving.search_index import build_search_documents_table
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 from tests._helpers.schemas import ensure_production_schemas
 
@@ -111,8 +112,8 @@ def _write_pointer(
         semantic_registry_path=registry_path,
         schema_manifest_path=manifest_path,
         buildspec_path=buildspec_path,
-        repo="demo/repo",
-        commit="deadbeef",
+        repo=DEFAULT_VARIANT.repo,
+        commit=DEFAULT_VARIANT.commit,
         run_id="run-1",
         published_at=datetime.now(tz=UTC),
         semantic_layer_version="v123",

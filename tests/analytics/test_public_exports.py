@@ -9,7 +9,7 @@ from tests._helpers import assert_frozen
 from tests._helpers.assertions.expectation_assertions import (
     expect_in,
 )
-from tests._helpers.rows import list_public_exports
+from tests._helpers.fixtures.rows import list_public_exports
 
 
 def test_functions_module_exports() -> None:

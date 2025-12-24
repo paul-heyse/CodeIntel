@@ -22,7 +22,7 @@ from tests._helpers.assertions import (
     expect_true,
     require_projection_graph,
 )
-from tests._helpers.fakes.networkx_graphs import (
+from tests._helpers.fixtures.graphs import (
     acyclic_bipartite_flow,
     bipartite_graph,
     empty_graph,

@@ -39,7 +39,7 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.assertions.logging_assertions import assert_logged
 from tests._helpers.builders import ModuleRow, RepoMapRow, insert_rows
-from tests._helpers.graphs import build_graph_engine_double
+from tests._helpers.fakes.graph_runtime import build_graph_engine_double
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef

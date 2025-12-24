@@ -12,7 +12,7 @@ simulate a multi-package Python codebase with:
 Usage
 -----
 >>> from tests._helpers.seeds.golden_graphs import seed_golden_graphs
->>> seed_golden_graphs(gateway, repo="test/repo", commit="abc123")
+>>> seed_golden_graphs(gateway, snapshot_variant=SnapshotVariant(repo="test/repo", commit="abc123"))
 """
 
 from __future__ import annotations
@@ -32,13 +32,10 @@ from tests._helpers.builders import (
     insert_rows,
     insert_symbol_use_edges,
 )
+from tests._helpers.fixtures.snapshots import GOLDEN_VARIANT, SnapshotVariant
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
-
-
-GOLDEN_REPO: Final = "golden/repo"
-GOLDEN_COMMIT: Final = "golden123"
 
 
 GOLDEN_MODULES: Final = {
@@ -632,8 +629,7 @@ def _build_config_values(repo: str, commit: str) -> list[ConfigValueRow]:
 def seed_golden_graphs(
     gateway: StorageGateway,
     *,
-    repo: str = GOLDEN_REPO,
-    commit: str = GOLDEN_COMMIT,
+    snapshot_variant: SnapshotVariant = GOLDEN_VARIANT,
 ) -> GoldenGraphStats:
     """Seed a gateway with the golden graph dataset.
 
@@ -644,16 +640,16 @@ def seed_golden_graphs(
     ----------
     gateway
         Storage gateway to seed.
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
+    snapshot_variant
+        Snapshot variant for the golden dataset.
 
     Returns
     -------
     GoldenGraphStats
         Statistics about the seeded data.
     """
+    repo = snapshot_variant.repo
+    commit = snapshot_variant.commit
     modules = _build_modules(repo, commit)
     goids = _build_goids(repo, commit)
     call_nodes = _build_call_graph_nodes(goids)
@@ -681,50 +677,44 @@ def seed_golden_graphs(
 
 
 def get_golden_call_graph_goids(
-    repo: str = GOLDEN_REPO, commit: str = GOLDEN_COMMIT
+    snapshot_variant: SnapshotVariant = GOLDEN_VARIANT,
 ) -> list[GoidRow]:
     """Get GOID rows without seeding (for unit tests that build graphs manually).
 
     Parameters
     ----------
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
+    snapshot_variant
+        Snapshot variant for the golden dataset.
 
     Returns
     -------
     list[GoidRow]
         GOID rows for the golden dataset.
     """
-    return _build_goids(repo, commit)
+    return _build_goids(snapshot_variant.repo, snapshot_variant.commit)
 
 
 def get_golden_import_edges(
-    repo: str = GOLDEN_REPO, commit: str = GOLDEN_COMMIT
+    snapshot_variant: SnapshotVariant = GOLDEN_VARIANT,
 ) -> list[ImportGraphEdgeRow]:
     """Get import edges without seeding (for unit tests).
 
     Parameters
     ----------
-    repo
-        Repository identifier.
-    commit
-        Commit identifier.
+    snapshot_variant
+        Snapshot variant for the golden dataset.
 
     Returns
     -------
     list[ImportGraphEdgeRow]
         Import edge rows for the golden dataset.
     """
-    return _build_import_edges(repo, commit)
+    return _build_import_edges(snapshot_variant.repo, snapshot_variant.commit)
 
 
 __all__ = [
-    "GOLDEN_COMMIT",
     "GOLDEN_FUNCTION_COUNT",
     "GOLDEN_MODULE_COUNT",
-    "GOLDEN_REPO",
     "GoldenGraphStats",
     "get_golden_call_graph_goids",
     "get_golden_import_edges",

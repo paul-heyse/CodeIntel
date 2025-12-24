@@ -20,14 +20,14 @@ from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.env_options import EnvOptions, GatewayOptions
-from tests._helpers.gateway import GatewayFactory
 from tests._helpers.fixtures.repos import write_canonical_repo
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
+from tests._helpers.gateway import GatewayFactory
 from tests._helpers.schemas import ensure_schema_service
 from tests._helpers.seeds.core import CORE_PACK
 from tests._helpers.seeds.coverage import COVERAGE_PACK
 from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
 from tests._helpers.seeds.graph import GRAPH_PACK
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -462,9 +462,11 @@ def create_test_context(
     tmp_path
         Temporary directory for test artifacts.
     options
-        Environment options bundle; defaults to standard repo/commit and in-memory DB.
+        Environment options bundle; defaults to standard snapshot variant and in-memory DB.
     gateway_options
         Optional gateway configuration to override schema/view/validation or snapshot defaults.
+    snapshot_variant
+        Optional snapshot variant to override EnvOptions.
 
     Returns
     -------

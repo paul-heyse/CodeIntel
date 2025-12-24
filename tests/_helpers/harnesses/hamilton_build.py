@@ -17,9 +17,10 @@ from codeintel.config.primitives import BuildPaths, SnapshotRef
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.context import SeedPack, TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions, GatewayOptions
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 from tests._helpers.hamilton_manifest_priming import ManifestPriming
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
+from tests._helpers.scenarios import ScenarioConfig
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -83,6 +84,69 @@ def build_test_env(
     )
 
 
+def _prepare_harness_context(
+    tmp_path: Path,
+    *,
+    config: HarnessConfig,
+    options: HarnessOpenOptions,
+    scenario: ScenarioConfig,
+) -> tuple[TestContext, list[Path], Providers, BuildConfig]:
+    """Build a TestContext and supporting config for a harness.
+
+    Returns
+    -------
+    tuple[TestContext, list[Path], Providers, BuildConfig]
+        Context, written repo files, providers, and build config.
+
+    Raises
+    ------
+    ValueError
+        If the repo strategy is invalid or required arguments are missing.
+    """
+    repo_root = tmp_path / "repo"
+    build_dir = repo_root / "build"
+    db_path = build_dir / "db" / "codeintel.duckdb"
+    resolved_variant = options.snapshot_variant or scenario.snapshot_variant or DEFAULT_VARIANT
+
+    env_opts = EnvOptions(
+        file_backed=config.file_backed_db or scenario.file_backed,
+        repo_root=repo_root,
+        build_dir=build_dir,
+        db_path=db_path if config.file_backed_db else None,
+        snapshot_variant=resolved_variant,
+    )
+    ctx = create_test_context(
+        tmp_path,
+        options=env_opts,
+        gateway_options=options.gateway_options,
+    )
+    if scenario.extra:
+        ctx.extra.update(scenario.extra)
+
+    written: list[Path] = []
+    if options.repo_strategy == "canonical":
+        ctx.ensure_canonical_repo()
+    elif options.repo_strategy == "writer":
+        if options.repo_writer is None:
+            message = "repo_strategy='writer' requires repo_writer"
+            raise ValueError(message)
+        written = options.repo_writer(ctx.repo_root)
+    elif options.repo_strategy != "none":
+        message = f"Unknown repo_strategy: {options.repo_strategy}"
+        raise ValueError(message)
+
+    seed_packs = tuple(scenario.seed_packs) + tuple(options.seed_packs)
+    if seed_packs:
+        ctx.require(*seed_packs)
+    if scenario.write_files and options.repo_strategy == "none":
+        ctx.ensure_canonical_repo()
+
+    resolved_tools = options.tools_config or ToolsConfig.default()
+    resolved_providers = options.providers or create_default_providers(resolved_tools)
+    resolved_build_config = options.build_config or load_build_config(ctx.repo_root)
+    return ctx, written, resolved_providers, resolved_build_config
+
+
 @dataclass(frozen=True)
 class HarnessConfig:
     """Configuration surface for a Hamilton build harness."""
@@ -110,7 +174,8 @@ class HarnessOpenOptions:
     tools_config: ToolsConfig | None = None
     providers: Providers | None = None
     build_config: BuildConfig | None = None
-    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
+    snapshot_variant: SnapshotVariant | None = None
+    scenario: ScenarioConfig | None = None
 
 
 @dataclass
@@ -140,50 +205,16 @@ class HamiltonBuildHarness:
         HamiltonBuildHarness
             New harness wrapping a fresh TestContext.
 
-        Raises
-        ------
-        ValueError
-            If the repo strategy is invalid or required arguments are missing.
         """
         cfg = harness or HarnessConfig(repo="test/repo", commit="deadbeef")
         resolved = options or HarnessOpenOptions()
-        repo_root = tmp_path / "repo"
-        build_dir = repo_root / "build"
-        db_path = build_dir / "db" / "codeintel.duckdb"
-
-        env_opts = EnvOptions(
-            file_backed=cfg.file_backed_db,
-            repo_root=repo_root,
-            build_dir=build_dir,
-            db_path=db_path if cfg.file_backed_db else None,
-            snapshot_variant=resolved.snapshot_variant,
-        )
-        ctx = create_test_context(
+        scenario = resolved.scenario or ScenarioConfig()
+        ctx, written, resolved_providers, resolved_build_config = _prepare_harness_context(
             tmp_path,
-            options=env_opts,
-            gateway_options=resolved.gateway_options,
+            config=cfg,
+            options=resolved,
+            scenario=scenario,
         )
-
-        written: list[Path] = []
-        if resolved.repo_strategy == "canonical":
-            ctx.ensure_canonical_repo()
-        elif resolved.repo_strategy == "writer":
-            if resolved.repo_writer is None:
-                message = "repo_strategy='writer' requires repo_writer"
-                raise ValueError(message)
-            written = resolved.repo_writer(ctx.repo_root)
-        elif resolved.repo_strategy == "none":
-            pass
-        else:
-            message = f"Unknown repo_strategy: {resolved.repo_strategy}"
-            raise ValueError(message)
-
-        if resolved.seed_packs:
-            ctx.require(*resolved.seed_packs)
-
-        resolved_tools = resolved.tools_config or ToolsConfig.default()
-        resolved_providers = resolved.providers or create_default_providers(resolved_tools)
-        resolved_build_config = resolved.build_config or load_build_config(ctx.repo_root)
 
         env = BuildEnv(
             gateway=ctx.gateway,

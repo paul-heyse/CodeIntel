@@ -9,6 +9,7 @@ import pytest
 
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import assert_target_ok, expect_equal, expect_rows_equal
+from tests._helpers.fixtures.repos import write_sample_repo
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
@@ -20,7 +21,6 @@ from tests._helpers.ingestion import (
     make_scan_setup,
     materialize_repo_scan_result,
 )
-from tests._helpers.fixtures.repos import write_sample_repo
 from tests._helpers.tool_payloads import coverage_json_payload, pytest_report_payload
 from tests._helpers.tool_sandbox import ToolSandbox, ToolStubSpec
 

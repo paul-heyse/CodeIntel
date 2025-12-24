@@ -50,17 +50,15 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "DEFAULT_VARIANT",
         "GOLDEN_VARIANT",
         "METRICS_VARIANT",
+        "SNAPSHOT_VARIANTS",
         "SPAN_VARIANT",
+        "SnapshotVariants",
         "SnapshotVariant",
     ),
     "tests._helpers.context": (
         "QueryRow",
         "SeedPack",
         "TestContext",
-        "coverage_and_graph_context",
-        "coverage_ready_context",
-        "create_test_context",
-        "graph_ready_context",
     ),
     "tests._helpers.fixtures.coverage": (
         "CoverageFixtureFactory",
@@ -70,8 +68,22 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     "tests._helpers.env": ("build_test_gateway", "create_provisioned_test_env", "create_test_env"),
     "tests._helpers.evidence": ("build_entrypoint_evidence",),
     "tests._helpers.fakes.httpx_clients": ("RecordingAsyncClient",),
-    "tests._helpers.fakes.ingestion_context": ("build_repo_tree",),
-    "tests._helpers.fakes.networkx_graphs": (
+    "tests._helpers.fixtures.repos": (
+        "RepoFixture",
+        "RepoFixtureSpec",
+        "RepoFixtureWriter",
+        "write_callgraph_alias_repo",
+        "write_canonical_repo",
+        "write_coverage_driver",
+        "write_generated_noise_fixture",
+        "write_graph_metrics_repo",
+        "write_large_file_fixture",
+        "write_monorepo_fixture",
+        "write_sample_repo",
+        "write_scoped_paths_fixture",
+        "write_tree",
+    ),
+    "tests._helpers.fixtures.graphs": (
         "chain_graph",
         "complete_digraph",
         "cyclic_graph",
@@ -131,7 +143,7 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "get_repo_fixture",
         "list_repo_fixtures",
     ),
-    "tests._helpers.rows": ("function_meta", "function_metrics_row", "module_row"),
+    "tests._helpers.fixtures.rows": ("function_meta", "function_metrics_row", "module_row"),
     "tests._helpers.scenarios": (
         "ScenarioConfig",
         "TestScenario",
@@ -200,28 +212,44 @@ if TYPE_CHECKING:
         ProvisioningConfig,
         provisioning_gateway_options,
     )
-    from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, DEFAULT_RUN_ID
-    from tests._helpers.context import (
-        QueryRow,
-        SeedPack,
-        TestContext,
-        coverage_and_graph_context,
-        coverage_ready_context,
-        create_test_context,
-        graph_ready_context,
-    )
-    from tests._helpers.coverage import build_fake_coverage, seed_coverage_pack
+    from tests._helpers.context import QueryRow, SeedPack, TestContext
     from tests._helpers.env import build_test_gateway, create_provisioned_test_env, create_test_env
     from tests._helpers.evidence import build_entrypoint_evidence
     from tests._helpers.fakes.httpx_clients import RecordingAsyncClient
-    from tests._helpers.fakes.ingestion_context import build_repo_tree
-    from tests._helpers.fakes.networkx_graphs import (
+    from tests._helpers.fixtures.coverage import (
+        CoverageFixtureFactory,
+        CoverageFixtureSpec,
+        synthesize_coverage_edges,
+    )
+    from tests._helpers.fixtures.graphs import (
         chain_graph,
         complete_digraph,
         cyclic_graph,
         diamond_graph,
         disconnected_graph,
         star_graph,
+    )
+    from tests._helpers.fixtures.repos import (
+        RepoFixture,
+        RepoFixtureSpec,
+        RepoFixtureWriter,
+        write_callgraph_alias_repo,
+        write_canonical_repo,
+        write_coverage_driver,
+        write_generated_noise_fixture,
+        write_graph_metrics_repo,
+        write_large_file_fixture,
+        write_monorepo_fixture,
+        write_sample_repo,
+        write_scoped_paths_fixture,
+        write_tree,
+    )
+    from tests._helpers.fixtures.rows import function_meta, function_metrics_row, module_row
+    from tests._helpers.fixtures.snapshots import (
+        DEFAULT_VARIANT,
+        SNAPSHOT_VARIANTS,
+        SnapshotVariant,
+        SnapshotVariants,
     )
     from tests._helpers.gateway import GatewayFactory, analytics_gateway
     from tests._helpers.hamilton_execution import (
@@ -275,7 +303,6 @@ if TYPE_CHECKING:
         seed_mcp_backend,
         seed_profile_data,
     )
-    from tests._helpers.rows import function_meta, function_metrics_row, module_row
     from tests._helpers.scenarios import (
         ScenarioConfig,
         TestScenario,
@@ -310,9 +337,10 @@ if TYPE_CHECKING:
         CLI_CORE_PACK,
         CORE_PACK,
         COVERAGE_PACK,
-        DEFAULT_VARIANT.commit,
-        DEFAULT_VARIANT.repo,
-        DEFAULT_RUN_ID,
+        DEFAULT_VARIANT,
+        SnapshotVariant,
+        SnapshotVariants,
+        SNAPSHOT_VARIANTS,
         DATA_MODELS_PACK,
         FUNCTION_TYPES_PACK,
         GRAPH_HANDLER_PACK,
@@ -345,18 +373,15 @@ if TYPE_CHECKING:
         assert_frozen,
         build_callgraph_fixture_repo,
         build_entrypoint_evidence,
-        build_fake_coverage,
-        build_repo_tree,
+        CoverageFixtureFactory,
+        CoverageFixtureSpec,
         build_test_gateway,
         chain_graph,
         cli_test_context_with_seeds,
         complete_digraph,
-        coverage_and_graph_context,
         coverage_context,
-        coverage_ready_context,
         create_cli_test_context,
         create_provisioned_test_env,
-        create_test_context,
         create_test_env,
         cyclic_graph,
         diamond_graph,
@@ -371,7 +396,6 @@ if TYPE_CHECKING:
         function_metrics_row,
         graph_context,
         graph_metrics_ready_gateway,
-        graph_ready_context,
         make_build_config,
         make_build_paths,
         make_command_context,
@@ -390,7 +414,7 @@ if TYPE_CHECKING:
         sample_manifest,
         sample_target_graph,
         seed_call_graph_scoping,
-        seed_coverage_pack,
+        synthesize_coverage_edges,
         seed_docs_export_invalid_profile,
         seed_docs_export_minimal,
         seed_function_graph_cycle,
@@ -400,7 +424,20 @@ if TYPE_CHECKING:
         seed_module_graph_inputs,
         seed_profile_data,
         star_graph,
+        RepoFixture,
         RepoFixtureEntry,
+        RepoFixtureSpec,
+        RepoFixtureWriter,
+        write_callgraph_alias_repo,
+        write_canonical_repo,
+        write_coverage_driver,
+        write_generated_noise_fixture,
+        write_graph_metrics_repo,
+        write_large_file_fixture,
+        write_monorepo_fixture,
+        write_sample_repo,
+        write_scoped_paths_fixture,
+        write_tree,
         ToolSandbox,
         build_repo_fixture,
         coverage_json_payload,

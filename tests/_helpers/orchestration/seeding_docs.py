@@ -40,8 +40,8 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.fakes import utcnow
+from tests._helpers.fixtures.rows import function_profile_row
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
-from tests._helpers.rows import function_profile_row
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

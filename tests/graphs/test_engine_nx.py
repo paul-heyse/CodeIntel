@@ -26,7 +26,7 @@ from tests._helpers.builders import (
     insert_symbol_use_edges,
 )
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.networkx_graphs import chain_graph, empty_digraph
+from tests._helpers.fixtures.graphs import chain_graph, empty_digraph
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 

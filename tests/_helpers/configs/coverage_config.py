@@ -48,6 +48,14 @@ class CoverageSeedConfig:
     function_goid: int = 1
     test_goid: int = 99
 
+    @property
+    def repo(self) -> str:
+        return self.snapshot_variant.repo
+
+    @property
+    def commit(self) -> str:
+        return self.snapshot_variant.commit
+
 
 __all__ = [
     "FUNCTION_NAME",

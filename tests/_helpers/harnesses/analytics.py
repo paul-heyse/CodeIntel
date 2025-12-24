@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.context import create_test_context
+from tests._helpers import TestScenario
 from tests._helpers.seeds import (
     CORE_PACK,
     COVERAGE_LINES_PACK,
@@ -52,8 +52,8 @@ def plugin_harness_with_packs(tmp_path: Path, *packs: SeedPack) -> Iterator[Anal
     AnalyticsPluginHarness
         Harness with the requested seed packs applied.
     """
-    ctx = create_test_context(tmp_path)
-    _apply_packs(ctx, packs)
+    scenario = TestScenario().with_seeds(*packs)
+    ctx = scenario.build(tmp_path)
     harness = AnalyticsPluginHarness(ctx=ctx)
     try:
         yield harness

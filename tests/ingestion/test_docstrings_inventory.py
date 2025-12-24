@@ -15,7 +15,7 @@ from tests._helpers.assertions import (
     format_missing_extra,
 )
 from tests._helpers.builders import RepoMapRow, insert_rows
-from tests._helpers.fakes.ingestion_context import build_repo_tree
+from tests._helpers.fixtures.repos import write_tree
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
@@ -36,7 +36,7 @@ def _docstrings_harness(
 ) -> Iterator[HamiltonBuildHarness]:
     def _write_repo(repo_root: Path) -> list[Path]:
         files = {"src/pkg/__init__.py": "", **repo_structure}
-        build_repo_tree(repo_root, files)
+        write_tree(repo_root, files)
         return [repo_root / rel_path for rel_path in files]
 
     config = BuildConfig.from_dict({"ingestion": {"modules": {"scope_paths": scope_paths}}})

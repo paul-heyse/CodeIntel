@@ -16,7 +16,6 @@ from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
@@ -27,6 +26,7 @@ from tests._helpers.fakes.fake_providers import (
     FakeToolRunner,
     FakeTypeChecker,
 )
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from collections.abc import Mapping

@@ -35,8 +35,9 @@ from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
+from tests._helpers.fixtures.snapshots import GOLDEN_VARIANT
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.seeds.golden_graphs import GOLDEN_COMMIT, GOLDEN_REPO, seed_golden_graphs
+from tests._helpers.seeds.golden_graphs import seed_golden_graphs
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -120,7 +121,7 @@ def golden_gateway() -> Iterator[StorageGateway]:
     """
     gateway = GatewayFactory().with_views().open()
     apply_all_schemas(gateway.con)
-    seed_golden_graphs(gateway, repo=GOLDEN_REPO, commit=GOLDEN_COMMIT)
+    seed_golden_graphs(gateway, snapshot_variant=GOLDEN_VARIANT)
     try:
         yield gateway
     finally:
@@ -141,7 +142,11 @@ def golden_snapshot(tmp_path: Path) -> SnapshotRef:
     SnapshotRef
         Snapshot reference for the golden repo and commit.
     """
-    return make_snapshot(repo=GOLDEN_REPO, commit=GOLDEN_COMMIT, repo_root=tmp_path)
+    return make_snapshot(
+        repo=GOLDEN_VARIANT.repo,
+        commit=GOLDEN_VARIANT.commit,
+        repo_root=tmp_path,
+    )
 
 
 @dataclass(frozen=True)

@@ -25,8 +25,8 @@ import pytest
 
 from codeintel.config.primitives import BuildPaths
 from codeintel.core.plugins.execution.context import PluginExecutionContext
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
-from tests._helpers.context import TestContext, create_test_context
+from tests._helpers import TestScenario
+from tests._helpers.context import TestContext
 from tests._helpers.env import build_test_gateway
 from tests._helpers.fakes.configs import create_test_snapshot
 from tests._helpers.fakes.function_catalogs import (
@@ -44,6 +44,7 @@ from tests._helpers.fakes.graph_runtime import (
     create_mock_runtime_with_call_graph,
     create_mock_runtime_with_import_graph,
 )
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.graph_runtime_harness import build_graph_runtime_harness
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
@@ -372,7 +373,7 @@ def plugin_harness(tmp_path: Path) -> Iterator[PluginTestHarness]:
     PluginTestHarness
         Harness containing TestContext.
     """
-    ctx = create_test_context(tmp_path)
+    ctx = TestScenario().build(tmp_path)
     harness = PluginTestHarness(ctx=ctx)
     try:
         yield harness

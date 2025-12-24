@@ -11,10 +11,14 @@ from codeintel.analytics.compute.graphs.structural import structural_metrics
 from codeintel.config.primitives import GraphFeatureFlags
 from codeintel.graphs.engine import GraphKind
 from codeintel.graphs.runtime import GraphRuntimeOptions, build_graph_runtime
+from tests._helpers import TestScenario
 from tests._helpers.assertions import expect_true
-from tests._helpers.context import create_test_context
-from tests._helpers.env_options import EnvOptions
-from tests._helpers.graphs import CountingGraphEngineAdapter, GraphStubEngine
+from tests._helpers.fakes.graph_runtime import (
+    CountingGraphEngineAdapter,
+)
+from tests._helpers.fakes.graph_runtime import (
+    GraphRuntimeDouble as GraphStubEngine,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -46,8 +50,7 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context configured for graph feature flag integration tests.
     """
-    options = EnvOptions(repo="demo/repo", commit="deadbeef")
-    context = create_test_context(tmp_path, options=options)
+    context = TestScenario().build(tmp_path)
     try:
         yield context
     finally:

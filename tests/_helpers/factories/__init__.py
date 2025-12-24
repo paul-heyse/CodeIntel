@@ -28,7 +28,8 @@ from tests._helpers.factories.graph_factories import (
     build_star_graph,
     build_two_communities_graph,
 )
-from tests._helpers.factories.row_factories import (
+from tests._helpers.factories.step_config_factories import make_snapshot
+from tests._helpers.fixtures.rows import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_function_profile_row,
@@ -40,7 +41,6 @@ from tests._helpers.factories.row_factories import (
     sample_module_profile_rows,
     sample_test_profile_rows,
 )
-from tests._helpers.factories.step_config_factories import make_snapshot
 
 __all__ = [
     "GOLDEN_EXPECTED_COMMUNITIES",

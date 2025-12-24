@@ -23,8 +23,7 @@ from tests._helpers.configs.provisioning_config import (
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 __all__ = [
-    "DEFAULT_VARIANT.commit",
-    "DEFAULT_VARIANT.repo",
+    "DEFAULT_VARIANT",
     "CallgraphFixtureOptions",
     "CoverageEdgeEnv",
     "CoverageSeedConfig",

@@ -16,6 +16,7 @@ import pytest
 
 from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.analytics.parsing.ast_cache import FunctionAst
+from tests._helpers import TestScenario
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,
@@ -23,13 +24,11 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
-from tests._helpers.context import create_test_context
-from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
     MockFunctionSpan,
 )
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -59,8 +58,7 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context configured with default repo and commit identifiers.
     """
-    options = EnvOptions(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
-    context = create_test_context(tmp_path, options=options)
+    context = TestScenario().build(tmp_path)
     try:
         yield context
     finally:

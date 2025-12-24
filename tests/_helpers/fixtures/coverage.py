@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.builders import (
@@ -26,7 +27,6 @@ from tests._helpers.fixtures.repos import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.config.primitives import SnapshotRef
     from tests._helpers.context import TestContext
 
 
@@ -37,11 +37,23 @@ class FakeCoverageData:
         self._contexts_by_file = contexts_by_file
 
     def measured_files(self) -> list[str]:
-        """Return measured file paths."""
+        """Return measured file paths.
+
+        Returns
+        -------
+        list[str]
+            File paths with coverage data.
+        """
         return list(self._contexts_by_file.keys())
 
     def contexts_by_lineno(self, filename: str) -> dict[int, set[str]]:
-        """Return contexts keyed by line number for a file."""
+        """Return contexts keyed by line number for a file.
+
+        Returns
+        -------
+        dict[int, set[str]]
+            Contexts keyed by line number.
+        """
         return self._contexts_by_file.get(filename, {})
 
 
@@ -57,12 +69,24 @@ class FakeCoverage:
         self._contexts = contexts
 
     def analysis2(self, filename: str) -> tuple[str, list[int], list[int], list[int], list[int]]:
-        """Analyze a file and return statement information."""
+        """Analyze a file and return statement information.
+
+        Returns
+        -------
+        tuple[str, list[int], list[int], list[int], list[int]]
+            Tuple containing filename and statement metadata.
+        """
         stmts = self._statements.get(filename, [])
         return filename, stmts, [], [], stmts
 
     def get_data(self) -> FakeCoverageData:
-        """Return deterministic coverage data wrapper."""
+        """Return deterministic coverage data wrapper.
+
+        Returns
+        -------
+        FakeCoverageData
+            Coverage data accessor.
+        """
         return FakeCoverageData(self._contexts)
 
 
@@ -90,13 +114,19 @@ class CoverageFixtureFactory:
         if spec.include_edges:
             _seed_coverage_edges(ctx, spec)
         if spec.include_functions:
-            _seed_coverage_functions(ctx, spec)
+            _seed_coverage_functions(ctx)
         if spec.include_lines:
-            _seed_coverage_lines(ctx, spec)
+            _seed_coverage_lines(ctx)
 
     @staticmethod
     def build_fake_coverage(ctx: TestContext) -> FakeCoverage:
-        """Build FakeCoverage backed by analytics coverage tables."""
+        """Build FakeCoverage backed by analytics coverage tables.
+
+        Returns
+        -------
+        FakeCoverage
+            Coverage shim built from analytics tables.
+        """
         statements: dict[str, list[int]] = {}
         contexts: dict[str, dict[int, set[str]]] = {}
 
@@ -111,7 +141,7 @@ class CoverageFixtureFactory:
         ).fetchall()
 
         if rows:
-            for rel_path, line, is_exec, is_cov in rows:
+            for rel_path, line, _is_exec, is_cov in rows:
                 rel_path_str = str(rel_path)
                 statements.setdefault(rel_path_str, []).append(int(line))
                 if is_cov:
@@ -153,7 +183,14 @@ class CoverageEdgeMeta:
     last_status: str | None = None
 
     @classmethod
-    def from_mapping(cls, meta: Mapping[str, object] | None) -> "CoverageEdgeMeta":
+    def from_mapping(cls, meta: Mapping[str, object] | None) -> CoverageEdgeMeta:
+        """Build a CoverageEdgeMeta from a mapping.
+
+        Returns
+        -------
+        CoverageEdgeMeta
+            Normalized metadata with defaults applied.
+        """
         if meta is None:
             return cls()
         covered_lines = _coerce_int(meta.get("covered_lines"), default=1)
@@ -168,6 +205,13 @@ class CoverageEdgeMeta:
         )
 
     def resolved_ratio(self) -> float:
+        """Return a resolved coverage ratio.
+
+        Returns
+        -------
+        float
+            Coverage ratio computed from metadata.
+        """
         if self.coverage_ratio is not None:
             return self.coverage_ratio
         if self.executable_lines <= 0:
@@ -187,7 +231,14 @@ class TestMeta:
     flaky: bool = False
 
     @classmethod
-    def from_mapping(cls, meta: Mapping[str, object] | None, *, status: str) -> "TestMeta":
+    def from_mapping(cls, meta: Mapping[str, object] | None, *, status: str) -> TestMeta:
+        """Build a TestMeta from a mapping and status override.
+
+        Returns
+        -------
+        TestMeta
+            Normalized metadata with defaults applied.
+        """
         if meta is None:
             return cls(status=status)
         markers_raw = meta.get("markers", "[]")
@@ -202,6 +253,13 @@ class TestMeta:
 
 
 def _coerce_int(value: object, *, default: int) -> int:
+    """Coerce a value to int using a default fallback.
+
+    Returns
+    -------
+    int
+        Coerced integer value.
+    """
     if isinstance(value, bool):
         return int(value)
     if isinstance(value, (int, float)):
@@ -215,6 +273,13 @@ def _coerce_int(value: object, *, default: int) -> int:
 
 
 def _coerce_float(value: object, *, default: float | None) -> float | None:
+    """Coerce a value to float using a default fallback.
+
+    Returns
+    -------
+    float | None
+        Coerced float value.
+    """
     if value is None:
         return default
     if isinstance(value, (int, float)):
@@ -228,6 +293,8 @@ def _coerce_float(value: object, *, default: float | None) -> float | None:
 
 
 def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
+    """Seed analytics.test_catalog rows for coverage tests."""
+    now = datetime.now(tz=UTC)
     test_statuses = ["passed", "passed", "passed", "failed"]
     passing_count = int(len(test_statuses) * spec.passing_ratio)
     for idx in range(passing_count):
@@ -246,7 +313,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             markers="[]",
             parametrized=False,
             flaky=False,
-            created_at=None,
+            created_at=now,
         ),
         TestCatalogRow(
             test_id=TEST_B,
@@ -260,7 +327,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             markers='["slow"]',
             parametrized=False,
             flaky=False,
-            created_at=None,
+            created_at=now,
         ),
         TestCatalogRow(
             test_id=TEST_C,
@@ -274,7 +341,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             markers="[]",
             parametrized=True,
             flaky=False,
-            created_at=None,
+            created_at=now,
         ),
         TestCatalogRow(
             test_id=TEST_HELPER,
@@ -288,13 +355,15 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             markers="[]",
             parametrized=False,
             flaky=True,
-            created_at=None,
+            created_at=now,
         ),
     ]
     insert_rows(ctx.gateway, rows)
 
 
 def _seed_coverage_edges(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
+    """Seed analytics.test_coverage_edges rows for coverage tests."""
+    now = datetime.now(tz=UTC)
     meta = spec.edge_meta or {}
     covered_lines = _coerce_int(meta.get("covered_lines"), default=1)
     executable_lines = _coerce_int(meta.get("executable_lines"), default=1)
@@ -303,81 +372,115 @@ def _seed_coverage_edges(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
     if ratio is None:
         ratio = covered_lines / executable_lines if executable_lines else 0.0
 
+    test_id = TEST_A
+    rel_path = "tests/test_mod_a.py"
+    qualname = "test_func_a"
+    urn = f"urn:{ctx.repo}:{ctx.commit}:{rel_path}#{qualname}"
     rows = [
         TestCoverageEdgeRow(
-            repo=ctx.repo,
-            commit=ctx.commit,
+            test_id=test_id,
             test_goid_h128=100,
             function_goid_h128=GOID_FUNC_A,
+            urn=urn,
+            repo=ctx.repo,
+            commit=ctx.commit,
+            rel_path=rel_path,
+            qualname=qualname,
             coverage_ratio=ratio,
             covered_lines=covered_lines,
             executable_lines=executable_lines,
             last_status=last_status,
-            created_at=None,
+            created_at=now,
         )
     ]
     insert_rows(ctx.gateway, rows)
 
 
-def _seed_coverage_functions(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
+def _seed_coverage_functions(ctx: TestContext) -> None:
+    """Seed analytics.coverage_functions rows for coverage tests."""
+    now = datetime.now(tz=UTC)
+    default_language = "python"
+    default_kind = "function"
     rows = [
         CoverageFunctionRow(
             repo=ctx.repo,
             commit=ctx.commit,
             function_goid_h128=GOID_FUNC_A,
+            urn=f"urn:{ctx.repo}:{ctx.commit}:{MOD_A_PATH}#func_a",
             rel_path=MOD_A_PATH,
+            language=default_language,
+            kind=default_kind,
+            qualname="func_a",
             start_line=1,
+            end_line=1,
             executable_lines=3,
             covered_lines=3,
             coverage_ratio=1.0,
             tested=True,
             untested_reason=None,
-            created_at=None,
+            created_at=now,
         ),
         CoverageFunctionRow(
             repo=ctx.repo,
             commit=ctx.commit,
             function_goid_h128=GOID_FUNC_B,
+            urn=f"urn:{ctx.repo}:{ctx.commit}:{MOD_B_PATH}#func_b",
             rel_path=MOD_B_PATH,
+            language=default_language,
+            kind=default_kind,
+            qualname="func_b",
             start_line=1,
+            end_line=1,
             executable_lines=4,
             covered_lines=2,
             coverage_ratio=0.5,
             tested=True,
             untested_reason=None,
-            created_at=None,
+            created_at=now,
         ),
         CoverageFunctionRow(
             repo=ctx.repo,
             commit=ctx.commit,
             function_goid_h128=GOID_FUNC_C,
+            urn=f"urn:{ctx.repo}:{ctx.commit}:{MOD_C_PATH}#func_c",
             rel_path=MOD_C_PATH,
+            language=default_language,
+            kind=default_kind,
+            qualname="func_c",
             start_line=1,
+            end_line=1,
             executable_lines=2,
             covered_lines=0,
             coverage_ratio=0.0,
             tested=False,
             untested_reason="missing",
-            created_at=None,
+            created_at=now,
         ),
         CoverageFunctionRow(
             repo=ctx.repo,
             commit=ctx.commit,
             function_goid_h128=GOID_HELPER,
+            urn=f"urn:{ctx.repo}:{ctx.commit}:{MOD_UTIL_PATH}#helper",
             rel_path=MOD_UTIL_PATH,
+            language=default_language,
+            kind=default_kind,
+            qualname="helper",
             start_line=1,
+            end_line=1,
             executable_lines=1,
             covered_lines=1,
             coverage_ratio=1.0,
             tested=True,
             untested_reason=None,
-            created_at=None,
+            created_at=now,
         ),
     ]
     insert_rows(ctx.gateway, rows)
 
 
-def _seed_coverage_lines(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
+def _seed_coverage_lines(ctx: TestContext) -> None:
+    """Seed analytics.coverage_lines rows for coverage tests."""
+    now = datetime.now(tz=UTC)
     rows = [
         CoverageLineRow(
             repo=ctx.repo,
@@ -386,6 +489,9 @@ def _seed_coverage_lines(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             line=1,
             is_executable=True,
             is_covered=True,
+            hits=1,
+            context_count=0,
+            created_at=now,
         ),
         CoverageLineRow(
             repo=ctx.repo,
@@ -394,6 +500,9 @@ def _seed_coverage_lines(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             line=2,
             is_executable=True,
             is_covered=True,
+            hits=1,
+            context_count=0,
+            created_at=now,
         ),
         CoverageLineRow(
             repo=ctx.repo,
@@ -402,6 +511,9 @@ def _seed_coverage_lines(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             line=1,
             is_executable=True,
             is_covered=False,
+            hits=0,
+            context_count=0,
+            created_at=now,
         ),
     ]
     insert_rows(ctx.gateway, rows)
@@ -415,7 +527,13 @@ def synthesize_coverage_edges(
     test_meta: Mapping[str, Mapping[str, object]] | None = None,
     edge_meta: Mapping[str, Mapping[str, object]] | None = None,
 ) -> None:
-    """Create minimal test_catalog + coverage_edges + coverage_functions rows."""
+    """Create minimal test_catalog + coverage_edges + coverage_functions rows.
+
+    Raises
+    ------
+    RuntimeError
+        If the database fails to return a timestamp.
+    """
     row = ctx.gateway.con.execute("SELECT NOW()").fetchone()
     if row is None:
         msg = "SELECT NOW() returned no rows"
@@ -499,9 +617,9 @@ def synthesize_coverage_edges(
 
 
 __all__ = [
+    "CoverageEdgeMeta",
     "CoverageFixtureFactory",
     "CoverageFixtureSpec",
-    "CoverageEdgeMeta",
     "TestMeta",
     "synthesize_coverage_edges",
 ]

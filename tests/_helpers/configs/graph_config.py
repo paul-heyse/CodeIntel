@@ -16,7 +16,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-
 @dataclass(frozen=True)
 class SpanSnapshot:
     """Collected GOID/symbol-use state for alignment assertions."""
@@ -45,6 +44,14 @@ class GraphEngineSeed:
     repo_root: Path | None = None
     call_graph: nx.DiGraph | None = None
     import_graph: nx.DiGraph | None = None
+
+    @property
+    def repo(self) -> str:
+        return self.snapshot_variant.repo
+
+    @property
+    def commit(self) -> str:
+        return self.snapshot_variant.commit
 
 
 __all__ = [

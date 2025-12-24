@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import GraphBackendConfig, SnapshotRef
     from codeintel.storage.gateway import StorageGateway
-    from tests._helpers.graphs import GraphFixtures
+    from tests._helpers.fixtures.graphs import GraphFixtures
 
 CALL_GRAPH_TABLE: Final[str] = "graph.call_graph_edges"
 IMPORT_GRAPH_TABLE: Final[str] = "graph.import_graph_edges"
@@ -178,7 +178,7 @@ class GraphRuntimeDouble(GraphRuntimeLike):
             Runtime seeded with provided fixtures.
         """
         if fixtures is None:
-            graphs_module = import_module("tests._helpers.graphs")
+            graphs_module = import_module("tests._helpers.fixtures.graphs")
             graphs = graphs_module.standard_graph_fixtures()
         else:
             graphs = fixtures
@@ -699,7 +699,7 @@ def create_mock_runtime_with_standard_graphs(
         Runtime seeded with standard fixtures.
     """
     if fixtures is None:
-        graphs_module = import_module("tests._helpers.graphs")
+        graphs_module = import_module("tests._helpers.fixtures.graphs")
         graphs = graphs_module.standard_graph_fixtures()
     else:
         graphs = fixtures

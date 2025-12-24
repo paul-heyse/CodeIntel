@@ -1,9 +1,4 @@
-"""Factory helpers for commonly used analytics rows.
-
-Available builders include module_row, function_metrics_row, coverage_line_row,
-test_catalog_row, typedness_row, static_diagnostics_row, subsystem_row, config_value_row,
-and ast_metric_row. Prefer these over ad hoc tuples to keep schemas consistent in tests.
-"""
+"""Unified row factory utilities for tests."""
 
 from __future__ import annotations
 
@@ -11,14 +6,130 @@ import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
+from codeintel.build.schemas.service import get_schema_service
+from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.catalog import FunctionSpan
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsFileProfileRow as FileProfileRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsFunctionProfileRow as FunctionProfileRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsModuleProfileRow as ModuleProfileRowModel,
+)
+from codeintel.core.schemas.generated_rows.analytics import (
+    AnalyticsTestProfileRow as ProfileRowModel,
+)
 from tests._helpers.builders import FunctionMetricsRow, ModuleRow
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+
+get_schema_service()
+_COLUMNS_BY_TABLE = load_columns_by_table()
+
+
+@dataclass(frozen=True)
+class RowCoercions:
+    """Common coercion helpers for row fields."""
+
+    @staticmethod
+    def to_int(value: object, *, default: int = 0) -> int:
+        """Coerce a value to int with a default fallback.
+
+        Returns
+        -------
+        int
+            Coerced integer value.
+        """
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        return default
+
+    @staticmethod
+    def to_bool(value: object, *, default: bool = False) -> bool:
+        """Coerce a value to bool with a default fallback.
+
+        Returns
+        -------
+        bool
+            Coerced boolean value.
+        """
+        if value is None:
+            return default
+        return bool(value)
+
+    @staticmethod
+    def to_timestamp(value: object | None = None) -> datetime:
+        """Coerce a value to a UTC timestamp.
+
+        Returns
+        -------
+        datetime
+            Timestamp value.
+        """
+        if isinstance(value, datetime):
+            return value
+        return datetime.now(tz=UTC)
+
+
+class RowFactory:
+    """Create schema-aligned row dictionaries for tests."""
+
+    @staticmethod
+    def blank_row(table_key: str) -> Mapping[str, object]:
+        """Create a blank row mapping for a table.
+
+        Returns
+        -------
+        Mapping[str, object]
+            Mapping populated with table columns set to None.
+        """
+        columns = tuple(_COLUMNS_BY_TABLE[table_key])
+        return cast("Mapping[str, object]", dict.fromkeys(columns))
+
+    @staticmethod
+    def row_for(table_key: str, **fields: object) -> Mapping[str, object]:
+        """Create a row mapping with provided field overrides.
+
+        Returns
+        -------
+        Mapping[str, object]
+            Row mapping with overrides applied.
+        """
+        row = dict(RowFactory.blank_row(table_key))
+        row.update(fields)
+        return row
+
+    @staticmethod
+    def rows_for(
+        table_key: str,
+        count: int,
+        **overrides: object,
+    ) -> list[Mapping[str, object]]:
+        """Create multiple row mappings for a table.
+
+        Returns
+        -------
+        list[Mapping[str, object]]
+            List of row mappings with overrides applied.
+        """
+        return [RowFactory.row_for(table_key, **overrides) for _ in range(count)]
 
 
 def list_public_exports(module: object) -> tuple[str, ...]:
@@ -35,35 +146,316 @@ def list_public_exports(module: object) -> tuple[str, ...]:
     return tuple(sorted(name for name in dir(module) if not name.startswith("_")))
 
 
-def _coerce_int(value: object) -> int:
-    """Best-effort conversion to int for metrics fields.
+def blank_row(table_key: str) -> Mapping[str, object]:
+    """Return a blank row mapping for a table key.
 
     Returns
     -------
-    int
-        Converted integer value or 0 on failure.
+    Mapping[str, object]
+        Mapping populated with table columns set to None.
     """
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return 0
-    return 0
+    return RowFactory.blank_row(table_key)
 
 
-def _coerce_bool(value: object) -> bool:
-    """Best-effort conversion to bool for metrics fields.
+def row_for(table_key: str, **fields: object) -> Mapping[str, object]:
+    """Return a row mapping with provided field overrides.
 
     Returns
     -------
-    bool
-        Boolean interpretation of the value.
+    Mapping[str, object]
+        Row mapping with overrides applied.
     """
-    return bool(value)
+    return RowFactory.row_for(table_key, **fields)
+
+
+def row_list_for(
+    table_key: str,
+    count: int,
+    **overrides: object,
+) -> list[Mapping[str, object]]:
+    """Return multiple row mappings with overrides applied.
+
+    Returns
+    -------
+    list[Mapping[str, object]]
+        List of row mappings.
+    """
+    return RowFactory.rows_for(table_key, count, **overrides)
+
+
+def blank_file_profile_row() -> FileProfileRowModel:
+    """Return a blank analytics.file_profile row.
+
+    Returns
+    -------
+    FileProfileRowModel
+        Blank row payload.
+    """
+    return cast("FileProfileRowModel", RowFactory.blank_row("analytics.file_profile"))
+
+
+def blank_module_profile_row() -> ModuleProfileRowModel:
+    """Return a blank analytics.module_profile row.
+
+    Returns
+    -------
+    ModuleProfileRowModel
+        Blank row payload.
+    """
+    return cast("ModuleProfileRowModel", RowFactory.blank_row("analytics.module_profile"))
+
+
+def blank_test_profile_row() -> ProfileRowModel:
+    """Return a blank analytics.test_profile row.
+
+    Returns
+    -------
+    ProfileRowModel
+        Blank row payload.
+    """
+    return cast("ProfileRowModel", RowFactory.blank_row("analytics.test_profile"))
+
+
+def blank_behavioral_coverage_row() -> BehavioralCoverageRowModel:
+    """Return a blank analytics.behavioral_coverage row.
+
+    Returns
+    -------
+    BehavioralCoverageRowModel
+        Blank row payload.
+    """
+    return cast(
+        "BehavioralCoverageRowModel",
+        RowFactory.blank_row("analytics.behavioral_coverage"),
+    )
+
+
+def blank_function_profile_row() -> FunctionProfileRowModel:
+    """Return a blank analytics.function_profile row.
+
+    Returns
+    -------
+    FunctionProfileRowModel
+        Blank row payload.
+    """
+    return cast("FunctionProfileRowModel", RowFactory.blank_row("analytics.function_profile"))
+
+
+def sample_function_profile_rows(repo: str, commit: str) -> list[FunctionProfileRowModel]:
+    """Return sample analytics.function_profile rows.
+
+    Returns
+    -------
+    list[FunctionProfileRowModel]
+        Sample row payloads.
+    """
+    return [
+        cast(
+            "FunctionProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "function_goid_h128": 101,
+                "urn": "urn:fn:alpha::helper",
+                "rel_path": "pkg/alpha.py",
+                "language": "python",
+                "kind": "function",
+                "qualname": "pkg.alpha.helper",
+                "tags": '["io","auth"]',
+                "owners": '["team-data"]',
+                "created_at": None,
+            },
+        ),
+        cast(
+            "FunctionProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "function_goid_h128": 202,
+                "urn": "urn:fn:beta::process",
+                "rel_path": "pkg/beta.py",
+                "language": "python",
+                "kind": "method",
+                "qualname": "pkg.beta.B.process",
+                "tags": "[]",
+                "owners": None,
+                "created_at": None,
+            },
+        ),
+        cast(
+            "FunctionProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "function_goid_h128": 303,
+                "urn": "urn:fn:unicode::delta",
+                "rel_path": "pkg/unicode/delta.py",
+                "language": "python",
+                "kind": "function",
+                "qualname": "pkg.unicode.delta.fn",
+                "tags": '["unicode","core"]',
+                "owners": '["team-delta"]',
+                "created_at": None,
+            },
+        ),
+    ]
+
+
+def sample_file_profile_rows(repo: str, commit: str) -> list[FileProfileRowModel]:
+    """Return sample analytics.file_profile rows.
+
+    Returns
+    -------
+    list[FileProfileRowModel]
+        Sample row payloads.
+    """
+    return [
+        cast(
+            "FileProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "rel_path": "pkg/alpha.py",
+                "module": "pkg.alpha_mod",
+                "tags": '["core","io"]',
+                "owners": '["team-analytics"]',
+                "created_at": None,
+            },
+        ),
+        cast(
+            "FileProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "rel_path": "pkg/beta.py",
+                "module": "pkg.beta",
+                "tags": "[]",
+                "owners": None,
+                "created_at": None,
+            },
+        ),
+        cast(
+            "FileProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "rel_path": "pkg/unicode/delta.py",
+                "module": "pkg.unicode.delta",
+                "tags": '["unicode"]',
+                "owners": None,
+                "created_at": None,
+            },
+        ),
+    ]
+
+
+def sample_module_profile_rows(repo: str, commit: str) -> list[ModuleProfileRowModel]:
+    """Return sample analytics.module_profile rows.
+
+    Returns
+    -------
+    list[ModuleProfileRowModel]
+        Sample row payloads.
+    """
+    return [
+        cast(
+            "ModuleProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "module": "pkg.alpha_mod",
+                "rel_path": "pkg/alpha.py",
+                "language": "python",
+                "loc": 120,
+                "created_at": None,
+            },
+        ),
+        cast(
+            "ModuleProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "module": "pkg.beta",
+                "rel_path": "pkg/beta.py",
+                "language": "python",
+                "loc": 75,
+                "created_at": None,
+            },
+        ),
+    ]
+
+
+def sample_test_profile_rows(repo: str, commit: str) -> list[ProfileRowModel]:
+    """Return sample analytics.test_profile rows.
+
+    Returns
+    -------
+    list[ProfileRowModel]
+        Sample row payloads.
+    """
+    return [
+        cast(
+            "ProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "test_id": "tests/test_mod_a.py::test_func_a",
+                "rel_path": "tests/test_mod_a.py",
+                "qualname": "test_func_a",
+                "status": "passed",
+                "kind": "unit",
+                "duration_ms": 150,
+                "markers": "[]",
+                "parametrized": False,
+                "flaky": False,
+                "created_at": None,
+            },
+        ),
+        cast(
+            "ProfileRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "test_id": "tests/test_mod_b.py::test_func_b",
+                "rel_path": "tests/test_mod_b.py",
+                "qualname": "test_func_b",
+                "status": "passed",
+                "kind": "unit",
+                "duration_ms": 200,
+                "markers": '["slow"]',
+                "parametrized": False,
+                "flaky": False,
+                "created_at": None,
+            },
+        ),
+    ]
+
+
+def sample_behavioral_coverage_rows(repo: str, commit: str) -> list[BehavioralCoverageRowModel]:
+    """Return sample analytics.behavioral_coverage rows.
+
+    Returns
+    -------
+    list[BehavioralCoverageRowModel]
+        Sample row payloads.
+    """
+    return [
+        cast(
+            "BehavioralCoverageRowModel",
+            {
+                "repo": repo,
+                "commit": commit,
+                "function_goid_h128": 101,
+                "urn": "urn:fn:alpha::helper",
+                "rel_path": "pkg/alpha.py",
+                "qualname": "pkg.alpha.helper",
+                "covered_branches": 5,
+                "total_branches": 10,
+                "coverage_ratio": 0.5,
+                "created_at": None,
+            },
+        )
+    ]
 
 
 def function_meta(
@@ -157,13 +549,10 @@ def function_metrics_row(
         defaults.update(metrics)
 
     def _as_int(key: str) -> int:
-        return _coerce_int(defaults.get(key, 0))
+        return RowCoercions.to_int(defaults.get(key, 0))
 
     def _as_bool(key: str) -> bool:
-        value = defaults.get(key)
-        if value is None:
-            return _coerce_bool(defaults.get(key, False))
-        return _coerce_bool(value)
+        return RowCoercions.to_bool(defaults.get(key, False))
 
     def _as_str(key: str) -> str:
         value = defaults.get(key)
@@ -1550,6 +1939,7 @@ def config_value_row(
 
 __all__ = [
     "AstMetricSeed",
+    "BehavioralCoverageRowModel",
     "ConfigValueSeed",
     "CoverageLineSeed",
     "DataModelFieldSeed",
@@ -1558,13 +1948,21 @@ __all__ = [
     "DataModelUsagePayloadSeed",
     "DataModelUsageSeed",
     "DependencyAggregatePayloadSeed",
+    "DependencyAggregateRow",
     "DependencyAggregateSeed",
     "DependencyCallPayloadSeed",
+    "DependencyCallRow",
     "DependencyCallSeed",
     "EntrypointPayloadSeed",
     "EntrypointSeed",
     "EntrypointTestPayloadSeed",
     "EntrypointTestSeed",
+    "FileProfileRowModel",
+    "FunctionProfileRowModel",
+    "ModuleProfileRowModel",
+    "ProfileRowModel",
+    "RowCoercions",
+    "RowFactory",
     "SemanticRoleFunctionSeed",
     "SemanticRoleModuleSeed",
     "StaticDiagnosticsSeed",
@@ -1575,6 +1973,13 @@ __all__ = [
     "TestCatalogSeed",
     "TypednessSeed",
     "ast_metric_row",
+    "blank_behavioral_coverage_row",
+    "blank_file_profile_row",
+    "blank_function_profile_row",
+    "blank_module_profile_row",
+    "blank_row",
+    "blank_test_profile_row",
+    "compute_dep_id",
     "config_value_row",
     "coverage_line_row",
     "data_model_field_row",
@@ -1596,8 +2001,16 @@ __all__ = [
     "function_meta",
     "function_metrics_row",
     "function_profile_row",
+    "list_public_exports",
     "module_profile_row",
     "module_row",
+    "row_for",
+    "row_list_for",
+    "sample_behavioral_coverage_rows",
+    "sample_file_profile_rows",
+    "sample_function_profile_rows",
+    "sample_module_profile_rows",
+    "sample_test_profile_rows",
     "semantic_role_function_row",
     "semantic_role_module_row",
     "static_diagnostics_row",
