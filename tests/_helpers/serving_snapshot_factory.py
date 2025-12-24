@@ -1,0 +1,412 @@
+"""Serving snapshot helpers aligned with production pointer formats."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import duckdb
+
+from codeintel.build.serving.publisher import (
+    PublishServingSnapshotRequest,
+    publish_serving_snapshot,
+)
+from codeintel.config.primitives import BuildPaths
+from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.serving.search_index import build_search_documents_table
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
+from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+from tests._helpers.harnesses.serving_harness import ServingTargetHarness
+from tests._helpers.schemas import ensure_production_schemas
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+
+@dataclass(frozen=True, slots=True)
+class ServingSnapshot:
+    """Serving snapshot paths and identity metadata."""
+
+    serve_dir: Path
+    db_path: Path
+    registry_path: Path
+    schema_manifest_path: Path
+    buildspec_path: Path
+    pointer_path: Path
+    repo: str
+    commit: str
+    run_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotArtifacts:
+    """Optional artifacts and callbacks for snapshot generation."""
+
+    views: list[dict[str, object]] | None = None
+    tables: list[dict[str, object]] | None = None
+    db_setup: Callable[[Path], None] | None = None
+
+
+@dataclass(frozen=True)
+class ServingSnapshotFactory:
+    """Factory for producing serving snapshots with production pointer semantics."""
+
+    tmp_path: Path
+    serve_dir: Path | None = None
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
+
+    def demo_snapshot(
+        self,
+        *,
+        run_id: str = "run-1",
+        row_count: int = 3,
+        pointer_path: Path | None = None,
+        publish: bool = False,
+    ) -> ServingSnapshot:
+        """Create a demo snapshot matching existing fixture behavior.
+
+        Parameters
+        ----------
+        run_id
+            Run identifier to embed in the pointer.
+        row_count
+            Number of demo rows to insert.
+        pointer_path
+            Optional pointer path override.
+        publish
+            When True, publish via the production snapshot publisher.
+
+        Returns
+        -------
+        ServingSnapshot
+            Snapshot paths and identity metadata.
+        """
+        artifacts = SnapshotArtifacts(
+            views=_demo_views(),
+            tables=_demo_tables(),
+            db_setup=lambda db_path: _write_demo_db(
+                db_path,
+                row_count=row_count,
+                repo=self.repo,
+                commit=self.commit,
+            ),
+        )
+        return self.make_snapshot(
+            run_id=run_id,
+            pointer_path=pointer_path,
+            publish=publish,
+            artifacts=artifacts,
+        )
+
+    def make_snapshot(
+        self,
+        *,
+        run_id: str = "run-1",
+        pointer_path: Path | None = None,
+        artifacts: SnapshotArtifacts | None = None,
+        publish: bool = False,
+        use_production_pointer_model: bool = True,
+    ) -> ServingSnapshot:
+        """Create a serving snapshot with optional custom artifacts.
+
+        Parameters
+        ----------
+        run_id
+            Run identifier to embed in the pointer.
+        pointer_path
+            Optional pointer path override.
+        artifacts
+            Optional snapshot artifacts and seed callbacks.
+        publish
+            When True, publish via the production snapshot publisher.
+        use_production_pointer_model
+            When True, write pointer JSON via ServingSnapshotPointer.
+
+        Returns
+        -------
+        ServingSnapshot
+            Snapshot paths and identity metadata.
+        """
+        resolved_serve_dir = pointer_path.parent if pointer_path else self._default_serve_dir()
+        resolved_serve_dir.mkdir(parents=True, exist_ok=True)
+
+        db_path = resolved_serve_dir / "codeintel.duckdb"
+        registry_path = resolved_serve_dir / "semantic_registry.json"
+        schema_manifest_path = resolved_serve_dir / "schema_manifest.json"
+        buildspec_path = resolved_serve_dir / "buildspec.json"
+        resolved_pointer_path = pointer_path or resolved_serve_dir / "current.json"
+        snapshot = ServingSnapshot(
+            serve_dir=resolved_serve_dir,
+            db_path=db_path,
+            registry_path=registry_path,
+            schema_manifest_path=schema_manifest_path,
+            buildspec_path=buildspec_path,
+            pointer_path=resolved_pointer_path,
+            repo=self.repo,
+            commit=self.commit,
+            run_id=run_id,
+        )
+
+        resolved_artifacts = artifacts or SnapshotArtifacts()
+        views = resolved_artifacts.views or _demo_views()
+        tables = resolved_artifacts.tables or _demo_tables()
+        db_setup = resolved_artifacts.db_setup
+
+        if db_setup is not None:
+            db_setup(snapshot.db_path)
+        else:
+            _write_demo_db(snapshot.db_path, row_count=3, repo=self.repo, commit=self.commit)
+
+        _write_registry(snapshot.registry_path, views=views)
+        _write_schema_manifest(snapshot.schema_manifest_path, tables=tables)
+        _write_buildspec(snapshot.buildspec_path, tables=tables)
+
+        if publish:
+            _publish_snapshot(snapshot)
+            return _snapshot_from_pointer(
+                pointer_path=snapshot.pointer_path,
+                serve_dir=snapshot.serve_dir,
+            )
+
+        _write_pointer(snapshot, use_production_pointer_model=use_production_pointer_model)
+        return snapshot
+
+    @staticmethod
+    def publish_from_harness(
+        harness: ServingTargetHarness,
+        *,
+        run_id: str = "run-1",
+        keep_last: int = 2,
+    ) -> ServingSnapshot:
+        """Publish a serving snapshot via ServingTargetHarness.
+
+        Parameters
+        ----------
+        harness
+            ServingTargetHarness configured with seeded modules.
+        run_id
+            Run identifier to publish.
+        keep_last
+            Number of snapshots to retain.
+
+        Returns
+        -------
+        ServingSnapshot
+            Snapshot paths and identity metadata.
+        """
+        harness.publish_snapshot(run_id=run_id, keep_last=keep_last)
+        serve_dir = harness.harness.ctx.build_paths.build_dir / "serving"
+        pointer_path = serve_dir / "current.json"
+        return _snapshot_from_pointer(pointer_path=pointer_path, serve_dir=serve_dir)
+
+    def _default_serve_dir(self) -> Path:
+        return self.serve_dir or (self.tmp_path / "serve")
+
+
+def _write_demo_db(db_path: Path, *, row_count: int, repo: str, commit: str) -> None:
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(db_path))
+    try:
+        ensure_production_schemas(con)
+        con.execute("CREATE TABLE docs.v_demo (id INTEGER, label VARCHAR)")
+        con.execute(
+            "INSERT INTO docs.v_demo SELECT i, 'label-' || i::VARCHAR FROM range(1, ?) t(i)",
+            [row_count + 1],
+        )
+        con.execute(
+            """
+            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            ["pkg.mod", "pkg/mod.py", repo, commit, "python", None, None],
+        )
+        build_search_documents_table(con)
+        _ensure_search_documents(con, repo=repo, commit=commit)
+    finally:
+        con.close()
+
+
+def _ensure_search_documents(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> None:
+    row = con.execute("SELECT COUNT(*) FROM docs.search_documents").fetchone()
+    count = int(row[0]) if row is not None and row[0] is not None else 0
+    if count > 0:
+        return
+    con.execute(
+        """
+        INSERT INTO docs.search_documents (
+            doc_id, kind, name, module, rel_path, text, ref_goid_h128, repo, commit
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            "module:demo",
+            "module",
+            "pkg.mod",
+            "pkg.mod",
+            "pkg/mod.py",
+            "pkg.mod pkg/mod.py",
+            None,
+            repo,
+            commit,
+        ],
+    )
+
+
+def _write_registry(path: Path, *, views: list[dict[str, object]]) -> None:
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_semantic_registry(path=path, views=views)
+
+
+def _write_schema_manifest(path: Path, *, tables: list[dict[str, object]]) -> None:
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_schema_manifest(path=path, tables=tables)
+
+
+def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None:
+    artifacts = HarnessArtifacts(
+        repo_root=path.parent,
+        paths=BuildPaths.from_explicit(build_dir=path.parent),
+    )
+    artifacts.write_buildspec(
+        path=path,
+        datasets=[
+            {"table_key": table["table_key"], "schema_hash": "schema_v_demo"} for table in tables
+        ],
+    )
+
+
+def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: bool) -> None:
+    published_at = datetime.now(tz=UTC)
+    semantic_layer_version = _semantic_version(
+        snapshot.registry_path,
+        snapshot.schema_manifest_path,
+        snapshot.buildspec_path,
+    )
+    if use_production_pointer_model:
+        pointer = ServingSnapshotPointer(
+            db_path=snapshot.db_path,
+            semantic_registry_path=snapshot.registry_path,
+            schema_manifest_path=snapshot.schema_manifest_path,
+            buildspec_path=snapshot.buildspec_path,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            run_id=snapshot.run_id,
+            published_at=published_at,
+            semantic_layer_version=semantic_layer_version,
+        )
+        snapshot.pointer_path.write_text(pointer.to_json(), encoding="utf-8")
+        return
+    payload = {
+        "db_path": str(snapshot.db_path),
+        "semantic_registry_path": str(snapshot.registry_path),
+        "schema_manifest_path": str(snapshot.schema_manifest_path),
+        "buildspec_path": str(snapshot.buildspec_path),
+        "repo": snapshot.repo,
+        "commit": snapshot.commit,
+        "run_id": snapshot.run_id,
+        "published_at": published_at.isoformat(),
+        "semantic_layer_version": semantic_layer_version,
+    }
+    snapshot.pointer_path.write_text(_json_dump(payload), encoding="utf-8")
+
+
+def _semantic_version(registry_path: Path, manifest_path: Path, buildspec_path: Path) -> str:
+    hasher = hashlib.sha256()
+    for path in (registry_path, manifest_path, buildspec_path):
+        if path.is_file():
+            hasher.update(path.read_bytes())
+    return hasher.hexdigest()[:16]
+
+
+def _publish_snapshot(snapshot: ServingSnapshot) -> None:
+    config = StorageConfig(
+        db_path=snapshot.db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+    gateway = open_gateway(config)
+    try:
+        request = PublishServingSnapshotRequest(
+            run_id=snapshot.run_id,
+            serve_dir=snapshot.serve_dir,
+            semantic_registry_path=snapshot.registry_path,
+            schema_manifest_path=snapshot.schema_manifest_path,
+            buildspec_path=snapshot.buildspec_path,
+            keep_last=2,
+        )
+        publish_serving_snapshot(gateway=gateway, request=request)
+    finally:
+        gateway.close()
+
+
+def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSnapshot:
+    pointer = ServingSnapshotPointer.load(pointer_path)
+    return ServingSnapshot(
+        serve_dir=serve_dir,
+        db_path=pointer.db_path,
+        registry_path=pointer.semantic_registry_path,
+        schema_manifest_path=pointer.schema_manifest_path,
+        buildspec_path=pointer.buildspec_path,
+        pointer_path=pointer_path,
+        repo=pointer.repo,
+        commit=pointer.commit,
+        run_id=pointer.run_id,
+    )
+
+
+def _demo_views() -> list[dict[str, object]]:
+    return [
+        {
+            "id": "demo.view",
+            "kind": "view",
+            "table_key": "docs.v_demo",
+            "entity": "demo",
+            "grain": "per_row",
+            "description": "Demo view",
+            "primary_key": ["id"],
+            "columns": ["id", "label"],
+            "joins": [],
+            "defaults": {"limit": 200, "order_by": ["id"]},
+            "sensitivity": "internal",
+        }
+    ]
+
+
+def _demo_tables() -> list[dict[str, object]]:
+    return [
+        {
+            "schema": "docs",
+            "name": "v_demo",
+            "table_key": "docs.v_demo",
+            "primary_key": ["id"],
+            "indexes": [],
+            "columns": [
+                {"name": "id", "type": "INTEGER", "nullable": False},
+                {"name": "label", "type": "VARCHAR", "nullable": True},
+            ],
+        }
+    ]
+
+
+def _json_dump(payload: Mapping[str, object]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
+__all__ = ["ServingSnapshot", "ServingSnapshotFactory"]

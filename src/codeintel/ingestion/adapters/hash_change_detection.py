@@ -175,7 +175,7 @@ class HashChangeDetectionAdapter:
                 .select("rel_path", "size_bytes", "mtime_ns", "content_hash")
             )
             df = cast("pd.DataFrame", ranked.execute())
-            rows = cast("list[dict[str, object]]", df.to_dict(orient="records"))
+            rows = df.to_dict(orient="records")
         else:
             self._storage.ensure_schema("core.file_state")
             result = self._storage.execute_query(

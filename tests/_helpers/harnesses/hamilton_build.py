@@ -10,8 +10,10 @@ from typing import TYPE_CHECKING, Literal, Self
 from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
+from codeintel.build.hamilton.graph_validation import validate_graph
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import Providers, create_default_providers
+from codeintel.build.target_inventory import resolve_output_inventory
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from tests._helpers.build import TEST_BUILD_SETTINGS
@@ -21,6 +23,7 @@ from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 from tests._helpers.hamilton_manifest_priming import ManifestPriming
 from tests._helpers.scenarios import ScenarioConfig
+from tests._helpers.tooling_audit import require_tooling
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -142,6 +145,7 @@ def _prepare_harness_context(
         ctx.ensure_canonical_repo()
 
     resolved_tools = options.tools_config or ToolsConfig.default()
+    require_tooling(resolved_tools)
     resolved_providers = options.providers or create_default_providers(resolved_tools)
     resolved_build_config = options.build_config or load_build_config(ctx.repo_root)
     return ctx, written, resolved_providers, resolved_build_config
@@ -154,12 +158,12 @@ class HarnessConfig:
     repo: str
     commit: str
     profile: str | None = None
-    file_backed_db: bool = False
-    strict_contracts: bool = False
-    validate_outputs: bool = False
-    parallel_backend: str = "sequential"
-    max_workers: int | None = None
-    enable_hamilton_cache: bool = False
+    file_backed_db: bool = True
+    strict_contracts: bool = True
+    validate_outputs: bool = True
+    parallel_backend: str = "threadpool"
+    max_workers: int | None = 4
+    enable_hamilton_cache: bool = True
     cache_dir: Path | None = None
 
 
@@ -176,6 +180,36 @@ class HarnessOpenOptions:
     build_config: BuildConfig | None = None
     snapshot_variant: SnapshotVariant | None = None
     scenario: ScenarioConfig | None = None
+
+    @classmethod
+    def production_repo(
+        cls,
+        *,
+        repo_strategy: RepoStrategy = "canonical",
+        seed_packs: Sequence[SeedPack] = (),
+        snapshot_variant: SnapshotVariant | None = None,
+    ) -> HarnessOpenOptions:
+        """Return production-parity open options for repo-backed tests.
+
+        Parameters
+        ----------
+        repo_strategy
+            Repo strategy to use (canonical or writer).
+        seed_packs
+            Optional seed packs to apply.
+        snapshot_variant
+            Snapshot variant to apply.
+
+        Returns
+        -------
+        HarnessOpenOptions
+            Production-parity open options.
+        """
+        return cls(
+            repo_strategy=repo_strategy,
+            seed_packs=seed_packs,
+            snapshot_variant=snapshot_variant,
+        )
 
 
 @dataclass
@@ -207,6 +241,8 @@ class HamiltonBuildHarness:
 
         """
         cfg = harness or HarnessConfig(repo="test/repo", commit="deadbeef")
+        if cfg.enable_hamilton_cache and cfg.cache_dir is None:
+            cfg = replace(cfg, cache_dir=tmp_path / "hamilton_cache")
         resolved = options or HarnessOpenOptions()
         scenario = resolved.scenario or ScenarioConfig()
         ctx, written, resolved_providers, resolved_build_config = _prepare_harness_context(
@@ -261,7 +297,10 @@ class HamiltonBuildHarness:
             Harness bound to the provided TestContext.
         """
         cfg = harness or HarnessConfig(repo=ctx.snapshot.repo, commit=ctx.snapshot.commit)
+        if cfg.enable_hamilton_cache and cfg.cache_dir is None:
+            cfg = replace(cfg, cache_dir=ctx.build_paths.build_dir / "hamilton_cache")
         resolved_tools = tools_config or ToolsConfig.default()
+        require_tooling(resolved_tools)
         resolved_providers = providers or create_default_providers(resolved_tools)
         resolved_build_config = build_config or load_build_config(ctx.repo_root)
         env = BuildEnv(
@@ -350,6 +389,85 @@ class HamiltonBuildHarness:
         result = self.executor.run(env=self.env, targets=list(targets))
         self.last_result = result
         return result
+
+    @staticmethod
+    def validate_graph() -> None:
+        """Validate Hamilton DAG invariants for the build graph.
+
+        Raises
+        ------
+        AssertionError
+            If graph validation reports errors or warnings.
+        """
+        result = validate_graph()
+        if result.errors or result.warnings:
+            message = (
+                f"Graph validation failed: errors={len(result.errors)} "
+                f"warnings={len(result.warnings)}"
+            )
+            raise AssertionError(message)
+
+    @staticmethod
+    def assert_output_inventory_consistent() -> None:
+        """Assert DAG-derived output inventory matches declared contracts.
+
+        Raises
+        ------
+        AssertionError
+            If the resolved output inventory diverges from declared contracts.
+        """
+        try:
+            resolve_output_inventory(mode="compare", strict=True)
+        except (RuntimeError, TypeError) as exc:
+            message = f"Output inventory mismatch: {exc}"
+            raise AssertionError(message) from exc
+
+    def assert_incremental_behavior(
+        self,
+        target: str,
+        *,
+        touch_path: Path | None = None,
+        mutate_repo: Callable[[Path], None] | None = None,
+    ) -> None:
+        """Assert target skip behavior across identical and modified inputs.
+
+        Parameters
+        ----------
+        target
+            Target name to execute.
+        touch_path
+            Optional path to touch between runs.
+        mutate_repo
+            Optional callback to mutate repo state between runs.
+
+        Raises
+        ------
+        AssertionError
+            If expected skip or rerun behavior is not observed.
+        """
+        first = self.run_targets([target])
+        first_record = self.record(target, result=first)
+        if not first_record.success:
+            message = f"Expected first run of {target} to succeed"
+            raise AssertionError(message)
+
+        second = self.run_targets([target])
+        second_record = self.record(target, result=second)
+        if not second_record.skipped:
+            message = f"Expected second run of {target} to be skipped"
+            raise AssertionError(message)
+
+        if mutate_repo is not None:
+            mutate_repo(self.ctx.repo_root)
+        elif touch_path is not None:
+            touch_path.parent.mkdir(parents=True, exist_ok=True)
+            touch_path.touch()
+
+        third = self.run_targets([target])
+        third_record = self.record(target, result=third)
+        if not third_record.success:
+            message = f"Expected third run of {target} to succeed after mutation"
+            raise AssertionError(message)
 
     def build_env(self) -> BuildEnv:
         """Return the current BuildEnv for this harness.

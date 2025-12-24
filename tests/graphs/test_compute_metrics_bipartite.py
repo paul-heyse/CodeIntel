@@ -101,7 +101,7 @@ def test_bipartite_degrees_unweighted() -> None:
     expect_equal(result.degree["p1"], EXPECTED_DEGREE_TWO)
     expect_equal(result.degree["p2"], EXPECTED_DEGREE_TWO)
 
-    shared_nodes = {node for node in secondary if node.startswith("s")}
+    shared_nodes = {node for node in secondary if str(node).startswith("s")}
     unique_nodes = secondary - shared_nodes
     for node in shared_nodes:
         expect_equal(result.degree[node], EXPECTED_DEGREE_TWO)

@@ -17,7 +17,7 @@ from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.mcp_payloads import extract_payload
-from tests._helpers.serving_snapshots import setup_demo_snapshot
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -38,7 +38,9 @@ if TYPE_CHECKING:
 
 
 def _setup_test_snapshot(tmp_path: Path, *, row_count: int) -> Path:
-    snapshot = setup_demo_snapshot(tmp_path, row_count=row_count)
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot(
+        row_count=row_count
+    )
     return snapshot.pointer_path
 
 

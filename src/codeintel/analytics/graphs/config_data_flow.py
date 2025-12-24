@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import networkx as nx
+from networkx.exception import NetworkXNoPath
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
@@ -286,10 +287,10 @@ def _call_chains(
             continue
         try:
             for path in nx.all_simple_paths(graph, entry, target, cutoff=max_length):
-                paths.append([int(node) for node in path])
+                paths.append([int(str(node)) for node in path])
                 if len(paths) >= max_paths:
                     return paths
-        except nx.NetworkXNoPath:
+        except NetworkXNoPath:
             continue
     if not paths:
         paths.append([target])

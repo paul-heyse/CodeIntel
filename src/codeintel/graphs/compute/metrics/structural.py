@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import networkx as nx
+from networkx.exception import NetworkXError
 
 log = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ def compute_constraint(
         return {
             node: 0.0 if math.isnan(val) else float(val) for node, val in constraint_result.items()
         }
-    except nx.NetworkXError:
+    except NetworkXError:
         log.warning("Cannot compute constraint; returning zeros")
         return dict.fromkeys(graph.nodes(), 0.0)
 
@@ -184,7 +185,7 @@ def compute_effective_size(
     try:
         effective_size_result: dict[Any, float] = nx.effective_size(work_graph)
         return {node: float(val) for node, val in effective_size_result.items()}
-    except nx.NetworkXError:
+    except NetworkXError:
         log.warning("Cannot compute effective size; returning zeros")
         return dict.fromkeys(graph.nodes(), 0.0)
 

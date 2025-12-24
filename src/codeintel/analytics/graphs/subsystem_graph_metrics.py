@@ -29,11 +29,13 @@ if TYPE_CHECKING:
 
 
 def _dag_layers(graph: nx.DiGraph) -> dict[str, int]:
-    layers: dict[str, int] = {node: 0 for node in graph.nodes if graph.in_degree(node) == 0}
+    layers: dict[str, int] = {str(node): 0 for node in graph.nodes if graph.in_degree(node) == 0}
     for node in nx.topological_sort(graph):
-        base = layers.get(node, 0)
+        node_key = str(node)
+        base = layers.get(node_key, 0)
         for succ in graph.successors(node):
-            layers[succ] = max(layers.get(succ, 0), base + 1)
+            succ_key = str(succ)
+            layers[succ_key] = max(layers.get(succ_key, 0), base + 1)
     return layers
 
 
@@ -50,11 +52,12 @@ def _subsystem_centralities(
 def _layer_by_subsystem(subsystem_graph: nx.DiGraph) -> dict[str, int]:
     condensation = nx.condensation(subsystem_graph)
     layers = _dag_layers(condensation)
-    scc_index = condensation.graph.get("mapping", {})
+    scc_index = cast("dict[object, object]", condensation.graph.get("mapping", {}))
     layer_map: dict[str, int] = {}
     for node in subsystem_graph.nodes:
-        comp_idx = scc_index.get(node)
-        layer_map[node] = layers.get(comp_idx, 0) if comp_idx is not None else 0
+        node_key = str(node)
+        comp_idx = scc_index.get(node_key)
+        layer_map[node_key] = layers.get(str(comp_idx), 0) if comp_idx is not None else 0
     return layer_map
 
 
@@ -81,16 +84,32 @@ def _build_subsystem_graph(
     subsystem_graph.add_nodes_from({subsystem_id for subsystem_id, _ in membership_rows})
 
     for src, dst, data in import_graph.edges(data=True):
-        src_sub = module_to_subsystem.get(src)
-        dst_sub = module_to_subsystem.get(dst)
+        src_sub = module_to_subsystem.get(str(src))
+        dst_sub = module_to_subsystem.get(str(dst))
         if src_sub is None or dst_sub is None or src_sub == dst_sub:
             continue
-        weight = float(data.get(graph_ctx.betweenness_weight or "weight", 1.0))
+        weight = _coerce_edge_weight(data.get(graph_ctx.betweenness_weight or "weight", 1.0))
         if subsystem_graph.has_edge(src_sub, dst_sub):
-            subsystem_graph[src_sub][dst_sub]["weight"] += weight
+            attrs = subsystem_graph[src_sub][dst_sub]
+            attrs["weight"] = _coerce_edge_weight(attrs.get("weight")) + weight
         else:
             subsystem_graph.add_edge(src_sub, dst_sub, weight=weight)
     return subsystem_graph
+
+
+def _coerce_edge_weight(value: object) -> float:
+    if value is None:
+        return 1.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 1.0
+    return 1.0
 
 
 def build_subsystem_graph_metrics_rows(

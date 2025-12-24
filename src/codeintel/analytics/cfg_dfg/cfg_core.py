@@ -142,9 +142,11 @@ def branching_stats(graph: nx.DiGraph) -> tuple[float, int, float]:
     out_degrees = [deg for deg in out_degrees_map.values() if deg > 0]
     branching_mean = (sum(out_degrees) / len(out_degrees)) if out_degrees else 0.0
     branching_max = max(out_degrees) if out_degrees else 0
-    linear_blocks = [
-        n for n in graph.nodes if in_degrees.get(n, 0) == 1 and out_degrees_map.get(n, 0) == 1
-    ]
+    linear_blocks: list[int] = []
+    for node in graph.nodes:
+        node_idx = int(str(node))
+        if in_degrees.get(node_idx, 0) == 1 and out_degrees_map.get(node_idx, 0) == 1:
+            linear_blocks.append(node_idx)
     linear_fraction = (
         len(linear_blocks) / graph.number_of_nodes() if graph.number_of_nodes() else 0.0
     )
@@ -269,22 +271,23 @@ def cfg_fn_rows(
 
     block_rows: list[tuple[object, ...]] = []
     for node, data in ctx.graph.nodes(data=True):
+        node_idx = int(str(node))
         block_rows.append(
             (
                 ctx.fn_goid,
                 ctx.repo,
                 ctx.commit,
-                node,
+                node_idx,
                 data.get("kind") == "entry",
                 data.get("kind") == "exit",
-                centrality_data.out_deg_map.get(node, 0) > 1,
-                centrality_data.in_deg_map.get(node, 0) > 1,
-                centrality_data.dom_depth.get(node),
+                centrality_data.out_deg_map.get(node_idx, 0) > 1,
+                centrality_data.in_deg_map.get(node_idx, 0) > 1,
+                centrality_data.dom_depth.get(node_idx),
                 None,
-                centrality_data.bc.get(node, 0.0),
-                centrality_data.closeness.get(node, 0.0),
-                centrality_data.eig.get(node, 0.0),
-                node in loop_nodes_set,
+                centrality_data.bc.get(node_idx, 0.0),
+                centrality_data.closeness.get(node_idx, 0.0),
+                centrality_data.eig.get(node_idx, 0.0),
+                node_idx in loop_nodes_set,
                 False,
                 None,
                 ctx.now,

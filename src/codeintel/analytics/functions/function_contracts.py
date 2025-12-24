@@ -15,7 +15,7 @@ from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Hashable, Iterable, Mapping
 
     import pandas as pd
 
@@ -176,7 +176,7 @@ def _load_docstrings(
         .select("rel_path", "qualname", "params", "returns")
         .execute(),
     )
-    rows: Iterable[dict[str, object]] = df.to_dict(orient="records")
+    rows = _normalize_records(df.to_dict(orient="records"))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
     for row in rows:
         rel_path = row["rel_path"]
@@ -200,7 +200,7 @@ def _load_function_types(
         .select("function_goid_h128", "return_type", "param_types")
         .execute(),
     )
-    rows: Iterable[dict[str, object]] = df.to_dict(orient="records")
+    rows = _normalize_records(df.to_dict(orient="records"))
     mapping: dict[int, dict[str, object]] = {}
     for row in rows:
         goid = normalize_decimal_id(row["function_goid_h128"])
@@ -211,6 +211,10 @@ def _load_function_types(
             "param_types": _coerce_json(row["param_types"]) or {},
         }
     return mapping
+
+
+def _normalize_records(records: Iterable[Mapping[Hashable, object]]) -> list[dict[str, object]]:
+    return [{str(key): value for key, value in record.items()} for record in records]
 
 
 def _coerce_json(value: object) -> object:

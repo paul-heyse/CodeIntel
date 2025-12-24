@@ -423,8 +423,7 @@ class GraphRuntimeDouble(GraphRuntimeLike):
         if graph is None:
             return None
         if self.copy_graphs and hasattr(graph, "copy"):
-            copied = graph.copy()
-            return cast("nx.Graph", copied)
+            return graph.copy()
         return graph
 
     def _load_call_graph_from_db(self) -> nx.DiGraph | None:

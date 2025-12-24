@@ -78,7 +78,7 @@ class ProvisionOptions:
     include_typing: bool = True
     include_coverage: bool = True
     build_graph_metrics: bool = False
-    file_backed: bool = False
+    file_backed: bool = True
     db_path: Path | None = None
     include_seed_goid: bool = True
 

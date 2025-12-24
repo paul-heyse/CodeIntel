@@ -11,6 +11,7 @@ from pandera.errors import SchemaErrors
 
 from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 from codeintel.core.schemas.json_schema_gen import pandera_to_json_schema
+from codeintel.core.schemas.row_models import normalize_row_value
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -137,8 +138,11 @@ def validate_rows(
         df = pd.DataFrame(rows, columns=column_names)
 
     validated = validate_df(table_key, df, mode="strict")
-    normalized_df = validated.where(pd.notna(validated), None)
-    return normalized_df.to_dict(orient="records")
+    records = validated.to_dict(orient="records")
+    return [
+        {str(key): normalize_row_value(value) for key, value in record.items()}
+        for record in records
+    ]
 
 
 def dataset_json_schema(table_key: str) -> dict[str, Any] | None:

@@ -123,6 +123,7 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "provision_docs_export_ready",
         "provision_gateway_with_repo",
         "provision_graph_ready_repo",
+        "provision_hamilton_repo",
         "provisioned_gateway",
     ),
     "tests._helpers.orchestration.seeding": (
@@ -166,7 +167,12 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
         "SUBSYSTEM_ANALYTICS_PACK",
         "SUBSYSTEM_HANDLER_PACK",
     ),
-    "tests._helpers.tool_sandbox": ("ToolSandbox",),
+    "tests._helpers.tooling_audit": (
+        "ToolCall",
+        "ToolCallLog",
+        "assert_tool_called",
+        "require_tooling",
+    ),
     "tests._helpers.tool_payloads": (
         "coverage_json_payload",
         "pytest_report_payload",
@@ -179,7 +185,6 @@ _EXPORT_TO_MODULE: Final[dict[str, str]] = {
 }
 
 _ALL_EXPORTS: Final[tuple[str, ...]] = tuple(sorted(_EXPORT_TO_MODULE))
-__all__ = []
 
 if TYPE_CHECKING:
     from tests._helpers.build import (
@@ -283,6 +288,7 @@ if TYPE_CHECKING:
         provision_docs_export_ready,
         provision_gateway_with_repo,
         provision_graph_ready_repo,
+        provision_hamilton_repo,
         provisioned_gateway,
     )
     from tests._helpers.orchestration.repo_registry import (
@@ -330,7 +336,12 @@ if TYPE_CHECKING:
         pytest_report_payload,
         scip_json_payload,
     )
-    from tests._helpers.tool_sandbox import ToolSandbox
+    from tests._helpers.tooling_audit import (
+        ToolCall,
+        ToolCallLog,
+        assert_tool_called,
+        require_tooling,
+    )
 
     _TYPE_CHECKING_EXPORTS = (
         CallgraphFixtureOptions,
@@ -409,6 +420,7 @@ if TYPE_CHECKING:
         provision_docs_export_ready,
         provision_gateway_with_repo,
         provision_graph_ready_repo,
+        provision_hamilton_repo,
         provisioned_gateway,
         provisioning_gateway_options,
         sample_manifest,
@@ -438,7 +450,10 @@ if TYPE_CHECKING:
         write_sample_repo,
         write_scoped_paths_fixture,
         write_tree,
-        ToolSandbox,
+        ToolCall,
+        ToolCallLog,
+        assert_tool_called,
+        require_tooling,
         build_repo_fixture,
         coverage_json_payload,
         get_repo_fixture,

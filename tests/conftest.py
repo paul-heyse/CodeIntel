@@ -38,7 +38,8 @@ from tests._helpers.orchestration.provisioning import (
 )
 from tests._helpers.schemas import ensure_storage_contract_catalog
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
-from tests._helpers.tool_sandbox import ToolSandbox
+from tests._helpers.tooling_audit import ToolCallLog
+from tests._helpers.tooling_audit import require_tooling as _require_tooling
 
 ensure_storage_contract_catalog()
 
@@ -226,15 +227,23 @@ def serving_target_harness(tmp_path: Path) -> Iterator[ServingTargetHarness]:
 
 
 @pytest.fixture
-def tool_sandbox(tmp_path: Path) -> ToolSandbox:
-    """Provide a tool sandbox with a stubbed bin directory.
+def tool_call_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ToolCallLog:
+    """Provide a per-test tool invocation log file.
 
     Returns
     -------
-    ToolSandbox
-        Sandbox instance with an isolated bin directory.
+    ToolCallLog
+        Log wrapper for recorded tool calls.
     """
-    return ToolSandbox.create(tmp_path)
+    path = tmp_path / "tool_calls.jsonl"
+    monkeypatch.setenv("CODEINTEL_TOOL_CALL_LOG", str(path))
+    return ToolCallLog(path)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def require_tooling() -> None:
+    """Fail fast if required tool binaries are missing."""
+    _require_tooling()
 
 
 @pytest.fixture

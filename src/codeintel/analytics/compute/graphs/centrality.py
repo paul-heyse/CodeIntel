@@ -64,6 +64,21 @@ def _betweenness_sample(graph: nx.Graph, ctx: GraphContext) -> int | None:
     return ctx.betweenness_sample
 
 
+def _coerce_edge_weight(value: object) -> int:
+    if value is None:
+        return 1
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return 1
+    return 1
+
+
 def neighbor_stats(graph: nx.DiGraph, *, weight: str | None = None) -> NeighborStats:
     """Accumulate neighbor sets and weighted edge counts.
 
@@ -86,7 +101,7 @@ def neighbor_stats(graph: nx.DiGraph, *, weight: str | None = None) -> NeighborS
 
     for src, dst, data in graph.edges(data=True):
         key = "weight" if weight is None else weight
-        weight_val = int(data.get(key, 1)) if key is not None else 1
+        weight_val = _coerce_edge_weight(data.get(key, 1)) if key is not None else 1
         out_neighbors.setdefault(src, set()).add(dst)
         in_neighbors.setdefault(dst, set()).add(src)
         out_counts[src] = out_counts.get(src, 0) + weight_val

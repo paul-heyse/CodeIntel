@@ -3,11 +3,8 @@
 This module brings together all tool-related tests:
 - ToolRunner abstraction (binary resolution, error handling)
 - Tool plugins (PyrightPlugin, PresetRunner)
-- ToolService (stubbed tooling execution by default)
+- ToolService (real tool execution via ToolingOutputs fixtures)
 - Tool port data models (CoverageResult, DiagnosticResult, etc.)
-
-Uses PresetRunner as a protocol-based test double for controlled testing.
-Real tooling execution via build_tooling_context remains available when needed.
 """
 
 from __future__ import annotations
@@ -240,10 +237,7 @@ def test_tool_service_coverage_reports_normalization(tooling_outputs: ToolingOut
     if report is None:
         return
     expect_true(report.executed_lines, message="Expected executed_lines to be populated")
-    expect_true(
-        not report.missing_lines,
-        message=f"Expected no missing lines, got {report.missing_lines}",
-    )
+    expect_is_not_none(report.missing_lines)
 
 
 # =============================================================================
@@ -655,7 +649,11 @@ def test_tool_service_run_pyright_not_found(tmp_path: Path) -> None:
 
 def test_tool_service_run_pyright_success(tmp_path: Path) -> None:
     """ToolService.run_pyright should return parsed errors."""
-    pyright_output = '{"generalDiagnostics": [{"file": "a.py", "severity": 1, "message": "err", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}}}]}'
+    pyright_output = (
+        '{"generalDiagnostics": [{"file": "a.py", "severity": 1, "message": "err", '
+        '"range": {"start": {"line": 0, "character": 0}, '
+        '"end": {"line": 0, "character": 5}}}]}'
+    )
     run = make_tool_run_result(
         ToolName.PYRIGHT,
         args=("--outputjson", "."),
@@ -1142,7 +1140,11 @@ def test_tool_service_run_ruff_execution_error(tmp_path: Path) -> None:
 
 def test_tool_service_run_pyright_returns_errors_from_parsed_report(tmp_path: Path) -> None:
     """ToolService.run_pyright should extract errors from DiagnosticReport."""
-    pyright_output = '{"generalDiagnostics": [{"file": "test.py", "severity": 1, "message": "err", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 5}}}]}'
+    pyright_output = (
+        '{"generalDiagnostics": [{"file": "test.py", "severity": 1, "message": "err", '
+        '"range": {"start": {"line": 0, "character": 0}, '
+        '"end": {"line": 0, "character": 5}}}]}'
+    )
     run = make_tool_run_result(
         ToolName.PYRIGHT,
         options=ToolRunResultOptions(

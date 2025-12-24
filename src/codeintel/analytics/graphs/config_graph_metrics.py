@@ -22,6 +22,8 @@ from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_
 from codeintel.graphs.runtime.context import GraphContextSpec, resolve_graph_context
 
 if TYPE_CHECKING:
+    from collections.abc import Hashable
+
     import networkx as nx
 
     from codeintel.analytics.compute.graphs import (
@@ -113,7 +115,7 @@ def _projection_rows(
         {
             "repo": context.repo,
             "commit": context.commit,
-            node_id_col: node[1],
+            node_id_col: _projection_node_id(node),
             "degree": metrics.degree.get(node, 0),
             "weighted_degree": metrics.weighted_degree.get(node, 0.0),
             "betweenness": metrics.betweenness.get(node, 0.0),
@@ -127,9 +129,9 @@ def _projection_rows(
         {
             "repo": context.repo,
             "commit": context.commit,
-            src_col: src[1],
-            dst_col: dst[1],
-            "weight": float(data.get("weight", 1.0)),
+            src_col: _projection_node_id(src),
+            dst_col: _projection_node_id(dst),
+            "weight": _coerce_edge_weight(data.get("weight", 1.0)),
             "created_at": context.created_at,
         }
         for src, dst, data in proj.edges(data=True)
@@ -144,10 +146,31 @@ def _projection_rows(
     )
 
 
+def _projection_node_id(node: object) -> str:
+    if isinstance(node, tuple) and len(node) > 1:
+        return str(node[1])
+    return str(node)
+
+
+def _coerce_edge_weight(value: object) -> float:
+    if value is None:
+        return 1.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 1.0
+    return 1.0
+
+
 def _projection_payload(
     *,
     graph: nx.Graph,
-    nodes: set[tuple[str, str]],
+    nodes: set[Hashable],
     context: ProjectionContext,
     label: str,
     targets: ProjectionTargets,

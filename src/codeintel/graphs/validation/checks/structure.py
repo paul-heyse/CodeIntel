@@ -8,10 +8,12 @@ Check classes implement CheckProtocol from core/validation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, cast
+from collections.abc import Hashable
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import networkx as nx
 
+from codeintel.core.data_models.ids import as_int
 from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.graphs.validation.findings import (
     CALL_SCC_MIN,
@@ -340,7 +342,9 @@ def _call_graph_findings_impl(
                 "severity": "warning",
                 "path": None,
                 "detail": f"{len(sccs)} recursion cluster(s), largest size {len(largest)}",
-                "context": {"largest_cluster": sorted(largest)[: SAMPLE_LIMIT * 4]},
+                "context": {
+                    "largest_cluster": sorted(str(node) for node in largest)[: SAMPLE_LIMIT * 4]
+                },
             }
         )
 
@@ -387,7 +391,7 @@ def _import_graph_findings_impl(
 
 
 def _import_cycle_findings_impl(
-    sccs: list[set[str]], repo: str, commit: str, log: logging.Logger
+    sccs: list[set[Hashable]], repo: str, commit: str, log: logging.Logger
 ) -> list[dict[str, object]]:
     """Check for import cycles (implementation).
 
@@ -413,7 +417,9 @@ def _import_cycle_findings_impl(
                 "severity": "warning",
                 "path": None,
                 "detail": f"{len(large_sccs)} import cycles, largest size {len(largest)}",
-                "context": {"largest_cycle": sorted(largest)[: SAMPLE_LIMIT * 4]},
+                "context": {
+                    "largest_cycle": sorted(str(node) for node in largest)[: SAMPLE_LIMIT * 4]
+                },
             }
         )
 
@@ -423,7 +429,7 @@ def _import_cycle_findings_impl(
         if len(comp) > 1 and len({str(module).split(".")[0] for module in comp}) > 1
     ]
     if cross_package_cycles:
-        sample_cycle = sorted(cross_package_cycles[0])[: SAMPLE_LIMIT * 4]
+        sample_cycle = sorted(str(node) for node in cross_package_cycles[0])[: SAMPLE_LIMIT * 4]
         log.warning(
             "Validation: %d import cycle(s) cross package boundaries", len(cross_package_cycles)
         )
@@ -453,13 +459,13 @@ def _import_hub_findings_impl(
     """
     findings: list[dict[str, object]] = []
     degree_threshold = hub_threshold(import_graph.number_of_nodes())
-    degree_map = {}
+    degree_map: dict[str, int] = {}
     for node in import_graph.nodes:
         out_deg_raw = import_graph.out_degree(node)
         in_deg_raw = import_graph.in_degree(node)
-        out_deg = int(cast("int", out_deg_raw))
-        in_deg = int(cast("int", in_deg_raw))
-        degree_map[node] = out_deg + in_deg
+        out_deg = int(out_deg_raw)
+        in_deg = int(in_deg_raw)
+        degree_map[str(node)] = out_deg + in_deg
     hubs = [node for node, deg in degree_map.items() if deg > degree_threshold]
     if hubs:
         sample = ", ".join(sorted(hubs)[:SAMPLE_LIMIT])
@@ -488,13 +494,14 @@ def _import_upward_findings_impl(
     list[dict[str, object]]
         Findings for upward import anomalies.
     """
-    upward_edges = [
-        (src, dst)
-        for src, dst in import_graph.edges
-        if import_graph.nodes.get(src, {}).get("layer") is not None
-        and import_graph.nodes.get(dst, {}).get("layer") is not None
-        and import_graph.nodes[src]["layer"] > import_graph.nodes[dst]["layer"]
-    ]
+    upward_edges = []
+    for src, dst in import_graph.edges:
+        src_layer = as_int(import_graph.nodes.get(src, {}).get("layer"))
+        dst_layer = as_int(import_graph.nodes.get(dst, {}).get("layer"))
+        if src_layer is None or dst_layer is None:
+            continue
+        if src_layer > dst_layer:
+            upward_edges.append((src, dst))
     if not upward_edges:
         return []
     sample_edges = [f"{s}->{d}" for s, d in upward_edges[:SAMPLE_LIMIT]]
@@ -529,10 +536,11 @@ def _import_bridge_findings_impl(
     betweenness: dict[str, float] = {}
     if import_graph.number_of_nodes() > 0:
         sample_size = min(200, import_graph.number_of_nodes())
-        betweenness = nx.betweenness_centrality(
+        raw_betweenness = nx.betweenness_centrality(
             import_graph,
             k=sample_size if sample_size < import_graph.number_of_nodes() else None,
         )
+        betweenness = {str(node): float(score) for node, score in raw_betweenness.items()}
     if not betweenness:
         return []
     max_score = max(betweenness.values())
@@ -612,7 +620,14 @@ def _config_key_findings_impl(
     cfg_bipartite_any: Any = cfg_bipartite
     degs = {node: int(cfg_bipartite_any.degree(node)) for node in keys}
     key_threshold = max(CONFIG_KEY_MIN_THRESHOLD, int(len(keys) * 0.05))
-    high_keys = [str(k[1]) for k, deg in degs.items() if deg > key_threshold]
+    high_keys: list[str] = []
+    for node, deg in degs.items():
+        if deg <= key_threshold:
+            continue
+        if isinstance(node, tuple) and len(node) > 1:
+            high_keys.append(str(node[1]))
+        else:
+            high_keys.append(str(node))
     if not high_keys:
         return []
     sample = ", ".join(high_keys[:SAMPLE_LIMIT])

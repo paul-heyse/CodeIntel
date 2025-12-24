@@ -11,7 +11,7 @@ from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.settings import ServingSettings
 from tests._helpers.assertions import assert_http_success
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
-from tests._helpers.serving_snapshots import setup_demo_snapshot
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,7 +21,7 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
     """Serve semantic endpoints from a snapshot and query results."""
     serve_dir = tmp_path / "serve"
     serve_dir.mkdir(parents=True, exist_ok=True)
-    setup_demo_snapshot(tmp_path, pointer_path=serve_dir / "current.json")
+    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
 
     settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
     app = create_serving_app(settings=settings, mount_mcp=False)
@@ -52,7 +52,7 @@ def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -> None:
     """Bad filters map to 400 rather than a server error."""
     serve_dir = tmp_path / "serve"
     serve_dir.mkdir(parents=True, exist_ok=True)
-    setup_demo_snapshot(tmp_path, pointer_path=serve_dir / "current.json")
+    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
 
     settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
     app = create_serving_app(settings=settings, mount_mcp=False)
@@ -74,7 +74,7 @@ def test_semantic_routes_support_correlation_id(tmp_path: Path) -> None:
     """All semantic routes include correlation IDs."""
     serve_dir = tmp_path / "serve"
     serve_dir.mkdir(parents=True, exist_ok=True)
-    setup_demo_snapshot(tmp_path, pointer_path=serve_dir / "current.json")
+    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
 
     settings = ServingSettings(serve_dir=serve_dir, pool_size=1, poll_interval_s=0.01)
     app = create_serving_app(settings=settings, mount_mcp=False)
@@ -97,7 +97,7 @@ def test_semantic_routes_support_optional_api_key(tmp_path: Path) -> None:
     """When an API key is configured, routes require it."""
     serve_dir = tmp_path / "serve"
     serve_dir.mkdir(parents=True, exist_ok=True)
-    setup_demo_snapshot(tmp_path, pointer_path=serve_dir / "current.json")
+    ServingSnapshotFactory(tmp_path).demo_snapshot(pointer_path=serve_dir / "current.json")
 
     settings = ServingSettings(
         serve_dir=serve_dir,

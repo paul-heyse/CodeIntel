@@ -285,7 +285,7 @@ def test_modularity_single_community() -> None:
 def test_modularity_optimal_partition() -> None:
     """Well-separated communities have high modularity."""
     graph = bridged_cliques_graph(3, 3)
-    communities = {node: 0 if node.startswith("a") else 1 for node in graph.nodes()}
+    communities = {node: 0 if str(node).startswith("a") else 1 for node in graph.nodes()}
     result = compute_modularity(graph, communities)
 
     expect_true(result > 0)

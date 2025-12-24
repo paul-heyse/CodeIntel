@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
+from uuid import uuid4
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.run_records import compute_target_input_hash, options_hash_for_target
 from codeintel.build.hashing import InputHashOptions
-from codeintel.core.build_manifest import OutputManifest
+from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -186,6 +187,64 @@ class ManifestPriming:
             change_delta=change_delta,
         )
         return self.prime_manifest(spec)
+
+    def prime_target_as_upstream_success(
+        self,
+        target: str,
+        *,
+        file_state_hash: str | None = None,
+        row_count: int | None = None,
+        change_delta: dict[str, object] | None = None,
+        run_id: str | None = None,
+    ) -> OutputManifest:
+        """Prime a target manifest and a successful run record.
+
+        Parameters
+        ----------
+        target
+            Target name to prime.
+        file_state_hash
+            Optional file state hash for input hash computation.
+        row_count
+            Optional row count to store on the manifest.
+        change_delta
+            Optional change delta payload to store.
+        run_id
+            Optional run ID; defaults to a generated UUID.
+
+        Returns
+        -------
+        OutputManifest
+            Saved manifest record for the target.
+        """
+        manifest = self.prime_target_manifest(
+            target,
+            file_state_hash=file_state_hash,
+            row_count=row_count,
+            change_delta=change_delta,
+        )
+        env = self.harness.build_env()
+        started_at = manifest.computed_at
+        resolved_run_id = run_id or f"primed-{target}-{uuid4().hex[:8]}"
+        env.gateway.build.start_run(
+            BuildRunRecord(
+                run_id=resolved_run_id,
+                repo=env.repo,
+                commit=env.commit,
+                requested_targets=(target,),
+                computed_targets=(),
+                skipped_targets=(),
+                started_at=started_at,
+                status="running",
+            )
+        )
+        env.gateway.build.complete_run(
+            run_id=resolved_run_id,
+            status="succeeded",
+            computed_targets=(target,),
+            skipped_targets=(),
+        )
+        return manifest
 
 
 __all__ = ["ManifestPriming"]

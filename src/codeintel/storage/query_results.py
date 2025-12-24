@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Protocol, cast
 import ibis.expr.types as it
 import pandas as pd
 
+from codeintel.core.schemas.row_models import normalize_row_value
+
 if TYPE_CHECKING:
     from typing import SupportsFloat, SupportsInt
 
@@ -243,12 +245,16 @@ def records_from_dataframe(frame: pd.DataFrame) -> list[dict[str, object]]:
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    sanitized = frame.astype("object").where(pd.notna(frame), None)
+    sanitized = frame.astype("object")
     for column in sanitized.columns:
         if "goid" not in str(column).lower():
             continue
         sanitized[column] = sanitized[column].map(_normalize_goid_value)
-    return sanitized.to_dict(orient="records")
+    records = sanitized.to_dict(orient="records")
+    return [
+        {str(key): normalize_row_value(value) for key, value in record.items()}
+        for record in records
+    ]
 
 
 def _normalize_goid_value(value: object) -> object:

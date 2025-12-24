@@ -177,7 +177,8 @@ def add_graph_weight(graph: nx.Graph, left: str, right: str, weight: float) -> N
     if left == right or weight <= 0:
         return
     if graph.has_edge(left, right):
-        graph[left][right]["weight"] += weight
+        attrs = graph[left][right]
+        attrs["weight"] = _coerce_edge_weight(attrs.get("weight")) + weight
     else:
         graph.add_edge(left, right, weight=weight)
 
@@ -198,9 +199,11 @@ def graph_to_adjacency(graph: nx.Graph) -> dict[str, dict[str, float]]:
     """
     adjacency: dict[str, dict[str, float]] = defaultdict(dict)
     for src, dst, data in graph.edges(data=True):
-        weight = float(data.get("weight", 1.0))
-        adjacency[src][dst] = weight
-        adjacency[dst][src] = weight
+        weight = _coerce_edge_weight(data.get("weight", 1.0))
+        src_key = str(src)
+        dst_key = str(dst)
+        adjacency[src_key][dst_key] = weight
+        adjacency[dst_key][src_key] = weight
     return adjacency
 
 
@@ -238,12 +241,12 @@ def label_propagation_nx(
         Module -> label mapping after propagation.
     """
     labels: dict[str, str] = {}
-    for node in graph.nodes:
-        fallback = node if isinstance(node, str) else str(node)
+    nodes = [str(node) for node in graph.nodes]
+    for node in nodes:
         seed = seed_labels.get(node)
-        labels[node] = seed if seed is not None else fallback
+        labels[node] = seed if seed is not None else node
     frozen: set[str] = set(seed_labels)
-    ordered_nodes = sorted(graph.nodes)
+    ordered_nodes = sorted(nodes)
 
     for _ in range(max_iters):
         changed = False
@@ -252,10 +255,11 @@ def label_propagation_nx(
                 continue
             weights: dict[str, float] = defaultdict(float)
             for neighbor, data in graph[node].items():
-                neighbor_label = labels.get(neighbor)
+                neighbor_key = str(neighbor)
+                neighbor_label = labels.get(neighbor_key)
                 if neighbor_label is None:
                     continue
-                weights[neighbor_label] += float(data.get("weight", 1.0))
+                weights[neighbor_label] += _coerce_edge_weight(data.get("weight", 1.0))
             if not weights:
                 continue
             best_label = max(weights.items(), key=lambda item: (item[1], item[0]))[0]
@@ -265,6 +269,21 @@ def label_propagation_nx(
         if not changed:
             break
     return labels
+
+
+def _coerce_edge_weight(value: object) -> float:
+    if value is None:
+        return 1.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 1.0
+    return 1.0
 
 
 def reassign_small_clusters(

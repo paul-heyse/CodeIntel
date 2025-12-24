@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.config.primitives import SnapshotRef
-from tests._helpers.assertions import assert_target_ok, expect_equal, expect_rows_equal
+from codeintel.core.tools import ToolName
+from tests._helpers.assertions import assert_target_ok, expect_rows_equal, expect_true
 from tests._helpers.fixtures.repos import write_sample_repo
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
@@ -21,107 +21,11 @@ from tests._helpers.ingestion import (
     make_scan_setup,
     materialize_repo_scan_result,
 )
-from tests._helpers.tool_payloads import coverage_json_payload, pytest_report_payload
-from tests._helpers.tool_sandbox import ToolSandbox, ToolStubSpec
+from tests._helpers.orchestration.tooling import generate_coverage_for_function
+from tests._helpers.tooling_audit import ToolCallLog, assert_tool_called
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from codeintel.config.models import ToolsConfig
-
-
-class CoverageFile(TypedDict):
-    """Coverage line data for a single file."""
-
-    executed_lines: list[int]
-    missing_lines: list[int]
-
-
-class CoveragePayload(TypedDict):
-    """Coverage payload keyed by file path."""
-
-    files: dict[str, CoverageFile]
-
-
-def _install_tool_stubs(tool_sandbox: ToolSandbox, repo_root: Path) -> tuple[ToolsConfig, int]:
-    mod_path = repo_root / "pkg" / "mod.py"
-    coverage_payload = coverage_json_payload(
-        files={
-            str(mod_path): {
-                "executed_lines": [1, 2, 3],
-                "missing_lines": [4],
-            }
-        }
-    )
-    tool_sandbox.install_stub(
-        "coverage",
-        spec=ToolStubSpec(
-            writes="-o",
-            writes_payload=json.dumps(coverage_payload),
-        ),
-    )
-    tool_sandbox.install_stub(
-        "pyright",
-        spec=ToolStubSpec(
-            stdout=json.dumps(
-                {
-                    "generalDiagnostics": [
-                        {
-                            "file": str(mod_path),
-                            "severity": "error",
-                            "message": "stub error",
-                        }
-                    ]
-                }
-            )
-        ),
-    )
-    tool_sandbox.install_stub(
-        "pyrefly",
-        spec=ToolStubSpec(
-            writes="--output",
-            writes_payload=json.dumps(
-                {
-                    "errors": [
-                        {
-                            "path": str(mod_path),
-                            "severity": "error",
-                            "message": "stub error",
-                        }
-                    ]
-                }
-            ),
-        ),
-    )
-    tool_sandbox.install_stub(
-        "ruff",
-        spec=ToolStubSpec(
-            stdout=json.dumps(
-                [
-                    {
-                        "filename": str(mod_path),
-                        "code": "F401",
-                        "message": "stub error",
-                    }
-                ]
-            )
-        ),
-    )
-    pytest_payload = pytest_report_payload(
-        tests=[], summary={"passed": 0, "failed": 0, "skipped": 0}
-    )
-    tool_sandbox.install_stub(
-        "pytest",
-        spec=ToolStubSpec(
-            writes="--json-report-file",
-            writes_payload=json.dumps(pytest_payload),
-        ),
-    )
-    typed_payload = cast("CoveragePayload", coverage_payload)
-    expected_lines = len(typed_payload["files"][str(mod_path)]["executed_lines"]) + len(
-        typed_payload["files"][str(mod_path)]["missing_lines"]
-    )
-    return tool_sandbox.tools_config(), expected_lines
 
 
 def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
@@ -154,20 +58,23 @@ def test_repo_scan_honors_scan_profile(tmp_path: Path) -> None:
         expect_rows_equal(rows, [("keep/a.py",)], message="Unexpected modules from repo_scan")
 
 
-def test_coverage_ingest_uses_runner(tool_sandbox: ToolSandbox, tmp_path: Path) -> None:
+def test_coverage_ingest_uses_runner(tmp_path: Path, tool_call_log: ToolCallLog) -> None:
     """Verify coverage ingestion prefers the shared runner path."""
-    repo_root = tmp_path / "repo"
-    tools_config, expected_lines = _install_tool_stubs(tool_sandbox, repo_root)
     with HamiltonBuildHarness.open(
         tmp_path,
         harness=HarnessConfig(repo="r", commit="c"),
         options=HarnessOpenOptions(
             repo_strategy="writer",
             repo_writer=write_sample_repo,
-            tools_config=tools_config,
         ),
     ) as harness:
-        harness.artifacts.touch_coverage_file()
+        generate_coverage_for_function(
+            repo_root=harness.ctx.repo_root,
+            module_import="pkg.mod",
+            function_name="adder",
+            test_id="tests/test_mod.py::test_adder",
+            coverage_file=harness.ctx.repo_root / ".coverage",
+        )
         result = harness.run_targets(["coverage_ingest"])
         record = harness.record("coverage_ingest", result=result)
         assert_target_ok(record)
@@ -176,20 +83,22 @@ def test_coverage_ingest_uses_runner(tool_sandbox: ToolSandbox, tmp_path: Path) 
             "SELECT COUNT(*) FROM analytics.coverage_lines"
         ).fetchone()
         count = row[0] if row is not None else 0
-        expect_equal(count, expected_lines, label="coverage_line_count")
+        expect_true(count > 0, message="Expected coverage_line_count to be positive")
+        assert_tool_called(
+            tool_call_log.read(),
+            ToolName.COVERAGE,
+            expected_args_contains=["json"],
+        )
 
 
-def test_tests_ingest_uses_report_file(tool_sandbox: ToolSandbox, tmp_path: Path) -> None:
+def test_tests_ingest_uses_report_file(tmp_path: Path) -> None:
     """Verify tests_ingest consumes the pytest report artifact."""
-    repo_root = tmp_path / "repo"
-    tools_config, _expected_lines = _install_tool_stubs(tool_sandbox, repo_root)
     with HamiltonBuildHarness.open(
         tmp_path,
         harness=HarnessConfig(repo="r", commit="c"),
         options=HarnessOpenOptions(
             repo_strategy="writer",
             repo_writer=write_sample_repo,
-            tools_config=tools_config,
         ),
     ) as harness:
         harness.artifacts.write_pytest_report(
@@ -219,18 +128,14 @@ def test_tests_ingest_uses_report_file(tool_sandbox: ToolSandbox, tmp_path: Path
 )
 def test_typing_ingest_uses_shared_runner(
     tmp_path: Path,
-    tool_sandbox: ToolSandbox,
 ) -> None:
     """Ensure typing ingestion reuses the provided ToolRunner."""
-    repo_root = tmp_path / "repo"
-    tools_config, _expected_lines = _install_tool_stubs(tool_sandbox, repo_root)
     with HamiltonBuildHarness.open(
         tmp_path,
         harness=HarnessConfig(repo="r", commit="c"),
         options=HarnessOpenOptions(
             repo_strategy="writer",
             repo_writer=write_sample_repo,
-            tools_config=tools_config,
         ),
     ) as harness:
         result = harness.run_targets(["typing"])

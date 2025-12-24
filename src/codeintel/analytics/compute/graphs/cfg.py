@@ -200,7 +200,7 @@ def build_cfg_graph(
         graph.add_edge(src, dst, edge_type=edge_type)
 
     if entry_idx is None and graph.nodes:
-        entry_idx = min(graph.nodes)
+        entry_idx = min(int(str(node)) for node in graph.nodes)
     if exit_idx is None:
         exits = [n for n, deg in out_deg_map.items() if deg == 0]
         exit_idx = exits[0] if exits else (entry_idx if entry_idx is not None else 0)

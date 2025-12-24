@@ -8,9 +8,10 @@ architectural hotspots and coupling signals.
 from __future__ import annotations
 
 import logging
+from collections.abc import Hashable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx
 
@@ -76,7 +77,7 @@ class ModuleMetricOptions:
 class GraphMetricFilters:
     """Optional filters for graph metric node sets."""
 
-    function_goids: set[int] | None = None
+    function_goids: set[Hashable] | None = None
     modules: set[str] | None = None
     subsystems: set[str] | None = None
 
@@ -111,7 +112,7 @@ class GraphMetricFilters:
         """
         if not self.modules:
             return graph
-        return nx.subgraph(graph, self.modules).copy()
+        return cast("nx.DiGraph", nx.subgraph(graph, self.modules).copy())
 
     def filter_subsystem_graph(self, graph: nx.DiGraph) -> nx.DiGraph:
         """
@@ -124,7 +125,7 @@ class GraphMetricFilters:
         """
         if not self.subsystems:
             return graph
-        return nx.subgraph(graph, self.subsystems).copy()
+        return cast("nx.DiGraph", nx.subgraph(graph, self.subsystems).copy())
 
     def filter_subsystem_memberships(
         self, memberships: list[tuple[str, str]]
@@ -178,7 +179,7 @@ def build_graph_metric_filters(
     """
     func_repo = FunctionRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
     module_repo = ModuleRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit)
-    function_goids = set(func_repo.list_function_goids())
+    function_goids = cast("set[Hashable]", set(func_repo.list_function_goids()))
     modules = set(module_repo.list_modules())
     subsystem_repo = SubsystemRepository(
         gateway=gateway, repo=snapshot.repo, commit=snapshot.commit
@@ -297,7 +298,7 @@ def _build_function_graph_metrics_rows(
             stats=stats,
             centrality=centrality,
             components=components,
-            graph_nodes=sorted(graph.nodes),
+            graph_nodes=sorted(str(node) for node in graph.nodes),
             created_at=created_at,
         )
     )
@@ -323,7 +324,7 @@ def _build_module_graph_metrics_rows(
     filters = options.filters or GraphMetricFilters()
     graph = filters.filter_import_graph(runtime.ensure_import_graph())
     symbol_edges = load_symbol_module_edges(gateway, options.module_by_path)
-    modules = set(graph.nodes) | symbol_edges[0]
+    modules = {str(node) for node in graph.nodes} | {str(node) for node in symbol_edges[0]}
     modules.update(
         ModuleRepository(gateway=gateway, repo=snapshot.repo, commit=snapshot.commit).list_modules()
     )

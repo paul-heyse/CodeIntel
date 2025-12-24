@@ -125,21 +125,31 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
     graph, phi_edges, symbol_count = build_dfg_graph(inputs.edges)
     dfg_in_deg = degree_dict(graph, direction="in")
     dfg_out_deg = degree_dict(graph, direction="out")
-    dfg_phi_in = dict.fromkeys(graph.nodes, 0)
-    dfg_phi_out = dict.fromkeys(graph.nodes, 0)
+    dfg_phi_in = {int(str(node)): 0 for node in graph.nodes}
+    dfg_phi_out = {int(str(node)): 0 for node in graph.nodes}
     for src, dst, data in graph.edges(data=True):
+        src_idx = int(str(src))
+        dst_idx = int(str(dst))
         if data.get("via_phi"):
-            dfg_phi_out[src] += 1
-            dfg_phi_in[dst] += 1
+            dfg_phi_out[src_idx] += 1
+            dfg_phi_in[dst_idx] += 1
 
-    components_count, sccs, has_cycles = dfg_component_stats(graph)
+    component_stats = dfg_component_stats(graph)
     path_lengths = dfg_path_lengths(graph)
-    centrality_ctx = replace(
-        inputs.graph_ctx,
-        betweenness_sample=min(inputs.graph_ctx.betweenness_sample, MAX_DFG_CENTRALITY_SAMPLE),
-        eigen_max_iter=min(inputs.graph_ctx.eigen_max_iter, MAX_CFG_EIGEN_SAMPLE),
+    centralities = dfg_centralities(
+        graph,
+        ctx=replace(
+            inputs.graph_ctx,
+            betweenness_sample=min(
+                inputs.graph_ctx.betweenness_sample,
+                MAX_DFG_CENTRALITY_SAMPLE,
+            ),
+            eigen_max_iter=min(
+                inputs.graph_ctx.eigen_max_iter,
+                MAX_CFG_EIGEN_SAMPLE,
+            ),
+        ),
     )
-    centralities = dfg_centralities(graph, ctx=centrality_ctx)
 
     return DfgFnContext(
         repo=inputs.repo,
@@ -151,9 +161,9 @@ def build_dfg_context(inputs: DfgInputs) -> DfgFnContext | None:
         graph=graph,
         phi_edges=phi_edges,
         symbol_count=symbol_count,
-        components_count=components_count,
-        sccs=sccs,
-        has_cycles=has_cycles,
+        components_count=component_stats[0],
+        sccs=component_stats[1],
+        has_cycles=component_stats[2],
         longest_chain=path_lengths[0],
         avg_spl=path_lengths[1],
         dfg_in_deg=dfg_in_deg,
@@ -221,26 +231,29 @@ def dfg_block_rows(ctx: DfgFnContext) -> list[tuple[object, ...]]:
         Rows matching analytics.dfg_block_metrics schema.
     """
     loop_nodes = {node for comp in ctx.sccs if len(comp) > 1 for node in comp}
-    return [
-        (
-            _to_decimal(ctx.fn_goid),
-            ctx.repo,
-            ctx.commit,
-            node,
-            ctx.dfg_in_deg.get(node, 0),
-            ctx.dfg_out_deg.get(node, 0),
-            ctx.dfg_phi_in.get(node, 0),
-            ctx.dfg_phi_out.get(node, 0),
-            ctx.bc.get(node, 0.0),
-            None,
-            ctx.eig.get(node, 0.0),
-            node in loop_nodes,
-            False,
-            ctx.now,
-            1,
+    rows: list[tuple[object, ...]] = []
+    for node in ctx.graph.nodes:
+        node_idx = int(str(node))
+        rows.append(
+            (
+                _to_decimal(ctx.fn_goid),
+                ctx.repo,
+                ctx.commit,
+                node_idx,
+                ctx.dfg_in_deg.get(node_idx, 0),
+                ctx.dfg_out_deg.get(node_idx, 0),
+                ctx.dfg_phi_in.get(node_idx, 0),
+                ctx.dfg_phi_out.get(node_idx, 0),
+                ctx.bc.get(node_idx, 0.0),
+                None,
+                ctx.eig.get(node_idx, 0.0),
+                node_idx in loop_nodes,
+                False,
+                ctx.now,
+                1,
+            )
         )
-        for node in ctx.graph.nodes
-    ]
+    return rows
 
 
 def dfg_ext_row(ctx: DfgFnContext) -> tuple[object, ...]:

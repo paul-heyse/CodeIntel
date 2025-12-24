@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from codeintel.core.data_models.ids import normalize_decimal_id
 from tests._helpers.assertions.expectation_assertions import expect_equal
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.schemas import ensure_production_schemas
@@ -41,6 +42,6 @@ def test_bulk_insert_normalizes_numpy_scalars(tmp_path: Path) -> None:
         expect_equal(inserted, 1)
         records = gateway.ibis.table("analytics.numpy_insert_test").to_pandas()
         expect_equal(len(records), 1)
-        expect_equal(int(records.loc[0, "id"]), 1)
+        expect_equal(normalize_decimal_id(records.loc[0, "id"]), 1)
     finally:
         gateway.close()

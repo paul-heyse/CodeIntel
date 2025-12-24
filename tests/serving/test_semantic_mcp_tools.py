@@ -22,7 +22,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.mcp_payloads import extract_payload
-from tests._helpers.serving_snapshots import setup_demo_snapshot
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,7 +41,7 @@ def _setup_test_snapshot(tmp_path: Path) -> Path:
     Path
         Path to the pointer JSON file.
     """
-    snapshot = setup_demo_snapshot(tmp_path)
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot()
     return snapshot.pointer_path
 
 

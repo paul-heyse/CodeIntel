@@ -20,7 +20,7 @@ from tests._helpers.configs.provisioning_config import (
     RepoContext,
     provisioning_gateway_options,
 )
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 __all__ = [
     "DEFAULT_VARIANT",
@@ -36,6 +36,7 @@ __all__ = [
     "ProvisioningSetup",
     "RepoContext",
     "SnapshotSpec",
+    "SnapshotVariant",
     "SpanSnapshot",
     "SpanTestEnv",
     "provisioning_gateway_options",

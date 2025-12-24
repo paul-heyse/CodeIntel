@@ -13,7 +13,7 @@ from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_true
-from tests._helpers.serving_snapshots import setup_demo_snapshot
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 @pytest.mark.anyio
 async def test_mcp_middleware_logging_smoke(tmp_path: Path) -> None:
     """Ensure middleware stack supports list_tools + call_tool without crashing."""
-    pointer_path = setup_demo_snapshot(tmp_path).pointer_path
+    pointer_path = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot().pointer_path
 
     manager = ServingDBManager(
         pointer_path=pointer_path,

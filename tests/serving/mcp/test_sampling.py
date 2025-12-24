@@ -15,7 +15,7 @@ from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.mcp_payloads import extract_payload
-from tests._helpers.serving_snapshots import setup_demo_snapshot
+from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 def _setup_demo_snapshot(tmp_path: Path) -> Path:
-    snapshot = setup_demo_snapshot(tmp_path, row_count=30)
+    snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot(row_count=30)
     return snapshot.pointer_path
 
 

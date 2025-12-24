@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, cast
 from codeintel.analytics.compute.graphs import (
     projection_metrics,
 )
+from codeintel.core.data_models.ids import as_int
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -92,9 +93,11 @@ def _build_test_rows(
         _, test_id = node
         risk_weighted = 0.0
         for neighbor in graph.neighbors(node):
-            _, func_id = neighbor
-            weight = float(graph[node][neighbor].get("weight", 0.0))
-            risk_weighted += weight * ctx.risk_by_goid.get(int(func_id), 0.0)
+            _, func_id = cast("tuple[str, object]", neighbor)
+            weight = _coerce_edge_weight(graph[node][neighbor].get("weight", 0.0))
+            func_id_value = as_int(func_id)
+            if func_id_value is not None:
+                risk_weighted += weight * ctx.risk_by_goid.get(func_id_value, 0.0)
         rows.append(
             (
                 test_id,
@@ -112,6 +115,21 @@ def _build_test_rows(
             )
         )
     return rows
+
+
+def _coerce_edge_weight(value: object) -> float:
+    if value is None:
+        return 0.0
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0
 
 
 def _build_function_rows(

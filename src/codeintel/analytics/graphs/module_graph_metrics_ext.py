@@ -53,11 +53,11 @@ class ModuleGraphSlices:
     centralities: CentralityBundle
     structure: StructuralMetrics
     components: ComponentBundle
-    degree_map: dict[object, int]
+    degree_map: dict[str, int]
     degree_cutoff: int
 
 
-def _rich_club_cutoff(degree_map: dict[object, int]) -> int:
+def _rich_club_cutoff(degree_map: dict[str, int]) -> int:
     """Compute the degree cutoff for rich-club membership.
 
     Parameters
@@ -131,7 +131,7 @@ def _module_metric_slices(views: GraphViews, ctx: GraphContext) -> ModuleGraphSl
     )
     components = component_metadata(views.simple_graph)
     degree_view = cast("Iterable[tuple[object, float]]", views.simple_graph.degree)
-    degree_map: dict[object, int] = {node: int(deg) for node, deg in degree_view}
+    degree_map: dict[str, int] = {str(node): int(deg) for node, deg in degree_view}
     return ModuleGraphSlices(
         centralities=centralities,
         structure=structure,
@@ -186,11 +186,12 @@ def _module_metric_rows(
         "scc_id": slices.components.scc_id,
         "scc_size": slices.components.scc_size,
     }
+    nodes = [str(node) for node in views.simple_graph.nodes]
     rich_club = {
         module: slices.degree_map.get(module, 0) >= slices.degree_cutoff
         if slices.degree_cutoff > 0
         else False
-        for module in views.simple_graph.nodes
+        for module in nodes
     }
     inputs = ModuleMetricExtInputs(
         repo=repo,
@@ -200,7 +201,7 @@ def _module_metric_rows(
         structure=structure,
         components=components,
         rich_club=rich_club,
-        nodes=sorted(views.simple_graph.nodes),
+        nodes=sorted(nodes),
     )
     return build_module_metric_ext_rows(inputs)
 

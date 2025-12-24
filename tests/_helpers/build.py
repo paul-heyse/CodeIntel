@@ -16,6 +16,7 @@ from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
 from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
+from codeintel.core.runtime.loader import load_runtime_settings
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
@@ -33,9 +34,13 @@ if TYPE_CHECKING:
 
     from codeintel.config.primitives import BuildPaths, SnapshotRef
 
+_RUNTIME_BUILD_SETTINGS = load_runtime_settings().build
 TEST_BUILD_SETTINGS = BuildSettings(
     engine_version="test",
-    export_audit=ExportAuditSettings(),
+    export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
+    output_inventory_source=_RUNTIME_BUILD_SETTINGS.output_inventory_source,
+    output_inventory_strict=_RUNTIME_BUILD_SETTINGS.output_inventory_strict,
+    support_nodes_source=_RUNTIME_BUILD_SETTINGS.support_nodes_source,
 )
 
 
@@ -52,7 +57,13 @@ def make_build_settings(engine_version: str = "test") -> BuildSettings:
     BuildSettings
         Build settings for tests.
     """
-    return BuildSettings(engine_version=engine_version, export_audit=ExportAuditSettings())
+    return BuildSettings(
+        engine_version=engine_version,
+        export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
+        output_inventory_source=_RUNTIME_BUILD_SETTINGS.output_inventory_source,
+        output_inventory_strict=_RUNTIME_BUILD_SETTINGS.output_inventory_strict,
+        support_nodes_source=_RUNTIME_BUILD_SETTINGS.support_nodes_source,
+    )
 
 
 def make_snapshot(

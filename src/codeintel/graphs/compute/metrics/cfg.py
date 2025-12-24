@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 import networkx as nx
+from networkx.exception import NetworkXError
 
 NodeT = TypeVar("NodeT", bound=Hashable)
 
@@ -63,7 +64,7 @@ def compute_dominator_tree(
 
     try:
         idoms = nx.immediate_dominators(graph, entry)
-    except nx.NetworkXError as exc:
+    except NetworkXError as exc:
         log.warning("Dominator computation failed: %s", exc)
         return {}
 
@@ -102,7 +103,7 @@ def compute_dominance_frontier(
 
     try:
         frontiers = nx.dominance_frontiers(graph, entry)
-    except nx.NetworkXError as exc:
+    except NetworkXError as exc:
         log.warning("Dominance frontier computation failed: %s", exc)
         return {}
 
@@ -174,7 +175,7 @@ def find_natural_loop_headers(
 
     try:
         idoms = nx.immediate_dominators(graph, entry)
-    except nx.NetworkXError:
+    except NetworkXError:
         return set()
 
     dominates: dict[Hashable, set[Hashable]] = {node: set() for node in graph.nodes()}
