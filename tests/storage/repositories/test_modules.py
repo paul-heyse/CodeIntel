@@ -10,7 +10,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_none,
 )
-from tests._helpers.builders import ModuleRow, insert_rows
+from tests._helpers.fixtures.rows import ModuleRow, insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import TestContext

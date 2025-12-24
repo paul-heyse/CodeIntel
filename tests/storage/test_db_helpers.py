@@ -17,7 +17,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_length,
 )
-from tests._helpers.builders import ModuleRow, RepoMapRow, insert_rows
+from tests._helpers.fixtures.rows import ModuleRow, RepoMapRow, insert_rows
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway

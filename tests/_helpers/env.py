@@ -6,6 +6,7 @@ instances with production-parity defaults (schema, views).
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 from tests._helpers.configs.provisioning_config import ProvisioningConfig
@@ -15,10 +16,6 @@ from tests._helpers.context import (
 )
 from tests._helpers.context import (
     build_test_gateway as _build_test_gateway,
-)
-from tests._helpers.orchestration.provisioning import (
-    provision_gateway_with_repo,
-    provision_ingested_repo,
 )
 
 if TYPE_CHECKING:
@@ -71,6 +68,10 @@ def create_provisioned_test_env(
     TestContext
         Provisioned context with gateway, snapshot, and build paths.
     """
+    provisioning = importlib.import_module("tests._helpers.orchestration.provisioning")
+    provision_gateway_with_repo = provisioning.provision_gateway_with_repo
+    provision_ingested_repo = provisioning.provision_ingested_repo
+
     cfg = config or ProvisioningConfig()
     variant = cfg.snapshot_variant
     if cfg.run_ingestion:

@@ -1204,6 +1204,12 @@ goid_rows.append(GoidRow(**row_data))
 - Update `docs/tests_refinement/helpers_consolidation_plan.md` to reflect the final module map.
 - Remove references to legacy helpers from `docs/tests_refinement/helpers_wider_deployment.md`.
 
+### Phase 6 Completion Notes
+- Legacy modules removed (defaults/coverage/rows/graphs/repo shims, graph_factories, repo_writers).
+- Canonical surfaces: `tests/_helpers/fixtures/*` + `tests/_helpers/scenarios.py`.
+- Public exports: `tests/_helpers/__init__.py` and `tests/_helpers/seeds/__init__.py` now map to
+  canonical fixtures and packs only.
+
 ---
 
 ## Phase 6 File-by-File Before/After Snippets

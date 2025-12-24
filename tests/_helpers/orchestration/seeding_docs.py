@@ -15,7 +15,8 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import Warehouse
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import (
+from tests._helpers.fakes import utcnow
+from tests._helpers.fixtures.rows import (
     AstMetricsRow,
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -37,10 +38,9 @@ from tests._helpers.builders import (
     TestCatalogRow,
     TestCoverageEdgeRow,
     TypednessRow,
+    function_profile_row,
     insert_rows,
 )
-from tests._helpers.fakes import utcnow
-from tests._helpers.fixtures.rows import function_profile_row
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:

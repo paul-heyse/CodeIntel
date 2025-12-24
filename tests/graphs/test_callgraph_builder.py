@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true
-from tests._helpers.builders import insert_symbol_use_edges
+from tests._helpers.fixtures.rows import insert_symbol_use_edges
 from tests._helpers.fixtures.snapshots import SnapshotVariant
 
 if TYPE_CHECKING:

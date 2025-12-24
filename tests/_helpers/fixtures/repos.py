@@ -79,7 +79,7 @@ class RepoFixtureSpec:
     """Specification for writing repo fixtures."""
 
     kind: RepoFixtureKind
-    repo_root: Path
+    repo_root: Path | None = None
     files: Mapping[str, str] | None = None
     module_map: Mapping[str, str] | None = None
 
@@ -101,20 +101,26 @@ class RepoFixtureWriter:
         ValueError
             If the fixture kind is unsupported.
         """
+        if spec.repo_root is None:
+            message = "RepoFixtureSpec.repo_root is required for writing fixtures"
+            raise ValueError(message)
         if spec.kind == "canonical":
             fixture = write_canonical_repo(spec.repo_root)
-            return RepoFixture(
-                files=tuple(spec.repo_root / path for path in fixture.module_paths.values()),
-                module_map=fixture.module_paths,
+            return _with_module_map_override(
+                spec,
+                RepoFixture(
+                    files=tuple(spec.repo_root / path for path in fixture.module_paths.values()),
+                    module_map=fixture.module_paths,
+                ),
             )
         if spec.kind == "callgraph_alias":
-            return _write_callgraph_alias_repo(spec.repo_root)
+            return _with_module_map_override(spec, _write_callgraph_alias_repo(spec.repo_root))
         if spec.kind == "graph_metrics":
-            return _write_graph_metrics_repo(spec.repo_root)
+            return _with_module_map_override(spec, _write_graph_metrics_repo(spec.repo_root))
         if spec.kind == "sample":
-            return _write_sample_repo(spec.repo_root)
+            return _with_module_map_override(spec, _write_sample_repo(spec.repo_root))
         if spec.kind == "custom":
-            return write_tree(spec.repo_root, spec.files or {})
+            return _with_module_map_override(spec, write_tree(spec.repo_root, spec.files or {}))
         message = f"Unsupported repo fixture kind: {spec.kind}"
         raise ValueError(message)
 
@@ -128,6 +134,12 @@ class RepoFixtureWriter:
             Written fixture metadata.
         """
         return write_tree(root, files)
+
+
+def _with_module_map_override(spec: RepoFixtureSpec, fixture: RepoFixture) -> RepoFixture:
+    if spec.module_map is None:
+        return fixture
+    return RepoFixture(files=fixture.files, module_map=dict(spec.module_map))
 
 
 def write_tree(root: Path, files: Mapping[str, str]) -> RepoFixture:

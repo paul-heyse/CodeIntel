@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import (
+from tests._helpers.fakes import utcnow
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     CFGBlockRow,
@@ -28,7 +29,6 @@ from tests._helpers.builders import (
     SymbolUseEdgeRow,
     insert_rows,
 )
-from tests._helpers.fakes import utcnow
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:

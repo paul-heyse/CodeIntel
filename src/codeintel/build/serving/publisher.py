@@ -209,6 +209,10 @@ def publish_serving_snapshot(
     snap_buildspec = snap_dir / "buildspec.json"
     shutil.copy2(request.buildspec_path, snap_buildspec)
 
+    env_artifact = request.buildspec_path.parent / "environment.json"
+    if env_artifact.is_file():
+        shutil.copy2(env_artifact, snap_dir / "environment.json")
+
     version = _compute_semantic_version(snap_registry, snap_manifest, snap_buildspec)
 
     manifest = ServingSnapshotManifest(

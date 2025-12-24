@@ -16,12 +16,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CallGraphNodeRow,
     FunctionTypesRow,
     GoidRow,
     ModuleRow,
     RepoMapRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
@@ -291,7 +292,8 @@ class DataModelsPack:
     def _seed_repo_map(ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed the core.repo_map table."""
         rows = [
-            RepoMapRow(
+            dataclass_row(
+                RepoMapRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 modules=module_map,
@@ -312,7 +314,7 @@ class DataModelsPack:
             Module map keyed by module name to repo-relative paths.
         """
         rows = [
-            ModuleRow(module=module, path=path, repo=ctx.repo, commit=ctx.commit)
+            dataclass_row(ModuleRow, module=module, path=path, repo=ctx.repo, commit=ctx.commit)
             for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
@@ -343,7 +345,8 @@ class DataModelsPack:
         """
         rows = [
             # Classes
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_USER_CLASS,
                 urn=f"goid:{ctx.repo}/{MOD_MODELS_PATH}#{MOD_MODELS_FQN}.User",
                 repo=ctx.repo,
@@ -356,7 +359,8 @@ class DataModelsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_POST_CLASS,
                 urn=f"goid:{ctx.repo}/{MOD_MODELS_PATH}#{MOD_MODELS_FQN}.Post",
                 repo=ctx.repo,
@@ -369,7 +373,8 @@ class DataModelsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_USER_PAYLOAD_CLASS,
                 urn=f"goid:{ctx.repo}/{MOD_MODELS_PATH}#{MOD_MODELS_FQN}.UserPayload",
                 repo=ctx.repo,
@@ -383,7 +388,8 @@ class DataModelsPack:
                 created_at=now,
             ),
             # Functions
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_CREATE_USER,
                 urn=f"goid:{ctx.repo}/{MOD_DB_PATH}#{MOD_DB_FQN}.create_user",
                 repo=ctx.repo,
@@ -396,7 +402,8 @@ class DataModelsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_FETCH_USER,
                 urn=f"goid:{ctx.repo}/{MOD_DB_PATH}#{MOD_DB_FQN}.fetch_user",
                 repo=ctx.repo,
@@ -409,7 +416,8 @@ class DataModelsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_SERIALIZE_POST,
                 urn=(
                     f"goid:{ctx.repo}/{MOD_API_HANDLERS_PATH}#{MOD_API_HANDLERS_FQN}.serialize_post"
@@ -424,7 +432,8 @@ class DataModelsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_SERIALIZE_PAYLOAD,
                 urn=f"goid:{ctx.repo}/{MOD_API_HANDLERS_PATH}#"
                 f"{MOD_API_HANDLERS_FQN}.serialize_payload",
@@ -438,7 +447,8 @@ class DataModelsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=GOID_CONFIG_CHECKS,
                 urn=f"goid:{ctx.repo}/{MOD_CONFIG_PATH}#{MOD_CONFIG_FQN}.config_checks",
                 repo=ctx.repo,
@@ -475,7 +485,8 @@ class DataModelsPack:
         ]
 
         rows = [
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=goid,
                 language="python",
                 kind=kind,
@@ -547,7 +558,8 @@ class DataModelsPack:
             qualname = f"{module_fqn}.{func_name}"
             total_params = len(params)
             rows.append(
-                FunctionTypesRow(
+                dataclass_row(
+                    FunctionTypesRow,
                     function_goid_h128=goid,
                     urn=f"goid:{ctx.repo}/{rel_path}#{qualname}",
                     repo=ctx.repo,

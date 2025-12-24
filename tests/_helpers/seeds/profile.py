@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     AstMetricsRow,
     CallGraphEdgeRow,
     CallGraphNodeRow,
@@ -29,6 +29,7 @@ from tests._helpers.builders import (
     TestCatalogRow,
     TestCoverageEdgeRow,
     TypednessRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
@@ -162,7 +163,8 @@ class ProfilePack:
     def _seed_repo_map(self, ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed the core.repo_map table."""
         rows = [
-            RepoMapRow(
+            dataclass_row(
+                RepoMapRow,
                 repo=self.repo,
                 commit=self.commit,
                 modules=module_map,
@@ -174,7 +176,8 @@ class ProfilePack:
     def _seed_modules(self, ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed the core.modules table."""
         rows = [
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module=module,
                 path=path,
                 repo=self.repo,
@@ -196,7 +199,8 @@ class ProfilePack:
     def _seed_ast_metrics(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.ast_metrics table."""
         rows = [
-            AstMetricsRow(
+            dataclass_row(
+                AstMetricsRow,
                 rel_path=self.rel_path,
                 node_count=10,
                 function_count=1,
@@ -212,7 +216,8 @@ class ProfilePack:
     def _seed_hotspots(self, ctx: TestContext) -> None:
         """Seed the analytics.hotspots table."""
         rows = [
-            HotspotRow(
+            dataclass_row(
+                HotspotRow,
                 rel_path=self.rel_path,
                 commit_count=1,
                 author_count=1,
@@ -227,7 +232,8 @@ class ProfilePack:
     def _seed_typedness(self, ctx: TestContext) -> None:
         """Seed the analytics.typedness table."""
         rows = [
-            TypednessRow(
+            dataclass_row(
+                TypednessRow,
                 repo=self.repo,
                 commit=self.commit,
                 path=self.rel_path,
@@ -242,7 +248,8 @@ class ProfilePack:
     def _seed_static_diagnostics(self, ctx: TestContext) -> None:
         """Seed the analytics.static_diagnostics table."""
         rows = [
-            StaticDiagnosticsRow(
+            dataclass_row(
+                StaticDiagnosticsRow,
                 repo=self.repo,
                 commit=self.commit,
                 rel_path=self.rel_path,
@@ -258,7 +265,8 @@ class ProfilePack:
     def _seed_docstrings(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.docstrings table."""
         rows = [
-            DocstringRow(
+            dataclass_row(
+                DocstringRow,
                 repo=self.repo,
                 commit=self.commit,
                 rel_path=self.rel_path,
@@ -283,7 +291,8 @@ class ProfilePack:
     def _seed_risk_factors(self, ctx: TestContext) -> None:
         """Seed the analytics.goid_risk_factors table."""
         rows = [
-            RiskFactorRow(
+            dataclass_row(
+                RiskFactorRow,
                 function_goid_h128=DEFAULT_GOID,
                 repo=self.repo,
                 commit=self.commit,
@@ -300,7 +309,8 @@ class ProfilePack:
     def _seed_function_metrics(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.function_metrics table."""
         rows = [
-            FunctionMetricsRow(
+            dataclass_row(
+                FunctionMetricsRow,
                 function_goid_h128=DEFAULT_GOID,
                 urn=f"{DEFAULT_URN_PREFIX}{DEFAULT_QUALNAME}",
                 repo=self.repo,
@@ -337,7 +347,8 @@ class ProfilePack:
     def _seed_function_types(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.function_types table."""
         rows = [
-            FunctionTypesRow(
+            dataclass_row(
+                FunctionTypesRow,
                 function_goid_h128=DEFAULT_GOID,
                 urn=f"{DEFAULT_URN_PREFIX}{DEFAULT_QUALNAME}",
                 repo=self.repo,
@@ -370,7 +381,8 @@ class ProfilePack:
     def _seed_coverage_functions(self, ctx: TestContext, now: datetime) -> None:
         """Seed the coverage.functions table."""
         rows = [
-            CoverageFunctionRow(
+            dataclass_row(
+                CoverageFunctionRow,
                 function_goid_h128=DEFAULT_GOID,
                 urn=f"{DEFAULT_URN_PREFIX}{DEFAULT_QUALNAME}",
                 repo=self.repo,
@@ -394,7 +406,8 @@ class ProfilePack:
     def _seed_test_catalog(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.test_catalog table."""
         rows = [
-            TestCatalogRow(
+            dataclass_row(
+                TestCatalogRow,
                 test_id="pkg/mod.py::test_func",
                 test_goid_h128=TEST_GOID,
                 urn=f"{DEFAULT_URN_PREFIX}pkg.mod.test_func",
@@ -416,7 +429,8 @@ class ProfilePack:
     def _seed_test_coverage_edges(self, ctx: TestContext, now: datetime) -> None:
         """Seed the analytics.test_coverage_edges table."""
         rows = [
-            TestCoverageEdgeRow(
+            dataclass_row(
+                TestCoverageEdgeRow,
                 test_id="pkg/mod.py::test_func",
                 test_goid_h128=TEST_GOID,
                 function_goid_h128=DEFAULT_GOID,
@@ -437,7 +451,8 @@ class ProfilePack:
     def _seed_call_graph_nodes(self, ctx: TestContext) -> None:
         """Seed the graph.call_graph_nodes table."""
         rows = [
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=DEFAULT_GOID,
                 language="python",
                 kind="function",
@@ -445,7 +460,8 @@ class ProfilePack:
                 is_public=True,
                 rel_path=self.rel_path,
             ),
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=TEST_GOID,
                 language="python",
                 kind="function",
@@ -453,7 +469,8 @@ class ProfilePack:
                 is_public=False,
                 rel_path=self.rel_path,
             ),
-            CallGraphNodeRow(
+            dataclass_row(
+                CallGraphNodeRow,
                 goid_h128=CALLER_GOID,
                 language="python",
                 kind="function",
@@ -467,7 +484,8 @@ class ProfilePack:
     def _seed_call_graph_edges(self, ctx: TestContext) -> None:
         """Seed the graph.call_graph_edges table."""
         rows = [
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=self.repo,
                 commit=self.commit,
                 caller_goid_h128=DEFAULT_GOID,
@@ -480,7 +498,8 @@ class ProfilePack:
                 resolved_via="local_name",
                 confidence=1.0,
             ),
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=self.repo,
                 commit=self.commit,
                 caller_goid_h128=CALLER_GOID,
@@ -499,7 +518,8 @@ class ProfilePack:
     def _seed_import_graph_edges(self, ctx: TestContext) -> None:
         """Seed the graph.import_graph_edges table."""
         rows = [
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=self.repo,
                 commit=self.commit,
                 src_module=self.module,

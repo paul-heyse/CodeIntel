@@ -16,7 +16,9 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
-from tests._helpers.builders import (
+from tests._helpers.factories import make_snapshot
+from tests._helpers.fixtures.graphs import chain_graph, empty_digraph
+from tests._helpers.fixtures.rows import (
     CallGraphNodeRow,
     ConfigValueRow,
     ModuleRow,
@@ -25,8 +27,6 @@ from tests._helpers.builders import (
     insert_rows,
     insert_symbol_use_edges,
 )
-from tests._helpers.factories import make_snapshot
-from tests._helpers.fixtures.graphs import chain_graph, empty_digraph
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 from tests._helpers.seeds import CONFIG_PACK, COVERAGE_PACK, GRAPH_PACK, SYMBOL_PACK
 

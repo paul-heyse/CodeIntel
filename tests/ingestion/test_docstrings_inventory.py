@@ -14,8 +14,8 @@ from tests._helpers.assertions import (
     assert_target_ok,
     format_missing_extra,
 )
-from tests._helpers.builders import RepoMapRow, insert_rows
 from tests._helpers.fixtures.repos import write_tree
+from tests._helpers.fixtures.rows import RepoMapRow, insert_rows
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,

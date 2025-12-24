@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageSeedConfig
+from tests._helpers.fixtures.rows import GoidRow, ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.fixtures.snapshots import SnapshotVariant
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 

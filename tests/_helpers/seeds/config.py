@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import ConfigValueRow, insert_rows
+from tests._helpers.fixtures.rows import ConfigValueRow, dataclass_row, insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     MOD_A_FQN,
@@ -81,7 +81,8 @@ class ConfigPack:
             Test context with gateway.
         """
         rows = [
-            ConfigValueRow(
+            dataclass_row(
+                ConfigValueRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 config_path=CONFIG_PYPROJECT,
@@ -91,7 +92,8 @@ class ConfigPack:
                 reference_modules=[MOD_A_FQN, MOD_B_FQN],
                 reference_count=2,
             ),
-            ConfigValueRow(
+            dataclass_row(
+                ConfigValueRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 config_path=CONFIG_PYPROJECT,
@@ -101,7 +103,8 @@ class ConfigPack:
                 reference_modules=[],
                 reference_count=0,
             ),
-            ConfigValueRow(
+            dataclass_row(
+                ConfigValueRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 config_path=CONFIG_SETTINGS,
@@ -111,7 +114,8 @@ class ConfigPack:
                 reference_modules=[MOD_A_FQN],
                 reference_count=1,
             ),
-            ConfigValueRow(
+            dataclass_row(
+                ConfigValueRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 config_path=CONFIG_SETTINGS,
@@ -126,7 +130,8 @@ class ConfigPack:
         if self.include_env:
             rows.extend(
                 [
-                    ConfigValueRow(
+                    dataclass_row(
+                        ConfigValueRow,
                         repo=ctx.repo,
                         commit=ctx.commit,
                         config_path=CONFIG_ENV,
@@ -136,7 +141,8 @@ class ConfigPack:
                         reference_modules=[MOD_A_FQN, MOD_B_FQN, MOD_UTIL_FQN],
                         reference_count=3,
                     ),
-                    ConfigValueRow(
+                    dataclass_row(
+                        ConfigValueRow,
                         repo=ctx.repo,
                         commit=ctx.commit,
                         config_path=CONFIG_ENV,

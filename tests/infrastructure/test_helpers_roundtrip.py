@@ -14,7 +14,7 @@ from tests._helpers import (
     provisioned_gateway,
 )
 from tests._helpers.assertions import assert_columns_not_null, assert_table_has_rows
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     ConfigValueRow,

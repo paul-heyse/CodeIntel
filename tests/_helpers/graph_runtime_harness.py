@@ -23,15 +23,6 @@ from codeintel.analytics.parsing.ast_cache import FunctionAst
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.catalog import FunctionCatalog
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions
-from tests._helpers.builders import (
-    ConfigValueRow,
-    ModuleRow,
-    SubsystemModuleRow,
-    SymbolEdgeOptions,
-    insert_rows,
-    insert_symbol_use_edges,
-    make_symbol_use_edge_row,
-)
 from tests._helpers.catalogs import seed_goids_for_snapshot
 from tests._helpers.fakes.graph_runtime import (
     CountingGraphEngineAdapter,
@@ -56,7 +47,16 @@ from tests._helpers.fixtures.repos import (
     MOD_UTIL_PATH,
     write_canonical_repo,
 )
-from tests._helpers.fixtures.rows import function_meta
+from tests._helpers.fixtures.rows import (
+    ConfigValueRow,
+    ModuleRow,
+    SubsystemModuleRow,
+    SymbolEdgeOptions,
+    function_meta,
+    insert_rows,
+    insert_symbol_use_edges,
+    make_symbol_use_edge_row,
+)
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.seeds import AST_METRICS_PACK, CORE_PACK
 

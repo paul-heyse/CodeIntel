@@ -176,7 +176,7 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
     tuple[str, ...]
         Tuple of module paths for the current snapshot.
     """
-    if t__modules.status != "succeeded":
+    if t__modules.status == "failed":
         return ()
     return tuple(get_module_paths_from_env(env))
 

@@ -14,11 +14,12 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from tests._helpers.assertions import ModulesAssertions
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     GoidRow,
     ModuleRow,
     RepoMapRow,
     TestCatalogRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.fixtures.snapshots import SPAN_VARIANT
@@ -109,7 +110,8 @@ class SpanPack:
     def _seed_repo_map(ctx: TestContext, module_map: dict[str, str]) -> None:
         """Seed the core.repo_map table."""
         rows = [
-            RepoMapRow(
+            dataclass_row(
+                RepoMapRow,
                 repo=SPAN_REPO,
                 commit=SPAN_COMMIT,
                 modules=module_map,
@@ -130,7 +132,7 @@ class SpanPack:
             Module map keyed by module name to repo-relative paths.
         """
         rows = [
-            ModuleRow(module=module, path=path, repo=SPAN_REPO, commit=SPAN_COMMIT)
+            dataclass_row(ModuleRow, module=module, path=path, repo=SPAN_REPO, commit=SPAN_COMMIT)
             for module, path in sorted(module_map.items())
         ]
         insert_rows(ctx.gateway, rows)
@@ -157,7 +159,8 @@ class SpanPack:
             Timestamp for created_at fields.
         """
         rows = [
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=self.caller_goid,
                 urn=f"urn:{SPAN_MOD_B_FQN}.caller",
                 repo=SPAN_REPO,
@@ -185,7 +188,8 @@ class SpanPack:
             Timestamp for created_at fields.
         """
         rows = [
-            TestCatalogRow(
+            dataclass_row(
+                TestCatalogRow,
                 test_id=SPAN_TEST_ID,
                 repo=SPAN_REPO,
                 commit=SPAN_COMMIT,

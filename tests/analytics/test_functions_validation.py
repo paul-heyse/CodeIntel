@@ -13,7 +13,7 @@ from codeintel.analytics.functions.metrics import (
 )
 from codeintel.config.primitives import SnapshotRef
 from tests._helpers import TestScenario
-from tests._helpers.builders import GoidRow, insert_rows
+from tests._helpers.fixtures.rows import GoidRow, insert_rows
 from tests._helpers.sql import run_query
 
 if TYPE_CHECKING:

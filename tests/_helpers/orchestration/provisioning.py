@@ -39,15 +39,6 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.assertions import assert_target_ok
 from tests._helpers.assertions.modules import ModulesAssertions, compute_file_state_hash_from_table
-from tests._helpers.builders import (
-    CallGraphEdgeRow,
-    CallGraphNodeRow,
-    GoidRow,
-    SubsystemModuleRow,
-    SubsystemRow,
-    SymbolUseEdgeRow,
-    insert_rows,
-)
 from tests._helpers.configs import (
     DEFAULT_VARIANT,
     CallgraphFixtureOptions,
@@ -67,6 +58,15 @@ from tests._helpers.fixtures.repos import (
     write_coverage_driver,
     write_graph_metrics_repo,
     write_sample_repo,
+)
+from tests._helpers.fixtures.rows import (
+    CallGraphEdgeRow,
+    CallGraphNodeRow,
+    GoidRow,
+    SubsystemModuleRow,
+    SubsystemRow,
+    SymbolUseEdgeRow,
+    insert_rows,
 )
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness

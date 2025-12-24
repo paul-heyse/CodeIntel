@@ -14,9 +14,10 @@ from datetime import UTC, datetime
 from textwrap import dedent
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     GoidRow,
     ModuleRow,
+    dataclass_row,
     insert_rows,
 )
 
@@ -141,7 +142,8 @@ class EntrypointsPack:
             Test context with gateway.
         """
         rows = [
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module=ENTRYPOINTS_MOD_FQN,
                 path=ENTRYPOINTS_MOD_PATH,
                 repo=self.repo,
@@ -161,7 +163,8 @@ class EntrypointsPack:
             Timestamp for created_at fields.
         """
         rows = [
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=self.hello_goid,
                 urn=self.hello_urn,
                 repo=self.repo,
@@ -174,7 +177,8 @@ class EntrypointsPack:
                 language="python",
                 created_at=now,
             ),
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=self.cli_goid,
                 urn=self.cli_urn,
                 repo=self.repo,

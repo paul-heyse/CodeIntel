@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import DocstringRow, insert_rows
+from tests._helpers.fixtures.rows import DocstringRow, dataclass_row, insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     MOD_A_FQN,
@@ -91,7 +91,8 @@ class DocstringPack:
         raises_json = "[]" if not self.include_raises else '[{"type": "ValueError"}]'
 
         rows = [
-            DocstringRow(
+            dataclass_row(
+                DocstringRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_A_PATH,
@@ -110,7 +111,8 @@ class DocstringPack:
                 examples_json="[]",
                 created_at=now,
             ),
-            DocstringRow(
+            dataclass_row(
+                DocstringRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_B_PATH,
@@ -129,7 +131,8 @@ class DocstringPack:
                 examples_json="[]",
                 created_at=now,
             ),
-            DocstringRow(
+            dataclass_row(
+                DocstringRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 rel_path=MOD_UTIL_PATH,

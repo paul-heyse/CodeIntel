@@ -315,22 +315,45 @@ def t__docstrings__extract(
     DocstringsExtractResult
         Result bundle with row tuples and execution status.
     """
+    warnings: list[str] = []
     if t__modules.status != "succeeded":
-        return DocstringsExtractResult(
-            result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+        if not module_records:
+            message = t__modules.error or "No module inventory available"
+            return DocstringsExtractResult(
+                result=ExecutionResult.failed(
+                    f"Upstream modules target {t__modules.status}: {message}"
+                )
+            )
+        warnings.append(
+            f"Upstream modules target {t__modules.status}; using stored module inventory."
         )
 
     if _should_skip_extract(env, graph, DOCSTRINGS_TARGET_NAME):
-        return DocstringsExtractResult(result=ExecutionResult.skip("Docstrings skipped"))
+        return DocstringsExtractResult(
+            result=ExecutionResult.skip(
+                "Docstrings skipped",
+                warnings=tuple(warnings),
+            )
+        )
 
     get_schema_service()
     discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
     step = DocstringsExtractStep(discovery=discovery)
-    return step.execute(
+    extract_result = step.execute(
         module_records,
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
     )
+    if warnings and extract_result.result.success and not extract_result.result.skipped:
+        merged_warnings = (*extract_result.result.warnings, *warnings)
+        return DocstringsExtractResult(
+            result=ExecutionResult.ok(
+                table_counts=extract_result.result.table_counts,
+                warnings=tuple(merged_warnings),
+            ),
+            rows=extract_result.rows,
+        )
+    return extract_result
 
 
 @SaveToObjectMetadataDecorator(

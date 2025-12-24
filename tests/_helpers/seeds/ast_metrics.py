@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import AstMetricsRow, insert_rows
+from tests._helpers.fixtures.rows import AstMetricsRow, dataclass_row, insert_rows
 from tests._helpers.seeds.core import (
     CORE_PACK,
     MOD_A_PATH,
@@ -85,7 +85,8 @@ class AstMetricsPack:
         rows: list[AstMetricsRow] = []
 
         rows.append(
-            AstMetricsRow(
+            dataclass_row(
+                AstMetricsRow,
                 rel_path=MOD_A_PATH,
                 node_count=MEDIUM_NODE_COUNT,
                 function_count=5,
@@ -99,7 +100,8 @@ class AstMetricsPack:
 
         b_complexity = HIGH_COMPLEXITY if self.include_high_complexity else MEDIUM_COMPLEXITY
         rows.append(
-            AstMetricsRow(
+            dataclass_row(
+                AstMetricsRow,
                 rel_path=MOD_B_PATH,
                 node_count=LARGE_NODE_COUNT,
                 function_count=12,
@@ -112,7 +114,8 @@ class AstMetricsPack:
         )
 
         rows.append(
-            AstMetricsRow(
+            dataclass_row(
+                AstMetricsRow,
                 rel_path=MOD_C_PATH,
                 node_count=SMALL_NODE_COUNT,
                 function_count=3,
@@ -125,7 +128,8 @@ class AstMetricsPack:
         )
 
         rows.append(
-            AstMetricsRow(
+            dataclass_row(
+                AstMetricsRow,
                 rel_path=MOD_UTIL_PATH,
                 node_count=UTILITY_NODE_COUNT,
                 function_count=2,

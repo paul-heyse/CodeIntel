@@ -13,7 +13,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     DatasetDataflowEdgeRow,
     DatasetDataflowNodeRow,
     insert_rows,

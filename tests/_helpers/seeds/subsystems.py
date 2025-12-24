@@ -14,9 +14,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     SubsystemModuleRow,
     SubsystemRow,
+    dataclass_row,
     insert_rows,
 )
 from tests._helpers.seeds.core import (
@@ -88,28 +89,32 @@ class SubsystemPack:
             Test context with gateway.
         """
         rows = [
-            SubsystemModuleRow(
+            dataclass_row(
+                SubsystemModuleRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_CORE,
                 module=MOD_A_FQN,
                 role="entrypoint",
             ),
-            SubsystemModuleRow(
+            dataclass_row(
+                SubsystemModuleRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_CORE,
                 module=MOD_B_FQN,
                 role="internal",
             ),
-            SubsystemModuleRow(
+            dataclass_row(
+                SubsystemModuleRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_CORE,
                 module=MOD_C_FQN,
                 role="internal",
             ),
-            SubsystemModuleRow(
+            dataclass_row(
+                SubsystemModuleRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_UTIL,
@@ -133,7 +138,8 @@ class SubsystemPack:
         max_risk = 0.55 if self.include_risk_scores else None
 
         rows = [
-            SubsystemRow(
+            dataclass_row(
+                SubsystemRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_CORE,
@@ -153,7 +159,8 @@ class SubsystemPack:
                 risk_level="low",
                 created_at=now,
             ),
-            SubsystemRow(
+            dataclass_row(
+                SubsystemRow,
                 repo=ctx.repo,
                 commit=ctx.commit,
                 subsystem_id=SUBSYSTEM_UTIL,

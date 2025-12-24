@@ -19,9 +19,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
-from tests._helpers.builders import (
+import networkx as nx
+
+from tests._helpers.fixtures.graphs import GOLDEN_CALL, GOLDEN_IMPORT, GraphFixtureFactory
+from tests._helpers.fixtures.rows import (
     CallGraphEdgeRow,
     CallGraphNodeRow,
     ConfigValueRow,
@@ -29,6 +32,7 @@ from tests._helpers.builders import (
     ImportGraphEdgeRow,
     ModuleRow,
     SymbolUseEdgeRow,
+    dataclass_row,
     insert_rows,
     insert_symbol_use_edges,
 )
@@ -102,6 +106,32 @@ class GoldenGraphStats:
     config_key_count: int
 
 
+def _map_nodes_to_goids(graph: nx.Graph, goids: list[GoidRow]) -> dict[object, GoidRow]:
+    function_goids = [goid for goid in goids if goid.kind == "function"]
+    nodes = list(graph.nodes())
+    if len(nodes) > len(function_goids):
+        message = "Golden graph has more nodes than available function GOIDs"
+        raise ValueError(message)
+    return {node: function_goids[idx] for idx, node in enumerate(nodes)}
+
+
+def _map_nodes_to_modules(graph: nx.Graph) -> dict[object, str]:
+    modules = list(GOLDEN_MODULES.values())
+    nodes = list(graph.nodes())
+    if len(nodes) > len(modules):
+        message = "Golden graph has more nodes than available modules"
+        raise ValueError(message)
+    return {node: modules[idx] for idx, node in enumerate(nodes)}
+
+
+def _cycle_nodes(graph: nx.DiGraph) -> set[object]:
+    cycle_nodes: set[object] = set()
+    for component in nx.strongly_connected_components(graph):
+        if len(component) > 1:
+            cycle_nodes.update(component)
+    return cycle_nodes
+
+
 def _build_modules(repo: str, commit: str) -> list[ModuleRow]:
     """Build module rows for golden dataset.
 
@@ -118,7 +148,7 @@ def _build_modules(repo: str, commit: str) -> list[ModuleRow]:
         Module rows for insertion.
     """
     return [
-        ModuleRow(module=module, path=path, repo=repo, commit=commit)
+        dataclass_row(ModuleRow, module=module, path=path, repo=repo, commit=commit)
         for path, module in GOLDEN_MODULES.items()
     ]
 
@@ -225,7 +255,8 @@ def _build_goids(repo: str, commit: str) -> list[GoidRow]:
         for func_name in funcs:
             kind = "class" if func_name[0].isupper() else "function"
             goids.append(
-                GoidRow(
+                dataclass_row(
+                    GoidRow,
                     goid_h128=goid_counter,
                     urn=f"urn:goid:{repo}:{commit}:{module}.{func_name}",
                     repo=repo,
@@ -259,7 +290,8 @@ def _build_call_graph_nodes(goids: list[GoidRow]) -> list[CallGraphNodeRow]:
         Call graph node rows.
     """
     return [
-        CallGraphNodeRow(
+        dataclass_row(
+            CallGraphNodeRow,
             goid_h128=goid.goid_h128,
             language=goid.language,
             kind=goid.kind,
@@ -273,12 +305,7 @@ def _build_call_graph_nodes(goids: list[GoidRow]) -> list[CallGraphNodeRow]:
 
 
 def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> list[CallGraphEdgeRow]:
-    """Build realistic call graph edges with patterns.
-
-    Creates edges representing:
-    - Hub functions (auth.authenticate called by many handlers)
-    - Recursive patterns (queue.process_batch)
-    - Utility chains (format_string -> validate_input)
+    """Build call graph edges based on the golden graph fixture.
 
     Parameters
     ----------
@@ -294,88 +321,29 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
     list[CallGraphEdgeRow]
         Call graph edge rows.
     """
+    graph = cast("nx.DiGraph", GraphFixtureFactory.build(GOLDEN_CALL))
+    node_to_goid = _map_nodes_to_goids(graph, goids)
     edges: list[CallGraphEdgeRow] = []
-    goid_by_name: dict[str, int] = {g.qualname.split(".")[-1]: g.goid_h128 for g in goids}
-    goid_by_qualname: dict[str, GoidRow] = {g.qualname: g for g in goids}
 
-    call_patterns = [
-        ("create_user", "authenticate", 5),
-        ("get_user", "authenticate", 3),
-        ("update_user", "authenticate", 4),
-        ("delete_user", "authenticate", 3),
-        ("create_order", "authenticate", 5),
-        ("process_order", "authenticate", 3),
-        ("create_product", "authenticate", 4),
-        ("create_user", "query", 10),
-        ("get_user", "query", 8),
-        ("update_user", "execute", 12),
-        ("delete_user", "execute", 8),
-        ("create_order", "transaction", 15),
-        ("process_order", "transaction", 10),
-        ("authenticate", "get_cached", 5),
-        ("authenticate", "set_cached", 15),
-        ("validate_session", "get_cached", 3),
-        ("get_user", "get_cached", 5),
-        ("get_product", "get_cached", 4),
-        ("search_products", "get_cached", 3),
-        ("validate_input", "format_string", 5),
-        ("parse_json", "validate_input", 8),
-        ("load_config", "parse_json", 3),
-        ("get_setting", "load_config", 5),
-        ("process_batch", "dequeue", 5),
-        ("process_batch", "enqueue", 20),
-        ("upload", "validate_input", 3),
-        ("download", "get_cached", 5),
-        ("handle_request", "create_user", 10),
-        ("handle_request", "get_user", 15),
-        ("handle_request", "create_order", 20),
-        ("handle_request", "process_payment", 25),
-        ("auth_middleware", "validate_session", 5),
-        ("rate_limit", "get_cached", 3),
-        ("authenticate", "log_info", 20),
-        ("authorize", "log_info", 15),
-        ("process_order", "log_info", 25),
-        ("process_payment", "log_info", 20),
-        ("create_user", "log_info", 18),
-        ("upload", "log_info", 12),
-        ("download", "log_info", 10),
-        ("authenticate", "record_metric", 22),
-        ("process_order", "record_metric", 28),
-        ("process_payment", "record_metric", 25),
-        ("query", "record_metric", 15),
-        ("execute", "record_metric", 12),
-        ("authenticate", "log_error", 25),
-        ("query", "log_error", 20),
-        ("process_payment", "log_error", 30),
-        ("query", "retry", 5),
-        ("upload", "retry", 8),
-        ("download", "timeout", 3),
-    ]
-
-    for caller_name, callee_name, offset in call_patterns:
-        caller_goid = goid_by_name.get(caller_name)
-        callee_goid = goid_by_name.get(callee_name)
-
-        if caller_goid is None or callee_goid is None:
-            continue
-
-        caller_qualname = next((q for q in goid_by_qualname if q.endswith(f".{caller_name}")), None)
-        if caller_qualname is None:
-            continue
-
-        caller_row = goid_by_qualname[caller_qualname]
+    edge_pairs = cast("list[tuple[object, object]]", list(graph.edges()))
+    for idx, edge in enumerate(edge_pairs):
+        caller_node = edge[0]
+        callee_node = edge[1]
+        caller_row = node_to_goid[caller_node]
+        callee_row = node_to_goid[callee_node]
         edges.append(
-            CallGraphEdgeRow(
+            dataclass_row(
+                CallGraphEdgeRow,
                 repo=repo,
                 commit=commit,
-                caller_goid_h128=caller_goid,
-                callee_goid_h128=callee_goid,
+                caller_goid_h128=caller_row.goid_h128,
+                callee_goid_h128=callee_row.goid_h128,
                 callsite_path=caller_row.rel_path,
-                callsite_line=caller_row.start_line + offset,
+                callsite_line=caller_row.start_line + (idx % 5),
                 callsite_col=4,
                 language="python",
                 kind="direct",
-                resolved_via="local_name",
+                resolved_via="graph_fixture",
                 confidence=0.95,
             )
         )
@@ -384,12 +352,7 @@ def _build_call_graph_edges(repo: str, commit: str, goids: list[GoidRow]) -> lis
 
 
 def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
-    """Build realistic import graph edges with layered architecture.
-
-    Creates import relationships:
-    - Layer adherence (handlers -> services -> core)
-    - Cross-cutting utilities (everyone imports utils)
-    - Intentional cycles (for testing cycle detection)
+    """Build import graph edges based on the golden graph fixture.
 
     Parameters
     ----------
@@ -403,86 +366,37 @@ def _build_import_edges(repo: str, commit: str) -> list[ImportGraphEdgeRow]:
     list[ImportGraphEdgeRow]
         Import graph edge rows.
     """
+    graph = cast("nx.DiGraph", GraphFixtureFactory.build(GOLDEN_IMPORT))
+    node_to_module = _map_nodes_to_modules(graph)
+    cycle_nodes = _cycle_nodes(graph)
+
     edges: list[ImportGraphEdgeRow] = []
-
-    service_to_core = [
-        ("services.auth", "core.utils"),
-        ("services.auth", "core.errors"),
-        ("services.auth", "core.config"),
-        ("services.cache", "core.utils"),
-        ("services.cache", "core.config"),
-        ("services.database", "core.utils"),
-        ("services.database", "core.errors"),
-        ("services.database", "core.config"),
-        ("services.queue", "core.utils"),
-        ("services.storage", "core.utils"),
-        ("services.storage", "core.errors"),
-    ]
-
-    handler_imports = [
-        ("handlers.user", "services.auth"),
-        ("handlers.user", "services.database"),
-        ("handlers.user", "services.cache"),
-        ("handlers.user", "core.errors"),
-        ("handlers.product", "services.database"),
-        ("handlers.product", "services.cache"),
-        ("handlers.product", "core.errors"),
-        ("handlers.order", "services.database"),
-        ("handlers.order", "services.queue"),
-        ("handlers.order", "services.auth"),
-        ("handlers.payment", "services.database"),
-        ("handlers.payment", "services.auth"),
-        ("handlers.payment", "core.errors"),
-    ]
-
-    api_imports = [
-        ("api.routes", "handlers.user"),
-        ("api.routes", "handlers.product"),
-        ("api.routes", "handlers.order"),
-        ("api.routes", "handlers.payment"),
-        ("api.routes", "api.schemas"),
-        ("api.middleware", "services.auth"),
-        ("api.middleware", "services.cache"),
-        ("api.schemas", "core.types"),
-    ]
-
-    utils_imports = [
-        ("services.auth", "utils.logging"),
-        ("services.database", "utils.logging"),
-        ("handlers.user", "utils.logging"),
-        ("handlers.order", "utils.logging"),
-        ("api.routes", "utils.logging"),
-        ("services.auth", "utils.metrics"),
-        ("services.database", "utils.metrics"),
-        ("handlers.payment", "utils.metrics"),
-    ]
-
-    cycle_imports = [
-        ("services.auth", "services.cache"),
-        ("services.cache", "services.auth"),
-    ]
-
-    all_imports = service_to_core + handler_imports + api_imports + utils_imports + cycle_imports
-
     fan_out_counts: dict[str, int] = {}
     fan_in_counts: dict[str, int] = {}
+    edge_pairs = cast("list[tuple[object, object]]", list(graph.edges()))
+    for edge in edge_pairs:
+        src_node = edge[0]
+        dst_node = edge[1]
+        src_module = node_to_module[src_node]
+        dst_module = node_to_module[dst_node]
+        fan_out_counts[src_module] = fan_out_counts.get(src_module, 0) + 1
+        fan_in_counts[dst_module] = fan_in_counts.get(dst_module, 0) + 1
 
-    for src, dst in all_imports:
-        fan_out_counts[src] = fan_out_counts.get(src, 0) + 1
-        fan_in_counts[dst] = fan_in_counts.get(dst, 0) + 1
-
-    cycle_modules = {"services.auth", "services.cache"}
-
-    for src, dst in all_imports:
-        cycle_group = 1 if src in cycle_modules and dst in cycle_modules else 0
+    for edge in edge_pairs:
+        src_node = edge[0]
+        dst_node = edge[1]
+        src_module = node_to_module[src_node]
+        dst_module = node_to_module[dst_node]
+        cycle_group = 1 if src_node in cycle_nodes and dst_node in cycle_nodes else 0
         edges.append(
-            ImportGraphEdgeRow(
+            dataclass_row(
+                ImportGraphEdgeRow,
                 repo=repo,
                 commit=commit,
-                src_module=src,
-                dst_module=dst,
-                src_fan_out=fan_out_counts.get(src, 1),
-                dst_fan_in=fan_in_counts.get(dst, 1),
+                src_module=src_module,
+                dst_module=dst_module,
+                src_fan_out=fan_out_counts.get(src_module, 1),
+                dst_fan_in=fan_in_counts.get(dst_module, 1),
                 cycle_group=cycle_group,
             )
         )
@@ -529,7 +443,8 @@ def _build_symbol_use_edges(goids: list[GoidRow]) -> list[SymbolUseEdgeRow]:
 
             use_goid = use_funcs[0]
             edges.append(
-                SymbolUseEdgeRow(
+                dataclass_row(
+                    SymbolUseEdgeRow,
                     symbol=symbol,
                     def_path=def_goid.rel_path,
                     use_path=use_goid.rel_path,
@@ -559,7 +474,8 @@ def _build_config_values(repo: str, commit: str) -> list[ConfigValueRow]:
         Config value rows.
     """
     return [
-        ConfigValueRow(
+        dataclass_row(
+            ConfigValueRow,
             repo=repo,
             commit=commit,
             config_path="config/app.yaml",
@@ -569,7 +485,8 @@ def _build_config_values(repo: str, commit: str) -> list[ConfigValueRow]:
             reference_modules=["services.database", "services.cache"],
             reference_count=2,
         ),
-        ConfigValueRow(
+        dataclass_row(
+            ConfigValueRow,
             repo=repo,
             commit=commit,
             config_path="config/app.yaml",
@@ -579,7 +496,8 @@ def _build_config_values(repo: str, commit: str) -> list[ConfigValueRow]:
             reference_modules=["services.auth", "api.middleware"],
             reference_count=2,
         ),
-        ConfigValueRow(
+        dataclass_row(
+            ConfigValueRow,
             repo=repo,
             commit=commit,
             config_path="config/app.yaml",
@@ -589,7 +507,8 @@ def _build_config_values(repo: str, commit: str) -> list[ConfigValueRow]:
             reference_modules=["services.cache", "handlers.user", "handlers.product"],
             reference_count=3,
         ),
-        ConfigValueRow(
+        dataclass_row(
+            ConfigValueRow,
             repo=repo,
             commit=commit,
             config_path="config/app.yaml",
@@ -613,7 +532,8 @@ def _build_config_values(repo: str, commit: str) -> list[ConfigValueRow]:
             ],
             reference_count=6,
         ),
-        ConfigValueRow(
+        dataclass_row(
+            ConfigValueRow,
             repo=repo,
             commit=commit,
             config_path="config/app.yaml",

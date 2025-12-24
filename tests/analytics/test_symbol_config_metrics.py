@@ -10,7 +10,7 @@ import pytest
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
 from codeintel.analytics.graphs.subsystem_agreement import build_subsystem_agreement_rows
 from codeintel.analytics.graphs.symbol_graph_metrics import build_symbol_graph_metrics_module_rows
-from tests._helpers.builders import (
+from tests._helpers.fixtures.rows import (
     ConfigValueRow,
     GraphMetricsModulesExtRow,
     ModuleRow,

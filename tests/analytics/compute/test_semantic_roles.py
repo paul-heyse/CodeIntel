@@ -26,7 +26,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.builders import FunctionContextBuilder
+from tests._helpers.fixtures.rows import FunctionContextBuilder
 
 if TYPE_CHECKING:
     from codeintel.analytics.compute.semantic_roles.classification import (

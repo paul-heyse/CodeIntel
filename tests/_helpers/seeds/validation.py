@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from tests._helpers.builders import GoidRow, ModuleRow, insert_rows
+from tests._helpers.fixtures.rows import GoidRow, ModuleRow, dataclass_row, insert_rows
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
@@ -93,13 +93,15 @@ class ValidationPack:
     def _seed_modules(ctx: TestContext) -> None:
         """Seed the core.modules table."""
         rows = [
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module="pkg.a",
                 path="pkg/a.py",
                 repo=REPO,
                 commit=COMMIT,
             ),
-            ModuleRow(
+            dataclass_row(
+                ModuleRow,
                 module="pkg.b",
                 path="pkg/b.py",
                 repo=REPO,
@@ -116,7 +118,8 @@ class ValidationPack:
         a corresponding call graph node, triggering validation warnings.
         """
         rows = [
-            GoidRow(
+            dataclass_row(
+                GoidRow,
                 goid_h128=CALLER_GOID,
                 urn="urn:pkg.b.caller",
                 repo=REPO,

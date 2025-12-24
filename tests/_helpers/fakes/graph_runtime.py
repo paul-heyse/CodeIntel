@@ -17,6 +17,11 @@ from duckdb import Error as DuckDBError
 from codeintel.graphs.engine.protocol import GraphEngine, GraphKind
 from codeintel.graphs.resources.graph_provider import GraphRuntimeLike
 from codeintel.graphs.runtime import GraphRuntimeOptions
+from tests._helpers.fixtures.graphs import (
+    DEFAULT_SPOKES,
+    GraphFixtureFactory,
+    GraphFixtureSpec,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -67,6 +72,25 @@ class GraphEngineSeedKwargs(TypedDict, total=False):
     backend: GraphBackendConfig | None
     use_gpu: bool
     copy_graphs: bool
+
+
+@dataclass(frozen=True)
+class GraphRuntimeFixtureSpecs:
+    """Specs for building graph fixtures in a runtime double."""
+
+    call_spec: GraphFixtureSpec
+    import_spec: GraphFixtureSpec
+    symbol_spec: GraphFixtureSpec | None = None
+
+
+@dataclass(frozen=True)
+class GraphRuntimeFixtureOptions:
+    """Runtime options for fixture-backed graph doubles."""
+
+    gateway: StorageGateway | None = None
+    snapshot: SnapshotRef | None = None
+    backend: GraphBackendConfig | None = None
+    copy_graphs: bool = True
 
 
 @dataclass
@@ -194,6 +218,43 @@ class GraphRuntimeDouble(GraphRuntimeLike):
             cfg_graph=graphs.cfg_graph,
             backend=backend,
             copy_graphs=copy_graphs,
+        )
+
+    @classmethod
+    def from_fixture_specs(
+        cls,
+        *,
+        specs: GraphRuntimeFixtureSpecs,
+        options: GraphRuntimeFixtureOptions | None = None,
+    ) -> GraphRuntimeDouble:
+        """Construct from graph fixture specs.
+
+        Returns
+        -------
+        GraphRuntimeDouble
+            Runtime seeded with graphs built from specs.
+        """
+        resolved_symbol_spec = specs.symbol_spec or GraphFixtureSpec(
+            kind="star",
+            directed=False,
+            spokes=DEFAULT_SPOKES,
+        )
+        resolved_options = options or GraphRuntimeFixtureOptions()
+        call_graph = cast("nx.DiGraph", GraphFixtureFactory.build(specs.call_spec))
+        import_graph = cast("nx.DiGraph", GraphFixtureFactory.build(specs.import_spec))
+        symbol_graph = GraphFixtureFactory.build(resolved_symbol_spec)
+        return cls(
+            gateway=resolved_options.gateway,
+            snapshot=resolved_options.snapshot,
+            call_graph_obj=call_graph,
+            import_graph_obj=import_graph,
+            symbol_module_graph_obj=symbol_graph,
+            symbol_function_graph_obj=symbol_graph,
+            config_bipartite_obj=nx.Graph(),
+            test_function_bipartite_obj=nx.Graph(),
+            cfg_graph=None,
+            backend=resolved_options.backend,
+            copy_graphs=resolved_options.copy_graphs,
         )
 
     @property
@@ -706,6 +767,28 @@ def create_mock_runtime_with_standard_graphs(
     return GraphRuntimeDouble.from_fixtures(graphs)
 
 
+def create_mock_runtime_with_specs(
+    *,
+    call_spec: GraphFixtureSpec,
+    import_spec: GraphFixtureSpec,
+    symbol_spec: GraphFixtureSpec | None = None,
+) -> GraphRuntimeDouble:
+    """Create a GraphRuntimeDouble seeded from fixture specs.
+
+    Returns
+    -------
+    GraphRuntimeDouble
+        Runtime seeded with graphs built from specs.
+    """
+    return GraphRuntimeDouble.from_fixture_specs(
+        specs=GraphRuntimeFixtureSpecs(
+            call_spec=call_spec,
+            import_spec=import_spec,
+            symbol_spec=symbol_spec,
+        )
+    )
+
+
 MockGraphRuntime = GraphRuntimeDouble
 
 
@@ -719,6 +802,7 @@ __all__ = [
     "create_mock_runtime_all_graphs",
     "create_mock_runtime_with_call_graph",
     "create_mock_runtime_with_import_graph",
+    "create_mock_runtime_with_specs",
     "create_mock_runtime_with_standard_graphs",
     "graph_engine_with_cache",
     "runtime_with_graphs",
