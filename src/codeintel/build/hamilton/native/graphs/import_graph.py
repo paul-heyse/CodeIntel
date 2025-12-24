@@ -53,6 +53,7 @@ IMPORT_GRAPH_TABLE_KEYS = (
     IMPORT_GRAPH_EDGES_TABLE_KEY,
 )
 
+
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(IMPORT_MODULES_TABLE_KEY),

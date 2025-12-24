@@ -41,6 +41,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractResult, AstExtractStep
@@ -322,6 +323,7 @@ def t__docstrings__extract(
     if _should_skip_extract(env, graph, DOCSTRINGS_TARGET_NAME):
         return DocstringsExtractResult(result=ExecutionResult.skip("Docstrings skipped"))
 
+    get_schema_service()
     discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
     step = DocstringsExtractStep(discovery=discovery)
     return step.execute(

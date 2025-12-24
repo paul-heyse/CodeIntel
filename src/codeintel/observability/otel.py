@@ -47,8 +47,6 @@ try:
     from opentelemetry import metrics as otel_metrics
     from opentelemetry import trace as otel_trace
     from opentelemetry.context import Context
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
@@ -60,8 +58,6 @@ except ImportError:
     OTEL_AVAILABLE = False
     otel_metrics = None
     otel_trace = None
-    OTLPMetricExporter = None
-    OTLPSpanExporter = None
     MeterProvider = None
     PeriodicExportingMetricReader = None
     Resource = None
@@ -72,6 +68,16 @@ except ImportError:
     Context = None
     BatchSpanProcessor = None
     ConsoleSpanExporter = None
+
+try:
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+except ImportError:
+    OTLPMetricExporter = None
+
+try:
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+except ImportError:
+    OTLPSpanExporter = None
 
 try:
     from opentelemetry.exporter.prometheus import PrometheusMetricReader

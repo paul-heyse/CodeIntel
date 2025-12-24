@@ -1994,6 +1994,7 @@ TEST_PROFILE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+
 def _all_output_tables() -> tuple[TableSchema, ...]:
     return (
         *AST_OVERRIDE_TABLES,

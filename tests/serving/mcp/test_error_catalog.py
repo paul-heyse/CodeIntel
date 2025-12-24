@@ -59,6 +59,8 @@ EXPECTED_CODES = {
     "CODEINTEL_EXPORT_INTERNAL_ERROR",
     "CODEINTEL_META_ARTIFACT_NOT_FOUND",
     "CODEINTEL_META_SQL_UNSAFE",
+    "CODEINTEL_SEARCH_INDEX_MISSING",
+    "CODEINTEL_LINEAGE_MISSING",
     "CODEINTEL_SERVING_SNAPSHOT_NOT_MOUNTED",
     "CODEINTEL_SERVING_SNAPSHOT_MISMATCH",
     "CODEINTEL_SERVING_DB_LOCKED",
@@ -73,9 +75,9 @@ def test_error_catalog_codes_are_locked_in() -> None:
     expect_equal(set(ERROR_CODE_CATALOG.keys()), EXPECTED_CODES)
 
 
-def test_error_catalog_has_23_codes() -> None:
-    """Verify catalog contains exactly 23 codes."""
-    expect_equal(len(ERROR_CODE_CATALOG), 23)
+def test_error_catalog_has_25_codes() -> None:
+    """Verify catalog contains exactly 25 codes."""
+    expect_equal(len(ERROR_CODE_CATALOG), 25)
 
 
 def test_error_catalog_codes_match_keys() -> None:

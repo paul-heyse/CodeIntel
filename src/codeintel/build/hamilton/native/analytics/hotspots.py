@@ -50,7 +50,6 @@ HOTSPOTS_TABLE_KEY = "analytics.hotspots"
 MAX_STDERR_CHARS = 500
 
 
-
 @dataclass(frozen=True)
 class HotspotsOptions:
     """Options for computing hotspots."""

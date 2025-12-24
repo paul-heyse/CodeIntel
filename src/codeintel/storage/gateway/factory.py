@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import duckdb
 
-from codeintel.build.catalogs.canonical import load_contract_catalog
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.contracts.bootstrap import bootstrap_contract_catalog
 from codeintel.storage.contracts.catalog_state import (
     contract_catalog_table_schemas,
     get_contract_catalog,
@@ -49,12 +49,6 @@ def _maybe_set_schema_service_from_catalog() -> None:
             set_schema_service(service)
 
 
-@dataclass(frozen=True, slots=True)
-class _CatalogGatewayStub:
-    config: StorageConfig
-    con: duckdb.DuckDBPyConnection
-
-
 def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageConfig) -> None:
     load_contract_catalog_from_connection(con)
     if get_contract_catalog() is not None:
@@ -62,9 +56,7 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageC
     if config.read_only:
         msg = "Contract catalog missing for read-only gateway"
         raise RuntimeError(msg)
-    stub = _CatalogGatewayStub(config=config, con=con)
-    load_contract_catalog(gateway=stub)
-    load_contract_catalog_from_connection(con)
+    bootstrap_contract_catalog(con, config=config)
     if get_contract_catalog() is None:
         msg = "Contract catalog missing after bootstrap"
         raise RuntimeError(msg)

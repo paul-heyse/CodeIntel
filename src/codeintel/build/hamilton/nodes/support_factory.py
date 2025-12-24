@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.introspect import DerivedTargetOutputs
     from codeintel.build.targets import OutputTarget
 
+
 @dataclass(frozen=True)
 class SupportGenerationOptions:
     """Options for support-node module generation."""
