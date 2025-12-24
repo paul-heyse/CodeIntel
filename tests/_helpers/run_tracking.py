@@ -10,7 +10,7 @@ import pytest
 from codeintel.core.execution import RunContext
 from codeintel.storage.tracking import PipelineRunTracking
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.factories import make_snapshot
 
 if TYPE_CHECKING:
@@ -42,8 +42,8 @@ class ExpectedRun:
 class RunContextOptions:
     """Parameters for building RunContext objects in tests."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    repo: str = DEFAULT_VARIANT.repo
+    commit: str = DEFAULT_VARIANT.commit
     kind: RunKind = "analytics"
     trigger: TriggerKind = "cli"
     requested_operation: str | None = None
@@ -52,7 +52,7 @@ class RunContextOptions:
 
 def make_run_context(
     *,
-    run_id: str = DEFAULT_RUN_ID,
+    run_id: str | None = None,
     repo_root: Path | None = None,
     options: RunContextOptions | None = None,
 ) -> RunContext:
@@ -64,9 +64,10 @@ def make_run_context(
         Run context configured with provided options.
     """
     opts = options or RunContextOptions()
+    resolved_run_id = run_id or DEFAULT_VARIANT.run_id or "test-run-001"
     snapshot = make_snapshot(repo=opts.repo, commit=opts.commit, repo_root=repo_root)
     return RunContext(
-        run_id=run_id,
+        run_id=resolved_run_id,
         kind=opts.kind,
         snapshot=snapshot,
         trigger=opts.trigger,

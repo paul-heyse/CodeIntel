@@ -1,8 +1,7 @@
 """Shared environment builder for tests.
 
 Provides a single entry point for constructing gateways and ``TestContext``
-instances with production-parity defaults (schema, views). Exports canonical
-test defaults for repo/commit/run identifiers.
+instances with production-parity defaults (schema, views).
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ from tests._helpers.context import (
 from tests._helpers.context import (
     build_test_gateway as _build_test_gateway,
 )
-from tests._helpers.defaults import DEFAULT_COMMIT, DEFAULT_REPO, DEFAULT_RUN_ID
 from tests._helpers.orchestration.provisioning import (
     provision_gateway_with_repo,
     provision_ingested_repo,
@@ -74,27 +72,25 @@ def create_provisioned_test_env(
         Provisioned context with gateway, snapshot, and build paths.
     """
     cfg = config or ProvisioningConfig()
+    variant = cfg.snapshot_variant
     if cfg.run_ingestion:
         provisioned = provision_ingested_repo(
             repo_root,
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=variant.repo,
+            commit=variant.commit,
             options=cfg.provision_options,
         )
     else:
         provisioned = provision_gateway_with_repo(
             repo_root,
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=variant.repo,
+            commit=variant.commit,
             options=cfg.gateway_options,
         )
     return TestContext.from_provisioned(provisioned)
 
 
 __all__ = [
-    "DEFAULT_COMMIT",
-    "DEFAULT_REPO",
-    "DEFAULT_RUN_ID",
     "build_test_gateway",
     "create_provisioned_test_env",
     "create_test_env",

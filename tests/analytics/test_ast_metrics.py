@@ -34,7 +34,7 @@ from tests._helpers.assertions import (
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.factories import make_snapshot
 from tests._helpers.graphs import canonical_ast_artifacts
-from tests._helpers.repo import (
+from tests._helpers.fixtures.repos import (
     GOID_FUNC_A,
     GOID_FUNC_B,
     GOID_FUNC_C,

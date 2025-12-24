@@ -16,14 +16,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.config.primitives import SnapshotRef
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 
 def make_snapshot(
     repo_root: Path | None = None,
     *,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
 ) -> SnapshotRef:
     """Create a standard test snapshot.
 
@@ -32,9 +32,9 @@ def make_snapshot(
     repo_root
         Optional repo root path; defaults to Path.cwd() if not provided.
     repo
-        Repository identifier; defaults to DEFAULT_REPO.
+        Repository identifier; defaults to DEFAULT_VARIANT.repo.
     commit
-        Commit identifier; defaults to DEFAULT_COMMIT.
+        Commit identifier; defaults to DEFAULT_VARIANT.commit.
 
     Returns
     -------

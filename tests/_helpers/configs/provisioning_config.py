@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.env_options import GatewayOptions
 
 
@@ -164,8 +164,7 @@ class ProvisioningSetup:
 class ProvisioningConfig:
     """Configuration for context-managed gateway provisioning."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     provision_options: ProvisionOptions | None = None
     gateway_options: GatewayOptions | None = None
     run_ingestion: bool = True
@@ -175,8 +174,7 @@ class ProvisioningConfig:
 class GraphMetricsGatewayOptions:
     """Options for provisioning graph-metrics-ready gateways."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     metrics_options: GraphMetricsOptions | None = None
     include_symbol_edges: bool = True
     file_backed: bool = False
@@ -189,16 +187,14 @@ class GraphMetricsGatewayOptions:
 class CallgraphFixtureOptions:
     """Options for provisioning callgraph fixture repos."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     file_backed: bool = False
     db_path: Path | None = None
     goid_entries: list[tuple[int, str, str, int, int, str]] | None = None
 
 
 __all__ = [
-    "DEFAULT_COMMIT",
-    "DEFAULT_REPO",
+    "DEFAULT_VARIANT",
     "CallgraphFixtureOptions",
     "GatewayOptions",
     "GraphMetricsGatewayOptions",
@@ -209,4 +205,5 @@ __all__ = [
     "ProvisioningSetup",
     "RepoContext",
     "provisioning_gateway_options",
+    "SnapshotVariant",
 ]

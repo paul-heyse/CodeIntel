@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
@@ -131,8 +131,8 @@ class ProfileRecordOverrides(TypedDict, total=False):
 def make_graph_metric_function_row(
     *,
     function_goid_h128: int = 1,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     overrides: GraphMetricFunctionOverrides | None = None,
 ) -> GraphMetricsFunctionsRow:
     """Build a GraphMetricsFunctionsRow with sensible defaults.
@@ -166,8 +166,8 @@ def make_graph_metric_function_row(
 def make_graph_metric_module_row(
     *,
     module: str = "pkg.mod",
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     overrides: GraphMetricModuleOverrides | None = None,
 ) -> GraphMetricsModulesRow:
     """Build a GraphMetricsModulesRow with defaults.
@@ -204,8 +204,8 @@ def make_coverage_record(
     rel_path: str = "pkg/mod.py",
     *,
     line: int = 1,
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     overrides: CoverageRecordOverrides | None = None,
 ) -> CoverageLineRow:
     """Build a CoverageLineRow for analytics.coverage_lines inserts.
@@ -235,8 +235,8 @@ def make_profile_record(
     *,
     test_id: str = "test::sample",
     rel_path: str = "tests/test_sample.py",
-    repo: str = DEFAULT_REPO,
-    commit: str = DEFAULT_COMMIT,
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     overrides: ProfileRecordOverrides | None = None,
 ) -> ProfileRowModel:
     """Build a ProfileRowModel with defaults for test profiles.

@@ -14,7 +14,7 @@ from tests._helpers.harnesses.hamilton_build import (
     HarnessConfig,
     HarnessOpenOptions,
 )
-from tests._helpers.orchestration.repo_writers import write_callgraph_alias_repo
+from tests._helpers.fixtures.repos import write_callgraph_alias_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

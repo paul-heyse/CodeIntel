@@ -25,7 +25,7 @@ import pytest
 
 from codeintel.config.primitives import BuildPaths
 from codeintel.core.plugins.execution.context import PluginExecutionContext
-from tests._helpers.constants import DEFAULT_RUN_ID
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.context import TestContext, create_test_context
 from tests._helpers.env import build_test_gateway
 from tests._helpers.fakes.configs import create_test_snapshot
@@ -131,7 +131,7 @@ def analytics_context(
     return PluginExecutionContext(
         gateway=analytics_gateway,
         snapshot=analytics_snapshot,
-        run_id=DEFAULT_RUN_ID,
+        run_id=DEFAULT_VARIANT.run_id or "test-run-001",
     )
 
 

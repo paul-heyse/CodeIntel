@@ -19,15 +19,15 @@ from typing import TYPE_CHECKING, Protocol, Self, runtime_checkable
 
 from codeintel.config.primitives import BuildPathOverrides, BuildPaths, SnapshotRef
 from codeintel.storage.schema import apply_all_schemas
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.gateway import GatewayFactory
-from tests._helpers.repo import write_canonical_repo
+from tests._helpers.fixtures.repos import write_canonical_repo
 from tests._helpers.schemas import ensure_schema_service
 from tests._helpers.seeds.core import CORE_PACK
 from tests._helpers.seeds.coverage import COVERAGE_PACK
 from tests._helpers.seeds.coverage_lines import COVERAGE_LINES_PACK
 from tests._helpers.seeds.graph import GRAPH_PACK
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs.provisioning_config import ProvisionedGateway
-    from tests._helpers.repo import CanonicalRepo
+    from tests._helpers.fixtures.repos import CanonicalRepo
 
 
 @runtime_checkable
@@ -453,6 +453,7 @@ def create_test_context(
     options: EnvOptions | None = None,
     *,
     gateway_options: GatewayOptions | None = None,
+    snapshot_variant: SnapshotVariant | None = None,
 ) -> TestContext:
     """Create a minimal TestContext for testing.
 
@@ -472,8 +473,8 @@ def create_test_context(
     """
     env_opts = options or EnvOptions()
     repo_root_path, build_dir_path, db_path = _prepare_paths(tmp_path, env_opts)
-
-    snapshot = SnapshotRef(repo=env_opts.repo, commit=env_opts.commit, repo_root=repo_root_path)
+    variant = snapshot_variant or env_opts.snapshot_variant or DEFAULT_VARIANT
+    snapshot = variant.to_snapshot(repo_root=repo_root_path)
     build_paths = BuildPaths.from_repo_root(repo_root_path, build_dir=build_dir_path)
 
     gateway = build_test_gateway(
@@ -481,8 +482,8 @@ def create_test_context(
         or GatewayOptions(
             file_backed=env_opts.file_backed,
             db_path=db_path,
-            repo=env_opts.repo,
-            commit=env_opts.commit,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
         )
     )
     ensure_schema_service()
@@ -596,8 +597,6 @@ def _prepare_paths(
 
 
 __all__ = [
-    "DEFAULT_COMMIT",
-    "DEFAULT_REPO",
     "EnvOptions",
     "GatewayOptions",
     "QueryRow",

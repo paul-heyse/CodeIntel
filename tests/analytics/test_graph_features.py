@@ -10,6 +10,7 @@ import pytest
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import FunctionProfileInputs
 from codeintel.storage.gateway.factory import open_memory_gateway
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
@@ -57,7 +58,7 @@ def _setup_graph() -> StorageGateway:
         commit="c",
     )
     con = gateway.con
-    con.execute("CREATE SCHEMA IF NOT EXISTS graph")
+    ensure_production_schemas(con)
     con.execute(
         """
         CREATE TABLE graph.call_graph_edges (

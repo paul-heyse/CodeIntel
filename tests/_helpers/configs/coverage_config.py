@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -12,8 +14,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-REPO = "demo/repo"
-COMMIT = "deadbeef"
 MODULE_IMPORT = "pkg.mod"
 FUNCTION_NAME = "func"
 TEST_ID = "pkg/mod.py::test_func"
@@ -44,17 +44,14 @@ class CoverageSeedConfig:
     test_id: str = TEST_ID
     test_urn: str | None = None
     test_qualname: str | None = None
-    repo: str = REPO
-    commit: str = COMMIT
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     function_goid: int = 1
     test_goid: int = 99
 
 
 __all__ = [
-    "COMMIT",
     "FUNCTION_NAME",
     "MODULE_IMPORT",
-    "REPO",
     "TEST_ID",
     "CoverageEdgeEnv",
     "CoverageSeedConfig",

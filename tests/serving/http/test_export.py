@@ -21,6 +21,7 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.assertions.http_responses import assert_problem_detail_response
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -30,7 +31,7 @@ def _make_db(db_path: Path) -> None:
     """Create test database with sample data."""
     gateway = GatewayFactory().file_backed(db_path).open()
     try:
-        gateway.con.execute("CREATE SCHEMA docs")
+        ensure_production_schemas(gateway.con)
         gateway.con.execute(
             "CREATE TABLE docs.v_export_test (id INTEGER, name VARCHAR, value DOUBLE)"
         )

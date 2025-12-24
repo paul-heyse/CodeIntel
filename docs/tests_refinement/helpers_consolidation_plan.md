@@ -48,6 +48,16 @@
 - Hamilton and serving harnesses take `TestScenario` or `ScenarioConfig` as inputs.
 - Harness builders are thin wrappers over the scenario, not alternative setup systems.
 
+### Baseline hardening (already applied)
+- Canonical schema seeding helper is now `tests/_helpers/schemas.py::ensure_production_schemas`.
+  - Uses production DDL (`create_schemas` + metadata DDL) and is idempotent.
+  - All tests must call this helper instead of ad-hoc `CREATE SCHEMA` for production schemas.
+- Hamilton harness record lookup now includes diagnostic context when records are missing.
+  - Missing records surface build error, failed targets, and skipped targets.
+- New regression coverage exists for schema seeding idempotency in
+  `tests/_helpers/test_schema_seeding.py`.
+- Serving snapshot helpers now seed production schemas before creating docs tables.
+
 ## Detailed Work Plan
 
 ### Phase 0: Design final APIs (no code changes)
@@ -60,6 +70,8 @@
   - Row factories.
 - Decide preset names and expected default values.
 - Confirm standard docstrings and modules for each fixture catalog.
+- Ensure schema seeding helper is preserved and aligned with the new fixture layout
+  (keep in `tests/_helpers/schemas.py` or move to `tests/_helpers/fixtures/schemas.py`).
 
 ### Phase 1: Implement canonical fixture catalogs
 
@@ -110,6 +122,10 @@
 - Consolidate dataclass builders (`tests/_helpers/builders/*`), ad-hoc row helpers (`tests/_helpers/rows.py`), and schema dict factories (`tests/_helpers/factories/row_factories.py`) into one API.
 - Ensure all seed packs use the same row factory API for consistency.
 
+#### 7. Schema seeding helper alignment
+- Keep `ensure_production_schemas` as the canonical API (do not regress or delete).
+- If fixtures are re-homed, relocate to `tests/_helpers/fixtures/schemas.py` and update imports.
+
 ### Phase 2: Migrate all helper consumers
 
 #### Environment + scenario migration
@@ -158,6 +174,10 @@
 - `tests/_helpers/configs/coverage_config.py` -> snapshot variants preset
 - `tests/_helpers/seeds/span.py` -> snapshot variants preset
 
+### Schemas
+- Ad-hoc `CREATE SCHEMA` in tests -> `tests/_helpers/schemas.py::ensure_production_schemas`
+- `tests/_helpers/schemas.py` -> keep as canonical or move to `fixtures/schemas.py`
+
 ### Environment
 - `tests/_helpers/context.py` -> `TestScenario` (internal usage only)
 - `tests/_helpers/env.py` -> `TestScenario` facade or deletion
@@ -191,6 +211,8 @@
 - Repo fixture writing is defined by a single `RepoFixtureWriter` API.
 - Row factories are centralized and used by all seed packs.
 - No legacy helper modules remain in the repo.
+- No ad-hoc `CREATE SCHEMA` statements for production schemas remain in tests.
+- Missing `TargetRunRecord` errors include build error + target status context.
 
 ## Verification Plan
 - Run the quality report:
@@ -1165,6 +1187,7 @@ goid_rows.append(GoidRow(**row_data))
 ### 3. Remove stray imports and references
 - Run a repo-wide search for deleted module paths.
 - Remove or replace any remaining imports in tests and helpers.
+ - Confirm no ad-hoc `CREATE SCHEMA` for production schemas remains.
 
 ### 4. Final verification gates
 - Run the quality report:

@@ -20,11 +20,11 @@ from tests._helpers.configs.provisioning_config import (
     RepoContext,
     provisioning_gateway_options,
 )
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 __all__ = [
-    "DEFAULT_COMMIT",
-    "DEFAULT_REPO",
+    "DEFAULT_VARIANT.commit",
+    "DEFAULT_VARIANT.repo",
     "CallgraphFixtureOptions",
     "CoverageEdgeEnv",
     "CoverageSeedConfig",

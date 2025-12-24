@@ -20,15 +20,11 @@ if TYPE_CHECKING:
     from codeintel.ingestion.engine.service import ToolService
 
 
-from tests._helpers.constants import (
-    DEFAULT_COMMIT as DEFAULT_TEST_COMMIT,
-)
-from tests._helpers.constants import (
-    DEFAULT_REPO as DEFAULT_TEST_REPO,
-)
-from tests._helpers.constants import (
-    DEFAULT_RUN_ID as DEFAULT_TEST_RUN_ID,
-)
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
+
+DEFAULT_TEST_REPO = DEFAULT_VARIANT.repo
+DEFAULT_TEST_COMMIT = DEFAULT_VARIANT.commit
+DEFAULT_TEST_RUN_ID = DEFAULT_VARIANT.run_id or "test-run-001"
 
 
 def create_test_snapshot(

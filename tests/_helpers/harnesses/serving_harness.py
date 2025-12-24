@@ -16,12 +16,13 @@ from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
+from tests._helpers.gateway import seed_repo_identity
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
     HarnessOpenOptions,
 )
-from tests._helpers.orchestration.repo_writers import write_sample_repo
+from tests._helpers.fixtures.repos import write_sample_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -69,6 +70,12 @@ class ServingTargetHarness:
             repo_writer=write_sample_repo,
         )
         base = HamiltonBuildHarness.open(tmp_path, harness=config, options=resolved)
+        seed_repo_identity(
+            base.ctx.gateway,
+            repo=base.ctx.snapshot.repo,
+            commit=base.ctx.snapshot.commit,
+            repo_root=base.ctx.repo_root,
+        )
         return cls(base)
 
     def run_targets(self, targets: Iterable[str] | None = None) -> dict[str, TargetRunRecord]:
@@ -96,6 +103,7 @@ class ServingTargetHarness:
         ServingSnapshotManifest
             Published serving snapshot manifest.
         """
+        self._assert_modules_seeded()
         record = self.harness.record(SERVING_ARTIFACTS_TARGET_NAME)
         artifact_paths = {artifact.name: artifact.path for artifact in record.artifacts}
         semantic_registry = _require_path(artifact_paths, SERVING_ARTIFACT_SEMANTIC_REGISTRY)
@@ -112,6 +120,17 @@ class ServingTargetHarness:
             keep_last=keep_last,
         )
         return publish_serving_snapshot(gateway=self.harness.ctx.gateway, request=request)
+
+    def _assert_modules_seeded(self) -> None:
+        gateway = self.harness.ctx.gateway
+        if not gateway.policy.table_exists(schema="core", table="modules"):
+            message = "core.modules is missing; serving snapshots require seeded module inventory."
+            raise AssertionError(message)
+        row = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
+        count = int(row[0]) if row is not None and row[0] is not None else 0
+        if count <= 0:
+            message = "core.modules is empty; serving snapshots require seeded module inventory."
+            raise AssertionError(message)
 
     def assert_artifacts_exist(self) -> None:
         """Assert serving artifacts exist on disk.

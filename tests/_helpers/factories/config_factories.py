@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.runtime import GraphRuntimeOptions
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 if TYPE_CHECKING:
     from codeintel.config import GraphBackendConfig
@@ -14,8 +15,8 @@ if TYPE_CHECKING:
 
 
 def make_snapshot(
-    repo: str = "demo/repo",
-    commit: str = "deadbeef",
+    repo: str = DEFAULT_VARIANT.repo,
+    commit: str = DEFAULT_VARIANT.commit,
     repo_root: Path | None = None,
 ) -> SnapshotRef:
     """

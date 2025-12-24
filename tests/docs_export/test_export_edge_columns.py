@@ -9,6 +9,7 @@ from codeintel.build.exports import export_jsonl_for_table
 from codeintel.build.schemas import iter_contracts_by_table_key
 from codeintel.core.config.settings import ExportAuditSettings
 from tests._helpers import provision_graph_ready_repo
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -19,7 +20,7 @@ EXPORT_SETTINGS = ExportAuditSettings()
 
 
 def _setup_edge_table(con: DuckDBConnection, table: str) -> None:
-    con.execute("CREATE SCHEMA IF NOT EXISTS graph;")
+    ensure_production_schemas(con)
     contract = dict(iter_contracts_by_table_key())[table]
     if contract.schema is None:
         message = f"No schema for {table}"

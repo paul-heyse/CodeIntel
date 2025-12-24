@@ -273,12 +273,12 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__semantic_registry",
 )
-def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
+def serving_artifacts__semantic_registry(env: BuildEnv) -> str:
     """Compile semantic registry JSON for serving.
 
     Parameters
     ----------
-    _env
+    env
         Build environment (unused; required for Hamilton input binding).
 
     Returns
@@ -286,6 +286,7 @@ def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
     str
         Newline-terminated semantic registry JSON payload.
     """
+    _ = env
     return _semantic_registry_json()
 
 
@@ -303,12 +304,12 @@ def serving_artifacts__semantic_registry(_env: BuildEnv) -> str:
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__schema_manifest",
 )
-def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
+def serving_artifacts__schema_manifest(env: BuildEnv) -> str:
     """Compile schema manifest JSON for serving.
 
     Parameters
     ----------
-    _env
+    env
         Build environment (unused; required for Hamilton input binding).
 
     Returns
@@ -316,7 +317,7 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
     str
         Newline-terminated schema manifest JSON payload.
     """
-    return _schema_manifest_json(_env)
+    return _schema_manifest_json(env)
 
 
 @SaveToObjectMetadataDecorator(
@@ -333,12 +334,12 @@ def serving_artifacts__schema_manifest(_env: BuildEnv) -> str:
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__buildspec",
 )
-def serving_artifacts__buildspec(_env: BuildEnv) -> str:
+def serving_artifacts__buildspec(env: BuildEnv) -> str:
     """Compile BuildSpec JSON for serving.
 
     Parameters
     ----------
-    _env
+    env
         Build environment (unused; required for Hamilton input binding).
 
     Returns
@@ -346,6 +347,7 @@ def serving_artifacts__buildspec(_env: BuildEnv) -> str:
     str
         Newline-terminated BuildSpec JSON payload.
     """
+    _ = env
     return _buildspec_json()
 
 

@@ -40,7 +40,7 @@ from tests._helpers.graphs import (
     insert_subsystems,
     insert_symbol_edges,
 )
-from tests._helpers.repo import (
+from tests._helpers.fixtures.repos import (
     GOID_FUNC_A,
     GOID_FUNC_B,
     GOID_FUNC_C,

@@ -18,7 +18,7 @@ from codeintel.analytics.functions.function_contracts import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_is_none
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.contracts import count_rows
 from tests._helpers.factories import make_snapshot
 
@@ -173,7 +173,7 @@ def test_build_function_contracts_empty_catalog(
     total = count_rows(
         memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
-        [DEFAULT_REPO, DEFAULT_COMMIT],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit],
     )
     expect_equal(total, 0)
 
@@ -208,7 +208,7 @@ def test_build_function_contracts_with_simple_function(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, goid],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, goid],
     ).fetchone()
 
     expect_is_none(result)
@@ -242,7 +242,7 @@ def test_build_function_contracts_with_assert_guard(
     total = count_rows(
         memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
-        [DEFAULT_REPO, DEFAULT_COMMIT],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit],
     )
     expect_equal(total, 0)
 
@@ -305,7 +305,7 @@ def test_build_function_contracts_with_isinstance_check(
     total = count_rows(
         memory_gateway.con,
         "SELECT COUNT(*) FROM analytics.function_contracts WHERE repo = ? AND commit = ?",
-        [DEFAULT_REPO, DEFAULT_COMMIT],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit],
     )
     expect_equal(total, 0)
 

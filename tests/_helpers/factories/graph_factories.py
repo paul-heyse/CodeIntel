@@ -22,10 +22,11 @@ build_dense_cluster
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Final, cast
 
 import networkx as nx
 
+from tests._helpers.fixtures.graphs import GraphFixtureFactory, GraphFixtureSpec
 GOLDEN_MIN_NODES: Final[int] = 13
 GOLDEN_MIN_EDGES: Final[int] = 30
 GOLDEN_EXPECTED_COMMUNITIES: Final[int] = 2
@@ -56,38 +57,8 @@ def build_layered_call_graph() -> nx.DiGraph:
     >>> len(graph.edges()) >= 30
     True
     """
-    g = nx.DiGraph()
-
-    core_funcs = ["format_string", "parse_json", "validate_input", "hash_value"]
-    g.add_nodes_from(core_funcs)
-
-    services = ["authenticate", "query", "execute", "get_cached", "set_cached"]
-    g.add_nodes_from(services)
-    for s in services:
-        g.add_edge(s, "validate_input")
-        g.add_edge(s, "format_string")
-
-    handlers = ["create_user", "get_user", "update_user", "delete_user", "create_order"]
-    g.add_nodes_from(handlers)
-    for h in handlers:
-        g.add_edge(h, "authenticate")
-        g.add_edge(h, "query")
-        g.add_edge(h, "get_cached")
-
-    api = ["handle_request", "register_routes"]
-    g.add_nodes_from(api)
-    for a in api:
-        for h in handlers:
-            g.add_edge(a, h)
-
-    g.add_node("log_info")
-    for node in services + handlers:
-        g.add_edge(node, "log_info")
-
-    g.add_edge("authenticate", "get_cached")
-    g.add_edge("get_cached", "authenticate")
-
-    return g
+    spec = GraphFixtureSpec(kind="layered", directed=True, layers=(4, 5, 5, 3))
+    return cast("nx.DiGraph", GraphFixtureFactory.build(spec))
 
 
 def build_layered_import_graph() -> nx.DiGraph:
@@ -114,38 +85,8 @@ def build_layered_import_graph() -> nx.DiGraph:
     >>> "services.auth" in graph.nodes()
     True
     """
-    g = nx.DiGraph()
-
-    core = ["core.utils", "core.types", "core.errors", "core.config"]
-    g.add_nodes_from(core)
-
-    services = ["services.auth", "services.cache", "services.database"]
-    g.add_nodes_from(services)
-    for s in services:
-        g.add_edge(s, "core.utils")
-        g.add_edge(s, "core.errors")
-
-    handlers = ["handlers.user", "handlers.product", "handlers.order"]
-    g.add_nodes_from(handlers)
-    for h in handlers:
-        g.add_edge(h, "services.auth")
-        g.add_edge(h, "services.database")
-        g.add_edge(h, "core.errors")
-
-    api = ["api.routes", "api.middleware"]
-    g.add_nodes_from(api)
-    for a in api:
-        for h in handlers:
-            g.add_edge(a, h)
-
-    g.add_node("utils.logging")
-    for node in services + handlers + api:
-        g.add_edge(node, "utils.logging")
-
-    g.add_edge("services.auth", "services.cache")
-    g.add_edge("services.cache", "services.auth")
-
-    return g
+    spec = GraphFixtureSpec(kind="layered", directed=True, layers=(4, 3, 3, 2))
+    return cast("nx.DiGraph", GraphFixtureFactory.build(spec))
 
 
 def build_star_graph(center: str | int = 0, leaves: int = 10) -> nx.DiGraph:
@@ -174,13 +115,14 @@ def build_star_graph(center: str | int = 0, leaves: int = 10) -> nx.DiGraph:
     >>> graph.in_degree("hub")
     5
     """
-    g = nx.DiGraph()
-    g.add_node(center)
-    for i in range(leaves):
-        leaf = f"leaf_{i}" if isinstance(center, str) else i + 1
-        g.add_node(leaf)
-        g.add_edge(leaf, center)
-    return g
+    spec = GraphFixtureSpec(kind="star", directed=True, spokes=leaves)
+    graph = cast("nx.DiGraph", GraphFixtureFactory.build(spec))
+    if center != "hub":
+        mapping = {"hub": center}
+        for i in range(leaves):
+            mapping[f"spoke{i + 1}"] = f"leaf_{i}" if isinstance(center, str) else i + 1
+        return cast("nx.DiGraph", nx.relabel_nodes(graph, mapping))
+    return graph
 
 
 def build_chain_graph(length: int = 10, prefix: str = "node") -> nx.DiGraph:

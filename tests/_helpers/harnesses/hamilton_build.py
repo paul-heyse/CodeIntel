@@ -19,6 +19,7 @@ from tests._helpers.context import SeedPack, TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions, GatewayOptions
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 from tests._helpers.hamilton_manifest_priming import ManifestPriming
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -109,6 +110,7 @@ class HarnessOpenOptions:
     tools_config: ToolsConfig | None = None
     providers: Providers | None = None
     build_config: BuildConfig | None = None
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
 
 
 @dataclass
@@ -150,12 +152,11 @@ class HamiltonBuildHarness:
         db_path = build_dir / "db" / "codeintel.duckdb"
 
         env_opts = EnvOptions(
-            repo=cfg.repo,
-            commit=cfg.commit,
             file_backed=cfg.file_backed_db,
             repo_root=repo_root,
             build_dir=build_dir,
             db_path=db_path if cfg.file_backed_db else None,
+            snapshot_variant=resolved.snapshot_variant,
         )
         ctx = create_test_context(
             tmp_path,
@@ -353,7 +354,7 @@ class HamiltonBuildHarness:
             raise RuntimeError(message)
         record = resolved.get_record(target)
         if record is None:
-            message = f"No TargetRunRecord found for target {target}"
+            message = _format_missing_record_error(target, resolved)
             raise RuntimeError(message)
         return record
 
@@ -377,6 +378,19 @@ class HamiltonBuildHarness:
     def priming(self) -> ManifestPriming:
         """Access manifest priming helpers for this harness."""
         return ManifestPriming(self)
+
+
+def _format_missing_record_error(target: str, result: HamiltonBuildResult) -> str:
+    parts = [f"No TargetRunRecord found for target {target}."]
+    if result.error:
+        parts.append(f"build_error={result.error}")
+    if result.failed_targets:
+        parts.append(f"failed_targets={result.failed_targets}")
+    if result.skipped_targets:
+        parts.append(f"skipped_targets={result.skipped_targets}")
+    if result.computed_targets:
+        parts.append(f"computed_targets={result.computed_targets}")
+    return " ".join(parts)
 
 
 __all__ = [

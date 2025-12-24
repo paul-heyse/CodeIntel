@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
-from tests._helpers.repo import (
+from tests._helpers.fixtures.repos import (
     GOID_CALLEE,
     GOID_CALLER,
     GOID_FUNC_A,
@@ -34,7 +34,7 @@ from tests._helpers.repo import (
 
 if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
-    from tests._helpers.repo import (
+    from tests._helpers.fixtures.repos import (
         CanonicalRepo,
     )
 

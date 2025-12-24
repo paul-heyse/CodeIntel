@@ -9,9 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
-from tests._helpers.context import DEFAULT_COMMIT, DEFAULT_REPO
 from tests._helpers.env import create_test_env
 from tests._helpers.env_options import EnvOptions
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.ast_metrics import AST_METRICS_PACK
 from tests._helpers.seeds.config import CONFIG_PACK
@@ -28,8 +28,7 @@ if TYPE_CHECKING:
 class ScenarioConfig:
     """Configuration for a test scenario."""
 
-    repo: str = DEFAULT_REPO
-    commit: str = DEFAULT_COMMIT
+    snapshot_variant: SnapshotVariant = DEFAULT_VARIANT
     seed_packs: list[SeedPack] = field(default_factory=list)
     file_backed: bool = False
     write_files: bool = False
@@ -161,26 +160,15 @@ class TestScenario:
         scenario.config.seed_packs.extend([CORE_PACK, GRAPH_PACK, COVERAGE_PACK, METRICS_PACK])
         return scenario
 
-    def with_repo(self, repo: str) -> Self:
-        """Set repository identifier.
+    def with_snapshot_variant(self, variant: SnapshotVariant) -> Self:
+        """Set snapshot variant for this scenario.
 
         Returns
         -------
         Self
             Self for chaining.
         """
-        self.config.repo = repo
-        return self
-
-    def with_commit(self, commit: str) -> Self:
-        """Set commit hash.
-
-        Returns
-        -------
-        Self
-            Self for chaining.
-        """
-        self.config.commit = commit
+        self.config.snapshot_variant = variant
         return self
 
     def with_seeds(self, *packs: SeedPack) -> Self:
@@ -238,9 +226,8 @@ class TestScenario:
         ctx = create_test_env(
             tmp_path,
             options=EnvOptions(
-                repo=self.config.repo,
-                commit=self.config.commit,
                 file_backed=self.config.file_backed,
+                snapshot_variant=self.config.snapshot_variant,
             ),
         )
 

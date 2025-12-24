@@ -23,7 +23,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fakes.function_catalogs import (
@@ -59,7 +59,7 @@ def ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context configured with default repo and commit identifiers.
     """
-    options = EnvOptions(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
+    options = EnvOptions(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
     context = create_test_context(tmp_path, options=options)
     try:
         yield context
@@ -177,8 +177,8 @@ def _seed_docstrings(
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
         [
-            DEFAULT_REPO,
-            DEFAULT_COMMIT,
+            DEFAULT_VARIANT.repo,
+            DEFAULT_VARIANT.commit,
             rel_path,
             rel_path.replace("/", ".").replace(".py", ""),
             qualname,
@@ -217,8 +217,8 @@ def _seed_function_types(
         ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
         [
-            DEFAULT_REPO,
-            DEFAULT_COMMIT,
+            DEFAULT_VARIANT.repo,
+            DEFAULT_VARIANT.commit,
             goid,
             return_type,
             json.dumps(param_types) if param_types else "{}",
@@ -280,7 +280,7 @@ def test_compute_contracts_with_catalog_goid_iteration(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -309,7 +309,7 @@ def test_compute_contracts_with_missing_ast(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -358,7 +358,7 @@ def test_compute_contracts_with_docstring_data(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -405,7 +405,7 @@ def test_compute_contracts_with_type_annotations(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_TYPED],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_TYPED],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -450,7 +450,7 @@ def test_compute_contracts_with_guards_and_catalog(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_GUARDED],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_GUARDED],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -498,7 +498,7 @@ def test_compute_contracts_with_bool_return_type(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -554,7 +554,7 @@ def test_compute_contracts_confidence_score(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -596,7 +596,7 @@ def test_compute_contracts_multiple_goids(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -642,7 +642,7 @@ def test_compute_contracts_with_nullable_return(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -681,7 +681,7 @@ def test_compute_contracts_with_isinstance_guard(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     result = expect_is_not_none(result)
@@ -723,7 +723,7 @@ def test_compute_contracts_with_len_check(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     expect_is_not_none(result)
@@ -759,7 +759,7 @@ def test_compute_contracts_with_predicate_name(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     expect_is_not_none(result)
@@ -803,7 +803,7 @@ def test_compute_contracts_with_doc_return_none(
         FROM analytics.function_contracts
         WHERE repo = ? AND commit = ? AND function_goid_h128 = ?
         """,
-        [DEFAULT_REPO, DEFAULT_COMMIT, GOID_SIMPLE],
+        [DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit, GOID_SIMPLE],
     ).fetchone()
 
     result = expect_is_not_none(result)

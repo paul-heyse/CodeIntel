@@ -20,10 +20,10 @@ from codeintel.serving.semantic.models import (
 )
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
-from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
+from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,8 +32,7 @@ if TYPE_CHECKING:
 def _make_snapshot_db(db_path: Path) -> None:
     gateway = GatewayFactory().file_backed(db_path).open()
     try:
-        apply_metadata_ddl(gateway.con)
-        gateway.con.execute("CREATE SCHEMA docs")
+        ensure_production_schemas(gateway.con)
         gateway.con.execute("CREATE TABLE docs.demo (id INTEGER, label VARCHAR)")
         gateway.con.execute("INSERT INTO docs.demo VALUES (1, 'one'), (2, 'two'), (3, 'three')")
         gateway.con.execute("CREATE VIEW docs.v_demo AS SELECT * FROM docs.demo")
@@ -212,7 +211,7 @@ async def test_kernel_describe_includes_lineage(tmp_path: Path) -> None:
 
     con = duckdb.connect(str(db_path))
     try:
-        apply_metadata_ddl(con)
+        ensure_production_schemas(con)
         con.execute(
             """
             INSERT INTO metadata.derived_lineage_columns (

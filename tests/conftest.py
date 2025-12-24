@@ -17,7 +17,7 @@ import pytest
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers import GatewayOptions, ProvisioningConfig, provisioned_gateway
-from tests._helpers.constants import DEFAULT_COMMIT, DEFAULT_REPO
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.context import create_test_context
 from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.gateway import GatewayFactory
@@ -280,7 +280,7 @@ def span_env(tmp_path: Path) -> Iterator[SpanTestEnv]:
     SpanTestEnv
         Span test context built from a snapshot-backed gateway; gateway closed after the test.
     """
-    gateway = GatewayFactory().with_snapshot(DEFAULT_REPO, DEFAULT_COMMIT).open()
+    gateway = GatewayFactory().with_snapshot(DEFAULT_VARIANT.repo, DEFAULT_VARIANT.commit).open()
     try:
         yield create_span_test_env(tmp_path, gateway)
     finally:
@@ -325,7 +325,7 @@ def architecture_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway configured for architecture tests; closed after the session.
     """
-    provisioned = open_seeded_architecture_gateway(repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
+    provisioned = open_seeded_architecture_gateway(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
     try:
         yield provisioned
     finally:
@@ -357,7 +357,7 @@ def graph_ready_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     ProvisionedGateway
         Gateway prepared for graph tests; closed after the test.
     """
-    ctx = provision_graph_ready_repo(tmp_path / "repo", repo=DEFAULT_REPO, commit=DEFAULT_COMMIT)
+    ctx = provision_graph_ready_repo(tmp_path / "repo", repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
     try:
         yield ctx
     finally:
