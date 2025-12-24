@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "97923211030bd9ccb33df9c06d0124eafda1ca3867f94dc0734766f1e7d6c639",
+  "buildspec_hash": "7b33b9f20765ffaa90647cdecb94ed59afe0f7a82e7b710fb6b1150fba2a6f03",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -758,11 +758,6 @@
           "kind": null,
           "name": "scip_index",
           "path_template": "{scip_dir}/index.scip"
-        },
-        {
-          "kind": null,
-          "name": "scip_json",
-          "path_template": "{scip_dir}/index.json"
         }
       ],
       "deps": [
@@ -775,6 +770,20 @@
         "core.scip_occurrences",
         "core.scip_symbols"
       ]
+    },
+    {
+      "artifacts": [
+        {
+          "kind": null,
+          "name": "scip_pb2",
+          "path_template": "{scip_dir}/proto/scip_pb2.py"
+        }
+      ],
+      "deps": [],
+      "domain": "ingestion",
+      "impl_kind": "native",
+      "name": "scip_proto",
+      "outputs": []
     },
     {
       "artifacts": [],

@@ -39,7 +39,8 @@ from tests._helpers.modules_expectations import (
     module_paths_expected_from_repo_tree,
     modules_expected_from_env,
 )
-from tests._helpers.tool_payloads import pytest_report_payload, scip_json_payload
+from tests._helpers.scip_proto import ensure_proto_module, write_scip_index as write_proto_index
+from tests._helpers.tool_payloads import pytest_report_payload
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -504,10 +505,10 @@ def write_scip_index(
     build_dir: Path,
     documents: Sequence[Mapping[str, object]],
     *,
-    filename: str = "index.json",
+    filename: str = "index.scip",
 ) -> Path:
     """
-    Write a SCIP index JSON artifact under ``build/scip``.
+    Write a SCIP protobuf index under ``build/scip``.
 
     Parameters
     ----------
@@ -516,7 +517,7 @@ def write_scip_index(
     documents
         Iterable of SCIP document payloads.
     filename
-        Optional filename override (defaults to ``index.json``).
+        Optional filename override (defaults to ``index.scip``).
 
     Returns
     -------
@@ -527,8 +528,12 @@ def write_scip_index(
     scip_dir.mkdir(parents=True, exist_ok=True)
     index_path = scip_dir / filename
     typed_documents = [dict(doc) for doc in documents]
-    payload = scip_json_payload(documents=typed_documents)
-    index_path.write_text(json.dumps(payload), encoding="utf-8")
+    proto_module_path = ensure_proto_module()
+    write_proto_index(
+        index_path,
+        proto_module_path=proto_module_path,
+        documents=typed_documents,
+    )
     return index_path
 
 

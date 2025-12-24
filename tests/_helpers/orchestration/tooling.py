@@ -21,6 +21,7 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.engine.service import ToolService
 from tests._helpers.ingestion import write_coverage_file
+from tests._helpers.scip_proto import ensure_proto_module
 from tests._helpers.tool_payloads import coverage_json_payload
 from tests._helpers.tooling_audit import require_tooling
 
@@ -148,7 +149,6 @@ class ToolingArtifacts:
     coverage_file: Path
     pytest_report: Path
     scip_index: Path
-    scip_index_json: Path
     service: ToolService
     adapter: ToolRunnerAdapter
     context: ToolingContext
@@ -250,7 +250,6 @@ def build_tooling_artifacts(
             ToolName.PYREFLY,
             ToolName.RUFF,
             ToolName.PYTEST,
-            ToolName.SCIP,
             ToolName.SCIP_PYTHON,
         ),
         repo_root=tooling_repo_root,
@@ -268,13 +267,12 @@ def build_tooling_artifacts(
     )
     coverage_file = write_coverage_file(build_dir, content=coverage_json)
     pytest_report = _run_pytest_report(outputs.context, build_dir)
-    scip_index, scip_index_json = _run_scip_index(outputs.context, build_dir)
+    scip_index = _run_scip_index(outputs.context, build_dir)
     adapter = ToolRunnerAdapter(outputs.context.service)
     return ToolingArtifacts(
         coverage_file=coverage_file,
         pytest_report=pytest_report,
         scip_index=scip_index,
-        scip_index_json=scip_index_json,
         service=outputs.context.service,
         adapter=adapter,
         context=outputs.context,
@@ -290,17 +288,23 @@ def _run_pytest_report(context: ToolingContext, build_dir: Path) -> Path:
     return report_path
 
 
-def _run_scip_index(context: ToolingContext, build_dir: Path) -> tuple[Path, Path]:
+def _run_scip_index(context: ToolingContext, build_dir: Path) -> Path:
     scip_dir = build_dir / "scip"
     scip_dir.mkdir(parents=True, exist_ok=True)
     output_scip = scip_dir / "index.scip"
-    result = asyncio.run(context.service.run_scip_full(context.repo_root, output_scip=output_scip))
+    proto_module_path = ensure_proto_module(build_dir)
+    result = asyncio.run(
+        context.service.run_scip_full(
+            context.repo_root,
+            output_scip=output_scip,
+            proto_module_path=proto_module_path,
+        )
+    )
     scip_index = result.index_scip_path or output_scip
-    scip_json = result.index_json_path or output_scip.with_suffix(".json")
-    if not scip_index.is_file() or not scip_json.is_file():
-        message = f"SCIP artifacts missing at {scip_index} or {scip_json}"
+    if not scip_index.is_file():
+        message = f"SCIP artifact missing at {scip_index}"
         raise RuntimeError(message)
-    return scip_index, scip_json
+    return scip_index
 
 
 @pytest.fixture

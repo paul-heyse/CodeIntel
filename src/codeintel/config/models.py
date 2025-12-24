@@ -247,6 +247,10 @@ class ToolsConfig(BaseModel):
     generation, static typing diagnostics, and coverage/test ingestion.
     """
 
+    scip_project_name: str = Field(
+        "CodeIntel",
+        description="Project name passed to scip-python for stable SCIP identity",
+    )
     scip_python_bin: str = Field("scip-python", description="Path to scip-python binary")
     scip_bin: str = Field("scip", description="Path to scip binary")
     protoc_bin: str = Field(

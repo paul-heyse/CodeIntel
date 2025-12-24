@@ -36,10 +36,15 @@ from codeintel.build.hamilton.native.ingestion.ingest_targets import (
 from codeintel.build.hamilton.native.ingestion.scip import (
     ScipRunResult,
     scip__index_artifact,
-    scip__json_artifact,
     t__scip,
     t__scip__ingest,
     t__scip__run,
+)
+from codeintel.build.hamilton.native.ingestion.scip_proto import (
+    ScipProtoRunResult,
+    scip__proto_module_path,
+    t__scip_proto,
+    t__scip_proto__run,
 )
 
 __all__: list[str] = [
@@ -47,11 +52,12 @@ __all__: list[str] = [
     "ConfigScanResult",
     "CoverageIngestResult",
     "ModuleScanResult",
+    "ScipProtoRunResult",
     "ScipRunResult",
     "TestsIngestResult",
     "TypingIngestResult",
     "scip__index_artifact",
-    "scip__json_artifact",
+    "scip__proto_module_path",
     "t__ast",
     "t__ast__extract",
     "t__config_ingest",
@@ -68,6 +74,8 @@ __all__: list[str] = [
     "t__scip",
     "t__scip__ingest",
     "t__scip__run",
+    "t__scip_proto",
+    "t__scip_proto__run",
     "t__tests_ingest",
     "t__tests_ingest__ingest",
     "t__typing",

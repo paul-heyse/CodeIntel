@@ -293,6 +293,7 @@ dependencies = [
     { name = "fastmcp" },
     { name = "graphviz" },
     { name = "grpcio" },
+    { name = "grpcio-observability" },
     { name = "grpcio-tools" },
     { name = "hypothesis" },
     { name = "ibis-framework", extra = ["duckdb"] },
@@ -405,6 +406,7 @@ requires-dist = [
     { name = "fastmcp", specifier = ">=2.14.1,<3" },
     { name = "graphviz", specifier = ">=0.21" },
     { name = "grpcio", specifier = ">=1.76.0" },
+    { name = "grpcio-observability", specifier = ">=1.76.0" },
     { name = "grpcio-tools", specifier = ">=1.76.0" },
     { name = "hypothesis", specifier = ">=6.148.3" },
     { name = "ibis-framework", extras = ["duckdb"], specifier = ">=11.0.0" },
@@ -966,6 +968,26 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/1a/74/fd3317be5672f4856bcdd1a9e7b5e17554692d3db9a3b273879dc02d657d/grpcio-1.76.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:931091142fd8cc14edccc0845a79248bc155425eee9a98b2db2ea4f00a235a42", size = 7589983, upload-time = "2025-10-21T16:22:07.881Z" },
     { url = "https://files.pythonhosted.org/packages/45/bb/ca038cf420f405971f19821c8c15bcbc875505f6ffadafe9ffd77871dc4c/grpcio-1.76.0-cp313-cp313-win32.whl", hash = "sha256:5e8571632780e08526f118f74170ad8d50fb0a48c23a746bef2a6ebade3abd6f", size = 3984727, upload-time = "2025-10-21T16:22:10.032Z" },
     { url = "https://files.pythonhosted.org/packages/41/80/84087dc56437ced7cdd4b13d7875e7439a52a261e3ab4e06488ba6173b0a/grpcio-1.76.0-cp313-cp313-win_amd64.whl", hash = "sha256:f9f7bd5faab55f47231ad8dba7787866b69f5e93bc306e3915606779bbfb4ba8", size = 4702799, upload-time = "2025-10-21T16:22:12.709Z" },
+]
+
+[[package]]
+name = "grpcio-observability"
+version = "1.76.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "opentelemetry-api" },
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/56/bf/b7e834e25813d034ecf1d6d2c66ac79dc446702a65a45093231ebaa0e5b0/grpcio_observability-1.76.0.tar.gz", hash = "sha256:ebf4b41fc0ad1e2276c2d8e226384a851b0738b3aa5d68a0d94a346c725e6d91", size = 6249759, upload-time = "2025-10-21T16:28:50.833Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/13/05/5f535ac669c3c4ad8fec85f57f8827cbb658d9f91f1abc34bc7c21de7f95/grpcio_observability-1.76.0-cp313-cp313-linux_armv7l.whl", hash = "sha256:89907410066eb3d3ee27a4a91cd77fa8e7fdb9a363d91c51441f09e171486118", size = 352622, upload-time = "2025-10-21T16:27:52.835Z" },
+    { url = "https://files.pythonhosted.org/packages/70/ed/25b82007da81fe43fb73639f7b14dc716c30ad856a10758cd4f1dad6c7fc/grpcio_observability-1.76.0-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:303b503aab527d707ab3675dc0e6d87a80012423116bc5247780c235f1e7a419", size = 371756, upload-time = "2025-10-21T16:27:51.48Z" },
+    { url = "https://files.pythonhosted.org/packages/13/cf/09c84ec803ad41d52d0c57af0f5d0d1746f987d43c743b3dfa928b279a1a/grpcio_observability-1.76.0-cp313-cp313-manylinux2014_i686.manylinux_2_17_i686.whl", hash = "sha256:77355c687af621d1495e97542af32c0fabbf537b9bc0cb7cba64258751201d03", size = 420486, upload-time = "2025-10-21T16:27:35.089Z" },
+    { url = "https://files.pythonhosted.org/packages/db/e0/23938cf650dc9a71b7b7468665365fa9bff9212e2ee33781ba4489f5de6d/grpcio_observability-1.76.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:cf8f970d75cf57338e29676ade42026fc2ba4aff7ba6a08e142918835e4f4113", size = 379971, upload-time = "2025-10-21T16:27:59.325Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/17/ef45c6208619e2c2d1ee75c9f66baee7bd1691ed861e84193b8162cdaeec/grpcio_observability-1.76.0-cp313-cp313-musllinux_1_2_aarch64.whl", hash = "sha256:e9465fab35e56402dd2ed9982cc43eef055e15b43a9e7d468758bad61e319d02", size = 773313, upload-time = "2025-10-21T16:27:50.096Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/c1/8d50d8ab45e6eee839106b1719f68f9bcb4147e720e5e088c69f320c968e/grpcio_observability-1.76.0-cp313-cp313-musllinux_1_2_i686.whl", hash = "sha256:7b5ded4d3473de1680c606e0d29495be561b613b1045718ff5fb14a380d0d08f", size = 885797, upload-time = "2025-10-21T16:28:29.453Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/5e/bce74251eb3b430fdbc221db54d2b786c98c98b65202a6877b225ea33da5/grpcio_observability-1.76.0-cp313-cp313-musllinux_1_2_x86_64.whl", hash = "sha256:8e31ef75663588e990cd03f8afbc15aee449db3fce57a8345ed0d9e2e197b8f7", size = 804862, upload-time = "2025-10-21T16:28:21.336Z" },
 ]
 
 [[package]]

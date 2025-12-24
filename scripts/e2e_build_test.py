@@ -303,14 +303,12 @@ def _stage_scip_index(
     """
     scip_dir = build_dir / "scip"
     scip_index = scip_dir / "index.scip"
-    scip_json = scip_dir / "index.scip.json"
 
     if skip_scip and scip_index.exists():
         log.info("Skipping SCIP indexing - using existing index at %s", scip_index)
         return {
             "skipped": True,
             "scip_index": str(scip_index),
-            "scip_json": str(scip_json) if scip_json.exists() else None,
             "index_size_mb": scip_index.stat().st_size / (1024 * 1024),
         }
 
@@ -321,24 +319,16 @@ def _stage_scip_index(
         COMMAND_EXECUTOR.run_scip_index(
             repo_root,
             scip_index,
-            project_name="codeintel",
+            project_name="CodeIntel",
         )
     except CommandNotAllowedError as exc:
         msg = "scip-python is not available on PATH"
         raise RuntimeError(msg) from exc
 
-    if not scip_json.exists() and scip_index.exists():
-        try:
-            COMMAND_EXECUTOR.export_scip_to_json(scip_index, scip_json)
-        except CommandNotAllowedError as exc:
-            msg = "scip CLI is not available on PATH"
-            raise RuntimeError(msg) from exc
-
     index_size = scip_index.stat().st_size / (1024 * 1024) if scip_index.exists() else 0.0
     return {
         "skipped": False,
         "scip_index": str(scip_index),
-        "scip_json": str(scip_json) if scip_json.exists() else None,
         "index_size_mb": index_size,
     }
 

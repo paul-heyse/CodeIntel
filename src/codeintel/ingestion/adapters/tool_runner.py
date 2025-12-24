@@ -277,6 +277,9 @@ class ToolRunnerAdapter:
         *,
         output_scip: Path,
         proto_module_path: Path,
+        target_dir: Path | None = None,
+        rel_paths: Sequence[str] | None = None,
+        timeout_s: float | None = None,
     ) -> ScipResult:
         """Run SCIP indexing.
 
@@ -286,6 +289,14 @@ class ToolRunnerAdapter:
             Repository root directory.
         output_scip
             Path for SCIP index output.
+        proto_module_path
+            Path to generated scip_pb2 module.
+        target_dir
+            Optional repo subdirectory to index.
+        rel_paths
+            Optional repo-relative paths to index.
+        timeout_s
+            Optional timeout override (seconds).
 
         Returns
         -------
@@ -298,6 +309,9 @@ class ToolRunnerAdapter:
                 repo_root,
                 output_scip=output_scip,
                 proto_module_path=proto_module_path,
+                target_dir=target_dir,
+                rel_paths=rel_paths,
+                timeout_s=timeout_s,
             )
 
             duration = time.perf_counter() - start
@@ -311,7 +325,6 @@ class ToolRunnerAdapter:
                 status=ToolStatus.OK,
                 documents=documents,
                 index_scip_path=scip_path if scip_exists else None,
-                index_json_path=None,
                 duration_s=duration,
             )
         except (OSError, RuntimeError, ValueError) as exc:

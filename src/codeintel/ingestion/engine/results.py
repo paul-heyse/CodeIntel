@@ -564,8 +564,6 @@ class ScipIndexResult:
         Sequence of indexed documents.
     index_scip_path
         Path to the .scip binary index file.
-    index_json_path
-        Optional legacy JSON export path (unused in protobuf flow).
     definition_count
         Total number of definitions across all documents.
     reference_count
@@ -574,7 +572,6 @@ class ScipIndexResult:
 
     documents: Sequence[ScipDocument]
     index_scip_path: Path | None = None
-    index_json_path: Path | None = None
     definition_count: int = 0
     reference_count: int = 0
 
@@ -604,7 +601,6 @@ class ScipIndexResult:
         return cls(
             documents=tuple(documents),
             index_scip_path=index_scip_path,
-            index_json_path=None,
             definition_count=total_defs,
             reference_count=total_refs,
         )

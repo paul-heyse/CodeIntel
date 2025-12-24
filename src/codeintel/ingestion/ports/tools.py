@@ -216,8 +216,6 @@ class ScipResult:
         SCIP documents indexed.
     index_scip_path
         Path to the SCIP index file.
-    index_json_path
-        Path to the JSON export file.
     error
         Error message if status is FAILED.
     duration_s
@@ -227,7 +225,6 @@ class ScipResult:
     status: ToolStatus
     documents: list[ScipDocument] = field(default_factory=list)
     index_scip_path: Path | None = None
-    index_json_path: Path | None = None
     error: str | None = None
     duration_s: float = 0.0
 
@@ -365,6 +362,10 @@ class IngestToolPort(Protocol):
         repo_root: Path,
         *,
         output_scip: Path,
+        proto_module_path: Path,
+        target_dir: Path | None = None,
+        rel_paths: Sequence[str] | None = None,
+        timeout_s: float | None = None,
     ) -> ScipResult:
         """Run SCIP indexing.
 
@@ -374,6 +375,14 @@ class IngestToolPort(Protocol):
             Repository root directory.
         output_scip
             Path for SCIP index output.
+        proto_module_path
+            Path to generated scip_pb2 module.
+        target_dir
+            Optional repo subdirectory to index.
+        rel_paths
+            Optional repo-relative paths to index.
+        timeout_s
+            Optional timeout override (seconds).
 
         Returns
         -------

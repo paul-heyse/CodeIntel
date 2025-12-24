@@ -23,8 +23,14 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunOptions,
     ToolRunResult,
 )
-from codeintel.ingestion.engine.results import CoverageReport, ScipIndexResult
+from codeintel.ingestion.engine.results import (
+    CoverageReport,
+    ScipDocument,
+    ScipIndexResult,
+    ScipOccurrence,
+)
 from codeintel.ingestion.engine.service import ToolService
+from tests._helpers.scip_proto import ensure_proto_module, write_scip_index as write_proto_index
 from tests._helpers.records import CallRecorder, ToolRunCall
 
 if TYPE_CHECKING:
@@ -210,11 +216,10 @@ class FakeScipResult:
 
     status: str = "success"
     index_scip: Path | None = None
-    index_json: Path | None = None
     reason: str | None = None
 
 
-def write_dummy_scip_files(base_dir: Path, *, index_content: str = "[]") -> tuple[Path, Path]:
+def write_dummy_scip_files(base_dir: Path) -> Path:
     """
     Create minimal SCIP artifacts for tests.
 
@@ -222,21 +227,17 @@ def write_dummy_scip_files(base_dir: Path, *, index_content: str = "[]") -> tupl
     ----------
     base_dir
         Base directory for SCIP files.
-    index_content
-        Content for the JSON index file.
-
     Returns
     -------
-    tuple[Path, Path]
-        Paths to index.scip and index.scip.json.
+    Path
+        Path to index.scip.
     """
     scip_dir = base_dir / "scip"
     scip_dir.mkdir(parents=True, exist_ok=True)
     index_scip = scip_dir / "index.scip"
-    index_json = scip_dir / "index.scip.json"
-    index_scip.write_text("scip-binary", encoding="utf8")
-    index_json.write_text(index_content, encoding="utf8")
-    return index_scip, index_json
+    proto_module_path = ensure_proto_module()
+    write_proto_index(index_scip, proto_module_path=proto_module_path)
+    return index_scip
 
 
 class PresetRunner(ToolRunner):
@@ -324,7 +325,7 @@ def make_tool_run_result(
     )
 
 
-def make_scip_index_result(base_dir: Path, *, index_content: str = "[]") -> ScipIndexResult:
+def make_scip_index_result(base_dir: Path) -> ScipIndexResult:
     """Create SCIP artifacts and a corresponding ScipIndexResult.
 
     Returns
@@ -332,12 +333,12 @@ def make_scip_index_result(base_dir: Path, *, index_content: str = "[]") -> Scip
     ScipIndexResult
         Result pointing to the generated SCIP artifacts.
     """
-    index_scip, index_json = write_dummy_scip_files(base_dir, index_content=index_content)
-    return ScipIndexResult.from_json_documents(
-        [],
-        index_scip_path=index_scip,
-        index_json_path=index_json,
+    index_scip = write_dummy_scip_files(base_dir)
+    document = ScipDocument(
+        relative_path="src/example.py",
+        occurrences=(ScipOccurrence(symbol="sym", range_=(1, 0, 1, 1), symbol_roles=1),),
     )
+    return ScipIndexResult.from_documents((document,), index_scip_path=index_scip)
 
 
 @dataclass
@@ -524,6 +525,10 @@ class FakeToolService(ToolService):
         repo_root: Path,
         *,
         output_scip: Path,
+        proto_module_path: Path,
+        target_dir: Path | None = None,
+        rel_paths: Sequence[str] | None = None,
+        timeout_s: float | None = None,
     ) -> ScipIndexResult:
         """Run full SCIP indexing and return configured result.
 
@@ -533,13 +538,27 @@ class FakeToolService(ToolService):
             Repository root (logged but not used).
         output_scip
             Output SCIP file path (logged but not used).
+        proto_module_path
+            Path to generated scip_pb2 module (logged but not used).
+        target_dir
+            Optional repo subdirectory to index (logged but not used).
+        rel_paths
+            Optional repo-relative paths to index (logged but not used).
+        timeout_s
+            Optional timeout override (logged but not used).
 
         Returns
         -------
         ScipIndexResult
             Configured SCIP result.
         """
-        args = [str(output_scip)]
+        args = [str(output_scip), str(proto_module_path)]
+        if target_dir is not None:
+            args.append(str(target_dir))
+        if rel_paths:
+            args.extend(rel_paths)
+        if timeout_s is not None:
+            args.append(str(timeout_s))
         self.calls.record(
             ToolRunCall(
                 tool="scip_full",
