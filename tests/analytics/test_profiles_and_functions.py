@@ -88,19 +88,19 @@ from tests._helpers.assertions import (
     expect_true,
     require_row,
 )
-from tests._helpers.factories.row_factories import (
+from tests._helpers.fixtures.rows import (
     blank_behavioral_coverage_row,
     blank_file_profile_row,
     blank_function_profile_row,
     blank_module_profile_row,
     blank_test_profile_row,
+    list_public_exports,
     sample_behavioral_coverage_rows,
     sample_file_profile_rows,
     sample_function_profile_rows,
     sample_module_profile_rows,
     sample_test_profile_rows,
 )
-from tests._helpers.rows import list_public_exports
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.core import (
     GOID_FUNC_A,

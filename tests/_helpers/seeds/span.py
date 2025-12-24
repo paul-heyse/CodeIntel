@@ -21,6 +21,7 @@ from tests._helpers.builders import (
     TestCatalogRow,
     insert_rows,
 )
+from tests._helpers.fixtures.snapshots import SPAN_VARIANT
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
@@ -29,8 +30,8 @@ if TYPE_CHECKING:
     from tests._helpers.context import SeedPack, TestContext
 
 
-SPAN_REPO = "demo/repo"
-SPAN_COMMIT = "deadbeef"
+SPAN_REPO = SPAN_VARIANT.repo
+SPAN_COMMIT = SPAN_VARIANT.commit
 
 
 SPAN_MOD_A_PATH = "pkg/a.py"

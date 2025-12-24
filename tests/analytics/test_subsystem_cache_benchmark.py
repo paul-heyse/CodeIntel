@@ -11,7 +11,7 @@ from codeintel.analytics.subsystems.cache import (
     build_subsystem_coverage_cache_rows,
     build_subsystem_profile_cache_rows,
 )
-from tests._helpers import create_test_context
+from tests._helpers import TestScenario
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -70,7 +70,7 @@ def _seed_subsystem(ctx: TestContext) -> None:
 
 def test_subsystem_cache_rows_build(tmp_path: Path) -> None:
     """Building subsystem cache rows should return matching subsystem entries."""
-    ctx = create_test_context(tmp_path)
+    ctx = TestScenario.minimal().build(tmp_path)
     try:
         _seed_subsystem(ctx)
         profile_rows = build_subsystem_profile_cache_rows(ctx.gateway, ctx.snapshot)

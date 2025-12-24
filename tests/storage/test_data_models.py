@@ -30,7 +30,7 @@ from tests._helpers.assertions import (
     expect_not_in,
     expect_true,
 )
-from tests._helpers.rows import (
+from tests._helpers.fixtures.rows import (
     DataModelFieldSeed,
     DataModelRelationshipSeed,
     DataModelSeed,

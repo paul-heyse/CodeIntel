@@ -13,7 +13,7 @@ from codeintel.graphs.runtime import build_graph_runtime
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.graph_runtime import graph_engine_with_cache
-from tests._helpers.graphs import call_graph_fixture
+from tests._helpers.fixtures.graphs import call_graph_fixture
 
 if TYPE_CHECKING:
     from tests._helpers.fakes.graph_contexts import GraphTestEnv

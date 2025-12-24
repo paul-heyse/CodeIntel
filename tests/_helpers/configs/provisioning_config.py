@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.env_options import GatewayOptions
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 
 
 @dataclass(frozen=True)
@@ -169,6 +169,14 @@ class ProvisioningConfig:
     gateway_options: GatewayOptions | None = None
     run_ingestion: bool = True
 
+    @property
+    def repo(self) -> str:
+        return self.snapshot_variant.repo
+
+    @property
+    def commit(self) -> str:
+        return self.snapshot_variant.commit
+
 
 @dataclass(frozen=True)
 class GraphMetricsGatewayOptions:
@@ -182,6 +190,14 @@ class GraphMetricsGatewayOptions:
     run_metrics: bool = True
     build_callgraph_enabled: bool = True
 
+    @property
+    def repo(self) -> str:
+        return self.snapshot_variant.repo
+
+    @property
+    def commit(self) -> str:
+        return self.snapshot_variant.commit
+
 
 @dataclass(frozen=True)
 class CallgraphFixtureOptions:
@@ -191,6 +207,14 @@ class CallgraphFixtureOptions:
     file_backed: bool = False
     db_path: Path | None = None
     goid_entries: list[tuple[int, str, str, int, int, str]] | None = None
+
+    @property
+    def repo(self) -> str:
+        return self.snapshot_variant.repo
+
+    @property
+    def commit(self) -> str:
+        return self.snapshot_variant.commit
 
 
 __all__ = [
@@ -204,6 +228,6 @@ __all__ = [
     "ProvisioningGatewayOverrides",
     "ProvisioningSetup",
     "RepoContext",
-    "provisioning_gateway_options",
     "SnapshotVariant",
+    "provisioning_gateway_options",
 ]

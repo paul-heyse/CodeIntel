@@ -31,8 +31,8 @@ from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.factories import make_snapshot
-from tests._helpers.fakes.ingestion_context import build_repo_tree
 from tests._helpers.fakes.tools import write_dummy_scip_files
+from tests._helpers.fixtures.repos import write_tree
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 from tests._helpers.modules_expectations import (
@@ -87,7 +87,6 @@ __all__ = [
     "TargetContextConfig",
     "build_ingestion_adapters",
     "build_ingestion_context_bundle",
-    "build_repo_tree",
     "build_repo_with_configs",
     "build_repo_with_variants",
     "build_scan_profile",
@@ -116,6 +115,7 @@ __all__ = [
     "write_dummy_scip_files",
     "write_pytest_report",
     "write_scip_index",
+    "write_tree",
 ]
 
 
@@ -314,7 +314,8 @@ def build_repo_with_variants(
         structure["macros/ingest.sql"] = "-- macros for ingestion\n"
     if extra_structure:
         structure.update(extra_structure)
-    repo_root = build_repo_tree(tmp_path / "repo", structure)
+    repo_root = tmp_path / "repo"
+    write_tree(repo_root, structure)
     if include_symlinks:
         target = repo_root / "pkg" / "mod.py"
         symlink_path = repo_root / "pkg" / "mod_link.py"
@@ -369,16 +370,16 @@ def build_ingestion_context_bundle(
         Bundle containing repo root, gateway, adapters, and seeded module paths.
     """
     opts = variants or RepoVariantOptions()
-    repo_root = (
-        build_repo_tree(tmp_path / "repo", opts.repo_structure)
-        if opts.repo_structure is not None
-        else build_repo_with_variants(
+    if opts.repo_structure is not None:
+        repo_root = tmp_path / "repo"
+        write_tree(repo_root, opts.repo_structure)
+    else:
+        repo_root = build_repo_with_variants(
             tmp_path,
             include_invalid=opts.include_invalid,
             include_macros=opts.include_macros,
             include_symlinks=opts.include_symlinks,
         )
-    )
     gateway = (gateway_factory or GatewayFactory().with_macros()).open()
     target = _make_ingestion_target("repo_scan", "Repository scan target for testing")
     ctx = build_target_context_for_target(
@@ -553,7 +554,8 @@ def build_repo_with_configs(
     if include_invalid:
         structure["config/broken.yml"] = ":\n  - invalid\n"
 
-    repo_root = build_repo_tree(tmp_path / "repo", structure)
+    repo_root = tmp_path / "repo"
+    write_tree(repo_root, structure)
     modules = tuple(path for path in structure if path.endswith(".py"))
     return repo_root, modules
 
@@ -642,11 +644,11 @@ def make_scan_setup(
         Bundle containing repo root, gateway, profile, and scan adapters.
     """
     opts = options or ScanSetupOptions()
-    repo_root = (
-        build_repo_tree(tmp_path / "repo", opts.repo_structure)
-        if opts.repo_structure is not None
-        else build_repo_with_variants(tmp_path, include_invalid=opts.include_invalid)
-    )
+    if opts.repo_structure is not None:
+        repo_root = tmp_path / "repo"
+        write_tree(repo_root, opts.repo_structure)
+    else:
+        repo_root = build_repo_with_variants(tmp_path, include_invalid=opts.include_invalid)
     gateway = (opts.gateway_factory or GatewayFactory().with_macros()).open()
     profile = build_scan_profile(
         repo_root,
@@ -717,8 +719,9 @@ def build_scip_ingest_context(tmp_path: Path) -> ScipIngestContext:
     ScipIngestContext
         Context containing repo_root, gateway, adapters, and build_dir.
     """
-    repo_root = build_repo_tree(
-        tmp_path / "repo",
+    repo_root = tmp_path / "repo"
+    write_tree(
+        repo_root,
         {"pkg/__init__.py": "", "pkg/mod.py": "def foo(x: int) -> int:\n    return x + 1\n"},
     )
     build_dir = repo_root / "build"
@@ -798,8 +801,9 @@ def module_inventory_context(
     ModuleInventoryContext
         Snapshot, gateway, profile, and adapters for inventory round-trips.
     """
-    repo_root = build_repo_tree(
-        tmp_path / "repo",
+    repo_root = tmp_path / "repo"
+    write_tree(
+        repo_root,
         repo_structure
         or {
             "src/pkg/a.py": "print('a')\n",

@@ -38,11 +38,11 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestProfileRow as ProfileRowModel,
 )
-from tests._helpers import CORE_PACK, create_test_context
+from tests._helpers import TestScenario
 from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.contracts import ContractCtx, count_rows
-from tests._helpers.rows import function_meta
+from tests._helpers.fixtures.rows import function_meta
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -168,8 +168,7 @@ def contract_ctx(tmp_path: Path) -> Iterator[ContractCtx]:
     ContractCtx
         Context containing gateway, repo, and commit.
     """
-    ctx: TestContext = create_test_context(tmp_path)
-    ctx.require(CORE_PACK)
+    ctx: TestContext = TestScenario.minimal().build(tmp_path)
     try:
         yield ContractCtx(gateway=ctx.gateway, repo=ctx.repo, commit=ctx.commit)
     finally:

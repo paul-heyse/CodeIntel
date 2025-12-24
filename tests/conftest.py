@@ -16,10 +16,9 @@ import pytest
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
-from tests._helpers import GatewayOptions, ProvisioningConfig, provisioned_gateway
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
-from tests._helpers.context import create_test_context
+from tests._helpers import GatewayOptions, ProvisioningConfig, TestScenario, provisioned_gateway
 from tests._helpers.env import create_provisioned_test_env
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
@@ -38,7 +37,6 @@ from tests._helpers.orchestration.provisioning import (
     provision_graph_ready_repo,
 )
 from tests._helpers.schemas import ensure_storage_contract_catalog
-from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 from tests._helpers.tool_sandbox import ToolSandbox
 
@@ -92,7 +90,7 @@ def test_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context with an initialized gateway and filesystem roots.
     """
-    ctx = create_test_context(tmp_path)
+    ctx = TestScenario().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -108,8 +106,7 @@ def core_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core pack and closed after the test.
     """
-    ctx = create_test_context(tmp_path)
-    ctx.require(CORE_PACK)
+    ctx = TestScenario.minimal().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -125,8 +122,7 @@ def graph_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core and graph packs, then closed after the test.
     """
-    ctx = create_test_context(tmp_path)
-    ctx.require(CORE_PACK, GRAPH_PACK)
+    ctx = TestScenario.with_graph().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -142,8 +138,7 @@ def coverage_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core and coverage packs, then closed after the test.
     """
-    ctx = create_test_context(tmp_path)
-    ctx.require(CORE_PACK, COVERAGE_PACK)
+    ctx = TestScenario.with_coverage().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -159,8 +154,7 @@ def metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
     TestContext
         Context seeded with the core and metrics packs, then closed after the test.
     """
-    ctx = create_test_context(tmp_path)
-    ctx.require(CORE_PACK, METRICS_PACK)
+    ctx = TestScenario.with_metrics().build(tmp_path)
     try:
         yield ctx
     finally:
@@ -325,7 +319,9 @@ def architecture_gateway() -> Iterator[StorageGateway]:
     StorageGateway
         Gateway configured for architecture tests; closed after the session.
     """
-    provisioned = open_seeded_architecture_gateway(repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
+    provisioned = open_seeded_architecture_gateway(
+        repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit
+    )
     try:
         yield provisioned
     finally:
@@ -357,7 +353,9 @@ def graph_ready_gateway(tmp_path: Path) -> Iterator[ProvisionedGateway]:
     ProvisionedGateway
         Gateway prepared for graph tests; closed after the test.
     """
-    ctx = provision_graph_ready_repo(tmp_path / "repo", repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit)
+    ctx = provision_graph_ready_repo(
+        tmp_path / "repo", repo=DEFAULT_VARIANT.repo, commit=DEFAULT_VARIANT.commit
+    )
     try:
         yield ctx
     finally:

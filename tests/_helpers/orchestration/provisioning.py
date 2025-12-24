@@ -49,8 +49,7 @@ from tests._helpers.builders import (
     insert_rows,
 )
 from tests._helpers.configs import (
-    DEFAULT_VARIANT.commit,
-    DEFAULT_VARIANT.repo,
+    DEFAULT_VARIANT,
     CallgraphFixtureOptions,
     GatewayOptions,
     GraphMetricsGatewayOptions,
@@ -63,16 +62,16 @@ from tests._helpers.configs import (
 )
 from tests._helpers.context import TestContext
 from tests._helpers.fakes import utcnow
-from tests._helpers.gateway import GatewayFactory
-from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
-from tests._helpers.ingestion import materialize_repo_scan_result, materialize_rows_for_snapshot
-from tests._helpers.modules_expectations import module_paths_expected_from_repo_tree
 from tests._helpers.fixtures.repos import (
     write_callgraph_alias_repo,
     write_coverage_driver,
     write_graph_metrics_repo,
     write_sample_repo,
 )
+from tests._helpers.gateway import GatewayFactory
+from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
+from tests._helpers.ingestion import materialize_repo_scan_result, materialize_rows_for_snapshot
+from tests._helpers.modules_expectations import module_paths_expected_from_repo_tree
 from tests._helpers.orchestration.seeding import seed_callgraph_goids, seed_cfg_dfg_for_metrics
 from tests._helpers.orchestration.seeding_docs import seed_docs_export_minimal
 from tests._helpers.orchestration.tooling import make_tools_config
@@ -412,18 +411,19 @@ def provisioned_gateway(
         Provisioned gateway scoped to the repo root.
     """
     cfg = config or ProvisioningConfig()
+    variant = cfg.snapshot_variant
     if cfg.run_ingestion:
         ctx = provision_ingested_repo(
             repo_root,
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=variant.repo,
+            commit=variant.commit,
             options=cfg.provision_options,
         )
     else:
         ctx = provision_gateway_with_repo(
             repo_root,
-            repo=cfg.repo,
-            commit=cfg.commit,
+            repo=variant.repo,
+            commit=variant.commit,
             options=cfg.gateway_options,
         )
     try:

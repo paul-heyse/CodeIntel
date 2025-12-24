@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, TypedDict, Unpack
 
 from codeintel.config.primitives import GraphFeatureFlags, SnapshotRef
 from codeintel.graphs.runtime import GraphRuntimeOptions
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from codeintel.config import GraphBackendConfig

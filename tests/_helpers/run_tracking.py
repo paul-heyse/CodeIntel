@@ -10,8 +10,8 @@ import pytest
 from codeintel.core.execution import RunContext
 from codeintel.storage.tracking import PipelineRunTracking
 from tests._helpers.assertions import expect_equal, expect_true
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

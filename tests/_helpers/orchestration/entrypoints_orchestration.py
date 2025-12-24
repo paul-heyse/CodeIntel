@@ -11,6 +11,7 @@ from codeintel.config.primitives import SnapshotRef
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.builders import GoidRow, ModuleRow, RepoMapRow, insert_rows
 from tests._helpers.configs.coverage_config import CoverageSeedConfig
+from tests._helpers.fixtures.snapshots import SnapshotVariant
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
 if TYPE_CHECKING:
@@ -151,8 +152,7 @@ def make_coverage_seed_from_app(seeds: AppSeeds) -> CoverageSeedConfig:
         module_import="pkg.app",
         function_name="hello",
         test_id="tests.test_app::test_hello",
-        repo=seeds.repo,
-        commit=seeds.commit,
+        snapshot_variant=SnapshotVariant(repo=seeds.repo, commit=seeds.commit),
         function_goid=seeds.hello_goid,
         test_goid=seeds.hello_goid + 1000,
     )

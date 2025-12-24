@@ -16,13 +16,13 @@ from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
+from tests._helpers.fixtures.repos import write_sample_repo
 from tests._helpers.gateway import seed_repo_identity
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
     HarnessOpenOptions,
 )
-from tests._helpers.fixtures.repos import write_sample_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

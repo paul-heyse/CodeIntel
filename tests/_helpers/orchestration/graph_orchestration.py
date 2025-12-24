@@ -6,7 +6,7 @@ import importlib.util
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import duckdb
 
@@ -25,13 +25,9 @@ from tests._helpers.builders import (
     insert_rows,
     insert_symbol_use_edges,
 )
-from tests._helpers.configs.graph_config import (
-    COMMIT,
-    REPO,
-    SpanSnapshot,
-    SpanTestEnv,
-)
+from tests._helpers.configs.graph_config import SpanSnapshot, SpanTestEnv
 from tests._helpers.context import TestContext
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
@@ -42,6 +38,10 @@ if TYPE_CHECKING:
         GraphEngineSeed,
     )
     from tests._helpers.orchestration.tooling import CoverageArtifact
+
+
+REPO: Final[str] = DEFAULT_VARIANT.repo
+COMMIT: Final[str] = DEFAULT_VARIANT.commit
 
 
 def build_seeded_graph_engine(gateway: StorageGateway, seed: GraphEngineSeed) -> NxGraphEngine:

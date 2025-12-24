@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING, Self
 from codeintel.build.hamilton.native.analytics.function_metrics import FUNCTION_METRICS_TABLE_KEYS
 from codeintel.build.hamilton.native.analytics.risk_factors import RISK_FACTORS_TABLE_KEY
 from tests._helpers.assertions.table_assertions import assert_table_has_rows
+from tests._helpers.fixtures.repos import write_graph_metrics_repo
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
     HarnessOpenOptions,
 )
-from tests._helpers.fixtures.repos import write_graph_metrics_repo
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

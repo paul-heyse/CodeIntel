@@ -9,7 +9,7 @@ from codeintel.graphs.validation import apply_severity_overrides, resolve_valida
 from tests._helpers.assertions import expect_true
 from tests._helpers.factories import make_graph_runtime_options
 from tests._helpers.fakes.graph_runtime import runtime_with_graphs
-from tests._helpers.fakes.networkx_graphs import empty_digraph, empty_graph
+from tests._helpers.fixtures.graphs import empty_digraph, empty_graph
 
 if TYPE_CHECKING:
     from codeintel.graphs.runtime import GraphRuntimeOptions

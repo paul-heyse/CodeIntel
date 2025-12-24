@@ -29,9 +29,9 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
-from tests._helpers.fixtures.coverage import synthesize_coverage_edges
 from tests._helpers.factories import make_snapshot
+from tests._helpers.fixtures.coverage import synthesize_coverage_edges
+from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,7 +51,9 @@ TEST_QUALNAME = "my_function"
 TEST_GOID = 12345
 TEST_START_LINE = 10
 TEST_END_LINE = 20
-TEST_URN = f"urn:codeintel:{DEFAULT_VARIANT.repo}:{DEFAULT_VARIANT.commit}:{TEST_REL_PATH}#{TEST_QUALNAME}"
+TEST_URN = (
+    f"urn:codeintel:{DEFAULT_VARIANT.repo}:{DEFAULT_VARIANT.commit}:{TEST_REL_PATH}#{TEST_QUALNAME}"
+)
 
 # Edge computation constants
 EXPECTED_EMPTY_LIST_LENGTH = 0

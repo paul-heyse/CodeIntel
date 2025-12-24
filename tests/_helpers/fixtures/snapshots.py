@@ -53,10 +53,25 @@ SPAN_VARIANT: Final[SnapshotVariant] = SnapshotVariant(
     commit="deadbeef",
 )
 
+
+@dataclass(frozen=True)
+class SnapshotVariants:
+    """Catalog of snapshot variants for test helpers."""
+
+    default: SnapshotVariant = DEFAULT_VARIANT
+    golden: SnapshotVariant = GOLDEN_VARIANT
+    metrics: SnapshotVariant = METRICS_VARIANT
+    span: SnapshotVariant = SPAN_VARIANT
+
+
+SNAPSHOT_VARIANTS: Final[SnapshotVariants] = SnapshotVariants()
+
 __all__ = [
     "DEFAULT_VARIANT",
     "GOLDEN_VARIANT",
     "METRICS_VARIANT",
+    "SNAPSHOT_VARIANTS",
     "SPAN_VARIANT",
     "SnapshotVariant",
+    "SnapshotVariants",
 ]

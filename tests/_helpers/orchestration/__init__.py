@@ -9,6 +9,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from tests._helpers.fixtures.repos import (
+    write_callgraph_alias_repo,
+    write_coverage_driver,
+    write_graph_metrics_repo,
+    write_sample_repo,
+)
 from tests._helpers.orchestration.coverage_orchestration import (
     compute_coverage_edges,
     create_coverage_edge_env,
@@ -36,12 +42,6 @@ from tests._helpers.orchestration.graph_orchestration import (
 from tests._helpers.orchestration.history import (
     create_snapshot_db,
     insert_function_history_row,
-)
-from tests._helpers.fixtures.repos import (
-    write_callgraph_alias_repo,
-    write_coverage_driver,
-    write_graph_metrics_repo,
-    write_sample_repo,
 )
 from tests._helpers.orchestration.seeding import (
     seed_call_graph_scoping,

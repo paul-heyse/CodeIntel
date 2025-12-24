@@ -33,7 +33,6 @@ from tests._helpers.assertions import (
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
 from tests._helpers.factories import make_snapshot
-from tests._helpers.graphs import canonical_ast_artifacts
 from tests._helpers.fixtures.repos import (
     GOID_FUNC_A,
     GOID_FUNC_B,
@@ -44,7 +43,8 @@ from tests._helpers.fixtures.repos import (
     MOD_C_PATH,
     MOD_UTIL_PATH,
 )
-from tests._helpers.rows import AstMetricSeed
+from tests._helpers.fixtures.rows import AstMetricSeed
+from tests._helpers.graph_runtime_harness import canonical_ast_artifacts
 from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.ast_metrics import MEDIUM_COMPLEXITY
 

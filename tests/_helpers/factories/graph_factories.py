@@ -27,6 +27,7 @@ from typing import Final, cast
 import networkx as nx
 
 from tests._helpers.fixtures.graphs import GraphFixtureFactory, GraphFixtureSpec
+
 GOLDEN_MIN_NODES: Final[int] = 13
 GOLDEN_MIN_EDGES: Final[int] = 30
 GOLDEN_EXPECTED_COMMUNITIES: Final[int] = 2

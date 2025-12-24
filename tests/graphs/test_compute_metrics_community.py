@@ -23,7 +23,7 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
-from tests._helpers.fakes.networkx_graphs import (
+from tests._helpers.fixtures.graphs import (
     barbell_graph_small,
     bridged_cliques_graph,
     chain_graph,

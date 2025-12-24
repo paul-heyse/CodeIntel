@@ -33,6 +33,12 @@ To avoid regressions and reduce rework, implement in this order:
 4. **Efficiency + derived resources + observability** (Consolidations 8–10)
 5. **Advanced optimizations + “beyond the 10”** (optional, but recommended)
 
+After each target migration (starting with `scip`), add explicit **settings + validation gates**:
+
+* Transition settings to DAG-derived surfaces: set `BuildSettings.output_inventory_source` to `compare` (then `dag` once stable), and set `BuildSettings.support_nodes_source` to `derived` for the migrated target set.
+* Run `build validate` with `validate_graph(..., enforce_compute_io_purity=True)` to ensure no manual IO remains and DAG purity is preserved as you scale the pattern.
+* Treat any drift reported by `build validate` as a blocking defect before moving to the next target.
+
 ---
 
 # The 10 consolidations for `scip.py`
@@ -165,6 +171,12 @@ You already have `ScipIngestOptions` defined in the options system, but `scip.py
 
      * relying on your existing `options_hash_for_target()` (if it already hashes these parameters), or
      * explicitly passing `hash_options=InputHashOptions(options_hash=...)` into the savers and executor (see consolidation #4 and #7).
+
+5. Add a shared hash node as the single hash source of truth:
+
+   * `scip__hash_options(env: BuildEnv, scip__options: ScipIngestOptions) -> InputHashOptions`
+   * Use it in `NativeTargetExecutor.for_target(..., hash_options=...)`, in `SaveToObjectMetadataDecorator` calls, and in any tool execution path that accepts `expected_input_hash`.
+   * Normalize all hash inputs here (e.g., sorted/normalized `scope_paths`) so every consumer reuses the exact same hash.
 
 **Advanced optimization:** if `scope_paths` is frequently used, also hash a normalized canonical representation (sorted, normalized paths). This prevents “same semantics, different ordering” from forcing reruns.
 
@@ -416,9 +428,10 @@ This keeps DAG visibility, keeps contract enforcement, and avoids redundant IO.
    * computes input hash (manifest key),
    * respects manifest skip,
    * validates contract (ContractEnforcer),
+   * participates in saver tag derivation/validation (`derive_target_outputs_from_savers`, IO registry, `validate_nodes`),
    * and returns consistent metadata schema.
 
-**Advanced optimization:** include a “content hash” (e.g., sha256) in metadata for artifacts. This enables stronger provenance and future dedupe.
+**Advanced optimization:** include a “content hash” (e.g., sha256) in `MaterializationMetadata` for artifacts and persist it in the manifest (not a sidecar). This enables stronger provenance, centralized reuse checks, and future dedupe without introducing a second metadata authority.
 
 ---
 
@@ -446,7 +459,7 @@ Resources are computed as:
 
    * scan nodes for tool tags within a target scope,
    * union them into `TargetResources.tools` for that target.
-3. Optionally: keep `TargetSpecDescriptor.resources.tools` as an override, but default to derived if absent.
+3. Add canonical tag keys in `codeintel/core/hamilton/tags.py` for tool identity, and treat `TargetSpecDescriptor.resources.tools` as an explicit override when provided.
 4. Update `scip.py` to remove explicit tools list *once the compiler is proven*.
 
 **Advanced optimization:** do the same for “modules dependency”. If a target depends on `t__modules`, you can infer `resources.modules=True` automatically instead of specifying.
@@ -489,6 +502,9 @@ Add or extend validations so “bad DAG definitions” fail fast during driver b
 
    * record builder must mark failed if any required artifact write failed,
    * must include row_counts for all tables in contract (even if 0 when skipped).
+5. **Compute IO purity gate**:
+
+   * run `validate_graph(..., enforce_compute_io_purity=True)` as part of migration gating to ensure no manual IO has crept back into compute/tool nodes.
 
 #### 10B) Observability / telemetry enhancements
 
@@ -644,6 +660,7 @@ After implementing the 10 consolidations, you should be able to demonstrate:
 3. **Add a third scip table saver** → row_counts includes it automatically; no edits to summarizers/collectors.
 4. `t__scip` anchor becomes small and generic: no bespoke lists, no bespoke parsing of metadata.
 5. Peak memory improves (if you do streaming/chunking), but even without it, the code path is now set up for it cleanly.
+6. `output_inventory_source="dag"` is viable for scip: artifact templates resolve from saver tags, and no declared inventory is needed for correctness.
 
 ---
 
@@ -919,8 +936,8 @@ This is the point where **adding a new tool target can become “define spec + i
 
 * `resolve_artifact_output_path(env: BuildEnv, *, target: str, artifact: str, fallback_template: str | None = None) -> Path`
 
-  * uses `env.output_inventory.artifact_templates_for(target)` when `output_inventory_source="dag"` (or `compare` with DAG available)
-  * otherwise uses provided fallback_template to avoid a second source of truth
+* uses `env.output_inventory.artifact_templates_for(target)` when `output_inventory_source="dag"` (or `compare` with DAG available and `output_inventory_strict` satisfied)
+* otherwise uses provided fallback_template to avoid a second source of truth
   * formats with `format_path_template(...)`
 
 * `resolve_artifact_output_paths(env, *, target, artifacts: Sequence[str]) -> dict[str, Path]`
@@ -950,6 +967,7 @@ For each artifact `a__<artifact>` (returns `ArtifactRef`), also generate:
 * `p__<artifact>` → `Path | None`
 
   * returns `Path(artifact_ref.path)` when present
+  * intended for downstream targets/consumers; do not use `p__*` inside the same target DAG (it depends on `t__<target>`)
 
 Add this behind a settings flag or an argument to `build_support_module(...)`:
 
@@ -1282,6 +1300,7 @@ This is the “best-in-class” pattern for tool-backed indexing because it’s 
 
 * Tool outputs are “blessed” into canonical artifact paths via FileArtifactSaver.
 * No DB writes occur inside tool-run or ingest nodes; only via saver nodes.
+* Tool run, artifact materialization, ingest, and table writes stay in a single target DAG; do not split into separate targets for the same calculation scope.
 * The anchor must construct the run record *only* from:
 
   * `MaterializationMetadata` for artifacts/tables
@@ -1434,7 +1453,12 @@ These are “do this or you’re not actually DAG-native”.
 * Support nodes can be generated from contracts or from saver-derived `DerivedTargetOutputs`.
 * The “endgame” is: **support nodes derive from saver tags**, not a parallel manually-maintained contract surface.
 
-6. **Execution model assumptions**
+6. **Output inventory is DAG-derived in steady state**
+
+* `output_inventory_source="dag"` is the desired default. `declared`/`compare` are transitional and should not become a second source of truth.
+* Helpers that read inventory data should accept a fallback template/value for non-dag modes to avoid drift.
+
+7. **Execution model assumptions**
 
 * Build executor runs Hamilton with `inputs={"env": env, "graph": graph}` and `final_vars=[t__* anchors]`.
   So everything you want to happen must be reachable from the anchor through the dependency graph.
@@ -1840,6 +1864,18 @@ Run these after each conversion, regardless of template:
 
 ---
 
+## Migration gate checklist (PR-ready)
+
+Use this block verbatim in PRs that migrate a target to DAG-derived IO:
+
+* **Settings**: `output_inventory_source` moved to `compare` (then `dag` once stable) and `support_nodes_source=derived` for migrated targets.
+* **Validation**: `build validate` includes `validate_graph(..., enforce_compute_io_purity=True)`; no drift or IO-purity violations.
+* **Inventory**: DAG-derived inventory contains all new outputs/templates without relying on declared inventory.
+* **Hashing**: shared `*_hash_options` node is used by tool execution, savers, and record builders (no duplicated hash logic).
+* **Reuse**: tool reuse is gated by `expected_input_hash`; no filesystem short-circuiting when manifest says rerun.
+
+---
+
 If you want, I can also produce a **“conversion playbook page”** that’s literally a one-page set of regex/find patterns (e.g., `executor_materialize`, `warehouse.materialize_*`, marker savers returning `None`, direct `save_manifest` calls) → “replace with template steps X/Y/Z” mapping, so a developer can mechanically process the repo like a migration pipeline.
 
 # conversion playbook #
@@ -1904,10 +1940,10 @@ Apply **every** rule that matches. If multiple specs apply, always choose the **
 
 **REPLACE WITH**
 
-* **TO**: `TO-3` + `TO-4`
-* **TT**: `TT-4` + `TT-5`
-* **TA**: `TA-4` + `TA-5`
-* **MX**: `MX-4` + `MX-5`
+* **TO**: `TO-5` + `TO-6`
+* **TT**: `TT-6` + `TT-7`
+* **TA**: `TA-5` + `TA-6`
+* **MX**: `MX-6` + `MX-7`
 
 **DO**
 
@@ -1931,7 +1967,7 @@ Apply **every** rule that matches. If multiple specs apply, always choose the **
 
 * **TO**: `TO-2` + `TO-4`
 * **TT**: `TT-4` + `TT-5`
-* **TA**: `TA-3` + `TA-5`
+* **TA**: reclassify to **TT/MX** (TA targets should not write tables)
 * **MX**: `MX-3` + `MX-5`
 
 **DO**
@@ -2012,7 +2048,7 @@ Apply **every** rule that matches. If multiple specs apply, always choose the **
 **REPLACE WITH**
 
 * **TO**: `TO-1` + `TO-3` cleanup
-* **TT/TA/MX**: `TT-1` or `TA-1` or `MX-1` cleanup
+* **TT/TA/MX**: `TT-2` or `TA-2` or `MX-2` cleanup
 
 **DO**
 
@@ -2065,10 +2101,10 @@ Apply **every** rule that matches. If multiple specs apply, always choose the **
 
 **REPLACE WITH**
 
-* **TO**: `TO-3` (use centralized record_from_duckdb_materializations semantics)
+* **TO**: `TO-6` (use centralized record_from_duckdb_materializations semantics)
 * **TT**: `TT-7` (use record_from_duckdb_materializations semantics)
-* **TA**: `TA-3` (use record_from_file_artifact_materializations semantics)
-* **MX**: `MX-4` (use unified mixed record builder)
+* **TA**: `TA-6` (use record_from_file_artifact_materializations semantics)
+* **MX**: `MX-7` (use unified mixed record builder)
 
 **DO**
 
@@ -2095,8 +2131,9 @@ Apply **every** rule that matches. If multiple specs apply, always choose the **
 
 **REPLACE WITH**
 
-* **AO**: `AO-2` + `AO-4`
-* **TA/MX**: `TA-2` + `TA-4` (or `MX-3` + `MX-5`)
+* **AO**: `AO-2` + `AO-3`
+* **TA**: `TA-3` + `TA-4`
+* **MX**: `MX-3` + `MX-4` (remove existence checks; rely on savers + ingest nodes)
 
 **DO**
 

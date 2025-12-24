@@ -11,7 +11,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_in,
     expect_is_instance,
 )
-from tests._helpers.graphs import build_ast_map
+from tests._helpers.graph_runtime_harness import build_ast_map
 
 if TYPE_CHECKING:
     from pathlib import Path

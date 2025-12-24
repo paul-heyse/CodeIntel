@@ -16,7 +16,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.builders import insert_rows
-from tests._helpers.rows import function_metrics_row, function_profile_row
+from tests._helpers.fixtures.rows import function_metrics_row, function_profile_row
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
