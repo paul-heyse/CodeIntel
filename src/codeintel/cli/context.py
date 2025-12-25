@@ -37,6 +37,28 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
+def _merge_project_params(config: CliConfig, params: dict[str, object]) -> dict[str, object]:
+    merged = dict(params)
+    project = config.project
+
+    if merged.get("project_root") is None and project.root is not None:
+        merged["project_root"] = project.root
+
+    if merged.get("repo_root") is None and project.root is not None:
+        merged["repo_root"] = project.root
+
+    if merged.get("repo") is None:
+        if project.repo is not None:
+            merged["repo"] = project.repo
+        elif project.name is not None:
+            merged["repo"] = project.name
+
+    if merged.get("commit") is None and project.commit is not None:
+        merged["commit"] = project.commit
+
+    return merged
+
+
 @dataclass
 class CommandContext:
     """Unified execution context for all CLI commands.
@@ -350,7 +372,8 @@ class CommandContextBuilder:
 
         logger = self._logger or logging.getLogger("codeintel.cli")
 
-        param_service = ParamService(self._params)
+        params = _merge_project_params(config, self._params)
+        param_service = ParamService(params)
 
         job_service = JobService()
 

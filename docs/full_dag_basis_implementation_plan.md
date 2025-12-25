@@ -127,7 +127,7 @@ The architecture explicitly positions savers + derived IO as the canonical write
 
 ### Concrete implementation plan
 
-1. Change `ScipRunResult` to carry only `index_path` + status (no documents).
+1. Ensure `ScipRunResult` (alias of `ToolStepOutput`) carries only output paths + status (no documents).
 2. In `t__scip__ingest`, parse `index.scip` via `parse_index(index_path, proto_module_path)` using `scip__proto_module_path`.
 3. Remove JSON fallback logic entirely.
 4. If you later add a `scip__parsed_index` node, ensure it returns `None` when upstream execution skipped/failed so downstream row materializers skip cleanly.
@@ -198,7 +198,7 @@ Even with `ScipIngestOptions` wired in, it is easy for options to drift out of t
 
 `scip.py` has:
 
-* `ScipRunResult(success: bool, skipped: bool, error: str|None, ...)`
+* `ScipRunResult` (alias of `ToolStepOutput`, carrying `ExecutionResult` + output paths)
 * `ScipIngestResult(result: ExecutionResult, rows...)`
 
 This is a fractured status model:
@@ -212,21 +212,15 @@ This is a fractured status model:
 Use one “status carrier” everywhere:
 
 * `ExecutionResult` is already your standard “target step status” abstraction.
-* Tool steps should also speak `ExecutionResult`.
+* Tool steps should also speak `ExecutionResult` via `ToolStepOutput`.
 
 ### Concrete implementation plan
 
 Create a reusable pattern used by other tool-backed targets:
 
-1. Define a single result type for tool steps, e.g.:
+1. Use the existing standard tool step output:
 
    * `ToolStepOutput(result: ExecutionResult, outputs: Mapping[str, Path])`
-
-   or (if you prefer to avoid dicts):
-
-   * `ScipToolOutput(result: ExecutionResult, index_path: Path | None)`
-
-   but **status must always be ExecutionResult**.
 
 2. Update:
 
@@ -680,7 +674,7 @@ After implementing the 10 consolidations, you should be able to demonstrate:
 
 ---
 
-If you want, I can also produce (still narrative, not diffs) a **“shared library extraction plan”** that names the exact shared utilities/modules to add (e.g., `native/patterns/tool_target.py`, `materialization_records.record_from_materializations`, `support_factory` extensions) so you can apply the same consolidation pattern across other targets with minimal variance.
+The shared library extraction plan below is the fully detailed, implementation-ready scope for the shared libraries work.
 
 [1]: https://hamilton.apache.org/reference/decorators/parameterize/?utm_source=chatgpt.com "parameterize - Hamilton - The Apache Software Foundation"
 [2]: https://hamilton.staged.apache.org/reference/decorators/resolve/?utm_source=chatgpt.com "resolve - Hamilton - The Apache Software Foundation"
@@ -697,20 +691,39 @@ I’m going to name **exact modules/utilities to add** (and the exact existing m
 
 ---
 
+## 0) Scope and goals (shared libraries)
+
+- Reuse existing run-result primitives: `ExecutionResult`, `ToolStepOutput`, `MaterializationMetadata`, and `NativeTargetExecutor`.
+- Keep manifest semantics unchanged: `save_manifest(...)` remains the single authority; no new manifest schema.
+- Enforce DAG-derivable saver tags: `target_name`, `table_key` or `artifact_name`, `path_template`, and `output_role` must be static via `value(...)`.
+- Preserve output inventory modes: use `BuildEnv.output_inventory` when present; use DAG templates when `output_inventory_source` is `dag`/`compare`.
+- Keep shared modules outside native discovery: `native/patterns` must not register as targets.
+- Make generated nodes deterministic and tag collectors with `tag_helper` to keep IO surfaces clean.
+
 ## 1) New shared package: `src/codeintel/build/hamilton/native/patterns/`
 
 Create a dedicated patterns package **outside** domain directories (so discovery won’t treat them as targets). This becomes the “standard library” for DAG-native target authoring.
 
-### 1.1 `native/patterns/__init__.py`
+### 1.1 `native/patterns/specs.py`
+
+Define the typed spec objects used across the shared library:
+
+* `ArtifactOutputSpec` (artifact name, path template, output_role)
+* `TableOutputSpec` (table_key, columns/deferred_columns, output_role)
+* `ToolTargetSpec` (domain, target_name, `TargetSpecDescriptor`, artifacts, tables, tool tags)
+
+These specs are the single source of truth for “what a target outputs” when using templates.
+
+### 1.2 `native/patterns/__init__.py`
 
 Export the public, stable surface:
 
 * decorator factories (`save_artifact`, `save_rows`, `save_ibis_table`)
-* collectors (`make_materialization_collector`, `make_rows_collectors`)
+* collectors (`make_artifact_materializations_collector`, `make_table_materializations_collector`, `make_mixed_materializations_collector`)
 * tool-step helpers (`run_tool_step`, `run_tool_and_ingest`)
 * finalization helpers (`finalize_target_from_materializations`)
 
-The goal: **target modules only import from `native.patterns.*`** for orchestration/IO, and “business logic” remains in target modules.
+Re-export spec types from `specs.py` so target modules only import from `native.patterns.*` for orchestration/IO, and “business logic” remains in target modules.
 
 ---
 
@@ -739,6 +752,13 @@ Each factory composes:
    * static identity (`table_key=value(...)` or `artifact_name=value(...)`)
    * for artifacts: `path_template=value(...)` (must stay a `value()` to satisfy DAG-derived tag constraints)
    * `output_name_ = materialize_node(...)`
+3. **hash and schema wiring**:
+
+   * pass `hash_options=source("<target>__hash_options")` when a hash node exists
+   * for row-based tables, pass `columns=value(deferred_columns_for_table_key(table_key))`
+4. **no new saver classes**:
+
+   * wrap existing `FileArtifactSaver`, `DuckDBRowsSaver`, and `DuckDBIbisTableSaver` only
 
 #### Why this matters
 
@@ -790,7 +810,8 @@ Add the missing “unified record builder” you explicitly called out:
     * otherwise → `succeeded`
 * **Input hash + options hash**
 
-  * require consistency across all provided materializations (if mismatch, fail record with explicit error)
+  * require `input_hash` consistency across all provided materializations; mismatches fail with explicit error
+  * compute `options_hash` via `options_hash_for_target(env, target_name)` (do not derive from metadata)
 * **Row counts**
 
   * derived from DuckDB materialization metadata row_count (normalize across expected keys)
@@ -869,37 +890,29 @@ This is the keystone that makes “apply the same consolidation pattern across t
 
 This directly operationalizes the design principle that targets are DAG-defined and incremental behavior is manifest/hash-driven.
 
-#### Recommended types
+#### Recommended types (reuse existing primitives)
 
-* `@dataclass(frozen=True, slots=True) class ToolRunResult:`
+Use the existing result containers to avoid type drift:
 
-  * `success: bool`
-  * `skipped: bool`
-  * `error: str | None`
-  * `duration_ms: float | None`
-  * `details: Mapping[str, object] | None` (optional)
-* `@dataclass(frozen=True, slots=True) class IngestResult[T]:`
+* `ToolStepOutput` (from `native/tool_results.py`) for tool runs; it already carries `ExecutionResult` and output paths.
+* `ExecutionResult` for ingest status; payloads can remain target-specific dataclasses (e.g., `ScipIngestResult`) or a rows-by-table mapping.
+* `HasExecutionResult` protocol is the common gate for helper functions that need to branch on success/skipped/failed.
 
-  * `success: bool`
-  * `skipped: bool`
-  * `error: str | None`
-  * `duration_ms: float | None`
-  * `payload: T | None` (e.g., rows-by-table, or an ingestion handle)
-
-(You can keep target-specific payload dataclasses; this provides a standardized wrapper.)
+Avoid new per-target “success/skipped/error” dataclasses unless the payload shape truly demands it.
 
 #### Core helpers
 
-1. `run_tool_step(...) -> ToolRunResult`
+1. `run_tool_step(...) -> ToolStepOutput`
 
    * constructs `NativeTargetExecutor.for_target(...)`
    * calls `.should_skip()` to gate tool execution (exactly as `scip` already does)
    * invokes the tool service call (sync or async)
-   * catches exceptions and returns structured error (do not raise unless you want whole DAG abort)
+   * catches exceptions and returns `ToolStepOutput(result=ExecutionResult.failed(...))`
 
-2. `run_tool_and_ingest(...) -> tuple[ToolRunResult, IngestResult[RowsByTable]]`
+2. `run_tool_and_ingest(...) -> tuple[ToolStepOutput, ExecutionResult | Payload]`
 
    * executes tool step, then ingest step only if tool succeeded and not skipped
+   * keeps ingest payloads separate from tool run outputs to avoid coupling
 
 3. `finalize_target_from_materializations(...) -> TargetRunRecord`
 
@@ -913,9 +926,9 @@ This directly operationalizes the design principle that targets are DAG-defined 
 
 Provide:
 
-* `attach_tool_target_template(module: ModuleType, *, spec: ToolTargetTemplateSpec, run_fn, ingest_fn, ...) -> None`
+* `attach_tool_target_template(module: ModuleType, *, spec: ToolTargetSpec, run_fn, ingest_fn, ...) -> None`
 
-Where `ToolTargetTemplateSpec` includes:
+Where `ToolTargetSpec` (from `native/patterns/specs.py`) includes:
 
 * `domain`, `target_name`
 * `spec_descriptor` for `@codeintel_target(...)`
@@ -925,7 +938,7 @@ Where `ToolTargetTemplateSpec` includes:
 
   * `output_roles` per artifact/table (contract/internal)
   * table schema hints (if needed)
-  * tool metadata tags (tool id/version)
+  * tool metadata tags (tool id/version), used by `tag_tool(extra_tags=...)`
 
 This function can **auto-attach**:
 
@@ -954,7 +967,7 @@ This is the point where **adding a new tool target can become “define spec + i
 
 * uses `env.output_inventory.artifact_templates_for(target)` when `output_inventory_source="dag"` (or `compare` with DAG available and `output_inventory_strict` satisfied)
 * otherwise uses provided fallback_template to avoid a second source of truth
-  * formats with `format_path_template(...)`
+  * formats with `format_path_template(...)` and `default_formatter(build_dir, scip_dir, export_dir, repo_root)`
 
 * `resolve_artifact_output_paths(env, *, target, artifacts: Sequence[str]) -> dict[str, Path]`
 
@@ -984,6 +997,8 @@ For each artifact `a__<artifact>` (returns `ArtifactRef`), also generate:
 
   * returns `Path(artifact_ref.path)` when present
   * intended for downstream targets/consumers; do not use `p__*` inside the same target DAG (it depends on `t__<target>`)
+
+Add a `path_node(...)` helper in `src/codeintel/build/hamilton/naming.py` to keep `p__*` node naming stable.
 
 Add this behind a settings flag or an argument to `build_support_module(...)`:
 
@@ -1033,6 +1048,16 @@ Update the DAG validator or add a lightweight “lint/validator” to ensure:
 * mixed-output targets use `record_from_materializations`
 * saver nodes for contract outputs always provide `path_template` via `value(...)` for artifacts (enforced already at decorator level, but validator can catch drift earlier)
 
+### 8.5 Testing and rollout gates
+
+Add explicit tests and checks for the shared libraries before migrating additional targets:
+
+* saver helper tags remain DAG-derivable (static `target_name`, `table_key`/`artifact_name`, `path_template`, `output_role`)
+* `record_from_materializations` handles mixed outputs, missing metadata, and input_hash mismatch correctly
+* path resolution uses `OutputInventory` templates when available and respects fallback templates otherwise
+* tool-target helpers do not bypass manifest-based skip checks
+* `build validate` with `enforce_compute_io_purity=True` passes for each migrated target set
+
 ---
 
 ## 9) Additional “best-in-class” consolidation opportunities enabled by this library
@@ -1071,6 +1096,14 @@ Once tool execution is standardized in `tool_target.py`, it becomes trivial to:
 
 (Your architecture explicitly highlights per-node telemetry as a first-class feature in the execution path.)
 
+### 9.4 Derive `TargetResources.tools` from tool tags
+
+Reduce drift between tool nodes and target specs by deriving tools from DAG tags:
+
+* add a canonical tool tag key in `codeintel.core.hamilton.tags` and in `tagging.TagKey`
+* apply `tag_tool(extra_tags={...})` to tool nodes with stable tool identifiers
+* extend `target_spec_compiler._resources_from_tags(...)` to merge tag-derived tools when the spec does not explicitly set tools (explicit tools remain the override)
+
 ---
 
 ## 10) What you’ll end up with
@@ -1089,7 +1122,17 @@ After implementing this shared library and migrating representative targets:
 
 ---
 
-If you want, I can also produce a **“target template spec catalog”** (a short list of 3–5 canonical template specs: *artifact-only*, *tables-only*, *tool→artifacts*, *tool→ingest→tables*, *mixed tool + tables + artifacts*) and map each existing native module to which template it should migrate to, so the whole repo can converge with minimal variance.
+### 10.1 Shared library acceptance criteria
+
+* `native/patterns` is importable and does not register as a target module.
+* Mixed-output targets build `TargetRunRecord` solely from saver metadata via `record_from_materializations`.
+* Tool nodes resolve output paths from DAG templates when `output_inventory_source` is `dag`/`compare`.
+* Tool tag metadata can derive `TargetResources.tools` when explicit tools are not set.
+* Support modules can emit `p__*` path nodes when enabled without introducing target cycles.
+
+---
+
+The target template spec catalog follows.
 
 # target template spec catalog #
 
@@ -1221,7 +1264,7 @@ Typical for:
 
 * `t__<target>__run` (tag_tool): runs tool via ToolService/ToolRunner and returns a structured result:
 
-  * `ToolRunResult(success, artifacts: dict[name → Path], warnings, error, durations, provenance)`
+  * `ToolStepOutput(result=ExecutionResult, outputs={artifact_name: Path, ...})`
 * `artifact_<name>__content|plan` nodes: DAG-visible write via `FileArtifactSaver` (often copy/move into build dir for stability)
 * `t__<target>` anchor: records artifacts with `record_from_file_artifact_materializations`
 
@@ -1232,9 +1275,9 @@ Typical for:
 
 ### Recommended shared helper(s)
 
-* `native/patterns/tool_artifact_target.py`:
+* `native/patterns/tool_target.py`:
 
-  * standard tool invocation result model
+  * standard tool invocation using `ToolStepOutput`
   * standard “tool output dir → canonical artifact path template” mapping
 
 ---
@@ -1257,10 +1300,7 @@ This is the canonical spec for ingestion-like targets (even if the module is in 
 
 ### Canonical DAG shape
 
-* `t__<target>__scan` or `t__<target>__run` (tag_tool): does external boundary work (filesystem, tool service, parsing) and returns a structured compute result containing:
-
-  * `ExecutionResult`-like success/skipped/error + row payload(s)
-  * plus any file_state hash/provenance
+* `t__<target>__scan` or `t__<target>__run` (tag_tool): does external boundary work (filesystem, tool service, parsing) and returns `ToolStepOutput` (ExecutionResult + output paths)
 * `<target>__<table>_rows` nodes: extract row tuples from the result (or return `None` if skipped/failed)
 * per-table saver nodes via `DuckDBRowsSaver` / `DuckDBIbisTableSaver`
 * `t__<target>` anchor: uses `NativeTargetExecutor` for consistent failure/skip semantics, and `record_from_duckdb_materializations`
@@ -1277,9 +1317,9 @@ This is the canonical spec for ingestion-like targets (even if the module is in 
 
 ### Recommended shared helper(s)
 
-* `native/patterns/tool_table_target.py`:
+* `native/patterns/tool_target.py`:
 
-  * standard scan/run result dataclass
+  * standard tool-step output using `ToolStepOutput`
   * standard `hash_options` construction (including file_state hash)
   * standard anchor boundary wrapper
 
@@ -1614,7 +1654,7 @@ This is the template that replaces the “manual materialize + marker saver” a
 
 * `DOMAIN`, `TARGET_NAME`
 * `ARTIFACTS = { artifact_name: path_template }`
-* Define a `RunResult` dataclass for the tool step (fields: `success`, `skipped`, `error`, `output_paths_by_artifact`, maybe `stats`).
+* Use `ToolStepOutput` for the tool step output (result + output paths).
 
 2. **Implement the tool node `t__<target>__run`**
 
@@ -1622,7 +1662,7 @@ This is the template that replaces the “manual materialize + marker saver” a
 * It should:
 
   * compute skip once (native skip check pattern is explicitly in the scip walkthrough)
-  * if skip → return `RunResult(skipped=True, success=True)` (no IO)
+  * if skip → return `ToolStepOutput(result=ExecutionResult.skip(...))` (no IO)
   * else run the tool, producing outputs in canonical locations (typically under a build dir)
   * return structured paths/metadata
     This node is where “imperative orchestration” lives.
@@ -1630,7 +1670,7 @@ This is the template that replaces the “manual materialize + marker saver” a
 3. **Implement one artifact compute node per artifact**
 
 * Each node depends on `t__<target>__run`.
-* If `run.skipped` or not `run.success` → return `None`.
+* If `run.result.skipped` or not `run.result.success` → return `None`.
 * Else return `Path` to the artifact (or another supported artifact payload).
 
 4. **Attach `FileArtifactSaver` to each artifact compute node**
@@ -1721,18 +1761,19 @@ This is the “no thinking” conversion recipe when you see a legacy module doi
 
 * `DOMAIN`, `TARGET_NAME`
 * `TABLE_KEYS = [...]`
-* Define a tool `RunResult` and an ingest `IngestResult` dataclass.
+* Define tool output using `ToolStepOutput` and an ingest payload wrapper that carries `ExecutionResult`.
 
 2. **Tool node `t__<target>__run`**
 
 * Perform native skip check once (like scip does).
-* If skip: return `RunResult(skipped=True, success=True)`; do not do IO.
+* If skip: return `ToolStepOutput(result=ExecutionResult.skip(...))`; do not do IO.
 * Else: run tool and return the raw outputs required for ingest (paths or in-memory structures).
 
 3. **Ingest node(s)**
 
 * Convert tool outputs into normalized row payloads or ibis expressions.
 * This node should contain parsing/normalization logic, not persistence.
+* Return `ExecutionResult` alongside payloads so downstream nodes can gate on `success/skipped`.
 
 4. **One compute node per table**
 
@@ -1786,7 +1827,7 @@ This is the “scip-like” template; the architecture walkthrough explicitly fr
 * `DOMAIN`, `TARGET_NAME`
 * `ARTIFACTS = {artifact_name: path_template}`
 * `TABLE_KEYS = [...]`
-* Define a tool `RunResult`.
+* Use `ToolStepOutput` for the tool step output (result + output paths).
 
 2. **Tool node `t__<target>__run`**
 

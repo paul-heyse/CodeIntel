@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
@@ -121,6 +122,7 @@ class RepoScanStep:
         modules = list(self._discovery.discover_modules(repo_root, profile))
         if self._module_filter is not None:
             modules = list(self._module_filter(modules))
+        modules = _dedupe_modules(modules)
         log.info("Discovered %d modules in %s", len(modules), repo_root)
 
         change_request = ChangeRequest(
@@ -134,20 +136,19 @@ class RepoScanStep:
         change_set = self._change_detection.compute_changes(change_request, modules)
 
         serializer = row_serializer_for_table_key(MODULES_TABLE_KEY)
-        module_rows: list[tuple[object, ...]] = [
-            serializer(
-                {
-                    "module": module.module_name,
-                    "path": module.rel_path,
-                    "repo": repo,
-                    "commit": commit,
-                    "language": "python",
-                    "tags": "[]",
-                    "owners": "[]",
-                }
-            )
-            for module in modules
-        ]
+        module_rows: list[tuple[object, ...]] = []
+        for module in modules:
+            payload = {
+                "module": module.module_name,
+                "path": module.rel_path,
+                "repo": repo,
+                "commit": commit,
+                "language": "python",
+                "tags": "[]",
+                "owners": "[]",
+            }
+            payload["row_hash"] = stable_hash(payload)
+            module_rows.append(serializer(payload))
 
         repo_map_rows = self._build_repo_map_rows(
             repo=repo,
@@ -200,3 +201,12 @@ class RepoScanStep:
 
 
 __all__ = ["RepoScanResult", "RepoScanStep"]
+
+
+def _dedupe_modules(modules: Sequence[ModuleRecord]) -> list[ModuleRecord]:
+    deduped: dict[tuple[str, str], ModuleRecord] = {}
+    for module in modules:
+        key = (module.module_name, module.rel_path)
+        if key not in deduped:
+            deduped[key] = module
+    return list(deduped.values())

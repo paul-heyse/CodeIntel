@@ -10,6 +10,7 @@ This module brings together all tool-related tests:
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -138,6 +139,37 @@ def test_tool_runner_unknown_tool_raises_value_error(tmp_path: Path) -> None:
     runner = ToolRunner(cache_dir=tmp_path)
     with pytest.raises(ValueError, match="Unknown tool"):
         runner.run("unknown-tool", ["--version"])
+
+
+def _write_sleep_script(path: Path, *, sleep_s: float) -> None:
+    content = "\n".join(
+        [
+            "#!/usr/bin/env python3",
+            "import time",
+            f"time.sleep({sleep_s})",
+            "print(\"done\")",
+        ]
+    )
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def test_tool_runner_emits_heartbeat_logs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """ToolRunner emits heartbeat logs for long-running tools."""
+    script_path = tmp_path / "sleep_tool.py"
+    _write_sleep_script(script_path, sleep_s=0.1)
+    tools_config = ToolsConfig.with_overrides(scip_python_bin=str(script_path))
+    runner = ToolRunner(cache_dir=tmp_path, tools_config=tools_config)
+    with caplog.at_level(logging.INFO, logger="codeintel.ingestion.engine.infrastructure.runner"):
+        result = runner.run(
+            ToolName.SCIP_PYTHON,
+            [],
+            options=ToolRunOptions(progress_interval_s=0.02),
+        )
+    expect_true(result.ok)
+    expect_true("still running" in caplog.text)
 
 
 # =============================================================================

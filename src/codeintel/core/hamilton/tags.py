@@ -16,6 +16,7 @@ TAG_TARGET_EXECUTION = "target_execution"
 TAG_TARGET_PARAMETERS = "target_parameters"
 TAG_TARGET_ESTIMATED_DURATION_MS = "target_estimated_duration_ms"
 TAG_TARGET_SPEC_VERSION = "target_spec_version"
+TAG_TOOLS = "tools"
 
 TAG_OUTPUT_KIND = "output_kind"
 TAG_SEMANTIC_ID = "semantic_id"
@@ -62,4 +63,5 @@ __all__ = [
     "TAG_TARGET_PARAMETERS",
     "TAG_TARGET_RESOURCES",
     "TAG_TARGET_SPEC_VERSION",
+    "TAG_TOOLS",
 ]

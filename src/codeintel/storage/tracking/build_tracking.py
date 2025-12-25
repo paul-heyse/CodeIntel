@@ -10,6 +10,7 @@ All DuckDB access is encapsulated here, following the storage layer pattern.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
@@ -21,6 +22,7 @@ from codeintel.storage.helpers.json import (
     encode_json_compact,
     serialize_str_sequence,
 )
+from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -31,6 +33,39 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ScipRunRecord:
+    """Structured record for build.scip_runs telemetry rows."""
+
+    run_id: str
+    repo: str
+    commit: str
+    mode: str
+    options_hash: str | None
+    tool_version: str | None
+    total_modules: int
+    changed_modules: int
+    deleted_modules: int
+    changed_ratio: float | None
+    batch_size: int | None
+    batch_count: int
+    decision: str | None
+    hash_source: str | None
+    hash_reused: int
+    hash_computed: int
+    plan_ms: float | None
+    hash_ms: float | None
+    tool_ms: float | None
+    parse_ms: float | None
+    merge_ms: float | None
+    write_ms: float | None
+    total_ms: float | None
+    status: str
+    error_summary: str | None
+    output_scip: str | None
+    recorded_at: datetime
 
 
 def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
@@ -178,16 +213,18 @@ class BuildTracking:
                 "options_hash",
                 "change_delta",
             ),
-            conflict_columns=("target", "repo", "commit"),
-            update_columns=(
-                "plugin",
-                "computed_at",
-                "duration_ms",
-                "input_hash",
-                "output_hash",
-                "row_count",
-                "options_hash",
-                "change_delta",
+            upsert=UpsertSpec(
+                conflict_columns=("target", "repo", "commit"),
+                update_columns=(
+                    "plugin",
+                    "computed_at",
+                    "duration_ms",
+                    "input_hash",
+                    "output_hash",
+                    "row_count",
+                    "options_hash",
+                    "change_delta",
+                ),
             ),
         )
 
@@ -309,8 +346,10 @@ class BuildTracking:
                 "error_summary",
                 "duration_ms",
             ),
-            conflict_columns=("run_id",),
-            update_columns=(),
+            upsert=UpsertSpec(
+                conflict_columns=("run_id",),
+                update_columns=(),
+            ),
         )
         if inserted == 0:
             log.warning("build.run start ignored due to duplicate run_id: %s", record.run_id)
@@ -594,6 +633,102 @@ class BuildTracking:
             ),
         )
 
+    def record_scip_run(self, record: ScipRunRecord) -> None:
+        """Upsert a SCIP telemetry record into build.scip_runs."""
+        self._backend.ensure_table("build.scip_runs", create_if_missing=True)
+        self._backend.upsert(
+            "build.scip_runs",
+            [
+                (
+                    record.run_id,
+                    record.repo,
+                    record.commit,
+                    record.mode,
+                    record.options_hash,
+                    record.tool_version,
+                    record.total_modules,
+                    record.changed_modules,
+                    record.deleted_modules,
+                    record.changed_ratio,
+                    record.batch_size,
+                    record.batch_count,
+                    record.decision,
+                    record.hash_source,
+                    record.hash_reused,
+                    record.hash_computed,
+                    record.plan_ms,
+                    record.hash_ms,
+                    record.tool_ms,
+                    record.parse_ms,
+                    record.merge_ms,
+                    record.write_ms,
+                    record.total_ms,
+                    record.status,
+                    record.error_summary,
+                    record.output_scip,
+                    record.recorded_at,
+                )
+            ],
+            columns=(
+                "run_id",
+                "repo",
+                "commit",
+                "mode",
+                "options_hash",
+                "tool_version",
+                "total_modules",
+                "changed_modules",
+                "deleted_modules",
+                "changed_ratio",
+                "batch_size",
+                "batch_count",
+                "decision",
+                "hash_source",
+                "hash_reused",
+                "hash_computed",
+                "plan_ms",
+                "hash_ms",
+                "tool_ms",
+                "parse_ms",
+                "merge_ms",
+                "write_ms",
+                "total_ms",
+                "status",
+                "error_summary",
+                "output_scip",
+                "recorded_at",
+            ),
+            upsert=UpsertSpec(
+                conflict_columns=("run_id",),
+                update_columns=(
+                    "mode",
+                    "options_hash",
+                    "tool_version",
+                    "total_modules",
+                    "changed_modules",
+                    "deleted_modules",
+                    "changed_ratio",
+                    "batch_size",
+                    "batch_count",
+                    "decision",
+                    "hash_source",
+                    "hash_reused",
+                    "hash_computed",
+                    "plan_ms",
+                    "hash_ms",
+                    "tool_ms",
+                    "parse_ms",
+                    "merge_ms",
+                    "write_ms",
+                    "total_ms",
+                    "status",
+                    "error_summary",
+                    "output_scip",
+                    "recorded_at",
+                ),
+            ),
+        )
+
     def list_run_nodes(
         self,
         run_id: str,
@@ -648,4 +783,5 @@ class BuildTracking:
 
 __all__ = [
     "BuildTracking",
+    "ScipRunRecord",
 ]

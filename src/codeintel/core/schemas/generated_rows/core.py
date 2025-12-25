@@ -169,6 +169,7 @@ class CoreModulesRow(TypedDict):
     language: str | None
     tags: object | None
     owners: object | None
+    row_hash: str | None
 
 
 class CoreRepoMapRow(TypedDict):

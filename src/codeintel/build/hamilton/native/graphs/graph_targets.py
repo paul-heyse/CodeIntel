@@ -994,7 +994,7 @@ def t__goids__extract(
             len(tracked_files),
         )
 
-        options = materialize_options(env, owner_target=GOIDS_TARGET_NAME, mode="replace")
+        options = materialize_options(env, owner_target=GOIDS_TARGET_NAME)
         goid_result = env.warehouse.materialize_rows(
             GOIDS_GOIDS_TABLE_KEY,
             [row.to_tuple() for row in all_goid_rows],
@@ -1126,11 +1126,7 @@ def t__symbol_uses__extract(
             SYMBOL_USE_EDGES_TABLE_KEY,
             [row.to_tuple() for row in rows],
             columns=None,
-            options=materialize_options(
-                env,
-                owner_target=SYMBOL_USES_TARGET_NAME,
-                mode="replace",
-            ),
+            options=materialize_options(env, owner_target=SYMBOL_USES_TARGET_NAME),
         )
         row_count = int(row_result.rows_written or 0)
         return SymbolUsesExtractResult(

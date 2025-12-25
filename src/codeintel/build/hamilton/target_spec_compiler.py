@@ -234,6 +234,30 @@ def _parse_tools(
     return default
 
 
+def _derive_tools_from_nodes(
+    nodes: Mapping[str, Node],
+    *,
+    target_name: str,
+) -> tuple[str, ...]:
+    tools: set[str] = set()
+    for node in nodes.values():
+        tags = getattr(node, "tags", None)
+        if not isinstance(tags, dict):
+            continue
+        if tags.get(ht.TAG_NODE_TYPE) != ht.NODE_TYPE_TOOL:
+            continue
+        if tags.get(ht.TAG_TARGET) != target_name:
+            continue
+        raw = tags.get(ht.TAG_TOOLS)
+        if isinstance(raw, str) and raw:
+            tools.add(raw)
+        elif isinstance(raw, (list, tuple)):
+            for item in raw:
+                if isinstance(item, str) and item:
+                    tools.add(item)
+    return tuple(sorted(tools))
+
+
 def _resources_from_tags(
     *,
     tags: Mapping[str, object],
@@ -498,6 +522,7 @@ def _build_output_target(
     target_name: str,
     node: Node,
     derived_outputs: DerivedTargetOutputs,
+    derived_tools: Mapping[str, tuple[str, ...]],
     overrides_by_target: Mapping[str, TargetSpecOverride],
     strict: bool,
 ) -> OutputTarget:
@@ -519,6 +544,15 @@ def _build_output_target(
 
     if override and override.resources is not None:
         resources = override.resources
+    elif not resources.tools:
+        tools = derived_tools.get(target_name)
+        if tools:
+            resources = TargetResources(
+                tracker=resources.tracker,
+                modules=resources.modules,
+                gateway=resources.gateway,
+                tools=tools,
+            )
     if override and override.execution is not None:
         execution = override.execution
     if override and override.parameters is not None:
@@ -583,12 +617,17 @@ def compile_output_targets_from_driver(
     runtime = HamiltonRuntime(dr=driver, graph=TargetGraph())
     derived_outputs = derive_target_outputs_from_savers(runtime)
     anchors = _collect_target_anchors(nodes, strict=strict)
+    derived_tools = {
+        target_name: _derive_tools_from_nodes(nodes, target_name=target_name)
+        for target_name in anchors
+    }
 
     results = [
         _build_output_target(
             target_name=target_name,
             node=anchors[target_name],
             derived_outputs=derived_outputs,
+            derived_tools=derived_tools,
             overrides_by_target=overrides_by_target,
             strict=strict,
         )

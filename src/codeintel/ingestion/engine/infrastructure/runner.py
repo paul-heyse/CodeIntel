@@ -16,6 +16,7 @@ import os
 import threading
 import time
 from asyncio.subprocess import PIPE
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -59,6 +60,9 @@ class ToolRunOptions:
     output_path: Path | None = None
     timeout_s: float | None = None
     env: Mapping[str, str] | None = None
+    progress_interval_s: float | None = None
+    log_prefix: str | None = None
+    stream_output: bool = False
 
 
 @dataclass(frozen=True)
@@ -196,14 +200,34 @@ class ToolRunner:
             stderr=PIPE,
             env=tool_env if tool_env else None,
         )
-        try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=run_options.timeout_s,
+        log_prefix = run_options.log_prefix or tool_enum.value
+        heartbeat_task: asyncio.Task[None] | None = None
+        if run_options.progress_interval_s:
+            heartbeat_task = asyncio.create_task(
+                _tool_heartbeat(
+                    proc,
+                    started_at=start_ts,
+                    interval_s=run_options.progress_interval_s,
+                    log_prefix=log_prefix,
+                    output_path=run_options.output_path,
+                )
             )
+        try:
+            if run_options.stream_output:
+                stdout_b, stderr_b = await _stream_process(
+                    proc,
+                    timeout_s=run_options.timeout_s,
+                    log_prefix=log_prefix,
+                )
+            else:
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=run_options.timeout_s,
+                )
         except TimeoutError as exc:
             proc.kill()
-            await proc.communicate()
+            with suppress(asyncio.CancelledError):
+                await proc.communicate()
             result = ToolRunResult(
                 tool=tool_enum,
                 args=tuple(cmd[1:]),
@@ -223,6 +247,11 @@ class ToolRunner:
             )
             _record_tool_call(record)
             raise ToolExecutionError(result) from exc
+        finally:
+            if heartbeat_task is not None:
+                heartbeat_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await heartbeat_task
 
         result = ToolRunResult(
             tool=tool_enum,
@@ -286,10 +315,84 @@ class ToolRunner:
             )
 
 
+async def _tool_heartbeat(
+    proc: asyncio.subprocess.Process,
+    *,
+    started_at: float,
+    interval_s: float,
+    log_prefix: str,
+    output_path: Path | None,
+) -> None:
+    while proc.returncode is None:
+        await asyncio.sleep(interval_s)
+        if proc.returncode is not None:
+            return
+        elapsed = time.perf_counter() - started_at
+        output_bytes = None
+        if output_path is not None:
+            output_bytes = await asyncio.to_thread(_output_path_size, output_path)
+        if output_bytes is None:
+            log.info("%s still running (elapsed=%.1fs)", log_prefix, elapsed)
+        else:
+            log.info(
+                "%s still running (elapsed=%.1fs, output_bytes=%d)",
+                log_prefix,
+                elapsed,
+                output_bytes,
+            )
+
+
+async def _stream_process(
+    proc: asyncio.subprocess.Process,
+    *,
+    timeout_s: float | None,
+    log_prefix: str,
+) -> tuple[bytes, bytes]:
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+
+    async def _read_stream(
+        stream: asyncio.StreamReader | None,
+        *,
+        label: str,
+        chunks: list[bytes],
+    ) -> None:
+        if stream is None:
+            return
+        while True:
+            line = await stream.readline()
+            if not line:
+                return
+            chunks.append(line)
+            log.info("%s[%s] %s", log_prefix, label, line.decode(errors="replace").rstrip())
+
+    stdout_task = asyncio.create_task(
+        _read_stream(proc.stdout, label="stdout", chunks=stdout_chunks)
+    )
+    stderr_task = asyncio.create_task(
+        _read_stream(proc.stderr, label="stderr", chunks=stderr_chunks)
+    )
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=timeout_s)
+    finally:
+        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+
+    return b"".join(stdout_chunks), b"".join(stderr_chunks)
+
+
+def _output_path_size(path: Path) -> int | None:
+    if not path.exists():
+        return None
+    return path.stat().st_size
+
+
 def _record_tool_call(record: ToolCallRecord) -> None:
     path = os.environ.get(_TOOL_CALL_LOG_ENV, "").strip()
     if not path:
         return
+    output_size_bytes = None
+    if record.result.output_path is not None and record.result.output_path.exists():
+        output_size_bytes = record.result.output_path.stat().st_size
     payload = {
         "tool": record.tool.value,
         "argv": list(record.args),
@@ -299,6 +402,9 @@ def _record_tool_call(record: ToolCallRecord) -> None:
         "duration_s": record.result.duration_s,
         "returncode": record.result.returncode,
         "version": _extract_version(record.args, record.result.stdout),
+        "output_size_bytes": output_size_bytes,
+        "stdout_tail": _tail_text(record.result.stdout),
+        "stderr_tail": _tail_text(record.result.stderr),
     }
     _append_json_line(Path(path), payload)
 
@@ -307,6 +413,14 @@ def _extract_version(args: Sequence[str], stdout: str) -> str | None:
     if "--version" in args or "-V" in args:
         return stdout.strip().splitlines()[0][:200] if stdout else ""
     return None
+
+
+def _tail_text(text: str, *, max_chars: int = 2000) -> str:
+    if not text:
+        return ""
+    if len(text) <= max_chars:
+        return text
+    return text[-max_chars:]
 
 
 def _append_json_line(path: Path, payload: Mapping[str, object]) -> None:

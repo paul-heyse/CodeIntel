@@ -18,10 +18,6 @@ Phase 4: Analytics domain migration with Hamilton-native DAG-visible I/O.
 
 from __future__ import annotations
 
-import logging
-
-from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.functions import FunctionAnalyticsOptions
 from codeintel.analytics.functions.metrics import (
     FunctionAnalyticsResult,
@@ -29,27 +25,31 @@ from codeintel.analytics.functions.metrics import (
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materializations,
+    record_from_materializations,
 )
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import save_rows
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
-
-log = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, FunctionAnalyticsResult)
+_HAMILTON_TYPE_HINTS = (
+    BuildEnv,
+    InputHashOptions,
+    TargetGraph,
+    TargetRunRecord,
+    FunctionAnalyticsResult,
+)
 
 FUNCTION_METRICS_TARGET_NAME = "function_metrics"
 
@@ -62,10 +62,35 @@ FUNCTION_METRICS_TABLE_KEYS = (
     FUNCTION_VALIDATION_TABLE_KEY,
 )
 
+@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+def function_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for function_metrics execution."""
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, FUNCTION_METRICS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+def function_metrics__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    function_metrics__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when function_metrics should be skipped."""
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        FUNCTION_METRICS_TARGET_NAME,
+        hash_options=function_metrics__hash_options,
+    )
+    return executor.should_skip()
+
 
 @tag_compute(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics__compute(
-    env: BuildEnv, graph: TargetGraph
+    env: BuildEnv,
+    function_metrics__skip: bool,
 ) -> FunctionAnalyticsResult | None:
     """Compute function metrics and type coverage for all functions.
 
@@ -76,8 +101,8 @@ def t__function_metrics__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for skip detection.
+    function_metrics__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -92,19 +117,8 @@ def t__function_metrics__compute(
     - Nesting depth
     - Type annotation coverage
     """
-    target = graph.get(FUNCTION_METRICS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, FUNCTION_METRICS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if function_metrics__skip:
+        return None
 
     options = load_target_options(
         env,
@@ -118,14 +132,11 @@ def t__function_metrics__compute(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_METRICS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_METRICS_TARGET_NAME),
-    table_key=value(FUNCTION_METRICS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_METRICS_TABLE_KEY)),
+@save_rows(
+    domain="analytics",
+    target=FUNCTION_METRICS_TARGET_NAME,
+    table_key=FUNCTION_METRICS_TABLE_KEY,
+    hash_options_node="function_metrics__hash_options",
 )
 @tag_compute(
     domain="analytics",
@@ -156,14 +167,11 @@ def function_metrics__metrics_rows(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_TYPES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_METRICS_TARGET_NAME),
-    table_key=value(FUNCTION_TYPES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_TYPES_TABLE_KEY)),
+@save_rows(
+    domain="analytics",
+    target=FUNCTION_METRICS_TARGET_NAME,
+    table_key=FUNCTION_TYPES_TABLE_KEY,
+    hash_options_node="function_metrics__hash_options",
 )
 @tag_compute(
     domain="analytics",
@@ -194,14 +202,11 @@ def function_metrics__types_rows(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_VALIDATION_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_METRICS_TARGET_NAME),
-    table_key=value(FUNCTION_VALIDATION_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_VALIDATION_TABLE_KEY)),
+@save_rows(
+    domain="analytics",
+    target=FUNCTION_METRICS_TARGET_NAME,
+    table_key=FUNCTION_VALIDATION_TABLE_KEY,
+    hash_options_node="function_metrics__hash_options",
 )
 @tag_compute(
     domain="analytics",
@@ -233,12 +238,19 @@ def function_metrics__validation_rows(
 
 
 @codeintel_target(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+function_metrics__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=FUNCTION_METRICS_TARGET_NAME,
+    table_keys=FUNCTION_METRICS_TABLE_KEYS,
+    node_name="function_metrics__table_materializations",
+)
+
+
+@codeintel_target(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_metrics: MaterializationMetadata,
-    m__analytics__function_types: MaterializationMetadata,
-    m__analytics__function_validation: MaterializationMetadata,
+    function_metrics__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize function structural metrics and type annotations.
 
@@ -251,33 +263,29 @@ def t__function_metrics(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__function_metrics
-        Materialization metadata for function_metrics table.
-    m__analytics__function_types
-        Materialization metadata for function_types table.
-    m__analytics__function_validation
-        Materialization metadata for function_validation table.
+    function_metrics__table_materializations
+        Aggregated materialization metadata for function_metrics tables.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materializations(
+    return record_from_materializations(
         env=env,
         graph=graph,
         target_name=FUNCTION_METRICS_TARGET_NAME,
-        materializations={
-            FUNCTION_METRICS_TABLE_KEY: m__analytics__function_metrics,
-            FUNCTION_TYPES_TABLE_KEY: m__analytics__function_types,
-            FUNCTION_VALIDATION_TABLE_KEY: m__analytics__function_validation,
-        },
+        artifact_materializations=None,
+        table_materializations=function_metrics__table_materializations,
     )
 
 
 __all__ = [
     "FunctionAnalyticsResult",
+    "function_metrics__hash_options",
     "function_metrics__metrics_rows",
+    "function_metrics__skip",
+    "function_metrics__table_materializations",
     "function_metrics__types_rows",
     "function_metrics__validation_rows",
     "t__function_metrics",

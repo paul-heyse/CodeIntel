@@ -20,10 +20,6 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materialize_options import (
-    append_materialize_options,
-    materialize_options,
-)
 from codeintel.build.hamilton.materializers.base import (
     MaterializationContextError,
     duration_ms,
@@ -31,6 +27,7 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
+from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
@@ -174,17 +171,19 @@ class DuckDBIbisTableSaver(DataSaver):
                     ContractEnforcer.validate_table_write(self.table_key)
 
                     warehouse = self.env.warehouse
+                    options = resolve_materialize_options(
+                        env=self.env,
+                        target_name=self.target_name,
+                        table_key=self.table_key,
+                        input_hash=input_hash,
+                        column_names=None,
+                    )
                     row_count = _materialize_table(
                         warehouse,
                         table_key=self.table_key,
                         table=data,
                         validate=self.env.validate_outputs,
-                        options=materialize_options(
-                            self.env,
-                            owner_target=self.target_name,
-                            mode="replace",
-                            input_hash=input_hash,
-                        ),
+                        options=options,
                     )
 
                     result = _succeeded(
@@ -271,19 +270,9 @@ def _materialize_table(
         result = warehouse.materialize_table(table_key, table, options=options)
         return result.rows_written or 0
 
-    snapshot = options.snapshot
-    if snapshot is None:
-        msg = "Validated DuckDB materialization requires a snapshot"
-        raise ValueError(msg)
-
     df = cast("pd.DataFrame", table.execute())
     validated = schema.validate(df, lazy=False)
-    warehouse.delete_for_snapshot(table_key, snapshot=snapshot)
-    result = warehouse.materialize_dataframe(
-        table_key,
-        validated,
-        options=append_materialize_options(options),
-    )
+    result = warehouse.materialize_dataframe(table_key, validated, options=options)
     return result.rows_written or 0
 
 

@@ -46,6 +46,7 @@ TagKey = Literal[
     "entity",
     "grain",
     "mcp_visible",
+    "tools",
     "target_resources",
     "target_execution",
     "target_parameters",
@@ -65,6 +66,7 @@ class _HamiltonTagKwargs(TypedDict, total=False):
     entity: TagValue
     grain: TagValue
     mcp_visible: TagValue
+    tools: TagValue
     target_resources: TagValue
     target_execution: TagValue
     target_parameters: TagValue
@@ -107,6 +109,7 @@ _SECONDARY_TAGS: dict[TagKey, TagKey] = {
     "entity": "entity",
     "grain": "grain",
     "mcp_visible": "mcp_visible",
+    "tools": "tools",
     "target_resources": "target_resources",
     "target_execution": "target_execution",
     "target_parameters": "target_parameters",

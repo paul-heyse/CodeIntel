@@ -10,10 +10,12 @@ while persistence is DAG-visible via ``FileArtifactSaver``.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -48,6 +50,7 @@ from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
+from codeintel.core.execution.ids import new_run_id
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
@@ -55,7 +58,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
     ToolRunOptions,
 )
-from codeintel.ingestion.ports.change_detection import ChangeSet
+from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 from codeintel.ingestion.scip import (
     ScipParsedIndex,
     ScipRowContext,
@@ -80,7 +83,9 @@ from codeintel.ingestion.scip.manifest import (
     manifest_path,
     write_manifest,
 )
+from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
 from codeintel.storage.io import IbisIOConfig, load_table_as_dataframe
+from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -110,6 +115,7 @@ SCIP_TABLE_KEYS = (
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
     SCIP_MODULE_STATE_TABLE_KEY,
 )
+_FILE_STATE_ROW_MIN_COLUMNS = 7
 
 
 ScipRunResult = ToolStepOutput
@@ -328,7 +334,7 @@ def scip__run_config(
 
 
 def _scip_run_precheck(inputs: ScipModuleInputs) -> ExecutionResult | None:
-    if inputs.modules.status != "succeeded":
+    if inputs.modules.status not in {"succeeded", "skipped"}:
         return ExecutionResult.failed(
             f"Upstream modules target failed: {inputs.modules.error}"
         )
@@ -412,6 +418,19 @@ def _shard_record_matches(left: ScipShardRecord, right: ScipShardRecord) -> bool
     )
 
 
+def _coerce_int(value: object | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
 def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
     manifest_file = manifest_path(scip_dir)
     try:
@@ -438,6 +457,81 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
     write_manifest(manifest_file, manifest)
 
 
+def _build_file_state_map(
+    file_state_rows: tuple[tuple[object, ...], ...],
+) -> dict[str, FileDigest]:
+    digest_by_path: dict[str, FileDigest] = {}
+    for row in file_state_rows:
+        if len(row) < _FILE_STATE_ROW_MIN_COLUMNS:
+            continue
+        rel_path_raw = row[2]
+        size_raw = row[4]
+        mtime_raw = row[5]
+        hash_raw = row[6]
+        if rel_path_raw is None or hash_raw is None:
+            continue
+        rel_path = str(rel_path_raw)
+        size_bytes = _coerce_int(size_raw) or 0
+        mtime_ns = _coerce_int(mtime_raw) or 0
+        content_hash = str(hash_raw)
+        digest_by_path[rel_path] = FileDigest(
+            size_bytes=size_bytes,
+            mtime_ns=mtime_ns,
+            content_hash=content_hash,
+        )
+    return digest_by_path
+
+
+def _persist_scip_telemetry(env: BuildEnv, telemetry: ScipRunTelemetry) -> None:
+    record = ScipRunRecord(
+        run_id=telemetry.run_id,
+        repo=telemetry.repo,
+        commit=telemetry.commit,
+        mode=telemetry.mode,
+        options_hash=telemetry.options_hash,
+        tool_version=telemetry.tool_version,
+        total_modules=telemetry.total_modules,
+        changed_modules=telemetry.changed_modules,
+        deleted_modules=telemetry.deleted_modules,
+        changed_ratio=telemetry.changed_ratio,
+        batch_size=telemetry.batch_size,
+        batch_count=telemetry.batch_count,
+        decision=telemetry.decision,
+        hash_source=telemetry.hash_source,
+        hash_reused=telemetry.hash_reused,
+        hash_computed=telemetry.hash_computed,
+        plan_ms=telemetry.plan_ms,
+        hash_ms=telemetry.hash_ms,
+        tool_ms=telemetry.tool_ms,
+        parse_ms=telemetry.parse_ms,
+        merge_ms=telemetry.merge_ms,
+        write_ms=telemetry.write_ms,
+        total_ms=telemetry.total_ms,
+        status=telemetry.status,
+        error_summary=telemetry.error_summary,
+        output_scip=telemetry.output_scip,
+        recorded_at=telemetry.recorded_at,
+    )
+    env.gateway.build.record_scip_run(record)
+    _write_scip_run_report(env.paths.scip_dir, telemetry)
+
+
+def _write_scip_run_report(scip_dir: Path, telemetry: ScipRunTelemetry) -> None:
+    run_dir = scip_dir / "runs"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = telemetry.recorded_at.strftime("%Y%m%dT%H%M%SZ")
+    output_path = run_dir / f"scip_run_{timestamp}.json"
+    payload = telemetry.to_payload()
+    output_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+
+
+def _persist_scip_telemetry_safe(env: BuildEnv, telemetry: ScipRunTelemetry) -> None:
+    try:
+        _persist_scip_telemetry(env, telemetry)
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("Failed to persist SCIP telemetry: %s", exc)
+
+
 def _execute_scip_incremental(
     env: BuildEnv,
     run_config: ScipRunConfig,
@@ -450,6 +544,17 @@ def _execute_scip_incremental(
         )
 
     change_set, force_full_rebuild = _resolve_change_set(module_inputs.scan)
+    run_id = (
+        env.run_context.run_id if env.run_context is not None else new_run_id("scip")
+    )
+    telemetry = ScipRunTelemetry.create(
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        run_id=run_id,
+        options_hash=run_config.hash_options.options_hash,
+    )
+    file_state_rows = module_inputs.scan.file_state_rows or tuple(change_set.state_rows)
+    file_state_by_path = _build_file_state_map(file_state_rows)
     try:
         config = ScipIncrementalConfig(
             repo_root=env.snapshot.repo_root,
@@ -465,16 +570,30 @@ def _execute_scip_incremental(
             timeout_seconds=run_config.options.timeout_seconds,
             target_dir=None,
             force_full_rebuild=force_full_rebuild,
+            batch_size=run_config.options.batch_size,
+            batch_max_bytes=run_config.options.batch_max_bytes,
+            full_rebuild_threshold_count=run_config.options.full_rebuild_threshold_count,
+            full_rebuild_threshold_ratio=run_config.options.full_rebuild_threshold_ratio,
+            file_state_by_path=file_state_by_path,
+            telemetry=telemetry,
         )
         result = update_index_incremental(config=config)
     except (OSError, RuntimeError, ToolExecutionError, ToolNotFoundError, ValueError) as exc:
         log.exception("SCIP execution failed")
+        telemetry.status = "failed"
+        telemetry.error_summary = str(exc)
+        telemetry.total_ms = 0.0
+        _persist_scip_telemetry_safe(env, telemetry)
         return ScipRunResult(result=ExecutionResult.failed(str(exc)))
 
     if not result.success:
+        telemetry.status = "failed"
+        telemetry.error_summary = result.error or "SCIP indexing failed"
+        _persist_scip_telemetry_safe(env, telemetry)
         return ScipRunResult(
             result=ExecutionResult.failed(result.error or "SCIP indexing failed"),
         )
+    _persist_scip_telemetry_safe(env, telemetry)
     return ScipRunResult(
         result=ExecutionResult.ok(),
         outputs={SCIP_ARTIFACT_INDEX: result.index_path or output_scip},
@@ -570,7 +689,7 @@ def scip__ingest_inputs(
 
 
 def _scip_ingest_precheck(inputs: ScipIngestInputs) -> ExecutionResult | None:
-    if inputs.modules.status != "succeeded":
+    if inputs.modules.status not in {"succeeded", "skipped"}:
         return ExecutionResult.failed(
             f"Upstream modules target failed: {inputs.modules.error}"
         )
@@ -1086,7 +1205,7 @@ def t__scip(
         SCIP_TARGET_NAME,
         hash_options=scip__target_inputs.hash_options,
     )
-    if scip__target_inputs.modules.status != "succeeded":
+    if scip__target_inputs.modules.status not in {"succeeded", "skipped"}:
         return executor.fail(
             RuntimeError(
                 scip__target_inputs.modules.error or "Upstream modules target failed"

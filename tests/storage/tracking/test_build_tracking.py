@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.storage.tracking.build_tracking import ScipRunRecord
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_none,
@@ -157,6 +158,56 @@ class TestOutputManifestOperations:
 
         manifests_after = tracking.list_manifests("test-org/test-repo", "abc123")
         expect_length(manifests_after, 0)
+
+
+class TestScipRunTracking:
+    """Tests for SCIP run tracking persistence."""
+
+    @staticmethod
+    def test_record_scip_run_persists_row(fresh_gateway: StorageGateway) -> None:
+        """Record a SCIP run and verify the row is stored."""
+        tracking = fresh_gateway.build
+        record = ScipRunRecord(
+            run_id="run-1",
+            repo="test/repo",
+            commit="abc123",
+            mode="incremental",
+            options_hash="options-hash",
+            tool_version="scip-python 1.0.0",
+            total_modules=10,
+            changed_modules=2,
+            deleted_modules=1,
+            changed_ratio=0.3,
+            batch_size=5,
+            batch_count=1,
+            decision="incremental",
+            hash_source="file_state",
+            hash_reused=2,
+            hash_computed=0,
+            plan_ms=10.0,
+            hash_ms=1.0,
+            tool_ms=20.0,
+            parse_ms=2.0,
+            merge_ms=3.0,
+            write_ms=4.0,
+            total_ms=40.0,
+            status="succeeded",
+            error_summary=None,
+            output_scip="build/scip/index.scip",
+            recorded_at=datetime.now(tz=UTC),
+        )
+        tracking.record_scip_run(record)
+
+        row = fresh_gateway.con.execute(
+            "SELECT run_id, repo, commit, mode, status FROM build.scip_runs WHERE run_id = ?",
+            [record.run_id],
+        ).fetchone()
+        loaded = expect_is_not_none(row)
+        expect_equal(loaded[0], record.run_id)
+        expect_equal(loaded[1], record.repo)
+        expect_equal(loaded[2], record.commit)
+        expect_equal(loaded[3], record.mode)
+        expect_equal(loaded[4], record.status)
 
 
 class TestBuildRunOperations:

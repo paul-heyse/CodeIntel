@@ -50,6 +50,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
@@ -296,7 +297,15 @@ def modules__module_rows(
     """
     if not t__modules__scan.success:
         return None
-    return t__modules__scan.module_rows
+    rows = t__modules__scan.module_rows
+    if not rows:
+        return rows
+    schema = get_schema_service().require_table_schema(MODULES_TABLE_KEY)
+    key_columns = schema.primary_key
+    if not key_columns:
+        return rows
+    columns = tuple(schema.column_names())
+    return _dedupe_rows_by_keys(rows, columns=columns, key_columns=key_columns)
 
 
 @SaveToObjectMetadataDecorator(
@@ -349,6 +358,28 @@ def modules__repo_map_rows(
     if not t__modules__scan.success:
         return None
     return t__modules__scan.repo_map_rows
+
+
+def _dedupe_rows_by_keys(
+    rows: tuple[tuple[object, ...], ...],
+    *,
+    columns: tuple[str, ...],
+    key_columns: tuple[str, ...],
+) -> tuple[tuple[object, ...], ...]:
+    key_indexes = tuple(columns.index(col) for col in key_columns)
+    deduped: dict[tuple[object, ...], tuple[object, ...]] = {}
+    for row in rows:
+        key = tuple(row[idx] for idx in key_indexes)
+        if key not in deduped:
+            deduped[key] = row
+    if len(deduped) != len(rows):
+        log.warning(
+            "Deduplicated %d rows for %s using keys %s",
+            len(rows) - len(deduped),
+            MODULES_TABLE_KEY,
+            key_columns,
+        )
+    return tuple(deduped.values())
 
 
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)

@@ -168,6 +168,24 @@ def artifact_node(artifact_name: str) -> str:
     return to_node_name(artifact_name, prefix="a")
 
 
+def path_node(artifact_name: str) -> str:
+    """Convert an artifact name to a Path support node identifier.
+
+    Path nodes use the "p" prefix and return resolved filesystem paths.
+
+    Parameters
+    ----------
+    artifact_name
+        The artifact name (e.g., "faiss_index", "model_weights").
+
+    Returns
+    -------
+    str
+        Hamilton node name with "p__" prefix.
+    """
+    return to_node_name(artifact_name, prefix="p")
+
+
 def query_node(table_key: str) -> str:
     """Convert a table key to an Ibis query loader node identifier.
 

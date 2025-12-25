@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import logging
+import os
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,17 +37,22 @@ from codeintel.ingestion.scip.manifest import (
     write_manifest,
 )
 from codeintel.ingestion.scip.paths import resolve_target_base, scip_relative_path
+from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import ToolRunner
-    from codeintel.ingestion.ports.change_detection import ChangeSet
+    from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
     from codeintel.ingestion.ports.discovery import ModuleRecord
     from codeintel.ingestion.scip.proto_types import IndexProto
 
 log = logging.getLogger(__name__)
+
+_SCIP_TRACE_ENV = "CODEINTEL_SCIP_TRACE"
+_SCIP_PROGRESS_INTERVAL_S = 30.0
+_SCIP_TRACE_PROGRESS_INTERVAL_S = 5.0
 
 
 def _resolve_decode_error() -> type[Exception]:
@@ -90,6 +98,12 @@ class ScipIncrementalConfig:
     timeout_seconds: int
     target_dir: Path | None
     force_full_rebuild: bool = False
+    batch_size: int = 200
+    batch_max_bytes: int = 50_000_000
+    full_rebuild_threshold_count: int = 1000
+    full_rebuild_threshold_ratio: float = 0.3
+    file_state_by_path: Mapping[str, FileDigest] | None = None
+    telemetry: ScipRunTelemetry | None = None
 
 
 @dataclass(frozen=True)
@@ -115,7 +129,25 @@ class _ModuleShardPlan:
     rel_path: str
     scip_rel_path: str
     content_hash: str
+    size_bytes: int
     shard_path: Path
+
+
+@dataclass(frozen=True)
+class _ShardPlanStats:
+    total_candidates: int
+    computed_hashes: int
+    reused_hashes: int
+    computed_ms: float
+
+
+@dataclass(frozen=True)
+class _ShardIndexResult:
+    shard_indexes: tuple[IndexProto, ...]
+    shard_updates: dict[str, ScipShardRecord]
+    tool_ms: float
+    parse_ms: float
+    batch_count: int
 
 
 @dataclass(frozen=True)
@@ -129,6 +161,43 @@ class _IncrementalMergeInputs:
     manifest_file: Path
 
 
+@dataclass(frozen=True)
+class _IncrementalRunContext:
+    config: ScipIncrementalConfig
+    run_config: _ScipRunConfig
+    scip_dir: Path
+    manifest_file: Path
+    target_base: Path
+    total_modules: int
+    changed_modules: tuple[ModuleRecord, ...]
+    deleted_modules: tuple[ModuleRecord, ...]
+    changed_count: int
+    changed_ratio: float | None
+
+
+@dataclass(frozen=True)
+class _IncrementalPlan:
+    context: _IncrementalRunContext
+    base_index: IndexProto
+    manifest: ScipShardManifest
+    changed_plans: tuple[_ModuleShardPlan, ...]
+    deleted_paths: tuple[str, ...]
+    plan_stats: _ShardPlanStats
+    plan_ms: float
+    hash_source: str | None
+
+
+@dataclass(frozen=True)
+class _ShardIndexRequest:
+    run_config: _ScipRunConfig
+    proto_module_path: Path
+    plans: Sequence[_ModuleShardPlan]
+    options_hash: str | None
+    batch_size: int
+    batch_max_bytes: int
+    telemetry: ScipRunTelemetry | None
+
+
 def update_index_incremental(
     *,
     config: ScipIncrementalConfig,
@@ -140,6 +209,80 @@ def update_index_incremental(
     ScipIncrementalResult
         Result describing the update outcome and paths.
     """
+    start_total = time.perf_counter()
+    context = _build_run_context(config)
+    telemetry = context.config.telemetry
+    decision = _resolve_full_rebuild_decision(
+        config=context.config,
+        manifest_file=context.manifest_file,
+        changed_count=context.changed_count,
+        changed_ratio=context.changed_ratio,
+    )
+    _initialize_telemetry(context, decision)
+    _log_plan_summary(context, decision)
+    if decision is not None:
+        result = _full_rebuild(
+            run_config=context.run_config,
+            output_scip=context.config.output_scip,
+            manifest_file=context.manifest_file,
+            telemetry=telemetry,
+            error=None,
+        )
+    else:
+        base_index, fallback = _load_base_index_or_full_rebuild(context)
+        if fallback is not None:
+            result = fallback
+        elif base_index is None:
+            result = ScipIncrementalResult(
+                success=False,
+                index_path=None,
+                manifest_path=None,
+                full_rebuild=True,
+                updated=False,
+                error="SCIP base index missing after fallback",
+            )
+        else:
+            plan = _build_incremental_plan(context, base_index)
+            skip_result = _maybe_skip_incremental_plan(plan)
+            if skip_result is not None:
+                result = skip_result
+            else:
+                shard_result, fallback = _index_shards_or_full_rebuild(plan)
+                if fallback is not None:
+                    result = fallback
+                elif shard_result is None:
+                    result = ScipIncrementalResult(
+                        success=False,
+                        index_path=None,
+                        manifest_path=None,
+                        full_rebuild=False,
+                        updated=False,
+                        error="SCIP shard indexing missing after fallback",
+                    )
+                else:
+                    _record_shard_metrics(telemetry, shard_result)
+                    log.info(
+                        "SCIP shard indexing complete (batches=%d, tool_ms=%.1f, parse_ms=%.1f)",
+                        shard_result.batch_count,
+                        shard_result.tool_ms,
+                        shard_result.parse_ms,
+                    )
+                    result = _apply_incremental_merge(
+                        _IncrementalMergeInputs(
+                            config=context.config,
+                            base_index=plan.base_index,
+                            shard_indexes=shard_result.shard_indexes,
+                            deleted_paths=plan.deleted_paths,
+                            manifest=plan.manifest,
+                            shard_updates=shard_result.shard_updates,
+                            manifest_file=context.manifest_file,
+                        ),
+                        telemetry=telemetry,
+                    )
+    return _finalize_result(result, telemetry=telemetry, start_total=start_total)
+
+
+def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
     scip_dir = config.output_scip.parent
     scip_dir.mkdir(parents=True, exist_ok=True)
     manifest_file = manifest_path(scip_dir)
@@ -151,59 +294,167 @@ def update_index_incremental(
         target_base=target_base,
         timeout_seconds=config.timeout_seconds,
     )
+    total_modules = len(config.modules)
+    changed_modules = tuple(config.change_set.added) + tuple(config.change_set.modified)
+    deleted_modules = tuple(config.change_set.deleted)
+    changed_count = len(changed_modules) + len(deleted_modules)
+    changed_ratio = (changed_count / total_modules) if total_modules else None
+    return _IncrementalRunContext(
+        config=config,
+        run_config=run_config,
+        scip_dir=scip_dir,
+        manifest_file=manifest_file,
+        target_base=target_base,
+        total_modules=total_modules,
+        changed_modules=changed_modules,
+        deleted_modules=deleted_modules,
+        changed_count=changed_count,
+        changed_ratio=changed_ratio,
+    )
 
-    if config.force_full_rebuild or not config.output_scip.is_file():
-        return _full_rebuild(
-            run_config=run_config,
-            output_scip=config.output_scip,
-            manifest_file=manifest_file,
-        )
 
+def _initialize_telemetry(context: _IncrementalRunContext, decision: str | None) -> None:
+    telemetry = context.config.telemetry
+    if telemetry is None:
+        return
+    telemetry.total_modules = context.total_modules
+    telemetry.changed_modules = len(context.changed_modules)
+    telemetry.deleted_modules = len(context.deleted_modules)
+    telemetry.changed_ratio = context.changed_ratio
+    telemetry.batch_size = context.config.batch_size
+    telemetry.decision = decision
+    telemetry.output_scip = str(context.config.output_scip)
+
+
+def _finalize_result(
+    result: ScipIncrementalResult,
+    *,
+    telemetry: ScipRunTelemetry | None,
+    start_total: float,
+) -> ScipIncrementalResult:
+    if telemetry is not None:
+        telemetry.total_ms = _elapsed_ms(start_total)
+    return result
+
+
+def _load_base_index_or_full_rebuild(
+    context: _IncrementalRunContext,
+) -> tuple[IndexProto | None, ScipIncrementalResult | None]:
     try:
         base_index = load_index_proto(
-            config.output_scip,
-            proto_module_path=config.proto_module_path,
+            context.config.output_scip,
+            proto_module_path=context.config.proto_module_path,
         )
     except (_DECODE_ERROR, OSError, AttributeError, TypeError, ValueError) as exc:
         log.warning("SCIP index parse failed; falling back to full rebuild: %s", exc)
-        return _full_rebuild(
-            run_config=run_config,
-            output_scip=config.output_scip,
-            manifest_file=manifest_file,
+        result = _full_rebuild(
+            run_config=context.run_config,
+            output_scip=context.config.output_scip,
+            manifest_file=context.manifest_file,
+            telemetry=context.config.telemetry,
+            error=str(exc),
         )
+        if context.config.telemetry is not None:
+            context.config.telemetry.decision = "parse_failed_full_rebuild"
+        return None, result
+    return base_index, None
 
-    manifest = load_manifest(manifest_file)
-    changed_modules = tuple(config.change_set.added) + tuple(config.change_set.modified)
-    deleted_modules = tuple(config.change_set.deleted)
-    if _options_mismatch(manifest, config.options_hash):
-        log.info("SCIP options changed; reindexing all modules")
-        changed_modules = tuple(config.modules)
+
+def _build_incremental_plan(
+    context: _IncrementalRunContext,
+    base_index: IndexProto,
+) -> _IncrementalPlan:
+    manifest = load_manifest(context.manifest_file)
     plan_context = _ShardPlanContext(
-        repo_root=config.repo_root,
-        target_base=target_base,
-        scope_paths=config.scope_paths,
-        max_file_size_kb=config.max_file_size_kb,
-        scip_dir=scip_dir,
+        repo_root=context.config.repo_root,
+        target_base=context.target_base,
+        scope_paths=context.config.scope_paths,
+        max_file_size_kb=context.config.max_file_size_kb,
+        scip_dir=context.scip_dir,
     )
-    changed_plans = _build_shard_plans(plan_context, modules=changed_modules)
-    deleted_paths = _filter_deleted_paths(plan_context, modules=deleted_modules)
+    plan_started = time.perf_counter()
+    changed_plans, plan_stats = _build_shard_plans(
+        plan_context,
+        modules=context.changed_modules,
+        file_state_by_path=context.config.file_state_by_path,
+    )
+    deleted_paths = _filter_deleted_paths(plan_context, modules=context.deleted_modules)
+    plan_ms = _elapsed_ms(plan_started)
+    hash_source = _hash_source_label(plan_stats)
+    _record_plan_metrics(
+        context.config.telemetry,
+        plan_ms=plan_ms,
+        plan_stats=plan_stats,
+        hash_source=hash_source,
+    )
+    log.info(
+        "SCIP plan complete (plan_ms=%.1f, hash_ms=%.1f, hash_source=%s, candidates=%d)",
+        plan_ms,
+        plan_stats.computed_ms,
+        hash_source or "none",
+        plan_stats.total_candidates,
+    )
+    return _IncrementalPlan(
+        context=context,
+        base_index=base_index,
+        manifest=manifest,
+        changed_plans=changed_plans,
+        deleted_paths=deleted_paths,
+        plan_stats=plan_stats,
+        plan_ms=plan_ms,
+        hash_source=hash_source,
+    )
 
-    if not changed_plans and not deleted_paths:
-        return ScipIncrementalResult(
-            success=True,
-            index_path=config.output_scip,
-            manifest_path=manifest_file if manifest_file.is_file() else None,
-            full_rebuild=False,
-            updated=False,
-        )
 
+def _record_plan_metrics(
+    telemetry: ScipRunTelemetry | None,
+    *,
+    plan_ms: float,
+    plan_stats: _ShardPlanStats,
+    hash_source: str | None,
+) -> None:
+    if telemetry is None:
+        return
+    telemetry.plan_ms = plan_ms
+    telemetry.hash_ms = plan_stats.computed_ms
+    telemetry.hash_reused = plan_stats.reused_hashes
+    telemetry.hash_computed = plan_stats.computed_hashes
+    telemetry.hash_source = hash_source
+
+
+def _maybe_skip_incremental_plan(plan: _IncrementalPlan) -> ScipIncrementalResult | None:
+    if plan.changed_plans or plan.deleted_paths:
+        return None
+    log.info("SCIP incremental skipped (no changes detected)")
+    telemetry = plan.context.config.telemetry
+    if telemetry is not None:
+        telemetry.mode = "incremental"
+        telemetry.status = "skipped"
+    return ScipIncrementalResult(
+        success=True,
+        index_path=plan.context.config.output_scip,
+        manifest_path=(
+            plan.context.manifest_file if plan.context.manifest_file.is_file() else None
+        ),
+        full_rebuild=False,
+        updated=False,
+    )
+
+
+def _index_shards_or_full_rebuild(
+    plan: _IncrementalPlan,
+) -> tuple[_ShardIndexResult | None, ScipIncrementalResult | None]:
+    request = _ShardIndexRequest(
+        run_config=plan.context.run_config,
+        proto_module_path=plan.context.config.proto_module_path,
+        plans=plan.changed_plans,
+        options_hash=plan.context.config.options_hash,
+        batch_size=plan.context.config.batch_size,
+        batch_max_bytes=plan.context.config.batch_max_bytes,
+        telemetry=plan.context.config.telemetry,
+    )
     try:
-        shard_indexes, shard_updates = _index_changed_modules(
-            run_config=run_config,
-            proto_module_path=config.proto_module_path,
-            plans=changed_plans,
-            options_hash=config.options_hash,
-        )
+        shard_result = _index_changed_modules(request)
     except (
         _DECODE_ERROR,
         OSError,
@@ -215,24 +466,29 @@ def update_index_incremental(
         RuntimeError,
     ) as exc:
         log.exception("Incremental SCIP indexing failed for change set")
-        return _full_rebuild(
-            run_config=run_config,
-            output_scip=config.output_scip,
-            manifest_file=manifest_file,
+        result = _full_rebuild(
+            run_config=plan.context.run_config,
+            output_scip=plan.context.config.output_scip,
+            manifest_file=plan.context.manifest_file,
+            telemetry=plan.context.config.telemetry,
             error=str(exc),
         )
+        if plan.context.config.telemetry is not None:
+            plan.context.config.telemetry.decision = "incremental_failed_full_rebuild"
+        return None, result
+    return shard_result, None
 
-    return _apply_incremental_merge(
-        _IncrementalMergeInputs(
-            config=config,
-            base_index=base_index,
-            shard_indexes=shard_indexes,
-            deleted_paths=deleted_paths,
-            manifest=manifest,
-            shard_updates=shard_updates,
-            manifest_file=manifest_file,
-        )
-    )
+
+def _record_shard_metrics(
+    telemetry: ScipRunTelemetry | None,
+    shard_result: _ShardIndexResult,
+) -> None:
+    if telemetry is None:
+        return
+    telemetry.mode = "incremental"
+    telemetry.tool_ms = shard_result.tool_ms
+    telemetry.parse_ms = shard_result.parse_ms
+    telemetry.batch_count = shard_result.batch_count
 
 
 def _full_rebuild(
@@ -240,14 +496,23 @@ def _full_rebuild(
     run_config: _ScipRunConfig,
     output_scip: Path,
     manifest_file: Path,
+    telemetry: ScipRunTelemetry | None,
     error: str | None = None,
 ) -> ScipIncrementalResult:
+    if telemetry is not None:
+        telemetry.mode = "full"
+        telemetry.tool_version = _resolve_scip_python_version(run_config)
     try:
+        tool_start = time.perf_counter()
         _run_scip_python(
             run_config=run_config,
             output_scip=output_scip,
             rel_paths=None,
+            log_prefix="scip-python full",
         )
+        tool_ms = _elapsed_ms(tool_start)
+        if telemetry is not None:
+            telemetry.tool_ms = tool_ms
     except (
         ToolExecutionError,
         ToolNotFoundError,
@@ -256,6 +521,9 @@ def _full_rebuild(
         ValueError,
     ) as exc:
         message = error or str(exc)
+        if telemetry is not None:
+            telemetry.status = "failed"
+            telemetry.error_summary = message
         return ScipIncrementalResult(
             success=False,
             index_path=None,
@@ -265,7 +533,13 @@ def _full_rebuild(
             error=message,
         )
 
+    write_start = time.perf_counter()
     write_manifest(manifest_file, ScipShardManifest.empty())
+    write_ms = _elapsed_ms(write_start)
+    if telemetry is not None:
+        telemetry.write_ms = write_ms
+        telemetry.status = "succeeded"
+    log.info("SCIP full rebuild complete (tool_ms=%.1f, write_ms=%.1f)", tool_ms, write_ms)
     return ScipIncrementalResult(
         success=True,
         index_path=output_scip,
@@ -275,7 +549,11 @@ def _full_rebuild(
     )
 
 
-def _apply_incremental_merge(inputs: _IncrementalMergeInputs) -> ScipIncrementalResult:
+def _apply_incremental_merge(
+    inputs: _IncrementalMergeInputs,
+    *,
+    telemetry: ScipRunTelemetry | None,
+) -> ScipIncrementalResult:
     base_updated_at = {
         path: record.updated_at for path, record in inputs.manifest.records.items()
     }
@@ -286,6 +564,7 @@ def _apply_incremental_merge(inputs: _IncrementalMergeInputs) -> ScipIncremental
         shard_updated_at=shard_updated_at,
         base_updated_at=base_updated_at,
     )
+    merge_start = time.perf_counter()
     merged = merge_indexes(
         base_index=inputs.base_index,
         shard_indexes=inputs.shard_indexes,
@@ -294,13 +573,22 @@ def _apply_incremental_merge(inputs: _IncrementalMergeInputs) -> ScipIncremental
         context=merge_context,
     )
     write_index_proto(merged, inputs.config.output_scip)
+    merge_ms = _elapsed_ms(merge_start)
+    if telemetry is not None:
+        telemetry.merge_ms = merge_ms
 
+    write_start = time.perf_counter()
     updated_manifest = update_manifest(
         inputs.manifest,
         updates=inputs.shard_updates,
         deleted=dict.fromkeys(inputs.deleted_paths, True),
     )
     write_manifest(inputs.manifest_file, updated_manifest)
+    write_ms = _elapsed_ms(write_start)
+    if telemetry is not None:
+        telemetry.write_ms = write_ms
+        telemetry.status = "succeeded"
+    log.info("SCIP merge complete (merge_ms=%.1f, write_ms=%.1f)", merge_ms, write_ms)
 
     return ScipIncrementalResult(
         success=True,
@@ -319,12 +607,88 @@ def _options_mismatch(manifest: ScipShardManifest, options_hash: str | None) -> 
     return any(record.options_hash != options_hash for record in manifest.records.values())
 
 
+def _resolve_full_rebuild_decision(
+    *,
+    config: ScipIncrementalConfig,
+    manifest_file: Path,
+    changed_count: int,
+    changed_ratio: float | None,
+) -> str | None:
+    if config.force_full_rebuild or not config.output_scip.is_file():
+        return "force_full_rebuild"
+
+    if manifest_file.is_file():
+        manifest = load_manifest(manifest_file)
+        if _options_mismatch(manifest, config.options_hash):
+            log.info("SCIP options changed; forcing full rebuild")
+            return "options_mismatch"
+
+    if (
+        config.full_rebuild_threshold_count > 0
+        and changed_count >= config.full_rebuild_threshold_count
+    ):
+        log.info(
+            "SCIP change count %d exceeds threshold %d; forcing full rebuild",
+            changed_count,
+            config.full_rebuild_threshold_count,
+        )
+        return "threshold_count"
+
+    if (
+        changed_ratio is not None
+        and config.full_rebuild_threshold_ratio > 0
+        and changed_ratio >= config.full_rebuild_threshold_ratio
+    ):
+        log.info(
+            "SCIP change ratio %.2f exceeds threshold %.2f; forcing full rebuild",
+            changed_ratio,
+            config.full_rebuild_threshold_ratio,
+        )
+        return "threshold_ratio"
+
+    return None
+
+
+def _elapsed_ms(start_ts: float) -> float:
+    return (time.perf_counter() - start_ts) * 1000
+
+
+def _log_plan_summary(context: _IncrementalRunContext, decision: str | None) -> None:
+    ratio_label = (
+        f"{context.changed_ratio:.2f}" if context.changed_ratio is not None else "n/a"
+    )
+    decision_label = decision or "incremental"
+    log.info(
+        "SCIP incremental plan: total=%d changed=%d deleted=%d ratio=%s "
+        "decision=%s batch_size=%d batch_max_bytes=%d "
+        "threshold_count=%d threshold_ratio=%.2f",
+        context.total_modules,
+        len(context.changed_modules),
+        len(context.deleted_modules),
+        ratio_label,
+        decision_label,
+        context.config.batch_size,
+        context.config.batch_max_bytes,
+        context.config.full_rebuild_threshold_count,
+        context.config.full_rebuild_threshold_ratio,
+    )
+
+
+def _scip_trace_enabled() -> bool:
+    value = os.environ.get(_SCIP_TRACE_ENV, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _build_shard_plans(
     context: _ShardPlanContext,
     *,
     modules: Sequence[ModuleRecord],
-) -> tuple[_ModuleShardPlan, ...]:
+    file_state_by_path: Mapping[str, FileDigest] | None,
+) -> tuple[tuple[_ModuleShardPlan, ...], _ShardPlanStats]:
     plans: list[_ModuleShardPlan] = []
+    computed_hashes = 0
+    reused_hashes = 0
+    computed_start = time.perf_counter()
     for module in modules:
         if not _in_scope(module.rel_path, context.scope_paths):
             continue
@@ -335,9 +699,13 @@ def _build_shard_plans(
         )
         if scip_rel is None:
             continue
-        digest = HashChangeDetectionAdapter.compute_file_digest(module.file_path)
+        digest = _resolve_file_digest(module, file_state_by_path=file_state_by_path)
         if digest is None:
             continue
+        if file_state_by_path and module.rel_path in file_state_by_path:
+            reused_hashes += 1
+        else:
+            computed_hashes += 1
         if context.max_file_size_kb > 0 and digest.size_bytes > context.max_file_size_kb * 1024:
             continue
         shard_file = shard_path(
@@ -351,10 +719,20 @@ def _build_shard_plans(
                 rel_path=module.rel_path,
                 scip_rel_path=scip_rel,
                 content_hash=digest.content_hash,
+                size_bytes=digest.size_bytes,
                 shard_path=shard_file,
             )
         )
-    return tuple(plans)
+    computed_ms = (time.perf_counter() - computed_start) * 1000
+    return (
+        tuple(plans),
+        _ShardPlanStats(
+            total_candidates=len(modules),
+            computed_hashes=computed_hashes,
+            reused_hashes=reused_hashes,
+            computed_ms=computed_ms,
+        ),
+    )
 
 
 def _filter_deleted_paths(
@@ -377,35 +755,123 @@ def _filter_deleted_paths(
     return tuple(sorted(set(deleted)))
 
 
-def _index_changed_modules(
+def _resolve_file_digest(
+    module: ModuleRecord,
     *,
-    run_config: _ScipRunConfig,
-    proto_module_path: Path,
+    file_state_by_path: Mapping[str, FileDigest] | None,
+) -> FileDigest | None:
+    if file_state_by_path is not None:
+        digest = file_state_by_path.get(module.rel_path)
+        if digest is not None:
+            return digest
+    return HashChangeDetectionAdapter.compute_file_digest(module.file_path)
+
+
+def _hash_source_label(stats: _ShardPlanStats) -> str | None:
+    if stats.computed_hashes and stats.reused_hashes:
+        return "mixed"
+    if stats.reused_hashes:
+        return "file_state"
+    if stats.computed_hashes:
+        return "computed"
+    return None
+
+
+def _partition_plans(
     plans: Sequence[_ModuleShardPlan],
-    options_hash: str | None,
-) -> tuple[tuple[IndexProto, ...], dict[str, ScipShardRecord]]:
-    shard_indexes: list[IndexProto] = []
-    shard_updates: dict[str, ScipShardRecord] = {}
-    tool_version = _resolve_scip_python_version(run_config)
+    *,
+    batch_size: int,
+    max_batch_bytes: int,
+) -> tuple[tuple[_ModuleShardPlan, ...], ...]:
+    batches: list[list[_ModuleShardPlan]] = []
+    current: list[_ModuleShardPlan] = []
+    current_bytes = 0
 
     for plan in plans:
-        _run_scip_python(
-            run_config=run_config,
-            output_scip=plan.shard_path,
-            rel_paths=(plan.scip_rel_path,),
-        )
-        shard_index = load_index_proto(plan.shard_path, proto_module_path=proto_module_path)
-        shard_indexes.append(shard_index)
-        shard_updates[plan.scip_rel_path] = ScipShardRecord(
-            rel_path=plan.scip_rel_path,
-            content_hash=plan.content_hash,
-            options_hash=options_hash,
-            tool_version=tool_version,
-            shard_path=str(plan.shard_path),
-            updated_at=datetime.now(tz=UTC),
-        )
+        plan_bytes = plan.size_bytes
+        exceeds_size = max_batch_bytes > 0 and current_bytes + plan_bytes > max_batch_bytes
+        exceeds_count = batch_size > 0 and len(current) >= batch_size
+        if current and (exceeds_size or exceeds_count):
+            batches.append(current)
+            current = []
+            current_bytes = 0
+        current.append(plan)
+        current_bytes += plan_bytes
 
-    return tuple(shard_indexes), shard_updates
+    if current:
+        batches.append(current)
+
+    return tuple(tuple(batch) for batch in batches)
+
+
+def _batch_shard_path(batch: Sequence[_ModuleShardPlan]) -> Path:
+    if not batch:
+        msg = "batch_shard_path requires at least one plan"
+        raise ValueError(msg)
+    digest = _hash_batch(batch)
+    shard_dir = batch[0].shard_path.parent
+    return shard_dir / f"batch_{digest}.scip"
+
+
+def _hash_batch(batch: Sequence[_ModuleShardPlan]) -> str:
+    hasher = hashlib.sha256()
+    for plan in batch:
+        hasher.update(plan.scip_rel_path.encode("utf-8"))
+        hasher.update(b"|")
+        hasher.update(plan.content_hash.encode("utf-8"))
+        hasher.update(b"|")
+    return hasher.hexdigest()[:16]
+
+
+def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
+    shard_indexes: list[IndexProto] = []
+    shard_updates: dict[str, ScipShardRecord] = {}
+    tool_version = _resolve_scip_python_version(request.run_config)
+    if request.telemetry is not None:
+        request.telemetry.tool_version = tool_version
+    tool_ms = 0.0
+    parse_ms = 0.0
+    batches = _partition_plans(
+        request.plans,
+        batch_size=max(1, request.batch_size),
+        max_batch_bytes=max(0, request.batch_max_bytes),
+    )
+    for idx, batch in enumerate(batches, start=1):
+        batch_path = _batch_shard_path(batch)
+        rel_paths = [plan.scip_rel_path for plan in batch]
+        tool_start = time.perf_counter()
+        _run_scip_python(
+            run_config=request.run_config,
+            output_scip=batch_path,
+            rel_paths=rel_paths,
+            log_prefix=f"scip-python batch {idx}/{len(batches)}",
+        )
+        tool_ms += _elapsed_ms(tool_start)
+        parse_start = time.perf_counter()
+        shard_index = load_index_proto(
+            batch_path,
+            proto_module_path=request.proto_module_path,
+        )
+        parse_ms += _elapsed_ms(parse_start)
+        shard_indexes.append(shard_index)
+        updated_at = datetime.now(tz=UTC)
+        for plan in batch:
+            shard_updates[plan.scip_rel_path] = ScipShardRecord(
+                rel_path=plan.scip_rel_path,
+                content_hash=plan.content_hash,
+                options_hash=request.options_hash,
+                tool_version=tool_version,
+                shard_path=str(batch_path),
+                updated_at=updated_at,
+            )
+
+    return _ShardIndexResult(
+        shard_indexes=tuple(shard_indexes),
+        shard_updates=shard_updates,
+        tool_ms=tool_ms,
+        parse_ms=parse_ms,
+        batch_count=len(batches),
+    )
 
 
 def _in_scope(rel_path: str, scope_paths: Sequence[str] | None) -> bool:
@@ -420,7 +886,12 @@ def _run_scip_python(
     run_config: _ScipRunConfig,
     output_scip: Path,
     rel_paths: Sequence[str] | None,
+    log_prefix: str | None = None,
 ) -> None:
+    trace_enabled = _scip_trace_enabled()
+    progress_interval = (
+        _SCIP_TRACE_PROGRESS_INTERVAL_S if trace_enabled else _SCIP_PROGRESS_INTERVAL_S
+    )
     args = build_scip_python_args(
         target_base=run_config.target_base,
         output_scip=output_scip,
@@ -435,6 +906,9 @@ def _run_scip_python(
                 cwd=run_config.repo_root,
                 output_path=output_scip,
                 timeout_s=float(run_config.timeout_seconds),
+                progress_interval_s=progress_interval,
+                log_prefix=log_prefix,
+                stream_output=trace_enabled,
             ),
         )
     )

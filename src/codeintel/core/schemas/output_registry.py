@@ -11,7 +11,7 @@ from codeintel.config.datasets.primitives import (
     REPO_COMMIT_COLS,
     SUBSYSTEM_ENTITY_COLS,
 )
-from codeintel.core.schemas.primitives import Column, Index, TableSchema
+from codeintel.core.schemas.primitives import Column, Index, TableSchema, TableWritePolicy
 
 AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
@@ -111,11 +111,19 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
             Column("language", "VARCHAR"),
             Column("tags", "JSON"),
             Column("owners", "JSON"),
+            Column("row_hash", "VARCHAR"),
         ],
         primary_key=("module", "path"),
         indexes=(
             Index("idx_core_modules_path", ("path",)),
             Index("idx_core_modules_module", ("module",)),
+        ),
+        write_policy=TableWritePolicy(
+            mode="upsert",
+            conflict_columns=("module", "path"),
+            update_columns=("repo", "commit", "language", "tags", "owners", "row_hash"),
+            hash_column="row_hash",
+            use_staging=True,
         ),
         description="Discovered modules per repo/commit",
     ),

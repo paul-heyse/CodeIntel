@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import decode_json_dict, encode_json_compact
+from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -231,13 +232,15 @@ class AssetTracking:
                 "created_at",
                 "meta",
             ),
-            conflict_columns=("asset_kind", "asset_key", "version_hash"),
-            update_columns=(
-                "schema_hash",
-                "row_count",
-                "bytes",
-                "created_at",
-                "meta",
+            upsert=UpsertSpec(
+                conflict_columns=("asset_kind", "asset_key", "version_hash"),
+                update_columns=(
+                    "schema_hash",
+                    "row_count",
+                    "bytes",
+                    "created_at",
+                    "meta",
+                ),
             ),
         )
 
@@ -292,19 +295,21 @@ class AssetTracking:
                 "recorded_at",
                 "meta",
             ),
-            conflict_columns=("run_id", "asset_kind", "asset_key"),
-            update_columns=(
-                "repo",
-                "commit",
-                "version_hash",
-                "target",
-                "impl_kind",
-                "status",
-                "location",
-                "input_hash",
-                "options_hash",
-                "recorded_at",
-                "meta",
+            upsert=UpsertSpec(
+                conflict_columns=("run_id", "asset_kind", "asset_key"),
+                update_columns=(
+                    "repo",
+                    "commit",
+                    "version_hash",
+                    "target",
+                    "impl_kind",
+                    "status",
+                    "location",
+                    "input_hash",
+                    "options_hash",
+                    "recorded_at",
+                    "meta",
+                ),
             ),
         )
 
@@ -351,8 +356,16 @@ class AssetTracking:
                 "recorded_at",
                 "meta",
             ),
-            conflict_columns=("run_id", "asset_kind", "asset_key"),
-            update_columns=("version_hash", "target", "resolution_kind", "recorded_at", "meta"),
+            upsert=UpsertSpec(
+                conflict_columns=("run_id", "asset_kind", "asset_key"),
+                update_columns=(
+                    "version_hash",
+                    "target",
+                    "resolution_kind",
+                    "recorded_at",
+                    "meta",
+                ),
+            ),
         )
 
     def record_lineage_edges_batch(self, edges: Sequence[AssetLineageEdgeRecord]) -> int:
@@ -396,16 +409,18 @@ class AssetTracking:
                 "created_at",
                 "meta",
             ),
-            conflict_columns=(
-                "downstream_kind",
-                "downstream_key",
-                "downstream_version",
-                "upstream_kind",
-                "upstream_key",
-                "upstream_version",
-                "edge_kind",
+            upsert=UpsertSpec(
+                conflict_columns=(
+                    "downstream_kind",
+                    "downstream_key",
+                    "downstream_version",
+                    "upstream_kind",
+                    "upstream_key",
+                    "upstream_version",
+                    "edge_kind",
+                ),
+                update_columns=("created_at", "meta"),
             ),
-            update_columns=("created_at", "meta"),
         )
 
     def set_alias(self, record: AssetAliasRecord) -> None:
@@ -433,8 +448,10 @@ class AssetTracking:
                 "set_at",
                 "note",
             ),
-            conflict_columns=("alias", "asset_kind", "asset_key"),
-            update_columns=("version_hash", "set_by_run_id", "set_at", "note"),
+            upsert=UpsertSpec(
+                conflict_columns=("alias", "asset_kind", "asset_key"),
+                update_columns=("version_hash", "set_by_run_id", "set_at", "note"),
+            ),
         )
 
     def resolve_alias(self, *, alias: str, asset_kind: str, asset_key: str) -> str | None:
@@ -622,14 +639,16 @@ class AssetTracking:
                 "computed_at",
                 "computed_by_run_id",
             ),
-            conflict_columns=(
-                "asset_kind",
-                "asset_key",
-                "from_version_hash",
-                "to_version_hash",
-                "diff_kind",
+            upsert=UpsertSpec(
+                conflict_columns=(
+                    "asset_kind",
+                    "asset_key",
+                    "from_version_hash",
+                    "to_version_hash",
+                    "diff_kind",
+                ),
+                update_columns=("summary", "computed_at", "computed_by_run_id"),
             ),
-            update_columns=("summary", "computed_at", "computed_by_run_id"),
         )
 
     @staticmethod
@@ -784,15 +803,17 @@ class AssetTracking:
                 "git_dirty",
                 "captured_at",
             ),
-            conflict_columns=("run_id",),
-            update_columns=(
-                "python_version",
-                "os_name",
-                "os_version",
-                "tool_versions",
-                "config_hash",
-                "git_dirty",
-                "captured_at",
+            upsert=UpsertSpec(
+                conflict_columns=("run_id",),
+                update_columns=(
+                    "python_version",
+                    "os_name",
+                    "os_version",
+                    "tool_versions",
+                    "config_hash",
+                    "git_dirty",
+                    "captured_at",
+                ),
             ),
         )
 

@@ -11,10 +11,12 @@ The primary API is `resolve_from_params()` which takes a params dict directly.
 
 from __future__ import annotations
 
+import configparser
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from codeintel.cli.project._project import (
     ProjectConfig,
@@ -26,7 +28,13 @@ from codeintel.cli.project._project import (
 )
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.cli.resolution.types import ResolvedRuntime
-from codeintel.config.models import CliConfigOptions, CliPathsInput, CodeIntelConfig, RepoConfig
+from codeintel.config.models import (
+    CliConfigOptions,
+    CliPathsInput,
+    CodeIntelConfig,
+    RepoConfig,
+    ToolsConfig,
+)
 from codeintel.config.primitives import (
     GraphBackendConfig,
     GraphFeatureFlags,
@@ -83,8 +91,98 @@ def _to_path_with_default(value: object, default: Path) -> Path:
     return Path(str(value))
 
 
+def _normalize_repo_slug(raw: str) -> str | None:
+    stripped = raw.strip()
+    if not stripped:
+        return None
+    if stripped.endswith(".git"):
+        stripped = stripped[:-4]
+    stripped = stripped.lstrip("/")
+    return stripped or None
+
+
+def _repo_from_remote_url(url: str) -> str | None:
+    if "://" in url:
+        parsed = urlparse(url)
+        return _normalize_repo_slug(parsed.path)
+
+    if ":" in url:
+        prefix, _, path = url.partition(":")
+        if "/" not in prefix and "\\" not in prefix:
+            return _normalize_repo_slug(path)
+
+    return _normalize_repo_slug(url)
+
+
+def _resolve_git_dir(repo_root: Path) -> Path | None:
+    git_path = repo_root / ".git"
+    if git_path.is_dir():
+        return git_path
+    if not git_path.is_file():
+        return None
+
+    try:
+        content = git_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+    prefix = "gitdir:"
+    if not content.startswith(prefix):
+        return None
+
+    git_dir = Path(content[len(prefix) :].strip())
+    if git_dir.is_absolute():
+        return git_dir
+    return (repo_root / git_dir).resolve()
+
+
+def _infer_repo_from_git_remote(repo_root: Path) -> str | None:
+    git_dir = _resolve_git_dir(repo_root)
+    if git_dir is None:
+        return None
+
+    git_config = git_dir / "config"
+    if not git_config.is_file():
+        return None
+
+    parser = configparser.ConfigParser()
+    try:
+        parser.read(git_config, encoding="utf-8")
+    except (OSError, configparser.Error):
+        return None
+
+    origin_section = 'remote "origin"'
+    url = None
+    if parser.has_section(origin_section):
+        url = parser.get(origin_section, "url", fallback=None)
+    if not url:
+        for section_name in parser.sections():
+            if section_name.startswith('remote "'):
+                url = parser.get(section_name, "url", fallback=None)
+                if url:
+                    break
+
+    if not url:
+        return None
+
+    return _repo_from_remote_url(url)
+
+
+def _apply_default_scip_project_name(
+    config: CodeIntelConfig,
+    repo: str,
+) -> CodeIntelConfig:
+    default_name = ToolsConfig.default().scip_project_name
+    if config.tools.scip_project_name != default_name:
+        return config
+    tools = config.tools.model_copy(update={"scip_project_name": repo})
+    return config.model_copy(update={"tools": tools})
+
+
 _MSG_NO_PROJECT_NO_FALLBACK = "No codeintel.yaml found and fallback disabled"
-_MSG_MISSING_PARAMS = "No codeintel.yaml found. Provide --repo and --commit explicitly"
+_MSG_MISSING_PARAMS = (
+    "No codeintel.yaml found. Provide --repo explicitly or set project.repo/project.name."
+)
 
 
 @dataclass(frozen=True)
@@ -183,6 +281,7 @@ def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
         paths_cfg=paths_cfg,
         options=None,
     )
+    cfg = _apply_default_scip_project_name(cfg, cfg.repo.repo)
 
     snapshot = SnapshotRef(
         repo=cfg.repo.repo,
@@ -246,8 +345,8 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
     Propagates ResolutionError from _extract_required_params_dict if required
     parameters (repo, commit) are missing.
     """
-    repo, commit = _extract_required_params_dict(params)
     repo_root = _to_path_with_default(params.get("repo_root"), Path.cwd())
+    repo, commit = _extract_required_params_dict(params, repo_root=repo_root)
 
     db_path = _to_path_with_default(params.get("db_path"), Path("build/db/codeintel.duckdb"))
     build_dir = _to_path_with_default(params.get("build_dir"), Path("build"))
@@ -266,6 +365,7 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
             use_gpu=use_gpu,
         )
     )
+    config = _apply_default_scip_project_name(config, repo)
 
     config.build_paths.db_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -299,6 +399,8 @@ def _resolve_from_params_dict(params: Mapping[str, object] | Mapping[str, str]) 
 
 def _extract_required_params_dict(
     params: Mapping[str, object] | Mapping[str, str],
+    *,
+    repo_root: Path,
 ) -> tuple[str, str]:
     """Extract and validate required repo and commit params.
 
@@ -306,6 +408,8 @@ def _extract_required_params_dict(
     ----------
     params
         Parameters dict.
+    repo_root
+        Repository root used for fallback inference.
 
     Returns
     -------
@@ -319,15 +423,16 @@ def _extract_required_params_dict(
     """
     repo = params.get("repo")
     commit = params.get("commit")
+    resolved_root = repo_root.resolve()
 
-    missing: list[str] = []
     if repo is None:
-        missing.append("repo")
-    if commit is None:
-        missing.append("commit")
+        repo = _infer_repo_from_git_remote(resolved_root) or (resolved_root.name or None)
 
-    if missing:
-        raise ResolutionError(_MSG_MISSING_PARAMS, missing_params=missing)
+    if commit is None:
+        commit = detect_commit(resolved_root)
+
+    if repo is None:
+        raise ResolutionError(_MSG_MISSING_PARAMS, missing_params=["repo"])
 
     return str(repo), str(commit)
 

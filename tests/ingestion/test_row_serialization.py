@@ -26,6 +26,7 @@ def test_ingestion_row_serializer_matches_schema_order() -> None:
             "language": "python",
             "tags": [],
             "owners": [],
+            "row_hash": "rowhash",
         }
         expected = tuple(row[column.name] for column in schema.columns)
 

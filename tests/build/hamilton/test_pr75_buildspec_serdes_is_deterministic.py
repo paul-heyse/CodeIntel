@@ -37,7 +37,11 @@ def test_buildspec_serdes_is_deterministic() -> None:
             ),
         ),
         datasets=(
-            DatasetSpec(table_key="core.modules", schema_hash="h1", columns=("module", "path")),
+            DatasetSpec(
+                table_key="core.modules",
+                schema_hash="h1",
+                columns=("module", "path", "repo", "commit", "language", "tags", "owners", "row_hash"),
+            ),
             DatasetSpec(table_key="analytics.aa", schema_hash="h2", columns=None),
         ),
     )

@@ -241,7 +241,7 @@ def _materialize_import_graph(
     commit: str,
     analysis: imports_compute.ImportAnalysisResult,
 ) -> tuple[int, int]:
-    options = materialize_options(env, owner_target=IMPORT_GRAPH_TARGET_NAME, mode="replace")
+    options = materialize_options(env, owner_target=IMPORT_GRAPH_TARGET_NAME)
     module_count = int(
         env.warehouse.materialize_rows(
             IMPORT_MODULES_TABLE_KEY,

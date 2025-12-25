@@ -22,10 +22,6 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materialize_options import (
-    append_materialize_options,
-    materialize_options,
-)
 from codeintel.build.hamilton.materializers.base import (
     MaterializationContextError,
     duration_ms,
@@ -33,6 +29,7 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
+from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.schemas.column_resolution import DeferredColumns, resolve_columns
 from codeintel.build.schemas.service import get_schema_service
@@ -195,6 +192,13 @@ class DuckDBRowsSaver(DataSaver):
                     if not resolved_columns:
                         msg = f"Missing column order for {self.table_key}"
                         raise ValueError(msg)
+                    options = resolve_materialize_options(
+                        env=self.env,
+                        target_name=self.target_name,
+                        table_key=self.table_key,
+                        input_hash=input_hash,
+                        column_names=resolved_columns,
+                    )
                     row_count = _materialize_rows(
                         warehouse,
                         _RowsMaterializationRequest(
@@ -202,12 +206,7 @@ class DuckDBRowsSaver(DataSaver):
                             rows=rows,
                             columns=resolved_columns,
                             validate=self.env.validate_outputs,
-                            options=materialize_options(
-                                self.env,
-                                owner_target=self.target_name,
-                                mode="replace",
-                                input_hash=input_hash,
-                            ),
+                            options=options,
                         ),
                     )
 
@@ -335,18 +334,12 @@ def _materialize_rows(warehouse: Warehouse, request: _RowsMaterializationRequest
         )
         return result.rows_written or 0
 
-    snapshot = request.options.snapshot
-    if snapshot is None:
-        msg = "Validated DuckDB row materialization requires a snapshot"
-        raise ValueError(msg)
-
     frame = pd.DataFrame.from_records(request.rows, columns=list(request.columns))
     validated = schema.validate(frame, lazy=False)
-    warehouse.delete_for_snapshot(request.table_key, snapshot=snapshot)
     result = warehouse.materialize_dataframe(
         request.table_key,
         validated,
-        options=append_materialize_options(request.options),
+        options=request.options,
     )
     return result.rows_written or 0
 
