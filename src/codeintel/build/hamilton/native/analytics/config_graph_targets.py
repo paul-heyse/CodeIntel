@@ -89,7 +89,13 @@ CFG_DFG_METRICS_TABLE_KEYS = (
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for config graph nodes."""
+    """Expose the storage gateway for config graph nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -128,6 +134,8 @@ def t__config_data_flow__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     t__call_graph
         Upstream call_graph target result (for dependency).
     t__goids

@@ -140,7 +140,13 @@ CALL_GRAPH_DEPTH_STATS_NAMESPACE = "call_graph_call_depth_stats"
 
 @tag_helper(domain="graphs")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for graph targets."""
+    """Expose the storage gateway for graph targets.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -929,6 +935,8 @@ def t__goids__extract(
     ----------
     env
         Build environment with gateway and snapshot.
+    gateway
+        Storage gateway for graph data access.
     t__modules
         Upstream modules target result (for dependency).
 
@@ -1534,6 +1542,8 @@ def t__graph_metrics__compute(
         Build environment with gateway and snapshot.
     graph
         Target graph used for skip detection.
+    gateway
+        Storage gateway for graph data access.
     t__call_graph
         Upstream call_graph target result (for dependency).
 

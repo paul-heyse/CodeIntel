@@ -77,7 +77,13 @@ FUNCTION_METRICS_SAVE_CONTEXT = SaverContext(
 
 @tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for function metrics nodes."""
+    """Expose the storage gateway for function metrics nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -134,6 +140,8 @@ def t__function_metrics__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     function_metrics__skip
         Skip flag derived from manifest-based input hash evaluation.
 

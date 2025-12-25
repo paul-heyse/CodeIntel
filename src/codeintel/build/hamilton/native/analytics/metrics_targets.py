@@ -109,7 +109,13 @@ TEST_GRAPH_METRICS_TABLE_KEYS = (
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for metrics nodes."""
+    """Expose the storage gateway for metrics nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -127,6 +133,8 @@ def _get_graph_runtime(
         Build environment with gateway and snapshot info.
     target_name
         Target name used to load runtime options from configuration.
+    gateway
+        Storage gateway used to resolve runtime metadata.
 
     Returns
     -------
@@ -176,6 +184,8 @@ def t__function_history__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for manifest-driven skip checks.
+    gateway
+        Storage gateway for analytics queries.
 
     Returns
     -------
@@ -362,6 +372,8 @@ def t__subsystem_graph_metrics__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     t__subsystems
         Upstream subsystems target result (for dependency).
 
@@ -495,6 +507,8 @@ def t__symbol_graph_metrics__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     t__symbol_uses
         Upstream symbol_uses target result (for dependency).
 
@@ -700,6 +714,8 @@ def t__subsystem_agreement__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     t__subsystems
         Upstream subsystems target result (for dependency).
 
@@ -828,6 +844,8 @@ def t__test_graph_metrics__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for skip check.
+    gateway
+        Storage gateway for analytics queries.
 
     Returns
     -------

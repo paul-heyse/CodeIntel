@@ -31,9 +31,7 @@ def _node_has_type_tag(tags: object) -> bool:
 
 def _collect_nodes_missing_tags(nodes: dict[str, object]) -> tuple[str, ...]:
     missing = [
-        name
-        for name, node in nodes.items()
-        if not _node_has_type_tag(getattr(node, "tags", None))
+        name for name, node in nodes.items() if not _node_has_type_tag(getattr(node, "tags", None))
     ]
     return tuple(sorted(missing))
 

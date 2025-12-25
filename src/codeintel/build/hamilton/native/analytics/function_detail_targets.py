@@ -68,7 +68,13 @@ FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for function detail nodes."""
+    """Expose the storage gateway for function detail nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -117,6 +123,8 @@ def t__function_contracts__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for skip detection.
+    gateway
+        Storage gateway for analytics queries.
     t__goids
         Upstream goids target result (for dependency).
 

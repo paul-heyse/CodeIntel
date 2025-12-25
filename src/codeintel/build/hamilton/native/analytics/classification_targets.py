@@ -62,7 +62,13 @@ TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for classification nodes."""
+    """Expose the storage gateway for classification nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -85,6 +91,8 @@ def t__semantic_roles__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for skip detection.
+    gateway
+        Storage gateway for analytics queries.
     t__modules
         Upstream modules target result (for dependency).
     t__function_ast_features

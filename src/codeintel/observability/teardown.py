@@ -19,16 +19,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-SpanAttributeValue = (
-    str
-    | bool
-    | int
-    | float
-    | list[str]
-    | list[bool]
-    | list[int]
-    | list[float]
-)
+SpanAttributeValue = str | bool | int | float | list[str] | list[bool] | list[int] | list[float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,11 +146,61 @@ class TeardownTelemetry:
             "active_threads_count": self.active_threads_count,
             "active_thread_names": [*self.active_thread_names],
             "subprocess_count": self.subprocess_count,
-            "subprocess_samples": [
-                sample.to_payload() for sample in self.subprocess_samples
-            ],
+            "subprocess_samples": [sample.to_payload() for sample in self.subprocess_samples],
             "telemetry_flush_status": self.telemetry_flush_status,
             "telemetry_flush_ms": self.telemetry_flush_ms,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ScipTeardownTelemetry:
+    """Telemetry payload for SCIP teardown logging and spans."""
+
+    run_id: str | None = None
+    repo: str | None = None
+    commit: str | None = None
+    scip_mode: str | None = None
+    status: str = "unknown"
+    error_summary: str | None = None
+    duration_ms: float | None = None
+
+    def span_attributes(self) -> dict[str, SpanAttributeValue]:
+        """Return low-cardinality span attributes for SCIP teardown telemetry.
+
+        Returns
+        -------
+        dict[str, SpanAttributeValue]
+            Span attributes with None values pruned.
+        """
+        return _prune_none(
+            {
+                "scip.run_id": self.run_id,
+                "scip.repo": self.repo,
+                "scip.commit": self.commit,
+                "scip.mode": self.scip_mode,
+                "scip.status": self.status,
+                "scip.error": self.error_summary,
+                "scip.duration_ms": self.duration_ms,
+            }
+        )
+
+    def to_log_payload(self, *, event: str = "scip.teardown") -> dict[str, object]:
+        """Return a JSON-serializable payload for structured logs.
+
+        Returns
+        -------
+        dict[str, object]
+            Payload suitable for structured logging.
+        """
+        return {
+            "event": event,
+            "run_id": self.run_id,
+            "repo": self.repo,
+            "commit": self.commit,
+            "scip_mode": self.scip_mode,
+            "status": self.status,
+            "error_summary": self.error_summary,
+            "duration_ms": self.duration_ms,
         }
 
 
@@ -228,7 +269,6 @@ def snapshot_active_threads(
     return count, tuple(names)
 
 
-
 def emit_teardown_telemetry(
     telemetry: TeardownTelemetry,
     *,
@@ -252,13 +292,33 @@ def emit_teardown_telemetry(
         log_target.warning("build.shutdown %s", payload)
 
 
+def emit_scip_teardown_telemetry(
+    telemetry: ScipTeardownTelemetry,
+    *,
+    span_name: str = "scip.teardown",
+    logger: logging.Logger | None = None,
+) -> None:
+    """Emit SCIP teardown telemetry via OpenTelemetry spans and structured logs."""
+    obs = get_observability()
+    span: Span | None = None
+    if obs.enabled and obs.tracer is not None:
+        with obs.tracer.start_as_current_span(span_name) as active_span:
+            span = active_span
+            _set_span_attributes(span, telemetry.span_attributes())
+    log_payload = telemetry.to_log_payload()
+    log_target = logger or log
+    payload = json.dumps(log_payload, sort_keys=True)
+    if telemetry.status == "succeeded":
+        log_target.info("scip.teardown %s", payload)
+    else:
+        log_target.warning("scip.teardown %s", payload)
+
 
 def _set_span_attributes(span: Span, attributes: Mapping[str, SpanAttributeValue]) -> None:
     for key, value in attributes.items():
         attr_value = _coerce_span_value(value)
         if attr_value is not None:
             span.set_attribute(key, attr_value)
-
 
 
 def _add_span_event(
@@ -275,7 +335,6 @@ def _add_span_event(
         span.add_event(name, attributes=event_attrs)
 
 
-
 def _coerce_span_value(value: object) -> SpanAttributeValue | None:
     if value is None:
         return None
@@ -286,7 +345,6 @@ def _coerce_span_value(value: object) -> SpanAttributeValue | None:
             return list(value)
         return [str(item) for item in value]
     return str(value)
-
 
 
 def _redact_command_value(value: str | None) -> str | None:
@@ -301,8 +359,10 @@ def _prune_none(values: Mapping[str, SpanAttributeValue | None]) -> dict[str, Sp
 
 
 __all__ = [
+    "ScipTeardownTelemetry",
     "SubprocessSample",
     "TeardownTelemetry",
+    "emit_scip_teardown_telemetry",
     "emit_teardown_telemetry",
     "snapshot_active_threads",
     "snapshot_pending_tasks",
