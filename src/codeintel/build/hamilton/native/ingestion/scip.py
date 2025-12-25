@@ -54,6 +54,7 @@ from codeintel.ingestion.engine.infrastructure import (
 from codeintel.ingestion.ports.change_detection import ChangeSet
 from codeintel.ingestion.scip import (
     ScipParsedIndex,
+    ScipRowContext,
     build_diagnostic_rows,
     build_external_symbol_rows,
     build_module_state_rows,
@@ -194,6 +195,7 @@ class ScipIngestInputs:
     modules: TargetRunRecord
     run: ScipRunResult
     proto_module_path: Path | None
+    options: ScipIngestOptions
 
 
 @dataclass(frozen=True)
@@ -501,6 +503,7 @@ def t__scip__run(
     target_name=value(SCIP_TARGET_NAME),
     artifact_name=value(SCIP_ARTIFACT_INDEX),
     path_template=value("{scip_dir}/index.scip"),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(
     domain="ingestion",
@@ -525,6 +528,7 @@ def scip__ingest_inputs(
     t__modules: TargetRunRecord,
     t__scip__run: ScipRunResult,
     scip__proto_module_path: Path | None,
+    scip__options: ScipIngestOptions,
 ) -> ScipIngestInputs:
     """Bundle inputs required for SCIP ingestion.
 
@@ -537,6 +541,7 @@ def scip__ingest_inputs(
         modules=t__modules,
         run=t__scip__run,
         proto_module_path=scip__proto_module_path,
+        options=scip__options,
     )
 
 
@@ -554,59 +559,58 @@ def _scip_ingest_precheck(inputs: ScipIngestInputs) -> ExecutionResult | None:
     return None
 
 
-def _build_scip_row_payload(env: BuildEnv, parsed: ScipParsedIndex) -> ScipRowPayload:
+def _build_scip_row_payload(
+    env: BuildEnv,
+    parsed: ScipParsedIndex,
+    options: ScipIngestOptions,
+) -> ScipRowPayload:
     created_at = datetime.now(tz=UTC)
+    row_context = ScipRowContext(
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        created_at=created_at,
+        include_references=options.should_include_references(),
+        include_implementations=options.should_include_implementations(),
+    )
     symbol_rows = tuple(
         build_symbol_rows(
             parsed.documents,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
+            row_context,
             serializer=row_serializer_for_table_key(SCIP_SYMBOLS_TABLE_KEY),
         )
     )
     occurrence_rows = tuple(
         build_occurrence_rows(
             parsed.documents,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
+            row_context,
             serializer=row_serializer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY),
         )
     )
     symbol_info_rows = tuple(
         build_symbol_information_rows(
             parsed.symbol_infos,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
+            row_context,
             serializer=row_serializer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY),
         )
     )
     relationship_rows = tuple(
         build_symbol_relationship_rows(
             parsed.relationships,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
+            row_context,
             serializer=row_serializer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY),
         )
     )
     diagnostic_rows = tuple(
         build_diagnostic_rows(
             parsed.diagnostics,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
+            row_context,
             serializer=row_serializer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY),
         )
     )
     external_symbol_rows = tuple(
         build_external_symbol_rows(
             parsed.external_symbols,
-            env.snapshot.repo,
-            env.snapshot.commit,
-            created_at,
+            row_context,
             serializer=row_serializer_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
         )
     )
@@ -640,7 +644,7 @@ def _build_scip_ingest_result(env: BuildEnv, inputs: ScipIngestInputs) -> ScipIn
     proto_module_path = cast("Path", inputs.proto_module_path)
     try:
         parsed: ScipParsedIndex = parse_index(output_scip, proto_module_path)
-        payload = _build_scip_row_payload(env, parsed)
+        payload = _build_scip_row_payload(env, parsed, inputs.options)
     except (OSError, AttributeError, TypeError, ValueError):
         log.exception("SCIP ingestion failed")
         return ScipIngestResult(
@@ -692,6 +696,7 @@ def t__scip__ingest(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_SYMBOLS_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_SYMBOLS_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_rows")
 def scip__symbol_rows(
@@ -717,6 +722,7 @@ def scip__symbol_rows(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_OCCURRENCES_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__occurrence_rows")
 def scip__occurrence_rows(
@@ -742,6 +748,7 @@ def scip__occurrence_rows(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_SYMBOL_INFO_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_info_rows")
 def scip__symbol_info_rows(
@@ -767,6 +774,7 @@ def scip__symbol_info_rows(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_RELATIONSHIPS_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(
     domain="ingestion",
@@ -796,6 +804,7 @@ def scip__relationship_rows(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_DIAGNOSTICS_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(
     domain="ingestion",
@@ -825,6 +834,7 @@ def scip__diagnostic_rows(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(
     domain="ingestion",
@@ -854,6 +864,7 @@ def scip__external_symbol_rows(
     target_name=value(SCIP_TARGET_NAME),
     table_key=value(SCIP_MODULE_STATE_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCIP_MODULE_STATE_TABLE_KEY)),
+    hash_options=source("scip__hash_options"),
 )
 @tag_compute(
     domain="ingestion",

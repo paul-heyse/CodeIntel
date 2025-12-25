@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from codeintel.ingestion.scip.protobuf_parser import ScipParsedIndex, parse_index
 from codeintel.ingestion.scip.rows import (
+    ScipRowContext,
     build_diagnostic_rows,
     build_external_symbol_rows,
     build_module_state_rows,
@@ -15,6 +16,7 @@ from codeintel.ingestion.scip.rows import (
 
 __all__ = [
     "ScipParsedIndex",
+    "ScipRowContext",
     "build_diagnostic_rows",
     "build_external_symbol_rows",
     "build_module_state_rows",
