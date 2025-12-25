@@ -57,6 +57,7 @@ from codeintel.storage.schema.sqlglot_ddl import (
     create_schema_if_not_exists_ast,
 )
 from codeintel.storage.schema_roundtrip import create_table_ast
+from codeintel.storage.upsert import UpsertSpec
 from codeintel.storage.views.materialization import materialize_registered_views
 
 if TYPE_CHECKING:
@@ -340,8 +341,7 @@ def _build_upsert(
     table_schema: str,
     table_name: str,
     columns: Sequence[str],
-    conflict_columns: Sequence[str],
-    update_columns: Sequence[str] | None = None,
+    upsert: UpsertSpec,
 ) -> str:
     """Build an INSERT ... ON CONFLICT DO UPDATE statement.
 
@@ -359,10 +359,8 @@ def _build_upsert(
         Table name.
     columns
         All column names for the INSERT.
-    conflict_columns
-        Columns to detect conflicts on.
-    update_columns
-        Columns to update on conflict. If None, updates all non-conflict columns.
+    upsert
+        Upsert specification defining conflict columns and update behavior.
 
     Returns
     -------
@@ -370,13 +368,13 @@ def _build_upsert(
         SQL string for upsert operation.
     """
     cols_to_update = (
-        [col for col in columns if col not in conflict_columns]
-        if update_columns is None
-        else [col for col in update_columns if col not in conflict_columns]
+        [col for col in columns if col not in upsert.conflict_columns]
+        if upsert.update_columns is None
+        else [col for col in upsert.update_columns if col not in upsert.conflict_columns]
     )
 
     insert_expr = _build_insert(table_schema, table_name, columns)
-    conflict_keys = [exp.to_identifier(col) for col in conflict_columns]
+    conflict_keys = [exp.to_identifier(col) for col in upsert.conflict_columns]
 
     if cols_to_update:
         assignments = [
@@ -393,6 +391,7 @@ def _build_upsert(
             conflict_keys=conflict_keys,
             action=exp.Var(this="DO UPDATE"),
             expressions=assignments,
+            where=upsert.update_condition,
         )
     else:
         conflict = exp.OnConflict(
@@ -596,8 +595,7 @@ class DuckDBPolicyBackend:
         *,
         columns: Sequence[str],
         select_sql: str | exp.Expression,
-        conflict_columns: Sequence[str],
-        update_columns: Sequence[str] | None = None,
+        upsert: UpsertSpec,
     ) -> None:
         """Upsert rows produced by a SELECT query into a table.
 
@@ -609,10 +607,8 @@ class DuckDBPolicyBackend:
             Column names to insert into.
         select_sql
             SQL SELECT statement (string) or SQLGlot AST to upsert from.
-        conflict_columns
-            Columns defining the conflict key.
-        update_columns
-            Columns to update on conflict. When None, updates all non-conflict columns.
+        upsert
+            Upsert specification defining conflict columns and update behavior.
         """
         table_schema, table_name = split_table_key(table_key)
         if isinstance(select_sql, exp.Expression):
@@ -631,11 +627,11 @@ class DuckDBPolicyBackend:
             )
 
         cols_to_update = (
-            [col for col in columns if col not in conflict_columns]
-            if update_columns is None
-            else [col for col in update_columns if col not in conflict_columns]
+            [col for col in columns if col not in upsert.conflict_columns]
+            if upsert.update_columns is None
+            else [col for col in upsert.update_columns if col not in upsert.conflict_columns]
         )
-        conflict_keys = [exp.to_identifier(col) for col in conflict_columns]
+        conflict_keys = [exp.to_identifier(col) for col in upsert.conflict_columns]
 
         if cols_to_update:
             assignments = [
@@ -652,6 +648,7 @@ class DuckDBPolicyBackend:
                 conflict_keys=conflict_keys,
                 action=exp.Var(this="DO UPDATE"),
                 expressions=assignments,
+                where=upsert.update_condition,
             )
         else:
             conflict = exp.OnConflict(
@@ -984,8 +981,6 @@ class DuckDBPolicyBackend:
 
         Raises
         ------
-        KeyError
-            If no TableSchema is registered for the table.
         RuntimeError
             If the table is missing and creation is disabled.
         """
@@ -996,40 +991,95 @@ class DuckDBPolicyBackend:
         if table_key in _TABLE_CREATION_DENYLIST:
             return
 
-        table_schema = self.schema_provider.get_table_schema(table_key)
+        table_schema = self._resolve_table_schema(table_key, create_if_missing=create_if_missing)
         if table_schema is None:
-            schema, table = split_table_key(table_key)
-            if _duckdb_table_exists(self.con, schema=schema, table=table):
-                return
-            if not create_if_missing:
-                message = f"Missing table {table_key}"
-                raise RuntimeError(message)
-            msg = f"Unknown table schema: {table_key}"
-            raise KeyError(msg)
+            return
 
         self.create_schema_if_not_exists(table_schema.schema)
 
-        if not _duckdb_table_exists(self.con, schema=table_schema.schema, table=table_schema.name):
-            if not create_if_missing:
-                message = f"Missing table {table_key}"
-                raise RuntimeError(message)
-            create_stmt = _build_create_table(table_schema, if_not_exists=True)
-            self.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
+        if self._ensure_table_created(table_schema, create_if_missing=create_if_missing):
             return
 
+        self._ensure_table_columns(table_key, table_schema)
+
+    def _resolve_table_schema(
+        self,
+        table_key: str,
+        *,
+        create_if_missing: bool,
+    ) -> TableSchema | None:
+        schema_provider = self.schema_provider
+        if schema_provider is None:
+            msg = "DuckDBPolicyBackend requires schema_provider for ensure_table()"
+            raise RuntimeError(msg)
+
+        table_schema = schema_provider.get_table_schema(table_key)
+        if table_schema is not None:
+            return table_schema
+
+        schema, table = split_table_key(table_key)
+        if _duckdb_table_exists(self.con, schema=schema, table=table):
+            return None
+        if not create_if_missing:
+            message = f"Missing table {table_key}"
+            raise RuntimeError(message)
+        msg = f"Unknown table schema: {table_key}"
+        raise KeyError(msg)
+
+    def _ensure_table_created(
+        self,
+        table_schema: TableSchema,
+        *,
+        create_if_missing: bool,
+    ) -> bool:
+        if _duckdb_table_exists(self.con, schema=table_schema.schema, table=table_schema.name):
+            return False
+
+        if not create_if_missing:
+            message = f"Missing table {table_schema.table_key}"
+            raise RuntimeError(message)
+
+        create_stmt = _build_create_table(table_schema, if_not_exists=True)
+        self.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
+        return True
+
+    def _ensure_table_columns(self, table_key: str, table_schema: TableSchema) -> None:
         qualified_name = f"{table_schema.schema}.{table_schema.name}"
+        actual_columns = self._fetch_table_columns(qualified_name)
+        expected_columns = [col.name for col in table_schema.columns]
+        if actual_columns == expected_columns:
+            return
+
+        if expected_columns[: len(actual_columns)] == actual_columns:
+            self._add_missing_columns(table_schema, start_index=len(actual_columns))
+            actual_columns = self._fetch_table_columns(qualified_name)
+            if actual_columns == expected_columns:
+                return
+
+        message = (
+            f"Column order mismatch for {table_key}: "
+            f"db={actual_columns}, registry={expected_columns}"
+        )
+        raise RuntimeError(message)
+
+    def _fetch_table_columns(self, qualified_name: str) -> list[str]:
         info = self.con.execute(
             "SELECT * FROM pragma_table_info(?)",
             [qualified_name],
         ).fetchall()
-        actual_columns = [row[1] for row in info]
-        expected_columns = [col.name for col in table_schema.columns]
-        if actual_columns != expected_columns:
-            message = (
-                f"Column order mismatch for {table_key}: "
-                f"db={actual_columns}, registry={expected_columns}"
+        return [row[1] for row in info]
+
+    def _add_missing_columns(self, table_schema: TableSchema, *, start_index: int) -> None:
+        qualified_name = f'"{table_schema.schema}"."{table_schema.name}"'
+        missing_columns = table_schema.columns[start_index:]
+        for col in missing_columns:
+            col_type = col.type
+            nullable_sql = "" if col.nullable else " NOT NULL"
+            sql = (
+                f"ALTER TABLE {qualified_name} "
+                f'ADD COLUMN "{col.name}" {col_type}{nullable_sql}'
             )
-            raise RuntimeError(message)
+            self._run_sql(sql)
 
     def bulk_insert(
         self,
@@ -1199,8 +1249,7 @@ class DuckDBPolicyBackend:
         rows: Sequence[tuple[object, ...]],
         *,
         columns: Sequence[str],
-        conflict_columns: Sequence[str],
-        update_columns: Sequence[str] | None = None,
+        upsert: UpsertSpec,
     ) -> int:
         """Insert rows with ON CONFLICT UPDATE semantics.
 
@@ -1216,11 +1265,8 @@ class DuckDBPolicyBackend:
             Sequence of tuples containing row values in column order.
         columns
             Column names for the INSERT (required for upsert).
-        conflict_columns
-            Columns to detect conflicts on (typically primary key columns).
-        update_columns
-            Columns to update on conflict. If None, updates all non-conflict
-            columns. If empty sequence, uses DO NOTHING.
+        upsert
+            Upsert specification defining conflict columns and update behavior.
 
         Returns
         -------
@@ -1239,13 +1285,13 @@ class DuckDBPolicyBackend:
             message = f"Table key must be qualified (schema.table): {table_key}"
             raise ValueError(message)
 
-        if not conflict_columns:
+        if not upsert.conflict_columns:
             message = "conflict_columns cannot be empty"
             raise ValueError(message)
 
         schema, table = split_table_key(table_key)
 
-        sql = _build_upsert(schema, table, columns, conflict_columns, update_columns)
+        sql = _build_upsert(schema, table, columns, upsert)
 
         log.debug("Upsert into %s: %d rows", table_key, len(rows))
         self.con.executemany(sql, rows)

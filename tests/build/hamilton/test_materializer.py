@@ -16,6 +16,7 @@ from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBR
 from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.core.hashing import stable_hash
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
@@ -28,8 +29,9 @@ if TYPE_CHECKING:
 
 
 def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
-    rows = [
-        {
+    rows = []
+    for idx in range(count):
+        row = {
             "module": f"m{idx}",
             "path": f"pkg/mod_{idx}.py",
             "repo": repo,
@@ -38,8 +40,8 @@ def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
             "tags": "[]",
             "owners": "[]",
         }
-        for idx in range(count)
-    ]
+        row["row_hash"] = stable_hash(row)
+        rows.append(row)
     return pd.DataFrame(rows)
 
 

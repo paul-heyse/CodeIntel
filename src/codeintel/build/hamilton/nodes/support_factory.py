@@ -6,6 +6,7 @@ This module generates **support nodes** that are derived mechanically from the
 - Dataset nodes (`d__*`): extract `DatasetRef` from a producing target record.
 - Loader nodes (`q__*`, `df__*`): load datasets as Ibis tables or pandas DataFrames.
 - Artifact nodes (`a__*`): expose artifact references from a producing target record.
+- Path nodes (`p__*`): expose resolved filesystem paths for artifacts.
 
 This module no longer generates `t__*` stub targets; native Hamilton modules
 are expected to provide all target nodes directly.
@@ -16,6 +17,7 @@ from __future__ import annotations
 import inspect
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING
 
@@ -35,6 +37,7 @@ from codeintel.build.hamilton.naming import (
     artifact_node,
     dataframe_node,
     dataset_node,
+    path_node,
     query_node,
     target_node,
 )
@@ -47,6 +50,7 @@ from codeintel.build.hamilton.runtime import HamiltonRuntime
 from codeintel.build.hamilton.tagging import (
     tag_artifact,
     tag_dataset,
+    tag_helper,
     tag_loader_dataframe,
     tag_loader_query,
 )
@@ -67,6 +71,7 @@ class SupportGenerationOptions:
     include_dataset_nodes: bool = True
     include_loader_nodes: bool = True
     include_artifact_nodes: bool = True
+    include_artifact_path_nodes: bool = True
     include_targets: frozenset[str] | None = None
     exclude_targets: frozenset[str] | None = None
 
@@ -268,6 +273,39 @@ def _create_artifact_node_function(
     return tag_artifact(domain=domain, target=target_name, artifact=artifact_name)(artifact_fn)
 
 
+def _create_artifact_path_node_function(
+    *,
+    artifact_name: str,
+    target_name: str,
+    domain: str,
+) -> Callable[..., Path | None]:
+    """Create a `p__*` node that returns a Path from an ArtifactRef."""
+    p_name = path_node(artifact_name)
+    a_name = artifact_node(artifact_name)
+
+    def path_fn(**kwargs: object) -> Path | None:
+        artifact_ref = kwargs.get(a_name)
+        if not isinstance(artifact_ref, ArtifactRef):
+            msg = f"Expected ArtifactRef for {a_name}, got {type(artifact_ref)}"
+            raise TypeError(msg)
+        if artifact_ref.path is None:
+            return None
+        return Path(artifact_ref.path)
+
+    params = [
+        inspect.Parameter(
+            a_name,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            annotation=ArtifactRef,
+        ),
+    ]
+    set_signature(path_fn, inspect.Signature(params, return_annotation=Path | None))
+    path_fn.__name__ = p_name
+    path_fn.__doc__ = f"Return path for {artifact_name} artifact."
+
+    return tag_helper(domain=domain, target=target_name)(path_fn)
+
+
 def _build_contract_graph() -> TargetGraph:
     """Build a TargetGraph with Hamilton-derived dependencies.
 
@@ -399,6 +437,18 @@ def _populate_for_target(
                     domain=target.module,
                 ),
             )
+            if options.include_artifact_path_nodes:
+                p_name = path_node(artifact_name)
+                mappings.path_to_node[artifact_name] = p_name
+                attach_node(
+                    module,
+                    node_name=p_name,
+                    fn=_create_artifact_path_node_function(
+                        artifact_name=artifact_name,
+                        target_name=target.name,
+                        domain=target.module,
+                    ),
+                )
 
 
 def build_support_module(

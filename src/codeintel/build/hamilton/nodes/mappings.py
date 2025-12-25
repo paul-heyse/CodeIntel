@@ -15,6 +15,7 @@ class _SupportModule(Protocol):
     QUERY_TO_NODE: dict[str, str]
     DATAFRAME_TO_NODE: dict[str, str]
     ARTIFACT_TO_NODE: dict[str, str]
+    PATH_TO_NODE: dict[str, str]
 
 
 @dataclass
@@ -26,6 +27,7 @@ class SupportNodeMappings:
     query_to_node: dict[str, str] = field(default_factory=dict)
     dataframe_to_node: dict[str, str] = field(default_factory=dict)
     artifact_to_node: dict[str, str] = field(default_factory=dict)
+    path_to_node: dict[str, str] = field(default_factory=dict)
 
     def attach_to(self, module: ModuleType) -> None:
         """Attach mapping dicts to the support module."""
@@ -35,6 +37,7 @@ class SupportNodeMappings:
         mod.QUERY_TO_NODE = self.query_to_node
         mod.DATAFRAME_TO_NODE = self.dataframe_to_node
         mod.ARTIFACT_TO_NODE = self.artifact_to_node
+        mod.PATH_TO_NODE = self.path_to_node
 
 
 __all__ = ["SupportNodeMappings"]

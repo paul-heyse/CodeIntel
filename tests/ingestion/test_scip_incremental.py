@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,16 +15,19 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunResult,
 )
 from codeintel.ingestion.engine.infrastructure.runner import ToolRunner
-from codeintel.ingestion.ports.change_detection import ChangeSet
+from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.ingestion.scip.incremental import ScipIncrementalConfig, update_index_incremental
 from codeintel.ingestion.scip.index_store import load_index_proto
 from codeintel.ingestion.scip.manifest import load_manifest, manifest_path
-from tests._helpers.assertions import expect_equal, expect_true
+from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
+from tests._helpers.assertions import expect_equal, expect_in, expect_true
 from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+    import pytest
 
 
 @dataclass(frozen=True)
@@ -40,6 +44,7 @@ class ProtoIndexToolRunner(ToolRunner):
     def __init__(self, cache_dir: Path, *, config: _ProtoIndexRunnerConfig) -> None:
         super().__init__(cache_dir=cache_dir, tools_config=ToolsConfig.default())
         self.config = config
+        self.calls: list[tuple[ToolName, tuple[str, ...], ToolRunOptions]] = []
 
     async def run_async(
         self,
@@ -65,6 +70,7 @@ class ProtoIndexToolRunner(ToolRunner):
         tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
         args_list = list(args)
         run_options = options or ToolRunOptions()
+        self.calls.append((tool_enum, tuple(args_list), run_options))
         if tool_enum is not ToolName.SCIP_PYTHON:
             msg = f"Unsupported tool: {tool_enum.value}"
             raise ValueError(msg)
@@ -126,6 +132,10 @@ def _extract_target_only(args: Sequence[str]) -> list[str]:
         if idx + 1 < len(args):
             targets.append(args[idx + 1])
     return targets
+
+
+def _count_target_calls(runner: ProtoIndexToolRunner) -> int:
+    return sum(1 for _, args, _ in runner.calls if "--target-only" in args)
 
 
 def _doc_payload(
@@ -211,6 +221,225 @@ def test_incremental_updates_and_deletes_documents(tmp_path: Path) -> None:
     manifest = load_manifest(manifest_path(output_scip.parent))
     expect_true("a.py" in manifest.records)
     expect_true("b.py" not in manifest.records)
+
+
+def test_incremental_batches_changed_modules(tmp_path: Path) -> None:
+    """Incremental indexing batches target-only calls."""
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+    _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+    _write_module(repo_root, "c.py", "def c():\n    return 3\n")
+
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "build" / "scip" / "index.scip"
+    base_docs = {
+        "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+        "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+        "c.py": {"relative_path": "c.py", "symbols": [{"symbol": "symC"}]},
+    }
+    write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+
+    modules = (
+        _module_record(repo_root, "a.py", 1, 3),
+        _module_record(repo_root, "b.py", 2, 3),
+        _module_record(repo_root, "c.py", 3, 3),
+    )
+    change_set = ChangeSet(modified=list(modules))
+    runner = ProtoIndexToolRunner(
+        cache_dir=tmp_path,
+        config=_ProtoIndexRunnerConfig(
+            proto_module_path=proto_module_path,
+            doc_map={
+                "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA_new"}]},
+                "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB_new"}]},
+                "c.py": {"relative_path": "c.py", "symbols": [{"symbol": "symC_new"}]},
+            },
+        ),
+    )
+    telemetry = ScipRunTelemetry.create(
+        repo="test/repo",
+        commit="abc123",
+        run_id="run-1",
+        options_hash="options-hash",
+    )
+    config = ScipIncrementalConfig(
+        repo_root=repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+        change_set=change_set,
+        modules=modules,
+        options_hash="options-hash",
+        tools_config=runner.tools_config,
+        tool_runner=runner,
+        scope_paths=None,
+        max_file_size_kb=1024,
+        timeout_seconds=30,
+        target_dir=None,
+        batch_size=2,
+        batch_max_bytes=0,
+        full_rebuild_threshold_count=10,
+        full_rebuild_threshold_ratio=1.0,
+        telemetry=telemetry,
+    )
+
+    result = update_index_incremental(config=config)
+    expect_true(result.success)
+    expect_equal(telemetry.batch_count, 2)
+    expect_equal(_count_target_calls(runner), 2)
+
+
+def test_full_rebuild_thresholds_trigger_full_rebuild(tmp_path: Path) -> None:
+    """Thresholds force a single full rebuild invocation."""
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+    _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "build" / "scip" / "index.scip"
+    base_docs = {
+        "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+        "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+    }
+    write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+
+    modules = (
+        _module_record(repo_root, "a.py", 1, 2),
+        _module_record(repo_root, "b.py", 2, 2),
+    )
+    change_set = ChangeSet(modified=list(modules))
+    runner = ProtoIndexToolRunner(
+        cache_dir=tmp_path,
+        config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
+    )
+    telemetry = ScipRunTelemetry.create(
+        repo="test/repo",
+        commit="abc123",
+        run_id="run-2",
+        options_hash="options-hash",
+    )
+    config = ScipIncrementalConfig(
+        repo_root=repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+        change_set=change_set,
+        modules=modules,
+        options_hash="options-hash",
+        tools_config=runner.tools_config,
+        tool_runner=runner,
+        scope_paths=None,
+        max_file_size_kb=1024,
+        timeout_seconds=30,
+        target_dir=None,
+        full_rebuild_threshold_count=1,
+        full_rebuild_threshold_ratio=1.0,
+        telemetry=telemetry,
+    )
+
+    result = update_index_incremental(config=config)
+    expect_true(result.success)
+    expect_true(result.full_rebuild)
+    expect_equal(_count_target_calls(runner), 0)
+
+
+def test_hash_reuse_from_file_state(tmp_path: Path) -> None:
+    """File state rows should provide content hashes for planning."""
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "build" / "scip" / "index.scip"
+    base_docs = {"a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]}}
+    write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+
+    modules = (_module_record(repo_root, "a.py", 1, 1),)
+    change_set = ChangeSet(modified=list(modules))
+    runner = ProtoIndexToolRunner(
+        cache_dir=tmp_path,
+        config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
+    )
+    telemetry = ScipRunTelemetry.create(
+        repo="test/repo",
+        commit="abc123",
+        run_id="run-3",
+        options_hash="options-hash",
+    )
+    config = ScipIncrementalConfig(
+        repo_root=repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+        change_set=change_set,
+        modules=modules,
+        options_hash="options-hash",
+        tools_config=runner.tools_config,
+        tool_runner=runner,
+        scope_paths=None,
+        max_file_size_kb=1024,
+        timeout_seconds=30,
+        target_dir=None,
+        file_state_by_path={
+            "a.py": FileDigest(size_bytes=10, mtime_ns=1, content_hash="hash-a"),
+        },
+        telemetry=telemetry,
+    )
+
+    result = update_index_incremental(config=config)
+    expect_true(result.success)
+    expect_equal(telemetry.hash_source, "file_state")
+    expect_equal(telemetry.hash_reused, 1)
+    expect_equal(telemetry.hash_computed, 0)
+
+
+def test_incremental_plan_summary_logs_counts(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Plan summary logs counts and decision."""
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+    _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "build" / "scip" / "index.scip"
+    base_docs = {
+        "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+        "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+    }
+    write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+
+    change_set = ChangeSet(modified=[_module_record(repo_root, "a.py", 1, 2)])
+    runner = ProtoIndexToolRunner(
+        cache_dir=tmp_path,
+        config=_ProtoIndexRunnerConfig(
+            proto_module_path=proto_module_path,
+            doc_map={"a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA_new"}]}},
+        ),
+    )
+    config = ScipIncrementalConfig(
+        repo_root=repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+        change_set=change_set,
+        modules=(
+            _module_record(repo_root, "a.py", 1, 2),
+            _module_record(repo_root, "b.py", 2, 2),
+        ),
+        options_hash="options-hash",
+        tools_config=runner.tools_config,
+        tool_runner=runner,
+        scope_paths=None,
+        max_file_size_kb=1024,
+        timeout_seconds=30,
+        target_dir=None,
+        full_rebuild_threshold_count=10,
+        full_rebuild_threshold_ratio=1.0,
+    )
+
+    with caplog.at_level(logging.INFO, logger="codeintel.ingestion.scip.incremental"):
+        result = update_index_incremental(config=config)
+    expect_true(result.success)
+    expect_in("SCIP incremental plan", caplog.text)
+    expect_in("changed=1", caplog.text)
+    expect_in("decision=incremental", caplog.text)
 
 
 def test_incremental_falls_back_to_full_rebuild(tmp_path: Path) -> None:

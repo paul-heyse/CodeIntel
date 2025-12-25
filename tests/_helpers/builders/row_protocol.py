@@ -133,7 +133,7 @@ def insert_rows(
                 mode="upsert",
                 upsert=UpsertConfig(
                     conflict_columns=("module", "path"),
-                    update_columns=("repo", "commit", "language", "tags", "owners"),
+                    update_columns=("repo", "commit", "language", "tags", "owners", "row_hash"),
                 ),
             )
         result = warehouse.materialize_rows(

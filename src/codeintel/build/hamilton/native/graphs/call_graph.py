@@ -512,7 +512,7 @@ def _collect_all_edges(
 
 
 def _materialize_options(env: BuildEnv) -> MaterializeOptions:
-    return materialize_options(env, owner_target=CALL_GRAPH_TARGET_NAME, mode="replace")
+    return materialize_options(env, owner_target=CALL_GRAPH_TARGET_NAME)
 
 
 def _rows_written(result: MaterializationResult) -> int:

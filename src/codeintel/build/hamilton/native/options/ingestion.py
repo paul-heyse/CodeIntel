@@ -58,6 +58,14 @@ class ScipIngestOptions:
         Timeout for SCIP indexing operation.
     scip_output_dir
         Directory to write SCIP index files.
+    batch_size
+        Target number of modules per incremental shard batch.
+    batch_max_bytes
+        Optional maximum total size of a batch in bytes.
+    full_rebuild_threshold_count
+        Count threshold that triggers a full rebuild when exceeded.
+    full_rebuild_threshold_ratio
+        Ratio threshold (changed/total) that triggers a full rebuild.
     """
 
     scope_paths: list[str] | None = None
@@ -66,6 +74,10 @@ class ScipIngestOptions:
     max_file_size_kb: int = 1024
     timeout_seconds: int = 300
     scip_output_dir: Path | None = None
+    batch_size: int = 200
+    batch_max_bytes: int = 50_000_000
+    full_rebuild_threshold_count: int = 1000
+    full_rebuild_threshold_ratio: float = 0.3
 
     def should_include_references(self) -> bool:
         """Check if references should be included.

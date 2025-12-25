@@ -23,6 +23,38 @@ ColumnType = Literal[
     "TIMESTAMPTZ",
 ]
 
+WriteMode = Literal["append", "replace", "upsert"]
+ReplaceScope = Literal["snapshot", "table"]
+
+
+@dataclass(frozen=True)
+class TableWritePolicy:
+    """Table-level write policy for materialization operations.
+
+    Parameters
+    ----------
+    mode
+        Write mode applied during materialization.
+    replace_scope
+        Scope for replace operations ("snapshot" deletes repo+commit rows,
+        "table" deletes all rows).
+    conflict_columns
+        Columns used for upsert conflict detection.
+    update_columns
+        Columns updated on conflict (defaults to all non-conflict columns).
+    hash_column
+        Optional column used to gate updates (only update when hash differs).
+    use_staging
+        Whether to use a staging relation for writes.
+    """
+
+    mode: WriteMode = "replace"
+    replace_scope: ReplaceScope = "snapshot"
+    conflict_columns: tuple[str, ...] | None = None
+    update_columns: tuple[str, ...] | None = None
+    hash_column: str | None = None
+    use_staging: bool = False
+
 
 @dataclass(frozen=True)
 class Column:
@@ -120,6 +152,7 @@ class TableSchema:
     primary_key: tuple[str, ...] = ()
     indexes: tuple[Index, ...] = ()
     description: str | None = None
+    write_policy: TableWritePolicy | None = None
 
     @property
     def table_key(self) -> str:
@@ -161,7 +194,7 @@ class TableSchema:
         dict[str, object]
             JSON-serializable mapping for this table schema.
         """
-        return {
+        payload: dict[str, object] = {
             "schema": self.schema,
             "name": self.name,
             "table_key": self.table_key,
@@ -170,11 +203,26 @@ class TableSchema:
             "indexes": [idx.to_json_obj() for idx in self.indexes],
             "columns": [col.to_json_obj() for col in self.columns],
         }
+        if self.write_policy is None:
+            return payload
+        write_policy_payload: dict[str, object] = {
+            "mode": self.write_policy.mode,
+            "replace_scope": self.write_policy.replace_scope,
+            "conflict_columns": list(self.write_policy.conflict_columns or ()),
+            "update_columns": list(self.write_policy.update_columns or ()),
+            "hash_column": self.write_policy.hash_column,
+            "use_staging": self.write_policy.use_staging,
+        }
+        payload["write_policy"] = write_policy_payload
+        return payload
 
 
 __all__ = [
     "Column",
     "ColumnType",
     "Index",
+    "ReplaceScope",
     "TableSchema",
+    "TableWritePolicy",
+    "WriteMode",
 ]

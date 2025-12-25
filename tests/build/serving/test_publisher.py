@@ -58,13 +58,14 @@ def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> 
             repo VARCHAR,
             commit VARCHAR,
             module VARCHAR,
-            path VARCHAR
+            path VARCHAR,
+            row_hash VARCHAR
         )
         """
     )
     con.execute(
-        "INSERT INTO core.modules VALUES (?, ?, ?, ?)",
-        [repo, commit, "pkg.foo", "foo.py"],
+        "INSERT INTO core.modules VALUES (?, ?, ?, ?, ?)",
+        [repo, commit, "pkg.foo", "foo.py", "seed"],
     )
 
 
@@ -206,7 +207,8 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
             repo VARCHAR,
             commit VARCHAR,
             module VARCHAR,
-            path VARCHAR
+            path VARCHAR,
+            row_hash VARCHAR
         )
         """
     )

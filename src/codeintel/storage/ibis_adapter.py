@@ -33,6 +33,7 @@ from sqlglot import exp
 
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.staging import registered_temp_relation
+from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -59,10 +60,13 @@ class OnConflict:
         Column(s) that define the uniqueness constraint.
     update_columns
         Column(s) to update on conflict. If None, updates all non-conflict columns.
+    update_condition
+        Optional SQLGlot expression to gate updates (e.g., hash comparison).
     """
 
     conflict_columns: Sequence[str]
     update_columns: Sequence[str] | None = None
+    update_condition: exp.Expression | None = None
 
 
 @dataclass(frozen=True)
@@ -377,8 +381,7 @@ class IbisGateway:
         data: pd.DataFrame | Sequence[tuple[object, ...]],
         *,
         columns: Sequence[str] | None,
-        conflict_columns: Sequence[str],
-        update_columns: Sequence[str],
+        on_conflict: OnConflict,
     ) -> WriteResult:
         """
         Insert-or-update rows using ON CONFLICT semantics.
@@ -391,17 +394,14 @@ class IbisGateway:
             DataFrame or sequence of tuples to upsert.
         columns
             Column names to write.
-        conflict_columns
-            Columns defining the uniqueness constraint.
-        update_columns
-            Columns to update when a conflict occurs.
+        on_conflict
+            Conflict handling configuration.
 
         Returns
         -------
         WriteResult
             Result containing rows affected and method used.
         """
-        on_conflict = OnConflict(conflict_columns=conflict_columns, update_columns=update_columns)
         return self.write(table_key, data, columns=columns, on_conflict=on_conflict)
 
     def _write_ibis_expression(
@@ -429,8 +429,7 @@ class IbisGateway:
                 write_ctx.table_key,
                 columns=resolved_columns,
                 select_sql=select_ast,
-                conflict_columns=on_conflict.conflict_columns,
-                update_columns=on_conflict.update_columns,
+                upsert=_to_upsert_spec(on_conflict),
             )
             return WriteResult(
                 table_key=write_ctx.table_key,
@@ -490,8 +489,7 @@ class IbisGateway:
             write_ctx.table_key,
             rows,
             columns=resolved_columns,
-            conflict_columns=on_conflict.conflict_columns,
-            update_columns=on_conflict.update_columns,
+            upsert=_to_upsert_spec(on_conflict),
         )
         return WriteResult(
             table_key=write_ctx.table_key,
@@ -528,8 +526,7 @@ class IbisGateway:
                 write_ctx.table_key,
                 columns=columns,
                 select_sql=select_expr,
-                conflict_columns=on_conflict.conflict_columns,
-                update_columns=on_conflict.update_columns,
+                upsert=_to_upsert_spec(on_conflict),
             )
             return WriteResult(
                 table_key=write_ctx.table_key,
@@ -580,8 +577,7 @@ class IbisGateway:
             write_ctx.table_key,
             rows_list,
             columns=resolved_columns,
-            conflict_columns=on_conflict.conflict_columns,
-            update_columns=on_conflict.update_columns,
+            upsert=_to_upsert_spec(on_conflict),
         )
         return WriteResult(table_key=write_ctx.table_key, rows_affected=count, method="upsert")
 
@@ -626,6 +622,14 @@ class IbisGateway:
             backend.delete(table_key, where=where_ast)
 
         return -1
+
+
+def _to_upsert_spec(on_conflict: OnConflict) -> UpsertSpec:
+    return UpsertSpec(
+        conflict_columns=on_conflict.conflict_columns,
+        update_columns=on_conflict.update_columns,
+        update_condition=on_conflict.update_condition,
+    )
 
 
 def _extract_top_level_where(select_ast: exp.Expression) -> exp.Where | None:

@@ -52,6 +52,8 @@ def _maybe_set_schema_service_from_catalog() -> None:
 def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageConfig) -> None:
     load_contract_catalog_from_connection(con)
     if get_contract_catalog() is not None:
+        if not config.read_only and config.apply_schema:
+            bootstrap_contract_catalog(con, config=config)
         return
     if config.read_only:
         msg = "Contract catalog missing for read-only gateway"

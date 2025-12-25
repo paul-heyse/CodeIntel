@@ -1,1 +1,325 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="2" time="34.051" timestamp="2025-12-24T22:53:15.627137-06:00" hostname="MacBookPro.lan"><testcase classname="tests.ingestion.test_scip_ingest_result" name="test_scip_ingest_parses_explicit_index_path" time="12.153" /><testcase classname="tests.ingestion.test_scip_ingest_result" name="test_scip_ingest_skips_when_run_skipped" time="12.077" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="3" skipped="7" tests="230" time="138.971" timestamp="2025-12-25T01:19:55.172074-06:00" hostname="MacBookPro.lan"><testcase classname="tests.ingestion.test_ast_utils" name="test_indexes_requested_kinds[case_kinds1-class defs]" time="0.004" /><testcase classname="tests.ingestion.test_ast_utils" name="test_indexes_requested_kinds[case_kinds0-function defs]" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_lookup_cases[enclosing_span_match-&lt;lambda&gt;-enclosing]" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_lookup_cases[exact_span_match-&lt;lambda&gt;-exact]" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_ignores_nodes_without_lineno" time="0.006" /><testcase classname="tests.ingestion.test_ast_utils" name="test_lookup_cases[none_end_line_uses_start-&lt;lambda&gt;-none_end]" time="0.007" /><testcase classname="tests.ingestion.test_ast_utils" name="test_lookup_cases[no_match_returns_none-&lt;lambda&gt;-missing]" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_indexes_requested_kinds[case_kinds2-mixed defs]" time="0.005" /><testcase classname="tests.ingestion.test_ast_utils" name="test_empty_tree_returns_empty_index" time="0.002" /><testcase classname="tests.ingestion.test_ast_utils" name="test_smallest_enclosing_span_preferred" time="0.005" /><testcase classname="tests.ingestion.test_ast_utils" name="test_returns_source_lines" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_parses_empty_file" time="0.002" /><testcase classname="tests.ingestion.test_ast_utils" name="test_parses_valid_file" time="0.002" /><testcase classname="tests.ingestion.test_ast_utils" name="test_returns_none_for_binary_file" time="0.002" /><testcase classname="tests.ingestion.test_ast_utils" name="test_returns_lines_tree_and_duration" time="0.004" /><testcase classname="tests.ingestion.test_ast_utils" name="test_duration_is_non_negative" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_timed_parse_returns_none_on_parse_failure" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_returns_none_for_missing_file" time="0.004" /><testcase classname="tests.ingestion.test_ast_utils" name="test_handles_unicode_content" time="0.005" /><testcase classname="tests.ingestion.test_ast_utils" name="test_returns_none_for_syntax_error" time="0.003" /><testcase classname="tests.ingestion.test_ast_utils" name="test_parse_and_index_workflow" time="0.002" /><testcase classname="tests.ingestion.test_ast_utils" name="test_timed_parse_returns_none_for_missing_file" time="0.001" /><testcase classname="tests.ingestion.test_ast_utils" name="test_ast_visitor_records_decorator_span" time="0.001" /><testcase classname="tests.ingestion.test_db_queries" name="test_table_not_found_error" time="0.001" /><testcase classname="tests.ingestion.test_ast_utils" name="test_multiline_function_span" time="0.002" /><testcase classname="tests.ingestion.test_db_queries" name="test_column_not_found_error" time="0.001" /><testcase classname="tests.ingestion.test_db_queries" name="test_duckdb_query_errors_is_tuple" time="0.001" /><testcase classname="tests.ingestion.test_db_queries" name="test_query_error_attributes" time="0.001" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_with_scope_no_matches" time="20.210" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_invalid_or_missing_table[]" time="20.299" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_existing_table" time="20.519" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_invalid_or_missing_table[no-dot-separator]" time="20.684" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_with_scope_filters_by_snapshot" time="20.923" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_with_scope_nonexistent_table" time="21.081" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_sql_injection_protection" time="21.646" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_invalid_or_missing_table[nonexistent.table_xyz]" time="21.693" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_returns_correct_count" time="21.946" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_table_exists_invalid_or_missing[nonexistent.table_xyz]" time="21.956" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_with_unicode" time="19.248" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_nulls_no_nulls" time="19.464" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_table_exists_sql_injection_protection" time="19.179" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_with_special_characters" time="19.398" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_nulls_invalid_inputs[core.modules-nonexistent_col]" time="19.016" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_get_columns_existing_table" time="19.321" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_nulls_with_nulls" time="19.080" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_get_columns_nonexistent_or_invalid[nonexistent.table_xyz]" time="18.968" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_table_exists_invalid_or_missing[invalid-key]" time="19.274" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_get_columns_nonexistent_or_invalid[invalid-key]" time="19.164" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_min_value_with_data" time="17.239" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_max_value_with_data" time="17.057" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_nulls_invalid_inputs[invalid.table-column]" time="17.595" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_min_value_empty_table" time="17.499" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_min_value_invalid_table" time="17.745" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_max_value_empty_table" time="18.236" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_non_positive_all_positive" time="17.668" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_max_value_invalid_column" time="17.856" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_non_positive_with_negatives" time="17.897" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_non_positive_invalid_table" time="17.795" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_duplicates_with_dupes" time="19.265" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_duplicates_invalid_table" time="19.744" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_duplicates_no_dupes" time="19.507" /><testcase classname="tests.ingestion.test_db_queries" name="test_foreign_key_ref_dataclass" time="0.001" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_repo_scan_honors_scan_profile" time="18.136" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_not_null_fraction_all_not_null" time="19.433" /><testcase classname="tests.ingestion.test_db_queries" name="test_foreign_key_ref_default_allow_null" time="0.001" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_tests_ingest_uses_report_file" time="5.796"><skipped type="pytest.skip" message="Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)">/Users/paulheyse/CodeIntel/CodeIntel/tests/_helpers/tooling_audit.py:106: Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)</skipped></testcase><testcase classname="tests.ingestion.test_db_queries" name="test_safe_not_null_fraction_half_null" time="19.640" /><testcase classname="tests.ingestion.test_docstrings_inventory" name="test_docstrings_respects_scan_profile_and_module_inventory" time="5.740"><skipped type="pytest.skip" message="Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)">/Users/paulheyse/CodeIntel/CodeIntel/tests/_helpers/tooling_audit.py:106: Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)</skipped></testcase><testcase classname="tests.ingestion.test_db_queries" name="test_safe_not_null_fraction_invalid_table" time="19.053" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_orphan_refs_with_orphans" time="19.046" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_not_null_fraction_all_null" time="19.484" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path0]" time="0.002" /><testcase classname="tests.ingestion.test_docstrings_inventory" name="test_docstrings_uses_module_inventory_not_filesystem_scan" time="5.905"><skipped type="pytest.skip" message="Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)">/Users/paulheyse/CodeIntel/CodeIntel/tests/_helpers/tooling_audit.py:106: Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)</skipped></testcase><testcase classname="tests.ingestion.test_scip_incremental" name="test_incremental_updates_and_deletes_documents" time="0.026"><failure message="AssertionError: Expected condition to be True.">tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw5/test_incremental_updates_and_d0')
+
+    def test_incremental_updates_and_deletes_documents(tmp_path: Path) -&gt; None:
+        """Incremental updates should replace changed docs and drop deleted ones."""
+        repo_root = tmp_path / "repo"
+        _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+        _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+    
+        proto_module_path = ensure_proto_module(tmp_path)
+        output_scip = tmp_path / "build" / "scip" / "index.scip"
+        base_docs = {
+            "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+            "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+        }
+        write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+    
+        change_set = ChangeSet(
+            modified=[_module_record(repo_root, "a.py", 1, 2)],
+            deleted=[_module_record(repo_root, "b.py", 2, 2)],
+        )
+        runner = ProtoIndexToolRunner(
+            cache_dir=tmp_path,
+            config=_ProtoIndexRunnerConfig(
+                proto_module_path=proto_module_path,
+                doc_map={"a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA_new"}]}},
+            ),
+        )
+        config = ScipIncrementalConfig(
+            repo_root=repo_root,
+            output_scip=output_scip,
+            proto_module_path=proto_module_path,
+            change_set=change_set,
+            modules=(
+                _module_record(repo_root, "a.py", 1, 2),
+                _module_record(repo_root, "b.py", 2, 2),
+            ),
+            options_hash="options-hash",
+            tools_config=runner.tools_config,
+            tool_runner=runner,
+            scope_paths=None,
+            max_file_size_kb=1024,
+            timeout_seconds=30,
+            target_dir=None,
+        )
+    
+        result = update_index_incremental(config=config)
+        expect_true(result.success)
+&gt;       expect_true(result.full_rebuild is False)
+
+tests/ingestion/test_scip_incremental.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+condition = False
+
+    def expect_true(condition: object, *, message: str | None = None) -&gt; None:
+        """Raise AssertionError when a boolean condition is not satisfied.
+    
+        Parameters
+        ----------
+        condition
+            Value that must evaluate to True.
+        message
+            Optional override for the assertion message.
+    
+        Raises
+        ------
+        AssertionError
+            If the condition evaluates to False.
+        """
+        if not condition:
+&gt;           raise AssertionError(message or "Expected condition to be True.")
+E           AssertionError: Expected condition to be True.
+
+tests/_helpers/assertions/expectation_assertions.py:41: AssertionError</failure></testcase><testcase classname="tests.ingestion.test_scip_incremental" name="test_full_rebuild_thresholds_trigger_full_rebuild" time="0.011" /><testcase classname="tests.ingestion.test_scip_incremental" name="test_hash_reuse_from_file_state" time="0.011"><failure message="AssertionError: expected 'file_state', got None">tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw5/test_hash_reuse_from_file_stat0')
+
+    def test_hash_reuse_from_file_state(tmp_path: Path) -&gt; None:
+        """File state rows should provide content hashes for planning."""
+        repo_root = tmp_path / "repo"
+        _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+    
+        proto_module_path = ensure_proto_module(tmp_path)
+        output_scip = tmp_path / "build" / "scip" / "index.scip"
+        base_docs = {"a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]}}
+        write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+    
+        modules = (_module_record(repo_root, "a.py", 1, 1),)
+        change_set = ChangeSet(modified=list(modules))
+        runner = ProtoIndexToolRunner(
+            cache_dir=tmp_path,
+            config=_ProtoIndexRunnerConfig(proto_module_path=proto_module_path, doc_map=base_docs),
+        )
+        telemetry = ScipRunTelemetry.create(
+            repo="test/repo",
+            commit="abc123",
+            run_id="run-3",
+            options_hash="options-hash",
+        )
+        config = ScipIncrementalConfig(
+            repo_root=repo_root,
+            output_scip=output_scip,
+            proto_module_path=proto_module_path,
+            change_set=change_set,
+            modules=modules,
+            options_hash="options-hash",
+            tools_config=runner.tools_config,
+            tool_runner=runner,
+            scope_paths=None,
+            max_file_size_kb=1024,
+            timeout_seconds=30,
+            target_dir=None,
+            file_state_by_path={
+                "a.py": FileDigest(size_bytes=10, mtime_ns=1, content_hash="hash-a"),
+            },
+            telemetry=telemetry,
+        )
+    
+        result = update_index_incremental(config=config)
+        expect_true(result.success)
+&gt;       expect_equal(telemetry.hash_source, "file_state")
+
+tests/ingestion/test_scip_incremental.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+actual = None, expected = 'file_state'
+
+    def expect_equal(actual: object, expected: object, *, label: str | None = None) -&gt; None:
+        """Raise AssertionError when two values differ.
+    
+        Parameters
+        ----------
+        actual
+            Observed value.
+        expected
+            Expected value to compare against.
+        label
+            Optional label prefix for the failure message.
+    
+        Raises
+        ------
+        AssertionError
+            If the values are not equal.
+        """
+        if actual != expected:
+            failure_message = f"{_prefix(label)}expected {expected!r}, got {actual!r}"
+&gt;           raise AssertionError(failure_message)
+E           AssertionError: expected 'file_state', got None
+
+tests/_helpers/assertions/expectation_assertions.py:75: AssertionError</failure></testcase><testcase classname="tests.ingestion.test_scip_incremental" name="test_incremental_plan_summary_logs_counts" time="0.014" /><testcase classname="tests.ingestion.test_scip_incremental" name="test_incremental_falls_back_to_full_rebuild" time="0.013" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_orphan_refs_no_orphans" time="19.272" /><testcase classname="tests.ingestion.test_scip_index_store" name="test_merge_indexes_prefers_more_informative_symbol_info" time="0.009" /><testcase classname="tests.ingestion.test_scip_index_store" name="test_merge_indexes_prefers_newer_symbol_info_when_richer" time="0.007" /><testcase classname="tests.ingestion.test_scip_index_store" name="test_merge_indexes_retains_newer_base_when_shard_is_older" time="0.006" /><testcase classname="tests.ingestion.test_module_inventory" name="test_module_inventory_round_trip" time="17.933" /><testcase classname="tests.ingestion.test_scip_index_store" name="test_merge_indexes_dedupes_external_symbols" time="0.011" /><testcase classname="tests.ingestion.test_scip_ingest_result" name="test_scip_ingest_skips_when_run_skipped" time="18.081" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_not_null_fraction_empty_table" time="19.941" /><testcase classname="tests.ingestion.test_module_inventory" name="test_scanning_only_used_in_repo_scan_and_config_ingest" time="0.002" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolved_scip_config_create_minimal" time="4.982" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_typing_ingest_uses_shared_runner" time="0.001"><skipped type="pytest.skip" message="Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)">/Users/paulheyse/CodeIntel/CodeIntel/tests/ingestion/test_runner_plumbing.py:126: Schema mismatch: StaticDiagnosticRow (6 cols) vs static_diagnostics table (8 cols)</skipped></testcase><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolved_scip_config_frozen_dataclass" time="0.002" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_scip_resolver_input_create_empty" time="0.001" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_scip_resolver_input_create_with_explicit_params" time="4.801" /><testcase classname="tests.ingestion.test_harness_ingestion" name="test_modules_target_runs_with_build_harness" time="5.350"><skipped type="pytest.skip" message="Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)">/Users/paulheyse/CodeIntel/CodeIntel/tests/ingestion/test_harness_ingestion.py:9: Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)</skipped></testcase><testcase classname="tests.ingestion.test_scip_hash_options" name="test_scip_hash_options_changes_with_ingest_options" time="17.439" /><testcase classname="tests.ingestion.test_scip_hash_options" name="test_scip_hash_options_changes_with_tool_version" time="28.822" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolved_scip_config_create_with_modules" time="4.711" /><testcase classname="tests.ingestion.test_scip_incremental" name="test_incremental_batches_changed_modules" time="0.105"><failure message="AssertionError: expected 2, got 0">tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw4/test_incremental_batches_chang0')
+
+    def test_incremental_batches_changed_modules(tmp_path: Path) -&gt; None:
+        """Incremental indexing batches target-only calls."""
+        repo_root = tmp_path / "repo"
+        _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+        _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+        _write_module(repo_root, "c.py", "def c():\n    return 3\n")
+    
+        proto_module_path = ensure_proto_module(tmp_path)
+        output_scip = tmp_path / "build" / "scip" / "index.scip"
+        base_docs = {
+            "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+            "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+            "c.py": {"relative_path": "c.py", "symbols": [{"symbol": "symC"}]},
+        }
+        write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+    
+        modules = (
+            _module_record(repo_root, "a.py", 1, 3),
+            _module_record(repo_root, "b.py", 2, 3),
+            _module_record(repo_root, "c.py", 3, 3),
+        )
+        change_set = ChangeSet(modified=list(modules))
+        runner = ProtoIndexToolRunner(
+            cache_dir=tmp_path,
+            config=_ProtoIndexRunnerConfig(
+                proto_module_path=proto_module_path,
+                doc_map={
+                    "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA_new"}]},
+                    "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB_new"}]},
+                    "c.py": {"relative_path": "c.py", "symbols": [{"symbol": "symC_new"}]},
+                },
+            ),
+        )
+        telemetry = ScipRunTelemetry.create(
+            repo="test/repo",
+            commit="abc123",
+            run_id="run-1",
+            options_hash="options-hash",
+        )
+        config = ScipIncrementalConfig(
+            repo_root=repo_root,
+            output_scip=output_scip,
+            proto_module_path=proto_module_path,
+            change_set=change_set,
+            modules=modules,
+            options_hash="options-hash",
+            tools_config=runner.tools_config,
+            tool_runner=runner,
+            scope_paths=None,
+            max_file_size_kb=1024,
+            timeout_seconds=30,
+            target_dir=None,
+            batch_size=2,
+            batch_max_bytes=0,
+            full_rebuild_threshold_count=10,
+            full_rebuild_threshold_ratio=1.0,
+            telemetry=telemetry,
+        )
+    
+        result = update_index_incremental(config=config)
+        expect_true(result.success)
+&gt;       expect_equal(telemetry.batch_count, 2)
+
+tests/ingestion/test_scip_incremental.py:287: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+actual = 0, expected = 2
+
+    def expect_equal(actual: object, expected: object, *, label: str | None = None) -&gt; None:
+        """Raise AssertionError when two values differ.
+    
+        Parameters
+        ----------
+        actual
+            Observed value.
+        expected
+            Expected value to compare against.
+        label
+            Optional label prefix for the failure message.
+    
+        Raises
+        ------
+        AssertionError
+            If the values are not equal.
+        """
+        if actual != expected:
+            failure_message = f"{_prefix(label)}expected {expected!r}, got {actual!r}"
+&gt;           raise AssertionError(failure_message)
+E           AssertionError: expected 2, got 0
+
+tests/_helpers/assertions/expectation_assertions.py:75: AssertionError</failure></testcase><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_with_modules_sequence" time="4.543" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_scip_resolver_input_create_with_modules" time="4.381" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_with_scip_resolver_input" time="4.454" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_with_modules_in_input" time="4.298" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_missing_repo_raises_value_error" time="0.002" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_missing_build_dir_raises_value_error" time="0.003" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_missing_document_output_dir_raises_value_error" time="0.004" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_uses_inputs_values" time="5.010" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_missing_commit_raises_value_error" time="0.003" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_module_record_frozen" time="0.002" /><testcase classname="tests.ingestion.test_scip_rows" name="test_build_occurrence_rows_filters_references" time="0.001" /><testcase classname="tests.ingestion.test_scip_rows" name="test_build_symbol_relationship_rows_filters_options" time="0.001" /><testcase classname="tests.ingestion.test_subprocess_policy" name="test_no_direct_subprocess_usage_outside_tooling" time="0.264" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_missing_repo_root_raises_value_error" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_tool_runner_missing_binary_raises_not_found_error" time="0.011" /><testcase classname="tests.ingestion.test_tools" name="test_tool_runner_unknown_tool_raises_value_error" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_tool_runner_emits_heartbeat_logs" time="0.603" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_orphan_refs_invalid_table" time="16.969" /><testcase classname="tests.ingestion.test_subprocess_policy" name="test_preset_runner_respects_tool_run_options" time="0.007" /><testcase classname="tests.ingestion.test_tools" name="test_pyright_plugin_successful_run_returns_ok_status" time="0.003" /><testcase classname="tests.ingestion.test_no_ad_hoc_changes" name="test_no_ad_hoc_change_detection[path1]" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_default_registry_contains_expected_plugins" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_pyright_plugin_not_found_downgrades_to_not_found_status" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_diagnostic_entry_attributes" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_diagnostic_result_errors_by_path" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_diagnostic_result_failed_status" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_coverage_result_ok_status" time="0.008" /><testcase classname="tests.ingestion.test_db_queries" name="test_safe_count_orphan_refs_with_nulls_allowed" time="17.076" /><testcase classname="tests.ingestion.test_tools" name="test_coverage_result_with_files" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_scip_symbol_attributes" time="0.007" /><testcase classname="tests.ingestion.test_tools" name="test_scip_symbol_defaults" time="0.000" /><testcase classname="tests.ingestion.test_tools" name="test_port_scip_occurrence_attributes" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_port_scip_occurrence_required_fields_only" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_port_scip_document_attributes" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_port_scip_document_defaults" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_scip_result_ok_status" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_scip_result_with_documents" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_test_case_attributes" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_test_case_with_failure" time="0.001" /><testcase classname="tests.ingestion.test_row_serialization" name="test_ingestion_row_serializer_matches_schema_order" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_test_case_defaults" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_test_result_ok_status" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_test_result_with_tests" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_test_result_passed_count" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_tool_result_diagnostic_workflow" time="0.000" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_plugin_raises_key_error_for_unknown" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_plugin_success" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyright_not_found" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_test_result_failed_count" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_get_plugin_returns_registered_plugin" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyright_success" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyrefly_not_found" time="0.017" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_ruff_not_found" time="0.006" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pytest_raises_not_found" time="0.011" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_coverage_not_found" time="0.006" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pytest_skips_if_exists" time="0.004" /><testcase classname="tests.ingestion.test_tools" name="test_file_diagnostic_count_attributes" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_diagnostic_report_errors_by_path" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_diagnostic_report_empty" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_coverage_file_summary_properties" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_coverage_report_from_file_reports" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_coverage_report_by_path" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_parse_test_duration_valid" time="0.000" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_scip_not_found" time="0.006" /><testcase classname="tests.ingestion.test_tools" name="test_parse_test_duration_missing" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_parse_test_markers_dict" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_diagnostic_report_from_error_counts" time="0.000" /><testcase classname="tests.ingestion.test_tools" name="test_parse_test_markers_list" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_test_report_from_test_entries" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_parse_test_markers_empty" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_results_scip_occurrence_attributes" time="0.000" /><testcase classname="tests.ingestion.test_tools" name="test_results_scip_document_attributes" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_parse_scip_range_three_elements" time="0.006" /><testcase classname="tests.ingestion.test_tools" name="test_parse_scip_range_four_elements" time="0.008" /><testcase classname="tests.ingestion.test_tools" name="test_parse_scip_range_invalid_skips_occurrence" time="0.011" /><testcase classname="tests.ingestion.test_tools" name="test_test_report_from_entries_skips_empty_nodeid" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_parse_scip_metadata_and_diagnostics" time="0.016" /><testcase classname="tests.ingestion.test_tools" name="test_scip_index_result_from_documents" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_scip_index_result_empty" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_scip_plugin_not_found_during_scip_python" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_test_report_empty" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_scip_plugin_type_error_on_missing_output_scip" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_scip_plugin_type_error_on_missing_proto_module_path" time="0.004" /><testcase classname="tests.ingestion.test_tools" name="test_scip_plugin_type_error_on_invalid_target_dir" time="0.004" /><testcase classname="tests.ingestion.test_tools" name="test_scip_plugin_type_error_on_invalid_rel_paths" time="0.004" /><testcase classname="tests.ingestion.test_tools" name="test_pytest_plugin_not_found" time="0.005" /><testcase classname="tests.ingestion.test_tools" name="test_pytest_plugin_type_error_on_missing_json_report_path" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_pytest_plugin_execution_error" time="0.012" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_ruff_execution_error" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyright_execution_error" time="0.003" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyrefly_failure_returns_empty" time="0.037" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyright_returns_errors_from_parsed_report" time="0.005" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_coverage_report_failure_returns_empty" time="0.005" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pytest_report_creates_file" time="0.008" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pytest_report_execution_error" time="0.004" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_scip_full_not_found_raises" time="0.006" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_scip_full_execution_error" time="0.012" /><testcase classname="tests.ingestion.test_workers" name="test_worker_config_create_with_defaults" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_worker_config_create_with_custom_values" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_worker_config_frozen_dataclass" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_explicit_count_takes_precedence" time="0.002" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_explicit_zero_is_ignored" time="0.002" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_negative_explicit_is_ignored" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_env_var_takes_precedence_over_default" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_invalid_env_var_is_ignored" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_zero_env_var_is_ignored" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_default_calculation" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_custom_max_workers" time="0.003" /><testcase classname="tests.ingestion.test_workers" name="test_resolve_worker_count_custom_min_workers" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_create_executor_process_executor" time="0.063" /><testcase classname="tests.ingestion.test_workers" name="test_create_executor_thread_executor" time="0.002" /><testcase classname="tests.ingestion.test_workers" name="test_create_executor_default_is_thread" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_worker_pool_process" time="0.002" /><testcase classname="tests.ingestion.test_workers" name="test_worker_pool_thread" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_worker_pool_shutdown_on_exit" time="0.006" /><testcase classname="tests.ingestion.test_workers" name="test_executor_factory_returns_callable" time="0.000" /><testcase classname="tests.ingestion.test_workers" name="test_executor_factory_creates_thread_executor" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_executor_factory_creates_process_executor" time="0.002" /><testcase classname="tests.ingestion.test_workers" name="test_executor_factory_creates_new_instance_each_call" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_default_max_workers" time="0.001" /><testcase classname="tests.ingestion.test_workers" name="test_default_min_workers" time="0.002" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_pyright_parses_errors" time="1.350" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_pyrefly_parses_errors" time="1.347" /><testcase classname="tests.ingestion.test_tools" name="test_tool_status_enum_values" time="0.001" /><testcase classname="tests.ingestion.test_tools" name="test_tool_service_coverage_reports_normalization" time="0.004" /><testcase classname="tests.ingestion.test_runner_plumbing" name="test_coverage_ingest_uses_runner" time="4.613"><skipped type="pytest.skip" message="Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)">/Users/paulheyse/CodeIntel/CodeIntel/tests/_helpers/tooling_audit.py:106: Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)</skipped></testcase><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_coverage_report_with_data" time="2.198"><error message="failed on setup with &quot;codeintel.ingestion.engine.infrastructure.runner.ToolExecutionError: Tool pytest failed (code=2)&#10;Args: ('-q', '--disable-warnings', '--maxfail=1', '--json-report', '--json-report-file=/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw4/test_tool_service_run_coverage0/repo/build/test-results/pytest-report.json')&#10;stderr:&quot;">tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw4/test_tool_service_run_coverage0')
+
+    @pytest.fixture
+    def tooling_artifacts(tmp_path: Path) -&gt; ToolingArtifacts:
+        """Run real tooling to produce coverage/pytest artifacts for integration checks.
+    
+        Returns
+        -------
+        ToolingArtifacts
+            Bundle containing adapter, service, and artifact paths.
+        """
+&gt;       return build_tooling_artifacts(tmp_path)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/ingestion/test_tools.py:96: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests/_helpers/orchestration/tooling.py:270: in build_tooling_artifacts
+    pytest_report = _run_pytest_report(outputs.context, build_dir)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/orchestration/tooling.py:288: in _run_pytest_report
+    asyncio.run(context.service.run_pytest_report(context.repo_root, json_report_path=report_path))
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/runners.py:195: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;codeintel.ingestion.engine.service.ToolService object at 0x12c8cb390&gt;
+repo_root = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw4/test_tool_service_run_coverage0/repo')
+
+    async def run_pytest_report(
+        self,
+        repo_root: Path,
+        *,
+        json_report_path: Path,
+    ) -&gt; bool:
+        """
+        Generate a pytest JSON report when missing.
+    
+        Parameters
+        ----------
+        repo_root
+            Repository root passed to the pytest invocation.
+        json_report_path
+            Output path for the pytest JSON report.
+    
+        Returns
+        -------
+        bool
+            True when pytest was executed to produce the report, False when reused.
+    
+        Raises
+        ------
+        ToolExecutionError
+            Raised when pytest execution fails or does not create a report.
+        ToolNotFoundError
+            Raised when the pytest binary cannot be resolved.
+        RuntimeError
+            Raised when a plugin result is missing the expected run metadata.
+        """
+        if await to_thread.run_sync(_path_is_file, json_report_path):
+            return False
+    
+        plugin_result = await self.run_plugin(
+            "pytest",
+            repo_root=repo_root,
+            json_report_path=json_report_path,
+        )
+    
+        if plugin_result.status is ToolStatus.NOT_FOUND:
+            raise ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin)
+    
+        if plugin_result.status is not ToolStatus.OK:
+            err = plugin_result.error
+            if isinstance(err, ToolExecutionError):
+&gt;               raise err
+E               codeintel.ingestion.engine.infrastructure.runner.ToolExecutionError: Tool pytest failed (code=2)
+E               Args: ('-q', '--disable-warnings', '--maxfail=1', '--json-report', '--json-report-file=/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-174/popen-gw4/test_tool_service_run_coverage0/repo/build/test-results/pytest-report.json')
+E               stderr:
+
+src/codeintel/ingestion/engine/service.py:355: ToolExecutionError</error></testcase><testcase classname="tests.ingestion.test_tools" name="test_tool_service_run_pyrefly_success" time="0.008" /><testcase classname="tests.ingestion.test_scip_ingest_result" name="test_scip_ingest_parses_explicit_index_path" time="12.719" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_module_record_create" time="3.359" /><testcase classname="tests.ingestion.test_scip_ingest" name="test_scip_target_writes_tables" time="4.038"><skipped type="pytest.skip" message="Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)">/Users/paulheyse/CodeIntel/CodeIntel/tests/ingestion/test_scip_ingest.py:9: Missing tool binaries: scip='scip' (searched configured_path -&gt; PATH -&gt; node_modules -&gt; extra_bin_dirs)</skipped></testcase><testcase classname="tests.ingestion.test_scip_resolver" name="test_scip_resolver_input_frozen_dataclass" time="0.005" /><testcase classname="tests.ingestion.test_scip_resolver" name="test_resolve_scip_inputs_with_explicit_params" time="2.874" /></testsuite></testsuites>

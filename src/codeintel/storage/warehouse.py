@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+import pandas as pd
 import sqlglot.expressions as exp
 from duckdb import ColumnExpression, ConstantExpression, ExplainType
 
@@ -28,12 +29,13 @@ from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.ibis_adapter import OnConflict
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.snapshot_scoping import RepoCommitScope, maybe_scope_by_snapshot
+from codeintel.storage.staging import registered_temp_relation
+from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
     import ibis.expr.types as ir
-    import pandas as pd
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
 from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError
 
 WriteMode = Literal["append", "replace", "upsert"]
+ReplaceScope = Literal["snapshot", "table"]
 
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
 
@@ -90,6 +93,7 @@ class UpsertConfig:
 
     conflict_columns: tuple[str, ...]
     update_columns: tuple[str, ...] | None = None
+    update_condition: exp.Expression | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,10 +102,12 @@ class MaterializeOptions:
 
     snapshot: SnapshotRef | None = None
     mode: WriteMode = "replace"
+    replace_scope: ReplaceScope = "snapshot"
     owner_target: str | None = None
     input_hash: str | None = None
     asset_type: str = "table"
     upsert: UpsertConfig | None = None
+    use_staging: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +236,7 @@ class Warehouse:
                 on_conflict = OnConflict(
                     conflict_columns=active.upsert.conflict_columns,
                     update_columns=active.upsert.update_columns,
+                    update_condition=active.upsert.update_condition,
                 )
             self.gateway.ibis.write(table_key, expr, on_conflict=on_conflict)
             return rows_written
@@ -280,13 +287,44 @@ class Warehouse:
         )
 
         def _write() -> int | None:
+            if df.empty:
+                return 0
+
+            if active.use_staging:
+                with registered_temp_relation(self.gateway.con, df, prefix="ci_df_") as temp_name:
+                    select_expr = exp.Select(
+                        expressions=[
+                            exp.Column(this=exp.to_identifier(col)) for col in df.columns
+                        ],
+                    ).from_(exp.Table(this=exp.to_identifier(temp_name)))
+                    if active.mode == "upsert" and active.upsert is not None:
+                        self.gateway.policy.upsert_select(
+                            table_key,
+                            columns=list(df.columns),
+                            select_sql=select_expr,
+                            upsert=UpsertSpec(
+                                conflict_columns=active.upsert.conflict_columns,
+                                update_columns=active.upsert.update_columns,
+                                update_condition=active.upsert.update_condition,
+                            ),
+                        )
+                        return len(df)
+                    self.gateway.policy.insert_select(
+                        table_key,
+                        columns=list(df.columns),
+                        select_sql=select_expr,
+                    )
+                    return len(df)
+
             if active.mode == "upsert" and active.upsert is not None:
                 on_conflict = OnConflict(
                     conflict_columns=active.upsert.conflict_columns,
                     update_columns=active.upsert.update_columns,
+                    update_condition=active.upsert.update_condition,
                 )
                 result = self.gateway.ibis.write(table_key, df, on_conflict=on_conflict)
                 return result.rows_affected
+
             rows_written = len(df)
             if rows_written:
                 self.gateway.ibis.write(table_key, df)
@@ -345,10 +383,43 @@ class Warehouse:
         )
 
         def _write() -> int | None:
+            if not rows:
+                return 0
+
+            if active.use_staging:
+                frame = pd.DataFrame.from_records(rows, columns=resolved_columns)
+                if frame.empty:
+                    return 0
+                with registered_temp_relation(self.gateway.con, frame, prefix="ci_rows_") as temp_name:
+                    select_expr = exp.Select(
+                        expressions=[
+                            exp.Column(this=exp.to_identifier(col)) for col in resolved_columns
+                        ],
+                    ).from_(exp.Table(this=exp.to_identifier(temp_name)))
+                    if active.mode == "upsert" and active.upsert is not None:
+                        self.gateway.policy.upsert_select(
+                            table_key,
+                            columns=resolved_columns,
+                            select_sql=select_expr,
+                            upsert=UpsertSpec(
+                                conflict_columns=active.upsert.conflict_columns,
+                                update_columns=active.upsert.update_columns,
+                                update_condition=active.upsert.update_condition,
+                            ),
+                        )
+                        return len(frame)
+                    self.gateway.policy.insert_select(
+                        table_key,
+                        columns=resolved_columns,
+                        select_sql=select_expr,
+                    )
+                    return len(frame)
+
             if active.mode == "upsert" and active.upsert is not None:
                 on_conflict = OnConflict(
                     conflict_columns=active.upsert.conflict_columns,
                     update_columns=active.upsert.update_columns,
+                    update_condition=active.upsert.update_condition,
                 )
                 result = self.gateway.ibis.write(
                     table_key,
@@ -669,8 +740,8 @@ def _validate_materialize_options(
     upsert_unsupported_message: str,
 ) -> None:
     snapshot = options.snapshot
-    if options.mode == "replace" and snapshot is None:
-        msg = "mode='replace' requires snapshot for safe snapshot-scoped semantics"
+    if options.mode == "replace" and options.replace_scope == "snapshot" and snapshot is None:
+        msg = "mode='replace' with replace_scope='snapshot' requires snapshot"
         raise ValueError(msg)
 
     if options.mode != "upsert":
@@ -730,12 +801,15 @@ def _materialize_with_writer(
     rows_written: int | None = None
     try:
         with ctx.gateway.policy.transaction():
-            if options.mode == "replace" and snapshot is not None:
-                ctx.gateway.policy.delete_for_snapshot(
-                    ctx.table_key,
-                    repo=snapshot.repo,
-                    commit=snapshot.commit,
-                )
+            if options.mode == "replace":
+                if options.replace_scope == "table":
+                    ctx.gateway.policy.delete(ctx.table_key)
+                elif snapshot is not None:
+                    ctx.gateway.policy.delete_for_snapshot(
+                        ctx.table_key,
+                        repo=snapshot.repo,
+                        commit=snapshot.commit,
+                    )
 
             rows_written = writer()
     finally:
@@ -759,6 +833,7 @@ def _materialize_with_writer(
 __all__ = [
     "MaterializationResult",
     "MaterializeOptions",
+    "ReplaceScope",
     "UpsertConfig",
     "Warehouse",
     "WriteMode",

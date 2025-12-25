@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
+from codeintel.core.hashing import stable_hash
 from tests._helpers.builders._common import _iso
 
 if TYPE_CHECKING:
@@ -70,6 +71,7 @@ class ModuleRow:
         "language",
         "tags",
         "owners",
+        "row_hash",
     )
 
     module: str
@@ -79,8 +81,9 @@ class ModuleRow:
     language: str = "python"
     tags: str = "[]"
     owners: str = "[]"
+    row_hash: str | None = None
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, str, str]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, str, str, str | None]:
         """Serialize row to database insert order.
 
         Returns
@@ -88,6 +91,19 @@ class ModuleRow:
         tuple
             Values in column order for INSERT.
         """
+        row_hash = self.row_hash
+        if row_hash is None:
+            row_hash = stable_hash(
+                {
+                    "module": self.module,
+                    "path": self.path,
+                    "repo": self.repo,
+                    "commit": self.commit,
+                    "language": self.language,
+                    "tags": self.tags,
+                    "owners": self.owners,
+                }
+            )
         return (
             self.module,
             self.path,
@@ -96,6 +112,7 @@ class ModuleRow:
             self.language,
             self.tags,
             self.owners,
+            row_hash,
         )
 
 

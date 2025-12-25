@@ -17,6 +17,7 @@ from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestCoverageEdgesRow as TestCoverageEdgeRow,
 )
+from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -254,8 +255,10 @@ def _backfill_test_goids(
                 "commit",
                 "rel_path",
             ],
-            conflict_columns=["test_id"],
-            update_columns=["test_goid_h128", "urn"],
+            upsert=UpsertSpec(
+                conflict_columns=("test_id",),
+                update_columns=("test_goid_h128", "urn"),
+            ),
         )
 
     return goid_by_id, urn_by_id

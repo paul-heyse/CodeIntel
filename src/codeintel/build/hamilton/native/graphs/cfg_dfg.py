@@ -440,7 +440,7 @@ def _materialize_cfg_outputs(
     block_rows: list[CFGBlockRow],
     edge_rows: list[CFGEdgeRow],
 ) -> tuple[int, int]:
-    options = materialize_options(env, owner_target=CFG_TARGET_NAME, mode="replace")
+    options = materialize_options(env, owner_target=CFG_TARGET_NAME)
     block_count = int(
         env.warehouse.materialize_rows(
             CFG_BLOCKS_TABLE_KEY,
@@ -646,7 +646,7 @@ def t__dfg__extract(
             DFG_EDGES_TABLE_KEY,
             [row.to_tuple() for row in all_dfg_rows],
             columns=None,
-            options=materialize_options(env, owner_target=DFG_TARGET_NAME, mode="replace"),
+            options=materialize_options(env, owner_target=DFG_TARGET_NAME),
         )
         edge_count = int(edge_result.rows_written or 0)
 
