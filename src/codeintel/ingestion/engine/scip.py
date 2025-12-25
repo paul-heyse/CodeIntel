@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from numbers import Real
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from anyio import to_thread
 
@@ -25,7 +25,10 @@ from codeintel.ingestion.engine.plugins import (
 )
 from codeintel.ingestion.engine.results import ScipDocument, ScipIndexResult, ScipOccurrence
 from codeintel.ingestion.scip.cli import build_scip_python_args
+from codeintel.ingestion.scip.index_store import write_index_proto
 from codeintel.ingestion.scip.paths import resolve_target_base
+from codeintel.ingestion.scip.proto import load_generated_module
+from codeintel.ingestion.scip.proto_types import ScipProtoModule
 from codeintel.ingestion.scip.protobuf_parser import parse_index
 
 if TYPE_CHECKING:
@@ -77,6 +80,17 @@ def _parse_scip_index(
             )
         )
     return ScipIndexResult.from_documents(tuple(documents), index_scip_path=scip_path)
+
+
+def _is_no_git_failure(result: ToolRunResult) -> bool:
+    combined = f"{result.stdout}\n{result.stderr}".lower()
+    return "not a git repository" in combined or "git: not found" in combined
+
+
+def _write_empty_scip_index(output_scip: Path, proto_module_path: Path) -> None:
+    module = cast("ScipProtoModule", load_generated_module(proto_module_path))
+    empty_index = module.Index()
+    write_index_proto(empty_index, output_scip)
 
 
 @dataclass
@@ -183,14 +197,35 @@ class ScipPlugin(ToolPlugin):
                 parsed=ScipIndexResult.empty(),
             )
         except ToolExecutionError as exc:
-            result = ToolPluginResult(
-                tool=ToolName.SCIP_PYTHON,
-                status=ToolStatus.FAILED,
-                artifacts={"index_scip": output_scip},
-                run=exc.result,
-                error=exc,
-                parsed=ScipIndexResult.empty(),
-            )
+            if _is_no_git_failure(exc.result):
+                try:
+                    _write_empty_scip_index(output_scip, proto_module_path)
+                except (OSError, ValueError, RuntimeError) as write_exc:
+                    log.warning(
+                        "Failed to write empty SCIP index for no-git fallback: %s",
+                        write_exc,
+                    )
+                else:
+                    log.warning(
+                        "scip-python failed due to missing git metadata; using empty index"
+                    )
+                    result = ToolPluginResult(
+                        tool=ToolName.SCIP_PYTHON,
+                        status=ToolStatus.OK,
+                        artifacts={"index_scip": output_scip},
+                        run=exc.result,
+                        error=None,
+                        parsed=ScipIndexResult.empty(),
+                    )
+            if result is None:
+                result = ToolPluginResult(
+                    tool=ToolName.SCIP_PYTHON,
+                    status=ToolStatus.FAILED,
+                    artifacts={"index_scip": output_scip},
+                    run=exc.result,
+                    error=exc,
+                    parsed=ScipIndexResult.empty(),
+                )
 
         if result is None:
             parsed = await to_thread.run_sync(

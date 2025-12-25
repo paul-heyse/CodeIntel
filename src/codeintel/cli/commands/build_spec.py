@@ -18,7 +18,7 @@ from codeintel.cli.options.registry import (
     BUILD_SPEC_INCLUDE_COLUMNS,
     BUILD_SPEC_OUTPUT,
 )
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 build_spec_app = App(
@@ -51,7 +51,7 @@ class BuildSpecCompileCommand:
         str | None,
         option_param(BUILD_SPEC_OUTPUT, command_path=BUILD_SPEC_COMPILE_PATH),
     ] = None
-    flags: SharedFlags = _BUILD_SPEC_COMPILE_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _BUILD_SPEC_COMPILE_FLAGS_FIELD
 
 
 __all__ = [

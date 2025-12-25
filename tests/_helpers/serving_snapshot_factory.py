@@ -17,6 +17,7 @@ from codeintel.build.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.hashing import stable_hash
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.serving.search_index import build_search_documents_table
@@ -221,12 +222,31 @@ def _write_demo_db(db_path: Path, *, row_count: int, repo: str, commit: str) -> 
             "INSERT INTO docs.v_demo SELECT i, 'label-' || i::VARCHAR FROM range(1, ?) t(i)",
             [row_count + 1],
         )
+        module_payload = {
+            "module": "pkg.mod",
+            "path": "pkg/mod.py",
+            "repo": repo,
+            "commit": commit,
+            "language": "python",
+            "tags": None,
+            "owners": None,
+        }
+        module_payload["row_hash"] = stable_hash(module_payload)
         con.execute(
             """
-            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO core.modules (module, path, repo, commit, language, tags, owners, row_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            ["pkg.mod", "pkg/mod.py", repo, commit, "python", None, None],
+            [
+                module_payload["module"],
+                module_payload["path"],
+                module_payload["repo"],
+                module_payload["commit"],
+                module_payload["language"],
+                module_payload["tags"],
+                module_payload["owners"],
+                module_payload["row_hash"],
+            ],
         )
         build_search_documents_table(con)
         _ensure_search_documents(con, repo=repo, commit=commit)

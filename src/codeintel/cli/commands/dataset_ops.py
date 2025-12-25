@@ -20,7 +20,7 @@ from codeintel.cli.handlers.ops import (
     dataset_verify_handler,
 )
 from codeintel.cli.options.registry import DATASET_TABLE_KEY
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 dataset_app = App(
@@ -54,7 +54,7 @@ _DATASET_CONSTRAINTS_FLAGS_FIELD = shared_flags_field(DATASET_CONSTRAINTS_PATH)
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    flags: SharedFlags = _DATASET_LIST_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DATASET_LIST_FLAGS_FIELD
 
 
 @cli_command(
@@ -69,7 +69,7 @@ class DatasetDescribeCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_DESCRIBE_PATH),
     ]
-    flags: SharedFlags = _DATASET_DESCRIBE_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DATASET_DESCRIBE_FLAGS_FIELD
 
 
 @cli_command("dataset.verify", handler=dataset_verify_handler, config=_DATASET_RUNTIME_CONFIG)
@@ -82,7 +82,7 @@ class DatasetVerifyCommand:
         str | None,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_VERIFY_PATH),
     ] = None
-    flags: SharedFlags = _DATASET_VERIFY_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DATASET_VERIFY_FLAGS_FIELD
 
 
 @cli_command("dataset.info", handler=dataset_info_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -103,7 +103,7 @@ class DatasetInfoCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_INFO_PATH),
     ]
-    flags: SharedFlags = _DATASET_INFO_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DATASET_INFO_FLAGS_FIELD
 
 
 @cli_command("dataset.flow", handler=dataset_flow_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -120,7 +120,7 @@ class DatasetFlowCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_FLOW_PATH),
     ]
-    flags: SharedFlags = _DATASET_FLOW_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DATASET_FLOW_FLAGS_FIELD
 
 
 @cli_command(
@@ -144,7 +144,7 @@ class DatasetConstraintsCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_CONSTRAINTS_PATH),
     ]
-    flags: SharedFlags = _DATASET_CONSTRAINTS_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DATASET_CONSTRAINTS_FLAGS_FIELD
 
 
 __all__ = [

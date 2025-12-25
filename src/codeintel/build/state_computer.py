@@ -256,6 +256,15 @@ class StateComputer:
         TargetState
             Preliminary state (may be upgraded to blocked in pass 2).
         """
+        if manifest is None:
+            return TargetState(
+                name=target.name,
+                status="missing",
+                manifest=None,
+                current_hash=None,
+                blocking_reason=None,
+                blocking_deps=(),
+            )
         options_hash = self._options_hash_for_target(target)
         current_hash = self._session.get_input_hash(target, options_hash)
         evaluation = evaluate_hash_state(

@@ -327,6 +327,17 @@ def get_target_metadata_service() -> TargetMetadataService:
     )
 
 
+def get_target_system() -> TargetSystem:
+    """Return the cached TargetSystem without loading schema inventory helpers.
+
+    Returns
+    -------
+    TargetSystem
+        Cached target system with runtime and graph metadata.
+    """
+    return _load_target_system()
+
+
 def get_target_metadata_provider() -> TargetMetadataProvider:
     """Return a lazy target metadata provider.
 
@@ -366,5 +377,6 @@ __all__ = [
     "clear_target_metadata_cache",
     "get_target_metadata_provider",
     "get_target_metadata_service",
+    "get_target_system",
     "is_target_metadata_loaded",
 ]

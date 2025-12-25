@@ -14,7 +14,7 @@ from codeintel.cli.rendering.types import OutputFormat
 from codeintel.observability.cli import RunContext
 
 
-class SharedFlags(Protocol):
+class SharedFlagsProtocol(Protocol):
     """Protocol for shared CLI flags injected into commands."""
 
     project_root: Path | None
@@ -24,18 +24,24 @@ class SharedFlags(Protocol):
     run_context: RunContext | None
 
 
-SHARED_FLAGS_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
-"""Metadata for SharedFlags field to enable Cyclopts nested parameter flattening."""
-
-_SHARED_FLAGS_CACHE: dict[CommandPath, type[SharedFlags]] = {}
+_SHARED_FLAGS_CACHE: dict[CommandPath, type[SharedFlagsProtocol]] = {}
 
 
-def shared_flags_type(command_path: CommandPath) -> type[SharedFlags]:
+def _shared_flags_metadata() -> dict[str, Parameter]:
+    return {"parameter": Parameter(name="*")}
+
+
+def _shared_flags_class_name(command_path: CommandPath) -> str:
+    safe_parts = (part.replace("-", "_") for part in command_path)
+    return "SharedFlags_" + "_".join(safe_parts)
+
+
+def shared_flags_type(command_path: CommandPath) -> type[SharedFlagsProtocol]:
     """Return a cached SharedFlags dataclass for a command path.
 
     Returns
     -------
-    type[SharedFlags]
+    type[SharedFlagsProtocol]
         Generated SharedFlags dataclass type for the command path.
     """
     cached = _SHARED_FLAGS_CACHE.get(command_path)
@@ -71,30 +77,29 @@ def shared_flags_type(command_path: CommandPath) -> type[SharedFlags]:
     ]
 
     cls = make_dataclass(
-        "SharedFlags",
+        _shared_flags_class_name(command_path),
         fields,
         frozen=True,
         slots=True,
     )
-    _SHARED_FLAGS_CACHE[command_path] = cast("type[SharedFlags]", cls)
-    return cast("type[SharedFlags]", cls)
+    _SHARED_FLAGS_CACHE[command_path] = cast("type[SharedFlagsProtocol]", cls)
+    return cast("type[SharedFlagsProtocol]", cls)
 
 
-def shared_flags_field(command_path: CommandPath) -> SharedFlags:
+def shared_flags_field(command_path: CommandPath) -> SharedFlagsProtocol:
     """Create a SharedFlags field with Cyclopts metadata for nested flattening.
 
     Returns
     -------
-    SharedFlags
+    SharedFlagsProtocol
         Field instance configured for nested parameter flattening.
     """
     flags_type = shared_flags_type(command_path)
-    return field(default_factory=flags_type, metadata=SHARED_FLAGS_METADATA)
+    return field(default_factory=flags_type, metadata=_shared_flags_metadata())
 
 
 __all__ = [
-    "SHARED_FLAGS_METADATA",
-    "SharedFlags",
+    "SharedFlagsProtocol",
     "shared_flags_field",
     "shared_flags_type",
 ]

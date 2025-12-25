@@ -160,8 +160,8 @@ class RuntimeCLI:
     verbose: Verbose = 0
 
 
-RUNTIME_PARAM_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
-"""Metadata for RuntimeCLI fields to enable Cyclopts nested parameter flattening."""
+def _runtime_param_metadata() -> dict[str, Parameter]:
+    return {"parameter": Parameter(name="*")}
 
 
 def runtime_field() -> RuntimeCLI:
@@ -169,14 +169,14 @@ def runtime_field() -> RuntimeCLI:
 
     This function returns a dataclass ``field()`` configured for nested
     runtime CLI flags. Use this for dynamically created dataclasses.
-    For static dataclasses, use ``field(default_factory=RuntimeCLI, metadata=RUNTIME_PARAM_METADATA)``.
+    For static dataclasses, use ``field(default_factory=RuntimeCLI, metadata=_runtime_param_metadata())``.
 
     Returns
     -------
     RuntimeCLI
         Dataclass field (typed as RuntimeCLI for type checker compatibility).
     """
-    return field(default_factory=RuntimeCLI, metadata=RUNTIME_PARAM_METADATA)
+    return field(default_factory=RuntimeCLI, metadata=_runtime_param_metadata())
 
 
 @dataclass
@@ -187,8 +187,8 @@ class OutputFormatCLI:
     json: JsonFlag = False
 
 
-OUTPUT_PARAM_METADATA: dict[str, Parameter] = {"parameter": Parameter(name="*")}
-"""Metadata for OutputFormatCLI fields to enable Cyclopts nested parameter flattening."""
+def _output_param_metadata() -> dict[str, Parameter]:
+    return {"parameter": Parameter(name="*")}
 
 
 def output_field() -> OutputFormatCLI:
@@ -196,14 +196,14 @@ def output_field() -> OutputFormatCLI:
 
     This function returns a dataclass ``field()`` configured for nested
     output format flags. Use this for dynamically created dataclasses.
-    For static dataclasses, use ``field(default_factory=OutputFormatCLI, metadata=OUTPUT_PARAM_METADATA)``.
+    For static dataclasses, use ``field(default_factory=OutputFormatCLI, metadata=_output_param_metadata())``.
 
     Returns
     -------
     OutputFormatCLI
         Dataclass field (typed as OutputFormatCLI for type checker compatibility).
     """
-    return field(default_factory=OutputFormatCLI, metadata=OUTPUT_PARAM_METADATA)
+    return field(default_factory=OutputFormatCLI, metadata=_output_param_metadata())
 
 
 def resolve_output_format(
@@ -255,8 +255,6 @@ def get_output_format(
 
 
 __all__ = [
-    "OUTPUT_PARAM_METADATA",
-    "RUNTIME_PARAM_METADATA",
     "ExistingDir",
     "ExistingPath",
     "JsonFlag",

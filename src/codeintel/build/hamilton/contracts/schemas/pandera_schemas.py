@@ -469,18 +469,17 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
         "largest_scc_size": [_check_non_negative()],
     },
     "analytics.test_catalog": {
-        "duration_seconds": [_check_non_negative()],
-        "lineno": [_check_positive()],
+        "duration_ms": [_check_non_negative()],
     },
     "analytics.test_coverage_edges": {
         "function_goid_h128": [_check_non_negative()],
     },
     "analytics.test_profile": {
-        "duration_seconds": [_check_non_negative()],
+        "duration_ms": [_check_non_negative()],
         "functions_covered_count": [_check_non_negative()],
     },
     "analytics.behavioral_coverage": {
-        "function_goid_h128": [_check_non_negative()],
+        "test_goid_h128": [_check_non_negative()],
     },
     "analytics.test_graph_metrics_tests": {
         "functions_covered": [_check_non_negative()],

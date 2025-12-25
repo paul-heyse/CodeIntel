@@ -25,7 +25,10 @@ from typing import TYPE_CHECKING
 from codeintel.config.models import ToolsConfig
 from codeintel.core.tools import ToolName
 from codeintel.core.tools.resolver import ToolResolveConfig, resolve_tool
-from codeintel.observability.runtime_registry import register_subprocess, unregister_subprocess
+from codeintel.observability.runtime_registry import (
+    mark_subprocess_exited,
+    register_subprocess,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -258,7 +261,7 @@ class ToolRunner:
                     await heartbeat_task
             if return_code is None:
                 return_code = proc.returncode if proc.returncode is not None else 1
-            unregister_subprocess(pid=proc.pid, exit_code=return_code)
+            mark_subprocess_exited(pid=proc.pid, exit_code=return_code)
 
         return_code = proc.returncode if proc.returncode is not None else 1
         result = ToolRunResult(

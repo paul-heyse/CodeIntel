@@ -10,7 +10,7 @@ from cyclopts import App
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import serve_http_handler, serve_mcp_handler
 from codeintel.cli.options.registry import SERVE_HOST, SERVE_PORT, SERVE_RELOAD
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 serve_app = App(
@@ -44,7 +44,7 @@ class ServeHttpCommand:
         bool,
         option_param(SERVE_RELOAD, command_path=SERVE_HTTP_PATH),
     ] = False
-    flags: SharedFlags = _SERVE_HTTP_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _SERVE_HTTP_FLAGS_FIELD
 
 
 @serve_app.command(name="mcp")
@@ -53,7 +53,7 @@ class ServeHttpCommand:
 class ServeMcpCommand:
     """Start the MCP server."""
 
-    flags: SharedFlags = _SERVE_MCP_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _SERVE_MCP_FLAGS_FIELD
 
 
 __all__ = [

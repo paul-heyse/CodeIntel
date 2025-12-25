@@ -47,7 +47,7 @@ from codeintel.build.serving.publisher import (
 )
 from codeintel.build.settings import get_build_settings
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.target_metadata import get_target_metadata_service, get_target_system
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     BuildAssetsResult,
@@ -85,6 +85,7 @@ from codeintel.observability.teardown import (
     emit_teardown_telemetry,
 )
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
+from codeintel.storage.validation import ContractValidationMode
 
 if TYPE_CHECKING:
     from hamilton.caching.adapter import CachingEvent
@@ -168,6 +169,7 @@ class BuildExecutionArgs:
     cache_dir: str | None
     clear_cache: bool
     cache_report: bool
+    validation_mode: ContractValidationMode
 
     @property
     def is_dry_run(self) -> bool:
@@ -691,7 +693,7 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_metadata_service().system.graph
+    graph = get_target_system().graph
 
     LOG.info(
         "build.status repo=%s commit=%s",
@@ -746,6 +748,7 @@ class _BuildRunParams:
     cache_dir: str | None
     clear_cache: bool
     cache_report: bool
+    validation_mode: ContractValidationMode
 
 
 def resolve_parallel_backend(*, parallel_backend: str | None, max_workers: int | None) -> str:
@@ -772,6 +775,17 @@ def resolve_parallel_backend(*, parallel_backend: str | None, max_workers: int |
     if max_workers is not None and backend == "sequential":
         return "threadpool"
     return backend
+
+
+def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
+    if raw is None:
+        return ContractValidationMode.LENIENT
+    normalized = raw.lower()
+    try:
+        return ContractValidationMode(normalized)
+    except ValueError as exc:
+        msg = "Invalid value for \"--validation-mode\""
+        raise ValidationError(msg) from exc
 
 
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
@@ -816,6 +830,7 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         cache_dir=ctx.params.get_str("cache_dir"),
         clear_cache=ctx.params.get_bool("clear_cache"),
         cache_report=ctx.params.get_bool("cache_report"),
+        validation_mode=_resolve_validation_mode(ctx.params.get_str("validation_mode")),
     )
 
 
@@ -894,53 +909,10 @@ def build_run_handler(
     run_context = ctx.run_context
 
     try:
-        params = _extract_build_run_params(ctx)
-        validation_error = _validate_build_run_params(params)
-        if validation_error is not None:
-            result = validation_error
-        else:
-            try:
-                runtime = ctx.runtime
-            except ResolutionError as e:
-                result = fail_project_error("build", str(e))
-            else:
-                graph = get_target_metadata_service().system.graph
-                scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
-
-                try:
-                    goals = _resolve_goals(params.targets, params.module, scope, graph)
-                except ValidationError as e:
-                    result = fail_invalid_targets(str(e))
-                else:
-                    if params.publish_serving_snapshot and "serving_artifacts" not in goals:
-                        goals.append("serving_artifacts")
-
-                    LOG.info(
-                        "build.run repo=%s commit=%s targets=%s",
-                        runtime.snapshot.repo,
-                        runtime.snapshot.commit,
-                        goals,
-                    )
-
-                    execution_args = BuildExecutionArgs(
-                        goals=goals,
-                        force=params.force,
-                        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
-                        validate_outputs=params.validate_outputs,
-                        strict_contracts=params.strict_contracts,
-                        publish_serving_snapshot=params.publish_serving_snapshot,
-                        parallel_backend=params.parallel_backend,
-                        max_workers=params.max_workers,
-                        enable_cache=params.enable_cache,
-                        cache_dir=params.cache_dir,
-                        clear_cache=params.clear_cache,
-                        cache_report=params.cache_report,
-                    )
-                    result = _execute_and_format_result(
-                        runtime,
-                        execution_args,
-                        telemetry_state=telemetry_state,
-                    )
+        result, runtime, goals = _build_run_result(
+            ctx,
+            telemetry_state=telemetry_state,
+        )
     finally:
         teardown_inputs = _BuildTeardownInputs(
             runtime=runtime,
@@ -954,6 +926,67 @@ def build_run_handler(
     if result is None:
         return fail_execution_failed("build", "Build run failed to produce a result.")
     return result
+
+
+def _build_run_result(
+    ctx: CommandContext,
+    *,
+    telemetry_state: _BuildRunTelemetryState,
+) -> tuple[CliResult[BuildRunResult] | None, ResolvedRuntime | None, list[str]]:
+    runtime: ResolvedRuntime | None = None
+    goals: list[str] = []
+    try:
+        params = _extract_build_run_params(ctx)
+    except ValidationError as exc:
+        return fail_invalid_target_selection(str(exc)), runtime, goals
+
+    validation_error = _validate_build_run_params(params)
+    if validation_error is not None:
+        return validation_error, runtime, goals
+
+    try:
+        runtime = ctx.runtime
+    except ResolutionError as exc:
+        return fail_project_error("build", str(exc)), runtime, goals
+
+    graph = get_target_metadata_service().system.graph
+    scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
+    try:
+        goals = _resolve_goals(params.targets, params.module, scope, graph)
+    except ValidationError as exc:
+        return fail_invalid_targets(str(exc)), runtime, goals
+
+    if params.publish_serving_snapshot and "serving_artifacts" not in goals:
+        goals.append("serving_artifacts")
+
+    LOG.info(
+        "build.run repo=%s commit=%s targets=%s",
+        runtime.snapshot.repo,
+        runtime.snapshot.commit,
+        goals,
+    )
+
+    execution_args = BuildExecutionArgs(
+        goals=goals,
+        force=params.force,
+        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
+        validate_outputs=params.validate_outputs,
+        strict_contracts=params.strict_contracts,
+        publish_serving_snapshot=params.publish_serving_snapshot,
+        parallel_backend=params.parallel_backend,
+        max_workers=params.max_workers,
+        enable_cache=params.enable_cache,
+        cache_dir=params.cache_dir,
+        clear_cache=params.clear_cache,
+        cache_report=params.cache_report,
+        validation_mode=params.validation_mode,
+    )
+    result = _execute_and_format_result(
+        runtime,
+        execution_args,
+        telemetry_state=telemetry_state,
+    )
+    return result, runtime, goals
 
 
 def _emit_build_teardown(
@@ -1136,7 +1169,11 @@ def _execute_and_format_result(
         Build result.
     """
     try:
-        with runtime_gateway(runtime, read_only=False) as gateway:
+        with runtime_gateway(
+            runtime,
+            read_only=False,
+            validation_mode=execution.validation_mode,
+        ) as gateway:
             outcome = _execute_build_hamilton(runtime, gateway, execution)
             if (
                 execution.publish_serving_snapshot

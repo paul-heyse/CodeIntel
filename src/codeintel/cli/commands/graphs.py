@@ -25,7 +25,7 @@ from codeintel.cli.options.registry import (
     GRAPH_PLAN,
     GRAPH_SELECTION_POLICY,
 )
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 if TYPE_CHECKING:
@@ -165,7 +165,7 @@ class GraphTargetsList(Command[GraphTargetsResult]):
         list[str] | None,
         option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_LIST_PATH),
     ] = None
-    flags: SharedFlags = _GRAPH_TARGETS_LIST_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _GRAPH_TARGETS_LIST_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphTargetsResult]:
         """Execute graph targets listing.
@@ -221,7 +221,7 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
         list[str] | None,
         option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_PLAN_PATH),
     ] = None
-    flags: SharedFlags = _GRAPH_TARGETS_PLAN_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _GRAPH_TARGETS_PLAN_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
         """Execute graph targets planning.
@@ -289,7 +289,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
         DependencyPolicy,
         option_param(GRAPH_DEPENDENCY_POLICY, command_path=GRAPH_PLUGINS_PATH),
     ] = DependencyPolicy.STRICT
-    flags: SharedFlags = _GRAPH_PLUGINS_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _GRAPH_PLUGINS_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List plugins or show plan.
@@ -377,7 +377,7 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
         list[str] | None,
         option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_PATH),
     ] = None
-    flags: SharedFlags = _GRAPH_TARGETS_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _GRAPH_TARGETS_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List targets or show plan.

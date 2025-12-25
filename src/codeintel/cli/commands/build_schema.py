@@ -33,7 +33,7 @@ from codeintel.cli.options.registry import (
     BUILD_SCHEMA_STABLE,
     BUILD_SCHEMA_TARGETS,
 )
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 build_schema_app = App(
@@ -98,7 +98,7 @@ class BuildSchemaCompileCommand:
         bool,
         option_param(BUILD_SCHEMA_INCLUDE_PROVENANCE, command_path=BUILD_SCHEMA_COMPILE_PATH),
     ] = False
-    flags: SharedFlags = _BUILD_SCHEMA_COMPILE_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _BUILD_SCHEMA_COMPILE_FLAGS_FIELD
 
 
 @cli_command("build.schema.diff", handler=build_schema_diff_handler, config=_SCHEMA_CONFIG)
@@ -151,7 +151,7 @@ class BuildSchemaDiffCommand:
         bool,
         option_param(BUILD_SCHEMA_INCLUDE_PROVENANCE, command_path=BUILD_SCHEMA_DIFF_PATH),
     ] = False
-    flags: SharedFlags = _BUILD_SCHEMA_DIFF_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _BUILD_SCHEMA_DIFF_FLAGS_FIELD
 
 
 @cli_command("build.schema.migrate", handler=build_schema_migrate_handler, config=_SCHEMA_CONFIG)
@@ -200,7 +200,7 @@ class BuildSchemaMigrateCommand:
         bool,
         option_param(BUILD_SCHEMA_INCLUDE_PROVENANCE, command_path=BUILD_SCHEMA_MIGRATE_PATH),
     ] = False
-    flags: SharedFlags = _BUILD_SCHEMA_MIGRATE_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _BUILD_SCHEMA_MIGRATE_FLAGS_FIELD
 
 
 __all__ = [

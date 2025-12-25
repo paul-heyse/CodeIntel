@@ -17,12 +17,12 @@ from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.serving.manifest import ServingSnapshotManifest
-from codeintel.build.serving.search_index import build_search_documents_table, ensure_fts_index
-from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.gateway.protocol import DuckDBError
-from codeintel.storage.helpers.table_key import fully_qualified_table_ref
+from codeintel.storage.serving.snapshot_service import (
+    LineageMetadataError,
+    SearchIndexBuildError,
+    ServingSnapshotService,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -102,44 +102,6 @@ def _compute_semantic_version(
     return hasher.hexdigest()[:16]
 
 
-def _table_exists(snap_con: DuckDBConnection, *, schema: str, table: str) -> bool:
-    result = snap_con.execute(
-        """
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = ? AND table_name = ?
-        LIMIT 1
-        """,
-        [schema, table],
-    ).fetchone()
-    return result is not None
-
-
-def _require_table(snap_con: DuckDBConnection, *, schema: str, table: str) -> None:
-    if _table_exists(snap_con, schema=schema, table=table):
-        return
-    msg = f"Required table missing: {schema}.{table}"
-    raise RuntimeError(msg)
-
-
-def _require_search_documents(snap_con: DuckDBConnection) -> None:
-    _require_table(snap_con, schema="docs", table="search_documents")
-    search_documents_ref = fully_qualified_table_ref(
-        "docs.search_documents",
-        catalog=duckdb_default_catalog(snap_con),
-    )
-    row = snap_con.execute(f"SELECT COUNT(*) FROM {search_documents_ref}").fetchone()
-    count = int(row[0]) if row is not None and row[0] is not None else 0
-    if count <= 0:
-        msg = "Search documents table is empty: docs.search_documents"
-        raise RuntimeError(msg)
-
-
-def _require_lineage_tables(snap_con: DuckDBConnection) -> None:
-    _require_table(snap_con, schema="metadata", table="derived_lineage_edges")
-    _require_table(snap_con, schema="metadata", table="derived_lineage_columns")
-
-
 def publish_serving_snapshot(
     *,
     gateway: SnapshotPublisherGateway,
@@ -180,32 +142,23 @@ def publish_serving_snapshot(
     snap_db = snap_dir / "codeintel.duckdb"
     shutil.copy2(db_path, snap_db)
 
-    snap_con = DuckDBSession(StorageConfig(db_path=snap_db)).open()
+    service = ServingSnapshotService()
     try:
-        try:
-            build_search_documents_table(snap_con)
-            ensure_fts_index(snap_con)
-            _require_search_documents(snap_con)
-        except (OSError, ValueError, DuckDBError, RuntimeError) as exc:
-            log.exception(
-                "build.serving.publisher.search_index_failed run_id=%s",
-                request.run_id,
-            )
-            message = f"Search index build failed for serving snapshot run_id={request.run_id}"
-            raise RuntimeError(message) from exc
-
-        try:
-            _require_lineage_tables(snap_con)
-        except RuntimeError as exc:
-            log.exception(
-                "build.serving.publisher.lineage_missing run_id=%s",
-                request.run_id,
-            )
-            message = f"Lineage metadata missing for serving snapshot run_id={request.run_id}"
-            raise RuntimeError(message) from exc
-    finally:
-        snap_con.commit()
-        snap_con.close()
+        service.prepare_snapshot(db_path=snap_db)
+    except SearchIndexBuildError as exc:
+        log.exception(
+            "build.serving.publisher.search_index_failed run_id=%s",
+            request.run_id,
+        )
+        message = f"Search index build failed for serving snapshot run_id={request.run_id}"
+        raise RuntimeError(message) from exc
+    except LineageMetadataError as exc:
+        log.exception(
+            "build.serving.publisher.lineage_missing run_id=%s",
+            request.run_id,
+        )
+        message = f"Lineage metadata missing for serving snapshot run_id={request.run_id}"
+        raise RuntimeError(message) from exc
     snap_registry = snap_dir / "semantic_registry.json"
     shutil.copy2(request.semantic_registry_path, snap_registry)
 
