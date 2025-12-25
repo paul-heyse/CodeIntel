@@ -61,6 +61,21 @@ def unregister_subprocess(*, pid: int, exit_code: int | None = None) -> None:
     exit_code
         Optional exit code for the completed subprocess.
     """
+    _ = exit_code
+    with _SUBPROCESS_LOCK:
+        _SUBPROCESS_REGISTRY.pop(pid, None)
+
+
+def mark_subprocess_exited(*, pid: int, exit_code: int | None = None) -> None:
+    """Mark a subprocess as exited while retaining it for teardown reporting.
+
+    Parameters
+    ----------
+    pid
+        Process identifier for the subprocess to mark.
+    exit_code
+        Optional exit code for the completed subprocess.
+    """
     now = monotonic()
     with _SUBPROCESS_LOCK:
         record = _SUBPROCESS_REGISTRY.get(pid)
@@ -142,6 +157,7 @@ def snapshot_subprocesses(
 __all__ = [
     "SubprocessRecord",
     "count_subprocesses",
+    "mark_subprocess_exited",
     "register_subprocess",
     "snapshot_subprocesses",
     "unregister_subprocess",

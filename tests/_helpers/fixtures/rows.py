@@ -521,18 +521,21 @@ def sample_behavioral_coverage_rows(repo: str, commit: str) -> list[BehavioralCo
     return [
         cast(
             "BehavioralCoverageRowModel",
-            {
-                "repo": repo,
-                "commit": commit,
-                "function_goid_h128": 101,
-                "urn": "urn:fn:alpha::helper",
-                "rel_path": "pkg/alpha.py",
-                "qualname": "pkg.alpha.helper",
-                "covered_branches": 5,
-                "total_branches": 10,
-                "coverage_ratio": 0.5,
-                "created_at": None,
-            },
+            RowFactory.row_for(
+                "analytics.behavioral_coverage",
+                repo=repo,
+                commit=commit,
+                test_id="tests/test_mod_a.py::test_func_a",
+                test_goid_h128=101,
+                rel_path="tests/test_mod_a.py",
+                qualname="test_func_a",
+                behavior_tags=["unit", "fast"],
+                tag_source="heuristic",
+                heuristic_version="v1",
+                llm_model=None,
+                llm_run_id=None,
+                created_at=None,
+            ),
         )
     ]
 

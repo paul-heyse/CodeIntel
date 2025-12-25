@@ -91,6 +91,12 @@ BUILD_RUN_STRICT_CONTRACTS = OptionSpec(
     help="Fail if target writes outside declared contract.",
     negative=(),
 )
+BUILD_RUN_VALIDATION_MODE = OptionSpec(
+    arg_name="validation_mode",
+    names=("--validation-mode",),
+    help="Contract validation mode: lenient, strict, or off.",
+    show_choices=True,
+)
 BUILD_RUN_PUBLISH_SNAPSHOT = OptionSpec(
     arg_name="publish_serving_snapshot",
     names=("--publish-serving-snapshot",),
@@ -857,6 +863,12 @@ STORAGE_DB_PATH = OptionSpec(
     names=("--db-path",),
     help="Path to DuckDB database.",
 )
+STORAGE_VALIDATION_MODE = OptionSpec(
+    arg_name="validation_mode",
+    names=("--validation-mode",),
+    help="Contract validation mode: lenient, strict, or off.",
+    show_choices=True,
+)
 STORAGE_OUTPUT_DIR = OptionSpec(
     arg_name="output_dir",
     names=("--output-dir",),
@@ -986,6 +998,7 @@ __all__ = [
     "BUILD_RUN_STRICT_CONTRACTS",
     "BUILD_RUN_TARGETS",
     "BUILD_RUN_VALIDATE_OUTPUTS",
+    "BUILD_RUN_VALIDATION_MODE",
     "BUILD_SCHEMA_ALL",
     "BUILD_SCHEMA_DRY_RUN",
     "BUILD_SCHEMA_EXPECTED_FILE",
@@ -1072,5 +1085,6 @@ __all__ = [
     "STORAGE_INCLUDE_VIEWS",
     "STORAGE_INPUT_DIR",
     "STORAGE_OUTPUT_DIR",
+    "STORAGE_VALIDATION_MODE",
     "VERBOSE",
 ]

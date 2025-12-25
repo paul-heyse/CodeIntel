@@ -32,7 +32,7 @@ from codeintel.cli.options.registry import (
     DOCS_VALIDATE,
     DOCS_VALIDATION_MODE,
 )
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 docs_app = App(
@@ -131,7 +131,7 @@ class DocsExportCommand:
         option_param(DOCS_PREREQ_MODE, command_path=DOCS_EXPORT_PATH),
     ] = "run"
 
-    flags: SharedFlags = _DOCS_EXPORT_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _DOCS_EXPORT_FLAGS_FIELD
 
 
 __all__ = ["docs_app"]

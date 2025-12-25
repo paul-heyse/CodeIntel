@@ -27,7 +27,7 @@ from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core.command import Command
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.execution.registry import OperationSpec, register_operation
-from codeintel.cli.options.shared_flags import SharedFlags
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.observability import observe_operation, shutdown_observability
@@ -378,7 +378,7 @@ def _reconstruct_command_from_context(
 def _build_flags_from_context(
     fld: dataclasses.Field[object],
     ctx: CommandContext,
-) -> SharedFlags | None:
+) -> SharedFlagsProtocol | None:
     default_flags: object | None
     if fld.default_factory is not dataclasses.MISSING:
         default_flags = fld.default_factory()
@@ -390,7 +390,7 @@ def _build_flags_from_context(
     if not dataclasses.is_dataclass(default_flags):
         return None
 
-    flags = cast("SharedFlags", default_flags)
+    flags = cast("SharedFlagsProtocol", default_flags)
 
     field_names = {field.name for field in dataclasses.fields(default_flags)}
     replace_kwargs: dict[str, object] = {}

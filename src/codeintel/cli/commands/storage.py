@@ -23,8 +23,9 @@ from codeintel.cli.options.registry import (
     STORAGE_INCLUDE_VIEWS,
     STORAGE_INPUT_DIR,
     STORAGE_OUTPUT_DIR,
+    STORAGE_VALIDATION_MODE,
 )
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 storage_app = App(
@@ -55,7 +56,11 @@ class ValidateMacrosCommand:
         Path | None,
         option_param(STORAGE_DB_PATH, command_path=STORAGE_VALIDATE_PATH),
     ] = None
-    flags: SharedFlags = _STORAGE_VALIDATE_FLAGS_FIELD
+    validation_mode: Annotated[
+        str | None,
+        option_param(STORAGE_VALIDATION_MODE, command_path=STORAGE_VALIDATE_PATH),
+    ] = None
+    flags: SharedFlagsProtocol = _STORAGE_VALIDATE_FLAGS_FIELD
 
 
 @cli_command("storage.profile", handler=profile_storage_handler, config=_STORAGE_CONFIG)
@@ -76,7 +81,7 @@ class ProfileStorageCommand:
         bool,
         option_param(STORAGE_INCLUDE_VIEWS, command_path=STORAGE_PROFILE_PATH),
     ] = False
-    flags: SharedFlags = _STORAGE_PROFILE_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _STORAGE_PROFILE_FLAGS_FIELD
 
 
 @cli_command("storage.export_db", handler=export_database_handler, config=_STORAGE_CONFIG)
@@ -93,7 +98,7 @@ class ExportDatabaseCommand:
         Path,
         option_param(STORAGE_OUTPUT_DIR, command_path=STORAGE_EXPORT_PATH),
     ] = field(default_factory=lambda: Path("build/db_export"))
-    flags: SharedFlags = _STORAGE_EXPORT_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _STORAGE_EXPORT_FLAGS_FIELD
 
 
 @cli_command("storage.import_db", handler=import_database_handler, config=_STORAGE_CONFIG)
@@ -110,7 +115,7 @@ class ImportDatabaseCommand:
         Path,
         option_param(STORAGE_INPUT_DIR, command_path=STORAGE_IMPORT_PATH),
     ] = field(default_factory=lambda: Path("build/db_export"))
-    flags: SharedFlags = _STORAGE_IMPORT_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _STORAGE_IMPORT_FLAGS_FIELD
 
 
 __all__ = ["storage_app"]

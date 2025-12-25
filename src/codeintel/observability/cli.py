@@ -42,6 +42,8 @@ if TYPE_CHECKING:
     from opentelemetry.metrics import Meter
     from opentelemetry.trace import Span, Tracer
 
+    from codeintel.core.runtime import RuntimeSettings
+
 log = logging.getLogger(__name__)
 _CLI_CAPTURE_MODE_NAMES_ONLY = "names-only"
 _CLI_CAPTURE_MODE_ALLOWLIST = "allowlist"
@@ -78,11 +80,29 @@ class _InvocationOptions:
     arg_allowlist: set[str]
 
 
+@dataclass(frozen=True, slots=True)
+class _InvocationContext:
+    state: _InvocationState
+    options: _InvocationOptions
+    bootstrap: Callable[[int], object]
+
+
+@dataclass(frozen=True, slots=True)
+class RunCliTelemetryDeps:
+    """Dependency overrides for CLI telemetry execution."""
+
+    load_settings: Callable[[], RuntimeSettings] = load_runtime_settings
+    bootstrap: Callable[[int], object] = bootstrap_cli
+    shutdown: Callable[[], object] = shutdown_observability
+    get_observability: Callable[[], ObservabilityRuntime] = get_observability
+
+
 def run_cli_with_telemetry(
     app: App,
     *,
     output_format: OutputFormat,
     argv: Sequence[str] | None = None,
+    deps: RunCliTelemetryDeps | None = None,
 ) -> None:
     """Run a Cyclopts app with a unified telemetry wrapper.
 
@@ -96,26 +116,31 @@ def run_cli_with_telemetry(
         start_ns=time.time_ns(),
         start_ts=time.perf_counter(),
     )
-    settings = load_runtime_settings().observability
+    resolved_deps = deps or RunCliTelemetryDeps()
+    settings = resolved_deps.load_settings().observability
     options = _InvocationOptions(
         output_format=output_format,
         cli_enabled=settings.cli_enabled,
         arg_capture_mode=_normalize_capture_mode(settings.cli_args_capture_mode),
         arg_allowlist=_normalize_allowlist(settings.cli_args_allowlist),
     )
-    obs = get_observability()
+    obs = resolved_deps.get_observability()
     span_cm = _span_context(obs) if options.cli_enabled else nullcontext(None)
     exit_code = 1
     span: Span | None = None
     try:
         with span_cm as active_span:
             span = active_span
+            invocation_ctx = _InvocationContext(
+                state=state,
+                options=options,
+                bootstrap=resolved_deps.bootstrap,
+            )
             exit_code = _execute_invocation(
                 app,
                 argv=argv,
                 span=span,
-                state=state,
-                options=options,
+                context=invocation_ctx,
             )
             _set_span_context(
                 span,
@@ -125,7 +150,7 @@ def run_cli_with_telemetry(
             )
     finally:
         _finalize_span(span, state=state, exit_code=exit_code)
-        shutdown_observability()
+        resolved_deps.shutdown()
     raise SystemExit(exit_code)
 
 
@@ -134,42 +159,41 @@ def _execute_invocation(
     *,
     argv: Sequence[str] | None,
     span: Span | None,
-    state: _InvocationState,
-    options: _InvocationOptions,
+    context: _InvocationContext,
 ) -> int:
     try:
         command, bound, ignored = app.parse_args(
             argv,
             exit_on_error=False,
-            print_error=options.output_format == OutputFormat.TEXT,
+            print_error=context.options.output_format == OutputFormat.TEXT,
         )
         bound_args: BoundArguments = bound
-        state.command_chain = _command_chain(command)
-        if options.cli_enabled:
-            run_ctx = _build_run_context(state)
+        context.state.command_chain = _command_chain(command)
+        if context.options.cli_enabled:
+            run_ctx = _build_run_context(context.state)
             _inject_run_context(bound_args, ignored, run_ctx)
-            state.arg_names = _safe_arg_names(
+            context.state.arg_names = _safe_arg_names(
                 bound_args,
                 ignored,
-                capture_mode=options.arg_capture_mode,
-                allowlist=options.arg_allowlist,
+                capture_mode=context.options.arg_capture_mode,
+                allowlist=context.options.arg_allowlist,
                 enabled=True,
             )
         else:
-            state.arg_names = ()
+            context.state.arg_names = ()
         verbosity = _resolve_verbosity(bound_args)
-        bootstrap_cli(verbosity=verbosity)
+        context.bootstrap(verbosity)
         result = _invoke_command(command, bound_args)
         return _default_exit_code_from_result(result)
     except SystemExit as exc:
-        state.error_type = type(exc).__name__
+        context.state.error_type = type(exc).__name__
         return _exit_code_from_system_exit(exc)
     except CycloptsError as exc:
-        state.is_parse_error = True
-        state.error_type = type(exc).__name__
+        context.state.is_parse_error = True
+        context.state.error_type = type(exc).__name__
         if span is not None:
             span.record_exception(exc)
-        return handle_cli_error(exc, sys.stderr, output_format=options.output_format)
+        return handle_cli_error(exc, sys.stderr, output_format=context.options.output_format)
     except (
         CliError,
         StructuredCliError,
@@ -184,10 +208,10 @@ def _execute_invocation(
         TypeError,
         OSError,
     ) as exc:
-        state.error_type = type(exc).__name__
+        context.state.error_type = type(exc).__name__
         if span is not None:
             span.record_exception(exc)
-        return handle_cli_error(exc, sys.stderr, output_format=options.output_format)
+        return handle_cli_error(exc, sys.stderr, output_format=context.options.output_format)
 
 
 def _invoke_command(command: Callable[..., object], bound: BoundArguments) -> object:

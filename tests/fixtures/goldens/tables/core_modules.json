@@ -5,6 +5,7 @@
     "module": "pkg.mod",
     "owners": null,
     "path": "pkg/mod.py",
+    "row_hash": "459c3c726071d5c6ac14b9406a29d0182deee4ae077e993dda1233b56ab5cc9b",
     "repo": "demo/repo",
     "tags": null
   }

@@ -201,7 +201,7 @@ class _ConfigParams:
 def resolve_from_params(
     params: Mapping[str, object] | Mapping[str, str],
     *,
-    allow_fallback: bool = True,
+    allow_fallback: bool | None = None,
 ) -> ResolvedRuntime:
     """Resolve runtime from params dict directly.
 
@@ -213,8 +213,9 @@ def resolve_from_params(
     params
         Parameters dict with keys like project_root, repo, commit, db_path, etc.
     allow_fallback
-        If True, attempt fallback to explicit params when no project file.
-        If False, raise immediately when project file not found.
+        When True, attempt fallback to explicit params when no project file.
+        When False, raise immediately when project file is missing.
+        When None, fallback is enabled only if explicit repo/commit/db_path params are set.
 
     Returns
     -------
@@ -234,14 +235,19 @@ def resolve_from_params(
     """
     project_root_raw = params.get("project_root")
     project_root = _to_path_or_none(project_root_raw)
+    fallback_enabled = _should_allow_fallback(params) if allow_fallback is None else allow_fallback
 
     try:
         return _resolve_from_project(project_root)
     except ProjectNotFoundError as exc:
-        if not allow_fallback:
+        if not fallback_enabled:
             raise ResolutionError(_MSG_NO_PROJECT_NO_FALLBACK) from exc
 
     return _resolve_from_params_dict(params)
+
+
+def _should_allow_fallback(params: Mapping[str, object] | Mapping[str, str]) -> bool:
+    return bool(params.get("repo") or params.get("commit") or params.get("db_path"))
 
 
 def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:

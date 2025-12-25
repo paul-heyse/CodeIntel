@@ -59,39 +59,49 @@ def _setup_graph() -> StorageGateway:
     )
     con = gateway.con
     ensure_production_schemas(con)
-    con.execute(
-        """
-        CREATE TABLE graph.call_graph_edges (
-            caller_goid_h128 BIGINT,
-            callee_goid_h128 BIGINT,
-            repo VARCHAR,
-            commit VARCHAR
-        )
-        """
-    )
-    con.execute(
-        """
-        CREATE TABLE graph.call_graph_nodes (
-            goid_h128 BIGINT,
-            is_public BOOLEAN
-        )
-        """
-    )
+    con.execute("DELETE FROM graph.call_graph_edges")
+    con.execute("DELETE FROM graph.call_graph_nodes")
     con.executemany(
-        "INSERT INTO graph.call_graph_edges VALUES (?, ?, ?, ?)",
+        """
+        INSERT INTO graph.call_graph_edges (
+            repo,
+            commit,
+            caller_goid_h128,
+            callee_goid_h128,
+            callsite_path,
+            callsite_line,
+            callsite_col,
+            language,
+            kind,
+            resolved_via,
+            confidence,
+            evidence_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
         [
-            (GOID_1, GOID_2, "r", "c"),
-            (GOID_1, GOID_3, "r", "c"),
-            (GOID_4, GOID_2, "r", "c"),
+            ("r", "c", GOID_1, GOID_2, "pkg/a.py", 1, 1, "python", "call", None, None, None),
+            ("r", "c", GOID_1, GOID_3, "pkg/a.py", 2, 1, "python", "call", None, None, None),
+            ("r", "c", GOID_4, GOID_2, "pkg/b.py", 1, 1, "python", "call", None, None, None),
         ],
     )
     con.executemany(
-        "INSERT INTO graph.call_graph_nodes VALUES (?, ?)",
+        """
+        INSERT INTO graph.call_graph_nodes (
+            goid_h128,
+            language,
+            kind,
+            arity,
+            is_public,
+            rel_path
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
         [
-            (GOID_1, True),
-            (GOID_2, False),
-            (GOID_3, True),
-            (GOID_4, False),
+            (GOID_1, "python", "function", 0, True, "pkg/a.py"),
+            (GOID_2, "python", "function", 1, False, "pkg/b.py"),
+            (GOID_3, "python", "function", 0, True, "pkg/a.py"),
+            (GOID_4, "python", "function", 2, False, "pkg/b.py"),
         ],
     )
     return gateway

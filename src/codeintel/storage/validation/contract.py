@@ -60,12 +60,13 @@ def get_binding_required_datasets() -> frozenset[str]:
 
 __all__ = [
     "collect_contract_issues",
+    "collect_contract_issues_lenient",
     "get_binding_required_datasets",
     "validate_contract_or_raise",
 ]
 
 
-def _table_columns_lookup(con: DuckDBPyConnection) -> TableColumnsLookup:
+def _table_columns_lookup(con: DuckDBPyConnection, *, missing_ok: bool) -> TableColumnsLookup:
     def _lookup(table_key: str) -> list[str] | None:
         schema_name, table_name = split_table_key(table_key)
         info = con.execute(
@@ -77,6 +78,8 @@ def _table_columns_lookup(con: DuckDBPyConnection) -> TableColumnsLookup:
             """,
             [schema_name, table_name],
         ).fetchall()
+        if not info and missing_ok:
+            return None
         return [row[0] for row in info]
 
     return _lookup
@@ -86,6 +89,7 @@ def collect_contract_issues(
     con: DuckDBPyConnection,
     *,
     include_views: bool = True,
+    missing_ok: bool = False,
 ) -> list[str]:
     """Collect contract inconsistencies for the active database.
 
@@ -104,8 +108,23 @@ def collect_contract_issues(
         contracts_by_table_key=contracts.by_table_key,
         contracts_by_name=contracts.by_name,
         include_views=include_views,
-        table_columns_lookup=_table_columns_lookup(con),
+        table_columns_lookup=_table_columns_lookup(con, missing_ok=missing_ok),
     )
+
+
+def collect_contract_issues_lenient(
+    con: DuckDBPyConnection,
+    *,
+    include_views: bool = True,
+) -> list[str]:
+    """Collect contract issues while ignoring missing tables.
+
+    Returns
+    -------
+    list[str]
+        Human-readable list of problems. Empty when the contract is healthy.
+    """
+    return collect_contract_issues(con, include_views=include_views, missing_ok=True)
 
 
 def validate_contract_or_raise(
@@ -121,5 +140,5 @@ def validate_contract_or_raise(
         contracts_by_table_key=contracts.by_table_key,
         contracts_by_name=contracts.by_name,
         include_views=include_views,
-        table_columns_lookup=_table_columns_lookup(con),
+        table_columns_lookup=_table_columns_lookup(con, missing_ok=False),
     )

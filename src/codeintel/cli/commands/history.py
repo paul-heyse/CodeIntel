@@ -24,7 +24,7 @@ from codeintel.cli.options.registry import (
     HISTORY_REPO_ROOT,
     HISTORY_SELECTION_STRATEGY,
 )
-from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
 
 history_app = App(
@@ -94,7 +94,7 @@ class HistoryTimeseriesCommand:
         Path | None,
         option_param(HISTORY_REPO_ROOT, command_path=HISTORY_TIMESERIES_PATH),
     ] = None
-    flags: SharedFlags = _HISTORY_TIMESERIES_FLAGS_FIELD
+    flags: SharedFlagsProtocol = _HISTORY_TIMESERIES_FLAGS_FIELD
 
 
 __all__ = ["history_app"]

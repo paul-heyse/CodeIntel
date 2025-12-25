@@ -148,7 +148,8 @@ Add an explicit collector pipeline blueprint that matches CodeIntel’s defaults
 2) **Processors**
    - `batch` with explicit queue sizes/timeouts aligned to SDK defaults.
    - `memory_limiter` to avoid process OOM during bursts.
-   - `attributes` for redaction / allowlist of `codeintel.*` keys.
+   - `attributes` for redaction / allowlist of `codeintel.*` keys, including
+     `build.decision_trace_path`.
    - `resource` to inject `deployment.environment.name` if missing.
    - `tail_sampling` (optional in prod) with:
      - error‑based sampling
@@ -168,17 +169,24 @@ Provide a reference collector YAML file in `docs/observability/collector_referen
 
 Define and document the exact attribute schema for each surface:
 
+- **Global**
+  - Optional: `codeintel.domain` (from `tag_helper` domains).
+
 - **CLI**
   - Required: `cli.invocation_id`, `cli.command`, `cli.exit_code`, `cli.duration_ms`.
   - Optional: `cli.error_type`, `cli.is_parse_error`, `cli.arg_count`, `cli.arg_names`.
 
 - **Build**
-  - Required: `build.run_id`, `build.repo`, `build.commit`, `build.targets`.
-  - Optional: `build.duration_ms`, `build.status`, `build.error`.
+  - Required: `build.run_id`, `build.repo`, `build.commit`, `build.targets`,
+    `build.decision_trace_artifact`.
+  - Optional: `build.duration_ms`, `build.status`, `build.error`,
+    `build.decision_trace_path` (redacted).
 
 - **Storage / DB**
   - Required: `db.system`, `db.operation`, `db.query.summary`.
   - Optional: `db.query.hash`, `db.statement` (redacted or hashed).
+  - Notes: emit DB spans from loader tables (`q__*`); graph modules should not read
+    gateway tables directly.
 
 - **Hamilton**
   - Required: `dag.name`, `dag.version`, `dag.project_id`, `run.id`.
@@ -232,6 +240,10 @@ Add a runbook section:
    - Review attribute allowlists.
    - Verify argument redaction.
 
+4) **Decision trace artifact missing**
+   - Confirm the export-domain decision trace target runs in the build.
+   - Check `build.decision_trace_artifact` metadata and FileArtifactSaver output path.
+
 ### P) Version Pin + Compatibility Matrix
 
 Document supported versions and constraints:
@@ -252,6 +264,8 @@ Define clear module ownership and init/shutdown ordering:
 4) `observability/teardown.py`: teardown event emission and flush results.
 5) `observability/grpc.py` (new): gRPC metrics plugin lifecycle.
 6) Hamilton integration: tracker adapter attached in driver construction.
+7) Storage/loader boundary: DB spans emitted from loader tables (`q__*`); graph modules
+   must not read gateway tables directly.
 
 Shutdown order: CLI teardown → flush observability → shutdown providers.
 
@@ -260,11 +274,15 @@ Shutdown order: CLI teardown → flush observability → shutdown providers.
 Define schemas for each surface with required/optional fields and cardinality policy:
 
 - **Build teardown log**: `event`, `run_id`, `repo`, `commit`, `targets`, `duration_ms`,
-  `shutdown_status`, `telemetry_flush_ok`, `telemetry_flush_ms`.
+  `decision_trace_artifact`, `decision_trace_path` (redacted), `validation_mode`,
+  `validation_issue_count`, `schema_inference_errors_count`, `shutdown_status`,
+  `telemetry_flush_ok`, `telemetry_flush_ms`.
 - **CLI invocation span/log**: `cli.invocation_id`, `cli.command`, `cli.exit_code`,
   `cli.is_parse_error`, `cli.error_type`, `cli.duration_ms`.
 - **Hamilton run**: `dag_name`, `project_id`, `environment`, `version`, `run_id`, `trace_id`.
 - **gRPC metrics**: `grpc.method`, `grpc.target`, `grpc.status` with filters to cap cardinality.
+- **Validation behavior**: In LENIENT mode, missing tables must not fail telemetry; surface
+  issues via `validation_issue_count`.
 
 ### D) Collector Topology Assumptions
 
@@ -312,6 +330,9 @@ Add test suites per phase:
 - Metrics views: bucket/aggregation checks.
 - CLI parse errors: telemetry flush + correlation.
 - gRPC plugin: registration + cardinality filter behavior.
+- Build teardown: decision trace artifact metadata present and redacted.
+- Validation lenient mode: missing tables do not error; telemetry flush emitted.
+- Storage boundary: loader-table spans only; no direct gateway reads in telemetry paths.
 
 ### I) Operational Dashboards + Alerts
 
@@ -474,6 +495,10 @@ instrumentation.
 3) **Trace linkage**
    - Include trace/run identifiers in tracker metadata.
 
+4) **Decision trace artifact metadata**
+   - Ensure export-domain decision trace target metadata is included in UI telemetry.
+   - Capture artifact metadata only (name/hash/path), never file contents.
+
 **Proposed code locations**
 - `src/codeintel/build/hamilton/driver_factory.py`
 - `src/codeintel/build/hamilton/observability.py`
@@ -482,6 +507,7 @@ instrumentation.
 **Acceptance criteria**
 - Hamilton UI receives DAG version + run telemetry on enabled builds.
 - Capture policies prevent sensitive data leakage by default.
+- Decision trace artifact metadata appears in the UI catalog for each build.
 
 ## Phase 6: gRPC Observability
 
@@ -514,6 +540,7 @@ instrumentation.
 2) **Safe argument capture**
    - Centralize allowlist and names‑only capture policies.
    - Ensure arguments never appear raw by default.
+   - Align allowlists with flattened `SharedFlags` and deterministic env var naming.
 
 **Proposed code locations**
 - `src/codeintel/observability/cli.py`

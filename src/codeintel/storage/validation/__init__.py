@@ -51,14 +51,18 @@ from codeintel.storage.validation.conformance import (
 )
 from codeintel.storage.validation.contract import (
     collect_contract_issues,
+    collect_contract_issues_lenient,
     get_binding_required_datasets,
     validate_contract_or_raise,
 )
+from codeintel.storage.validation.mode import ContractValidationMode
 
 __all__ = [
     "ConformanceIssue",
     "ConformanceReport",
+    "ContractValidationMode",
     "collect_contract_issues",
+    "collect_contract_issues_lenient",
     "count_rows_for_snapshot",
     "count_rows_for_tables",
     "get_binding_required_datasets",

@@ -22,12 +22,14 @@ from codeintel.cli.core.result_types import (
     StorageDatabaseImportResult,
     ValidateMacrosResult,
 )
+from codeintel.cli.errors import ValidationError, validation_error
 from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
     fail_storage_connection,
 )
 from codeintel.core.errors.storage import StorageConnectionError
+from codeintel.core.errors.taxonomy import INVALID_FORMAT
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
@@ -35,6 +37,7 @@ from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.metadata import (
     validate_dataset_schema_registry,
 )
+from codeintel.storage.validation import ContractValidationMode
 from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
@@ -46,21 +49,38 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 
+def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
+    if raw is None:
+        return ContractValidationMode.STRICT
+    normalized = raw.lower()
+    try:
+        return ContractValidationMode(normalized)
+    except ValueError as exc:
+        msg = "Invalid value for \"--validation-mode\""
+        raise ValidationError(msg) from exc
+
+
 @contextmanager
-def _readonly_gateway(db_path: Path) -> Iterator[StorageGateway]:
+def _readonly_gateway(
+    db_path: Path,
+    *,
+    validation_mode: ContractValidationMode = ContractValidationMode.LENIENT,
+) -> Iterator[StorageGateway]:
     """Open a read-only gateway with automatic cleanup.
 
     Parameters
     ----------
     db_path
         Path to the database.
+    validation_mode
+        Contract validation behavior when opening the gateway.
 
     Yields
     ------
     StorageGateway
         Open gateway that closes on context exit.
     """
-    gw = open_gateway(StorageConfig.for_readonly(db_path))
+    gw = open_gateway(StorageConfig.for_readonly(db_path, validation_mode=validation_mode))
     try:
         yield gw
     finally:
@@ -106,11 +126,24 @@ def validate_macros_handler(
     Uses explicit gateway when db_path is provided, otherwise uses ctx.gateway.
     """
     db_path_str = ctx.params.get_str("db_path")
+    try:
+        validation_mode = _resolve_validation_mode(ctx.params.get_str("validation_mode"))
+    except ValidationError as exc:
+        return CliResult.fail(
+            validation_error(
+                INVALID_FORMAT,
+                "validation_mode",
+                str(exc),
+            )
+        )
 
     if db_path_str is not None:
         db_path = Path(db_path_str)
         try:
-            with _readonly_gateway(db_path) as gateway:
+            with _readonly_gateway(
+                db_path,
+                validation_mode=validation_mode,
+            ) as gateway:
                 return _validate_macros(gateway)
         except StorageConnectionError as exc:
             LOG.warning("Failed to connect to database at %s: %s", db_path, exc)

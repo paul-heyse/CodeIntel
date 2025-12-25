@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.validation import ContractValidationMode
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -22,6 +23,13 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
+
+
+def _default_validation_summary_path(db_path: Path) -> Path | None:
+    if str(db_path) == ":memory:":
+        return None
+    name = f"{db_path.stem}.contract_validation.json"
+    return db_path.with_name(name)
 
 
 def get_handler_logger(name: str) -> logging.Logger:
@@ -44,6 +52,7 @@ def open_handler_gateway(
     db_path: Path,
     *,
     read_only: bool = True,
+    validation_mode: ContractValidationMode = ContractValidationMode.LENIENT,
 ) -> StorageGateway:
     """Open a gateway for handler use.
 
@@ -62,13 +71,26 @@ def open_handler_gateway(
         Path to the database file.
     read_only
         Whether to open in read-only mode.
+    validation_mode
+        Contract validation behavior when opening the gateway.
 
     Returns
     -------
     StorageGateway
         Open gateway.
     """
-    storage_config = StorageConfig(db_path=db_path, read_only=read_only)
+    validation_summary_path = (
+        _default_validation_summary_path(db_path)
+        if validation_mode != ContractValidationMode.OFF
+        else None
+    )
+    storage_config = StorageConfig(
+        db_path=db_path,
+        read_only=read_only,
+        validate_schema=validation_mode != ContractValidationMode.OFF,
+        validation_mode=validation_mode,
+        validation_summary_path=validation_summary_path,
+    )
     gateway = open_gateway(storage_config)
     if not read_only:
         gateway.policy.ensure_schemas_preserve()
@@ -80,6 +102,7 @@ def runtime_gateway(
     runtime: ResolvedRuntime,
     *,
     read_only: bool = True,
+    validation_mode: ContractValidationMode = ContractValidationMode.LENIENT,
 ) -> Iterator[StorageGateway]:
     """Open a gateway for a runtime as a context manager.
 
@@ -92,6 +115,8 @@ def runtime_gateway(
         ResolvedRuntime with paths.db_path.
     read_only
         Whether to open in read-only mode.
+    validation_mode
+        Contract validation behavior when opening the gateway.
 
     Yields
     ------
@@ -103,7 +128,11 @@ def runtime_gateway(
     >>> with runtime_gateway(ctx.runtime) as gateway:
     ...     gateway.execute("SELECT 1")
     """
-    gateway = open_handler_gateway(runtime.paths.db_path, read_only=read_only)
+    gateway = open_handler_gateway(
+        runtime.paths.db_path,
+        read_only=read_only,
+        validation_mode=validation_mode,
+    )
     try:
         yield gateway
     finally:

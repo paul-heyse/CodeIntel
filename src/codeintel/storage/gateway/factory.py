@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,7 +28,11 @@ from codeintel.storage.gateway.inference import InferenceGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
-from codeintel.storage.validation import validate_contract_or_raise
+from codeintel.storage.validation import (
+    ContractValidationMode,
+    collect_contract_issues_lenient,
+    validate_contract_or_raise,
+)
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.provider import SchemaProvider
@@ -37,6 +44,9 @@ __all__ = [
     "open_inference_gateway",
     "open_memory_gateway",
 ]
+
+LOG = logging.getLogger(__name__)
+ISSUE_PREVIEW_LIMIT = 10
 
 
 def _maybe_set_schema_service_from_catalog() -> None:
@@ -64,6 +74,65 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageC
         raise RuntimeError(msg)
 
 
+def _write_contract_validation_summary(
+    *,
+    issues: list[str],
+    config: StorageConfig,
+    include_views: bool,
+) -> None:
+    summary_path = config.validation_summary_path
+    if summary_path is None or not issues:
+        return
+    payload = {
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "validation_mode": config.validation_mode.value,
+        "db_path": str(config.db_path),
+        "repo": config.repo,
+        "commit": config.commit,
+        "include_views": include_views,
+        "issue_count": len(issues),
+        "issues": issues,
+    }
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _log_contract_issues(issues: list[str]) -> None:
+    if not issues:
+        return
+    preview = "; ".join(issues[:ISSUE_PREVIEW_LIMIT])
+    remaining = len(issues) - ISSUE_PREVIEW_LIMIT
+    suffix = f" (+{remaining} more)" if remaining > 0 else ""
+    LOG.warning("Contract validation warnings: %s%s", preview, suffix)
+
+
+def _apply_contract_validation(
+    *,
+    con: duckdb.DuckDBPyConnection,
+    config: StorageConfig,
+    include_views: bool,
+) -> None:
+    if not config.validate_schema:
+        return
+    if config.validation_mode == ContractValidationMode.STRICT:
+        assert_schema_alignment(
+            con,
+            include_views=include_views,
+            strict=True,
+        )
+        validate_contract_or_raise(con, include_views=include_views)
+        return
+    if config.validation_mode != ContractValidationMode.LENIENT:
+        return
+    issues = collect_contract_issues_lenient(con, include_views=include_views)
+    _log_contract_issues(issues)
+    _write_contract_validation_summary(
+        issues=issues,
+        config=config,
+        include_views=include_views,
+    )
+
+
 def open_gateway(config: StorageConfig) -> StorageGateway:
     """Create a StorageGateway bound to a DuckDB database.
 
@@ -84,38 +153,34 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
     """
     try:
         session_config = config
-        include_views = False
+        include_views_for_bootstrap = False
         if not config.read_only and config.apply_schema:
             session_config = replace(config, apply_schema=False)
         session = DuckDBSession(session_config)
         con = session.open_reader() if config.read_only else session.open()
         if not config.read_only:
             apply_metadata_ddl(con)
-            include_views = config.ensure_views and config.apply_schema
+            include_views_for_bootstrap = config.ensure_views and config.apply_schema
         _ensure_contract_catalog(con, config=config)
         if not config.read_only and config.apply_schema:
             apply_all_schemas(con)
         if not config.read_only:
             bootstrap_metadata_datasets(
                 con,
-                include_views=include_views,
+                include_views=include_views_for_bootstrap,
                 validate_schema_registry=config.validate_schema,
             )
         _maybe_set_schema_service_from_catalog()
         datasets = load_dataset_registry(con)
         gateway = DuckDBGateway(config=config, datasets=datasets, con=con)
-        if config.ensure_views and not config.read_only:
+        include_views = config.ensure_views and not config.read_only
+        if include_views:
             gateway.policy.ensure_all_views(overwrite=True, strict=config.validate_schema)
-        if config.validate_schema:
-            assert_schema_alignment(
-                con,
-                include_views=config.ensure_views and not config.read_only,
-                strict=True,
-            )
-            validate_contract_or_raise(
-                con,
-                include_views=config.ensure_views and not config.read_only,
-            )
+        _apply_contract_validation(
+            con=con,
+            config=config,
+            include_views=include_views,
+        )
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc), cause=exc) from exc
     return gateway

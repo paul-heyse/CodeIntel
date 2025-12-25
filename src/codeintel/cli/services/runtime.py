@@ -40,7 +40,8 @@ class RuntimeService:
     db_path
         Optional explicit database path override.
     allow_fallback
-        If True, fall back to explicit params when no project file found.
+        When True, fall back to explicit params when no project file found.
+        When None, fallback is enabled only if explicit repo/commit/db_path params are set.
 
     Examples
     --------
@@ -76,7 +77,7 @@ class RuntimeService:
         *,
         project_root: Path | None = None,
         db_path: Path | None = None,
-        allow_fallback: bool = True,
+        allow_fallback: bool | None = None,
     ) -> None:
         """Initialize runtime service."""
         if params is None:
@@ -99,7 +100,7 @@ class RuntimeService:
         cls,
         params: dict[str, object],
         *,
-        allow_fallback: bool = True,
+        allow_fallback: bool | None = None,
     ) -> RuntimeService:
         """Create from dictionary.
 
@@ -124,6 +125,7 @@ class RuntimeService:
         *,
         project_root: Path | None = None,
         db_path: Path | None = None,
+        allow_fallback: bool | None = None,
     ) -> RuntimeService:
         """Create from ParamService.
 
@@ -135,13 +137,20 @@ class RuntimeService:
             Optional project root override.
         db_path
             Optional database path override.
+        allow_fallback
+            Optional override for fallback behavior when no project file is found.
 
         Returns
         -------
         RuntimeService
             Configured service.
         """
-        return cls(params, project_root=project_root, db_path=db_path)
+        return cls(
+            params,
+            project_root=project_root,
+            db_path=db_path,
+            allow_fallback=allow_fallback,
+        )
 
     @property
     def runtime(self) -> ResolvedRuntime:
