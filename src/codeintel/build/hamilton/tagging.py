@@ -175,7 +175,13 @@ def build_tag_kwargs(
     target: str | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> dict[TagKey, TagValue]:
-    """Return canonical tag keyword arguments for node attachment."""
+    """Return canonical tag keyword arguments for node attachment.
+
+    Returns
+    -------
+    dict[TagKey, TagValue]
+        Tag mapping suitable for Hamilton tag decorators.
+    """
     tags = _build_common_tags(
         node_type=node_type,
         domain=domain,
@@ -183,6 +189,25 @@ def build_tag_kwargs(
         extra_tags=extra_tags,
     )
     return cast("dict[TagKey, TagValue]", tags)
+
+
+def apply_tags[TCallable](
+    fn: TCallable,
+    *,
+    tags: Mapping[TagKey, TagValue],
+) -> TCallable:
+    """Apply canonical tag metadata to a callable.
+
+    Returns
+    -------
+    TCallable
+        Callable decorated with Hamilton tag metadata.
+    """
+    if not tags:
+        return fn
+    tags_kwargs: dict[TagKey, TagValue] = dict(tags)
+    decorator = _tag(cast("_HamiltonTagKwargs", tags_kwargs), target_=None)
+    return cast("TCallable", decorator(cast("Callable[..., object]", fn)))
 
 
 def _tag(
@@ -391,6 +416,7 @@ def tag_helper(
 __all__ = [
     "Decorator",
     "TagAttachContext",
+    "apply_tags",
     "build_tag_kwargs",
     "tag_artifact",
     "tag_compute",

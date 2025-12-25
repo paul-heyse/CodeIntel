@@ -13,6 +13,7 @@ __all__ = [
     "ParsedTableKey",
     "TableKey",
     "TableKeyValidationError",
+    "fully_qualified_table_ref",
     "is_valid_table_key",
     "parse_table_key",
     "split_table_key",
@@ -60,6 +61,35 @@ def validate_table_key(table_key: TableKey) -> None:
     if not _TABLE_KEY_PATTERN.match(table_key):
         message = f"Invalid table key format: {table_key}"
         raise TableKeyValidationError(message)
+
+
+def fully_qualified_table_ref(table_key: TableKey, *, catalog: str | None = None) -> str:
+    """Return a fully qualified SQL table reference.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table name (schema.table).
+    catalog
+        Optional catalog name. When None, omit the catalog prefix.
+
+    Returns
+    -------
+    str
+        SQL table reference in ``catalog.schema.table`` or ``schema.table`` form.
+
+    Raises
+    ------
+    ValueError
+        If the catalog name is invalid.
+    """
+    if catalog is not None and (not isinstance(catalog, str) or not catalog.strip()):
+        msg = f"Invalid catalog name: {catalog!r}"
+        raise ValueError(msg)
+    parsed = parse_table_key(table_key)
+    if catalog is None:
+        return f"{parsed.schema}.{parsed.name}"
+    return f"{catalog}.{parsed.schema}.{parsed.name}"
 
 
 def is_valid_table_key(table_key: TableKey) -> bool:

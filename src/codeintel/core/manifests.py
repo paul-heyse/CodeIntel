@@ -456,14 +456,17 @@ class SchemaManifest(ManifestBase):
             result["views"] = views
 
         if self.artifacts:
-            artifacts = [artifact.to_json_obj() for artifact in self.artifacts]
+            artifacts: list[dict[str, object]] = []
+            for artifact in self.artifacts:
+                artifact_obj = artifact.to_json_obj()
+                provenance = self.artifact_provenance.get(artifact.filename)
+                artifact_obj["provenance"] = (
+                    provenance.to_json_obj()
+                    if provenance is not None
+                    else {"source_table_keys": [], "source_schema_hashes": []}
+                )
+                artifacts.append(artifact_obj)
             result["artifacts"] = artifacts
-
-        if self.artifact_provenance:
-            result["artifact_provenance"] = {
-                key: provenance.to_json_obj()
-                for key, provenance in self.artifact_provenance.items()
-            }
 
         return result
 

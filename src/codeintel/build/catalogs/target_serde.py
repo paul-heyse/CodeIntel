@@ -167,7 +167,7 @@ def output_target_to_json_obj(target: OutputTarget) -> dict[str, object]:
         "name": target.name,
         "module": target.module,
         "description": target.description,
-        "dependencies": list(target.dependencies),
+        "dependencies": [],
         "contract": _output_contract_to_json_obj(target.contract),
         "resources": _target_resources_to_json_obj(target.resources),
         "execution": _target_execution_to_json_obj(target.execution),
@@ -207,7 +207,6 @@ def output_target_from_json_obj(obj: Mapping[str, object]) -> OutputTarget:
             f"got {module_raw}"
         )
         raise TypeError(msg)
-    deps = _tuple_of_str(obj.get("dependencies", []))
     contract_raw = obj.get("contract")
     resources_raw = obj.get("resources")
     execution_raw = obj.get("execution")
@@ -228,7 +227,7 @@ def output_target_from_json_obj(obj: Mapping[str, object]) -> OutputTarget:
         name=name,
         module=module,
         contract=_output_contract_from_json_obj(contract_raw),
-        dependencies=deps,
+        dependencies=(),
         resources=_target_resources_from_json_obj(resources_raw),
         execution=_target_execution_from_json_obj(execution_raw),
         parameters=_target_parameters_from_json_obj(parameters_raw),

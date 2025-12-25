@@ -114,7 +114,17 @@
           "kind": { "type": "string" },
           "filename": { "type": "string" },
           "table_key": { "type": ["string", "null"] },
-          "description": { "type": ["string", "null"] }
+          "description": { "type": ["string", "null"] },
+          "provenance": {
+            "type": "object",
+            "default": {},
+            "additionalProperties": false,
+            "required": ["source_table_keys", "source_schema_hashes"],
+            "properties": {
+              "source_table_keys": { "type": "array", "items": { "type": "string" } },
+              "source_schema_hashes": { "type": "array", "items": { "type": "string" } }
+            }
+          }
         }
       }
     },

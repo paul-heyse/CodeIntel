@@ -79,6 +79,11 @@ def load_query(
     -------
     Callable[..., ir.Table]
         Hamilton node that executes the SQL using the DuckDB connection.
+
+    Raises
+    ------
+    ValueError
+        If the provided SQL string is empty.
     """
     if not isinstance(sql, str) or not sql:
         msg = "load_query requires a non-empty SQL string"

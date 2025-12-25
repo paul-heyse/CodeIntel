@@ -60,8 +60,7 @@ class _RecordingGateway:
 
 def _seed_export_table(con: DuckDBPyConnection) -> None:
     ensure_production_schemas(con)
-    con.execute("CREATE TABLE analytics.function_metrics (id INTEGER)")
-    con.execute("INSERT INTO analytics.function_metrics VALUES (1)")
+    con.execute("INSERT INTO analytics.function_metrics (function_goid_h128) VALUES (1)")
 
 
 def test_build_export_relation_uses_storage_export_service() -> None:
@@ -78,5 +77,6 @@ def test_build_export_relation_uses_storage_export_service() -> None:
     )
 
     last_sql = expect_is_not_none(gateway.exports.last_sql)
-    expect_in("analytics.function_metrics", last_sql)
-    expect_equal(result.fetchone(), (1,))
+    expect_in('"analytics"."function_metrics"', last_sql)
+    row = expect_is_not_none(result.fetchone())
+    expect_equal(row[0], 1)

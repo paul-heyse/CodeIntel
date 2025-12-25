@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from codeintel.config.models import ToolsConfig
 from codeintel.core.tools import ToolName
 from codeintel.core.tools.resolver import ToolResolveConfig, resolve_tool
+from codeintel.observability.runtime_registry import register_subprocess, unregister_subprocess
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -200,6 +201,7 @@ class ToolRunner:
             stderr=PIPE,
             env=tool_env if tool_env else None,
         )
+        register_subprocess(pid=proc.pid, command=Path(cmd[0]).name)
         log_prefix = run_options.log_prefix or tool_enum.value
         heartbeat_task: asyncio.Task[None] | None = None
         if run_options.progress_interval_s:
@@ -252,6 +254,7 @@ class ToolRunner:
                 heartbeat_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await heartbeat_task
+            unregister_subprocess(pid=proc.pid)
 
         result = ToolRunResult(
             tool=tool_enum,

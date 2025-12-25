@@ -70,6 +70,54 @@ def to_node_name(logical_name: str, *, prefix: str) -> str:
     return f"{prefix}__{cleaned}"
 
 
+def sanitize_pipeline_component(component: str, *, default: str = "pipeline") -> str:
+    """Sanitize a pipeline name component into a valid identifier fragment.
+
+    Parameters
+    ----------
+    component
+        Pipeline namespace or step component to sanitize.
+    default
+        Fallback value when the component is empty after sanitization.
+
+    Returns
+    -------
+    str
+        Sanitized component suitable for use in a node name.
+    """
+    cleaned = component.strip()
+    cleaned = cleaned.replace(".", "_")
+    cleaned = cleaned.replace("/", "_")
+    cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", cleaned)
+    cleaned = re.sub(r"_+", "_", cleaned)
+    cleaned = cleaned.strip("_")
+    if not cleaned:
+        cleaned = default
+    if cleaned[0].isdigit():
+        cleaned = f"p_{cleaned}"
+    return cleaned
+
+
+def pipeline_node_name(namespace: str, step_name: str) -> str:
+    """Build a stable node name for a pipeline step.
+
+    Parameters
+    ----------
+    namespace
+        Pipeline namespace string.
+    step_name
+        Step function name.
+
+    Returns
+    -------
+    str
+        Sanitized node name combining namespace and step name.
+    """
+    namespace_part = sanitize_pipeline_component(namespace)
+    step_part = sanitize_pipeline_component(step_name.lstrip("_"))
+    return f"{namespace_part}__{step_part}"
+
+
 def target_node(target_name: str) -> str:
     """Convert a target name to a Hamilton node identifier.
 
@@ -291,7 +339,9 @@ __all__ = [
     "dataset_node",
     "materialize_node",
     "node_to_target",
+    "pipeline_node_name",
     "query_node",
+    "sanitize_pipeline_component",
     "target_node",
     "to_node_name",
 ]

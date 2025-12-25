@@ -60,15 +60,15 @@ class TestTargetRegistry:
 
     @staticmethod
     def test_all_targets_have_tables() -> None:
-        """All non-export targets specify at least one output table."""
+        """All targets specify at least one output table or artifact."""
         graph = get_target_metadata_service().system.graph
         for target in graph.all_targets:
-            if target.module == "export":
-                continue
-            # Skip SCIP target as it produces artifacts not tables
-            if target.name == "scip":
-                continue
-            expect_true(len(target.table_keys) > 0, message=f"No tables for {target.name}")
+            has_tables = len(target.table_keys) > 0
+            has_artifacts = len(target.contract.artifact_names) > 0
+            expect_true(
+                has_tables or has_artifacts,
+                message=f"No tables or artifacts for {target.name}",
+            )
 
     @staticmethod
     def test_target_names_are_unique() -> None:

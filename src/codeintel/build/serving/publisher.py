@@ -19,8 +19,10 @@ from typing import TYPE_CHECKING, Protocol
 from codeintel.build.serving.manifest import ServingSnapshotManifest
 from codeintel.build.serving.search_index import build_search_documents_table, ensure_fts_index
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBError
+from codeintel.storage.helpers.table_key import fully_qualified_table_ref
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -122,7 +124,11 @@ def _require_table(snap_con: DuckDBConnection, *, schema: str, table: str) -> No
 
 def _require_search_documents(snap_con: DuckDBConnection) -> None:
     _require_table(snap_con, schema="docs", table="search_documents")
-    row = snap_con.execute("SELECT COUNT(*) FROM docs.search_documents").fetchone()
+    search_documents_ref = fully_qualified_table_ref(
+        "docs.search_documents",
+        catalog=duckdb_default_catalog(snap_con),
+    )
+    row = snap_con.execute(f"SELECT COUNT(*) FROM {search_documents_ref}").fetchone()
     count = int(row[0]) if row is not None and row[0] is not None else 0
     if count <= 0:
         msg = "Search documents table is empty: docs.search_documents"
