@@ -28,6 +28,7 @@ codeintel.ingestion.tool_service : Facade using these Report types internally
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 

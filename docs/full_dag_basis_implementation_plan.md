@@ -1,5 +1,5 @@
 
-According to a document from **December 24, 2025**, your current `scip` native Hamilton module already demonstrates the “Phase 4” pattern clearly: a tool step, artifact savers with `path_template`, DuckDB row savers, and a `t__scip` target anchor that assembles a `TargetRunRecord` from materialization metadata. The architecture overview explicitly calls out that saver-node tags (emitted by `SaveToObjectMetadataDecorator`) are the backbone for contract/output derivation and IO surface introspection. This is the exact leverage point to push `scip.py` from “DAG-driven” to “maximally DAG-derived” with minimal remaining boilerplate and minimal drift risk. 
+According to a document from **December 24, 2025**, your current `scip` native Hamilton module already demonstrates the “Phase 4” pattern clearly: a tool step, artifact savers with `path_template`, DuckDB row savers, and a `t__scip` target anchor that assembles a `TargetRunRecord` from materialization metadata. The architecture overview explicitly calls out that saver-node tags (emitted by `SaveToObjectMetadataDecorator`) are the backbone for contract/output derivation and IO surface introspection. Since the SCIP upgrade, `index.scip` + protobuf parsing (via `scip_proto`) are the canonical path, and incremental indexing + richer tables are part of the baseline. This is the exact leverage point to push `scip.py` from “DAG-driven” to “maximally DAG-derived” with minimal remaining boilerplate and minimal drift risk. 
 
 Below is a **fully integrated, narrative implementation plan** to enact the **10 consolidations** for `src/codeintel/build/hamilton/native/ingestion/scip.py` (representative target), plus advanced optimizations and further consolidation opportunities. It’s intentionally written so an experienced Python/Hamilton engineer can implement without line-by-line diffs.
 
@@ -9,13 +9,14 @@ Below is a **fully integrated, narrative implementation plan** to enact the **10
 
 For `scip`, the “end state” should satisfy these invariants:
 
-1. **Manifest is authoritative for reuse/skip** — no ad-hoc file existence checks can override hash/manifest decisions. (This is crucial for correctness when options, tool versions, or upstream semantics change.)
+1. **Module-state + manifest are authoritative for reuse/skip** — no ad-hoc file existence checks can override hash/manifest decisions. Module-level correctness is anchored in `core.scip_module_state`, with the shard manifest as a cache that can be regenerated. (This is crucial for correctness when options, tool versions, or upstream semantics change.)
 2. **Artifacts and tables are “declared by savers”, not by anchor logic** — collectors, run record assembly, and output inventory should be derived from saver tags and contracts, not hand-maintained lists inside `scip.py`. This aligns with DAG-derived output derivation and IO registry compilation described in the architecture. 
 3. **All configuration flows through DAG-visible nodes** — the target’s options are loaded once (as a node), hashed once, and used consistently in tool execution + ingestion. No hidden configuration pathways.
 4. **The anchor node is “boring”** — it should only: (a) validate upstream target health, (b) call a shared “record builder” that consumes materialization metadata, and (c) return `TargetRunRecord`. No bespoke artifact/table enumeration or custom summarizers per target.
 5. **Adding a new output requires minimal edits** — ideally only “add a new saver-decorated node” (or add an item to a small spec list) and the rest is automatically reflected in: output inventory, IO registry, materialization collection, and record assembly.
 6. **Single-target truth for mixed outputs** — tool run, artifact materialization, ingest, and table writes remain within one target DAG for a single calculation scope/context. Do not split tool/ingest into separate targets. Avoid consuming `a__*` / `ArtifactRef` inside the same target (it depends on the target record and creates a cycle); use tool outputs or saver metadata nodes instead.
 7. **Output inventory is DAG-derived in steady state** — `output_inventory_source="dag"` is the target and the source of truth. Transitional modes (`declared`/`compare`) are allowed during migration but must not become a parallel authority; utilities that read templates must fall back to explicit templates when DAG-derived inventory is unavailable.
+8. **Protobuf is canonical for SCIP** — `index.scip` + `scip_proto` codegen are the source of truth; JSON artifacts are not part of the pipeline. SCIP project identity is stable (`--project-name CodeIntel`).
 
 Everything below is designed to make those invariants true for `scip`, using the system you already have (SaveTo tags → output derivation; compile_write_registry; support nodes; etc.). 
 
@@ -50,7 +51,7 @@ After each target migration (starting with `scip`), add explicit **settings + va
 The current `t__scip__run()` performs:
 
 * `executor.should_skip()` (good),
-* then **checks for existing `index.scip` and `index.json`** and returns success without running tools (dangerous).
+* then **checks for existing `index.scip`** and returns success without running tools (dangerous if it becomes a skip override).
 
 That file-existence short-circuit can create a correctness hole whenever:
 
@@ -67,31 +68,41 @@ The architecture doc emphasizes that skip checks are computed from the Hamilton 
 
 * If `NativeTargetExecutor.should_skip()` says **skip**, do **not** run tools.
 * If it says **do not skip**, you must **run tools deterministically**, regardless of existing files, unless you can prove they correspond to the current computed input hash.
+* Module-level state is authoritative via `core.scip_module_state`; the shard manifest is a cache that can be regenerated.
 
 ### Concrete implementation plan
 
-Implement this as a **unified mechanism** across tool-service + plugin:
+Implement this as a **unified mechanism** across the incremental runner + tool runner:
 
-1. **Remove file-existence reuse from `t__scip__run`** (or gate it behind a hash-aware condition).
-2. Extend the tool runtime boundary to support:
+1. **Ensure file-existence checks are only a safety valve**, not a skip override:
 
-   * `reuse_existing: bool = True` (default for ad-hoc use),
-   * `force: bool = False` (explicitly bypass plugin reuse),
-   * and/or `expected_input_hash: str | None` to allow content-addressed reuse.
-3. In `t__scip__run`, compute the target input hash once (see consolidation #3) and choose:
+   * If `executor.should_skip()` is true, only skip when `index.scip` exists; if missing, force rebuild.
+2. **Use DAG-derived hash inputs end-to-end**:
 
-   * `force=True` when `should_skip()` is False, or
-   * `reuse_existing=False` when `should_skip()` is False.
-4. If you do want “reuse existing” for performance, make it **content-addressed**:
+   * `scip__hash_options` should include options hash + module scan file_state_hash + manifest index.
+   * Pass these into `NativeTargetExecutor` and `ScipIncrementalConfig` so skip/reuse is hash-driven.
+   * Include `tool_version` at the module-state level so tooling changes invalidate only affected shards.
+3. **Drive incremental updates from module deltas**:
 
-   * Either embed the input hash into the output directory layout (preferred long-term),
-   * Or store a small `.meta.json` alongside the files that includes the input hash and validate it before reusing.
-5. Add a regression test:
+   * Use `ModuleScanResult.change_set` when available; if missing, force a full rebuild.
+4. **Make reuse content-addressed**:
+
+   * Use `core.scip_module_state` as the source of truth for module-level reuse.
+   * Regenerate the shard manifest (`{scip_dir}/shards/manifest.json`) from the table when missing or inconsistent.
+   * Do not accept file existence alone as proof of correctness.
+5. **Apply deterministic merge policy when updating `index.scip`**:
+
+   * Symbol_information: prefer newest shard by `updated_at` **only** when the
+     new row is strictly more informative (non-empty documentation/signature/
+     display_name). Otherwise keep the existing row.
+   * External_symbols: dedupe by full symbol string; prefer the most complete
+     package triple (manager+name+version), then newest shard.
+6. Add a regression test:
 
    * Run `scip` once → success.
    * Change a scip option or tool version stamp → ensure executor marks as not-skipped → ensure tool runtime does not reuse old files.
 
-**Advanced optimization:** once you have `expected_input_hash`, tool-service reuse becomes safe and fast: “reuse only if `.meta.json.input_hash == expected_input_hash` and outputs exist”. That gives you correctness + speed.
+**Advanced optimization:** once you have `expected_input_hash`, incremental reuse becomes safe and fast: “reuse only if module-state rows report the same input hash + tool version and outputs exist”. That gives you correctness + speed.
 
 ---
 
@@ -99,7 +110,7 @@ Implement this as a **unified mechanism** across tool-service + plugin:
 
 ### What’s wrong today
 
-`t__scip__run` returns `documents` (converted from tool-service result), and `t__scip__ingest` prefers these, falling back to parsing JSON if documents are absent.
+Earlier iterations returned parsed documents from the tool runtime, and ingestion relied on them directly. Even though parsing is now protobuf-based, that pattern still couples ingestion to in-memory payloads rather than the canonical artifact (`index.scip`), and hides the dependency on the generated protobuf module. Keep the artifact-driven parse boundary explicit to avoid regressions.
 
 This is subtly anti-DAG:
 
@@ -110,28 +121,22 @@ The architecture explicitly positions savers + derived IO as the canonical write
 
 ### Target state
 
-* Tool node returns: status + artifact locations (only).
-* A dedicated compute node parses the JSON artifact into “documents”.
-* Ingest node depends on that document node, not on the tool node’s in-memory payload.
+* Tool node returns: status + `index.scip` location (only).
+* Ingest parses `index.scip` via protobuf using `scip__proto_module_path` (artifact-driven, not in-memory payloads).
+* If you want a more explicit DAG boundary, extract parsing into a helper node later.
 
 ### Concrete implementation plan
 
-1. Change `ScipRunResult` to remove `documents`.
-2. Add a new compute node, e.g. `scip__documents(...) -> tuple[ScipDocument, ...] | None`, that:
-
-   * depends on the JSON artifact **path** (from tool output or saver metadata; avoid `a__*` inside the same target to prevent cycles),
-   * parses via `parse_scip_json_file`.
-3. Update `t__scip__ingest` to:
-
-   * depend on `scip__documents`,
-   * remove fallback logic.
-4. Make `scip__documents` return `None` if upstream execution skipped/failed so downstream row materializers skip cleanly.
+1. Change `ScipRunResult` to carry only `index_path` + status (no documents).
+2. In `t__scip__ingest`, parse `index.scip` via `parse_index(index_path, proto_module_path)` using `scip__proto_module_path`.
+3. Remove JSON fallback logic entirely.
+4. If you later add a `scip__parsed_index` node, ensure it returns `None` when upstream execution skipped/failed so downstream row materializers skip cleanly.
 5. Add tests:
 
-   * tool run success → json exists → documents parse,
-   * tool run skipped → documents node returns None → ingest returns skip.
+   * tool run success → `index.scip` exists → protobuf parse succeeds,
+   * tool run skipped → ingest returns skip.
 
-**Advanced optimization:** move parsing to a streaming parser if JSON is large (see optimization section). Even if you don’t implement streaming now, isolating parsing into a dedicated node makes it easy later.
+**Advanced optimization:** move parsing to a streaming parser if `index.scip` is large (see optimization section). Even if you don’t implement streaming now, isolating parsing into a dedicated node makes it easy later.
 
 ---
 
@@ -139,7 +144,7 @@ The architecture explicitly positions savers + derived IO as the canonical write
 
 ### What’s wrong today
 
-You already have `ScipIngestOptions` defined in the options system, but `scip.py` does not load or use it, while other targets (like `modules`) do use `load_target_options` and pass `hash_options`. This creates:
+Even with `ScipIngestOptions` wired in, it is easy for options to drift out of the execution path (tool invocation, incremental config, row filtering) unless they are enforced as a single source of truth. This creates:
 
 * configuration drift risk,
 * inability to tune scip behavior via the same mechanism as other targets,
@@ -154,17 +159,21 @@ You already have `ScipIngestOptions` defined in the options system, but `scip.py
   * tool execution parameters,
   * ingestion logic behavior,
   * and **options hashing** (manifest key).
+* `scip__run_config` bundles `scip__options`, `scip__hash_options`, and `scip__proto_module_path` so tool execution has a single, explicit config surface.
 
 ### Concrete implementation plan
 
 1. Add a node: `scip__options(env: BuildEnv) -> ScipIngestOptions` using the existing options loader (mirroring other targets).
 2. Ensure options affect tool execution:
 
-   * `scope_paths` → passed down to `tool_service.run_scip_full(rel_paths=...)` (you’ll need to extend tool_service signature).
-   * `timeout_seconds` → passed to tool runner.
+   * `scope_paths` → passed into the incremental config (per-module `--target-only`).
+   * `max_file_size_kb` → passed into the incremental config to avoid oversized files.
+   * `timeout_seconds` → passed to the tool runner.
+   * `scip_output_dir` → used to resolve the canonical `index.scip` output path.
+   * `scip_project_name` → sourced from `ToolsConfig.scip_project_name` (default `"CodeIntel"`) and passed into `build_scip_python_args`.
 3. Ensure options affect ingestion:
 
-   * `include_references`, `include_implementations` and any future flags should be passed into `build_symbol_rows` / `build_occurrence_rows` or used to filter documents.
+   * `include_references`, `include_implementations` and any future flags should be passed into row builders (symbols, occurrences, symbol_information, relationships, diagnostics, external_symbols) or used to filter parsed documents.
 4. Ensure options affect hashing:
 
    * Either by:
@@ -174,8 +183,9 @@ You already have `ScipIngestOptions` defined in the options system, but `scip.py
 
 5. Add a shared hash node as the single hash source of truth:
 
-   * `scip__hash_options(env: BuildEnv, scip__options: ScipIngestOptions) -> InputHashOptions`
-   * Use it in `NativeTargetExecutor.for_target(..., hash_options=...)`, in `SaveToObjectMetadataDecorator` calls, and in any tool execution path that accepts `expected_input_hash`.
+   * `scip__hash_options(env: BuildEnv, t__modules__scan: ModuleScanResult) -> InputHashOptions`
+   * Include `options_hash_for_target(env, "scip")` plus `t__modules__scan.file_state_hash` (module state) and manifest index.
+   * Use it in `NativeTargetExecutor.for_target(..., hash_options=...)`, in `SaveToObjectMetadataDecorator` calls, and in incremental execution paths that need consistent reuse checks.
    * Normalize all hash inputs here (e.g., sorted/normalized `scope_paths`) so every consumer reuses the exact same hash.
 
 **Advanced optimization:** if `scope_paths` is frequently used, also hash a normalized canonical representation (sorted, normalized paths). This prevents “same semantics, different ordering” from forcing reruns.
@@ -214,7 +224,7 @@ Create a reusable pattern used by other tool-backed targets:
 
    or (if you prefer to avoid dicts):
 
-   * `ScipToolOutput(result: ExecutionResult, index_path: Path|None, json_path: Path|None)`
+   * `ScipToolOutput(result: ExecutionResult, index_path: Path | None)`
 
    but **status must always be ExecutionResult**.
 
@@ -235,13 +245,12 @@ This is where you begin to *materially* reduce per-target boilerplate while incr
 
 ### What’s wrong today
 
-`scip.py` has near-identical pairs of:
+`scip.py` has near-identical sets of:
 
-* artifact nodes (`scip__index_artifact`, `scip__json_artifact`)
-* row nodes (`scip__symbol_rows`, `scip__occurrence_rows`)
+* table row nodes (`scip__symbol_rows`, `scip__occurrence_rows`, `scip__symbol_info_rows`, `scip__relationship_rows`, `scip__diagnostic_rows`, `scip__external_symbol_rows`, `scip__module_state_rows`)
 * collector nodes (artifact materializations + table materializations)
 
-This isn’t terrible for 2 outputs, but it scales badly.
+This isn’t terrible for a few outputs, but it scales badly as tables and internal artifacts grow.
 
 ### Target state
 
@@ -254,8 +263,9 @@ Use Hamilton’s “multi-node from one function” patterns:
 
 #### 5A) Artifact nodes
 
-1. Replace the two artifact node functions with **one** generic artifact accessor, then parameterize it for index/json.
-2. Make sure each parameterized output is still decorated with a saver (this may require:
+1. Keep `scip__index_artifact` as the single contract artifact node for now.
+2. If you add additional artifacts (e.g., shard manifest as `output_role="internal"`), replace per-artifact functions with **one** generic artifact accessor and parameterize it.
+3. Make sure each parameterized output is still decorated with a saver (this may require:
 
    * keeping small wrappers, *or*
    * creating a mini-factory helper that returns decorated functions, *or*
@@ -265,7 +275,7 @@ The key: adding a new artifact should become “add one entry in a small mapping
 
 #### 5B) Table row nodes
 
-Similarly, replace two row nodes with one:
+Similarly, replace multiple row nodes with one:
 
 * `scip__rows_for_table(table_key: str, ingest_payload: ...) -> rows`
 * Parameterize it for each table key.
@@ -402,7 +412,7 @@ Choose one of these “best-in-class” patterns:
 Tool node returns an `ArtifactWritePlan` that, when invoked, runs the tool and writes directly to the resolved output path (so tool execution happens at materialization boundary).
 
 * This is the most “pure boundary” model.
-* But it’s tricky when one tool run produces multiple artifacts (index + json).
+* But it’s tricky when one tool run produces multiple artifacts (e.g., `index.scip` + shard manifest).
 
 #### Pattern B (recommended): “ExistingArtifactSaver” records metadata without rewriting
 
@@ -422,7 +432,7 @@ This keeps DAG visibility, keeps contract enforcement, and avoids redundant IO.
 1. Implement Pattern B as a new saver:
 
    * `ExistingFileArtifactSaver` (or extend `FileArtifactSaver` with `mode="record_only"` / `allow_in_place=True`).
-2. In `scip.py`, use this saver for `scip_index` and `scip_json` materializations.
+2. In `scip.py`, use this saver for `scip_index` materialization (and any internal shard/manifest artifacts if you choose to surface them).
 3. Ensure the saver still:
 
    * computes input hash (manifest key),
@@ -439,7 +449,7 @@ This keeps DAG visibility, keeps contract enforcement, and avoids redundant IO.
 
 ### What’s wrong today
 
-`scip` lists required tools in `TargetSpecDescriptor.resources.tools = ("scip-python","scip")`, but the DAG already knows which tool step exists (tagged as tool). If the tool list changes and spec isn’t updated, you get drift.
+`scip` lists required tools in `TargetSpecDescriptor.resources.tools = ("scip-python",)`, but the DAG already knows which tool step exists (tagged as tool). If the tool list changes and spec isn’t updated, you get drift.
 
 Your architecture already relies on tags for IO derivation. Extend that philosophy to resources.
 
@@ -454,7 +464,7 @@ Resources are computed as:
 
 1. Extend `tag_tool(...)` usage in `t__scip__run` to include tool names as tags, e.g.:
 
-   * `extra_tags={"tools": ["scip-python","scip"]}` (or whatever canonical tag key you choose).
+   * `extra_tags={"tools": ["scip-python"]}` (or whatever canonical tag key you choose).
 2. Extend target spec compilation to:
 
    * scan nodes for tool tags within a target scope,
@@ -505,6 +515,9 @@ Add or extend validations so “bad DAG definitions” fail fast during driver b
 5. **Compute IO purity gate**:
 
    * run `validate_graph(..., enforce_compute_io_purity=True)` as part of migration gating to ensure no manual IO has crept back into compute/tool nodes.
+6. **Module-state integrity gate**:
+
+   * ensure `core.scip_module_state` is populated and consistent for the current snapshot; regenerate shard manifest from the table when missing.
 
 #### 10B) Observability / telemetry enhancements
 
@@ -529,12 +542,12 @@ You don’t have to adopt these immediately (your manifest system already covers
 
 Once the 10 consolidations land, `scip` should look like this conceptually:
 
-1. `scip__options` (DAG config node)
-2. `t__scip__run` (tool node) → returns `ExecutionResult + artifact paths` (no documents)
-3. `scip__index_artifact` / `scip__json_artifact` (artifact nodes) → materialized via **record-only artifact saver** (no redundant writes)
-4. `scip__documents` (compute node) → parses from JSON artifact path (avoid `a__*` inside the same target to prevent cycles)
-5. `t__scip__ingest` (compute node) → returns `ExecutionResult` + payload (or returns only status and downstream nodes compute rows)
-6. `scip__rows_for_table` (parameterized) → two outputs for table keys → materialized via DuckDBRowsSaver
+1. `t__scip_proto__run` → `scip__proto_artifact` → `t__scip_proto` → `scip__proto_module_path`
+2. `scip__options` + `scip__hash_options` + `scip__module_inputs` + `scip__run_config`
+3. `t__scip__run` (incremental tool node) → returns `index.scip` path (no documents)
+4. `scip__index_artifact` (artifact node) → materialized via `FileArtifactSaver` (record-only optional)
+5. `t__scip__ingest` (compute node) → parses `index.scip` via protobuf and returns `ExecutionResult` + payload
+6. `scip__rows_for_table` (parameterized) → seven outputs for table keys (including `core.scip_module_state`) → materialized via DuckDBRowsSaver
 7. `c__contract_*__scip` collectors (auto-generated)
 8. `t__scip` anchor → calls shared `record_from_materializations(...)` and returns TargetRunRecord
 
@@ -544,6 +557,7 @@ Importantly:
 * No manual collectors.
 * Options are first-class.
 * Tool execution correctness is guaranteed by hash/manifest.
+* Protobuf (`index.scip`) is canonical; JSON artifacts are not part of the pipeline.
 
 This aligns strongly with the architecture’s emphasis on:
 
@@ -575,7 +589,7 @@ Two best-in-class options:
 
 ## B) Parallelize ingestion row building by document partitions
 
-Once `scip__documents` is its own node, you can:
+If you factor parsing into a `scip__parsed_index` node, you can:
 
 * partition documents by language or file path,
 * build rows in parallel (thread/process) as long as serializer is thread-safe,
@@ -656,11 +670,13 @@ You already persist telemetry; lifecycle hooks could eliminate per-target loggin
 After implementing the 10 consolidations, you should be able to demonstrate:
 
 1. **Change scip options** → input hash changes → `scip` reruns even if old files exist.
-2. **Add a third scip artifact saver** → output inventory includes it automatically, collectors include it automatically, run record includes it automatically.
-3. **Add a third scip table saver** → row_counts includes it automatically; no edits to summarizers/collectors.
-4. `t__scip` anchor becomes small and generic: no bespoke lists, no bespoke parsing of metadata.
-5. Peak memory improves (if you do streaming/chunking), but even without it, the code path is now set up for it cleanly.
-6. `output_inventory_source="dag"` is viable for scip: artifact templates resolve from saver tags, and no declared inventory is needed for correctness.
+2. **Add a new scip table or internal artifact** (e.g., shard manifest or module-state rows) → output inventory and collectors include it automatically.
+3. **Add a new scip table saver** → row_counts includes it automatically; no edits to summarizers/collectors.
+4. **Protobuf path is enforced** → `t__scip_proto` runs, `scip__proto_module_path` is used in ingestion, and no JSON artifacts are required.
+5. **Module-state is authoritative** → `core.scip_module_state` rows are populated and used to regenerate shard manifests when missing.
+6. `t__scip` anchor becomes small and generic: no bespoke lists, no bespoke parsing of metadata.
+7. Peak memory improves (if you do streaming/chunking), but even without it, the code path is now set up for it cleanly.
+8. `output_inventory_source="dag"` is viable for scip: artifact templates resolve from saver tags, and no declared inventory is needed for correctness.
 
 ---
 
@@ -1873,6 +1889,8 @@ Use this block verbatim in PRs that migrate a target to DAG-derived IO:
 * **Inventory**: DAG-derived inventory contains all new outputs/templates without relying on declared inventory.
 * **Hashing**: shared `*_hash_options` node is used by tool execution, savers, and record builders (no duplicated hash logic).
 * **Reuse**: tool reuse is gated by `expected_input_hash`; no filesystem short-circuiting when manifest says rerun.
+* **Module-State**: `core.scip_module_state` is populated for the snapshot and shard manifests regenerate from it when missing.
+* **Merge Policy**: symbol_information and external_symbols merge rules are deterministic and covered by regression tests.
 
 ---
 
@@ -2123,7 +2141,7 @@ Apply **every** rule that matches. If multiple specs apply, always choose the **
 
 * `Path\(.*\)\.exists\(\)`
 * `if output_.*\.exists\(\)`
-* `if .*index_path.* and .*json_path.*` style existence gating
+* `if .*index_path.*` or `if output_scip.exists()` style existence gating
 
 **MEANS**
 

@@ -94,6 +94,15 @@ $ scip-python index . --project-name my_project
 
 If the command completes successfully, you’ll have an index.scip file containing the index. The CLI may output progress or any errors encountered (for example, if Pyright finds import errors or type errors, you might see those logged as diagnostics in the index).
 
+CodeIntel integration defaults
+
+CodeIntel standardizes several scip-python behaviors to keep SCIP ingestion deterministic and easy to maintain:
+
+- Project identity: always pass --project-name CodeIntel, with no --project-version or --project-namespace.
+- Protobuf parsing: index.scip is parsed via generated scip_pb2 bindings; JSON artifacts are not used.
+- DAG codegen: the scip_proto target runs grpc_tools.protoc and publishes scip_pb2.py; the local mirror script is scripts/scip_proto_codegen.sh.
+- Incremental indexing: per-module shards live under build/scip/shards, with core.scip_module_state as the source-of-truth and the shard manifest as a cache artifact.
+
 Using the index with Sourcegraph: If your goal is to use Sourcegraph’s code intelligence, the next step would be to upload this index to a Sourcegraph instance. Using Sourcegraph’s CLI (src), you can do:
 
 $ src code-intel upload --file index.scip --upload-type=scip
@@ -1785,6 +1794,5 @@ If you snapshot Python, set `--comment-syntax="#"` or you’ll generate invalid-
 [4]: https://github.com/sourcegraph/scip/issues/178?utm_source=chatgpt.com "Using index.scip locally? · Issue #178 · sourcegraph/scip"
 [5]: https://github.com/sourcegraph/scip-ruby/issues/87 "No meaningful occurrences for rubocop repository · Issue #87 · sourcegraph/scip-ruby · GitHub"
 [6]: https://github.com/sourcegraph/scip/blob/main/docs/CLI.md?utm_source=chatgpt.com "scip/docs/CLI.md at main · sourcegraph/scip"
-
 
 

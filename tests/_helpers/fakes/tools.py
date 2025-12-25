@@ -30,11 +30,14 @@ from codeintel.ingestion.engine.results import (
     ScipOccurrence,
 )
 from codeintel.ingestion.engine.service import ToolService
-from tests._helpers.scip_proto import ensure_proto_module, write_scip_index as write_proto_index
 from tests._helpers.records import CallRecorder, ToolRunCall
+from tests._helpers.scip_proto import ensure_proto_module
+from tests._helpers.scip_proto import write_scip_index as write_proto_index
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+
+    from codeintel.ingestion.ports.tools import ScipRunRequest
 
 
 def _mkdir_parents(path: Path) -> None:
@@ -227,6 +230,7 @@ def write_dummy_scip_files(base_dir: Path) -> Path:
     ----------
     base_dir
         Base directory for SCIP files.
+
     Returns
     -------
     Path
@@ -520,50 +524,31 @@ class FakeToolService(ToolService):
             raise self.fake_config.raise_on_coverage
         return self.fake_config.coverage_report or CoverageReport.empty()
 
-    async def run_scip_full(
-        self,
-        repo_root: Path,
-        *,
-        output_scip: Path,
-        proto_module_path: Path,
-        target_dir: Path | None = None,
-        rel_paths: Sequence[str] | None = None,
-        timeout_s: float | None = None,
-    ) -> ScipIndexResult:
+    async def run_scip_full(self, request: ScipRunRequest) -> ScipIndexResult:
         """Run full SCIP indexing and return configured result.
 
         Parameters
         ----------
-        repo_root
-            Repository root (logged but not used).
-        output_scip
-            Output SCIP file path (logged but not used).
-        proto_module_path
-            Path to generated scip_pb2 module (logged but not used).
-        target_dir
-            Optional repo subdirectory to index (logged but not used).
-        rel_paths
-            Optional repo-relative paths to index (logged but not used).
-        timeout_s
-            Optional timeout override (logged but not used).
+        request
+            Run request payload (logged but not used).
 
         Returns
         -------
         ScipIndexResult
             Configured SCIP result.
         """
-        args = [str(output_scip), str(proto_module_path)]
-        if target_dir is not None:
-            args.append(str(target_dir))
-        if rel_paths:
-            args.extend(rel_paths)
-        if timeout_s is not None:
-            args.append(str(timeout_s))
+        args = [str(request.output_scip), str(request.proto_module_path)]
+        if request.target_dir is not None:
+            args.append(str(request.target_dir))
+        if request.rel_paths:
+            args.extend(request.rel_paths)
+        if request.timeout_s is not None:
+            args.append(str(request.timeout_s))
         self.calls.record(
             ToolRunCall(
                 tool="scip_full",
                 args=args,
-                cwd=repo_root,
+                cwd=request.repo_root,
                 timeout_ms=None,
                 env=None,
             )

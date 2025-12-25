@@ -11,10 +11,10 @@ from codeintel.build.schemas import (
     iter_row_bindings,
 )
 
-EXPECTED_DATASET_CONTRACTS_COUNT = 124
-EXPECTED_TABLE_SCHEMAS_COUNT = 94
+EXPECTED_DATASET_CONTRACTS_COUNT = 129
+EXPECTED_TABLE_SCHEMAS_COUNT = 99
 # Row bindings are now generated for ALL table schemas (not just hand-maintained ones)
-EXPECTED_ROW_BINDINGS_COUNT = 94
+EXPECTED_ROW_BINDINGS_COUNT = 99
 
 
 def test_dataset_contracts_count_snapshot() -> None:

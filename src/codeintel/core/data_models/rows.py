@@ -388,6 +388,320 @@ class GoidCrosswalkRow:
         return dataclasses.astuple(self)
 
 
+@dataclass(frozen=True)
+class ScipSymbolRow:
+    """Row data for core.scip_symbols table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    rel_path
+        Repository-relative file path.
+    symbol
+        SCIP symbol identifier.
+    documentation
+        Optional symbol documentation.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    rel_path: str
+    symbol: str
+    documentation: str | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipOccurrenceRow:
+    """Row data for core.scip_occurrences table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    rel_path
+        Repository-relative file path.
+    symbol
+        SCIP symbol identifier.
+    start_line
+        Starting line number (0-based).
+    start_col
+        Starting column number (0-based).
+    end_line
+        Ending line number (0-based).
+    end_col
+        Ending column number (0-based).
+    roles
+        SCIP symbol roles bitmask.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    rel_path: str
+    symbol: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    roles: int
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipSymbolInformationRow:
+    """Row data for core.scip_symbol_information table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    symbol
+        SCIP symbol identifier.
+    documentation
+        Optional symbol documentation.
+    kind
+        Symbol kind enum value.
+    display_name
+        Optional display name for the symbol.
+    signature
+        Optional signature documentation string.
+    enclosing_symbol
+        Optional enclosing symbol identifier.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    symbol: str
+    documentation: str | None
+    kind: int | None
+    display_name: str | None
+    signature: str | None
+    enclosing_symbol: str | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipSymbolRelationshipRow:
+    """Row data for core.scip_symbol_relationships table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    symbol
+        SCIP symbol identifier.
+    related_symbol
+        Related SCIP symbol identifier.
+    relationship_kind
+        Relationship kind label (implementation, reference, type_definition, definition).
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    symbol: str
+    related_symbol: str
+    relationship_kind: str
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipDiagnosticRow:
+    """Row data for core.scip_diagnostics table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    rel_path
+        Repository-relative file path.
+    start_line
+        Diagnostic start line (0-based).
+    start_col
+        Diagnostic start column (0-based).
+    end_line
+        Diagnostic end line (0-based).
+    end_col
+        Diagnostic end column (0-based).
+    severity
+        Diagnostic severity string.
+    code
+        Optional diagnostic code.
+    message
+        Diagnostic message.
+    source
+        Optional diagnostic source.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    rel_path: str
+    start_line: int
+    start_col: int
+    end_line: int
+    end_col: int
+    severity: str
+    code: str | None
+    message: str
+    source: str | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipExternalSymbolRow:
+    """Row data for core.scip_external_symbols table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    symbol
+        SCIP symbol identifier.
+    package_manager
+        Optional package manager (e.g., pypi).
+    package_name
+        Optional package name.
+    package_version
+        Optional package version.
+    created_at
+        Row creation timestamp.
+    """
+
+    repo: str
+    commit: str
+    symbol: str
+    package_manager: str | None
+    package_name: str | None
+    package_version: str | None
+    created_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
+@dataclass(frozen=True)
+class ScipModuleStateRow:
+    """Row data for core.scip_module_state table.
+
+    Attributes
+    ----------
+    repo
+        Repository identifier.
+    commit
+        Commit SHA.
+    rel_path
+        Repository-relative file path.
+    content_hash
+        Content hash of the module.
+    options_hash
+        Optional options hash applied during indexing.
+    tool_version
+        Optional scip-python version string.
+    shard_path
+        Filesystem path to the module shard.
+    updated_at
+        Timestamp of the last shard update.
+    """
+
+    repo: str
+    commit: str
+    rel_path: str
+    content_hash: str
+    options_hash: str | None
+    tool_version: str | None
+    shard_path: str
+    updated_at: datetime
+
+    def to_tuple(self) -> tuple[object, ...]:
+        """Serialize to tuple for DuckDB insertion.
+
+        Returns
+        -------
+        tuple[object, ...]
+            Field values in INSERT column order.
+        """
+        return dataclasses.astuple(self)
+
+
 __all__ = [
     "CFGBlockRow",
     "CFGEdgeRow",
@@ -396,5 +710,12 @@ __all__ = [
     "GoidRow",
     "ImportEdgeRow",
     "ImportModuleRow",
+    "ScipDiagnosticRow",
+    "ScipExternalSymbolRow",
+    "ScipModuleStateRow",
+    "ScipOccurrenceRow",
+    "ScipSymbolInformationRow",
+    "ScipSymbolRelationshipRow",
+    "ScipSymbolRow",
     "SymbolUseRow",
 ]

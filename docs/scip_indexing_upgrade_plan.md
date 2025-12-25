@@ -212,10 +212,11 @@ Phase 5 - Perpetual Index and Incremental Module Updates
 2) Compute module deltas using hash-based change detection
    - Use ChangeDetectionPort to compute added/modified/deleted modules and a
      state_hash.
-   - Persist the module state hash and rows in a durable store (table or
-     artifact) so the next run can compute deltas deterministically.
-   - If using a table, add a lightweight schema such as core.scip_module_state
-     (rel_path, content_hash, options_hash, tool_version, updated_at).
+   - Persist module state in a durable table (core.scip_module_state) as the
+     source-of-truth. The shard manifest remains a cache/inspection artifact
+     that can be regenerated from the table when missing or inconsistent.
+   - Add schema core.scip_module_state with:
+     (rel_path, content_hash, options_hash, tool_version, shard_path, updated_at).
    - Include scip options hash and scip-python version in the module-level
      hash to avoid stale shard reuse.
 
@@ -233,8 +234,14 @@ Phase 5 - Perpetual Index and Incremental Module Updates
      keyed by Document.relative_path:
      - Replace documents for modified/added modules.
      - Remove documents for deleted modules.
-     - Merge external_symbols and symbol_information with stable dedupe rules
-       (dedupe by symbol string; prefer newest shard for conflicts).
+     - Merge external_symbols and symbol_information deterministically:
+       - Deduplicate by full symbol string.
+       - Prefer the newest shard by updated_at when both candidates are equally
+         informative.
+       - Prefer the row that adds information (non-empty documentation,
+         signature, display_name) over less complete rows to avoid regressions.
+       - For external symbols, prefer the most complete package triple
+         (manager+name+version), then newest shard.
    - Normalize output ordering for determinism (documents sorted by relative_path).
    - Write the updated index.scip atomically (temp file + rename).
 
@@ -338,7 +345,7 @@ Incremental Indexing and Protobuf Parsing
 - src/codeintel/ingestion/scip/incremental.py (new)
   - Apply ChangeDetectionPort deltas and invoke per-module indexing.
 - src/codeintel/ingestion/scip/manifest.py (new)
-  - Read/write shard manifest and module state records.
+  - Read/write shard manifest; regenerate from module-state when needed.
 - src/codeintel/ingestion/ports/change_detection.py
   - Wire module delta computation into the SCIP target flow.
 - src/codeintel/build/hamilton/native/ingestion/scip_proto.py (new)
@@ -350,13 +357,12 @@ Incremental Indexing and Protobuf Parsing
 
 Schemas and Contracts
 - src/codeintel/core/data_models/rows.py
-  - Add row models for new tables.
+  - Add row models for new tables, including core.scip_module_state.
 - src/codeintel/core/schemas/output_registry.py
-  - Register new tables.
+  - Register new tables, including core.scip_module_state.
 - src/codeintel/build/hamilton/contracts/schemas/pandera_schemas.py
-  - Add schemas for new tables.
- - If using a module-state table:
-   - Add schema for core.scip_module_state (or equivalent).
+  - Add schemas for new tables, including core.scip_module_state.
+- Add schema for core.scip_module_state.
 
 Milestones and Acceptance Gates
 Milestone 1 - Protobuf parsing baseline
@@ -375,7 +381,7 @@ Milestone 3 - Perpetual index and deterministic incremental updates
 - Input hash and module state hash determine reuse.
 - index.scip is updated per module and fully rebuilt when missing.
 - No reliance on file existence for correctness.
-- Shard manifest and layout are in place and validated.
+- Module-state table and shard manifest layout are in place and validated.
 
 Quality Gates
 - Run the quality report:
@@ -383,10 +389,12 @@ Quality Gates
 - Run targeted pytest suites for ingestion and build targets.
 - Confirm zero ruff/pyright/pyrefly errors in modified files.
 
-Open Decisions to Resolve During Implementation
-- Index merge policy for external_symbols and symbol_information conflicts.
-- Shard manifest storage location (table vs artifact).
-- Final set of new SCIP tables and their naming.
+Decisions (Best-in-class)
+- Module state is stored in core.scip_module_state as source-of-truth; the shard
+  manifest is a cache/inspection artifact regenerated from the table.
+- Symbol_information merge prefers the newest shard only when it is equally
+  informative; otherwise, keep the most complete row to avoid regressions.
+- External_symbols merge prefers the most complete package triple, then newest.
 
 Appendix A - scip_proto Target Sketch (Hamilton)
 This sketch shows the concrete node signatures and decorators for a DAG-coupled

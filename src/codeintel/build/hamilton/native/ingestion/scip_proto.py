@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 from dataclasses import dataclass
+from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,12 +27,16 @@ from codeintel.build.hamilton.native.target_decorators import (
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
-from codeintel.build.hashing import InputHashOptions
+from codeintel.build.hashing import InputHashOptions, compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
 from codeintel.core.hashing import file_hash
 from codeintel.core.tools import ToolName
-from codeintel.ingestion.engine.infrastructure import ToolExecutionError, ToolRunOptions
+from codeintel.ingestion.engine.infrastructure import (
+    ToolExecutionError,
+    ToolNotFoundError,
+    ToolRunOptions,
+)
 
 if TYPE_CHECKING:
     from codeintel.ingestion.engine.infrastructure import ToolRunResult
@@ -57,6 +63,23 @@ def _proto_path(repo_root: Path) -> Path:
 
 def _proto_out_dir(env: BuildEnv) -> Path:
     return env.paths.scip_dir / "proto"
+
+
+def _grpc_tools_version() -> str | None:
+    try:
+        return metadata.version("grpcio-tools")
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def _options_hash(env: BuildEnv) -> str | None:
+    tools_config = env.providers.tool_runner.tools_config
+    options = {
+        "protoc_bin": tools_config.protoc_bin,
+        "grpc_tools_version": _grpc_tools_version(),
+        "python_version": sys.version,
+    }
+    return compute_options_hash(options)
 
 
 def _run_codegen(
@@ -95,16 +118,14 @@ def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
     -------
     ScipProtoRunResult
         Result describing the codegen outcome and output path.
-
-    Raises
-    ------
-    ToolExecutionError
-        If the protoc invocation returns a non-zero status.
     """
     proto_path = _proto_path(env.snapshot.repo_root)
     out_dir = _proto_out_dir(env)
     output_path = out_dir / "scip_pb2.py"
-    hash_options = InputHashOptions(file_state_hash=file_hash(proto_path))
+    hash_options = InputHashOptions(
+        file_state_hash=file_hash(proto_path),
+        options_hash=_options_hash(env),
+    )
     executor = NativeTargetExecutor.for_target(
         env,
         graph,
@@ -117,11 +138,13 @@ def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         result = _run_codegen(env, proto_path, out_dir, output_path)
-        if not result.ok:
-            raise ToolExecutionError(result)
-    except Exception as exc:
+    except (ToolExecutionError, ToolNotFoundError, OSError, RuntimeError, ValueError) as exc:
         log.exception("SCIP protobuf codegen failed")
         return ScipProtoRunResult(success=False, error=str(exc))
+
+    if not result.ok:
+        message = result.stderr.strip() or "SCIP protobuf codegen failed"
+        return ScipProtoRunResult(success=False, error=message)
 
     return ScipProtoRunResult(success=True, output_path=output_path)
 

@@ -40,13 +40,13 @@ from codeintel.ingestion.engine.results import (
 )
 from codeintel.ingestion.engine.scip import ScipPlugin
 from codeintel.ingestion.engine.service import ToolService
-from codeintel.ingestion.scip.protobuf_parser import parse_index
 from codeintel.ingestion.ports.tools import (
     CoverageFileData,
     CoverageResult,
     DiagnosticEntry,
     DiagnosticResult,
     ScipResult,
+    ScipRunRequest,
     ScipSymbol,
     TestCase,
     TestResult,
@@ -57,6 +57,7 @@ from codeintel.ingestion.ports.tools import (
 from codeintel.ingestion.ports.tools import (
     ScipOccurrence as PortScipOccurrence,
 )
+from codeintel.ingestion.scip.protobuf_parser import parse_index
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -109,6 +110,7 @@ EXPECTED_FILE_COUNT = 2
 EXPECTED_TEST_COUNT = 3
 PYRIGHT_PLUGINS_COUNT = 6
 EXPECTED_COVERAGE_RATIO = 0.6
+SYMBOL_KIND_CLASS = 7
 
 
 # =============================================================================
@@ -739,14 +741,13 @@ def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
     exc = ToolNotFoundError(ToolName.SCIP_PYTHON, tools_cfg.scip_python_bin)
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
+    request = ScipRunRequest(
+        repo_root=tmp_path,
+        output_scip=tmp_path / "index.scip",
+        proto_module_path=tmp_path / "scip_pb2.py",
+    )
     with pytest.raises(ToolNotFoundError):
-        asyncio.run(
-            service.run_scip_full(
-                tmp_path,
-                output_scip=tmp_path / "index.scip",
-                proto_module_path=tmp_path / "scip_pb2.py",
-            )
-        )
+        asyncio.run(service.run_scip_full(request))
 
 
 # =============================================================================
@@ -980,6 +981,85 @@ def test_parse_scip_range_invalid_skips_occurrence(tmp_path: Path) -> None:
     )
     parsed = parse_index(index_path, proto_module_path)
     expect_equal(len(parsed.documents[0].occurrences), 0)
+
+
+def test_parse_scip_metadata_and_diagnostics(tmp_path: Path) -> None:
+    """parse_index should capture symbol info, relationships, diagnostics, and externals."""
+    proto_module_path = ensure_proto_module(tmp_path)
+    index_path = tmp_path / "index.scip"
+    symbol = "scip-python python CodeIntel 0.1.0 `mod`/Foo#"
+    related_impl = "scip-python python CodeIntel 0.1.0 `mod`/Base#"
+    related_ref = "scip-python python CodeIntel 0.1.0 `mod`/Ref#"
+    enclosing_symbol = "scip-python python CodeIntel 0.1.0 `mod`/"
+    write_scip_index(
+        index_path,
+        proto_module_path=proto_module_path,
+        documents=[
+            {
+                "relative_path": "mod.py",
+                "symbols": [
+                    {
+                        "symbol": symbol,
+                        "documentation": ["Doc line 1", "Doc line 2"],
+                        "kind": SYMBOL_KIND_CLASS,
+                        "display_name": "Foo",
+                        "signature": "Foo()",
+                        "enclosing_symbol": enclosing_symbol,
+                        "relationships": [
+                            {"symbol": related_impl, "is_implementation": True},
+                            {"symbol": related_ref, "is_reference": True},
+                        ],
+                    }
+                ],
+                "occurrences": [
+                    {
+                        "symbol": symbol,
+                        "range": [2, 1, 2, 4],
+                        "symbol_roles": 1,
+                        "diagnostics": [
+                            {
+                                "severity": 1,
+                                "code": "E100",
+                                "message": "Bad call",
+                                "source": "scip",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+        external_symbols=["scip-python python requests 2.31.0 `requests`/"],
+    )
+    parsed = parse_index(index_path, proto_module_path)
+    expect_equal(len(parsed.symbol_infos), 1)
+    info = parsed.symbol_infos[0]
+    expect_true(info.symbol == symbol)
+    expect_true(info.documentation == "Doc line 1\nDoc line 2")
+    expect_true(info.kind == SYMBOL_KIND_CLASS)
+    expect_true(info.display_name == "Foo")
+    expect_true(info.signature == "Foo()")
+    expect_true(info.enclosing_symbol == enclosing_symbol)
+
+    relationship_kinds = {rel.relationship_kind for rel in parsed.relationships}
+    related_symbols = {rel.related_symbol for rel in parsed.relationships}
+    expect_true("implementation" in relationship_kinds)
+    expect_true("reference" in relationship_kinds)
+    expect_true(related_impl in related_symbols)
+    expect_true(related_ref in related_symbols)
+
+    expect_equal(len(parsed.diagnostics), 1)
+    diagnostic = parsed.diagnostics[0]
+    expect_true(diagnostic.rel_path == "mod.py")
+    expect_true(diagnostic.severity == "Error")
+    expect_true(diagnostic.code == "E100")
+    expect_true(diagnostic.message == "Bad call")
+    expect_true(diagnostic.source == "scip")
+
+    expect_equal(len(parsed.external_symbols), 1)
+    external = parsed.external_symbols[0]
+    expect_true(external.package_manager == "python")
+    expect_true(external.package_name == "requests")
+    expect_true(external.package_version == "2.31.0")
 
 
 def test_scip_index_result_from_documents() -> None:
@@ -1309,30 +1389,28 @@ def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:
     exc = ToolNotFoundError(ToolName.SCIP_PYTHON, tools_cfg.scip_python_bin)
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
+    request = ScipRunRequest(
+        repo_root=tmp_path,
+        output_scip=tmp_path / "index.scip",
+        proto_module_path=tmp_path / "scip_pb2.py",
+    )
 
     with pytest.raises(ToolNotFoundError):
-        asyncio.run(
-            service.run_scip_full(
-                tmp_path,
-                output_scip=tmp_path / "index.scip",
-                proto_module_path=tmp_path / "scip_pb2.py",
-            )
-        )
+        asyncio.run(service.run_scip_full(request))
 
 
 def test_tool_service_run_scip_full_execution_error(tmp_path: Path) -> None:
     """ToolService.run_scip_full should raise ToolExecutionError on failure."""
     runner = PresetRunner(RuntimeError("scip failed"))
     service = ToolService(runner)
+    request = ScipRunRequest(
+        repo_root=tmp_path,
+        output_scip=tmp_path / "index.scip",
+        proto_module_path=tmp_path / "scip_pb2.py",
+    )
 
     with pytest.raises(ToolExecutionError):
-        asyncio.run(
-            service.run_scip_full(
-                tmp_path,
-                output_scip=tmp_path / "index.scip",
-                proto_module_path=tmp_path / "scip_pb2.py",
-            )
-        )
+        asyncio.run(service.run_scip_full(request))
 
 
 def test_tool_service_run_pyrefly_success(tmp_path: Path) -> None:

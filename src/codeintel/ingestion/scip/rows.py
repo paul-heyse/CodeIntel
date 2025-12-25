@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from codeintel.ingestion.ports.tools import ScipDocument
+from codeintel.ingestion.scip.manifest import ScipShardManifest
 from codeintel.ingestion.scip.models import (
     ScipDiagnostic,
     ScipExternalSymbol,
@@ -336,9 +337,54 @@ def build_external_symbol_rows(
     return rows
 
 
+def build_module_state_rows(
+    manifest: ScipShardManifest,
+    repo: str,
+    commit: str,
+    *,
+    serializer: RowSerializer | None = None,
+) -> list[tuple[object, ...]]:
+    """Build rows for core.scip_module_state.
+
+    Returns
+    -------
+    list[tuple[object, ...]]
+        Serialized row tuples for module state records.
+    """
+    rows: list[tuple[object, ...]] = []
+    for rel_path, record in sorted(manifest.records.items()):
+        payload = {
+            "repo": repo,
+            "commit": commit,
+            "rel_path": rel_path,
+            "content_hash": record.content_hash,
+            "options_hash": record.options_hash,
+            "tool_version": record.tool_version,
+            "shard_path": record.shard_path,
+            "updated_at": record.updated_at,
+        }
+        if serializer is not None:
+            rows.append(serializer(payload))
+        else:
+            rows.append(
+                (
+                    payload["repo"],
+                    payload["commit"],
+                    payload["rel_path"],
+                    payload["content_hash"],
+                    payload["options_hash"],
+                    payload["tool_version"],
+                    payload["shard_path"],
+                    payload["updated_at"],
+                )
+            )
+    return rows
+
+
 __all__ = [
     "build_diagnostic_rows",
     "build_external_symbol_rows",
+    "build_module_state_rows",
     "build_occurrence_rows",
     "build_symbol_information_rows",
     "build_symbol_relationship_rows",

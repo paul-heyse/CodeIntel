@@ -20,6 +20,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunOptions,
 )
 from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.ports.tools import ScipRunRequest
 from tests._helpers.ingestion import write_coverage_file
 from tests._helpers.scip_proto import ensure_proto_module
 from tests._helpers.tool_payloads import coverage_json_payload
@@ -293,12 +294,13 @@ def _run_scip_index(context: ToolingContext, build_dir: Path) -> Path:
     scip_dir.mkdir(parents=True, exist_ok=True)
     output_scip = scip_dir / "index.scip"
     proto_module_path = ensure_proto_module(build_dir)
+    request = ScipRunRequest(
+        repo_root=context.repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+    )
     result = asyncio.run(
-        context.service.run_scip_full(
-            context.repo_root,
-            output_scip=output_scip,
-            proto_module_path=proto_module_path,
-        )
+        context.service.run_scip_full(request)
     )
     scip_index = result.index_scip_path or output_scip
     if not scip_index.is_file():
