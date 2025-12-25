@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.tagging import tag_helper
 from codeintel.core.execution import ExecutionContext, RunContext
 
 
+@tag_helper(domain="analytics")
 def execution_context(env: BuildEnv) -> ExecutionContext:
     """Expose the unified ExecutionContext to Hamilton targets.
 
@@ -30,6 +32,7 @@ def execution_context(env: BuildEnv) -> ExecutionContext:
     return env.execution_context
 
 
+@tag_helper(domain="analytics")
 def run_context(execution_context: ExecutionContext) -> RunContext:
     """Expose the RunContext for Hamilton targets.
 

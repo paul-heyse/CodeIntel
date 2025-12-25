@@ -9,7 +9,8 @@ still allowing controlled extension via ``extra_tags``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, ParamSpec, Protocol, TypedDict, TypeVar, cast
 
 from hamilton.function_modifiers import tag as h_tag
@@ -53,6 +54,16 @@ TagKey = Literal[
     "target_estimated_duration_ms",
     "target_spec_version",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class TagAttachContext:
+    """Context for attaching canonical tags to dynamic nodes."""
+
+    domain: str | None = None
+    target: str | None = None
+    node_type: str | None = None
+    extra_tags: Mapping[TagKey, TagValue] | None = None
 
 
 class _HamiltonTagKwargs(TypedDict, total=False):
@@ -155,6 +166,23 @@ def _build_common_tags(
     if target is not None:
         base["target"] = target
     return _merge_extra_tags(base, extra_tags)
+
+
+def build_tag_kwargs(
+    *,
+    node_type: str,
+    domain: str | None = None,
+    target: str | None = None,
+    extra_tags: Mapping[TagKey, TagValue] | None = None,
+) -> dict[TagKey, TagValue]:
+    """Return canonical tag keyword arguments for node attachment."""
+    tags = _build_common_tags(
+        node_type=node_type,
+        domain=domain,
+        target=target,
+        extra_tags=extra_tags,
+    )
+    return cast("dict[TagKey, TagValue]", tags)
 
 
 def _tag(
@@ -362,6 +390,8 @@ def tag_helper(
 
 __all__ = [
     "Decorator",
+    "TagAttachContext",
+    "build_tag_kwargs",
     "tag_artifact",
     "tag_compute",
     "tag_dataset",

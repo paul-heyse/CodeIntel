@@ -36,6 +36,16 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_PYTEST_NO_TESTS_EXIT_CODE = 5
+
+
+@dataclass(frozen=True)
+class _PytestRunOutcome:
+    status: ToolStatus
+    run: ToolRunResult | None
+    error: Exception | None
+    reason: str | None = None
+
 
 def _parse_pytest_json(
     payload: Mapping[str, Any],
@@ -146,24 +156,47 @@ class PytestPlugin(ToolPlugin):
             "--json-report",
             f"--json-report-file={json_report_path}",
         ]
-        result = await self._run_pytest(repo_root, json_report_path, args)
-        if result is None:
+        outcome = await self._run_pytest(repo_root, json_report_path, args)
+        if outcome.status is ToolStatus.NOT_FOUND:
+            error = outcome.error or ToolNotFoundError(
+                ToolName.PYTEST,
+                self.tools_config.pytest_bin,
+            )
+            return ToolPluginResult(
+                tool=ToolName.PYTEST,
+                status=ToolStatus.NOT_FOUND,
+                artifacts={},
+                run=None,
+                error=error,
+                parsed=TestReport.empty(),
+            )
+        if outcome.status is ToolStatus.SKIPPED:
+            if outcome.reason == "no_tests":
+                log.info("pytest run collected no tests; skipping report ingestion")
             return ToolPluginResult(
                 tool=ToolName.PYTEST,
                 status=ToolStatus.SKIPPED,
                 artifacts={"pytest_json_report": json_report_path},
-                run=None,
+                run=outcome.run,
                 error=None,
                 parsed=TestReport.empty(),
             )
+        if outcome.status is ToolStatus.FAILED:
+            return ToolPluginResult(
+                tool=ToolName.PYTEST,
+                status=ToolStatus.FAILED,
+                artifacts={"pytest_json_report": json_report_path},
+                run=outcome.run,
+                error=outcome.error,
+                parsed=TestReport.empty(),
+            )
         parsed = await _load_pytest_report(json_report_path)
-        status = ToolStatus.OK if result.ok else ToolStatus.FAILED
         return ToolPluginResult(
-            tool=result.tool,
-            status=status,
+            tool=ToolName.PYTEST,
+            status=ToolStatus.OK,
             artifacts={"pytest_json_report": json_report_path},
-            run=result,
-            error=None if status is ToolStatus.OK else ToolExecutionError(result),
+            run=outcome.run,
+            error=None,
             parsed=parsed,
         )
 
@@ -172,9 +205,9 @@ class PytestPlugin(ToolPlugin):
         repo_root: Path,
         json_report_path: Path,
         args: list[str],
-    ) -> ToolRunResult | None:
+    ) -> _PytestRunOutcome:
         try:
-            return await self.runner.run_async(
+            result = await self.runner.run_async(
                 ToolName.PYTEST,
                 args,
                 options=ToolRunOptions(
@@ -185,12 +218,17 @@ class PytestPlugin(ToolPlugin):
             )
         except ToolNotFoundError:
             log.warning("pytest binary not found; skipping test ingestion")
-            return None
+            outcome = _PytestRunOutcome(
+                status=ToolStatus.NOT_FOUND,
+                run=None,
+                error=ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin),
+                reason="not_found",
+            )
         except ToolExecutionError as exc:
-            if _looks_like_missing_json_report(exc.result.stderr):
-                log.warning("pytest json-report flags unsupported; skipping test ingestion")
-                return None
-            raise
+            outcome = _classify_pytest_execution_error(exc)
+        else:
+            outcome = _classify_pytest_result(result)
+        return outcome
 
 
 def _require_json_report_path(kwargs: Mapping[str, object]) -> Path:
@@ -220,8 +258,62 @@ async def _load_pytest_report(json_report_path: Path) -> TestReport:
     return await to_thread.run_sync(_load_and_parse)
 
 
-def _looks_like_missing_json_report(stderr: str) -> bool:
-    lowered = stderr.lower()
-    if "--json-report" not in lowered:
+def _looks_like_missing_json_report_output(stdout: str, stderr: str) -> bool:
+    combined = f"{stdout}\n{stderr}".lower()
+    if "--json-report" not in combined:
         return False
-    return "unrecognized arguments" in lowered or "unknown option" in lowered
+    return "unrecognized arguments" in combined or "unknown option" in combined
+
+
+def _is_no_tests_result(result: ToolRunResult) -> bool:
+    return result.returncode == _PYTEST_NO_TESTS_EXIT_CODE
+
+
+def _classify_pytest_execution_error(exc: ToolExecutionError) -> _PytestRunOutcome:
+    if _looks_like_missing_json_report_output(exc.result.stdout, exc.result.stderr):
+        log.warning("pytest json-report flags unsupported; skipping test ingestion")
+        return _PytestRunOutcome(
+            status=ToolStatus.SKIPPED,
+            run=exc.result,
+            error=None,
+            reason="missing_json_report",
+        )
+    if _is_no_tests_result(exc.result):
+        return _PytestRunOutcome(
+            status=ToolStatus.SKIPPED,
+            run=exc.result,
+            error=None,
+            reason="no_tests",
+        )
+    return _PytestRunOutcome(
+        status=ToolStatus.FAILED,
+        run=exc.result,
+        error=exc,
+        reason="execution_error",
+    )
+
+
+def _classify_pytest_result(result: ToolRunResult) -> _PytestRunOutcome:
+    if _is_no_tests_result(result):
+        return _PytestRunOutcome(
+            status=ToolStatus.SKIPPED,
+            run=result,
+            error=None,
+            reason="no_tests",
+        )
+    if _looks_like_missing_json_report_output(result.stdout, result.stderr):
+        log.warning("pytest json-report flags unsupported; skipping test ingestion")
+        return _PytestRunOutcome(
+            status=ToolStatus.SKIPPED,
+            run=result,
+            error=None,
+            reason="missing_json_report",
+        )
+    if result.ok:
+        return _PytestRunOutcome(status=ToolStatus.OK, run=result, error=None)
+    return _PytestRunOutcome(
+        status=ToolStatus.FAILED,
+        run=result,
+        error=ToolExecutionError(result),
+        reason="nonzero_exit",
+    )

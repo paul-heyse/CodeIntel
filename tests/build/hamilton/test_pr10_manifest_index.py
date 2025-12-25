@@ -247,7 +247,7 @@ class TestSkipCheckManifestIndex:
 
         try:
             request = SkipCheckRequest(
-                gateway=fake_gateway,
+                manifest_service=fake_gateway.build,
                 target="modules",
                 repo="test/repo",
                 commit="abc123",

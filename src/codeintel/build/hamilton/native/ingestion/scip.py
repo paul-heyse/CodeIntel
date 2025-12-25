@@ -871,6 +871,7 @@ _SCIP_INGEST_ROW_SPECS = (
         node_name="scip__external_symbol_rows",
     ),
 )
+_SCIP_INGEST_ROW_NODE_NAMES = tuple(spec.node_name for spec in _SCIP_INGEST_ROW_SPECS)
 
 
 def _scip_row_docstring(table_key: str) -> str:
@@ -939,7 +940,11 @@ class _SaveToScipRowTables(NodeTransformer):
     parameter="rows_attr",
     assigned_output=_SCIP_INGEST_ROW_VALUES,
 )
-@tag_compute(domain="ingestion", target=SCIP_TARGET_NAME)
+@tag_compute(
+    domain="ingestion",
+    target=SCIP_TARGET_NAME,
+    target_=_SCIP_INGEST_ROW_NODE_NAMES,
+)
 def scip__rows_for_table(
     t__scip__ingest: ScipIngestResult,
     rows_attr: str,

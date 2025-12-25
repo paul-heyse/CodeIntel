@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from anyio import to_thread
 
 from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.engine import ToolStatus
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -29,7 +30,7 @@ from codeintel.ingestion.engine.results import (
     ScipIndexResult,
     ScipOccurrence,
 )
-from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.engine.service import PytestReportResult, ToolService
 from tests._helpers.records import CallRecorder, ToolRunCall
 from tests._helpers.scip_proto import ensure_proto_module
 from tests._helpers.scip_proto import write_scip_index as write_proto_index
@@ -273,14 +274,16 @@ class PresetRunner(ToolRunner):
         ToolExecutionError
             When initialized with a generic exception.
         """
-        del tool, args
         run_options = options or ToolRunOptions()
+        tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
+        args_tuple = tuple(args)
         if isinstance(self._result, ToolNotFoundError):
             raise ToolNotFoundError(self._result.tool, self._result.configured_path)
         if isinstance(self._result, Exception):
             raise ToolExecutionError(
                 make_tool_run_result(
-                    ToolName.PYRIGHT,
+                    tool_enum,
+                    args=args_tuple,
                     options=ToolRunResultOptions(
                         returncode=1,
                         stderr="dummy error",
@@ -562,7 +565,7 @@ class FakeToolService(ToolService):
         repo_root: Path,
         *,
         json_report_path: Path,
-    ) -> bool:
+    ) -> PytestReportResult:
         """Run pytest and return configured success.
 
         Parameters
@@ -574,8 +577,8 @@ class FakeToolService(ToolService):
 
         Returns
         -------
-        bool
-            Configured pytest success status.
+        PytestReportResult
+            Configured pytest report outcome.
         """
         self.calls.record(
             ToolRunCall(
@@ -588,7 +591,16 @@ class FakeToolService(ToolService):
         )
         if self.fake_config.raise_on_pytest is not None:
             raise self.fake_config.raise_on_pytest
-        return self.fake_config.pytest_success
+        status = ToolStatus.OK if self.fake_config.pytest_success else ToolStatus.FAILED
+        error = None if self.fake_config.pytest_success else RuntimeError("pytest failed")
+        return PytestReportResult(
+            status=status,
+            executed=True,
+            report_path=json_report_path,
+            run=None,
+            error=error,
+            reason=None if self.fake_config.pytest_success else "fake_failure",
+        )
 
 
 def make_success_tool_service(

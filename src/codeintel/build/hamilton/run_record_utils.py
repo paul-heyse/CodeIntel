@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hash_evaluator import evaluate_hash_state
 from codeintel.build.hashing import compute_target_options_hash
@@ -14,14 +14,27 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import OutputTarget
-    from codeintel.storage.gateway import StorageGateway
+
+
+class BuildManifestService(Protocol):
+    """Protocol for manifest access in skip evaluation."""
+
+    def load_manifest(
+        self,
+        *,
+        target: str,
+        repo: str,
+        commit: str,
+    ) -> OutputManifest | None:
+        """Load an output manifest for a target snapshot."""
+        ...
 
 
 @dataclass(frozen=True)
 class SkipCheckRequest:
     """Input parameters for manifest skip evaluation."""
 
-    gateway: StorageGateway
+    manifest_service: BuildManifestService
     target: str
     repo: str
     commit: str
@@ -42,7 +55,11 @@ def _resolve_manifest(request: SkipCheckRequest) -> OutputManifest | None:
         cached = request.manifest_index.get(request.target)
         if cached is not None:
             return cached
-    return request.gateway.build.load_manifest(request.target, request.repo, request.commit)
+    return request.manifest_service.load_manifest(
+        target=request.target,
+        repo=request.repo,
+        commit=request.commit,
+    )
 
 
 def should_skip(request: SkipCheckRequest) -> bool:
@@ -94,7 +111,7 @@ def should_skip_native_target(
         resolved_options_hash = options_hash_for_target(env, target.name)
 
     request = SkipCheckRequest(
-        gateway=env.gateway,
+        manifest_service=env.manifest_service,
         target=target.name,
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
@@ -106,6 +123,7 @@ def should_skip_native_target(
 
 
 __all__ = [
+    "BuildManifestService",
     "SkipCheckRequest",
     "options_hash_for_target",
     "should_skip",

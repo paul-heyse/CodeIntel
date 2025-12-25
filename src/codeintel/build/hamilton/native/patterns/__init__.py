@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.native.patterns.loaders import load_query, load_table
 from codeintel.build.hamilton.native.patterns.materialization_collectors import (
     make_artifact_materializations_collector,
     make_mixed_materializations_collector,
@@ -52,6 +53,8 @@ __all__ = [
     "ToolTargetSpec",
     "attach_tool_target_template",
     "finalize_target_from_materializations",
+    "load_query",
+    "load_table",
     "make_artifact_materializations_collector",
     "make_mixed_materializations_collector",
     "make_table_materializations_collector",

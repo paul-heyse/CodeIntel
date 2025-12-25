@@ -31,6 +31,7 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.config import BuildConfig
+    from codeintel.build.hamilton.run_record_utils import BuildManifestService
     from codeintel.build.output_inventory import OutputInventory
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
@@ -190,6 +191,17 @@ class BuildEnv:
         if self.storage is not None:
             return self.storage.warehouse
         return Warehouse(self.gateway)
+
+    @property
+    def manifest_service(self) -> BuildManifestService:
+        """Return the manifest service for skip evaluation.
+
+        Returns
+        -------
+        BuildManifestService
+            Manifest service used to resolve OutputManifest entries.
+        """
+        return self.gateway.build
 
 
 __all__ = [

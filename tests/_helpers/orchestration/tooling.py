@@ -14,6 +14,7 @@ from coverage import Coverage
 
 from codeintel.config.models import ToolsConfig
 from codeintel.ingestion.adapters.tool_runner import ToolRunnerAdapter
+from codeintel.ingestion.engine import ToolStatus
 from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolRunner,
@@ -21,7 +22,7 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.engine.service import ToolService
 from codeintel.ingestion.ports.tools import ScipRunRequest
-from tests._helpers.ingestion import write_coverage_file
+from tests._helpers.ingestion import write_coverage_file, write_pytest_report
 from tests._helpers.scip_proto import ensure_proto_module
 from tests._helpers.tool_payloads import coverage_json_payload
 from tests._helpers.tooling_audit import require_tooling
@@ -267,7 +268,7 @@ def build_tooling_artifacts(
         }
     )
     coverage_file = write_coverage_file(build_dir, content=coverage_json)
-    pytest_report = _run_pytest_report(outputs.context, build_dir)
+    pytest_report = _run_pytest_report(outputs.context, build_dir, strict=False)
     scip_index = _run_scip_index(outputs.context, build_dir)
     adapter = ToolRunnerAdapter(outputs.context.service)
     return ToolingArtifacts(
@@ -280,12 +281,27 @@ def build_tooling_artifacts(
     )
 
 
-def _run_pytest_report(context: ToolingContext, build_dir: Path) -> Path:
+def _run_pytest_report(
+    context: ToolingContext,
+    build_dir: Path,
+    *,
+    strict: bool = True,
+) -> Path:
     report_path = context.tools_config.pytest_report_path or (
         build_dir / "test-results" / "pytest-report.json"
     )
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    asyncio.run(context.service.run_pytest_report(context.repo_root, json_report_path=report_path))
+    result = asyncio.run(
+        context.service.run_pytest_report(context.repo_root, json_report_path=report_path)
+    )
+    if result.status is ToolStatus.OK:
+        return report_path
+    if report_path.is_file():
+        return report_path
+    if strict:
+        message = f"pytest report unavailable: status={result.status} reason={result.reason}"
+        raise RuntimeError(message)
+    return write_pytest_report(build_dir, filename=report_path.name)
     return report_path
 
 
