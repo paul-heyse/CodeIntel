@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,12 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.fixtures.rows import function_metrics_row, function_profile_row, insert_rows
+from tests._helpers.fixtures.rows import (
+    FunctionValidationRow,
+    function_metrics_row,
+    function_profile_row,
+    insert_rows,
+)
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -79,6 +85,58 @@ def test_list_function_summaries_for_file_returns_empty_when_no_match(
     result = repo.list_function_summaries_for_file("nonexistent.py")
 
     expect_empty(result)
+
+
+def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> None:
+    """Verify list_function_validation filters by GOID and orders by newest first."""
+    rows = [
+        FunctionValidationRow(
+            repo=metrics_ctx.repo,
+            commit=metrics_ctx.commit,
+            function_goid_h128=900_001,
+            rel_path="src/alpha.py",
+            qualname="alpha",
+            issue="parse_failed",
+            detail="old",
+            created_at=datetime(2024, 1, 1, tzinfo=UTC),
+        ),
+        FunctionValidationRow(
+            repo=metrics_ctx.repo,
+            commit=metrics_ctx.commit,
+            function_goid_h128=900_001,
+            rel_path="src/alpha.py",
+            qualname="alpha",
+            issue="span_not_found",
+            detail="new",
+            created_at=datetime(2024, 1, 2, tzinfo=UTC),
+        ),
+        FunctionValidationRow(
+            repo=metrics_ctx.repo,
+            commit=metrics_ctx.commit,
+            function_goid_h128=900_002,
+            rel_path="src/beta.py",
+            qualname="beta",
+            issue="unknown_function",
+            detail="other",
+            created_at=datetime(2024, 1, 3, tzinfo=UTC),
+        ),
+    ]
+    insert_rows(metrics_ctx.gateway, rows)
+
+    repo = FunctionRepository(
+        gateway=metrics_ctx.gateway,
+        repo=metrics_ctx.repo,
+        commit=metrics_ctx.commit,
+    )
+
+    results = repo.list_function_validation(goid_h128=900_001)
+
+    expect_equal(len(results), 2)
+    expect_equal(results[0]["detail"], "new")
+    expect_true(
+        all(row["function_goid_h128"] == 900_001 for row in results),
+        message="results should include only the requested GOID",
+    )
 
 
 def test_list_high_risk_functions_returns_empty_when_no_match(

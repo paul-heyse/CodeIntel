@@ -70,6 +70,7 @@ def test_analytics_tables_relations_are_queryable(fresh_gateway: StorageGateway)
     for relation in (
         analytics.function_metrics(),
         analytics.function_types(),
+        analytics.function_validation(),
         analytics.function_profile(),
         analytics.coverage_functions(),
         analytics.coverage_lines(),

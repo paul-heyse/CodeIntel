@@ -46,19 +46,69 @@ class InstrumentationRegistry:
         self._emitted_metrics: WeakKeyDictionary[Meter, bool] = WeakKeyDictionary()
 
     def record_enabled(self, name: str) -> None:
-        """Record an enabled instrumentation entry."""
+        """Record an enabled instrumentation entry.
+
+        Parameters
+        ----------
+        name
+            Instrumentation name to record.
+
+        Returns
+        -------
+        None
+            None.
+        """
         self._record(name, status="enabled")
 
     def record_unavailable(self, name: str, detail: str | None = None) -> None:
-        """Record an unavailable instrumentation entry."""
+        """Record an unavailable instrumentation entry.
+
+        Parameters
+        ----------
+        name
+            Instrumentation name to record.
+        detail
+            Optional detail describing why it is unavailable.
+
+        Returns
+        -------
+        None
+            None.
+        """
         self._record(name, status="unavailable", detail=detail)
 
     def record_suppressed(self, name: str, detail: str | None = None) -> None:
-        """Record a suppressed instrumentation entry."""
+        """Record a suppressed instrumentation entry.
+
+        Parameters
+        ----------
+        name
+            Instrumentation name to record.
+        detail
+            Optional detail describing why it is suppressed.
+
+        Returns
+        -------
+        None
+            None.
+        """
         self._record(name, status="suppressed", detail=detail)
 
     def record_error(self, name: str, detail: str | None = None) -> None:
-        """Record an instrumentation error entry."""
+        """Record an instrumentation error entry.
+
+        Parameters
+        ----------
+        name
+            Instrumentation name to record.
+        detail
+            Optional detail describing the error.
+
+        Returns
+        -------
+        None
+            None.
+        """
         self._record(name, status="error", detail=detail)
 
     def snapshot(self) -> tuple[InstrumentationRecord, ...]:
@@ -93,7 +143,18 @@ class InstrumentationRegistry:
         return counts
 
     def emit_summary(self, logger: logging.Logger | None = None) -> None:
-        """Emit a structured log summary of instrumentation status."""
+        """Emit a structured log summary of instrumentation status.
+
+        Parameters
+        ----------
+        logger
+            Optional logger override.
+
+        Returns
+        -------
+        None
+            None.
+        """
         log_target = logger or LOG
         payload = {
             "event": "telemetry.instrumentation",
@@ -110,7 +171,18 @@ class InstrumentationRegistry:
         log_target.info("telemetry.instrumentation %s", json.dumps(payload, sort_keys=True))
 
     def emit_metrics(self, meter: Meter) -> None:
-        """Emit instrumentation status metrics using the supplied meter."""
+        """Emit instrumentation status metrics using the supplied meter.
+
+        Parameters
+        ----------
+        meter
+            OpenTelemetry meter to emit metrics with.
+
+        Returns
+        -------
+        None
+            None.
+        """
         with self._lock:
             if meter in self._emitted_metrics:
                 return
@@ -127,7 +199,13 @@ class InstrumentationRegistry:
             )
 
     def clear(self) -> None:
-        """Clear all tracked instrumentation records and emission state."""
+        """Clear all tracked instrumentation records and emission state.
+
+        Returns
+        -------
+        None
+            None.
+        """
         with self._lock:
             self._records.clear()
             self._emitted_metrics.clear()
@@ -145,6 +223,18 @@ class InstrumentationRegistry:
 
 
 def _get_instruments(meter: Meter) -> _Instruments:
+    """Return cached instruments for the supplied meter.
+
+    Parameters
+    ----------
+    meter
+        OpenTelemetry meter to use for metric instruments.
+
+    Returns
+    -------
+    _Instruments
+        Cached instrumentation counter wrapper.
+    """
     instruments = _INSTRUMENTS.get(meter)
     if instruments is not None:
         return instruments

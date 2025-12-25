@@ -37,7 +37,18 @@ def get_correlation_id() -> str | None:
 
 
 def set_correlation_id(value: str | None) -> None:
-    """Set the current correlation identifier."""
+    """Set the current correlation identifier.
+
+    Parameters
+    ----------
+    value
+        Correlation identifier to set.
+
+    Returns
+    -------
+    None
+        None.
+    """
     _CORRELATION_ID.set(value)
 
 
@@ -53,7 +64,18 @@ def get_run_id() -> str | None:
 
 
 def set_run_id(value: str | None) -> None:
-    """Set the current run identifier."""
+    """Set the current run identifier.
+
+    Parameters
+    ----------
+    value
+        Run identifier to set.
+
+    Returns
+    -------
+    None
+        None.
+    """
     _RUN_ID.set(value)
 
 
@@ -69,13 +91,35 @@ def get_domain() -> str | None:
 
 
 def set_domain(value: str | None) -> None:
-    """Set the current domain identifier."""
+    """Set the current domain identifier.
+
+    Parameters
+    ----------
+    value
+        Domain identifier to set.
+
+    Returns
+    -------
+    None
+        None.
+    """
     _DOMAIN.set(value)
 
 
 @contextlib.contextmanager
 def correlation_context(correlation_id: str) -> Iterator[None]:
-    """Set the correlation identifier within a context manager."""
+    """Set the correlation identifier within a context manager.
+
+    Parameters
+    ----------
+    correlation_id
+        Correlation identifier to attach in context.
+
+    Returns
+    -------
+    Iterator[None]
+        Context manager iterator.
+    """
     token = _CORRELATION_ID.set(correlation_id)
     baggage_token: contextvars.Token[Context] | None = None
 
@@ -92,7 +136,20 @@ def correlation_context(correlation_id: str) -> Iterator[None]:
 
 @contextlib.contextmanager
 def run_context(*, run_id: str | None = None, domain: str | None = None) -> Iterator[None]:
-    """Set run and domain identifiers within a context manager."""
+    """Set run and domain identifiers within a context manager.
+
+    Parameters
+    ----------
+    run_id
+        Run identifier to attach.
+    domain
+        Domain identifier to attach.
+
+    Returns
+    -------
+    Iterator[None]
+        Context manager iterator.
+    """
     run_token = _RUN_ID.set(run_id)
     domain_token = _DOMAIN.set(domain)
     baggage_token: contextvars.Token[Context] | None = None

@@ -325,7 +325,7 @@ def _record_cli_metrics(
         return
     instruments = _get_cli_instruments(obs.meter)
     command = _command_label(state.command_chain)
-    attrs: dict[str, object] = {
+    attrs: dict[str, str | bool | int | float] = {
         "cli.command": command,
         "cli.exit_code": exit_code,
         "cli.is_parse_error": state.is_parse_error,
@@ -341,7 +341,7 @@ def _record_cli_metrics(
             attributes={"cli.command": command},
         )
     if state.is_parse_error:
-        error_attrs: dict[str, object] = {"cli.command": command}
+        error_attrs: dict[str, str | bool | int | float] = {"cli.command": command}
         if state.error_type is not None:
             error_attrs["cli.error_type"] = state.error_type
         instruments.parse_errors.add(1, attributes=error_attrs)

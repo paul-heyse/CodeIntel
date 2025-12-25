@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import sys
 from collections.abc import Callable
@@ -24,7 +25,13 @@ class GrpcObservabilityHandle:
     plugin: object
 
     def shutdown(self) -> None:
-        """Deregister the global grpcio-observability plugin."""
+        """Deregister the global grpcio-observability plugin.
+
+        Returns
+        -------
+        None
+            None.
+        """
         deregister = getattr(self.plugin, "deregister_global", None)
         if callable(deregister):
             deregister()
@@ -55,8 +62,8 @@ def register_grpc_observability(
         return None
 
     try:
-        import grpc_observability
-    except ImportError as exc:
+        grpc_observability = importlib.import_module("grpc_observability")
+    except ModuleNotFoundError as exc:
         registry.record_unavailable("grpcio-observability", detail=str(exc))
         return None
 
