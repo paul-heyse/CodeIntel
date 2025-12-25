@@ -25,7 +25,18 @@ class DataAccessSpec:
 
 
 def load_table_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
-    """Build a loader node from a table access spec."""
+    """Build a loader node from a table access spec.
+
+    Returns
+    -------
+    Callable[..., ir.Table]
+        Loader function that returns a table expression.
+
+    Raises
+    ------
+    ValueError
+        If the spec includes a SQL query.
+    """
     if spec.sql:
         msg = "load_table_spec requires DataAccessSpec.sql to be None"
         raise ValueError(msg)
@@ -38,7 +49,18 @@ def load_table_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
 
 
 def load_query_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
-    """Build a loader node from a query access spec."""
+    """Build a loader node from a query access spec.
+
+    Returns
+    -------
+    Callable[..., ir.Table]
+        Loader function that returns a table expression.
+
+    Raises
+    ------
+    ValueError
+        If the spec does not include a SQL query.
+    """
     if not spec.sql:
         msg = "load_query_spec requires DataAccessSpec.sql to be set"
         raise ValueError(msg)
@@ -52,7 +74,13 @@ def load_query_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
 
 
 def load_access(spec: DataAccessSpec) -> Callable[..., ir.Table]:
-    """Build a loader node from a table/query access spec."""
+    """Build a loader node from a table/query access spec.
+
+    Returns
+    -------
+    Callable[..., ir.Table]
+        Loader function that returns a table expression.
+    """
     if spec.sql:
         return load_query_spec(spec)
     return load_table_spec(spec)

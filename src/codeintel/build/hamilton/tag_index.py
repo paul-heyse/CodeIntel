@@ -121,7 +121,7 @@ class TagIndex:
         TagIndex
             Tag index built from module nodes.
         """
-        driver = Driver(config or {}, *modules)
+        driver = Driver(config or {}, *modules, allow_module_overrides=True)
         tags_by_node: dict[str, dict[str, str]] = {}
         for node_name, node in driver.graph.nodes.items():
             tags_by_node[node_name] = _node_tags(node)

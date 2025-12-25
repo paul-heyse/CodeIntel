@@ -28,17 +28,18 @@ from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import FileArtifactSaver
+from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_file_artifact_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas import deferred_columns_for_table_key, get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
     compile_schema_manifest,
@@ -48,7 +49,9 @@ from codeintel.build.serving.semantic_compile import (
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.build.targets import TargetGraph
+from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.metadata.sync import (
     sync_derived_lineage_columns,
@@ -72,6 +75,7 @@ SERVING_ARTIFACT_BUILDSPEC = "buildspec"
 SERVING_ARTIFACT_ENVIRONMENT = "environment"
 SERVING_ARTIFACT_VIEWS_SQL = "views_sql"
 SERVING_ARTIFACT_VIEWS_SQL_DIFF = "views_sql_diff"
+SCHEMA_INFERENCE_ERRORS_TABLE_KEY = "core.schema_inference_errors"
 
 
 def _package_version(name: str) -> str:
@@ -321,6 +325,48 @@ def serving_artifacts__schema_manifest(env: BuildEnv) -> str:
 
 
 @SaveToObjectMetadataDecorator(
+    [DuckDBRowsSaver],
+    output_name_=materialize_node(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
+    env=source("env"),
+    graph=source("graph"),
+    target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
+    table_key=value(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
+    columns=value(deferred_columns_for_table_key(SCHEMA_INFERENCE_ERRORS_TABLE_KEY)),
+)
+@tag_compute(
+    domain="export",
+    target=SERVING_ARTIFACTS_TARGET_NAME,
+    target_="serving_artifacts__schema_inference_errors_rows",
+)
+def serving_artifacts__schema_inference_errors_rows(
+    env: BuildEnv,
+    serving_artifacts__schema_manifest: str,
+) -> tuple[tuple[object, ...], ...]:
+    """Persist schema inference errors recorded during schema compile.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...]
+        Row tuples for the schema inference errors table.
+    """
+    _ = serving_artifacts__schema_manifest
+    schema_index = get_target_metadata_service().schema_index
+    run_context = env.run_context
+    run_id = run_context.run_id if run_context is not None else "unknown"
+    return tuple(
+        row_to_tuple(
+            SCHEMA_INFERENCE_ERRORS_TABLE_KEY,
+            row,
+        )
+        for row in schema_index.iter_inference_error_rows(
+            repo=env.repo,
+            commit=env.commit,
+            run_id=run_id,
+        )
+    )
+
+
+@SaveToObjectMetadataDecorator(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_BUILDSPEC}"),
     env=source("env"),
@@ -493,6 +539,20 @@ def serving_artifacts__materializations_views(
 
 
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
+def serving_artifacts__table_materializations(
+    m__core__schema_inference_errors: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect saver metadata for schema inference error rows.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Mapping of table key to saver metadata.
+    """
+    return {SCHEMA_INFERENCE_ERRORS_TABLE_KEY: m__core__schema_inference_errors}
+
+
+@tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations(
     serving_artifacts__materializations_base: dict[str, MaterializationMetadata],
     serving_artifacts__materializations_views: dict[str, MaterializationMetadata],
@@ -514,6 +574,7 @@ def t__serving_artifacts(
     env: BuildEnv,
     graph: TargetGraph,
     serving_artifacts__materializations: dict[str, MaterializationMetadata],
+    serving_artifacts__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec).
 
@@ -525,17 +586,22 @@ def t__serving_artifacts(
         Target graph containing the serving_artifacts contract.
     serving_artifacts__materializations
         Saver metadata mapping keyed by artifact name.
+    serving_artifacts__table_materializations
+        Saver metadata mapping keyed by table name.
 
     Returns
     -------
     TargetRunRecord
         Record describing the artifact materialization outcome.
     """
-    return record_from_file_artifact_materializations(
-        env=env,
-        graph=graph,
-        target_name=SERVING_ARTIFACTS_TARGET_NAME,
-        materializations=serving_artifacts__materializations,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SERVING_ARTIFACTS_TARGET_NAME,
+        ),
+        artifact_materializations=serving_artifacts__materializations,
+        table_materializations=serving_artifacts__table_materializations,
     )
 
 

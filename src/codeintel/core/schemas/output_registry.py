@@ -211,6 +211,26 @@ GOIDS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+SCHEMA_INFERENCE_ERRORS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="core",
+        name="schema_inference_errors",
+        columns=[
+            Column("table_key", "VARCHAR", nullable=False),
+            *REPO_COMMIT_COLS,
+            Column("error", "VARCHAR", nullable=False),
+            Column("occurred_at", "TIMESTAMP", nullable=False),
+            Column("run_id", "VARCHAR", nullable=False),
+        ],
+        primary_key=("table_key", "repo", "commit", "run_id"),
+        indexes=(
+            Index("idx_core_schema_inference_errors_table_key", ("table_key",)),
+            Index("idx_core_schema_inference_errors_run_id", ("run_id",)),
+        ),
+        description="Schema inference failures recorded during schema compile.",
+    ),
+)
+
 SCIP_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="core",
@@ -2133,6 +2153,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *HOTSPOTS_OVERRIDE_TABLES,
         *IMPORT_GRAPH_OVERRIDE_TABLES,
         *MODULES_OVERRIDE_TABLES,
+        *SCHEMA_INFERENCE_ERRORS_OVERRIDE_TABLES,
         *PROFILES_OVERRIDE_TABLES,
         *SCIP_OVERRIDE_TABLES,
         *SEMANTIC_ROLES_OVERRIDE_TABLES,
@@ -2196,6 +2217,7 @@ __all__ = [
     "MODULES_OVERRIDE_TABLES",
     "OUTPUT_TABLE_SCHEMAS",
     "PROFILES_OVERRIDE_TABLES",
+    "SCHEMA_INFERENCE_ERRORS_OVERRIDE_TABLES",
     "SCIP_OVERRIDE_TABLES",
     "SEMANTIC_ROLES_OVERRIDE_TABLES",
     "SUBSYSTEMS_OVERRIDE_TABLES",

@@ -13,9 +13,10 @@ import contextlib
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
+import ibis.expr.types as ir
 import libcst as cst
 from hamilton.function_modifiers.dependencies import source, value
 
@@ -47,7 +48,7 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_cst,
 )
 from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 from codeintel.storage.warehouse import MaterializationResult, MaterializeOptions
 
 if TYPE_CHECKING:
@@ -57,8 +58,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.graph import (
         GraphCallGraphEdgesRow as CallGraphEdgeRow,
     )
-    from codeintel.storage.gateway import StorageGateway
-
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
@@ -157,7 +156,7 @@ class CallGraphExtractResult:
     error: str | None = None
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def call_graph__execution_result(t__call_graph__extract: CallGraphExtractResult) -> ExecutionResult:
     """Convert call_graph extract result to the executor boundary type.
 
@@ -206,55 +205,60 @@ class _EdgeCollectionState:
     max_edges_per_file: int
 
 
-@tag_helper()
-def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
+@tag_helper(domain="graphs")
+def _log_repo_state(
+    q__core__modules: ir.Table,
+    q__core__goids: ir.Table,
+    repo: str,
+    commit: str,
+) -> None:
     """Log current module/GOID counts to aid validation diagnostics.
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
+    q__core__modules
+        Ibis table expression for core.modules.
+    q__core__goids
+        Ibis table expression for core.goids.
     repo
         Repository identifier.
     commit
         Commit SHA.
     """
     try:
-        modules_tbl = ibis_facade.table(gateway, "core.modules")
-        goids_tbl = ibis_facade.table(gateway, "core.goids")
+        modules_tbl = q__core__modules
+        goids_tbl = q__core__goids
 
         module_count = int(
             cast(
-                "int",
-                gateway.ibis.execute_scalar(
-                    modules_tbl.filter(
-                        and_predicates(modules_tbl.repo == repo, modules_tbl.commit == commit)
-                    ).count()
-                ),
+                "SupportsInt",
+                modules_tbl.filter(
+                    and_predicates(modules_tbl.repo == repo, modules_tbl.commit == commit)
+                )
+                .count()
+                .execute(),
             )
         )
         goid_count = int(
             cast(
-                "int",
-                gateway.ibis.execute_scalar(
-                    goids_tbl.filter(
-                        and_predicates(goids_tbl.repo == repo, goids_tbl.commit == commit)
-                    ).count()
-                ),
+                "SupportsInt",
+                goids_tbl.filter(and_predicates(goids_tbl.repo == repo, goids_tbl.commit == commit))
+                .count()
+                .execute(),
             )
         )
         module_goid_count = int(
             cast(
-                "int",
-                gateway.ibis.execute_scalar(
-                    goids_tbl.filter(
-                        and_predicates(
-                            goids_tbl.repo == repo,
-                            goids_tbl.commit == commit,
-                            goids_tbl.kind == "module",
-                        )
-                    ).count()
-                ),
+                "SupportsInt",
+                goids_tbl.filter(
+                    and_predicates(
+                        goids_tbl.repo == repo,
+                        goids_tbl.commit == commit,
+                        goids_tbl.kind == "module",
+                    )
+                )
+                .count()
+                .execute(),
             )
         )
         log.info(
@@ -267,9 +271,9 @@ def _log_repo_state(gateway: StorageGateway, repo: str, commit: str) -> None:
         log.debug("call_graph: Could not query repo state: %s", exc)
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _build_global_callee_lookup(
-    gateway: StorageGateway,
+    q__core__goids: ir.Table,
     repo: str,
     commit: str,
 ) -> dict[str, int]:
@@ -277,8 +281,8 @@ def _build_global_callee_lookup(
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
+    q__core__goids
+        Ibis table expression for core.goids.
     repo
         Repository identifier.
     commit
@@ -290,7 +294,7 @@ def _build_global_callee_lookup(
         Mapping of qualname to GOID.
     """
     try:
-        goids_tbl = ibis_facade.table(gateway, "core.goids")
+        goids_tbl = q__core__goids
         expr = (
             filter_by(
                 goids_tbl,
@@ -309,9 +313,9 @@ def _build_global_callee_lookup(
         return {}
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _build_def_goids_by_path(
-    gateway: StorageGateway,
+    q__core__goids: ir.Table,
     repo: str,
     commit: str,
 ) -> dict[str, int]:
@@ -319,8 +323,8 @@ def _build_def_goids_by_path(
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
+    q__core__goids
+        Ibis table expression for core.goids.
     repo
         Repository identifier.
     commit
@@ -332,7 +336,7 @@ def _build_def_goids_by_path(
         Mapping of relative path to module GOID.
     """
     try:
-        goids_tbl = ibis_facade.table(gateway, "core.goids")
+        goids_tbl = q__core__goids
         expr = (
             filter_by(
                 goids_tbl,
@@ -352,7 +356,7 @@ def _build_def_goids_by_path(
         return {}
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _collect_edges_for_file(
     rel_path: str,
     file_path: Path,
@@ -405,9 +409,9 @@ def _collect_edges_for_file(
     return edges
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _build_nodes_from_goids(
-    gateway: StorageGateway,
+    q__core__goids: ir.Table,
     repo: str,
     commit: str,
 ) -> list[CallGraphNodeRow]:
@@ -415,8 +419,8 @@ def _build_nodes_from_goids(
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
+    q__core__goids
+        Ibis table expression for core.goids.
     repo
         Repository identifier.
     commit
@@ -428,7 +432,7 @@ def _build_nodes_from_goids(
         Node rows for all functions.
     """
     try:
-        goids_tbl = ibis_facade.table(gateway, "core.goids")
+        goids_tbl = q__core__goids
 
         language_expr = (
             goids_tbl.language if "language" in goids_tbl.columns else ibis.literal("python")
@@ -469,7 +473,7 @@ def _build_nodes_from_goids(
     ]
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _collect_all_edges(
     paths: list[str],
     ctx: _EdgeCollectionState,
@@ -546,6 +550,8 @@ def _serialize_call_graph_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraph
 def t__call_graph__extract(
     env: BuildEnv,
     gateway: StorageGateway,
+    q__core__modules: ir.Table,
+    q__core__goids: ir.Table,
     t__goids: TargetRunRecord,
 ) -> CallGraphExtractResult:
     """Execute call graph extraction on repository modules.
@@ -560,6 +566,10 @@ def t__call_graph__extract(
         Build environment with gateway and snapshot.
     gateway
         Storage gateway for graph data access.
+    q__core__modules
+        Ibis table expression for core.modules.
+    q__core__goids
+        Ibis table expression for core.goids.
     t__goids
         Upstream GOIDs target result (for dependency).
 
@@ -588,7 +598,7 @@ def t__call_graph__extract(
             options_type=CallGraphOptions,
         )
 
-        _log_repo_state(gateway, snapshot.repo, snapshot.commit)
+        _log_repo_state(q__core__modules, q__core__goids, snapshot.repo, snapshot.commit)
 
         function_index = load_function_index(gateway, repo=snapshot.repo, commit=snapshot.commit)
         paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
@@ -607,8 +617,12 @@ def t__call_graph__extract(
 
         collection_ctx = _EdgeCollectionState(
             function_index=function_index,
-            global_callees=_build_global_callee_lookup(gateway, snapshot.repo, snapshot.commit),
-            def_goids_by_path=_build_def_goids_by_path(gateway, snapshot.repo, snapshot.commit),
+            global_callees=_build_global_callee_lookup(
+                q__core__goids, snapshot.repo, snapshot.commit
+            ),
+            def_goids_by_path=_build_def_goids_by_path(
+                q__core__goids, snapshot.repo, snapshot.commit
+            ),
             source_root=snapshot.repo_root
             or get_source_root(gateway, snapshot.repo, snapshot.commit),
             repo=snapshot.repo,
@@ -624,7 +638,7 @@ def t__call_graph__extract(
         node_count = _rows_written(
             env.warehouse.materialize_mappings(
                 CALL_GRAPH_NODES_TABLE_KEY,
-                _build_nodes_from_goids(gateway, snapshot.repo, snapshot.commit),
+                _build_nodes_from_goids(q__core__goids, snapshot.repo, snapshot.commit),
                 options=options,
             )
         )

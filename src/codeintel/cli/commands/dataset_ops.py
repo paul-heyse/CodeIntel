@@ -40,6 +40,13 @@ DATASET_INFO_PATH: CommandPath = ("dataset", "info")
 DATASET_FLOW_PATH: CommandPath = ("dataset", "flow")
 DATASET_CONSTRAINTS_PATH: CommandPath = ("dataset", "constraints")
 
+_DATASET_LIST_FLAGS_FIELD = shared_flags_field(DATASET_LIST_PATH)
+_DATASET_DESCRIBE_FLAGS_FIELD = shared_flags_field(DATASET_DESCRIBE_PATH)
+_DATASET_VERIFY_FLAGS_FIELD = shared_flags_field(DATASET_VERIFY_PATH)
+_DATASET_INFO_FLAGS_FIELD = shared_flags_field(DATASET_INFO_PATH)
+_DATASET_FLOW_FLAGS_FIELD = shared_flags_field(DATASET_FLOW_PATH)
+_DATASET_CONSTRAINTS_FLAGS_FIELD = shared_flags_field(DATASET_CONSTRAINTS_PATH)
+
 
 @cli_command("dataset.list", handler=dataset_list_handler, config=_DATASET_NO_RUNTIME_CONFIG)
 @dataset_app.command(name="list")
@@ -47,7 +54,7 @@ DATASET_CONSTRAINTS_PATH: CommandPath = ("dataset", "constraints")
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    flags: SharedFlags = shared_flags_field(DATASET_LIST_PATH)
+    flags: SharedFlags = _DATASET_LIST_FLAGS_FIELD
 
 
 @cli_command(
@@ -62,7 +69,7 @@ class DatasetDescribeCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_DESCRIBE_PATH),
     ]
-    flags: SharedFlags = shared_flags_field(DATASET_DESCRIBE_PATH)
+    flags: SharedFlags = _DATASET_DESCRIBE_FLAGS_FIELD
 
 
 @cli_command("dataset.verify", handler=dataset_verify_handler, config=_DATASET_RUNTIME_CONFIG)
@@ -75,7 +82,7 @@ class DatasetVerifyCommand:
         str | None,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_VERIFY_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(DATASET_VERIFY_PATH)
+    flags: SharedFlags = _DATASET_VERIFY_FLAGS_FIELD
 
 
 @cli_command("dataset.info", handler=dataset_info_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -96,7 +103,7 @@ class DatasetInfoCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_INFO_PATH),
     ]
-    flags: SharedFlags = shared_flags_field(DATASET_INFO_PATH)
+    flags: SharedFlags = _DATASET_INFO_FLAGS_FIELD
 
 
 @cli_command("dataset.flow", handler=dataset_flow_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -113,7 +120,7 @@ class DatasetFlowCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_FLOW_PATH),
     ]
-    flags: SharedFlags = shared_flags_field(DATASET_FLOW_PATH)
+    flags: SharedFlags = _DATASET_FLOW_FLAGS_FIELD
 
 
 @cli_command(
@@ -137,7 +144,7 @@ class DatasetConstraintsCommand:
         str,
         option_param(DATASET_TABLE_KEY, command_path=DATASET_CONSTRAINTS_PATH),
     ]
-    flags: SharedFlags = shared_flags_field(DATASET_CONSTRAINTS_PATH)
+    flags: SharedFlags = _DATASET_CONSTRAINTS_FLAGS_FIELD
 
 
 __all__ = [

@@ -707,17 +707,23 @@ def flush_observability() -> ObservabilityShutdownResult | None:
     tracer_provider = otel_trace.get_tracer_provider()
     meter_provider = otel_metrics.get_meter_provider()
     if tracer_provider is not None:
-        flush_ok = _force_flush_provider(
-            tracer_provider,
-            label="tracer",
-            errors=errors,
-        ) and flush_ok
+        flush_ok = (
+            _force_flush_provider(
+                tracer_provider,
+                label="tracer",
+                errors=errors,
+            )
+            and flush_ok
+        )
     if meter_provider is not None:
-        flush_ok = _force_flush_provider(
-            meter_provider,
-            label="meter",
-            errors=errors,
-        ) and flush_ok
+        flush_ok = (
+            _force_flush_provider(
+                meter_provider,
+                label="meter",
+                errors=errors,
+            )
+            and flush_ok
+        )
     duration_ms = (time.perf_counter() - start) * 1000
     return ObservabilityShutdownResult(
         flush_ok=flush_ok,

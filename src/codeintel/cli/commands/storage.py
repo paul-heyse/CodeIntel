@@ -39,6 +39,11 @@ STORAGE_PROFILE_PATH: CommandPath = ("storage", "profile")
 STORAGE_EXPORT_PATH: CommandPath = ("storage", "export-db")
 STORAGE_IMPORT_PATH: CommandPath = ("storage", "import-db")
 
+_STORAGE_VALIDATE_FLAGS_FIELD = shared_flags_field(STORAGE_VALIDATE_PATH)
+_STORAGE_PROFILE_FLAGS_FIELD = shared_flags_field(STORAGE_PROFILE_PATH)
+_STORAGE_EXPORT_FLAGS_FIELD = shared_flags_field(STORAGE_EXPORT_PATH)
+_STORAGE_IMPORT_FLAGS_FIELD = shared_flags_field(STORAGE_IMPORT_PATH)
+
 
 @cli_command("storage.validate_macros", handler=validate_macros_handler, config=_STORAGE_CONFIG)
 @storage_app.command(name="validate-macros")
@@ -50,7 +55,7 @@ class ValidateMacrosCommand:
         Path | None,
         option_param(STORAGE_DB_PATH, command_path=STORAGE_VALIDATE_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(STORAGE_VALIDATE_PATH)
+    flags: SharedFlags = _STORAGE_VALIDATE_FLAGS_FIELD
 
 
 @cli_command("storage.profile", handler=profile_storage_handler, config=_STORAGE_CONFIG)
@@ -71,7 +76,7 @@ class ProfileStorageCommand:
         bool,
         option_param(STORAGE_INCLUDE_VIEWS, command_path=STORAGE_PROFILE_PATH),
     ] = False
-    flags: SharedFlags = shared_flags_field(STORAGE_PROFILE_PATH)
+    flags: SharedFlags = _STORAGE_PROFILE_FLAGS_FIELD
 
 
 @cli_command("storage.export_db", handler=export_database_handler, config=_STORAGE_CONFIG)
@@ -88,7 +93,7 @@ class ExportDatabaseCommand:
         Path,
         option_param(STORAGE_OUTPUT_DIR, command_path=STORAGE_EXPORT_PATH),
     ] = field(default_factory=lambda: Path("build/db_export"))
-    flags: SharedFlags = shared_flags_field(STORAGE_EXPORT_PATH)
+    flags: SharedFlags = _STORAGE_EXPORT_FLAGS_FIELD
 
 
 @cli_command("storage.import_db", handler=import_database_handler, config=_STORAGE_CONFIG)
@@ -105,7 +110,7 @@ class ImportDatabaseCommand:
         Path,
         option_param(STORAGE_INPUT_DIR, command_path=STORAGE_IMPORT_PATH),
     ] = field(default_factory=lambda: Path("build/db_export"))
-    flags: SharedFlags = shared_flags_field(STORAGE_IMPORT_PATH)
+    flags: SharedFlags = _STORAGE_IMPORT_FLAGS_FIELD
 
 
 __all__ = ["storage_app"]

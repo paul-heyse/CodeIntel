@@ -212,8 +212,7 @@ BUILD_EXPLAIN_IO_SURFACE = OptionSpec(
     arg_name="io_surface",
     names=("--io-surface",),
     help=(
-        "Include a per-target IO surface (reads/writes) derived strictly from "
-        "Hamilton DAG tags."
+        "Include a per-target IO surface (reads/writes) derived strictly from Hamilton DAG tags."
     ),
     negative=(),
 )
@@ -1010,7 +1009,6 @@ __all__ = [
     "CONFIG_FORMAT",
     "CONFIG_SOURCE",
     "CONFIG_TARGET",
-    "DATASET_TABLE_KEY",
     "DATASETS_DIFF_AGAINST_REF",
     "DATASETS_DIFF_BASELINE",
     "DATASETS_DIFF_BASELINE_PATH",
@@ -1019,11 +1017,12 @@ __all__ = [
     "DATASETS_MAX_DESCRIPTION",
     "DATASETS_READ_ONLY",
     "DATASETS_SAMPLING",
-    "DATASETS_SCHEMA_DIR",
     "DATASETS_SCAFFOLD_DRY_RUN",
     "DATASETS_SCAFFOLD_NAME",
     "DATASETS_SCAFFOLD_REGISTRY_CHECK",
+    "DATASETS_SCHEMA_DIR",
     "DATASETS_SNAPSHOT_OUTPUT",
+    "DATASET_TABLE_KEY",
     "DOCS_BUILD_DIR",
     "DOCS_COMMIT",
     "DOCS_DATASET",
@@ -1055,11 +1054,11 @@ __all__ = [
     "HISTORY_REPO",
     "HISTORY_REPO_ROOT",
     "HISTORY_SELECTION_STRATEGY",
-    "JSON_FLAG",
     "JOBS_JOB_ID",
     "JOBS_LIMIT",
     "JOBS_MAX_AGE_DAYS",
     "JOBS_STATUS_FILTER",
+    "JSON_FLAG",
     "OUTPUT_FORMAT",
     "PLUGINS_NAME",
     "PLUGINS_OUTPUT_DIR",

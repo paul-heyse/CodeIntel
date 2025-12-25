@@ -22,6 +22,9 @@ _SERVE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 SERVE_HTTP_PATH: CommandPath = ("serve", "http")
 SERVE_MCP_PATH: CommandPath = ("serve", "mcp")
 
+_SERVE_HTTP_FLAGS_FIELD = shared_flags_field(SERVE_HTTP_PATH)
+_SERVE_MCP_FLAGS_FIELD = shared_flags_field(SERVE_MCP_PATH)
+
 
 @serve_app.command(name="http")
 @cli_command("serve.http", handler=serve_http_handler, config=_SERVE_CONFIG)
@@ -41,7 +44,7 @@ class ServeHttpCommand:
         bool,
         option_param(SERVE_RELOAD, command_path=SERVE_HTTP_PATH),
     ] = False
-    flags: SharedFlags = shared_flags_field(SERVE_HTTP_PATH)
+    flags: SharedFlags = _SERVE_HTTP_FLAGS_FIELD
 
 
 @serve_app.command(name="mcp")
@@ -50,7 +53,7 @@ class ServeHttpCommand:
 class ServeMcpCommand:
     """Start the MCP server."""
 
-    flags: SharedFlags = shared_flags_field(SERVE_MCP_PATH)
+    flags: SharedFlags = _SERVE_MCP_FLAGS_FIELD
 
 
 __all__ = [

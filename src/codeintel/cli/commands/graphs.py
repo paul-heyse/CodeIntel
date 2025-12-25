@@ -43,6 +43,11 @@ GRAPH_TARGETS_PLAN_PATH: CommandPath = ("graph", "targets-plan")
 GRAPH_PLUGINS_PATH: CommandPath = ("graph", "plugins")
 GRAPH_TARGETS_PATH: CommandPath = ("graph", "targets")
 
+_GRAPH_TARGETS_LIST_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_LIST_PATH)
+_GRAPH_TARGETS_PLAN_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PLAN_PATH)
+_GRAPH_PLUGINS_FLAGS_FIELD = shared_flags_field(GRAPH_PLUGINS_PATH)
+_GRAPH_TARGETS_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PATH)
+
 
 def _get_graph_targets() -> list[tuple[str, str, tuple[str, ...]]]:
     """Get all targets in the graphs module.
@@ -160,7 +165,7 @@ class GraphTargetsList(Command[GraphTargetsResult]):
         list[str] | None,
         option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_LIST_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(GRAPH_TARGETS_LIST_PATH)
+    flags: SharedFlags = _GRAPH_TARGETS_LIST_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphTargetsResult]:
         """Execute graph targets listing.
@@ -216,7 +221,7 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
         list[str] | None,
         option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_PLAN_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(GRAPH_TARGETS_PLAN_PATH)
+    flags: SharedFlags = _GRAPH_TARGETS_PLAN_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
         """Execute graph targets planning.
@@ -284,7 +289,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
         DependencyPolicy,
         option_param(GRAPH_DEPENDENCY_POLICY, command_path=GRAPH_PLUGINS_PATH),
     ] = DependencyPolicy.STRICT
-    flags: SharedFlags = shared_flags_field(GRAPH_PLUGINS_PATH)
+    flags: SharedFlags = _GRAPH_PLUGINS_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List plugins or show plan.
@@ -372,7 +377,7 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
         list[str] | None,
         option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(GRAPH_TARGETS_PATH)
+    flags: SharedFlags = _GRAPH_TARGETS_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List targets or show plan.

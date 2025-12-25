@@ -53,6 +53,8 @@ _HISTORY_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
 HISTORY_TIMESERIES_PATH: CommandPath = ("history", "timeseries")
 
+_HISTORY_TIMESERIES_FLAGS_FIELD = shared_flags_field(HISTORY_TIMESERIES_PATH)
+
 
 @cli_command("history.timeseries", handler=history_timeseries_handler, config=_HISTORY_CONFIG)
 @history_app.command(name="timeseries")
@@ -92,7 +94,7 @@ class HistoryTimeseriesCommand:
         Path | None,
         option_param(HISTORY_REPO_ROOT, command_path=HISTORY_TIMESERIES_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(HISTORY_TIMESERIES_PATH)
+    flags: SharedFlags = _HISTORY_TIMESERIES_FLAGS_FIELD
 
 
 __all__ = ["history_app"]

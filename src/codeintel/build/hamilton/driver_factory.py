@@ -46,7 +46,7 @@ _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
 
 def _all_target_names() -> frozenset[str]:
     native_mods = load_native_modules()
-    driver = h_driver.Builder().with_modules(*native_mods).build()
+    driver = h_driver.Builder().with_modules(*native_mods).allow_module_overrides().build()
     return target_names_from_nodes(driver.graph.nodes)
 
 
@@ -55,7 +55,13 @@ def _build_base_graph(
     config: dict[str, Any] | None,
 ) -> tuple[TargetGraph, h_driver.Driver]:
     native_mods = load_native_modules()
-    driver = h_driver.Builder().with_config(config or {}).with_modules(*native_mods).build()
+    driver = (
+        h_driver.Builder()
+        .with_config(config or {})
+        .with_modules(*native_mods)
+        .allow_module_overrides()
+        .build()
+    )
     targets = compile_output_targets_from_driver(driver, strict=True)
     base_graph = TargetGraph()
     for target in targets:
@@ -155,6 +161,7 @@ def build_driver(
             *native_mods,
             support_module,
         )
+        .allow_module_overrides()
     )
     if enable_cache:
         cache_path = _DEFAULT_HAMILTON_CACHE_DIR if cache_dir is None else Path(cache_dir)

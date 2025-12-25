@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
@@ -107,4 +108,57 @@ def test_schema_index_records_inference_errors() -> None:
         pytest.fail("Expected inference failure to return None without overrides")
     error = schema_index.get_inference_error(table_key)
     if error != "ValueError: boom:analytics.inference_failure":
-        pytest.fail(f"Unexpected inference error message: {error}")
+        msg = f"Unexpected inference error message: {error}"
+        pytest.fail(msg)
+
+
+def test_schema_index_inference_error_rows() -> None:
+    """Inference error rows should include run metadata."""
+
+    class _FailingInferenceService:
+        @staticmethod
+        def infer_table_schema(
+            table_key: str,
+            *,
+            declared_provider: SchemaProvider,
+        ) -> TableSchema:
+            _ = declared_provider
+            msg = f"boom:{table_key}"
+            raise ValueError(msg)
+
+    table_key = "analytics.inference_failure"
+    schema_index = SchemaIndex(
+        derivations={
+            table_key: SchemaDerivation(
+                table_key=table_key,
+                kind="inferred_ibis",
+                source="test",
+                override_schema=None,
+            )
+        },
+        inferable_table_keys=frozenset({table_key}),
+        declared_provider=MappingSchemaProvider({}),
+        inference_service=cast("SchemaInferenceService", _FailingInferenceService()),
+    )
+
+    _ = schema_index.get_table_schema(table_key)
+    occurred_at = datetime(2024, 1, 1, tzinfo=UTC)
+    rows = list(
+        schema_index.iter_inference_error_rows(
+            repo="org/repo",
+            commit="deadbeef",
+            run_id="run-123",
+            occurred_at=occurred_at,
+        )
+    )
+
+    assert rows == [
+        {
+            "table_key": table_key,
+            "repo": "org/repo",
+            "commit": "deadbeef",
+            "error": "ValueError: boom:analytics.inference_failure",
+            "occurred_at": occurred_at,
+            "run_id": "run-123",
+        }
+    ]

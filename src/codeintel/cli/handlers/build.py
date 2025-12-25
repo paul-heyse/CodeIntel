@@ -9,6 +9,7 @@ import json as _json
 import logging
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -23,6 +24,11 @@ from hamilton.caching.adapter import (
 from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import HamiltonBuildExecutor
+from codeintel.build.hamilton.decision_trace import (
+    DECISION_TRACE_TARGET_NAME,
+    default_decision_trace_path,
+    read_decision_trace,
+)
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.introspect import derive_target_io_surface
@@ -65,6 +71,7 @@ from codeintel.cli.errors.results import (
     fail_project_error,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
+from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
@@ -329,6 +336,20 @@ def _build_status_result(state: BuildState) -> BuildStatusResult:
     )
 
 
+def _with_decision_trace_targets(targets: Sequence[str]) -> list[str]:
+    """Ensure decision_trace is included in executed targets when available.
+
+    Returns
+    -------
+    list[str]
+        Target list including decision_trace when requested targets are present.
+    """
+    requested = list(targets)
+    if requested and DECISION_TRACE_TARGET_NAME not in requested:
+        requested.append(DECISION_TRACE_TARGET_NAME)
+    return requested
+
+
 def _execute_build_hamilton(
     runtime: ResolvedRuntime,
     gateway: StorageGateway,
@@ -418,7 +439,10 @@ def _execute_build_hamilton(
         enable_cache=execution_options.enable_hamilton_cache,
         cache_dir=str(cache_dir),
     )
-    hamilton_result = executor.run(env=env, targets=execution.goals)
+    hamilton_result = executor.run(
+        env=env,
+        targets=_with_decision_trace_targets(execution.goals),
+    )
 
     cache_report: dict[str, object] | None = None
     if execution.cache_report:
@@ -1442,6 +1466,49 @@ def build_plan_handler(
     return CliResult.ok(result)
 
 
+def build_decision_trace_handler(ctx: CommandContext) -> CliResult[object]:
+    """Show or export the latest build decision trace.
+
+    Returns
+    -------
+    CliResult[object]
+        CLI result containing the decision trace payload or error.
+    """
+    try:
+        runtime = ctx.runtime
+    except ResolutionError as exc:
+        return fail_project_error("build", str(exc))
+
+    input_file = ctx.params.get_str("input_file")
+    output_file = ctx.params.get_str("output_file")
+    trace_path = (
+        Path(input_file) if input_file else default_decision_trace_path(runtime.paths.build_dir)
+    )
+
+    if not trace_path.exists():
+        return fail_execution_failed(
+            "build",
+            f"Decision trace not found: {trace_path}",
+            status=404,
+        )
+
+    try:
+        payload = read_decision_trace(trace_path)
+    except (OSError, ValueError) as exc:
+        return fail_execution_failed("build", f"Failed to read decision trace: {exc}")
+
+    if output_file:
+        Path(output_file).write_text(
+            f"{_json.dumps(payload, indent=2)}\n",
+            encoding="utf-8",
+        )
+
+    metadata: dict[str, object] = {"record_count": len(payload)}
+    if ctx.output_format == OutputFormat.JSON:
+        return CliResult.ok(payload, metadata=metadata)
+    return CliResult.ok(_json.dumps(payload, indent=2), metadata=metadata)
+
+
 @dataclass(frozen=True)
 class _BuildExplainParams:
     target: str
@@ -2232,6 +2299,7 @@ __all__ = [
     "RunMode",
     "TargetScope",
     "build_assets_handler",
+    "build_decision_trace_handler",
     "build_diff_handler",
     "build_explain_handler",
     "build_graph_handler",

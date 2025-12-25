@@ -9,7 +9,7 @@ pattern for now.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
@@ -27,7 +27,6 @@ from codeintel.cli.handlers.datasets import (
     datasets_list_handler,
     datasets_snapshot_handler,
 )
-from codeintel.core.errors.taxonomy import OperationErrorCode
 from codeintel.cli.options.registry import (
     DATASETS_DIFF_AGAINST_REF,
     DATASETS_DIFF_BASELINE,
@@ -37,14 +36,15 @@ from codeintel.cli.options.registry import (
     DATASETS_MAX_DESCRIPTION,
     DATASETS_READ_ONLY,
     DATASETS_SAMPLING,
-    DATASETS_SCHEMA_DIR,
     DATASETS_SCAFFOLD_DRY_RUN,
     DATASETS_SCAFFOLD_NAME,
     DATASETS_SCAFFOLD_REGISTRY_CHECK,
+    DATASETS_SCHEMA_DIR,
     DATASETS_SNAPSHOT_OUTPUT,
 )
 from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
+from codeintel.core.errors.taxonomy import OperationErrorCode
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -90,6 +90,12 @@ DATASETS_SNAPSHOT_PATH: CommandPath = ("datasets", "snapshot")
 DATASETS_DIFF_PATH: CommandPath = ("datasets", "diff")
 DATASETS_SCAFFOLD_PATH: CommandPath = ("datasets", "scaffold")
 
+_DATASETS_LINT_FLAGS_FIELD = shared_flags_field(DATASETS_LINT_PATH)
+_DATASETS_LIST_FLAGS_FIELD = shared_flags_field(DATASETS_LIST_PATH)
+_DATASETS_SNAPSHOT_FLAGS_FIELD = shared_flags_field(DATASETS_SNAPSHOT_PATH)
+_DATASETS_DIFF_FLAGS_FIELD = shared_flags_field(DATASETS_DIFF_PATH)
+_DATASETS_SCAFFOLD_FLAGS_FIELD = shared_flags_field(DATASETS_SCAFFOLD_PATH)
+
 
 @cli_command("datasets.lint", handler=datasets_lint_handler, config=_DATASETS_CONFIG)
 @datasets_ext_app.command(name="lint")
@@ -105,7 +111,7 @@ class LintCommand:
         str,
         option_param(DATASETS_SAMPLING, command_path=DATASETS_LINT_PATH),
     ] = "disabled"
-    flags: SharedFlags = shared_flags_field(DATASETS_LINT_PATH)
+    flags: SharedFlags = _DATASETS_LINT_FLAGS_FIELD
 
 
 @cli_command("datasets.list", handler=datasets_list_handler, config=_DATASETS_CONFIG)
@@ -126,7 +132,7 @@ class ListDatasetsCommand:
         int,
         option_param(DATASETS_MAX_DESCRIPTION, command_path=DATASETS_LIST_PATH),
     ] = 80
-    flags: SharedFlags = shared_flags_field(DATASETS_LIST_PATH)
+    flags: SharedFlags = _DATASETS_LIST_FLAGS_FIELD
 
 
 @cli_command("datasets.snapshot", handler=datasets_snapshot_handler, config=_DATASETS_CONFIG)
@@ -139,7 +145,7 @@ class SnapshotCommand:
         Path,
         option_param(DATASETS_SNAPSHOT_OUTPUT, command_path=DATASETS_SNAPSHOT_PATH),
     ] = Path("build/dataset_specs.json")
-    flags: SharedFlags = shared_flags_field(DATASETS_SNAPSHOT_PATH)
+    flags: SharedFlags = _DATASETS_SNAPSHOT_FLAGS_FIELD
 
 
 @cli_command("datasets.diff", handler=datasets_diff_handler, config=_DATASETS_CONFIG)
@@ -164,7 +170,7 @@ class DiffCommand:
         Path,
         option_param(DATASETS_DIFF_BASELINE_PATH, command_path=DATASETS_DIFF_PATH),
     ] = Path("build/dataset_specs.json")
-    flags: SharedFlags = shared_flags_field(DATASETS_DIFF_PATH)
+    flags: SharedFlags = _DATASETS_DIFF_FLAGS_FIELD
 
 
 @cli_command("datasets.scaffold", config=_SCAFFOLD_CONFIG)
@@ -185,7 +191,7 @@ class ScaffoldDatasetCommand(Command[dict[str, object]]):
         bool,
         option_param(DATASETS_SCAFFOLD_DRY_RUN, command_path=DATASETS_SCAFFOLD_PATH),
     ] = False
-    flags: SharedFlags = shared_flags_field(DATASETS_SCAFFOLD_PATH)
+    flags: SharedFlags = _DATASETS_SCAFFOLD_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[dict[str, object]]:
         """Validate scaffold request and report status.

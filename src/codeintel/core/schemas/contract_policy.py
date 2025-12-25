@@ -19,6 +19,7 @@ _NON_EXPORTABLE_CORE_TABLES: frozenset[str] = frozenset(
         "file_state",
         "ingest_runs",
         "repo_map",
+        "schema_inference_errors",
         "scip_occurrences",
         "scip_symbols",
         "test_results",

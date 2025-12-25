@@ -30,6 +30,8 @@ _SPEC_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
 BUILD_SPEC_COMPILE_PATH: CommandPath = ("build", "spec", "compile")
 
+_BUILD_SPEC_COMPILE_FLAGS_FIELD = shared_flags_field(BUILD_SPEC_COMPILE_PATH)
+
 
 @cli_command("build.spec.compile", handler=build_spec_compile_handler, config=_SPEC_CONFIG)
 @build_spec_app.command(name="compile")
@@ -49,7 +51,7 @@ class BuildSpecCompileCommand:
         str | None,
         option_param(BUILD_SPEC_OUTPUT, command_path=BUILD_SPEC_COMPILE_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(BUILD_SPEC_COMPILE_PATH)
+    flags: SharedFlags = _BUILD_SPEC_COMPILE_FLAGS_FIELD
 
 
 __all__ = [

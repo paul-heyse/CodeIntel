@@ -126,6 +126,21 @@ BUILD_DIFF_PATH: CommandPath = ("build", "diff")
 BUILD_IMPACT_PATH: CommandPath = ("build", "impact")
 BUILD_DECISION_TRACE_CMD_PATH: CommandPath = ("build", "decision-trace")
 
+_BUILD_RUN_FLAGS_FIELD = shared_flags_field(BUILD_RUN_PATH)
+_BUILD_STATUS_FLAGS_FIELD = shared_flags_field(BUILD_STATUS_PATH)
+_BUILD_HISTORY_FLAGS_FIELD = shared_flags_field(BUILD_HISTORY_PATH)
+_BUILD_VALIDATE_FLAGS_FIELD = shared_flags_field(BUILD_VALIDATE_PATH)
+_BUILD_PLAN_FLAGS_FIELD = shared_flags_field(BUILD_PLAN_PATH)
+_BUILD_EXPLAIN_FLAGS_FIELD = shared_flags_field(BUILD_EXPLAIN_PATH)
+_BUILD_GRAPH_FLAGS_FIELD = shared_flags_field(BUILD_GRAPH_PATH)
+_BUILD_ASSETS_FLAGS_FIELD = shared_flags_field(BUILD_ASSETS_PATH)
+_BUILD_LINEAGE_FLAGS_FIELD = shared_flags_field(BUILD_LINEAGE_PATH)
+_BUILD_PROMOTE_FLAGS_FIELD = shared_flags_field(BUILD_PROMOTE_PATH)
+_BUILD_RESOLVE_FLAGS_FIELD = shared_flags_field(BUILD_RESOLVE_PATH)
+_BUILD_DIFF_FLAGS_FIELD = shared_flags_field(BUILD_DIFF_PATH)
+_BUILD_IMPACT_FLAGS_FIELD = shared_flags_field(BUILD_IMPACT_PATH)
+_BUILD_DECISION_TRACE_FLAGS_FIELD = shared_flags_field(BUILD_DECISION_TRACE_CMD_PATH)
+
 
 @cli_command("build.run", handler=build_run_handler, config=_BUILD_CONFIG)
 @build_app.command(name="run")
@@ -193,7 +208,7 @@ class BuildRunCommand:
         bool,
         option_param(BUILD_RUN_PROGRESS, command_path=BUILD_RUN_PATH),
     ] = False
-    flags: SharedFlags = shared_flags_field(BUILD_RUN_PATH)
+    flags: SharedFlags = _BUILD_RUN_FLAGS_FIELD
 
 
 @cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)
@@ -206,7 +221,7 @@ class BuildStatusCommand:
         str | None,
         option_param(BUILD_STATUS_MODULE, command_path=BUILD_STATUS_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(BUILD_STATUS_PATH)
+    flags: SharedFlags = _BUILD_STATUS_FLAGS_FIELD
 
 
 @cli_command("build.history", handler=build_history_handler, config=_BUILD_CONFIG)
@@ -223,7 +238,7 @@ class BuildHistoryCommand:
         int,
         option_param(BUILD_HISTORY_LIMIT, command_path=BUILD_HISTORY_PATH),
     ] = 10
-    flags: SharedFlags = shared_flags_field(BUILD_HISTORY_PATH)
+    flags: SharedFlags = _BUILD_HISTORY_FLAGS_FIELD
 
 
 @cli_command("build.validate", handler=build_validate_handler, config=_VALIDATE_CONFIG)
@@ -236,7 +251,7 @@ class BuildValidateCommand:
         str,
         option_param(BUILD_VALIDATE_FORMAT, command_path=BUILD_VALIDATE_PATH),
     ] = "json"
-    flags: SharedFlags = shared_flags_field(BUILD_VALIDATE_PATH)
+    flags: SharedFlags = _BUILD_VALIDATE_FLAGS_FIELD
 
 
 @cli_command("build.plan", handler=build_plan_handler, config=_BUILD_CONFIG)
@@ -265,7 +280,7 @@ class BuildPlanCommand:
         str | None,
         option_param(BUILD_PLAN_OUTPUT, command_path=BUILD_PLAN_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(BUILD_PLAN_PATH)
+    flags: SharedFlags = _BUILD_PLAN_FLAGS_FIELD
 
 
 @cli_command("build.explain", handler=build_explain_handler, config=_BUILD_CONFIG)
@@ -286,7 +301,7 @@ class BuildExplainCommand:
         bool,
         option_param(BUILD_EXPLAIN_IO_SURFACE, command_path=BUILD_EXPLAIN_PATH),
     ] = False
-    flags: SharedFlags = shared_flags_field(BUILD_EXPLAIN_PATH)
+    flags: SharedFlags = _BUILD_EXPLAIN_FLAGS_FIELD
 
 
 @cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG)
@@ -315,7 +330,7 @@ class BuildGraphCommand:
         str | None,
         option_param(BUILD_GRAPH_OUTPUT, command_path=BUILD_GRAPH_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(BUILD_GRAPH_PATH)
+    flags: SharedFlags = _BUILD_GRAPH_FLAGS_FIELD
 
 
 @cli_command("build.assets", handler=build_assets_handler, config=_BUILD_CONFIG)
@@ -340,7 +355,7 @@ class BuildAssetsCommand:
         str,
         option_param(BUILD_ASSETS_FORMAT, command_path=BUILD_ASSETS_PATH),
     ] = "table"
-    flags: SharedFlags = shared_flags_field(BUILD_ASSETS_PATH)
+    flags: SharedFlags = _BUILD_ASSETS_FLAGS_FIELD
 
 
 @cli_command("build.lineage", handler=build_lineage_handler, config=_BUILD_CONFIG)
@@ -365,7 +380,7 @@ class BuildLineageCommand:
         str,
         option_param(BUILD_LINEAGE_FORMAT, command_path=BUILD_LINEAGE_PATH),
     ] = "json"
-    flags: SharedFlags = shared_flags_field(BUILD_LINEAGE_PATH)
+    flags: SharedFlags = _BUILD_LINEAGE_FLAGS_FIELD
 
 
 @cli_command("build.promote", handler=build_promote_handler, config=_BUILD_CONFIG)
@@ -398,7 +413,7 @@ class BuildPromoteCommand:
         str,
         option_param(BUILD_PROMOTE_FORMAT, command_path=BUILD_PROMOTE_PATH),
     ] = "json"
-    flags: SharedFlags = shared_flags_field(BUILD_PROMOTE_PATH)
+    flags: SharedFlags = _BUILD_PROMOTE_FLAGS_FIELD
 
 
 @cli_command("build.resolve", handler=build_resolve_handler, config=_BUILD_CONFIG)
@@ -419,7 +434,7 @@ class BuildResolveCommand:
         str,
         option_param(BUILD_RESOLVE_FORMAT, command_path=BUILD_RESOLVE_PATH),
     ] = "json"
-    flags: SharedFlags = shared_flags_field(BUILD_RESOLVE_PATH)
+    flags: SharedFlags = _BUILD_RESOLVE_FLAGS_FIELD
 
 
 @cli_command("build.diff", handler=build_diff_handler, config=_BUILD_CONFIG)
@@ -444,7 +459,7 @@ class BuildDiffCommand:
         str,
         option_param(BUILD_DIFF_FORMAT, command_path=BUILD_DIFF_PATH),
     ] = "json"
-    flags: SharedFlags = shared_flags_field(BUILD_DIFF_PATH)
+    flags: SharedFlags = _BUILD_DIFF_FLAGS_FIELD
 
 
 @cli_command("build.impact", handler=build_impact_handler, config=_BUILD_CONFIG)
@@ -481,7 +496,7 @@ class BuildImpactCommand:
         str,
         option_param(BUILD_IMPACT_FORMAT, command_path=BUILD_IMPACT_PATH),
     ] = "json"
-    flags: SharedFlags = shared_flags_field(BUILD_IMPACT_PATH)
+    flags: SharedFlags = _BUILD_IMPACT_FLAGS_FIELD
 
 
 @cli_command("build.decision_trace", handler=build_decision_trace_handler, config=_TRACE_CONFIG)
@@ -498,7 +513,7 @@ class BuildDecisionTraceCommand:
         str | None,
         option_param(BUILD_DECISION_TRACE_OUTPUT, command_path=BUILD_DECISION_TRACE_CMD_PATH),
     ] = None
-    flags: SharedFlags = shared_flags_field(BUILD_DECISION_TRACE_CMD_PATH)
+    flags: SharedFlags = _BUILD_DECISION_TRACE_FLAGS_FIELD
 
 
 __all__ = ["build_app"]

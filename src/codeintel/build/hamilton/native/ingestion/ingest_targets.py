@@ -160,7 +160,7 @@ class ConfigScanResult:
     error: str | None = None
 
 
-@tag_helper()
+@tag_helper(domain="ingestion")
 def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
     """Load module paths for the current snapshot from storage.
 
@@ -184,7 +184,7 @@ def module_paths(env: BuildEnv, t__modules: TargetRunRecord) -> tuple[str, ...]:
     return tuple(get_module_paths_from_env(env))
 
 
-@tag_helper()
+@tag_helper(domain="ingestion")
 def module_records(env: BuildEnv, module_paths: tuple[str, ...]) -> tuple[ModuleRecord, ...]:
     """Convert module paths into ModuleRecord objects.
 

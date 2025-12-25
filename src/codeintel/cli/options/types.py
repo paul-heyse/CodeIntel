@@ -49,23 +49,17 @@ class OptionSpec:
             Configured Cyclopts parameter.
         """
         env_var = self.env_var_for(command_path)
-        kwargs: dict[str, object] = {
-            "name": list(self.names) if self.names is not None else None,
-            "env_var": env_var,
-        }
-        if self.help is not None:
-            kwargs["help"] = self.help
-        if self.show_default is not None:
-            kwargs["show_default"] = self.show_default
-        if self.show_choices is not None:
-            kwargs["show_choices"] = self.show_choices
-        if self.count is not None:
-            kwargs["count"] = self.count
-        if self.negative is not None:
-            kwargs["negative"] = self.negative
-        if self.parse is not None:
-            kwargs["parse"] = self.parse
-        return Parameter(**kwargs)
+        name = list(self.names) if self.names is not None else None
+        return Parameter(
+            name=name,
+            env_var=env_var,
+            help=self.help,
+            show_default=self.show_default,
+            show_choices=self.show_choices,
+            count=self.count,
+            negative=self.negative,
+            parse=self.parse,
+        )
 
 
 @dataclass(frozen=True, slots=True)

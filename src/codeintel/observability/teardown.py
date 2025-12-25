@@ -316,8 +316,7 @@ def collect_teardown_snapshot(options: TeardownSnapshotOptions) -> TeardownSnaps
     )
     subprocess_records = snapshot_subprocesses(limit=options.subprocess_sample_limit)
     subprocess_samples = tuple(
-        SubprocessSample(pid=record.pid, command=record.command)
-        for record in subprocess_records
+        SubprocessSample(pid=record.pid, command=record.command) for record in subprocess_records
     )
     return TeardownSnapshot(
         pending_tasks_count=pending_tasks_count,

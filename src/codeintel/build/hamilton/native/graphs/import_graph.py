@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import ibis.expr.types as ir
 from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -34,12 +35,10 @@ from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ class ImportGraphExtractResult:
     error: str | None = None
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def import_graph__execution_result(
     t__import_graph__extract: ImportGraphExtractResult,
 ) -> ExecutionResult:
@@ -157,9 +156,9 @@ def import_graph__execution_result(
     )
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _load_modules(
-    gateway: StorageGateway,
+    q__core__modules: ir.Table,
     repo: str,
     commit: str,
 ) -> dict[str, str]:
@@ -167,8 +166,8 @@ def _load_modules(
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
+    q__core__modules
+        Ibis table expression for core.modules.
     repo
         Repository identifier.
     commit
@@ -180,10 +179,11 @@ def _load_modules(
         Mapping of relative path to module name.
     """
     try:
-        modules = ibis_facade.table(gateway, "core.modules")
-        expr = filter_by(modules, modules.repo == repo, modules.commit == commit).select(
-            modules.path, modules.module
-        )
+        expr = filter_by(
+            q__core__modules,
+            q__core__modules.repo == repo,
+            q__core__modules.commit == commit,
+        ).select(q__core__modules.path, q__core__modules.module)
         df = expr.execute()
         return {
             normalize_path(str(path)): str(module)
@@ -193,7 +193,7 @@ def _load_modules(
         return {}
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _extract_imports_from_file(file_path: Path) -> list[tuple[str, tuple[str, ...]]]:
     """Extract imports from a Python file.
 
@@ -285,6 +285,7 @@ def _materialize_import_graph(
 def t__import_graph__extract(
     env: BuildEnv,
     gateway: StorageGateway,
+    q__core__modules: ir.Table,
     t__modules: TargetRunRecord,
 ) -> ImportGraphExtractResult:
     """Execute import graph extraction on repository modules.
@@ -299,6 +300,8 @@ def t__import_graph__extract(
         Build environment with gateway and snapshot.
     gateway
         Storage gateway for graph data access.
+    q__core__modules
+        Ibis table expression for core.modules.
     t__modules
         Upstream modules target result (for dependency).
 
@@ -333,7 +336,7 @@ def t__import_graph__extract(
             snapshot.commit,
         )
         module_by_path = filter_mapping(
-            _load_modules(gateway, snapshot.repo, snapshot.commit),
+            _load_modules(q__core__modules, snapshot.repo, snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 
