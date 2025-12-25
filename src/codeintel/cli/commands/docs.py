@@ -5,16 +5,35 @@ Note: Docs commands require runtime/gateway access via handler pattern.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.docs import docs_export_handler
+from codeintel.cli.options.registry import (
+    DOCS_BUILD_DIR,
+    DOCS_COMMIT,
+    DOCS_DATASET,
+    DOCS_DB_PATH,
+    DOCS_DOCUMENT_OUTPUT_DIR,
+    DOCS_DRY_RUN,
+    DOCS_NX_BACKEND,
+    DOCS_NX_GPU_MODE,
+    DOCS_PREREQ_MODE,
+    DOCS_REPO,
+    DOCS_REPO_ROOT,
+    DOCS_RUN_MODE,
+    DOCS_SCHEMA,
+    DOCS_SKIP_PREREQS,
+    DOCS_VALIDATE,
+    DOCS_VALIDATION_MODE,
+)
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 docs_app = App(
     name="docs",
@@ -34,6 +53,8 @@ class NxBackend(StrEnum):
 
 _DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+DOCS_EXPORT_PATH: CommandPath = ("docs", "export")
+
 
 @cli_command("docs.export", handler=docs_export_handler, config=_DOCS_CONFIG)
 @docs_app.command(name="export")
@@ -43,127 +64,72 @@ class DocsExportCommand:
 
     repo: Annotated[
         str | None,
-        Parameter(
-            name="--repo",
-            help="Repository slug.",
-        ),
+        option_param(DOCS_REPO, command_path=DOCS_EXPORT_PATH),
     ] = None
     commit: Annotated[
         str | None,
-        Parameter(
-            name="--commit",
-            help="Commit SHA.",
-        ),
+        option_param(DOCS_COMMIT, command_path=DOCS_EXPORT_PATH),
     ] = None
     db_path: Annotated[
         Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database.",
-        ),
+        option_param(DOCS_DB_PATH, command_path=DOCS_EXPORT_PATH),
     ] = None
     build_dir: Annotated[
         Path | None,
-        Parameter(
-            name="--build-dir",
-            help="Build directory for docs export.",
-        ),
+        option_param(DOCS_BUILD_DIR, command_path=DOCS_EXPORT_PATH),
     ] = None
     repo_root: Annotated[
         Path | None,
-        Parameter(
-            name="--repo-root",
-            help="Repository root directory.",
-        ),
+        option_param(DOCS_REPO_ROOT, command_path=DOCS_EXPORT_PATH),
     ] = None
     document_output_dir: Annotated[
         Path | None,
-        Parameter(
-            name="--document-output-dir",
-            help="Document Output directory for emitted artifacts.",
-        ),
+        option_param(DOCS_DOCUMENT_OUTPUT_DIR, command_path=DOCS_EXPORT_PATH),
     ] = None
 
     nx_backend: Annotated[
         NxBackend,
-        Parameter(
-            name="--nx-backend",
-            help="NetworkX backend selection: auto, cpu, or nx-cugraph.",
-            show_choices=True,
-        ),
+        option_param(DOCS_NX_BACKEND, command_path=DOCS_EXPORT_PATH),
     ] = NxBackend.AUTO
     nx_gpu_mode: Annotated[
         str,
-        Parameter(
-            name="--nx-gpu-mode",
-            help="GPU backend preference: disabled, enabled, or strict.",
-        ),
+        option_param(DOCS_NX_GPU_MODE, command_path=DOCS_EXPORT_PATH),
     ] = "disabled"
 
     validation_mode: Annotated[
         str,
-        Parameter(
-            name="--validation-mode",
-            help="Validation strategy: required or skip.",
-            show_choices=True,
-        ),
+        option_param(DOCS_VALIDATION_MODE, command_path=DOCS_EXPORT_PATH),
     ] = "skip"
     validate: Annotated[
         bool,
-        Parameter(
-            name="--validate",
-            help="Enable export validation.",
-            negative=("--no-validate",),
-        ),
+        option_param(DOCS_VALIDATE, command_path=DOCS_EXPORT_PATH),
     ] = False
     skip_prereqs: Annotated[
         bool,
-        Parameter(
-            name="--skip-prereqs",
-            help="Skip prerequisite ingestion or build steps.",
-            negative=("--run-prereqs",),
-        ),
+        option_param(DOCS_SKIP_PREREQS, command_path=DOCS_EXPORT_PATH),
     ] = False
     schemas: Annotated[
         list[str] | None,
-        Parameter(
-            name="--schema",
-            help="Table key to validate (repeatable).",
-        ),
+        option_param(DOCS_SCHEMA, command_path=DOCS_EXPORT_PATH),
     ] = None
     datasets: Annotated[
         list[str] | None,
-        Parameter(
-            name="--dataset",
-            help="Dataset name to export (repeatable).",
-        ),
+        option_param(DOCS_DATASET, command_path=DOCS_EXPORT_PATH),
     ] = None
     run_mode: Annotated[
         str,
-        Parameter(
-            name="--run-mode",
-            help="Execution mode for docs export.",
-            show_choices=True,
-        ),
+        option_param(DOCS_RUN_MODE, command_path=DOCS_EXPORT_PATH),
     ] = "execute"
     dry_run: Annotated[
         bool,
-        Parameter(
-            name="--dry-run",
-            help="Preview export without writing files.",
-            negative=("--no-dry-run",),
-        ),
+        option_param(DOCS_DRY_RUN, command_path=DOCS_EXPORT_PATH),
     ] = False
     prereq_mode: Annotated[
         str,
-        Parameter(
-            name="--prereq-mode",
-            help="Prerequisite execution mode.",
-            show_choices=True,
-        ),
+        option_param(DOCS_PREREQ_MODE, command_path=DOCS_EXPORT_PATH),
     ] = "run"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DOCS_EXPORT_PATH)
 
 
 __all__ = ["docs_app"]

@@ -5,16 +5,27 @@ Note: History commands require runtime/gateway access via handler pattern.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.history import history_timeseries_handler
+from codeintel.cli.options.registry import (
+    HISTORY_COMMITS,
+    HISTORY_DB_DIR,
+    HISTORY_ENTITY_KIND,
+    HISTORY_MAX_ENTITIES,
+    HISTORY_OUTPUT_DB,
+    HISTORY_REPO,
+    HISTORY_REPO_ROOT,
+    HISTORY_SELECTION_STRATEGY,
+)
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 history_app = App(
     name="history",
@@ -40,6 +51,8 @@ class SelectionStrategy(StrEnum):
 
 _HISTORY_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
 
+HISTORY_TIMESERIES_PATH: CommandPath = ("history", "timeseries")
+
 
 @cli_command("history.timeseries", handler=history_timeseries_handler, config=_HISTORY_CONFIG)
 @history_app.command(name="timeseries")
@@ -49,61 +62,37 @@ class HistoryTimeseriesCommand:
 
     repo: Annotated[
         str,
-        Parameter(
-            name="--repo",
-            help="Repository slug (e.g., 'my-org/my-repo').",
-        ),
+        option_param(HISTORY_REPO, command_path=HISTORY_TIMESERIES_PATH),
     ] = ""
     commits: Annotated[
         list[str] | None,
-        Parameter(
-            name="--commits",
-            help="Commits to include in the timeseries (latest first).",
-        ),
+        option_param(HISTORY_COMMITS, command_path=HISTORY_TIMESERIES_PATH),
     ] = None
     db_dir: Annotated[
         Path,
-        Parameter(
-            name="--db-dir",
-            help="Directory with per-commit DuckDB snapshots.",
-        ),
+        option_param(HISTORY_DB_DIR, command_path=HISTORY_TIMESERIES_PATH),
     ] = Path("build/db")
     output_db: Annotated[
         Path,
-        Parameter(
-            name="--output-db",
-            help="Destination DuckDB for history_timeseries.",
-        ),
+        option_param(HISTORY_OUTPUT_DB, command_path=HISTORY_TIMESERIES_PATH),
     ] = Path("build/db/history.duckdb")
     entity_kind: Annotated[
         EntityKind,
-        Parameter(
-            name="--entity-kind",
-            help="Entity kind to include: function, module, or both.",
-        ),
+        option_param(HISTORY_ENTITY_KIND, command_path=HISTORY_TIMESERIES_PATH),
     ] = EntityKind.FUNCTION
     max_entities: Annotated[
         int,
-        Parameter(
-            name="--max-entities",
-            help="Maximum entities to track (top-N by selection strategy).",
-        ),
+        option_param(HISTORY_MAX_ENTITIES, command_path=HISTORY_TIMESERIES_PATH),
     ] = 500
     selection_strategy: Annotated[
         SelectionStrategy,
-        Parameter(
-            name="--selection-strategy",
-            help="Selection strategy for picking entities (default: risk_score).",
-        ),
+        option_param(HISTORY_SELECTION_STRATEGY, command_path=HISTORY_TIMESERIES_PATH),
     ] = SelectionStrategy.RISK_SCORE
     repo_root: Annotated[
         Path | None,
-        Parameter(
-            name="--repo-root",
-            help="Repository root directory.",
-        ),
+        option_param(HISTORY_REPO_ROOT, command_path=HISTORY_TIMESERIES_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(HISTORY_TIMESERIES_PATH)
 
 
 __all__ = ["history_app"]

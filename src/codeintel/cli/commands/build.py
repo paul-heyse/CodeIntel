@@ -9,17 +9,17 @@ the handler pattern for now.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.build_schema import build_schema_app
 from codeintel.cli.commands.build_spec import build_spec_app
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build import (
     build_assets_handler,
+    build_decision_trace_handler,
     build_diff_handler,
     build_explain_handler,
     build_graph_handler,
@@ -33,6 +33,71 @@ from codeintel.cli.handlers.build import (
     build_status_handler,
 )
 from codeintel.cli.handlers.build_validate import build_validate_handler
+from codeintel.cli.options.registry import (
+    BUILD_ASSETS_ASSET,
+    BUILD_ASSETS_FORMAT,
+    BUILD_ASSETS_TARGET,
+    BUILD_ASSETS_TYPE,
+    BUILD_DECISION_TRACE_OUTPUT,
+    BUILD_DECISION_TRACE_PATH,
+    BUILD_DIFF_ASSET,
+    BUILD_DIFF_FORMAT,
+    BUILD_DIFF_FROM,
+    BUILD_DIFF_TO,
+    BUILD_EXPLAIN_FORCE,
+    BUILD_EXPLAIN_IO_SURFACE,
+    BUILD_EXPLAIN_TARGET,
+    BUILD_GRAPH_ALL,
+    BUILD_GRAPH_FORMAT,
+    BUILD_GRAPH_MODULE,
+    BUILD_GRAPH_OUTPUT,
+    BUILD_GRAPH_TARGETS,
+    BUILD_HISTORY_LIMIT,
+    BUILD_HISTORY_RUN_ID,
+    BUILD_IMPACT_ASSET_KEY,
+    BUILD_IMPACT_ASSET_KIND,
+    BUILD_IMPACT_FORMAT,
+    BUILD_IMPACT_MAX_DEPTH,
+    BUILD_IMPACT_SHOW_TARGETS,
+    BUILD_IMPACT_VERSION_HASH,
+    BUILD_LINEAGE_ASSET,
+    BUILD_LINEAGE_DEPTH,
+    BUILD_LINEAGE_DIRECTION,
+    BUILD_LINEAGE_FORMAT,
+    BUILD_PLAN_ALL,
+    BUILD_PLAN_FORCE,
+    BUILD_PLAN_MODULE,
+    BUILD_PLAN_OUTPUT,
+    BUILD_PLAN_TARGETS,
+    BUILD_PROMOTE_ALIAS,
+    BUILD_PROMOTE_ASSET,
+    BUILD_PROMOTE_FORMAT,
+    BUILD_PROMOTE_FROM_RUN,
+    BUILD_PROMOTE_NOTE,
+    BUILD_PROMOTE_VERSION_HASH,
+    BUILD_RESOLVE_ALIAS,
+    BUILD_RESOLVE_ASSET,
+    BUILD_RESOLVE_FORMAT,
+    BUILD_RUN_ALL_TARGETS,
+    BUILD_RUN_CACHE_DIR,
+    BUILD_RUN_CACHE_REPORT,
+    BUILD_RUN_CLEAR_CACHE,
+    BUILD_RUN_DRY_RUN,
+    BUILD_RUN_ENABLE_CACHE,
+    BUILD_RUN_FORCE,
+    BUILD_RUN_MAX_WORKERS,
+    BUILD_RUN_MODULE,
+    BUILD_RUN_PARALLEL_BACKEND,
+    BUILD_RUN_PROGRESS,
+    BUILD_RUN_PUBLISH_SNAPSHOT,
+    BUILD_RUN_STRICT_CONTRACTS,
+    BUILD_RUN_TARGETS,
+    BUILD_RUN_VALIDATE_OUTPUTS,
+    BUILD_STATUS_MODULE,
+    BUILD_VALIDATE_FORMAT,
+)
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 build_app = App(
     name="build",
@@ -44,6 +109,22 @@ build_app.command(build_spec_app, name="spec")
 
 _BUILD_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 _VALIDATE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+_TRACE_CONFIG = CommandConfig(require_runtime=True, require_gateway=False)
+
+BUILD_RUN_PATH: CommandPath = ("build", "run")
+BUILD_STATUS_PATH: CommandPath = ("build", "status")
+BUILD_HISTORY_PATH: CommandPath = ("build", "history")
+BUILD_VALIDATE_PATH: CommandPath = ("build", "validate")
+BUILD_PLAN_PATH: CommandPath = ("build", "plan")
+BUILD_EXPLAIN_PATH: CommandPath = ("build", "explain")
+BUILD_GRAPH_PATH: CommandPath = ("build", "graph")
+BUILD_ASSETS_PATH: CommandPath = ("build", "assets")
+BUILD_LINEAGE_PATH: CommandPath = ("build", "lineage")
+BUILD_PROMOTE_PATH: CommandPath = ("build", "promote")
+BUILD_RESOLVE_PATH: CommandPath = ("build", "resolve")
+BUILD_DIFF_PATH: CommandPath = ("build", "diff")
+BUILD_IMPACT_PATH: CommandPath = ("build", "impact")
+BUILD_DECISION_TRACE_CMD_PATH: CommandPath = ("build", "decision-trace")
 
 
 @cli_command("build.run", handler=build_run_handler, config=_BUILD_CONFIG)
@@ -54,126 +135,65 @@ class BuildRunCommand:
 
     targets: Annotated[
         list[str] | None,
-        Parameter(
-            name=None,
-            help="Target names to build (e.g., function_metrics, call_graph).",
-        ),
+        option_param(BUILD_RUN_TARGETS, command_path=BUILD_RUN_PATH),
     ] = None
     module: Annotated[
         str | None,
-        Parameter(
-            name=["--module", "-m"],
-            help="Build all targets in a module (ingestion, graphs, analytics, export).",
-            show_choices=True,
-        ),
+        option_param(BUILD_RUN_MODULE, command_path=BUILD_RUN_PATH),
     ] = None
     all_targets: Annotated[
         bool,
-        Parameter(
-            name=["--all", "-a"],
-            help="Build all targets across all modules.",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_ALL_TARGETS, command_path=BUILD_RUN_PATH),
     ] = False
     dry_run: Annotated[
         bool,
-        Parameter(
-            name=["--dry-run", "-n"],
-            help="Show build plan without executing.",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_DRY_RUN, command_path=BUILD_RUN_PATH),
     ] = False
     force: Annotated[
         list[str] | None,
-        Parameter(
-            name=["--force", "-f"],
-            help="Force recompute of specific targets (repeatable).",
-        ),
+        option_param(BUILD_RUN_FORCE, command_path=BUILD_RUN_PATH),
     ] = None
     validate_outputs: Annotated[
         bool,
-        Parameter(
-            name=["--validate-outputs"],
-            help="Validate produced datasets against Pandera schemas after write.",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_VALIDATE_OUTPUTS, command_path=BUILD_RUN_PATH),
     ] = False
     strict_contracts: Annotated[
         bool,
-        Parameter(
-            name=["--strict-contracts"],
-            help="Fail if target writes outside declared contract.",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_STRICT_CONTRACTS, command_path=BUILD_RUN_PATH),
     ] = False
     publish_serving_snapshot: Annotated[
         bool,
-        Parameter(
-            name=["--publish-serving-snapshot"],
-            help="Publish an immutable serving snapshot (writes current.json and snapshot artifacts).",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_PUBLISH_SNAPSHOT, command_path=BUILD_RUN_PATH),
     ] = False
     parallel_backend: Annotated[
         str,
-        Parameter(
-            name=["--parallel-backend"],
-            help=(
-                "Parallel execution backend.\n\n"
-                "Options: sequential (default, safest); threadpool (multi-threaded with write lock); "
-                "auto (auto-select best backend).\n\n"
-                "Example: --parallel-backend=threadpool --max-workers=4."
-            ),
-            show_choices=True,
-        ),
+        option_param(BUILD_RUN_PARALLEL_BACKEND, command_path=BUILD_RUN_PATH),
     ] = "sequential"
     max_workers: Annotated[
         int | None,
-        Parameter(
-            name=["--max-workers", "--workers"],
-            help="Maximum parallel workers for threadpool backend.",
-        ),
+        option_param(BUILD_RUN_MAX_WORKERS, command_path=BUILD_RUN_PATH),
     ] = None
     enable_cache: Annotated[
         bool,
-        Parameter(
-            name=["--cache"],
-            help="Enable Hamilton on-disk caching for nodes decorated with @cache.",
-            negative=("--no-cache",),
-        ),
+        option_param(BUILD_RUN_ENABLE_CACHE, command_path=BUILD_RUN_PATH),
     ] = True
     cache_dir: Annotated[
         str | None,
-        Parameter(
-            name=["--cache-dir"],
-            help="Directory for Hamilton cache (default: build/.hamilton_cache).",
-        ),
+        option_param(BUILD_RUN_CACHE_DIR, command_path=BUILD_RUN_PATH),
     ] = None
     clear_cache: Annotated[
         bool,
-        Parameter(
-            name=["--clear-cache"],
-            help="Clear the Hamilton cache directory before executing.",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_CLEAR_CACHE, command_path=BUILD_RUN_PATH),
     ] = False
     cache_report: Annotated[
         bool,
-        Parameter(
-            name=["--cache-report"],
-            help="Include a cache hit/miss report for nodes decorated with @cache.",
-            negative=(),
-        ),
+        option_param(BUILD_RUN_CACHE_REPORT, command_path=BUILD_RUN_PATH),
     ] = False
     enable_progress: Annotated[
         bool,
-        Parameter(
-            name=["--progress"],
-            help="Show progress bar during execution.",
-            negative=("--no-progress",),
-        ),
+        option_param(BUILD_RUN_PROGRESS, command_path=BUILD_RUN_PATH),
     ] = False
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_RUN_PATH)
 
 
 @cli_command("build.status", handler=build_status_handler, config=_BUILD_CONFIG)
@@ -184,13 +204,9 @@ class BuildStatusCommand:
 
     module: Annotated[
         str | None,
-        Parameter(
-            name=["--module", "-m"],
-            help="Filter status to a specific module (ingestion, graphs, analytics, export).",
-            show_choices=True,
-        ),
+        option_param(BUILD_STATUS_MODULE, command_path=BUILD_STATUS_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_STATUS_PATH)
 
 
 @cli_command("build.history", handler=build_history_handler, config=_BUILD_CONFIG)
@@ -201,19 +217,13 @@ class BuildHistoryCommand:
 
     run_id: Annotated[
         str | None,
-        Parameter(
-            name=["--run-id", "-i"],
-            help="Specific run ID to show details for (prefix match supported).",
-        ),
+        option_param(BUILD_HISTORY_RUN_ID, command_path=BUILD_HISTORY_PATH),
     ] = None
     limit: Annotated[
         int,
-        Parameter(
-            name=["--limit", "-n"],
-            help="Number of recent runs to show.",
-        ),
+        option_param(BUILD_HISTORY_LIMIT, command_path=BUILD_HISTORY_PATH),
     ] = 10
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_HISTORY_PATH)
 
 
 @cli_command("build.validate", handler=build_validate_handler, config=_VALIDATE_CONFIG)
@@ -224,12 +234,9 @@ class BuildValidateCommand:
 
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format"],
-            help="Output format: json (default).",
-        ),
+        option_param(BUILD_VALIDATE_FORMAT, command_path=BUILD_VALIDATE_PATH),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_VALIDATE_PATH)
 
 
 @cli_command("build.plan", handler=build_plan_handler, config=_BUILD_CONFIG)
@@ -240,42 +247,25 @@ class BuildPlanCommand:
 
     targets: Annotated[
         list[str] | None,
-        Parameter(
-            name=None,
-            help="Target names to plan (e.g., function_metrics, call_graph).",
-        ),
+        option_param(BUILD_PLAN_TARGETS, command_path=BUILD_PLAN_PATH),
     ] = None
     module: Annotated[
         str | None,
-        Parameter(
-            name=["--module", "-m"],
-            help="Plan all targets in a module (ingestion, graphs, analytics, export).",
-            show_choices=True,
-        ),
+        option_param(BUILD_PLAN_MODULE, command_path=BUILD_PLAN_PATH),
     ] = None
     all_targets: Annotated[
         bool,
-        Parameter(
-            name=["--all", "-a"],
-            help="Plan all targets across all modules.",
-            negative=(),
-        ),
+        option_param(BUILD_PLAN_ALL, command_path=BUILD_PLAN_PATH),
     ] = False
     force: Annotated[
         list[str] | None,
-        Parameter(
-            name=["--force", "-f"],
-            help="Mark specific targets as forced (repeatable).",
-        ),
+        option_param(BUILD_PLAN_FORCE, command_path=BUILD_PLAN_PATH),
     ] = None
     output_file: Annotated[
         str | None,
-        Parameter(
-            name=["--output", "-o"],
-            help="Output file path (stdout if not specified).",
-        ),
+        option_param(BUILD_PLAN_OUTPUT, command_path=BUILD_PLAN_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_PLAN_PATH)
 
 
 @cli_command("build.explain", handler=build_explain_handler, config=_BUILD_CONFIG)
@@ -286,30 +276,17 @@ class BuildExplainCommand:
 
     target: Annotated[
         str,
-        Parameter(
-            name=None,
-            help="Target name to explain (e.g., function_metrics).",
-        ),
+        option_param(BUILD_EXPLAIN_TARGET, command_path=BUILD_EXPLAIN_PATH),
     ]
     force: Annotated[
         list[str] | None,
-        Parameter(
-            name=["--force", "-f"],
-            help="Mark specific targets as forced (repeatable).",
-        ),
+        option_param(BUILD_EXPLAIN_FORCE, command_path=BUILD_EXPLAIN_PATH),
     ] = None
     io_surface: Annotated[
         bool,
-        Parameter(
-            name=["--io-surface"],
-            help=(
-                "Include a per-target IO surface (reads/writes) derived strictly from "
-                "Hamilton DAG tags."
-            ),
-            negative=(),
-        ),
+        option_param(BUILD_EXPLAIN_IO_SURFACE, command_path=BUILD_EXPLAIN_PATH),
     ] = False
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_EXPLAIN_PATH)
 
 
 @cli_command("build.graph", handler=build_graph_handler, config=_BUILD_CONFIG)
@@ -320,42 +297,25 @@ class BuildGraphCommand:
 
     targets: Annotated[
         list[str] | None,
-        Parameter(
-            name=None,
-            help="Target names to show DAG for (e.g., function_metrics, call_graph).",
-        ),
+        option_param(BUILD_GRAPH_TARGETS, command_path=BUILD_GRAPH_PATH),
     ] = None
     module: Annotated[
         str | None,
-        Parameter(
-            name=["--module", "-m"],
-            help="Show DAG for all targets in a module (ingestion, graphs, analytics, export).",
-            show_choices=True,
-        ),
+        option_param(BUILD_GRAPH_MODULE, command_path=BUILD_GRAPH_PATH),
     ] = None
     all_targets: Annotated[
         bool,
-        Parameter(
-            name=["--all", "-a"],
-            help="Show DAG for all targets across all modules.",
-            negative=(),
-        ),
+        option_param(BUILD_GRAPH_ALL, command_path=BUILD_GRAPH_PATH),
     ] = False
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: json (default), mermaid, or dot.",
-        ),
+        option_param(BUILD_GRAPH_FORMAT, command_path=BUILD_GRAPH_PATH),
     ] = "json"
     output_file: Annotated[
         str | None,
-        Parameter(
-            name=["--output", "-o"],
-            help="Output file path (stdout if not specified).",
-        ),
+        option_param(BUILD_GRAPH_OUTPUT, command_path=BUILD_GRAPH_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_GRAPH_PATH)
 
 
 @cli_command("build.assets", handler=build_assets_handler, config=_BUILD_CONFIG)
@@ -366,33 +326,21 @@ class BuildAssetsCommand:
 
     asset: Annotated[
         str | None,
-        Parameter(
-            name=["--asset"],
-            help="Filter to a specific asset key (e.g., analytics.function_metrics).",
-        ),
+        option_param(BUILD_ASSETS_ASSET, command_path=BUILD_ASSETS_PATH),
     ] = None
     target: Annotated[
         str | None,
-        Parameter(
-            name=["--target", "-t"],
-            help="Filter to assets produced by a specific target.",
-        ),
+        option_param(BUILD_ASSETS_TARGET, command_path=BUILD_ASSETS_PATH),
     ] = None
     asset_type: Annotated[
         str | None,
-        Parameter(
-            name=["--type"],
-            help="Filter by asset type: table, view, or artifact.",
-        ),
+        option_param(BUILD_ASSETS_TYPE, command_path=BUILD_ASSETS_PATH),
     ] = None
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: table (default), json, or csv.",
-        ),
+        option_param(BUILD_ASSETS_FORMAT, command_path=BUILD_ASSETS_PATH),
     ] = "table"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_ASSETS_PATH)
 
 
 @cli_command("build.lineage", handler=build_lineage_handler, config=_BUILD_CONFIG)
@@ -403,34 +351,21 @@ class BuildLineageCommand:
 
     asset: Annotated[
         str,
-        Parameter(
-            name=["--asset"],
-            help="Asset key to traverse (e.g., analytics.goid_risk_factors).",
-        ),
+        option_param(BUILD_LINEAGE_ASSET, command_path=BUILD_LINEAGE_PATH),
     ]
     direction: Annotated[
         str,
-        Parameter(
-            name=["--direction", "-d"],
-            help="Traversal direction: up (dependencies) or down (dependents).",
-            show_choices=True,
-        ),
+        option_param(BUILD_LINEAGE_DIRECTION, command_path=BUILD_LINEAGE_PATH),
     ] = "up"
     depth: Annotated[
         int,
-        Parameter(
-            name=["--depth"],
-            help="Traversal depth (number of hops).",
-        ),
+        option_param(BUILD_LINEAGE_DEPTH, command_path=BUILD_LINEAGE_PATH),
     ] = 1
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: json (default) or text.",
-        ),
+        option_param(BUILD_LINEAGE_FORMAT, command_path=BUILD_LINEAGE_PATH),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_LINEAGE_PATH)
 
 
 @cli_command("build.promote", handler=build_promote_handler, config=_BUILD_CONFIG)
@@ -441,47 +376,29 @@ class BuildPromoteCommand:
 
     asset: Annotated[
         str,
-        Parameter(
-            name=["--asset"],
-            help="Asset key to promote.",
-        ),
+        option_param(BUILD_PROMOTE_ASSET, command_path=BUILD_PROMOTE_PATH),
     ]
     alias: Annotated[
         str,
-        Parameter(
-            name=["--alias"],
-            help="Alias to set (e.g., main, latest, release-2025.01).",
-        ),
+        option_param(BUILD_PROMOTE_ALIAS, command_path=BUILD_PROMOTE_PATH),
     ]
     version_hash: Annotated[
         str | None,
-        Parameter(
-            name=["--version-hash"],
-            help="Version hash to pin (preferred).",
-        ),
+        option_param(BUILD_PROMOTE_VERSION_HASH, command_path=BUILD_PROMOTE_PATH),
     ] = None
     from_run_id: Annotated[
         str | None,
-        Parameter(
-            name=["--from-run-id"],
-            help="Use the version recorded for this run_id.",
-        ),
+        option_param(BUILD_PROMOTE_FROM_RUN, command_path=BUILD_PROMOTE_PATH),
     ] = None
     note: Annotated[
         str | None,
-        Parameter(
-            name=["--note"],
-            help="Optional note describing the promotion.",
-        ),
+        option_param(BUILD_PROMOTE_NOTE, command_path=BUILD_PROMOTE_PATH),
     ] = None
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: json (default) or text.",
-        ),
+        option_param(BUILD_PROMOTE_FORMAT, command_path=BUILD_PROMOTE_PATH),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_PROMOTE_PATH)
 
 
 @cli_command("build.resolve", handler=build_resolve_handler, config=_BUILD_CONFIG)
@@ -492,26 +409,17 @@ class BuildResolveCommand:
 
     asset: Annotated[
         str,
-        Parameter(
-            name=["--asset"],
-            help="Asset key to resolve.",
-        ),
+        option_param(BUILD_RESOLVE_ASSET, command_path=BUILD_RESOLVE_PATH),
     ]
     alias: Annotated[
         str,
-        Parameter(
-            name=["--alias"],
-            help="Alias to resolve (e.g., main, latest).",
-        ),
+        option_param(BUILD_RESOLVE_ALIAS, command_path=BUILD_RESOLVE_PATH),
     ]
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: json (default) or text.",
-        ),
+        option_param(BUILD_RESOLVE_FORMAT, command_path=BUILD_RESOLVE_PATH),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_RESOLVE_PATH)
 
 
 @cli_command("build.diff", handler=build_diff_handler, config=_BUILD_CONFIG)
@@ -522,33 +430,21 @@ class BuildDiffCommand:
 
     asset: Annotated[
         str,
-        Parameter(
-            name=["--asset"],
-            help="Asset key to diff.",
-        ),
+        option_param(BUILD_DIFF_ASSET, command_path=BUILD_DIFF_PATH),
     ]
     from_spec: Annotated[
         str,
-        Parameter(
-            name=["--from"],
-            help="Baseline version spec (alias or version hash).",
-        ),
+        option_param(BUILD_DIFF_FROM, command_path=BUILD_DIFF_PATH),
     ]
     to_spec: Annotated[
         str,
-        Parameter(
-            name=["--to"],
-            help="Target version spec (alias or version hash).",
-        ),
+        option_param(BUILD_DIFF_TO, command_path=BUILD_DIFF_PATH),
     ]
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: json (default) or text.",
-        ),
+        option_param(BUILD_DIFF_FORMAT, command_path=BUILD_DIFF_PATH),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_DIFF_PATH)
 
 
 @cli_command("build.impact", handler=build_impact_handler, config=_BUILD_CONFIG)
@@ -563,48 +459,46 @@ class BuildImpactCommand:
 
     asset_kind: Annotated[
         str,
-        Parameter(
-            name=["--asset-kind"],
-            help="Kind of source asset: table or artifact.",
-        ),
+        option_param(BUILD_IMPACT_ASSET_KIND, command_path=BUILD_IMPACT_PATH),
     ] = "table"
     asset_key: Annotated[
         str,
-        Parameter(
-            name=["--asset-key"],
-            help="Key of source asset (e.g., analytics.function_metrics).",
-        ),
+        option_param(BUILD_IMPACT_ASSET_KEY, command_path=BUILD_IMPACT_PATH),
     ] = ""
     version_hash: Annotated[
         str | None,
-        Parameter(
-            name=["--version-hash"],
-            help="Specific version hash to analyze (optional).",
-        ),
+        option_param(BUILD_IMPACT_VERSION_HASH, command_path=BUILD_IMPACT_PATH),
     ] = None
     show_targets: Annotated[
         bool,
-        Parameter(
-            name=["--show-targets"],
-            help="Include target names that would need to re-run.",
-            negative=(),
-        ),
+        option_param(BUILD_IMPACT_SHOW_TARGETS, command_path=BUILD_IMPACT_PATH),
     ] = False
     max_depth: Annotated[
         int,
-        Parameter(
-            name=["--max-depth"],
-            help="Maximum traversal depth.",
-        ),
+        option_param(BUILD_IMPACT_MAX_DEPTH, command_path=BUILD_IMPACT_PATH),
     ] = 10
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format", "-f"],
-            help="Output format: json (default) or text.",
-        ),
+        option_param(BUILD_IMPACT_FORMAT, command_path=BUILD_IMPACT_PATH),
     ] = "json"
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_IMPACT_PATH)
+
+
+@cli_command("build.decision_trace", handler=build_decision_trace_handler, config=_TRACE_CONFIG)
+@build_app.command(name="decision-trace")
+@dataclass
+class BuildDecisionTraceCommand:
+    """Show or export the latest build decision trace."""
+
+    input_file: Annotated[
+        str | None,
+        option_param(BUILD_DECISION_TRACE_PATH, command_path=BUILD_DECISION_TRACE_CMD_PATH),
+    ] = None
+    output_file: Annotated[
+        str | None,
+        option_param(BUILD_DECISION_TRACE_OUTPUT, command_path=BUILD_DECISION_TRACE_CMD_PATH),
+    ] = None
+    flags: SharedFlags = shared_flags_field(BUILD_DECISION_TRACE_CMD_PATH)
 
 
 __all__ = ["build_app"]

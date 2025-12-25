@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Annotated, Literal
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
 from codeintel.cli.config import (
     DEFAULT_CONFIG_PATHS,
@@ -21,6 +21,8 @@ from codeintel.cli.config import (
     config_to_dict,
 )
 from codeintel.cli.config.service import TOML_CONFIG_PATHS
+from codeintel.cli.options.registry import CONFIG_FORMAT, CONFIG_SOURCE, CONFIG_TARGET
+from codeintel.cli.options.types import CommandPath, option_param
 from codeintel.core.runtime.loader import load_runtime_settings
 
 
@@ -62,6 +64,9 @@ def _load_toml_config() -> dict[str, object]:
 
 
 config_app = App(name="config", help="Configuration inspection and management.")
+CONFIG_SHOW_PATH: CommandPath = ("config", "show")
+CONFIG_ENV_PATH: CommandPath = ("config", "env")
+CONFIG_INIT_PATH: CommandPath = ("config", "init")
 
 
 @config_app.command(name="show")
@@ -75,11 +80,11 @@ class ConfigShowCommand:
 
     source: Annotated[
         Literal["all", "file", "cli-flags", "defaults"] | None,
-        Parameter(help="Show only config from specific source."),
+        option_param(CONFIG_SOURCE, command_path=CONFIG_SHOW_PATH),
     ] = None
     output_format: Annotated[
         Literal["text", "json"],
-        Parameter(name="--format", help="Output format."),
+        option_param(CONFIG_FORMAT, command_path=CONFIG_SHOW_PATH),
     ] = "text"
 
     def __call__(self) -> None:
@@ -171,7 +176,7 @@ class ConfigEnvCommand:
 
     output_format: Annotated[
         Literal["text", "json"],
-        Parameter(name="--format", help="Output format."),
+        option_param(CONFIG_FORMAT, command_path=CONFIG_ENV_PATH),
     ] = "text"
 
     def __call__(self) -> None:
@@ -206,7 +211,7 @@ class ConfigInitCommand:
 
     target: Annotated[
         Path | None,
-        Parameter(help="Target path for config file."),
+        option_param(CONFIG_TARGET, command_path=CONFIG_INIT_PATH),
     ] = None
 
     def __call__(self) -> None:

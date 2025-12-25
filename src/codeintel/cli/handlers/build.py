@@ -68,13 +68,14 @@ from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
-from codeintel.observability.runtime_registry import count_subprocesses, snapshot_subprocesses
+from codeintel.observability.otel import flush_observability
 from codeintel.observability.teardown import (
-    SubprocessSample,
+    ShutdownStatus,
+    TeardownSnapshotOptions,
     TeardownTelemetry,
+    collect_teardown_snapshot,
+    emit_shutdown_error_event,
     emit_teardown_telemetry,
-    snapshot_active_threads,
-    snapshot_pending_tasks,
 )
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
@@ -945,28 +946,25 @@ def _emit_build_teardown(
     settings = load_runtime_settings().observability
     if not settings.teardown_enabled:
         return
+    repo = inputs.runtime.snapshot.repo if inputs.runtime is not None else None
+    commit = inputs.runtime.snapshot.commit if inputs.runtime is not None else None
     try:
-        pending_tasks_count, pending_task_samples = snapshot_pending_tasks(
-            sample_limit=settings.teardown_task_sample_limit,
-        )
-        active_threads_count, active_thread_names = snapshot_active_threads(
-            sample_limit=settings.teardown_thread_sample_limit,
-            allowlisted_daemon_names=_TEARDOWN_DAEMON_ALLOWLIST,
-        )
-        subprocess_records = snapshot_subprocesses(
-            limit=settings.teardown_subprocess_sample_limit,
-        )
-        subprocess_samples = tuple(
-            SubprocessSample(pid=record.pid, command=record.command)
-            for record in subprocess_records
+        flush_result = flush_observability()
+        snapshot = collect_teardown_snapshot(
+            TeardownSnapshotOptions(
+                task_sample_limit=settings.teardown_task_sample_limit,
+                thread_sample_limit=settings.teardown_thread_sample_limit,
+                subprocess_sample_limit=settings.teardown_subprocess_sample_limit,
+                allowlisted_daemon_names=_TEARDOWN_DAEMON_ALLOWLIST,
+                telemetry_flush_ok=flush_result.flush_ok if flush_result is not None else None,
+                telemetry_flush_ms=flush_result.flush_ms if flush_result is not None else None,
+            )
         )
         cli_command = _format_cli_command(inputs.run_context)
         cli_invocation_id = (
             inputs.run_context.invocation_id if inputs.run_context is not None else None
         )
         cli_is_parse_error = False if inputs.run_context is not None else None
-        repo = inputs.runtime.snapshot.repo if inputs.runtime is not None else None
-        commit = inputs.runtime.snapshot.commit if inputs.runtime is not None else None
         telemetry = TeardownTelemetry(
             component="build",
             operation="shutdown",
@@ -981,19 +979,35 @@ def _emit_build_teardown(
             cli_is_parse_error=cli_is_parse_error,
             cli_error_type=_resolve_cli_error_type(inputs.result),
             shutdown_status=_resolve_shutdown_status(inputs.result),
-            pending_tasks_count=pending_tasks_count,
-            pending_task_samples=pending_task_samples,
-            active_threads_count=active_threads_count,
-            active_thread_names=active_thread_names,
-            subprocess_count=count_subprocesses(),
-            subprocess_samples=subprocess_samples,
+            pending_tasks_count=snapshot.pending_tasks_count,
+            pending_task_samples=snapshot.pending_task_samples,
+            active_threads_count=snapshot.active_threads_count,
+            active_thread_names=snapshot.active_thread_names,
+            subprocess_count=snapshot.subprocess_count,
+            subprocess_samples=snapshot.subprocess_samples,
+            telemetry_flush_ok=snapshot.telemetry_flush_ok,
+            telemetry_flush_ms=snapshot.telemetry_flush_ms,
         )
         emit_teardown_telemetry(telemetry, logger=LOG)
     except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        emit_shutdown_error_event(
+            span_name="build.shutdown",
+            error=exc,
+            logger=LOG,
+            attributes={
+                key: value
+                for key, value in {
+                    "build.run_id": inputs.run_id,
+                    "build.repo": repo,
+                    "build.commit": commit,
+                }.items()
+                if value is not None
+            },
+        )
         LOG.warning("Failed to emit build teardown telemetry: %s", exc)
 
 
-def _resolve_shutdown_status(result: CliResult[BuildRunResult] | None) -> str:
+def _resolve_shutdown_status(result: CliResult[BuildRunResult] | None) -> ShutdownStatus:
     """Resolve teardown status from a build run result.
 
     Parameters

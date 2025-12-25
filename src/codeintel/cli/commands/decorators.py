@@ -22,11 +22,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeGuard, TypeVar, cast
 
-from codeintel.cli.commands._common import SharedFlags
 from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core.command import Command
 from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.execution.registry import OperationSpec, register_operation
+from codeintel.cli.options.shared_flags import SharedFlags
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.observability import observe_operation, shutdown_observability
@@ -359,13 +359,12 @@ def _reconstruct_command_from_context(
     kwargs: dict[str, object] = {}
     for fld in dataclasses.fields(cls):
         if fld.name == "flags":
-            kwargs["flags"] = SharedFlags(
-                output_format=ctx.output_format,
-                verbose=ctx.verbosity,
-                project_root=ctx.runtime.root if ctx.runtime else None,
-                run_context=ctx.run_context,
-            )
-        elif fld.name in ctx.params.raw:
+            flags = _build_flags_from_context(fld, ctx)
+            if flags is not None:
+                kwargs["flags"] = flags
+                continue
+
+        if fld.name in ctx.params.raw:
             kwargs[fld.name] = ctx.params.raw[fld.name]
         elif fld.default is not dataclasses.MISSING:
             kwargs[fld.name] = fld.default
@@ -373,6 +372,39 @@ def _reconstruct_command_from_context(
             kwargs[fld.name] = fld.default_factory()
 
     return cast("Command[Any]", cls(**kwargs))
+
+
+def _build_flags_from_context(
+    fld: dataclasses.Field[object],
+    ctx: CommandContext,
+) -> SharedFlags | None:
+    default_flags: object | None
+    if fld.default_factory is not dataclasses.MISSING:
+        default_flags = fld.default_factory()
+    elif fld.default is not dataclasses.MISSING:
+        default_flags = fld.default
+    else:
+        return None
+
+    if not dataclasses.is_dataclass(default_flags):
+        return None
+
+    field_names = {field.name for field in dataclasses.fields(default_flags)}
+    replace_kwargs: dict[str, object] = {}
+    if "output_format" in field_names:
+        replace_kwargs["output_format"] = ctx.output_format
+    if "json" in field_names:
+        replace_kwargs["json"] = ctx.output_format == OutputFormat.JSON
+    if "verbose" in field_names:
+        replace_kwargs["verbose"] = ctx.verbosity
+    if "project_root" in field_names:
+        replace_kwargs["project_root"] = ctx.runtime.root if ctx.runtime else None
+    if "run_context" in field_names:
+        replace_kwargs["run_context"] = ctx.run_context
+
+    if not replace_kwargs:
+        return cast(SharedFlags, default_flags)
+    return cast(SharedFlags, dataclasses.replace(default_flags, **replace_kwargs))
 
 
 def _execute_new_command[T](

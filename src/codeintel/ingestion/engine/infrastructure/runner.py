@@ -214,6 +214,7 @@ class ToolRunner:
                     output_path=run_options.output_path,
                 )
             )
+        return_code: int | None = None
         try:
             if run_options.stream_output:
                 stdout_b, stderr_b = await _stream_process(
@@ -230,10 +231,11 @@ class ToolRunner:
             proc.kill()
             with suppress(asyncio.CancelledError):
                 await proc.communicate()
+            return_code = proc.returncode or 1
             result = ToolRunResult(
                 tool=tool_enum,
                 args=tuple(cmd[1:]),
-                returncode=proc.returncode or 1,
+                returncode=return_code,
                 stdout="",
                 stderr="timed out",
                 duration_s=time.perf_counter() - start_ts,
@@ -254,12 +256,15 @@ class ToolRunner:
                 heartbeat_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await heartbeat_task
-            unregister_subprocess(pid=proc.pid)
+            if return_code is None:
+                return_code = proc.returncode if proc.returncode is not None else 1
+            unregister_subprocess(pid=proc.pid, exit_code=return_code)
 
+        return_code = proc.returncode if proc.returncode is not None else 1
         result = ToolRunResult(
             tool=tool_enum,
             args=tuple(cmd[1:]),
-            returncode=proc.returncode if proc.returncode is not None else 1,
+            returncode=return_code,
             stdout=stdout_b.decode(errors="replace"),
             stderr=stderr_b.decode(errors="replace"),
             duration_s=time.perf_counter() - start_ts,

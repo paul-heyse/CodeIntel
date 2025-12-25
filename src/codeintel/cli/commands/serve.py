@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import serve_http_handler, serve_mcp_handler
+from codeintel.cli.options.registry import SERVE_HOST, SERVE_PORT, SERVE_RELOAD
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 serve_app = App(
     name="serve",
@@ -17,6 +19,8 @@ serve_app = App(
 )
 
 _SERVE_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+SERVE_HTTP_PATH: CommandPath = ("serve", "http")
+SERVE_MCP_PATH: CommandPath = ("serve", "mcp")
 
 
 @serve_app.command(name="http")
@@ -27,27 +31,17 @@ class ServeHttpCommand:
 
     host: Annotated[
         str | None,
-        Parameter(
-            name=["--host", "-h"],
-            help="Host to bind to.",
-        ),
+        option_param(SERVE_HOST, command_path=SERVE_HTTP_PATH),
     ] = None
     port: Annotated[
         int | None,
-        Parameter(
-            name=["--port", "-p"],
-            help="Port to bind to.",
-        ),
+        option_param(SERVE_PORT, command_path=SERVE_HTTP_PATH),
     ] = None
     reload: Annotated[
         bool,
-        Parameter(
-            name="--reload",
-            help="Enable auto-reload for development.",
-            negative=(),
-        ),
+        option_param(SERVE_RELOAD, command_path=SERVE_HTTP_PATH),
     ] = False
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(SERVE_HTTP_PATH)
 
 
 @serve_app.command(name="mcp")
@@ -56,7 +50,7 @@ class ServeHttpCommand:
 class ServeMcpCommand:
     """Start the MCP server."""
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(SERVE_MCP_PATH)
 
 
 __all__ = [

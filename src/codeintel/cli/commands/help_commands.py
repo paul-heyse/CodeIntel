@@ -9,11 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
 from codeintel.cli.introspection import get_help_renderer
+from codeintel.cli.options.registry import HELP_BY_GROUP, HELP_OPERATION_ID, HELP_QUERY
+from codeintel.cli.options.types import CommandPath, option_param
 
 help_commands_app = App(name="help", help="Get help on operations")
+HELP_OPERATION_PATH: CommandPath = ("help", "operation")
+HELP_LIST_PATH: CommandPath = ("help", "list")
+HELP_SEARCH_PATH: CommandPath = ("help", "search")
 
 
 @help_commands_app.command(name="operation")
@@ -25,7 +30,10 @@ class HelpOperationCommand:
     Use this to understand how to invoke an operation correctly.
     """
 
-    operation_id: Annotated[str, Parameter(help="Operation ID to describe")]
+    operation_id: Annotated[
+        str,
+        option_param(HELP_OPERATION_ID, command_path=HELP_OPERATION_PATH),
+    ]
 
     def __call__(self) -> None:
         """Execute the help operation command.
@@ -51,7 +59,7 @@ class HelpListCommand:
 
     by_group: Annotated[
         bool,
-        Parameter(help="Group operations by group"),
+        option_param(HELP_BY_GROUP, command_path=HELP_LIST_PATH),
     ] = False
 
     def __call__(self) -> None:
@@ -69,7 +77,10 @@ class HelpSearchCommand:
     name, or description text.
     """
 
-    query: Annotated[str, Parameter(help="Search query")]
+    query: Annotated[
+        str,
+        option_param(HELP_QUERY, command_path=HELP_SEARCH_PATH),
+    ]
 
     def __call__(self) -> None:
         """Execute the help search command."""

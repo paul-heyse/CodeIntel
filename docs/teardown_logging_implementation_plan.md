@@ -43,7 +43,7 @@ primary signal and structured logs as the fallback.
    - `pending_tasks_count`, `pending_task_samples`
    - `active_threads_count`, `active_thread_names`
    - `subprocess_count`, `subprocess_samples` (pid, command basename)
-   - `telemetry_flush_status`, `telemetry_flush_ms`
+   - `telemetry_flush_ok`, `telemetry_flush_ms`
 
 2) Add a centralized helper to emit teardown telemetry:
    - Span events + attributes (OTel)
@@ -116,7 +116,7 @@ primary signal and structured logs as the fallback.
    - `component=build`, `operation=shutdown`
    - `shutdown_status=success|partial|failed`
    - `pending_tasks_count`, `active_threads_count`, `subprocess_count`
-   - `telemetry_flush_ms`, `telemetry_flush_status`
+   - `telemetry_flush_ms`, `telemetry_flush_ok`
 
 3) Logs:
    - Structured log line with identical fields (for non-OTel environments).
@@ -176,6 +176,85 @@ primary signal and structured logs as the fallback.
 - `src/codeintel/build/hamilton/native/ingestion/scip.py`
 - `src/codeintel/build/hamilton/env.py` (propagate run context)
 
+### Phase 8: Teardown Completion + Best-in-Class Extensions
+
+**Objective:** Close remaining scope gaps and elevate teardown observability to a
+best-in-class, unified design.
+
+#### 8.1 Teardown completion and flush correlation
+1) Surface flush results inside teardown telemetry:
+   - Capture `ObservabilityShutdownResult` and map it to
+     `teleardown_flush_status` (succeeded/failed) and `telemetry_flush_ms`.
+   - Ensure flush results are emitted once, and only once, per CLI invocation.
+2) Ensure parse/validation errors still trigger shutdown flush:
+   - Call `shutdown_observability()` inside `run_cli_with_telemetry` `finally`
+     so CLI parse failures also produce flush logs.
+   - Propagate shutdown results to build teardown emitters when available.
+3) Wire teardown emission to use flush results:
+   - Extend `_emit_build_teardown` to accept optional shutdown results (or
+     pass via a shared context object).
+   - Populate `TeardownTelemetry.telemetry_flush_ok` and
+     `TeardownTelemetry.telemetry_flush_ms` when results exist.
+
+**Proposed code locations**
+- `src/codeintel/observability/cli.py` (shutdown call in finally)
+- `src/codeintel/cli/handlers/build.py` (pass flush results to teardown)
+- `src/codeintel/observability/otel.py` (stable mapping helper, if needed)
+
+#### 8.2 Unified teardown collector (single source of truth)
+1) Introduce a `TeardownContext` (or similar) that:
+   - Collects pending tasks, thread samples, subprocess samples, and
+     shutdown flush results in one place.
+   - Returns a structured payload used by both build teardown and
+     SCIP teardown emitters.
+2) Refactor `build` and `scip` teardown emitters to consume the shared
+   context to avoid drift and duplicated logic.
+
+**Proposed code locations**
+- `src/codeintel/observability/teardown.py` (collector + helpers)
+- `src/codeintel/cli/handlers/build.py` (consume collector)
+- `src/codeintel/build/hamilton/native/ingestion/scip.py` (consume collector)
+
+#### 8.3 Subprocess registry hardening
+1) Extend `SubprocessRecord` to include:
+   - `exit_code` (optional)
+   - `duration_ms` (optional, computed on unregister)
+   - `last_seen` timestamp for pruning
+2) Update registry lifecycle:
+   - Set `last_seen` on register and update on snapshot.
+   - Prune stale entries during `snapshot_subprocesses` for accuracy.
+3) Extend teardown payload:
+   - Include duration_ms for subprocess samples (bounded).
+   - Keep redaction policy for command basenames unchanged.
+
+**Proposed code locations**
+- `src/codeintel/observability/runtime_registry.py`
+- `src/codeintel/ingestion/engine/infrastructure/runner.py`
+- `src/codeintel/observability/teardown.py`
+
+#### 8.4 Status typing + schema consistency
+1) Replace stringly-typed statuses with stable `Literal` or small enums:
+   - `shutdown_status`, `telemetry_flush_ok`, `scip_mode`, `scip_status`
+2) Normalize flush naming:
+   - Align teardown payload fields with `telemetry.flush.ok` or move
+     to a consistent `telemetry_flush_ok` mapping.
+3) Add validation helpers to enforce status values at construction time.
+
+**Proposed code locations**
+- `src/codeintel/observability/teardown.py`
+- `src/codeintel/observability/otel.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+
+#### 8.5 Teardown error event emission
+1) Emit a `shutdown.error` span event on teardown collection exceptions:
+   - Include exception type and message (no tracebacks in attributes).
+2) Keep current `warning` log as a fallback.
+
+**Proposed code locations**
+- `src/codeintel/observability/teardown.py`
+- `src/codeintel/cli/handlers/build.py`
+- `src/codeintel/build/hamilton/native/ingestion/scip.py`
+
 ## Data Model and Attributes (Stable, Low-Cardinality)
 
 **Span attributes**
@@ -226,6 +305,14 @@ primary signal and structured logs as the fallback.
    - Parse/validation errors emit teardown telemetry.
    - Exit-code normalization matches Cyclopts defaults.
    - RunContext injection via `parse=False` works for commands.
+
+5) Flush correlation tests:
+   - Teardown logs include flush status/duration when shutdown runs.
+   - Parse-time errors still produce telemetry flush logs.
+
+6) Subprocess registry lifecycle tests:
+   - Duration is populated on unregister.
+   - Stale entries are pruned from snapshots.
 
 **Proposed test locations**
 - `tests/observability/test_teardown.py`

@@ -7,17 +7,18 @@ configured and all dependencies are available using the Command[T] pattern.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.handlers.health import get_health_checker
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 health_app = App(name="health", help="Check CLI environment health")
+
+HEALTH_CHECK_PATH: CommandPath = ("health",)
 
 
 @cli_command("health.check", require_storage=False)
@@ -40,7 +43,7 @@ class HealthCheck(Command[HealthCheckResult]):
 
     __operation_id__ = "health.check"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(HEALTH_CHECK_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[HealthCheckResult]:
         """Execute health checks.

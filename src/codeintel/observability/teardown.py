@@ -8,9 +8,10 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.observability.otel import get_observability
+from codeintel.observability.runtime_registry import count_subprocesses, snapshot_subprocesses
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -20,6 +21,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 SpanAttributeValue = str | bool | int | float | list[str] | list[bool] | list[int] | list[float]
+
+ShutdownStatus = Literal["unknown", "failed", "partial", "succeeded"]
+ScipTeardownStatus = Literal["unknown", "failed", "skipped", "succeeded"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,14 +60,14 @@ class TeardownTelemetry:
     cli_exit_code: int | None = None
     cli_is_parse_error: bool | None = None
     cli_error_type: str | None = None
-    shutdown_status: str = "unknown"
+    shutdown_status: ShutdownStatus = "unknown"
     pending_tasks_count: int | None = None
     pending_task_samples: tuple[str, ...] = field(default_factory=tuple)
     active_threads_count: int | None = None
     active_thread_names: tuple[str, ...] = field(default_factory=tuple)
     subprocess_count: int | None = None
     subprocess_samples: tuple[SubprocessSample, ...] = field(default_factory=tuple)
-    telemetry_flush_status: str | None = None
+    telemetry_flush_ok: bool | None = None
     telemetry_flush_ms: float | None = None
 
     def span_attributes(self) -> dict[str, SpanAttributeValue]:
@@ -93,7 +97,7 @@ class TeardownTelemetry:
                 "shutdown.pending_tasks_count": self.pending_tasks_count,
                 "shutdown.active_threads_count": self.active_threads_count,
                 "shutdown.subprocess_count": self.subprocess_count,
-                "telemetry.flush.status": self.telemetry_flush_status,
+                "telemetry.flush.ok": self.telemetry_flush_ok,
                 "telemetry.flush.ms": self.telemetry_flush_ms,
             }
         )
@@ -147,9 +151,35 @@ class TeardownTelemetry:
             "active_thread_names": [*self.active_thread_names],
             "subprocess_count": self.subprocess_count,
             "subprocess_samples": [sample.to_payload() for sample in self.subprocess_samples],
-            "telemetry_flush_status": self.telemetry_flush_status,
+            "telemetry_flush_ok": self.telemetry_flush_ok,
             "telemetry_flush_ms": self.telemetry_flush_ms,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class TeardownSnapshot:
+    """Snapshot of runtime state for teardown telemetry."""
+
+    pending_tasks_count: int | None
+    pending_task_samples: tuple[str, ...]
+    active_threads_count: int | None
+    active_thread_names: tuple[str, ...]
+    subprocess_count: int | None
+    subprocess_samples: tuple[SubprocessSample, ...]
+    telemetry_flush_ok: bool | None
+    telemetry_flush_ms: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class TeardownSnapshotOptions:
+    """Options controlling teardown snapshot collection."""
+
+    task_sample_limit: int | None
+    thread_sample_limit: int | None
+    subprocess_sample_limit: int | None
+    allowlisted_daemon_names: set[str] | None
+    telemetry_flush_ok: bool | None = None
+    telemetry_flush_ms: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,7 +190,7 @@ class ScipTeardownTelemetry:
     repo: str | None = None
     commit: str | None = None
     scip_mode: str | None = None
-    status: str = "unknown"
+    status: ScipTeardownStatus = "unknown"
     error_summary: str | None = None
     duration_ms: float | None = None
 
@@ -269,6 +299,38 @@ def snapshot_active_threads(
     return count, tuple(names)
 
 
+def collect_teardown_snapshot(options: TeardownSnapshotOptions) -> TeardownSnapshot:
+    """Collect teardown snapshot state for telemetry.
+
+    Returns
+    -------
+    TeardownSnapshot
+        Snapshot of pending tasks, threads, subprocesses, and flush metadata.
+    """
+    pending_tasks_count, pending_task_samples = snapshot_pending_tasks(
+        sample_limit=options.task_sample_limit,
+    )
+    active_threads_count, active_thread_names = snapshot_active_threads(
+        sample_limit=options.thread_sample_limit,
+        allowlisted_daemon_names=options.allowlisted_daemon_names,
+    )
+    subprocess_records = snapshot_subprocesses(limit=options.subprocess_sample_limit)
+    subprocess_samples = tuple(
+        SubprocessSample(pid=record.pid, command=record.command)
+        for record in subprocess_records
+    )
+    return TeardownSnapshot(
+        pending_tasks_count=pending_tasks_count,
+        pending_task_samples=pending_task_samples,
+        active_threads_count=active_threads_count,
+        active_thread_names=active_thread_names,
+        subprocess_count=count_subprocesses(),
+        subprocess_samples=subprocess_samples,
+        telemetry_flush_ok=options.telemetry_flush_ok,
+        telemetry_flush_ms=options.telemetry_flush_ms,
+    )
+
+
 def emit_teardown_telemetry(
     telemetry: TeardownTelemetry,
     *,
@@ -312,6 +374,32 @@ def emit_scip_teardown_telemetry(
         log_target.info("scip.teardown %s", payload)
     else:
         log_target.warning("scip.teardown %s", payload)
+
+
+def emit_shutdown_error_event(
+    *,
+    span_name: str,
+    error: Exception,
+    logger: logging.Logger | None = None,
+    attributes: Mapping[str, SpanAttributeValue] | None = None,
+) -> None:
+    """Emit a shutdown.error span event and structured log entry."""
+    obs = get_observability()
+    event_attrs = dict(attributes or {})
+    event_attrs["shutdown.error_type"] = type(error).__name__
+    event_attrs["shutdown.error_message"] = str(error)
+    if obs.enabled and obs.tracer is not None:
+        with obs.tracer.start_as_current_span(span_name) as span:
+            _add_span_event(span, "shutdown.error", _prune_none(event_attrs))
+    log_target = logger or log
+    payload = json.dumps(
+        {
+            "event": "shutdown.error",
+            **_prune_none(event_attrs),
+        },
+        sort_keys=True,
+    )
+    log_target.warning("shutdown.error %s", payload)
 
 
 def _set_span_attributes(span: Span, attributes: Mapping[str, SpanAttributeValue]) -> None:
@@ -361,8 +449,12 @@ def _prune_none(values: Mapping[str, SpanAttributeValue | None]) -> dict[str, Sp
 __all__ = [
     "ScipTeardownTelemetry",
     "SubprocessSample",
+    "TeardownSnapshot",
+    "TeardownSnapshotOptions",
     "TeardownTelemetry",
+    "collect_teardown_snapshot",
     "emit_scip_teardown_telemetry",
+    "emit_shutdown_error_event",
     "emit_teardown_telemetry",
     "snapshot_active_threads",
     "snapshot_pending_tasks",

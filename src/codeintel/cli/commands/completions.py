@@ -8,8 +8,11 @@ from typing import Annotated
 import cyclopts
 
 from codeintel.cli.completions import Shell, generate_completion, get_install_instructions
+from codeintel.cli.options.registry import COMPLETIONS_SHELL
+from codeintel.cli.options.types import CommandPath, option_param
 
 completions_app = cyclopts.App(name="completions", help="Shell completion generation")
+COMPLETIONS_INSTALL_PATH: CommandPath = ("completions", "install")
 
 
 def _write_stdout(message: str) -> None:
@@ -81,7 +84,10 @@ def powershell() -> None:
 
 @completions_app.command()
 def install(
-    shell: Annotated[str, cyclopts.Parameter(help="Shell to install for")],
+    shell: Annotated[
+        str,
+        option_param(COMPLETIONS_SHELL, command_path=COMPLETIONS_INSTALL_PATH),
+    ],
 ) -> None:
     """Show installation instructions for shell.
 

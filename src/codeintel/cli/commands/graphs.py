@@ -8,18 +8,25 @@ instead of plugin-era registries.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
 from codeintel.build.target_catalog import target_graph_from_catalog
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
 from codeintel.cli.core.results import result_type
+from codeintel.cli.options.registry import (
+    GRAPH_DEPENDENCY_POLICY,
+    GRAPH_NAMES,
+    GRAPH_PLAN,
+    GRAPH_SELECTION_POLICY,
+)
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -30,6 +37,11 @@ graphs_app = App(
     name="graph",
     help="Graph analytics target commands.",
 )
+
+GRAPH_TARGETS_LIST_PATH: CommandPath = ("graph", "targets-list")
+GRAPH_TARGETS_PLAN_PATH: CommandPath = ("graph", "targets-plan")
+GRAPH_PLUGINS_PATH: CommandPath = ("graph", "plugins")
+GRAPH_TARGETS_PATH: CommandPath = ("graph", "targets")
 
 
 def _get_graph_targets() -> list[tuple[str, str, tuple[str, ...]]]:
@@ -146,12 +158,9 @@ class GraphTargetsList(Command[GraphTargetsResult]):
 
     names: Annotated[
         list[str] | None,
-        Parameter(
-            name="--names",
-            help="Explicit target names to filter (repeatable).",
-        ),
+        option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_LIST_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(GRAPH_TARGETS_LIST_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphTargetsResult]:
         """Execute graph targets listing.
@@ -205,12 +214,9 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
 
     names: Annotated[
         list[str] | None,
-        Parameter(
-            name="--names",
-            help="Explicit target names to plan (repeatable). Defaults to all graph targets.",
-        ),
+        option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_PLAN_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(GRAPH_TARGETS_PLAN_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult]:
         """Execute graph targets planning.
@@ -264,36 +270,21 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
 
     plan: Annotated[
         bool,
-        Parameter(
-            name="--plan",
-            help="Display execution plan instead of listing.",
-            negative=("--no-plan",),
-        ),
+        option_param(GRAPH_PLAN, command_path=GRAPH_PLUGINS_PATH),
     ] = False
     names: Annotated[
         list[str] | None,
-        Parameter(
-            name="--names",
-            help="Explicit plugin (target) names to filter or plan (repeatable).",
-        ),
+        option_param(GRAPH_NAMES, command_path=GRAPH_PLUGINS_PATH),
     ] = None
     selection_policy: Annotated[
         SelectionPolicy,
-        Parameter(
-            name="--selection-policy",
-            help="How to handle unknown plugin names.",
-            show_choices=True,
-        ),
+        option_param(GRAPH_SELECTION_POLICY, command_path=GRAPH_PLUGINS_PATH),
     ] = SelectionPolicy.LENIENT
     dependency_policy: Annotated[
         DependencyPolicy,
-        Parameter(
-            name="--dependency-policy",
-            help="How to handle missing plugin dependencies.",
-            show_choices=True,
-        ),
+        option_param(GRAPH_DEPENDENCY_POLICY, command_path=GRAPH_PLUGINS_PATH),
     ] = DependencyPolicy.STRICT
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(GRAPH_PLUGINS_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List plugins or show plan.
@@ -375,20 +366,13 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
 
     plan: Annotated[
         bool,
-        Parameter(
-            name="--plan",
-            help="Display execution plan instead of listing.",
-            negative=("--no-plan",),
-        ),
+        option_param(GRAPH_PLAN, command_path=GRAPH_TARGETS_PATH),
     ] = False
     names: Annotated[
         list[str] | None,
-        Parameter(
-            name="--names",
-            help="Explicit target names to filter or plan (repeatable).",
-        ),
+        option_param(GRAPH_NAMES, command_path=GRAPH_TARGETS_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(GRAPH_TARGETS_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[GraphPlanResult | GraphTargetsResult]:
         """List targets or show plan.
