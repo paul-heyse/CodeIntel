@@ -149,27 +149,32 @@ def _coerce_attribute_value(value: object) -> SpanAttributeValue | None:
     return str(value)
 
 
+@dataclass(frozen=True)
+class _SpanContext:
+    correlation_id: str | None
+    run_id: str | None
+    domain: str | None
+    component: str
+    operation: str
+    attributes: dict[str, object] | None
+
+
 def _apply_span_attributes(
     span: Span,
     *,
-    correlation_id: str | None,
-    run_id: str | None,
-    domain: str | None,
-    component: str,
-    operation: str,
-    attributes: dict[str, object] | None,
+    context: _SpanContext,
 ) -> None:
-    if correlation_id:
-        span.set_attribute("codeintel.correlation_id", correlation_id)
-    if run_id:
-        span.set_attribute("codeintel.run_id", run_id)
-    if domain:
-        span.set_attribute("codeintel.domain", domain)
-    span.set_attribute("codeintel.component", component)
-    span.set_attribute("codeintel.operation", operation)
-    if not attributes:
+    if context.correlation_id:
+        span.set_attribute("codeintel.correlation_id", context.correlation_id)
+    if context.run_id:
+        span.set_attribute("codeintel.run_id", context.run_id)
+    if context.domain:
+        span.set_attribute("codeintel.domain", context.domain)
+    span.set_attribute("codeintel.component", context.component)
+    span.set_attribute("codeintel.operation", context.operation)
+    if not context.attributes:
         return
-    for key, value in attributes.items():
+    for key, value in context.attributes.items():
         attr_value = _coerce_attribute_value(value)
         if attr_value is not None:
             span.set_attribute(key, attr_value)
@@ -232,8 +237,7 @@ def observe_operation(
         with span_cm as active_span:
             span = active_span
             if span is not None:
-                _apply_span_attributes(
-                    span,
+                span_context = _SpanContext(
                     correlation_id=cid,
                     run_id=run_id,
                     domain=domain,
@@ -241,6 +245,7 @@ def observe_operation(
                     operation=operation,
                     attributes=attributes,
                 )
+                _apply_span_attributes(span, context=span_context)
             yield span
         success = True
     except Exception as exc:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import json
 import logging
@@ -9,31 +10,24 @@ import time
 from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol, cast
 
 import grpc
-from opentelemetry import _logs as otel_logs
 from opentelemetry import metrics as otel_metrics
 from opentelemetry import trace as otel_trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
-from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
-    OTLPLogExporter as OTLPLogExporterGrpc,
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter as OTLPSpanExporterGrpc,
 )
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
     OTLPMetricExporter as OTLPMetricExporterGrpc,
 )
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-    OTLPSpanExporter as OTLPSpanExporterGrpc,
-)
-from opentelemetry.exporter.otlp.proto.http._log_exporter import (
-    OTLPLogExporter as OTLPLogExporterHttp,
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter as OTLPSpanExporterHttp,
 )
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter as OTLPMetricExporterHttp,
-)
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-    OTLPSpanExporter as OTLPSpanExporterHttp,
 )
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
@@ -44,8 +38,6 @@ from opentelemetry.instrumentation.threading import ThreadingInstrumentor
 from opentelemetry.propagate import set_global_textmap
 from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.propagators.textmap import TextMapPropagator
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler, LogLimits
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import (
     AlwaysOffExemplarFilter,
     AlwaysOnExemplarFilter,
@@ -80,8 +72,6 @@ from codeintel.observability.instrumentation_registry import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from opentelemetry.metrics import Meter
     from opentelemetry.sdk.metrics import ExemplarFilter
 
@@ -93,6 +83,19 @@ class _Instrumentor(Protocol):
 
     def instrument(self, **kwargs: object) -> None:
         """Enable instrumentation."""
+
+
+class _LoggerProvider(Protocol):
+    """Protocol for logger provider behavior used by shutdown hooks."""
+
+    def add_log_record_processor(self, processor: object) -> None:
+        """Register a log record processor."""
+
+    def shutdown(self) -> None:
+        """Shutdown the provider."""
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        """Force flush pending log records."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,8 +164,8 @@ class ObservabilityRuntime:
     enabled: bool
     tracer: Tracer | None
     meter: Meter | None
-    logger_provider: LoggerProvider | None
-    log_handler: LoggingHandler | None
+    logger_provider: _LoggerProvider | None
+    log_handler: logging.Handler | None
     shutdown: Callable[[], ObservabilityShutdownResult] | None
     prometheus_enabled: bool = False
     grpc_observability: GrpcObservabilityHandle | None = None
@@ -340,8 +343,8 @@ def _build_span_limits(settings: SpanLimitSettings) -> SpanLimits | None:
         max_attribute_length=settings.attribute_value_length_limit,
         max_events=settings.span_event_count_limit,
         max_links=settings.span_link_count_limit,
-        max_attributes_per_event=settings.event_attribute_count_limit,
-        max_attributes_per_link=settings.link_attribute_count_limit,
+        max_event_attributes=settings.event_attribute_count_limit,
+        max_link_attributes=settings.link_attribute_count_limit,
     )
 
 
@@ -351,34 +354,39 @@ def _build_sampler(config: ObservabilityConfig) -> object | None:
         return None
     normalized = sampler.strip().lower()
     ratio = config.traces_sampler_arg if config.traces_sampler_arg is not None else 1.0
-    if normalized == "always_on":
-        return ALWAYS_ON
-    if normalized == "always_off":
-        return ALWAYS_OFF
+    mapping: dict[str, object] = {
+        "always_on": ALWAYS_ON,
+        "always_off": ALWAYS_OFF,
+        "parentbased_always_on": ParentBased(ALWAYS_ON),
+        "parentbased_always_off": ParentBased(ALWAYS_OFF),
+    }
     if normalized == "traceidratio":
-        return TraceIdRatioBased(ratio)
-    if normalized == "parentbased_always_on":
-        return ParentBased(ALWAYS_ON)
-    if normalized == "parentbased_always_off":
-        return ParentBased(ALWAYS_OFF)
-    if normalized == "parentbased_traceidratio":
-        return ParentBased(TraceIdRatioBased(ratio))
-    LOG.warning("Unsupported sampler %s; using SDK default", sampler)
-    return None
+        result: object | None = TraceIdRatioBased(ratio)
+    elif normalized == "parentbased_traceidratio":
+        result = ParentBased(TraceIdRatioBased(ratio))
+    else:
+        result = mapping.get(normalized)
+    if result is None:
+        LOG.warning("Unsupported sampler %s; using SDK default", sampler)
+    return result
 
 
 def _build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None:
     if not config.metrics_exemplar_filter:
         return None
     normalized = config.metrics_exemplar_filter.strip().lower()
-    if normalized == "always_on":
-        return AlwaysOnExemplarFilter()
-    if normalized == "always_off":
-        return AlwaysOffExemplarFilter()
-    if normalized == "trace_based":
-        return TraceBasedExemplarFilter()
-    LOG.warning("Unsupported exemplar filter %s; using SDK default", config.metrics_exemplar_filter)
-    return None
+    mapping: dict[str, ExemplarFilter] = {
+        "always_on": AlwaysOnExemplarFilter(),
+        "always_off": AlwaysOffExemplarFilter(),
+        "trace_based": TraceBasedExemplarFilter(),
+    }
+    result = mapping.get(normalized)
+    if result is None:
+        LOG.warning(
+            "Unsupported exemplar filter %s; using SDK default",
+            config.metrics_exemplar_filter,
+        )
+    return result
 
 
 def _build_views(config: ObservabilityConfig) -> list[View]:
@@ -435,10 +443,81 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
     return views
 
 
-def _build_log_limits(settings: LogLimitSettings) -> LogLimits | None:
+def _load_module(name: str, *, label: str) -> object:
+    try:
+        return importlib.import_module(name)
+    except ModuleNotFoundError as exc:
+        message = f"{label} module unavailable: {exc}"
+        raise RuntimeError(message) from exc
+
+
+def _load_otel_logs_api() -> object:
+    return _load_module("opentelemetry._logs", label="OpenTelemetry logs API")
+
+
+def _load_sdk_logs_module() -> object:
+    return _load_module("opentelemetry.sdk._logs", label="OpenTelemetry SDK logs")
+
+
+def _load_sdk_logs_export_module() -> object:
+    return _load_module("opentelemetry.sdk._logs.export", label="OpenTelemetry SDK logs export")
+
+
+def _get_logger_provider_cls() -> type[_LoggerProvider]:
+    module = _load_sdk_logs_module()
+    provider_cls = getattr(module, "LoggerProvider", None)
+    if not isinstance(provider_cls, type):
+        message = "LoggerProvider class is unavailable in OpenTelemetry SDK logs"
+        raise RuntimeError(message)
+    return cast(type[_LoggerProvider], provider_cls)
+
+
+def _get_logging_handler_cls() -> type[logging.Handler]:
+    module = _load_sdk_logs_module()
+    handler_cls = getattr(module, "LoggingHandler", None)
+    if not isinstance(handler_cls, type):
+        message = "LoggingHandler class is unavailable in OpenTelemetry SDK logs"
+        raise RuntimeError(message)
+    return cast(type[logging.Handler], handler_cls)
+
+
+def _get_log_limits_cls() -> type[object]:
+    module = _load_sdk_logs_module()
+    limits_cls = getattr(module, "LogLimits", None)
+    if not isinstance(limits_cls, type):
+        message = "LogLimits class is unavailable in OpenTelemetry SDK logs"
+        raise RuntimeError(message)
+    return limits_cls
+
+
+def _get_batch_log_record_processor_cls() -> type[object]:
+    module = _load_sdk_logs_export_module()
+    processor_cls = getattr(module, "BatchLogRecordProcessor", None)
+    if not isinstance(processor_cls, type):
+        message = "BatchLogRecordProcessor class is unavailable in OpenTelemetry SDK logs export"
+        raise RuntimeError(message)
+    return processor_cls
+
+
+def _get_otlp_log_exporter_cls(protocol: str) -> type[object]:
+    module_name = (
+        "opentelemetry.exporter.otlp.proto.http._log_exporter"
+        if protocol == "http/protobuf"
+        else "opentelemetry.exporter.otlp.proto.grpc._log_exporter"
+    )
+    module = _load_module(module_name, label="OpenTelemetry OTLP log exporter")
+    exporter_cls = getattr(module, "OTLPLogExporter", None)
+    if not isinstance(exporter_cls, type):
+        message = "OTLPLogExporter class is unavailable in OpenTelemetry exporters"
+        raise RuntimeError(message)
+    return exporter_cls
+
+
+def _build_log_limits(settings: LogLimitSettings) -> object | None:
     if settings.attribute_count_limit is None and settings.attribute_value_length_limit is None:
         return None
-    return LogLimits(
+    log_limits_cls = _get_log_limits_cls()
+    return log_limits_cls(
         max_attributes=settings.attribute_count_limit,
         max_attribute_length=settings.attribute_value_length_limit,
     )
@@ -447,7 +526,7 @@ def _build_log_limits(settings: LogLimitSettings) -> LogLimits | None:
 def _headers_to_dict(headers: tuple[tuple[str, str], ...]) -> dict[str, str] | None:
     if not headers:
         return None
-    return {key: value for key, value in headers}
+    return dict(headers)
 
 
 def _grpc_compression(value: str | None) -> grpc.Compression | None:
@@ -483,7 +562,7 @@ def _build_grpc_credentials(config: _ResolvedOtlp) -> grpc.ChannelCredentials | 
     )
 
 
-def _filter_kwargs(func: object, candidates: dict[str, object]) -> dict[str, object]:
+def _filter_kwargs(func: Callable[..., object], candidates: dict[str, object]) -> dict[str, object]:
     try:
         params = inspect.signature(func).parameters
     except (TypeError, ValueError):
@@ -518,8 +597,9 @@ def _build_otlp_trace_exporter(config: _ResolvedOtlp) -> object:
         kwargs["client_certificate_file"] = config.client_certificate
         kwargs["client_key_file"] = config.client_key
 
-    filtered = _filter_kwargs(exporter_cls, kwargs)
-    return exporter_cls(**filtered)
+    filtered = _filter_kwargs(cast(Callable[..., object], exporter_cls), kwargs)
+    exporter_ctor = cast(Callable[..., object], exporter_cls)
+    return exporter_ctor(**filtered)
 
 
 def _build_otlp_metric_exporter(config: _ResolvedOtlp) -> object:
@@ -545,15 +625,13 @@ def _build_otlp_metric_exporter(config: _ResolvedOtlp) -> object:
         kwargs["client_certificate_file"] = config.client_certificate
         kwargs["client_key_file"] = config.client_key
 
-    filtered = _filter_kwargs(exporter_cls, kwargs)
-    return exporter_cls(**filtered)
+    filtered = _filter_kwargs(cast(Callable[..., object], exporter_cls), kwargs)
+    exporter_ctor = cast(Callable[..., object], exporter_cls)
+    return exporter_ctor(**filtered)
 
 
 def _build_otlp_log_exporter(config: _ResolvedOtlp) -> object:
-    if config.protocol == "http/protobuf":
-        exporter_cls = OTLPLogExporterHttp
-    else:
-        exporter_cls = OTLPLogExporterGrpc
+    exporter_cls = _get_otlp_log_exporter_cls(config.protocol)
 
     headers = _headers_to_dict(config.headers)
     kwargs = {
@@ -562,7 +640,7 @@ def _build_otlp_log_exporter(config: _ResolvedOtlp) -> object:
         "timeout": config.timeout_s,
     }
 
-    if exporter_cls is OTLPLogExporterGrpc:
+    if config.protocol != "http/protobuf":
         kwargs["compression"] = _grpc_compression(config.compression)
         kwargs["insecure"] = config.insecure
         kwargs["credentials"] = _build_grpc_credentials(config)
@@ -572,8 +650,9 @@ def _build_otlp_log_exporter(config: _ResolvedOtlp) -> object:
         kwargs["client_certificate_file"] = config.client_certificate
         kwargs["client_key_file"] = config.client_key
 
-    filtered = _filter_kwargs(exporter_cls, kwargs)
-    return exporter_cls(**filtered)
+    filtered = _filter_kwargs(cast(Callable[..., object], exporter_cls), kwargs)
+    exporter_ctor = cast(Callable[..., object], exporter_cls)
+    return exporter_ctor(**filtered)
 
 
 def _build_batch_kwargs(settings: BatchProcessorSettings) -> dict[str, object]:
@@ -595,21 +674,21 @@ def _build_metric_reader_kwargs(settings: MetricExportSettings) -> dict[str, obj
 def _build_tracer_provider(config: ObservabilityConfig, resource: Resource) -> TracerProvider:
     span_limits = _build_span_limits(config.span_limits)
     sampler = _build_sampler(config)
-    kwargs: dict[str, object] = {"resource": resource}
-    if span_limits is not None:
-        kwargs["span_limits"] = span_limits
-    if sampler is not None:
-        kwargs["sampler"] = sampler
-    tracer_provider = TracerProvider(**kwargs)
+    tracer_provider = TracerProvider(
+        sampler=sampler,
+        resource=resource,
+        span_limits=span_limits,
+    )
 
     if config.export_traces:
         resolved = _resolve_otlp(config.otlp, config.otlp_traces)
         exporter = _build_otlp_trace_exporter(resolved)
         processor_kwargs = _filter_kwargs(
-            BatchSpanProcessor,
+            cast(Callable[..., object], BatchSpanProcessor),
             _build_batch_kwargs(config.traces_batch),
         )
-        tracer_provider.add_span_processor(BatchSpanProcessor(exporter, **processor_kwargs))
+        processor_ctor = cast(Callable[..., object], BatchSpanProcessor)
+        tracer_provider.add_span_processor(processor_ctor(exporter, **processor_kwargs))
 
     if config.console_export:
         tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
@@ -632,37 +711,32 @@ def _build_meter_provider(
         resolved = _resolve_otlp(config.otlp, config.otlp_metrics)
         exporter = _build_otlp_metric_exporter(resolved)
         reader_kwargs = _filter_kwargs(
-            PeriodicExportingMetricReader,
+            cast(Callable[..., object], PeriodicExportingMetricReader),
             _build_metric_reader_kwargs(config.metrics_export),
         )
-        metric_readers.append(PeriodicExportingMetricReader(exporter, **reader_kwargs))
+        reader_ctor = cast(Callable[..., object], PeriodicExportingMetricReader)
+        metric_readers.append(reader_ctor(exporter, **reader_kwargs))
 
     prometheus_enabled = False
     if config.prometheus_enabled:
         metric_readers.append(PrometheusMetricReader())
         prometheus_enabled = True
 
-    meter_kwargs: dict[str, object] = {
-        "resource": resource,
-        "metric_readers": metric_readers,
-    }
-
     views = _build_views(config)
-    if views:
-        meter_kwargs["views"] = views
-
     exemplar_filter = _build_exemplar_filter(config)
-    if exemplar_filter is not None:
-        meter_kwargs["exemplar_filter"] = exemplar_filter
-
-    meter_provider = MeterProvider(**meter_kwargs)
+    meter_provider = MeterProvider(
+        metric_readers=metric_readers,
+        resource=resource,
+        exemplar_filter=exemplar_filter,
+        views=views,
+    )
     return meter_provider, prometheus_enabled
 
 
 def _build_logger_provider(
     config: ObservabilityConfig,
     resource: Resource,
-) -> tuple[LoggerProvider | None, LoggingHandler | None]:
+) -> tuple[_LoggerProvider | None, logging.Handler | None]:
     if not config.export_logs and not config.logs_auto_instrument:
         return None, None
 
@@ -671,32 +745,45 @@ def _build_logger_provider(
     if log_limits is not None:
         logger_kwargs["log_record_limits"] = log_limits
 
-    logger_provider = LoggerProvider(**logger_kwargs)
+    logger_provider_cls = _get_logger_provider_cls()
+    logger_provider_ctor = cast(Callable[..., _LoggerProvider], logger_provider_cls)
+    filtered_logger_kwargs = _filter_kwargs(
+        cast(Callable[..., object], logger_provider_cls),
+        logger_kwargs,
+    )
+    logger_provider = logger_provider_ctor(**filtered_logger_kwargs)
 
     if config.export_logs:
         resolved = _resolve_otlp(config.otlp, config.otlp_logs)
         exporter = _build_otlp_log_exporter(resolved)
+        batch_processor_cls = _get_batch_log_record_processor_cls()
         processor_kwargs = _filter_kwargs(
-            BatchLogRecordProcessor,
+            cast(Callable[..., object], batch_processor_cls),
             _build_batch_kwargs(config.logs_batch),
         )
+        batch_processor_ctor = cast(Callable[..., object], batch_processor_cls)
         logger_provider.add_log_record_processor(
-            BatchLogRecordProcessor(exporter, **processor_kwargs)
+            batch_processor_ctor(exporter, **processor_kwargs)
         )
 
-    log_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+    handler_cls = _get_logging_handler_cls()
+    log_handler = handler_cls(level=logging.NOTSET, logger_provider=logger_provider)
     root_logger = logging.getLogger()
     root_logger.addHandler(log_handler)
     if config.logs_trace_filter:
-        log_handler.addFilter(_TraceSampledLogFilter())
+        log_handler.addFilter(_trace_sampled_log_filter())
 
     return logger_provider, log_handler
 
 
 def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRegistry) -> None:
-    def _instrument(name: str, instrumentor: _Instrumentor, **kwargs: object) -> None:
+    def _instrument(name: str, instrumentor: object, **kwargs: object) -> None:
+        instrument = getattr(instrumentor, "instrument", None)
+        if not callable(instrument):
+            registry.record_unavailable(name, detail="Instrumentor missing instrument()")
+            return
         try:
-            instrumentor.instrument(**kwargs)
+            instrument(**kwargs)
         except (RuntimeError, ValueError, TypeError, OSError) as exc:
             registry.record_error(name, str(exc))
         else:
@@ -770,7 +857,10 @@ def _load_propagator(module_name: str, symbol: str) -> TextMapPropagator | None:
 
 
 def _apply_config_file(path: Path) -> bool:
-    import opentelemetry.sdk._configuration as otel_config
+    otel_config = _load_module(
+        "opentelemetry.sdk._configuration",
+        label="OpenTelemetry SDK configuration",
+    )
 
     candidates: list[Callable[..., object]] = []
     for name in ("configure", "configure_otel", "initialize", "init", "load"):
@@ -804,7 +894,7 @@ def _call_configurator(func: Callable[..., object], path: Path) -> bool:
             func(**kwargs)
         except TypeError:
             continue
-        except Exception as exc:  # pragma: no cover - configuration errors
+        except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
             LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
             return False
         else:
@@ -814,7 +904,7 @@ def _call_configurator(func: Callable[..., object], path: Path) -> bool:
         func(config_value)
     except TypeError:
         pass
-    except Exception as exc:  # pragma: no cover - configuration errors
+    except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
         LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
         return False
     else:
@@ -824,15 +914,16 @@ def _call_configurator(func: Callable[..., object], path: Path) -> bool:
         func()
     except TypeError:
         return False
-    except Exception as exc:  # pragma: no cover - configuration errors
+    except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
         LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
         return False
     return True
 
 
-def _TraceSampledLogFilter() -> logging.Filter:
+def _trace_sampled_log_filter() -> logging.Filter:
     class _Filter(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
+        @staticmethod
+        def filter(_record: logging.LogRecord) -> bool:
             span = otel_trace.get_current_span()
             if span is None:
                 return True
@@ -842,6 +933,20 @@ def _TraceSampledLogFilter() -> logging.Filter:
             return bool(context.trace_flags.sampled)
 
     return _Filter()
+
+
+def _shutdown_component(component: object | None, *, label: str, errors: list[str]) -> bool:
+    if component is None:
+        return True
+    shutdown = getattr(component, "shutdown", None)
+    if not callable(shutdown):
+        return True
+    try:
+        shutdown()
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        errors.append(f"{label}:{exc}")
+        return False
+    return True
 
 
 def _disabled_runtime() -> ObservabilityRuntime:
@@ -883,46 +988,25 @@ def _disabled_runtime() -> ObservabilityRuntime:
 def _build_shutdown(
     tracer_provider: TracerProvider | None,
     meter_provider: MeterProvider | None,
-    logger_provider: LoggerProvider | None,
+    logger_provider: _LoggerProvider | None,
     *,
-    log_handler: LoggingHandler | None,
+    log_handler: logging.Handler | None,
     grpc_handle: GrpcObservabilityHandle | None,
 ) -> Callable[[], ObservabilityShutdownResult]:
     def _shutdown() -> ObservabilityShutdownResult:
         start = time.perf_counter()
         errors: list[str] = []
-        flush_ok = True
-        try:
-            if grpc_handle is not None:
-                grpc_handle.shutdown()
-        except (RuntimeError, ValueError, TypeError, OSError) as exc:
-            flush_ok = False
-            errors.append(f"grpc:{exc}")
+        flush_ok = _shutdown_component(grpc_handle, label="grpc", errors=errors)
 
         if log_handler is not None:
             root_logger = logging.getLogger()
             root_logger.removeHandler(log_handler)
 
-        if tracer_provider is not None:
-            try:
-                tracer_provider.shutdown()
-            except (RuntimeError, ValueError, TypeError, OSError) as exc:
-                flush_ok = False
-                errors.append(f"tracer:{exc}")
-
-        if meter_provider is not None:
-            try:
-                meter_provider.shutdown()
-            except (RuntimeError, ValueError, TypeError, OSError) as exc:
-                flush_ok = False
-                errors.append(f"meter:{exc}")
-
-        if logger_provider is not None:
-            try:
-                logger_provider.shutdown()
-            except (RuntimeError, ValueError, TypeError, OSError) as exc:
-                flush_ok = False
-                errors.append(f"logger:{exc}")
+        flush_ok = (
+            _shutdown_component(tracer_provider, label="tracer", errors=errors) and flush_ok
+        )
+        flush_ok = _shutdown_component(meter_provider, label="meter", errors=errors) and flush_ok
+        flush_ok = _shutdown_component(logger_provider, label="logger", errors=errors) and flush_ok
 
         duration_ms = (time.perf_counter() - start) * 1000
         return ObservabilityShutdownResult(
@@ -937,13 +1021,13 @@ def _build_shutdown(
 def _runtime_from_global(
     config: ObservabilityConfig,
     *,
-    log_handler: LoggingHandler | None,
-    logger_provider: LoggerProvider | None,
+    log_handler: logging.Handler | None,
+    logger_provider: _LoggerProvider | None,
     grpc_handle: GrpcObservabilityHandle | None,
     prometheus_enabled: bool,
 ) -> ObservabilityRuntime:
-    tracer_provider = otel_trace.get_tracer_provider()
-    meter_provider = otel_metrics.get_meter_provider()
+    tracer_provider = cast(TracerProvider, otel_trace.get_tracer_provider())
+    meter_provider = cast(MeterProvider, otel_metrics.get_meter_provider())
     tracer = otel_trace.get_tracer(config.service_name)
     meter = otel_metrics.get_meter(config.service_name)
     shutdown = _build_shutdown(
@@ -1008,14 +1092,21 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
             LOG.warning("Failed to apply OTEL config file %s; using manual config", config.config_file)
         else:
             _instrument_runtime(config, registry)
-            logger_provider: LoggerProvider | None = None
-            log_handler: LoggingHandler | None = None
+            logger_provider: _LoggerProvider | None = None
+            log_handler: logging.Handler | None = None
             if config.export_logs or config.logs_auto_instrument:
-                logger_provider = otel_logs.get_logger_provider()
-                log_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
-                logging.getLogger().addHandler(log_handler)
-                if config.logs_trace_filter:
-                    log_handler.addFilter(_TraceSampledLogFilter())
+                logs_api = _load_otel_logs_api()
+                get_logger_provider = getattr(logs_api, "get_logger_provider", None)
+                if callable(get_logger_provider):
+                    logger_provider = cast(_LoggerProvider, get_logger_provider())
+                    handler_cls = _get_logging_handler_cls()
+                    log_handler = handler_cls(
+                        level=logging.NOTSET,
+                        logger_provider=logger_provider,
+                    )
+                    logging.getLogger().addHandler(log_handler)
+                    if config.logs_trace_filter:
+                        log_handler.addFilter(_trace_sampled_log_filter())
             grpc_handle = register_grpc_observability(
                 config.grpc_observability,
                 meter_provider=otel_metrics.get_meter_provider(),
@@ -1043,7 +1134,10 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
 
     logger_provider, log_handler = _build_logger_provider(config, resource)
     if logger_provider is not None:
-        otel_logs.set_logger_provider(logger_provider)
+        logs_api = _load_otel_logs_api()
+        set_logger_provider = getattr(logs_api, "set_logger_provider", None)
+        if callable(set_logger_provider):
+            set_logger_provider(logger_provider)
 
     _instrument_runtime(config, registry)
 

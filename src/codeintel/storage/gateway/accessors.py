@@ -229,6 +229,16 @@ class AnalyticsTables(BaseTableAccessor):
         """
         return self._table("analytics.function_types")
 
+    def function_validation(self) -> DuckDBRelation:
+        """Return the ``analytics.function_validation`` relation.
+
+        Returns
+        -------
+        DuckDBRelation
+            Relation for ``analytics.function_validation``.
+        """
+        return self._table("analytics.function_validation")
+
     def coverage_functions(self) -> DuckDBRelation:
         """Return the ``analytics.coverage_functions`` relation.
 

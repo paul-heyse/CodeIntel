@@ -163,6 +163,50 @@ class FunctionRepository(BaseRepository):
         ).order_by(table.qualname)
         return self._validated_records("docs.v_function_summary", expr)
 
+    def list_function_validation(
+        self,
+        *,
+        goid_h128: int | None = None,
+        rel_path: str | None = None,
+        qualname: str | None = None,
+        limit: int | None = None,
+    ) -> list[RowDict]:
+        """
+        List validation issues for functions with optional filters.
+
+        Parameters
+        ----------
+        goid_h128
+            Optional function GOID filter.
+        rel_path
+            Optional file path filter.
+        qualname
+            Optional qualified name filter.
+        limit
+            Optional maximum number of rows to return.
+
+        Returns
+        -------
+        list[RowDict]
+            Validation rows ordered by newest first.
+        """
+        table = self._ibis_table("analytics.function_validation")
+        predicates: list[object] = []
+        if goid_h128 is not None:
+            predicates.append(table.function_goid_h128 == goid_h128)
+        if rel_path is not None:
+            predicates.append(table.rel_path == rel_path)
+        if qualname is not None:
+            predicates.append(table.qualname == qualname)
+
+        expr = table
+        if predicates:
+            expr = expr.filter(and_predicates(*predicates))
+        expr = expr.order_by(table.created_at.desc())
+        if limit is not None:
+            expr = expr.limit(limit)
+        return self._validated_records("analytics.function_validation", expr)
+
     def list_high_risk_functions(
         self,
         *,
