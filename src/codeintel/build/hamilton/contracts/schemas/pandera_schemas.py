@@ -262,11 +262,31 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
     "core.scip_symbol_information": {
         "kind": [_check_non_negative()],
     },
+    "core.scip_symbol_relationships": {
+        "relationship_kind": [
+            Check.isin(
+                [
+                    "definition",
+                    "implementation",
+                    "reference",
+                    "type_definition",
+                ]
+            )
+        ],
+    },
     "core.scip_diagnostics": {
         "start_line": [_check_non_negative()],
         "start_col": [_check_non_negative()],
         "end_line": [_check_non_negative()],
         "end_col": [_check_non_negative()],
+    },
+    "core.scip_external_symbols": {
+        "symbol": [Check.str_length(min_value=1)],
+    },
+    "core.scip_module_state": {
+        "rel_path": [Check.str_length(min_value=1)],
+        "content_hash": [Check.str_length(min_value=1)],
+        "shard_path": [Check.str_length(min_value=1)],
     },
     "analytics.function_metrics": {
         "function_goid_h128": [_check_non_negative()],
