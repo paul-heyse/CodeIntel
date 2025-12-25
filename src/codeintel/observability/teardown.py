@@ -45,6 +45,33 @@ class SubprocessSample:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactSummary:
+    """Summarized artifact metadata for teardown telemetry."""
+
+    name: str
+    artifact_type: str
+    path: str | None
+    size_bytes: int | None = None
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-ready payload for the artifact summary.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable artifact payload.
+        """
+        return _prune_none(
+            {
+                "name": self.name,
+                "artifact_type": self.artifact_type,
+                "path": _redact_path_value(self.path),
+                "size_bytes": self.size_bytes,
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class TeardownTelemetry:
     """Telemetry payload for teardown logging and spans."""
 
@@ -60,6 +87,12 @@ class TeardownTelemetry:
     cli_exit_code: int | None = None
     cli_is_parse_error: bool | None = None
     cli_error_type: str | None = None
+    domain: str | None = None
+    decision_trace_artifact: ArtifactSummary | None = None
+    decision_trace_path: str | None = None
+    validation_mode: str | None = None
+    validation_issue_count: int | None = None
+    schema_inference_errors_count: int | None = None
     shutdown_status: ShutdownStatus = "unknown"
     pending_tasks_count: int | None = None
     pending_task_samples: tuple[str, ...] = field(default_factory=tuple)
@@ -93,6 +126,11 @@ class TeardownTelemetry:
                 "cli.exit_code": self.cli_exit_code,
                 "cli.is_parse_error": self.cli_is_parse_error,
                 "cli.error_type": self.cli_error_type,
+                "codeintel.domain": self.domain,
+                "build.decision_trace_artifact": self._decision_trace_name(),
+                "build.validation_mode": self.validation_mode,
+                "build.validation_issue_count": self.validation_issue_count,
+                "build.schema_inference_errors_count": self.schema_inference_errors_count,
                 "shutdown.status": self.shutdown_status,
                 "shutdown.pending_tasks_count": self.pending_tasks_count,
                 "shutdown.active_threads_count": self.active_threads_count,
@@ -144,6 +182,12 @@ class TeardownTelemetry:
             "cli_exit_code": self.cli_exit_code,
             "cli_is_parse_error": self.cli_is_parse_error,
             "cli_error_type": self.cli_error_type,
+            "domain": self.domain,
+            "decision_trace_artifact": self._decision_trace_payload(),
+            "decision_trace_path": _redact_path_value(self.decision_trace_path),
+            "validation_mode": self.validation_mode,
+            "validation_issue_count": self.validation_issue_count,
+            "schema_inference_errors_count": self.schema_inference_errors_count,
             "shutdown_status": self.shutdown_status,
             "pending_tasks_count": self.pending_tasks_count,
             "pending_task_samples": [*self.pending_task_samples],
@@ -154,6 +198,32 @@ class TeardownTelemetry:
             "telemetry_flush_ok": self.telemetry_flush_ok,
             "telemetry_flush_ms": self.telemetry_flush_ms,
         }
+
+    def shutdown_error_attributes(self) -> dict[str, SpanAttributeValue]:
+        """Return span event attributes for shutdown errors.
+
+        Returns
+        -------
+        dict[str, SpanAttributeValue]
+            Span attributes for shutdown errors.
+        """
+        return _prune_none(
+            {
+                "shutdown.status": self.shutdown_status,
+                "cli.error_type": self.cli_error_type,
+                "cli.exit_code": self.cli_exit_code,
+            }
+        )
+
+    def _decision_trace_name(self) -> str | None:
+        if self.decision_trace_artifact is None:
+            return None
+        return self.decision_trace_artifact.name
+
+    def _decision_trace_payload(self) -> dict[str, object] | None:
+        if self.decision_trace_artifact is None:
+            return None
+        return self.decision_trace_artifact.to_payload()
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +263,21 @@ class ScipTeardownTelemetry:
     status: ScipTeardownStatus = "unknown"
     error_summary: str | None = None
     duration_ms: float | None = None
+
+    def shutdown_error_attributes(self) -> dict[str, SpanAttributeValue]:
+        """Return span event attributes for SCIP teardown errors.
+
+        Returns
+        -------
+        dict[str, SpanAttributeValue]
+            Span attributes for SCIP teardown errors.
+        """
+        return _prune_none(
+            {
+                "scip.status": self.status,
+                "scip.error": self.error_summary,
+            }
+        )
 
     def span_attributes(self) -> dict[str, SpanAttributeValue]:
         """Return low-cardinality span attributes for SCIP teardown telemetry.
@@ -344,6 +429,8 @@ def emit_teardown_telemetry(
             span = active_span
             _set_span_attributes(span, telemetry.span_attributes())
             _add_span_event(span, "shutdown.summary", telemetry.event_attributes())
+            if telemetry.shutdown_status != "succeeded":
+                _add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
     log_payload = telemetry.to_log_payload()
     log_target = logger or log
     payload = json.dumps(log_payload, sort_keys=True)
@@ -366,6 +453,8 @@ def emit_scip_teardown_telemetry(
         with obs.tracer.start_as_current_span(span_name) as active_span:
             span = active_span
             _set_span_attributes(span, telemetry.span_attributes())
+            if telemetry.status != "succeeded":
+                _add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
     log_payload = telemetry.to_log_payload()
     log_target = logger or log
     payload = json.dumps(log_payload, sort_keys=True)
@@ -435,6 +524,13 @@ def _coerce_span_value(value: object) -> SpanAttributeValue | None:
 
 
 def _redact_command_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    path = Path(value)
+    return path.name or value
+
+
+def _redact_path_value(value: str | None) -> str | None:
     if value is None:
         return None
     path = Path(value)

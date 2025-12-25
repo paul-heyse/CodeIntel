@@ -47,6 +47,8 @@ from codeintel.storage.gateway import ibis_facade
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import ibis.expr.types as ir
+
     from codeintel.analytics.compute.functions import (
         ComplexityMetrics,
     )
@@ -408,13 +410,16 @@ def build_function_analytics(
     )
 
 
-def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, list[GoidRow]]:
-    """Load function GOIDs from core.goids using Ibis.
+def _load_goids_from_table(
+    goids_table: ir.Table,
+    snapshot: SnapshotRef,
+) -> dict[str, list[GoidRow]]:
+    """Load function GOIDs from an Ibis table expression.
 
     Parameters
     ----------
-    gateway
-        Storage gateway for database access.
+    goids_table
+        Ibis table expression for ``core.goids``.
     snapshot
         Repository and commit identifiers.
 
@@ -423,12 +428,11 @@ def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, lis
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
-    tbl = ibis_facade.table(gateway, "core.goids")
-    scoped = tbl.filter(
+    scoped = goids_table.filter(
         and_predicates(
-            tbl.repo == snapshot.repo,
-            tbl.commit == snapshot.commit,
-            isin_values(tbl.kind, ["function", "method"]),
+            goids_table.repo == snapshot.repo,
+            goids_table.commit == snapshot.commit,
+            isin_values(goids_table.kind, ["function", "method"]),
         )
     )
     expr = scoped.select(
@@ -468,6 +472,25 @@ def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, lis
     return goids_by_file
 
 
+def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, list[GoidRow]]:
+    """Load function GOIDs from core.goids using Ibis.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway for database access.
+    snapshot
+        Repository and commit identifiers.
+
+    Returns
+    -------
+    dict[str, list[GoidRow]]
+        GOIDs grouped by relative file path.
+    """
+    table = ibis_facade.table(gateway, "core.goids")
+    return _load_goids_from_table(table, snapshot)
+
+
 def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
     end_line_raw = info["end_line"]
     end_line = int(end_line_raw) if end_line_raw is not None else int(info["start_line"])
@@ -500,6 +523,75 @@ def _build_span_index(
                 end_col=0,
             )
     return span_index
+
+
+def _compute_from_goids(
+    goids_by_file: dict[str, list[GoidRow]],
+    snapshot: SnapshotRef,
+    *,
+    options: FunctionAnalyticsOptions | None,
+) -> FunctionAnalyticsResult:
+    if not goids_by_file:
+        return FunctionAnalyticsResult(
+            metrics_rows=[],
+            types_rows=[],
+            reporter=FunctionValidationReporter(snapshot.repo, snapshot.commit),
+        )
+
+    now = datetime.now(UTC)
+    ctx = ProcessContext(snapshot=snapshot, now=now)
+
+    opts = options or FunctionAnalyticsOptions()
+    reporter = opts.validation_reporter or FunctionValidationReporter(
+        snapshot.repo, snapshot.commit
+    )
+    span_index = _build_span_index(goids_by_file, snapshot.repo_root)
+
+    if opts.has_ast_data():
+        return _build_function_analytics_from_ast_data(
+            goids_by_file=goids_by_file,
+            process_ctx=ctx,
+            ast_data=opts,
+            span_index=span_index,
+            reporter=reporter,
+        )
+
+    parsed_cache: dict[str, ParsedModule | None] = {}
+    state = ProcessState(
+        snapshot=snapshot,
+        cache=parsed_cache,
+        span_index=span_index,
+        reporter=reporter,
+        ctx=ctx,
+    )
+    return build_function_analytics(goids_by_file=goids_by_file, state=state)
+
+
+def compute_function_analytics_result_from_table(
+    goids_table: ir.Table,
+    snapshot: SnapshotRef,
+    *,
+    options: FunctionAnalyticsOptions | None = None,
+) -> FunctionAnalyticsResult:
+    """Compute function analytics result from a GOIDs table expression.
+
+    Parameters
+    ----------
+    goids_table
+        Ibis table expression for ``core.goids``.
+    snapshot
+        Repository and commit identifiers.
+    options
+        Optional hooks for reusing parsed AST context and overriding the
+        validation reporter.
+
+    Returns
+    -------
+    FunctionAnalyticsResult
+        Container with metrics_rows, types_rows, and validation reporter.
+    """
+    goids_by_file = _load_goids_from_table(goids_table, snapshot)
+    return _compute_from_goids(goids_by_file, snapshot, options=options)
 
 
 def _build_function_analytics_from_ast_data(
@@ -611,37 +703,4 @@ def compute_function_analytics_result(
         Container with metrics_rows, types_rows, and validation reporter.
     """
     goids_by_file = _load_goids(gateway, snapshot)
-    if not goids_by_file:
-        return FunctionAnalyticsResult(
-            metrics_rows=[],
-            types_rows=[],
-            reporter=FunctionValidationReporter(snapshot.repo, snapshot.commit),
-        )
-
-    now = datetime.now(UTC)
-    ctx = ProcessContext(snapshot=snapshot, now=now)
-
-    opts = options or FunctionAnalyticsOptions()
-    reporter = opts.validation_reporter or FunctionValidationReporter(
-        snapshot.repo, snapshot.commit
-    )
-    span_index = _build_span_index(goids_by_file, snapshot.repo_root)
-
-    if opts.has_ast_data():
-        return _build_function_analytics_from_ast_data(
-            goids_by_file=goids_by_file,
-            process_ctx=ctx,
-            ast_data=opts,
-            span_index=span_index,
-            reporter=reporter,
-        )
-
-    parsed_cache: dict[str, ParsedModule | None] = {}
-    state = ProcessState(
-        snapshot=snapshot,
-        cache=parsed_cache,
-        span_index=span_index,
-        reporter=reporter,
-        ctx=ctx,
-    )
-    return build_function_analytics(goids_by_file=goids_by_file, state=state)
+    return _compute_from_goids(goids_by_file, snapshot, options=options)

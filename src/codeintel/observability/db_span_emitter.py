@@ -7,23 +7,18 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.observability.context import get_correlation_id
+from opentelemetry import trace as otel_trace
+from opentelemetry.trace import SpanKind
+from opentelemetry.trace import SpanKind as _SpanKind
+from opentelemetry.trace.status import Status, StatusCode
+
+from codeintel.observability.context import get_correlation_id, get_domain, get_run_id
 from codeintel.observability.db_span_attributes import DbSpanAttributeBuilder
 
 if TYPE_CHECKING:
-    from opentelemetry.trace import Span, SpanKind, Tracer
+    from opentelemetry.trace import Span, Tracer
 
-try:
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.trace import SpanKind as _SpanKind
-    from opentelemetry.trace.status import Status, StatusCode
-
-    _SPAN_KIND_CLIENT: SpanKind | None = _SpanKind.CLIENT
-except ImportError:
-    otel_trace = None
-    Status = None
-    StatusCode = None
-    _SPAN_KIND_CLIENT = None
+_SPAN_KIND_CLIENT: SpanKind | None = _SpanKind.CLIENT
 
 SpanAttributeValue = (
     str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
@@ -80,6 +75,12 @@ class DbSpanEmitter:
             correlation_id = get_correlation_id()
             if correlation_id:
                 span.set_attribute("codeintel.correlation_id", correlation_id)
+            run_id = get_run_id()
+            if run_id:
+                span.set_attribute("codeintel.run_id", run_id)
+            domain = get_domain()
+            if domain:
+                span.set_attribute("codeintel.domain", domain)
             _set_span_attributes(span, self._config.attributes)
             try:
                 return call()
@@ -120,8 +121,6 @@ def _record_span_error(span: Span, exc: Exception) -> None:
 
 
 def _has_parent_span() -> bool:
-    if otel_trace is None:
-        return False
     span = otel_trace.get_current_span()
     context = span.get_span_context()
     return context.is_valid

@@ -2,92 +2,90 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
-from typing import TYPE_CHECKING, Protocol, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
-from codeintel.core.config.settings import ObservabilitySettings
+import grpc
+from opentelemetry import _logs as otel_logs
+from opentelemetry import metrics as otel_metrics
+from opentelemetry import trace as otel_trace
+from opentelemetry.baggage.propagation import W3CBaggagePropagator
+from opentelemetry.context import Context
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import (
+    OTLPLogExporter as OTLPLogExporterGrpc,
+)
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
+    OTLPMetricExporter as OTLPMetricExporterGrpc,
+)
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter as OTLPSpanExporterGrpc,
+)
+from opentelemetry.exporter.otlp.proto.http._log_exporter import (
+    OTLPLogExporter as OTLPLogExporterHttp,
+)
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+    OTLPMetricExporter as OTLPMetricExporterHttp,
+)
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter as OTLPSpanExporterHttp,
+)
+from opentelemetry.exporter.prometheus import PrometheusMetricReader
+from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+from opentelemetry.instrumentation.threading import ThreadingInstrumentor
+from opentelemetry.propagate import set_global_textmap
+from opentelemetry.propagators.composite import CompositePropagator
+from opentelemetry.propagators.textmap import TextMapPropagator
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler, LogLimits
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import (
+    AlwaysOffExemplarFilter,
+    AlwaysOnExemplarFilter,
+    MeterProvider,
+    TraceBasedExemplarFilter,
+)
+from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import ReadableSpan, Span, SpanLimits, SpanProcessor, TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ALWAYS_ON, ParentBased, TraceIdRatioBased
+from opentelemetry.trace import Tracer
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+
+from codeintel.core.config.settings import (
+    BatchProcessorSettings,
+    GrpcObservabilitySettings,
+    HamiltonTrackerSettings,
+    LogLimitSettings,
+    MetricExportSettings,
+    MetricViewSettings,
+    ObservabilitySettings,
+    OtlpExporterSettings,
+    SpanLimitSettings,
+)
 from codeintel.core.singleton import SingletonHolder
+from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
+from codeintel.observability.instrumentation_registry import (
+    InstrumentationRegistry,
+    get_instrumentation_registry,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from opentelemetry.context import Context as ContextType
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
-        OTLPMetricExporter as OTLPMetricExporterType,
-    )
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-        OTLPSpanExporter as OTLPSpanExporterType,
-    )
-    from opentelemetry.metrics import Meter as MeterType
-    from opentelemetry.metrics import MeterProvider as MeterProviderApiType
-    from opentelemetry.sdk.metrics import MeterProvider as MeterProviderType
-    from opentelemetry.sdk.metrics.export import (
-        MetricReader,
-    )
-    from opentelemetry.sdk.metrics.export import (
-        PeriodicExportingMetricReader as PeriodicExportingMetricReaderType,
-    )
-    from opentelemetry.sdk.resources import Resource as ResourceType
-    from opentelemetry.sdk.trace import ReadableSpan as ReadableSpanType
-    from opentelemetry.sdk.trace import Span as SpanType
-    from opentelemetry.sdk.trace import SpanProcessor as SpanProcessorType
-    from opentelemetry.sdk.trace import TracerProvider as TracerProviderType
-    from opentelemetry.sdk.trace.export import (
-        BatchSpanProcessor as BatchSpanProcessorType,
-    )
-    from opentelemetry.sdk.trace.export import (
-        ConsoleSpanExporter as ConsoleSpanExporterType,
-    )
-    from opentelemetry.trace import Tracer as TracerType
-    from opentelemetry.trace import TracerProvider as TracerProviderApiType
+    from opentelemetry.metrics import Meter
+    from opentelemetry.sdk.metrics import ExemplarFilter
 
-try:
-    from opentelemetry import metrics as otel_metrics
-    from opentelemetry import trace as otel_trace
-    from opentelemetry.context import Context
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor, TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-
-    OTEL_AVAILABLE = True
-except ImportError:
-    OTEL_AVAILABLE = False
-    otel_metrics = None
-    otel_trace = None
-    MeterProvider = None
-    PeriodicExportingMetricReader = None
-    Resource = None
-    TracerProvider = None
-    Span = None
-    ReadableSpan = None
-    SpanProcessor = None
-    Context = None
-    BatchSpanProcessor = None
-    ConsoleSpanExporter = None
-
-try:
-    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
-except ImportError:
-    OTLPMetricExporter = None
-
-try:
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-except ImportError:
-    OTLPSpanExporter = None
-
-try:
-    from opentelemetry.exporter.prometheus import PrometheusMetricReader
-
-    _PROMETHEUS_EXPORTER_AVAILABLE = True
-except ImportError:
-    _PROMETHEUS_EXPORTER_AVAILABLE = False
-    PrometheusMetricReader = None
+LOG = logging.getLogger(__name__)
 
 
 class _Instrumentor(Protocol):
@@ -97,81 +95,40 @@ class _Instrumentor(Protocol):
         """Enable instrumentation."""
 
 
-AsyncioInstrumentor: type[_Instrumentor] | None
-try:
-    from opentelemetry.instrumentation.asyncio import (
-        AsyncioInstrumentor as _AsyncioInstrumentor,
-    )
-
-    _ASYNCIO_INSTRUMENTOR_AVAILABLE = True
-    AsyncioInstrumentor = _AsyncioInstrumentor
-except ImportError:
-    _ASYNCIO_INSTRUMENTOR_AVAILABLE = False
-    AsyncioInstrumentor = None
-
-HTTPXClientInstrumentor: type[_Instrumentor] | None
-try:
-    from opentelemetry.instrumentation.httpx import (
-        HTTPXClientInstrumentor as _HTTPXClientInstrumentor,
-    )
-
-    _HTTPX_INSTRUMENTOR_AVAILABLE = True
-    HTTPXClientInstrumentor = _HTTPXClientInstrumentor
-except ImportError:
-    _HTTPX_INSTRUMENTOR_AVAILABLE = False
-    HTTPXClientInstrumentor = None
-
-LoggingInstrumentor: type[_Instrumentor] | None
-try:
-    from opentelemetry.instrumentation.logging import (
-        LoggingInstrumentor as _LoggingInstrumentor,
-    )
-
-    _LOGGING_INSTRUMENTOR_AVAILABLE = True
-    LoggingInstrumentor = _LoggingInstrumentor
-except ImportError:
-    _LOGGING_INSTRUMENTOR_AVAILABLE = False
-    LoggingInstrumentor = None
-
-RequestsInstrumentor: type[_Instrumentor] | None
-try:
-    from opentelemetry.instrumentation.requests import (
-        RequestsInstrumentor as _RequestsInstrumentor,
-    )
-
-    _REQUESTS_INSTRUMENTOR_AVAILABLE = True
-    RequestsInstrumentor = _RequestsInstrumentor
-except ImportError:
-    _REQUESTS_INSTRUMENTOR_AVAILABLE = False
-    RequestsInstrumentor = None
-
-ThreadingInstrumentor: type[_Instrumentor] | None
-try:
-    from opentelemetry.instrumentation.threading import (
-        ThreadingInstrumentor as _ThreadingInstrumentor,
-    )
-
-    _THREADING_INSTRUMENTOR_AVAILABLE = True
-    ThreadingInstrumentor = _ThreadingInstrumentor
-except ImportError:
-    _THREADING_INSTRUMENTOR_AVAILABLE = False
-    ThreadingInstrumentor = None
-
-
-LOG = logging.getLogger(__name__)
-
-
 @dataclass(frozen=True, slots=True)
 class ObservabilityConfig:
     """Runtime configuration for OpenTelemetry bootstrap."""
 
     enabled: bool = True
     service_name: str = "codeintel"
-    otlp_endpoint: str | None = None
+    service_version: str | None = None
+    deployment_environment: str | None = None
+    resource_attributes: tuple[tuple[str, str], ...] = ()
+    propagators: tuple[str, ...] = ()
+    traces_sampler: str | None = None
+    traces_sampler_arg: float | None = None
+    config_file: Path | None = None
+    otlp: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
+    otlp_traces: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
+    otlp_metrics: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
+    otlp_logs: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
     export_traces: bool = True
     export_metrics: bool = True
+    export_logs: bool = False
     console_export: bool = False
     prometheus_enabled: bool = False
+    logs_auto_instrument: bool = False
+    log_correlation: bool = False
+    logs_trace_filter: bool = False
+    traces_batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
+    logs_batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
+    metrics_export: MetricExportSettings = field(default_factory=MetricExportSettings)
+    span_limits: SpanLimitSettings = field(default_factory=SpanLimitSettings)
+    log_limits: LogLimitSettings = field(default_factory=LogLimitSettings)
+    metrics_exemplar_filter: str | None = None
+    metric_views: MetricViewSettings = field(default_factory=MetricViewSettings)
+    grpc_observability: GrpcObservabilitySettings = field(default_factory=GrpcObservabilitySettings)
+    hamilton_tracker: HamiltonTrackerSettings = field(default_factory=HamiltonTrackerSettings)
     duckdb_tracing_enabled: bool = True
     duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"
@@ -202,10 +159,13 @@ class ObservabilityRuntime:
     """Resolved OpenTelemetry runtime handles."""
 
     enabled: bool
-    tracer: TracerType | None
-    meter: MeterType | None
+    tracer: Tracer | None
+    meter: Meter | None
+    logger_provider: LoggerProvider | None
+    log_handler: LoggingHandler | None
     shutdown: Callable[[], ObservabilityShutdownResult] | None
     prometheus_enabled: bool = False
+    grpc_observability: GrpcObservabilityHandle | None = None
     duckdb_tracing_enabled: bool = True
     duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"
@@ -259,6 +219,65 @@ class ObservabilityShutdownResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedOtlp:
+    endpoint: str | None
+    protocol: str
+    headers: tuple[tuple[str, str], ...]
+    timeout_s: float | None
+    compression: str | None
+    certificate: str | None
+    client_certificate: str | None
+    client_key: str | None
+    insecure: bool | None
+
+
+class _DbQuerySummarySpanNameProcessor(SpanProcessor):
+    _SUMMARY_KEY = "db.query.summary"
+    _enabled = True
+
+    def on_start(self, span: Span, parent_context: Context | None = None) -> None:
+        if not self._enabled:
+            del parent_context
+            return
+        attributes = span.attributes
+        if attributes is None:
+            del parent_context
+            return
+        summary = attributes.get(self._SUMMARY_KEY)
+        if isinstance(summary, str) and summary:
+            span.update_name(summary)
+        del parent_context
+
+    def on_end(self, span: ReadableSpan) -> None:
+        if not self._enabled:
+            del span
+            return
+        del span
+
+    def shutdown(self) -> None:
+        if not self._enabled:
+            return
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        if not self._enabled:
+            del timeout_millis
+            return True
+        del timeout_millis
+        return True
+
+
+def _db_query_summary_span_name_processor() -> SpanProcessor | None:
+    return _DbQuerySummarySpanNameProcessor()
+
+
+def _package_version() -> str:
+    try:
+        return version("codeintel")
+    except PackageNotFoundError:
+        return "unknown"
+
+
 def _force_flush_provider(provider: object, *, label: str, errors: list[str]) -> bool:
     force_flush = getattr(provider, "force_flush", None)
     if force_flush is None:
@@ -271,99 +290,558 @@ def _force_flush_provider(provider: object, *, label: str, errors: list[str]) ->
     return True
 
 
-@dataclass(frozen=True, slots=True)
-class _OtelComponents:
-    set_meter_provider: Callable[[MeterProviderApiType], None]
-    get_meter: Callable[[str], MeterType]
-    set_tracer_provider: Callable[[TracerProviderApiType], None]
-    get_tracer: Callable[[str], TracerType]
-    meter_provider_cls: type[MeterProviderType]
-    tracer_provider_cls: type[TracerProviderType]
-    periodic_reader_cls: type[PeriodicExportingMetricReaderType]
-    batch_span_processor_cls: type[BatchSpanProcessorType]
-    console_span_exporter_cls: type[ConsoleSpanExporterType]
-    otlp_metric_exporter_cls: type[OTLPMetricExporterType] | None
-    otlp_span_exporter_cls: type[OTLPSpanExporterType] | None
-    resource_cls: type[ResourceType]
+def _resolve_otlp(base: OtlpExporterSettings, override: OtlpExporterSettings) -> _ResolvedOtlp:
+    headers = override.headers or base.headers
+    protocol = (override.protocol or base.protocol or "grpc").strip().lower()
+    return _ResolvedOtlp(
+        endpoint=override.endpoint or base.endpoint,
+        protocol=protocol,
+        headers=headers,
+        timeout_s=override.timeout_s if override.timeout_s is not None else base.timeout_s,
+        compression=override.compression or base.compression,
+        certificate=override.certificate or base.certificate,
+        client_certificate=override.client_certificate or base.client_certificate,
+        client_key=override.client_key or base.client_key,
+        insecure=override.insecure if override.insecure is not None else base.insecure,
+    )
 
 
-def _package_version() -> str:
+def _resolve_resource_attributes(config: ObservabilityConfig) -> dict[str, str]:
+    attrs = dict(config.resource_attributes)
+    attrs.setdefault("service.name", config.service_name)
+    service_version = config.service_version or _package_version()
+    if service_version:
+        attrs.setdefault("service.version", service_version)
+    if config.deployment_environment:
+        attrs.setdefault("deployment.environment.name", config.deployment_environment)
+    return attrs
+
+
+def _build_resource(config: ObservabilityConfig) -> Resource:
+    attrs = _resolve_resource_attributes(config)
+    return Resource.create(attrs)
+
+
+def _build_span_limits(settings: SpanLimitSettings) -> SpanLimits | None:
+    if not any(
+        value is not None
+        for value in (
+            settings.attribute_count_limit,
+            settings.attribute_value_length_limit,
+            settings.span_event_count_limit,
+            settings.span_link_count_limit,
+            settings.event_attribute_count_limit,
+            settings.link_attribute_count_limit,
+        )
+    ):
+        return None
+    return SpanLimits(
+        max_attributes=settings.attribute_count_limit,
+        max_attribute_length=settings.attribute_value_length_limit,
+        max_events=settings.span_event_count_limit,
+        max_links=settings.span_link_count_limit,
+        max_attributes_per_event=settings.event_attribute_count_limit,
+        max_attributes_per_link=settings.link_attribute_count_limit,
+    )
+
+
+def _build_sampler(config: ObservabilityConfig) -> object | None:
+    sampler = config.traces_sampler
+    if not sampler:
+        return None
+    normalized = sampler.strip().lower()
+    ratio = config.traces_sampler_arg if config.traces_sampler_arg is not None else 1.0
+    if normalized == "always_on":
+        return ALWAYS_ON
+    if normalized == "always_off":
+        return ALWAYS_OFF
+    if normalized == "traceidratio":
+        return TraceIdRatioBased(ratio)
+    if normalized == "parentbased_always_on":
+        return ParentBased(ALWAYS_ON)
+    if normalized == "parentbased_always_off":
+        return ParentBased(ALWAYS_OFF)
+    if normalized == "parentbased_traceidratio":
+        return ParentBased(TraceIdRatioBased(ratio))
+    LOG.warning("Unsupported sampler %s; using SDK default", sampler)
+    return None
+
+
+def _build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None:
+    if not config.metrics_exemplar_filter:
+        return None
+    normalized = config.metrics_exemplar_filter.strip().lower()
+    if normalized == "always_on":
+        return AlwaysOnExemplarFilter()
+    if normalized == "always_off":
+        return AlwaysOffExemplarFilter()
+    if normalized == "trace_based":
+        return TraceBasedExemplarFilter()
+    LOG.warning("Unsupported exemplar filter %s; using SDK default", config.metrics_exemplar_filter)
+    return None
+
+
+def _build_views(config: ObservabilityConfig) -> list[View]:
+    views: list[View] = []
+
+    if config.metric_views.operation_duration_ms_buckets:
+        views.append(
+            View(
+                instrument_name="codeintel.operation.duration_ms",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    list(config.metric_views.operation_duration_ms_buckets)
+                ),
+            )
+        )
+
+    if config.metric_views.query_duration_ms_buckets:
+        views.append(
+            View(
+                instrument_name="codeintel.query.duration_ms",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    list(config.metric_views.query_duration_ms_buckets)
+                ),
+            )
+        )
+
+    if config.metric_views.http_duration_s_buckets:
+        views.append(
+            View(
+                instrument_name="http.server.request.duration",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    list(config.metric_views.http_duration_s_buckets)
+                ),
+            )
+        )
+
+    if config.metric_views.grpc_duration_s_buckets:
+        views.append(
+            View(
+                instrument_name="grpc.client.call.duration",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    list(config.metric_views.grpc_duration_s_buckets)
+                ),
+            )
+        )
+        views.append(
+            View(
+                instrument_name="grpc.server.call.duration",
+                aggregation=ExplicitBucketHistogramAggregation(
+                    list(config.metric_views.grpc_duration_s_buckets)
+                ),
+            )
+        )
+
+    return views
+
+
+def _build_log_limits(settings: LogLimitSettings) -> LogLimits | None:
+    if settings.attribute_count_limit is None and settings.attribute_value_length_limit is None:
+        return None
+    return LogLimits(
+        max_attributes=settings.attribute_count_limit,
+        max_attribute_length=settings.attribute_value_length_limit,
+    )
+
+
+def _headers_to_dict(headers: tuple[tuple[str, str], ...]) -> dict[str, str] | None:
+    if not headers:
+        return None
+    return {key: value for key, value in headers}
+
+
+def _grpc_compression(value: str | None) -> grpc.Compression | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"none", ""}:
+        return None
+    if normalized == "gzip":
+        return grpc.Compression.Gzip
+    if normalized == "deflate":
+        return grpc.Compression.Deflate
+    LOG.warning("Unsupported gRPC compression %s; ignoring", value)
+    return None
+
+
+def _build_grpc_credentials(config: _ResolvedOtlp) -> grpc.ChannelCredentials | None:
+    if not any([config.certificate, config.client_certificate, config.client_key]):
+        return None
     try:
-        return version("codeintel")
-    except PackageNotFoundError:
-        return "unknown"
+        root_cert = Path(config.certificate).read_bytes() if config.certificate else None
+        client_cert = (
+            Path(config.client_certificate).read_bytes() if config.client_certificate else None
+        )
+        client_key = Path(config.client_key).read_bytes() if config.client_key else None
+    except OSError as exc:
+        LOG.warning("Failed to load OTLP TLS credentials: %s", exc)
+        return None
+    return grpc.ssl_channel_credentials(
+        root_certificates=root_cert,
+        private_key=client_key,
+        certificate_chain=client_cert,
+    )
 
 
-def _instrument_runtime() -> None:
-    if _LOGGING_INSTRUMENTOR_AVAILABLE and LoggingInstrumentor is not None:
-        instrumentor = cast("_Instrumentor", LoggingInstrumentor())
-        instrumentor.instrument(set_logging_format=False)
-
-    if _THREADING_INSTRUMENTOR_AVAILABLE and ThreadingInstrumentor is not None:
-        instrumentor = cast("_Instrumentor", ThreadingInstrumentor())
-        instrumentor.instrument()
-
-    if _ASYNCIO_INSTRUMENTOR_AVAILABLE and AsyncioInstrumentor is not None:
-        instrumentor = cast("_Instrumentor", AsyncioInstrumentor())
-        instrumentor.instrument()
-
-    if _HTTPX_INSTRUMENTOR_AVAILABLE and HTTPXClientInstrumentor is not None:
-        instrumentor = cast("_Instrumentor", HTTPXClientInstrumentor())
-        instrumentor.instrument()
-
-    if _REQUESTS_INSTRUMENTOR_AVAILABLE and RequestsInstrumentor is not None:
-        instrumentor = cast("_Instrumentor", RequestsInstrumentor())
-        instrumentor.instrument()
+def _filter_kwargs(func: object, candidates: dict[str, object]) -> dict[str, object]:
+    try:
+        params = inspect.signature(func).parameters
+    except (TypeError, ValueError):
+        return {key: value for key, value in candidates.items() if value is not None}
+    return {
+        key: value
+        for key, value in candidates.items()
+        if value is not None and key in params
+    }
 
 
-_DbQuerySummarySpanNameProcessor: type[SpanProcessorType] | None
+def _build_otlp_trace_exporter(config: _ResolvedOtlp) -> object:
+    if config.protocol == "http/protobuf":
+        exporter_cls = OTLPSpanExporterHttp
+    else:
+        exporter_cls = OTLPSpanExporterGrpc
 
-if (
-    OTEL_AVAILABLE
-    and SpanProcessor is not None
-    and Span is not None
-    and ReadableSpan is not None
-    and Context is not None
-):
+    headers = _headers_to_dict(config.headers)
+    kwargs = {
+        "endpoint": config.endpoint,
+        "headers": headers,
+        "timeout": config.timeout_s,
+    }
 
-    class _DbQuerySummarySpanNameProcessorImpl(SpanProcessor):
-        _SUMMARY_KEY = "db.query.summary"
-        _enabled = True
+    if exporter_cls is OTLPSpanExporterGrpc:
+        kwargs["compression"] = _grpc_compression(config.compression)
+        kwargs["insecure"] = config.insecure
+        kwargs["credentials"] = _build_grpc_credentials(config)
+    else:
+        kwargs["compression"] = config.compression
+        kwargs["certificate_file"] = config.certificate
+        kwargs["client_certificate_file"] = config.client_certificate
+        kwargs["client_key_file"] = config.client_key
 
-        def on_start(self, span: SpanType, parent_context: ContextType | None = None) -> None:
-            if not self._enabled:
-                del parent_context
-                return
-            attributes = span.attributes
-            if attributes is None:
-                del parent_context
-                return
-            summary = attributes.get(self._SUMMARY_KEY)
-            if isinstance(summary, str) and summary:
-                span.update_name(summary)
-            del parent_context
+    filtered = _filter_kwargs(exporter_cls, kwargs)
+    return exporter_cls(**filtered)
 
-        def on_end(self, span: ReadableSpanType) -> None:
-            if not self._enabled:
-                del span
-                return
-            del span
 
-        def shutdown(self) -> None:
-            if not self._enabled:
-                return
+def _build_otlp_metric_exporter(config: _ResolvedOtlp) -> object:
+    if config.protocol == "http/protobuf":
+        exporter_cls = OTLPMetricExporterHttp
+    else:
+        exporter_cls = OTLPMetricExporterGrpc
 
-        def force_flush(self, timeout_millis: int = 30000) -> bool:
-            if not self._enabled:
-                del timeout_millis
-                return True
-            del timeout_millis
+    headers = _headers_to_dict(config.headers)
+    kwargs = {
+        "endpoint": config.endpoint,
+        "headers": headers,
+        "timeout": config.timeout_s,
+    }
+
+    if exporter_cls is OTLPMetricExporterGrpc:
+        kwargs["compression"] = _grpc_compression(config.compression)
+        kwargs["insecure"] = config.insecure
+        kwargs["credentials"] = _build_grpc_credentials(config)
+    else:
+        kwargs["compression"] = config.compression
+        kwargs["certificate_file"] = config.certificate
+        kwargs["client_certificate_file"] = config.client_certificate
+        kwargs["client_key_file"] = config.client_key
+
+    filtered = _filter_kwargs(exporter_cls, kwargs)
+    return exporter_cls(**filtered)
+
+
+def _build_otlp_log_exporter(config: _ResolvedOtlp) -> object:
+    if config.protocol == "http/protobuf":
+        exporter_cls = OTLPLogExporterHttp
+    else:
+        exporter_cls = OTLPLogExporterGrpc
+
+    headers = _headers_to_dict(config.headers)
+    kwargs = {
+        "endpoint": config.endpoint,
+        "headers": headers,
+        "timeout": config.timeout_s,
+    }
+
+    if exporter_cls is OTLPLogExporterGrpc:
+        kwargs["compression"] = _grpc_compression(config.compression)
+        kwargs["insecure"] = config.insecure
+        kwargs["credentials"] = _build_grpc_credentials(config)
+    else:
+        kwargs["compression"] = config.compression
+        kwargs["certificate_file"] = config.certificate
+        kwargs["client_certificate_file"] = config.client_certificate
+        kwargs["client_key_file"] = config.client_key
+
+    filtered = _filter_kwargs(exporter_cls, kwargs)
+    return exporter_cls(**filtered)
+
+
+def _build_batch_kwargs(settings: BatchProcessorSettings) -> dict[str, object]:
+    return {
+        "schedule_delay_millis": settings.schedule_delay_ms,
+        "max_queue_size": settings.max_queue_size,
+        "max_export_batch_size": settings.max_export_batch_size,
+        "export_timeout_millis": settings.export_timeout_ms,
+    }
+
+
+def _build_metric_reader_kwargs(settings: MetricExportSettings) -> dict[str, object]:
+    return {
+        "export_interval_millis": settings.export_interval_ms,
+        "export_timeout_millis": settings.export_timeout_ms,
+    }
+
+
+def _build_tracer_provider(config: ObservabilityConfig, resource: Resource) -> TracerProvider:
+    span_limits = _build_span_limits(config.span_limits)
+    sampler = _build_sampler(config)
+    kwargs: dict[str, object] = {"resource": resource}
+    if span_limits is not None:
+        kwargs["span_limits"] = span_limits
+    if sampler is not None:
+        kwargs["sampler"] = sampler
+    tracer_provider = TracerProvider(**kwargs)
+
+    if config.export_traces:
+        resolved = _resolve_otlp(config.otlp, config.otlp_traces)
+        exporter = _build_otlp_trace_exporter(resolved)
+        processor_kwargs = _filter_kwargs(
+            BatchSpanProcessor,
+            _build_batch_kwargs(config.traces_batch),
+        )
+        tracer_provider.add_span_processor(BatchSpanProcessor(exporter, **processor_kwargs))
+
+    if config.console_export:
+        tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+
+    if config.db_query_summary_span_name_hook:
+        processor = _db_query_summary_span_name_processor()
+        if processor is not None:
+            tracer_provider.add_span_processor(processor)
+
+    return tracer_provider
+
+
+def _build_meter_provider(
+    config: ObservabilityConfig,
+    resource: Resource,
+) -> tuple[MeterProvider, bool]:
+    metric_readers: list[MetricReader] = []
+
+    if config.export_metrics:
+        resolved = _resolve_otlp(config.otlp, config.otlp_metrics)
+        exporter = _build_otlp_metric_exporter(resolved)
+        reader_kwargs = _filter_kwargs(
+            PeriodicExportingMetricReader,
+            _build_metric_reader_kwargs(config.metrics_export),
+        )
+        metric_readers.append(PeriodicExportingMetricReader(exporter, **reader_kwargs))
+
+    prometheus_enabled = False
+    if config.prometheus_enabled:
+        metric_readers.append(PrometheusMetricReader())
+        prometheus_enabled = True
+
+    meter_kwargs: dict[str, object] = {
+        "resource": resource,
+        "metric_readers": metric_readers,
+    }
+
+    views = _build_views(config)
+    if views:
+        meter_kwargs["views"] = views
+
+    exemplar_filter = _build_exemplar_filter(config)
+    if exemplar_filter is not None:
+        meter_kwargs["exemplar_filter"] = exemplar_filter
+
+    meter_provider = MeterProvider(**meter_kwargs)
+    return meter_provider, prometheus_enabled
+
+
+def _build_logger_provider(
+    config: ObservabilityConfig,
+    resource: Resource,
+) -> tuple[LoggerProvider | None, LoggingHandler | None]:
+    if not config.export_logs and not config.logs_auto_instrument:
+        return None, None
+
+    log_limits = _build_log_limits(config.log_limits)
+    logger_kwargs: dict[str, object] = {"resource": resource}
+    if log_limits is not None:
+        logger_kwargs["log_record_limits"] = log_limits
+
+    logger_provider = LoggerProvider(**logger_kwargs)
+
+    if config.export_logs:
+        resolved = _resolve_otlp(config.otlp, config.otlp_logs)
+        exporter = _build_otlp_log_exporter(resolved)
+        processor_kwargs = _filter_kwargs(
+            BatchLogRecordProcessor,
+            _build_batch_kwargs(config.logs_batch),
+        )
+        logger_provider.add_log_record_processor(
+            BatchLogRecordProcessor(exporter, **processor_kwargs)
+        )
+
+    log_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+    root_logger = logging.getLogger()
+    root_logger.addHandler(log_handler)
+    if config.logs_trace_filter:
+        log_handler.addFilter(_TraceSampledLogFilter())
+
+    return logger_provider, log_handler
+
+
+def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRegistry) -> None:
+    def _instrument(name: str, instrumentor: _Instrumentor, **kwargs: object) -> None:
+        try:
+            instrumentor.instrument(**kwargs)
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            registry.record_error(name, str(exc))
+        else:
+            registry.record_enabled(name)
+
+    if config.log_correlation or config.logs_auto_instrument:
+        _instrument("logging", LoggingInstrumentor(), set_logging_format=False)
+    else:
+        registry.record_suppressed("logging")
+
+    _instrument("threading", ThreadingInstrumentor())
+    _instrument("asyncio", AsyncioInstrumentor())
+    _instrument("httpx", HTTPXClientInstrumentor())
+    _instrument("requests", RequestsInstrumentor())
+
+
+def _configure_propagators(config: ObservabilityConfig) -> None:
+    if not config.propagators:
+        return
+
+    propagators: list[TextMapPropagator] = []
+    for name in config.propagators:
+        normalized = name.strip().lower()
+        if not normalized:
+            continue
+        if normalized == "none":
+            propagators.clear()
+            break
+        if normalized == "tracecontext":
+            propagators.append(TraceContextTextMapPropagator())
+            continue
+        if normalized == "baggage":
+            propagators.append(W3CBaggagePropagator())
+            continue
+        propagator = _load_optional_propagator(normalized)
+        if propagator is None:
+            LOG.warning("Unsupported propagator %s; skipping", name)
+            continue
+        propagators.append(propagator)
+
+    if propagators:
+        set_global_textmap(CompositePropagator(propagators))
+
+
+def _load_optional_propagator(name: str) -> TextMapPropagator | None:
+    if name in {"b3", "b3multi"}:
+        return _load_propagator("opentelemetry.propagators.b3", "B3MultiFormat")
+    if name == "b3single":
+        return _load_propagator("opentelemetry.propagators.b3", "B3SingleFormat")
+    if name == "jaeger":
+        return _load_propagator("opentelemetry.propagators.jaeger", "JaegerPropagator")
+    if name == "ottrace":
+        return _load_propagator(
+            "opentelemetry.propagators.ot_trace", "OTTracePropagator"
+        )
+    return None
+
+
+def _load_propagator(module_name: str, symbol: str) -> TextMapPropagator | None:
+    try:
+        module = __import__(module_name, fromlist=[symbol])
+    except ImportError:
+        return None
+    value = getattr(module, symbol, None)
+    if value is None:
+        return None
+    instance = value() if callable(value) else None
+    if isinstance(instance, TextMapPropagator):
+        return instance
+    return None
+
+
+def _apply_config_file(path: Path) -> bool:
+    import opentelemetry.sdk._configuration as otel_config
+
+    candidates: list[Callable[..., object]] = []
+    for name in ("configure", "configure_otel", "initialize", "init", "load"):
+        value = getattr(otel_config, name, None)
+        if callable(value):
+            candidates.append(value)
+
+    configurator_cls = getattr(otel_config, "Configurator", None)
+    if configurator_cls is not None:
+        configurator = configurator_cls()
+        configure = getattr(configurator, "configure", None)
+        if callable(configure):
+            candidates.append(configure)
+
+    for candidate in candidates:
+        if _call_configurator(candidate, path):
             return True
 
-    _DbQuerySummarySpanNameProcessor = _DbQuerySummarySpanNameProcessorImpl
+    LOG.warning("No compatible OpenTelemetry configuration entrypoint found")
+    return False
 
-else:
-    _DbQuerySummarySpanNameProcessor = None
+
+def _call_configurator(func: Callable[..., object], path: Path) -> bool:
+    config_value = str(path)
+    for kwargs in (
+        {"config_file": config_value},
+        {"config_file_path": config_value},
+        {"path": config_value},
+    ):
+        try:
+            func(**kwargs)
+        except TypeError:
+            continue
+        except Exception as exc:  # pragma: no cover - configuration errors
+            LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
+            return False
+        else:
+            return True
+
+    try:
+        func(config_value)
+    except TypeError:
+        pass
+    except Exception as exc:  # pragma: no cover - configuration errors
+        LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
+        return False
+    else:
+        return True
+
+    try:
+        func()
+    except TypeError:
+        return False
+    except Exception as exc:  # pragma: no cover - configuration errors
+        LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
+        return False
+    return True
+
+
+def _TraceSampledLogFilter() -> logging.Filter:
+    class _Filter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            span = otel_trace.get_current_span()
+            if span is None:
+                return True
+            context = span.get_span_context()
+            if context is None:
+                return True
+            return bool(context.trace_flags.sampled)
+
+    return _Filter()
 
 
 def _disabled_runtime() -> ObservabilityRuntime:
@@ -371,8 +849,11 @@ def _disabled_runtime() -> ObservabilityRuntime:
         enabled=False,
         tracer=None,
         meter=None,
+        logger_provider=None,
+        log_handler=None,
         shutdown=None,
         prometheus_enabled=False,
+        grpc_observability=None,
         duckdb_tracing_enabled=False,
         duckdb_require_parent_span=True,
         duckdb_statement_mode="hash",
@@ -399,148 +880,50 @@ def _disabled_runtime() -> ObservabilityRuntime:
     )
 
 
-def _resolve_components() -> _OtelComponents | None:
-    if not OTEL_AVAILABLE:
-        return None
-
-    if otel_metrics is None or otel_trace is None:
-        return None
-
-    required = {
-        "meter_provider_cls": MeterProvider,
-        "tracer_provider_cls": TracerProvider,
-        "periodic_reader_cls": PeriodicExportingMetricReader,
-        "batch_span_processor_cls": BatchSpanProcessor,
-        "console_span_exporter_cls": ConsoleSpanExporter,
-        "resource_cls": Resource,
-    }
-    if any(value is None for value in required.values()):
-        return None
-
-    meter_provider_cls = cast("type[MeterProviderType]", required["meter_provider_cls"])
-    tracer_provider_cls = cast("type[TracerProviderType]", required["tracer_provider_cls"])
-    periodic_reader_cls = cast(
-        "type[PeriodicExportingMetricReaderType]",
-        required["periodic_reader_cls"],
-    )
-    batch_span_processor_cls = cast(
-        "type[BatchSpanProcessorType]",
-        required["batch_span_processor_cls"],
-    )
-    console_span_exporter_cls = cast(
-        "type[ConsoleSpanExporterType]",
-        required["console_span_exporter_cls"],
-    )
-    resource_cls = cast("type[ResourceType]", required["resource_cls"])
-
-    return _OtelComponents(
-        set_meter_provider=otel_metrics.set_meter_provider,
-        get_meter=otel_metrics.get_meter,
-        set_tracer_provider=otel_trace.set_tracer_provider,
-        get_tracer=otel_trace.get_tracer,
-        meter_provider_cls=meter_provider_cls,
-        tracer_provider_cls=tracer_provider_cls,
-        periodic_reader_cls=periodic_reader_cls,
-        batch_span_processor_cls=batch_span_processor_cls,
-        console_span_exporter_cls=console_span_exporter_cls,
-        otlp_metric_exporter_cls=OTLPMetricExporter,
-        otlp_span_exporter_cls=OTLPSpanExporter,
-        resource_cls=resource_cls,
-    )
-
-
-def _build_resource(config: ObservabilityConfig, components: _OtelComponents) -> ResourceType:
-    return components.resource_cls.create(
-        {
-            "service.name": config.service_name,
-            "service.version": _package_version(),
-        }
-    )
-
-
-def _build_tracer_provider(
-    config: ObservabilityConfig,
-    resource: ResourceType,
-    components: _OtelComponents,
-) -> TracerProviderType:
-    tracer_provider = components.tracer_provider_cls(resource=resource)
-    if not hasattr(tracer_provider, "add_span_processor"):
-        LOG.warning("Tracer provider lacks add_span_processor; tracing disabled")
-        return tracer_provider
-    if config.export_traces and config.otlp_endpoint:
-        if components.otlp_span_exporter_cls is None:
-            LOG.warning("OTLP span exporter unavailable; trace export disabled")
-        else:
-            tracer_provider.add_span_processor(
-                components.batch_span_processor_cls(
-                    components.otlp_span_exporter_cls(endpoint=config.otlp_endpoint)
-                )
-            )
-    if config.console_export:
-        tracer_provider.add_span_processor(
-            components.batch_span_processor_cls(components.console_span_exporter_cls())
-        )
-    span_name_processor = _db_query_summary_span_name_processor()
-    if config.db_query_summary_span_name_hook and span_name_processor is not None:
-        tracer_provider.add_span_processor(span_name_processor)
-    return tracer_provider
-
-
-def _db_query_summary_span_name_processor() -> SpanProcessorType | None:
-    if _DbQuerySummarySpanNameProcessor is None:
-        return None
-    return _DbQuerySummarySpanNameProcessor()
-
-
-def _build_meter_provider(
-    config: ObservabilityConfig,
-    resource: ResourceType,
-    components: _OtelComponents,
-) -> tuple[MeterProviderType, bool]:
-    metric_readers: list[MetricReader] = []
-    if config.export_metrics and config.otlp_endpoint:
-        if components.otlp_metric_exporter_cls is None:
-            LOG.warning("OTLP metric exporter unavailable; metrics export disabled")
-        else:
-            metric_readers.append(
-                components.periodic_reader_cls(
-                    components.otlp_metric_exporter_cls(endpoint=config.otlp_endpoint)
-                )
-            )
-
-    prometheus_enabled = False
-    if config.prometheus_enabled:
-        if _PROMETHEUS_EXPORTER_AVAILABLE and PrometheusMetricReader is not None:
-            metric_readers.append(PrometheusMetricReader())
-            prometheus_enabled = True
-        else:
-            LOG.warning("Prometheus exporter unavailable; /metrics will be disabled")
-
-    meter_provider = components.meter_provider_cls(
-        resource=resource,
-        metric_readers=metric_readers,
-    )
-    return meter_provider, prometheus_enabled
-
-
 def _build_shutdown(
-    tracer_provider: TracerProviderType,
-    meter_provider: MeterProviderType,
+    tracer_provider: TracerProvider | None,
+    meter_provider: MeterProvider | None,
+    logger_provider: LoggerProvider | None,
+    *,
+    log_handler: LoggingHandler | None,
+    grpc_handle: GrpcObservabilityHandle | None,
 ) -> Callable[[], ObservabilityShutdownResult]:
     def _shutdown() -> ObservabilityShutdownResult:
         start = time.perf_counter()
         errors: list[str] = []
         flush_ok = True
         try:
-            tracer_provider.shutdown()
+            if grpc_handle is not None:
+                grpc_handle.shutdown()
         except (RuntimeError, ValueError, TypeError, OSError) as exc:
             flush_ok = False
-            errors.append(f"tracer:{exc}")
-        try:
-            meter_provider.shutdown()
-        except (RuntimeError, ValueError, TypeError, OSError) as exc:
-            flush_ok = False
-            errors.append(f"meter:{exc}")
+            errors.append(f"grpc:{exc}")
+
+        if log_handler is not None:
+            root_logger = logging.getLogger()
+            root_logger.removeHandler(log_handler)
+
+        if tracer_provider is not None:
+            try:
+                tracer_provider.shutdown()
+            except (RuntimeError, ValueError, TypeError, OSError) as exc:
+                flush_ok = False
+                errors.append(f"tracer:{exc}")
+
+        if meter_provider is not None:
+            try:
+                meter_provider.shutdown()
+            except (RuntimeError, ValueError, TypeError, OSError) as exc:
+                flush_ok = False
+                errors.append(f"meter:{exc}")
+
+        if logger_provider is not None:
+            try:
+                logger_provider.shutdown()
+            except (RuntimeError, ValueError, TypeError, OSError) as exc:
+                flush_ok = False
+                errors.append(f"logger:{exc}")
+
         duration_ms = (time.perf_counter() - start) * 1000
         return ObservabilityShutdownResult(
             flush_ok=flush_ok,
@@ -551,32 +934,145 @@ def _build_shutdown(
     return _shutdown
 
 
-def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
-    if not config.enabled:
-        return _disabled_runtime()
-
-    components = _resolve_components()
-    if components is None:
-        return _disabled_runtime()
-
-    _instrument_runtime()
-
-    resource = _build_resource(config, components)
-    tracer_provider = _build_tracer_provider(config, resource, components)
-    components.set_tracer_provider(tracer_provider)
-    tracer = components.get_tracer(config.service_name)
-
-    meter_provider, prometheus_enabled = _build_meter_provider(config, resource, components)
-    components.set_meter_provider(meter_provider)
-    meter = components.get_meter(config.service_name)
-
-    shutdown = _build_shutdown(tracer_provider, meter_provider)
+def _runtime_from_global(
+    config: ObservabilityConfig,
+    *,
+    log_handler: LoggingHandler | None,
+    logger_provider: LoggerProvider | None,
+    grpc_handle: GrpcObservabilityHandle | None,
+    prometheus_enabled: bool,
+) -> ObservabilityRuntime:
+    tracer_provider = otel_trace.get_tracer_provider()
+    meter_provider = otel_metrics.get_meter_provider()
+    tracer = otel_trace.get_tracer(config.service_name)
+    meter = otel_metrics.get_meter(config.service_name)
+    shutdown = _build_shutdown(
+        tracer_provider,
+        meter_provider,
+        logger_provider,
+        log_handler=log_handler,
+        grpc_handle=grpc_handle,
+    )
     return ObservabilityRuntime(
         enabled=True,
         tracer=tracer,
         meter=meter,
+        logger_provider=logger_provider,
+        log_handler=log_handler,
         shutdown=shutdown,
         prometheus_enabled=prometheus_enabled,
+        grpc_observability=grpc_handle,
+        duckdb_tracing_enabled=config.duckdb_tracing_enabled,
+        duckdb_require_parent_span=config.duckdb_require_parent_span,
+        duckdb_statement_mode=config.duckdb_statement_mode,
+        duckdb_statement_hash_len=config.duckdb_statement_hash_len,
+        duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
+        duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
+        duckdb_query_summary_emit_ellipsis=config.duckdb_query_summary_emit_ellipsis,
+        duckdb_query_summary_hash_suspicious_targets=(
+            config.duckdb_query_summary_hash_suspicious_targets
+        ),
+        duckdb_query_summary_hash_len=config.duckdb_query_summary_hash_len,
+        duckdb_query_summary_hash_min_len=config.duckdb_query_summary_hash_min_len,
+        duckdb_query_summary_include_subquery_operations=(
+            config.duckdb_query_summary_include_subquery_operations
+        ),
+        duckdb_query_summary_include_multi_statement=(
+            config.duckdb_query_summary_include_multi_statement
+        ),
+        db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
+        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
+        duckdb_query_text_policy=config.duckdb_query_text_policy,
+        duckdb_query_text_max_len=config.duckdb_query_text_max_len,
+        duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
+        duckdb_query_text_collapse_in_lists=config.duckdb_query_text_collapse_in_lists,
+        duckdb_query_parameter_enabled=config.duckdb_query_parameter_enabled,
+        duckdb_query_parameter_keys=config.duckdb_query_parameter_keys,
+        duckdb_query_parameter_hash_keys=config.duckdb_query_parameter_hash_keys,
+        duckdb_query_parameter_require_in_sql=config.duckdb_query_parameter_require_in_sql,
+        duckdb_query_parameter_max_str_len=config.duckdb_query_parameter_max_str_len,
+    )
+
+
+def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
+    if not config.enabled:
+        return _disabled_runtime()
+
+    _configure_propagators(config)
+
+    registry = get_instrumentation_registry()
+
+    if config.config_file:
+        configured = _apply_config_file(config.config_file)
+        if not configured:
+            LOG.warning("Failed to apply OTEL config file %s; using manual config", config.config_file)
+        else:
+            _instrument_runtime(config, registry)
+            logger_provider: LoggerProvider | None = None
+            log_handler: LoggingHandler | None = None
+            if config.export_logs or config.logs_auto_instrument:
+                logger_provider = otel_logs.get_logger_provider()
+                log_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+                logging.getLogger().addHandler(log_handler)
+                if config.logs_trace_filter:
+                    log_handler.addFilter(_TraceSampledLogFilter())
+            grpc_handle = register_grpc_observability(
+                config.grpc_observability,
+                meter_provider=otel_metrics.get_meter_provider(),
+                registry=registry,
+            )
+            registry.emit_summary(LOG)
+            registry.emit_metrics(otel_metrics.get_meter(config.service_name))
+            return _runtime_from_global(
+                config,
+                log_handler=log_handler,
+                logger_provider=logger_provider,
+                grpc_handle=grpc_handle,
+                prometheus_enabled=config.prometheus_enabled,
+            )
+
+    resource = _build_resource(config)
+
+    tracer_provider = _build_tracer_provider(config, resource)
+    otel_trace.set_tracer_provider(tracer_provider)
+    tracer = otel_trace.get_tracer(config.service_name)
+
+    meter_provider, prometheus_enabled = _build_meter_provider(config, resource)
+    otel_metrics.set_meter_provider(meter_provider)
+    meter = otel_metrics.get_meter(config.service_name)
+
+    logger_provider, log_handler = _build_logger_provider(config, resource)
+    if logger_provider is not None:
+        otel_logs.set_logger_provider(logger_provider)
+
+    _instrument_runtime(config, registry)
+
+    grpc_handle = register_grpc_observability(
+        config.grpc_observability,
+        meter_provider=meter_provider,
+        registry=registry,
+    )
+
+    registry.emit_summary(LOG)
+    registry.emit_metrics(meter)
+
+    shutdown = _build_shutdown(
+        tracer_provider,
+        meter_provider,
+        logger_provider,
+        log_handler=log_handler,
+        grpc_handle=grpc_handle,
+    )
+
+    return ObservabilityRuntime(
+        enabled=True,
+        tracer=tracer,
+        meter=meter,
+        logger_provider=logger_provider,
+        log_handler=log_handler,
+        shutdown=shutdown,
+        prometheus_enabled=prometheus_enabled,
+        grpc_observability=grpc_handle,
         duckdb_tracing_enabled=config.duckdb_tracing_enabled,
         duckdb_require_parent_span=config.duckdb_require_parent_span,
         duckdb_statement_mode=config.duckdb_statement_mode,
@@ -631,35 +1127,7 @@ def get_observability() -> ObservabilityRuntime:
     runtime = _ObservabilityHolder.get_or_none()
     if runtime is not None:
         return runtime
-    return ObservabilityRuntime(
-        enabled=False,
-        tracer=None,
-        meter=None,
-        shutdown=None,
-        prometheus_enabled=False,
-        duckdb_tracing_enabled=False,
-        duckdb_require_parent_span=True,
-        duckdb_statement_mode="hash",
-        duckdb_statement_hash_len=16,
-        duckdb_query_summary_max_len=255,
-        duckdb_query_summary_max_targets=6,
-        duckdb_query_summary_emit_ellipsis=True,
-        duckdb_query_summary_hash_suspicious_targets=True,
-        duckdb_query_summary_hash_len=12,
-        duckdb_query_summary_hash_min_len=64,
-        duckdb_query_summary_include_subquery_operations=True,
-        duckdb_query_summary_include_multi_statement=True,
-        db_query_summary_span_name_hook=False,
-        duckdb_query_text_policy="never",
-        duckdb_query_text_max_len=4096,
-        duckdb_query_text_strip_comments=True,
-        duckdb_query_text_collapse_in_lists=True,
-        duckdb_query_parameter_enabled=False,
-        duckdb_query_parameter_keys=(),
-        duckdb_query_parameter_hash_keys=(),
-        duckdb_query_parameter_require_in_sql=True,
-        duckdb_query_parameter_max_str_len=80,
-    )
+    return _disabled_runtime()
 
 
 def shutdown_observability() -> ObservabilityShutdownResult | None:
@@ -699,31 +1167,27 @@ def flush_observability() -> ObservabilityShutdownResult | None:
     runtime = _ObservabilityHolder.get_or_none()
     if runtime is None or not runtime.enabled:
         return None
-    if otel_trace is None or otel_metrics is None:
-        return None
     start = time.perf_counter()
     errors: list[str] = []
     flush_ok = True
+
     tracer_provider = otel_trace.get_tracer_provider()
     meter_provider = otel_metrics.get_meter_provider()
+
     if tracer_provider is not None:
         flush_ok = (
-            _force_flush_provider(
-                tracer_provider,
-                label="tracer",
-                errors=errors,
-            )
-            and flush_ok
+            _force_flush_provider(tracer_provider, label="tracer", errors=errors) and flush_ok
         )
     if meter_provider is not None:
         flush_ok = (
-            _force_flush_provider(
-                meter_provider,
-                label="meter",
-                errors=errors,
-            )
+            _force_flush_provider(meter_provider, label="meter", errors=errors) and flush_ok
+        )
+    if runtime.logger_provider is not None:
+        flush_ok = (
+            _force_flush_provider(runtime.logger_provider, label="logger", errors=errors)
             and flush_ok
         )
+
     duration_ms = (time.perf_counter() - start) * 1000
     return ObservabilityShutdownResult(
         flush_ok=flush_ok,
@@ -738,18 +1202,6 @@ def _log_shutdown_result(result: ObservabilityShutdownResult) -> None:
         LOG.info("telemetry.flush %s", payload)
     else:
         LOG.warning("telemetry.flush %s", payload)
-
-
-__all__ = [
-    "ObservabilityConfig",
-    "ObservabilityRuntime",
-    "ObservabilityShutdownResult",
-    "bootstrap_observability",
-    "flush_observability",
-    "get_observability",
-    "observability_config_from_settings",
-    "shutdown_observability",
-]
 
 
 def observability_config_from_settings(
@@ -768,11 +1220,34 @@ def observability_config_from_settings(
     return ObservabilityConfig(
         enabled=settings.enabled,
         service_name=service_name,
-        otlp_endpoint=settings.otlp_endpoint,
+        service_version=settings.service_version,
+        deployment_environment=settings.deployment_environment,
+        resource_attributes=settings.resource_attributes,
+        propagators=settings.propagators,
+        traces_sampler=settings.traces_sampler,
+        traces_sampler_arg=settings.traces_sampler_arg,
+        config_file=settings.config_file,
+        otlp=settings.otlp,
+        otlp_traces=settings.otlp_traces,
+        otlp_metrics=settings.otlp_metrics,
+        otlp_logs=settings.otlp_logs,
         export_traces=settings.export_traces,
         export_metrics=settings.export_metrics,
+        export_logs=settings.export_logs,
         console_export=settings.console_export,
         prometheus_enabled=settings.prometheus_enabled,
+        logs_auto_instrument=settings.logs_auto_instrument,
+        log_correlation=settings.log_correlation,
+        logs_trace_filter=settings.logs_trace_filter,
+        traces_batch=settings.traces_batch,
+        logs_batch=settings.logs_batch,
+        metrics_export=settings.metrics_export,
+        span_limits=settings.span_limits,
+        log_limits=settings.log_limits,
+        metrics_exemplar_filter=settings.metrics_exemplar_filter,
+        metric_views=settings.metric_views,
+        grpc_observability=settings.grpc_observability,
+        hamilton_tracker=settings.hamilton_tracker,
         duckdb_tracing_enabled=settings.duckdb_tracing_enabled,
         duckdb_require_parent_span=settings.duckdb_require_parent_span,
         duckdb_statement_mode=settings.duckdb_statement_mode,
@@ -803,3 +1278,15 @@ def observability_config_from_settings(
         duckdb_query_parameter_require_in_sql=settings.duckdb_query_parameter_require_in_sql,
         duckdb_query_parameter_max_str_len=settings.duckdb_query_parameter_max_str_len,
     )
+
+
+__all__ = [
+    "ObservabilityConfig",
+    "ObservabilityRuntime",
+    "ObservabilityShutdownResult",
+    "bootstrap_observability",
+    "flush_observability",
+    "get_observability",
+    "observability_config_from_settings",
+    "shutdown_observability",
+]

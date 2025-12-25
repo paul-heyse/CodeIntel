@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -59,3 +60,27 @@ def test_run_cli_with_telemetry_calls_shutdown_on_parse_error() -> None:
         )
 
     assert calls["shutdown"] == 1
+
+
+@dataclass(frozen=True, slots=True)
+class _DummyFlags:
+    verbose: int = 1
+    json: bool = False
+    run_context: cli_observability.RunContext | None = None
+
+
+def test_flatten_arg_names_includes_shared_flags() -> None:
+    """Ensure shared flags are flattened into argument names."""
+    arguments = {"flags": _DummyFlags(), "target": "modules"}
+    names = cli_observability._flatten_arg_names(arguments, ignored_names=set())
+    assert "flags.verbose" in names
+    assert "flags.json" in names
+    assert "flags.run_context" not in names
+    assert "target" in names
+
+
+def test_normalize_allowlist_expands_flags_prefix() -> None:
+    """Ensure allowlist expansion includes shared flag prefixes."""
+    allowlist = cli_observability._normalize_allowlist(("verbose", "target"))
+    assert "flags.verbose" in allowlist
+    assert "verbose" in allowlist

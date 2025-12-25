@@ -1,0 +1,791 @@
+version: 1
+generated_at: "2025-12-25"
+outputs:
+  - target: "function_metrics"
+    domain: "analytics"
+    anchor: "t__function_metrics"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_metrics"
+      - "analytics.function_types"
+      - "analytics.function_validation"
+    contracts:
+      - "analytics.function_metrics"
+      - "analytics.function_types"
+      - "analytics.function_validation"
+    downstream_consumers:
+      - "storage.views"
+      - "serving.search_index"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+    pilot: true
+    notes: "Core analytics metric set used across storage views, serving, and CLI."
+  - target: "function_ast_features"
+    domain: "analytics"
+    anchor: "t__function_ast_features"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_ast_features"
+    contracts:
+      - "analytics.function_ast_features"
+    downstream_consumers:
+      - "storage.datasets"
+    upstream_targets:
+      - "core.modules"
+      - "core.goids"
+    notes: "Single-table output; low coupling, useful as a follow-on validation."
+  - target: "coverage_functions"
+    domain: "analytics"
+    anchor: "t__coverage_functions"
+    materialization: "table"
+    table_keys:
+      - "analytics.coverage_functions"
+    contracts:
+      - "analytics.coverage_functions"
+    downstream_consumers:
+      - "storage.views"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+      - "analytics.coverage_lines"
+    notes: "Ibis materialization; depends on coverage ingest input."
+  - target: "data_models"
+    domain: "analytics"
+    anchor: "t__data_models"
+    materialization: "table"
+    table_keys:
+      - "analytics.data_models"
+      - "analytics.data_model_fields"
+      - "analytics.data_model_relationships"
+    contracts:
+      - "analytics.data_models"
+      - "analytics.data_model_fields"
+      - "analytics.data_model_relationships"
+    downstream_consumers:
+      - "storage.views"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+      - "core.modules"
+      - "core.docstrings"
+    notes: "Multi-table output; internal-only dependencies."
+  - target: "data_model_usage"
+    domain: "analytics"
+    anchor: "t__data_model_usage"
+    materialization: "table"
+    table_keys:
+      - "analytics.data_model_usage"
+    contracts:
+      - "analytics.data_model_usage"
+    downstream_consumers:
+      - "storage.views"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.ast_nodes"
+      - "core.modules"
+      - "core.goids"
+    notes: "Usage edges between data model definitions and call sites."
+  - target: "profiles"
+    domain: "analytics"
+    anchor: "t__profiles"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_profile"
+      - "analytics.file_profile"
+      - "analytics.module_profile"
+    contracts:
+      - "analytics.function_profile"
+      - "analytics.file_profile"
+      - "analytics.module_profile"
+    downstream_consumers:
+      - "storage.views"
+      - "serving.search_index"
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.function_metrics"
+      - "analytics.function_contracts"
+      - "analytics.function_effects"
+      - "analytics.function_history"
+      - "analytics.goid_risk_factors"
+      - "analytics.semantic_roles_functions"
+      - "analytics.coverage_functions"
+      - "graph.v_function_call_counts"
+      - "graph.v_call_depth_stats"
+    notes: "Aggregated function/file/module profiles for serving and CLI."
+  - target: "semantic_roles"
+    domain: "analytics"
+    anchor: "t__semantic_roles"
+    materialization: "table"
+    table_keys:
+      - "analytics.semantic_roles_functions"
+      - "analytics.semantic_roles_modules"
+    contracts:
+      - "analytics.semantic_roles_functions"
+      - "analytics.semantic_roles_modules"
+    downstream_consumers:
+      - "analytics.entrypoints"
+      - "analytics.subsystems"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.modules"
+      - "analytics.function_ast_features"
+    notes: "Function/module role classification based on AST features."
+  - target: "test_profile"
+    domain: "analytics"
+    anchor: "t__test_profile"
+    materialization: "table"
+    table_keys:
+      - "analytics.test_profile"
+    contracts:
+      - "analytics.test_profile"
+    downstream_consumers:
+      - "analytics.entrypoints"
+      - "analytics.test_graph_metrics"
+      - "analytics.subsystem_caches"
+    upstream_targets:
+      - "analytics.test_coverage_edges"
+    notes: "Per-test profiles derived from coverage edges."
+  - target: "function_contracts"
+    domain: "analytics"
+    anchor: "t__function_contracts"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_contracts"
+    contracts:
+      - "analytics.function_contracts"
+    downstream_consumers:
+      - "analytics.profiles"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+      - "core.ast_nodes"
+      - "core.modules"
+    notes: "Inferred function contracts and nullability."
+  - target: "function_effects"
+    domain: "analytics"
+    anchor: "t__function_effects"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_effects"
+    contracts:
+      - "analytics.function_effects"
+    downstream_consumers:
+      - "analytics.profiles"
+      - "cli.datasets"
+    upstream_targets:
+      - "graph.call_graph_edges"
+    notes: "Side effects classification for functions."
+  - target: "external_deps"
+    domain: "analytics"
+    anchor: "t__external_deps"
+    materialization: "table"
+    table_keys:
+      - "analytics.external_dependencies"
+      - "analytics.external_dependency_calls"
+    contracts:
+      - "analytics.external_dependencies"
+      - "analytics.external_dependency_calls"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "graph.call_graph_edges"
+      - "core.ast_nodes"
+      - "core.modules"
+    notes: "External dependency usage inferred from AST and call graph."
+  - target: "entrypoints"
+    domain: "analytics"
+    anchor: "t__entrypoints"
+    materialization: "table"
+    table_keys:
+      - "analytics.entrypoints"
+      - "analytics.entrypoint_tests"
+    contracts:
+      - "analytics.entrypoints"
+      - "analytics.entrypoint_tests"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+      - "analytics.semantic_roles_functions"
+      - "analytics.test_profile"
+    notes: "Entrypoint identification and test associations."
+  - target: "hotspots"
+    domain: "analytics"
+    anchor: "t__hotspots"
+    materialization: "table"
+    table_keys:
+      - "analytics.hotspots"
+    contracts:
+      - "analytics.hotspots"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "core.ast_metrics"
+      - "core.modules"
+    notes: "Hotspot scoring from AST metrics and module metadata."
+  - target: "config_data_flow"
+    domain: "analytics"
+    anchor: "t__config_data_flow"
+    materialization: "table"
+    table_keys:
+      - "analytics.config_data_flow"
+      - "analytics.config_graph_metrics_keys"
+      - "analytics.config_graph_metrics_modules"
+      - "analytics.config_projection_key_edges"
+      - "analytics.config_projection_module_edges"
+    contracts:
+      - "analytics.config_data_flow"
+      - "analytics.config_graph_metrics_keys"
+      - "analytics.config_graph_metrics_modules"
+      - "analytics.config_projection_key_edges"
+      - "analytics.config_projection_module_edges"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.config_values"
+      - "graph.call_graph_edges"
+    notes: "Configuration flow graph and projection metrics."
+  - target: "cfg_dfg_metrics"
+    domain: "analytics"
+    anchor: "t__cfg_dfg_metrics"
+    materialization: "table"
+    table_keys:
+      - "analytics.cfg_function_metrics"
+      - "analytics.cfg_block_metrics"
+      - "analytics.cfg_function_metrics_ext"
+      - "analytics.dfg_function_metrics"
+      - "analytics.dfg_block_metrics"
+      - "analytics.dfg_function_metrics_ext"
+    contracts:
+      - "analytics.cfg_function_metrics"
+      - "analytics.cfg_block_metrics"
+      - "analytics.cfg_function_metrics_ext"
+      - "analytics.dfg_function_metrics"
+      - "analytics.dfg_block_metrics"
+      - "analytics.dfg_function_metrics_ext"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "graph.cfg_blocks"
+      - "graph.cfg_edges"
+      - "graph.dfg_edges"
+    notes: "CFG/DFG metrics derived from graph structures."
+  - target: "function_history"
+    domain: "analytics"
+    anchor: "t__function_history"
+    materialization: "table"
+    table_keys:
+      - "analytics.function_history"
+    contracts:
+      - "analytics.function_history"
+    downstream_consumers:
+      - "analytics.profiles"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.goids"
+    notes: "Git history and churn metrics for functions."
+  - target: "history_timeseries"
+    domain: "analytics"
+    anchor: "t__history_timeseries"
+    materialization: "table"
+    table_keys:
+      - "analytics.history_timeseries"
+    contracts:
+      - "analytics.history_timeseries"
+    downstream_consumers:
+      - "cli.history"
+    upstream_targets:
+      - "history.db"
+    notes: "Longitudinal metrics across commit history."
+  - target: "subsystem_graph_metrics"
+    domain: "analytics"
+    anchor: "t__subsystem_graph_metrics"
+    materialization: "table"
+    table_keys:
+      - "analytics.subsystem_graph_metrics"
+    contracts:
+      - "analytics.subsystem_graph_metrics"
+    downstream_consumers:
+      - "analytics.subsystem_caches"
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.subsystems"
+    notes: "Subsystem connectivity metrics from graph runtime."
+  - target: "symbol_graph_metrics"
+    domain: "analytics"
+    anchor: "t__symbol_graph_metrics"
+    materialization: "table"
+    table_keys:
+      - "analytics.symbol_graph_metrics_modules"
+      - "analytics.symbol_graph_metrics_functions"
+    contracts:
+      - "analytics.symbol_graph_metrics_modules"
+      - "analytics.symbol_graph_metrics_functions"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "graph.symbol_use_edges"
+    notes: "Symbol graph metrics for modules and functions."
+  - target: "subsystem_agreement"
+    domain: "analytics"
+    anchor: "t__subsystem_agreement"
+    materialization: "table"
+    table_keys:
+      - "analytics.subsystem_agreement"
+    contracts:
+      - "analytics.subsystem_agreement"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.subsystems"
+    notes: "Agreement between inferred subsystems and import communities."
+  - target: "test_graph_metrics"
+    domain: "analytics"
+    anchor: "t__test_graph_metrics"
+    materialization: "table"
+    table_keys:
+      - "analytics.test_graph_metrics_tests"
+      - "analytics.test_graph_metrics_functions"
+    contracts:
+      - "analytics.test_graph_metrics_tests"
+      - "analytics.test_graph_metrics_functions"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.test_catalog"
+      - "analytics.test_coverage_edges"
+    notes: "Graph metrics for tests and their covered functions."
+  - target: "subsystem_caches"
+    domain: "analytics"
+    anchor: "t__subsystem_caches"
+    materialization: "table"
+    table_keys:
+      - "analytics.subsystem_profile_cache"
+      - "analytics.subsystem_coverage_cache"
+    contracts:
+      - "analytics.subsystem_profile_cache"
+      - "analytics.subsystem_coverage_cache"
+    downstream_consumers:
+      - "serving.search_index"
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.subsystems"
+      - "analytics.subsystem_graph_metrics"
+      - "analytics.test_profile"
+    notes: "Cached subsystem summaries for fast access."
+  - target: "risk_factors"
+    domain: "analytics"
+    anchor: "t__risk_factors"
+    materialization: "table"
+    table_keys:
+      - "analytics.goid_risk_factors"
+    contracts:
+      - "analytics.goid_risk_factors"
+    downstream_consumers:
+      - "analytics.profiles"
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.function_metrics"
+      - "analytics.coverage_functions"
+      - "graph.call_graph_edges"
+    notes: "Risk scoring based on complexity, coverage, and fan-in/out."
+  - target: "subsystems"
+    domain: "analytics"
+    anchor: "t__subsystems"
+    materialization: "table"
+    table_keys:
+      - "analytics.subsystems"
+      - "analytics.subsystem_modules"
+    contracts:
+      - "analytics.subsystems"
+      - "analytics.subsystem_modules"
+    downstream_consumers:
+      - "analytics.subsystem_graph_metrics"
+      - "analytics.subsystem_agreement"
+      - "cli.datasets"
+    upstream_targets:
+      - "graph.import_graph_edges"
+      - "analytics.semantic_roles_functions"
+    notes: "Subsystem inference from import graph communities."
+  - target: "coverage_test_edges"
+    domain: "analytics"
+    anchor: "t__coverage_test_edges"
+    materialization: "table"
+    table_keys:
+      - "analytics.test_coverage_edges"
+    contracts:
+      - "analytics.test_coverage_edges"
+    downstream_consumers:
+      - "analytics.test_profile"
+      - "analytics.test_graph_metrics"
+    upstream_targets:
+      - "core.goids"
+      - "analytics.coverage_lines"
+      - "analytics.test_catalog"
+    notes: "Edges linking tests to covered functions."
+  - target: "behavioral_coverage"
+    domain: "analytics"
+    anchor: "t__behavioral_coverage"
+    materialization: "table"
+    table_keys:
+      - "analytics.behavioral_coverage"
+    contracts:
+      - "analytics.behavioral_coverage"
+    downstream_consumers:
+      - "cli.datasets"
+    upstream_targets:
+      - "analytics.test_profile"
+    notes: "Behavioral tags derived from test profiles."
+  - target: "goids"
+    domain: "graphs"
+    anchor: "t__goids"
+    materialization: "table"
+    table_keys:
+      - "core.goids"
+      - "core.goid_crosswalk"
+    contracts:
+      - "core.goids"
+      - "core.goid_crosswalk"
+    downstream_consumers:
+      - "analytics"
+      - "graphs"
+      - "storage.views"
+    upstream_targets:
+      - "core.modules"
+    notes: "Foundational code entity IDs for analytics and graph targets."
+  - target: "call_graph"
+    domain: "graphs"
+    anchor: "t__call_graph"
+    materialization: "table"
+    table_keys:
+      - "graph.call_graph_nodes"
+      - "graph.call_graph_edges"
+    contracts:
+      - "graph.call_graph_nodes"
+      - "graph.call_graph_edges"
+    downstream_consumers:
+      - "graphs.call_graph_views"
+      - "graphs.graph_metrics"
+      - "cli.graph"
+    upstream_targets:
+      - "core.goids"
+      - "core.modules"
+    notes: "Call graph edges and nodes derived from source parsing."
+  - target: "import_graph"
+    domain: "graphs"
+    anchor: "t__import_graph"
+    materialization: "table"
+    table_keys:
+      - "graph.import_modules"
+      - "graph.import_graph_edges"
+    contracts:
+      - "graph.import_modules"
+      - "graph.import_graph_edges"
+    downstream_consumers:
+      - "analytics.subsystems"
+      - "cli.graph"
+    upstream_targets:
+      - "core.modules"
+    notes: "Module import graph used for subsystem and graph analytics."
+  - target: "cfg"
+    domain: "graphs"
+    anchor: "t__cfg"
+    materialization: "table"
+    table_keys:
+      - "graph.cfg_blocks"
+      - "graph.cfg_edges"
+    contracts:
+      - "graph.cfg_blocks"
+      - "graph.cfg_edges"
+    downstream_consumers:
+      - "graphs.dfg"
+      - "analytics.cfg_dfg_metrics"
+    upstream_targets:
+      - "core.goids"
+    notes: "Control flow graph blocks and edges."
+  - target: "dfg"
+    domain: "graphs"
+    anchor: "t__dfg"
+    materialization: "table"
+    table_keys:
+      - "graph.dfg_edges"
+    contracts:
+      - "graph.dfg_edges"
+    downstream_consumers:
+      - "analytics.cfg_dfg_metrics"
+    upstream_targets:
+      - "graph.cfg_blocks"
+      - "graph.cfg_edges"
+    notes: "Data flow graph edges derived from CFG."
+  - target: "call_graph_views"
+    domain: "graphs"
+    anchor: "t__call_graph_views"
+    materialization: "table"
+    table_keys:
+      - "graph.v_function_call_counts"
+      - "graph.v_call_depth_stats"
+    contracts:
+      - "graph.v_function_call_counts"
+      - "graph.v_call_depth_stats"
+    downstream_consumers:
+      - "analytics.function_profile"
+      - "cli.graph"
+    upstream_targets:
+      - "graph.call_graph_edges"
+    notes: "Materialized views over call graph edges."
+  - target: "graph_metrics"
+    domain: "graphs"
+    anchor: "t__graph_metrics"
+    materialization: "table"
+    table_keys:
+      - "analytics.graph_metrics_functions"
+      - "analytics.graph_metrics_functions_ext"
+      - "analytics.graph_metrics_modules"
+      - "analytics.graph_metrics_modules_ext"
+      - "analytics.graph_stats"
+    contracts:
+      - "analytics.graph_metrics_functions"
+      - "analytics.graph_metrics_functions_ext"
+      - "analytics.graph_metrics_modules"
+      - "analytics.graph_metrics_modules_ext"
+      - "analytics.graph_stats"
+    downstream_consumers:
+      - "analytics.function_profile"
+      - "cli.graph"
+    upstream_targets:
+      - "graph.call_graph_edges"
+    notes: "Graph-derived metrics for functions and modules."
+  - target: "graph_validation"
+    domain: "graphs"
+    anchor: "t__graph_validation"
+    materialization: "table"
+    table_keys:
+      - "analytics.graph_validation"
+    contracts:
+      - "analytics.graph_validation"
+    downstream_consumers:
+      - "cli.graph"
+    upstream_targets:
+      - "graph.cfg_edges"
+      - "graph.dfg_edges"
+    notes: "Validation errors for graph construction."
+  - target: "symbol_uses"
+    domain: "graphs"
+    anchor: "t__symbol_uses"
+    materialization: "table"
+    table_keys:
+      - "graph.symbol_use_edges"
+    contracts:
+      - "graph.symbol_use_edges"
+    downstream_consumers:
+      - "analytics.symbol_graph_metrics"
+      - "cli.graph"
+    upstream_targets:
+      - "core.scip_occurrences"
+      - "core.goids"
+      - "core.modules"
+    notes: "Symbol use edges derived from SCIP occurrences."
+  - target: "modules"
+    domain: "ingestion"
+    anchor: "t__modules"
+    materialization: "table"
+    table_keys:
+      - "core.modules"
+      - "core.file_state"
+      - "core.repo_map"
+    contracts:
+      - "core.modules"
+      - "core.file_state"
+      - "core.repo_map"
+    downstream_consumers:
+      - "graphs.goids"
+      - "ingestion.ast"
+      - "ingestion.docstrings"
+    upstream_targets:
+      - "filesystem.repo"
+    notes: "Module discovery and file state inventory."
+  - target: "ast"
+    domain: "ingestion"
+    anchor: "t__ast"
+    materialization: "table"
+    table_keys:
+      - "core.ast_nodes"
+      - "core.ast_metrics"
+    contracts:
+      - "core.ast_nodes"
+      - "core.ast_metrics"
+    downstream_consumers:
+      - "analytics.function_ast_features"
+    upstream_targets:
+      - "core.modules"
+    notes: "AST extraction for module source."
+  - target: "cst"
+    domain: "ingestion"
+    anchor: "t__cst"
+    materialization: "table"
+    table_keys:
+      - "core.cst_nodes"
+    contracts:
+      - "core.cst_nodes"
+    downstream_consumers:
+      - "analytics.function_metrics"
+    upstream_targets:
+      - "core.modules"
+    notes: "CST extraction for source parsing."
+  - target: "docstrings"
+    domain: "ingestion"
+    anchor: "t__docstrings"
+    materialization: "table"
+    table_keys:
+      - "core.docstrings"
+    contracts:
+      - "core.docstrings"
+    downstream_consumers:
+      - "analytics.data_models"
+      - "analytics.function_profile"
+    upstream_targets:
+      - "core.modules"
+    notes: "Docstring extraction for class and function metadata."
+  - target: "config_ingest"
+    domain: "ingestion"
+    anchor: "t__config_ingest"
+    materialization: "table"
+    table_keys:
+      - "analytics.config_values"
+    contracts:
+      - "analytics.config_values"
+    downstream_consumers:
+      - "analytics.config_data_flow"
+    upstream_targets:
+      - "filesystem.repo"
+    notes: "Configuration extraction from repo sources."
+  - target: "coverage_ingest"
+    domain: "ingestion"
+    anchor: "t__coverage_ingest"
+    materialization: "table"
+    table_keys:
+      - "analytics.coverage_lines"
+    contracts:
+      - "analytics.coverage_lines"
+    downstream_consumers:
+      - "analytics.coverage_functions"
+    upstream_targets:
+      - "core.modules"
+      - "coverage.report"
+    notes: "Coverage ingestion from coverage.py artifacts."
+  - target: "tests_ingest"
+    domain: "ingestion"
+    anchor: "t__tests_ingest"
+    materialization: "table"
+    table_keys:
+      - "analytics.test_catalog"
+    contracts:
+      - "analytics.test_catalog"
+    downstream_consumers:
+      - "analytics.test_profile"
+      - "analytics.behavioral_coverage"
+    upstream_targets:
+      - "core.modules"
+    notes: "Test discovery and catalog ingestion."
+  - target: "typing"
+    domain: "ingestion"
+    anchor: "t__typing"
+    materialization: "table"
+    table_keys:
+      - "analytics.typedness"
+      - "analytics.static_diagnostics"
+    contracts:
+      - "analytics.typedness"
+      - "analytics.static_diagnostics"
+    downstream_consumers:
+      - "analytics.function_metrics"
+    upstream_targets:
+      - "core.modules"
+    notes: "Static typing signals and diagnostics."
+  - target: "scip_proto"
+    domain: "ingestion"
+    anchor: "t__scip_proto"
+    materialization: "artifact"
+    table_keys: []
+    contracts: []
+    downstream_consumers:
+      - "ingestion.scip"
+    upstream_targets:
+      - "filesystem.repo"
+    notes: "SCIP schema artifact used by SCIP index generation."
+  - target: "scip"
+    domain: "ingestion"
+    anchor: "t__scip"
+    materialization: "mixed"
+    table_keys:
+      - "core.scip_symbols"
+      - "core.scip_occurrences"
+      - "core.scip_symbol_information"
+      - "core.scip_symbol_relationships"
+      - "core.scip_diagnostics"
+      - "core.scip_external_symbols"
+      - "core.scip_module_state"
+    contracts:
+      - "core.scip_symbols"
+      - "core.scip_occurrences"
+      - "core.scip_symbol_information"
+      - "core.scip_symbol_relationships"
+      - "core.scip_diagnostics"
+      - "core.scip_external_symbols"
+      - "core.scip_module_state"
+    downstream_consumers:
+      - "graphs.symbol_uses"
+      - "cli.datasets"
+    upstream_targets:
+      - "core.modules"
+      - "scip_proto"
+    notes: "SCIP index plus symbol tables; emits scip_index artifact."
+  - target: "serving_artifacts"
+    domain: "export"
+    anchor: "t__serving_artifacts"
+    materialization: "mixed"
+    table_keys:
+      - "core.schema_inference_errors"
+    contracts:
+      - "core.schema_inference_errors"
+    downstream_consumers:
+      - "serving.snapshot"
+      - "cli.export"
+    upstream_targets:
+      - "storage.views"
+      - "build.manifest"
+    notes: "Serving artifacts plus schema inference errors for validation."
+  - target: "export_jsonl"
+    domain: "export"
+    anchor: "t__export_jsonl"
+    materialization: "artifact"
+    table_keys: []
+    contracts: []
+    downstream_consumers:
+      - "cli.export"
+    upstream_targets:
+      - "storage.views"
+    notes: "Dataset manifest exported as JSONL artifact."
+  - target: "export_parquet"
+    domain: "export"
+    anchor: "t__export_parquet"
+    materialization: "artifact"
+    table_keys: []
+    contracts: []
+    downstream_consumers:
+      - "cli.export"
+    upstream_targets:
+      - "storage.views"
+    notes: "Dataset manifest exported as Parquet artifact."
+  - target: "decision_trace"
+    domain: "export"
+    anchor: "t__decision_trace"
+    materialization: "artifact"
+    table_keys: []
+    contracts: []
+    downstream_consumers:
+      - "cli.build"
+    upstream_targets:
+      - "build.manifest"
+    notes: "Build decision trace for debugging DAG decisions."

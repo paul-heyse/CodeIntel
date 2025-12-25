@@ -43,16 +43,127 @@ class HamiltonExecutionSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class OtlpExporterSettings:
+    """Settings for OTLP exporter configuration."""
+
+    endpoint: str | None = None
+    protocol: str | None = None
+    headers: tuple[tuple[str, str], ...] = ()
+    timeout_s: float | None = None
+    compression: str | None = None
+    certificate: str | None = None
+    client_certificate: str | None = None
+    client_key: str | None = None
+    insecure: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BatchProcessorSettings:
+    """Batch processor tuning for trace/log exporters."""
+
+    schedule_delay_ms: int | None = None
+    max_queue_size: int | None = None
+    max_export_batch_size: int | None = None
+    export_timeout_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MetricExportSettings:
+    """Metric reader export interval and timeout settings."""
+
+    export_interval_ms: int | None = None
+    export_timeout_ms: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SpanLimitSettings:
+    """Span limit settings for OpenTelemetry providers."""
+
+    attribute_count_limit: int | None = None
+    attribute_value_length_limit: int | None = None
+    span_event_count_limit: int | None = None
+    span_link_count_limit: int | None = None
+    event_attribute_count_limit: int | None = None
+    link_attribute_count_limit: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LogLimitSettings:
+    """Log record limit settings for OpenTelemetry providers."""
+
+    attribute_count_limit: int | None = None
+    attribute_value_length_limit: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MetricViewSettings:
+    """Histogram bucket overrides for metric views."""
+
+    operation_duration_ms_buckets: tuple[float, ...] = ()
+    query_duration_ms_buckets: tuple[float, ...] = ()
+    http_duration_s_buckets: tuple[float, ...] = ()
+    grpc_duration_s_buckets: tuple[float, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GrpcObservabilitySettings:
+    """gRPC observability configuration for grpcio-observability."""
+
+    enabled: bool = False
+    method_allowlist: tuple[str, ...] = ()
+    target_allowlist: tuple[str, ...] = ()
+    other_method_label: str = "other"
+    other_target_label: str = "other"
+
+
+@dataclass(frozen=True, slots=True)
+class HamiltonTrackerSettings:
+    """Hamilton UI tracker configuration."""
+
+    enabled: bool = False
+    project_id: str | None = None
+    username: str | None = None
+    dag_name: str | None = None
+    tags: tuple[tuple[str, str], ...] = ()
+    api_url: str | None = None
+    ui_url: str | None = None
+    capture_data_statistics: bool | None = None
+    max_list_length: int | None = None
+    max_dict_length: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ObservabilitySettings:
     """Observability settings for OpenTelemetry and storage tracing."""
 
     enabled: bool = True
     service_name: str | None = None
-    otlp_endpoint: str | None = None
+    service_version: str | None = None
+    deployment_environment: str | None = None
+    resource_attributes: tuple[tuple[str, str], ...] = ()
+    propagators: tuple[str, ...] = ()
+    traces_sampler: str | None = None
+    traces_sampler_arg: float | None = None
+    config_file: Path | None = None
+    otlp: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
+    otlp_traces: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
+    otlp_metrics: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
+    otlp_logs: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
     export_traces: bool = True
     export_metrics: bool = True
+    export_logs: bool = False
     console_export: bool = False
     prometheus_enabled: bool = False
+    logs_auto_instrument: bool = False
+    log_correlation: bool = False
+    logs_trace_filter: bool = False
+    traces_batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
+    logs_batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
+    metrics_export: MetricExportSettings = field(default_factory=MetricExportSettings)
+    span_limits: SpanLimitSettings = field(default_factory=SpanLimitSettings)
+    log_limits: LogLimitSettings = field(default_factory=LogLimitSettings)
+    metrics_exemplar_filter: str | None = None
+    metric_views: MetricViewSettings = field(default_factory=MetricViewSettings)
     teardown_enabled: bool = True
     teardown_task_sample_limit: int = 5
     teardown_thread_sample_limit: int = 5
@@ -60,6 +171,8 @@ class ObservabilitySettings:
     cli_enabled: bool = True
     cli_args_allowlist: tuple[str, ...] = ()
     cli_args_capture_mode: str = "names-only"
+    grpc_observability: GrpcObservabilitySettings = field(default_factory=GrpcObservabilitySettings)
+    hamilton_tracker: HamiltonTrackerSettings = field(default_factory=HamiltonTrackerSettings)
     duckdb_tracing_enabled: bool = True
     duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"
@@ -221,10 +334,18 @@ def _is_unspecified_host(host: str) -> bool:
 
 
 __all__ = [
+    "BatchProcessorSettings",
     "BuildSettings",
     "CliSettings",
     "ExportAuditSettings",
+    "GrpcObservabilitySettings",
     "HamiltonExecutionSettings",
+    "HamiltonTrackerSettings",
+    "LogLimitSettings",
+    "MetricExportSettings",
+    "MetricViewSettings",
     "ObservabilitySettings",
+    "OtlpExporterSettings",
     "ServingSettings",
+    "SpanLimitSettings",
 ]

@@ -16,7 +16,7 @@ import logging
 import signal
 import sys
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from codeintel.cli.config import load_config as load_cli_config
@@ -205,18 +205,17 @@ def _build_cli_observability_config(config: CliConfig) -> ObservabilityConfig:
     )
     enabled = base.enabled and config.telemetry.enabled
     service_name = config.telemetry.service_name or base.service_name
-    otlp_endpoint = config.telemetry.endpoint or base.otlp_endpoint
-    return ObservabilityConfig(
+    otlp_override = (
+        replace(base.otlp, endpoint=config.telemetry.endpoint)
+        if config.telemetry.endpoint
+        else base.otlp
+    )
+    return replace(
+        base,
         enabled=enabled,
         service_name=service_name,
-        otlp_endpoint=otlp_endpoint,
-        export_traces=base.export_traces,
-        export_metrics=base.export_metrics,
-        console_export=base.console_export,
+        otlp=otlp_override,
         prometheus_enabled=False,
-        duckdb_tracing_enabled=base.duckdb_tracing_enabled,
-        duckdb_statement_mode=base.duckdb_statement_mode,
-        duckdb_statement_hash_len=base.duckdb_statement_hash_len,
     )
 
 

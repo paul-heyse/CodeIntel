@@ -9,7 +9,7 @@ with DAG-visible I/O via SaveToDecorator/DuckDBRowsSaver:
 - `function_metrics__validation_rows`: Extract validation rows for materialization
 - `t__function_metrics`: Materialize node combining all table writes
 
-The compute node calls `compute_function_analytics_result` which returns pure rows
+The compute node calls `compute_function_analytics_result_from_table` which returns pure rows
 without persistence. Persistence is handled by DuckDBRowsSaver via SaveToDecorator,
 making I/O visible in the Hamilton DAG for caching and observability.
 
@@ -18,10 +18,12 @@ Phase 4: Analytics domain migration with Hamilton-native DAG-visible I/O.
 
 from __future__ import annotations
 
+import ibis.expr.types as ir
+
 from codeintel.analytics.functions import FunctionAnalyticsOptions
 from codeintel.analytics.functions.metrics import (
     FunctionAnalyticsResult,
-    compute_function_analytics_result,
+    compute_function_analytics_result_from_table,
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
@@ -47,15 +49,18 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.row_serialization import row_to_tuple
-from codeintel.storage.gateway import StorageGateway
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
     InputHashOptions,
+    SnapshotRef,
     TargetGraph,
     TargetRunRecord,
     FunctionAnalyticsResult,
+    FunctionAnalyticsOptions,
+    ir.Table,
 )
 
 FUNCTION_METRICS_TARGET_NAME = "function_metrics"
@@ -73,18 +78,6 @@ FUNCTION_METRICS_SAVE_CONTEXT = SaverContext(
     target=FUNCTION_METRICS_TARGET_NAME,
     hash_options_node="function_metrics__hash_options",
 )
-
-
-@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
-def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for function metrics nodes.
-
-    Returns
-    -------
-    StorageGateway
-        Storage gateway for the current build environment.
-    """
-    return env.gateway
 
 
 @tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
@@ -124,10 +117,39 @@ def function_metrics__skip(
     return executor.should_skip()
 
 
+@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+def function_metrics__snapshot(env: BuildEnv) -> SnapshotRef:
+    """Expose the current snapshot for function metrics nodes.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot context for the current build.
+    """
+    return env.snapshot
+
+
+@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+def function_metrics__options(env: BuildEnv) -> FunctionAnalyticsOptions:
+    """Load function metrics options from the build environment.
+
+    Returns
+    -------
+    FunctionAnalyticsOptions
+        Loaded options for function metrics computation.
+    """
+    return load_target_options(
+        env,
+        target_name=FUNCTION_METRICS_TARGET_NAME,
+        options_type=FunctionAnalyticsOptions,
+    )
+
+
 @tag_compute(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics__compute(
-    env: BuildEnv,
-    gateway: StorageGateway,
+    function_metrics__snapshot: SnapshotRef,
+    q__core__goids: ir.Table,
+    function_metrics__options: FunctionAnalyticsOptions,
     *,
     function_metrics__skip: bool,
 ) -> FunctionAnalyticsResult | None:
@@ -138,10 +160,12 @@ def t__function_metrics__compute(
 
     Parameters
     ----------
-    env
-        Build environment with gateway and snapshot info.
-    gateway
-        Storage gateway for analytics queries.
+    function_metrics__snapshot
+        Snapshot context for the current repository and commit.
+    q__core__goids
+        Ibis table expression for core.goids.
+    function_metrics__options
+        Function metrics options loaded from configuration.
     function_metrics__skip
         Skip flag derived from manifest-based input hash evaluation.
 
@@ -161,15 +185,10 @@ def t__function_metrics__compute(
     if function_metrics__skip:
         return None
 
-    options = load_target_options(
-        env,
-        target_name=FUNCTION_METRICS_TARGET_NAME,
-        options_type=FunctionAnalyticsOptions,
-    )
-    return compute_function_analytics_result(
-        gateway,
-        env.snapshot,
-        options=options,
+    return compute_function_analytics_result_from_table(
+        q__core__goids,
+        function_metrics__snapshot,
+        options=function_metrics__options,
     )
 
 
@@ -320,7 +339,9 @@ __all__ = [
     "FunctionAnalyticsResult",
     "function_metrics__hash_options",
     "function_metrics__metrics_rows",
+    "function_metrics__options",
     "function_metrics__skip",
+    "function_metrics__snapshot",
     "function_metrics__table_materializations",
     "function_metrics__types_rows",
     "function_metrics__validation_rows",

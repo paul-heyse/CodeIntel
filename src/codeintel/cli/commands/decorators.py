@@ -21,7 +21,9 @@ import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeGuard, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Protocol, TypeGuard, TypeVar, cast
+
+from cyclopts import Parameter
 
 from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core.command import Command
@@ -63,6 +65,34 @@ def _is_dataclass_command_type(cls: type[object]) -> TypeGuard[type[_DataclassCo
 
 
 CommandType = TypeVar("CommandType", bound=Command[Any])
+
+
+def _patch_shared_flags_annotation(cls: type[object]) -> None:
+    """Ensure shared flags are flattened for Cyclopts parsing."""
+    if not dataclasses.is_dataclass(cls):
+        return
+
+    annotations = getattr(cls, "__annotations__", None)
+    if not isinstance(annotations, dict):
+        return
+
+    for field_info in dataclasses.fields(cls):
+        if field_info.name != "flags":
+            continue
+
+        if field_info.default_factory is not dataclasses.MISSING:
+            flags_type = field_info.default_factory
+        elif field_info.default is not dataclasses.MISSING:
+            flags_type = type(field_info.default)
+        else:
+            return
+
+        if not hasattr(flags_type, "__dataclass_fields__"):
+            return
+
+        flags_type = cast("type[SharedFlagsProtocol]", flags_type)
+        annotations["flags"] = Annotated[flags_type, Parameter(name="*")]
+        return
 
 
 @dataclass(frozen=True)
@@ -166,6 +196,7 @@ def cli_command[T, R](
     """
 
     def decorator(cls: type[T]) -> type[T]:
+        _patch_shared_flags_annotation(cls)
         is_new_pattern = _is_command_subclass(cls)
 
         if is_new_pattern and handler is None:

@@ -206,9 +206,7 @@ class ScipPlugin(ToolPlugin):
                         write_exc,
                     )
                 else:
-                    log.warning(
-                        "scip-python failed due to missing git metadata; using empty index"
-                    )
+                    log.warning("scip-python failed due to missing git metadata; using empty index")
                     result = ToolPluginResult(
                         tool=ToolName.SCIP_PYTHON,
                         status=ToolStatus.OK,
