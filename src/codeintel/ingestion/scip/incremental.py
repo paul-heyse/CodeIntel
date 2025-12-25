@@ -19,6 +19,7 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.scip.cli import build_scip_python_args
 from codeintel.ingestion.scip.index_store import (
+    MergeIndexContext,
     load_index_proto,
     merge_indexes,
     write_index_proto,
@@ -35,7 +36,7 @@ from codeintel.ingestion.scip.manifest import (
 from codeintel.ingestion.scip.paths import resolve_target_base, scip_relative_path
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -115,6 +116,17 @@ class _ModuleShardPlan:
     scip_rel_path: str
     content_hash: str
     shard_path: Path
+
+
+@dataclass(frozen=True)
+class _IncrementalMergeInputs:
+    config: ScipIncrementalConfig
+    base_index: IndexProto
+    shard_indexes: Sequence[IndexProto]
+    deleted_paths: tuple[str, ...]
+    manifest: ScipShardManifest
+    shard_updates: Mapping[str, ScipShardRecord]
+    manifest_file: Path
 
 
 def update_index_incremental(
@@ -210,27 +222,16 @@ def update_index_incremental(
             error=str(exc),
         )
 
-    merged = merge_indexes(
-        base_index=base_index,
-        shard_indexes=shard_indexes,
-        deleted_paths=deleted_paths,
-        proto_module_path=config.proto_module_path,
-    )
-    write_index_proto(merged, config.output_scip)
-
-    updated_manifest = update_manifest(
-        manifest,
-        updates=shard_updates,
-        deleted=dict.fromkeys(deleted_paths, True),
-    )
-    write_manifest(manifest_file, updated_manifest)
-
-    return ScipIncrementalResult(
-        success=True,
-        index_path=config.output_scip,
-        manifest_path=manifest_file,
-        full_rebuild=False,
-        updated=True,
+    return _apply_incremental_merge(
+        _IncrementalMergeInputs(
+            config=config,
+            base_index=base_index,
+            shard_indexes=shard_indexes,
+            deleted_paths=deleted_paths,
+            manifest=manifest,
+            shard_updates=shard_updates,
+            manifest_file=manifest_file,
+        )
     )
 
 
@@ -270,6 +271,42 @@ def _full_rebuild(
         index_path=output_scip,
         manifest_path=manifest_file,
         full_rebuild=True,
+        updated=True,
+    )
+
+
+def _apply_incremental_merge(inputs: _IncrementalMergeInputs) -> ScipIncrementalResult:
+    base_updated_at = {
+        path: record.updated_at for path, record in inputs.manifest.records.items()
+    }
+    shard_updated_at = {
+        path: record.updated_at for path, record in inputs.shard_updates.items()
+    }
+    merge_context = MergeIndexContext(
+        shard_updated_at=shard_updated_at,
+        base_updated_at=base_updated_at,
+    )
+    merged = merge_indexes(
+        base_index=inputs.base_index,
+        shard_indexes=inputs.shard_indexes,
+        deleted_paths=inputs.deleted_paths,
+        proto_module_path=inputs.config.proto_module_path,
+        context=merge_context,
+    )
+    write_index_proto(merged, inputs.config.output_scip)
+
+    updated_manifest = update_manifest(
+        inputs.manifest,
+        updates=inputs.shard_updates,
+        deleted=dict.fromkeys(inputs.deleted_paths, True),
+    )
+    write_manifest(inputs.manifest_file, updated_manifest)
+
+    return ScipIncrementalResult(
+        success=True,
+        index_path=inputs.config.output_scip,
+        manifest_path=inputs.manifest_file,
+        full_rebuild=False,
         updated=True,
     )
 

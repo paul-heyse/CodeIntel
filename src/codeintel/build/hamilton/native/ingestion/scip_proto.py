@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,6 +13,7 @@ from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -24,6 +24,7 @@ from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
     codeintel_target,
 )
+from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
@@ -46,15 +47,7 @@ log = logging.getLogger(__name__)
 SCIP_PROTO_TARGET = "scip_proto"
 SCIP_PROTO_ARTIFACT = "scip_pb2"
 
-
-@dataclass(frozen=True)
-class ScipProtoRunResult:
-    """Result from generating scip_pb2.py via protoc."""
-
-    success: bool
-    skipped: bool = False
-    output_path: Path | None = None
-    error: str | None = None
+ScipProtoRunResult = ToolStepOutput
 
 
 def _proto_path(repo_root: Path) -> Path:
@@ -133,20 +126,26 @@ def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
         hash_options=hash_options,
     )
     if executor.should_skip():
-        return ScipProtoRunResult(success=True, skipped=True, output_path=output_path)
+        return ScipProtoRunResult(
+            result=ExecutionResult.skip("SCIP proto target skipped"),
+            outputs={SCIP_PROTO_ARTIFACT: output_path},
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     try:
         result = _run_codegen(env, proto_path, out_dir, output_path)
     except (ToolExecutionError, ToolNotFoundError, OSError, RuntimeError, ValueError) as exc:
         log.exception("SCIP protobuf codegen failed")
-        return ScipProtoRunResult(success=False, error=str(exc))
+        return ScipProtoRunResult(result=ExecutionResult.failed(str(exc)))
 
     if not result.ok:
         message = result.stderr.strip() or "SCIP protobuf codegen failed"
-        return ScipProtoRunResult(success=False, error=message)
+        return ScipProtoRunResult(result=ExecutionResult.failed(message))
 
-    return ScipProtoRunResult(success=True, output_path=output_path)
+    return ScipProtoRunResult(
+        result=ExecutionResult.ok(),
+        outputs={SCIP_PROTO_ARTIFACT: output_path},
+    )
 
 
 @SaveToObjectMetadataDecorator(
@@ -167,9 +166,9 @@ def scip__proto_artifact(t__scip_proto__run: ScipProtoRunResult) -> Path | None:
     Path | None
         Path to scip_pb2.py, or None when codegen failed.
     """
-    if not t__scip_proto__run.success:
+    if not t__scip_proto__run.result.success or t__scip_proto__run.result.skipped:
         return None
-    return t__scip_proto__run.output_path
+    return t__scip_proto__run.path_for(SCIP_PROTO_ARTIFACT)
 
 
 @tag_compute(domain="ingestion", target=SCIP_PROTO_TARGET)
@@ -185,9 +184,9 @@ def scip__proto_module_path(
         Path to scip_pb2.py, or None when codegen failed.
     """
     _ = env
-    if not t__scip_proto__run.success:
+    if not t__scip_proto__run.result.success:
         return None
-    return t__scip_proto__run.output_path
+    return t__scip_proto__run.path_for(SCIP_PROTO_ARTIFACT)
 
 
 @tag_compute(domain="ingestion", target=SCIP_PROTO_TARGET)
@@ -229,8 +228,10 @@ def t__scip_proto(
         Record describing the codegen materialization outcome.
     """
     executor = NativeTargetExecutor.for_target(env, graph, SCIP_PROTO_TARGET)
-    if not t__scip_proto__run.success:
-        return executor.fail(RuntimeError(t__scip_proto__run.error or "SCIP proto failed"))
+    if not t__scip_proto__run.result.success:
+        return executor.fail(
+            RuntimeError(t__scip_proto__run.result.error or "SCIP proto failed")
+        )
     return record_from_file_artifact_materializations(
         env=env,
         graph=graph,

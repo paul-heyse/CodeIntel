@@ -51,3 +51,18 @@ def test_scip_hash_options_changes_with_tool_version(tmp_path: Path) -> None:
     expect_true(hash_a.options_hash is not None)
     expect_true(hash_b.options_hash is not None)
     expect_true(hash_a.options_hash != hash_b.options_hash)
+
+
+def test_scip_hash_options_changes_with_ingest_options(tmp_path: Path) -> None:
+    """SCIP option changes should alter the scip target options hash."""
+    scan, env = _build_env(tmp_path, scip_stdout="scip-python 1.0.0")
+
+    options_a = ScipIngestOptions()
+    options_b = ScipIngestOptions(include_references=False)
+
+    hash_a = scip__hash_options(env, scan, options_a)
+    hash_b = scip__hash_options(env, scan, options_b)
+
+    expect_true(hash_a.options_hash is not None)
+    expect_true(hash_b.options_hash is not None)
+    expect_true(hash_a.options_hash != hash_b.options_hash)
