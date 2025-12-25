@@ -25,14 +25,19 @@ from codeintel.analytics.functions.metrics import (
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
+    MaterializationRecordContext,
     record_from_materializations,
 )
 from codeintel.build.hamilton.native.patterns.materialization_collectors import (
     make_table_materializations_collector,
 )
-from codeintel.build.hamilton.native.patterns.savers import save_rows
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
+)
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
@@ -43,6 +48,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
+
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
     InputHashOptions,
@@ -61,10 +67,22 @@ FUNCTION_METRICS_TABLE_KEYS = (
     FUNCTION_TYPES_TABLE_KEY,
     FUNCTION_VALIDATION_TABLE_KEY,
 )
+FUNCTION_METRICS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=FUNCTION_METRICS_TARGET_NAME,
+    hash_options_node="function_metrics__hash_options",
+)
+
 
 @tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def function_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for function_metrics execution."""
+    """Build hash inputs for function_metrics execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
     return InputHashOptions(
         options_hash=options_hash_for_target(env, FUNCTION_METRICS_TARGET_NAME),
         manifests=env.manifest_index,
@@ -77,7 +95,13 @@ def function_metrics__skip(
     graph: TargetGraph,
     function_metrics__hash_options: InputHashOptions,
 ) -> bool:
-    """Return True when function_metrics should be skipped."""
+    """Return True when function_metrics should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
     executor = NativeTargetExecutor.for_target(
         env,
         graph,
@@ -90,6 +114,7 @@ def function_metrics__skip(
 @tag_compute(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics__compute(
     env: BuildEnv,
+    *,
     function_metrics__skip: bool,
 ) -> FunctionAnalyticsResult | None:
     """Compute function metrics and type coverage for all functions.
@@ -133,10 +158,8 @@ def t__function_metrics__compute(
 
 
 @save_rows(
-    domain="analytics",
-    target=FUNCTION_METRICS_TARGET_NAME,
-    table_key=FUNCTION_METRICS_TABLE_KEY,
-    hash_options_node="function_metrics__hash_options",
+    context=FUNCTION_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_METRICS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -168,10 +191,8 @@ def function_metrics__metrics_rows(
 
 
 @save_rows(
-    domain="analytics",
-    target=FUNCTION_METRICS_TARGET_NAME,
-    table_key=FUNCTION_TYPES_TABLE_KEY,
-    hash_options_node="function_metrics__hash_options",
+    context=FUNCTION_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_TYPES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -203,10 +224,8 @@ def function_metrics__types_rows(
 
 
 @save_rows(
-    domain="analytics",
-    target=FUNCTION_METRICS_TARGET_NAME,
-    table_key=FUNCTION_VALIDATION_TABLE_KEY,
-    hash_options_node="function_metrics__hash_options",
+    context=FUNCTION_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_VALIDATION_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -237,7 +256,6 @@ def function_metrics__validation_rows(
     return tuple(validation_rows)
 
 
-@codeintel_target(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 function_metrics__table_materializations = make_table_materializations_collector(
     domain="analytics",
     target=FUNCTION_METRICS_TARGET_NAME,
@@ -272,9 +290,11 @@ def t__function_metrics(
         Record with status, datasets, and execution metadata.
     """
     return record_from_materializations(
-        env=env,
-        graph=graph,
-        target_name=FUNCTION_METRICS_TARGET_NAME,
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=FUNCTION_METRICS_TARGET_NAME,
+        ),
         artifact_materializations=None,
         table_materializations=function_metrics__table_materializations,
     )

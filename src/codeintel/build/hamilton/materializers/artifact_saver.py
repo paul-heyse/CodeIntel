@@ -83,6 +83,7 @@ class FileArtifactSaver(DataSaver):
     artifact_name: str
     path_template: str | None = None
     hash_options: InputHashOptions | None = None
+    output_role: Literal["contract", "internal"] | None = None
 
     _hamilton_runtime_types = (BuildEnv, TargetGraph)
 

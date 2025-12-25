@@ -24,6 +24,8 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.materializers.path_templates import validate_path_template
 from codeintel.core.hamilton import tags as ht
 
+_TAG_ONLY_KWARGS = {"output_role"}
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Collection, Sequence
 
@@ -133,7 +135,11 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
             }
             merged_kwargs = {**__resolved_kwargs, **input_args_with_fixed_dependencies}
             data_to_save = merged_kwargs[__data_node_name]
-            saver_kwargs = {k: v for k, v in merged_kwargs.items() if k != __data_node_name}
+            saver_kwargs = {
+                k: v
+                for k, v in merged_kwargs.items()
+                if k != __data_node_name and k not in _TAG_ONLY_KWARGS
+            }
             data_saver = __adapter_factory.create_saver(**saver_kwargs)
             metadata = data_saver.save_data(data_to_save)
             return dict(metadata)
@@ -240,7 +246,8 @@ def _resolve_saver_factory(
     saver_cls: type[AdapterCommon],
     kwargs: dict[str, ParametrizedDependency],
 ) -> tuple[AdapterFactory, dict[str, str], dict[str, object]]:
-    adapter_factory = AdapterFactory(saver_cls, **kwargs)
+    adapter_kwargs = {key: value for key, value in kwargs.items() if key not in _TAG_ONLY_KWARGS}
+    adapter_factory = AdapterFactory(saver_cls, **adapter_kwargs)
     dependencies, resolved_kwargs = resolve_kwargs(kwargs)
     resolved_kwargs_typed = cast("dict[str, object]", resolved_kwargs)
     return adapter_factory, dependencies, resolved_kwargs_typed

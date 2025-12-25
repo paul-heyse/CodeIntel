@@ -11,7 +11,7 @@ from codeintel.build.schemas.column_resolution import DeferredColumns
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.hamilton.tagging import TagValue
+    from codeintel.build.hamilton.tagging import TagKey, TagValue
 
 
 OutputRole = Literal["contract", "internal"]
@@ -44,7 +44,7 @@ class ToolTargetSpec:
     spec: TargetSpecDescriptor
     artifacts: tuple[ArtifactOutputSpec, ...] = ()
     tables: tuple[TableOutputSpec, ...] = ()
-    tool_tags: Mapping[str, TagValue] | None = None
+    tool_tags: Mapping[TagKey, TagValue] | None = None
 
 
 __all__ = [

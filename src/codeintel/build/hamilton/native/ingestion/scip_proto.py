@@ -229,9 +229,7 @@ def t__scip_proto(
     """
     executor = NativeTargetExecutor.for_target(env, graph, SCIP_PROTO_TARGET)
     if not t__scip_proto__run.result.success:
-        return executor.fail(
-            RuntimeError(t__scip_proto__run.result.error or "SCIP proto failed")
-        )
+        return executor.fail(RuntimeError(t__scip_proto__run.result.error or "SCIP proto failed"))
     return record_from_file_artifact_materializations(
         env=env,
         graph=graph,

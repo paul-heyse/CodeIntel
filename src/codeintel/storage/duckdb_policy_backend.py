@@ -1075,10 +1075,7 @@ class DuckDBPolicyBackend:
         for col in missing_columns:
             col_type = col.type
             nullable_sql = "" if col.nullable else " NOT NULL"
-            sql = (
-                f"ALTER TABLE {qualified_name} "
-                f'ADD COLUMN "{col.name}" {col_type}{nullable_sql}'
-            )
+            sql = f'ALTER TABLE {qualified_name} ADD COLUMN "{col.name}" {col_type}{nullable_sql}'
             self._run_sql(sql)
 
     def bulk_insert(

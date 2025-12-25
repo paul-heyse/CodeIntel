@@ -327,6 +327,7 @@ class ToolService:
         -------
         bool
             True when pytest was executed to produce the report, False when reused.
+            Returns False when the pytest JSON report is skipped due to missing capability.
 
         Raises
         ------
@@ -348,6 +349,10 @@ class ToolService:
 
         if plugin_result.status is ToolStatus.NOT_FOUND:
             raise ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin)
+
+        if plugin_result.status is ToolStatus.SKIPPED:
+            log.warning("pytest json report skipped; status=%s", plugin_result.status)
+            return False
 
         if plugin_result.status is not ToolStatus.OK:
             err = plugin_result.error

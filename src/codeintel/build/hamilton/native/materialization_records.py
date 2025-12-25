@@ -29,7 +29,7 @@ from codeintel.build.hamilton.run_records import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.targets import OutputTarget, TargetGraph
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,39 @@ class FileArtifactRecordContext:
     env: BuildEnv
     graph: TargetGraph
     target_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializationRecordContext:
+    """Context bundle for mixed materialization run record creation."""
+
+    env: BuildEnv
+    graph: TargetGraph
+    target_name: str
+    change_delta: Mapping[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _MaterializationInputs:
+    table_materializations: dict[str, MaterializationMetadata]
+    artifact_materializations: dict[str, MaterializationMetadata]
+
+
+@dataclass(frozen=True, slots=True)
+class _MaterializationSummary:
+    statuses: set[MaterializationStatus]
+    input_hash: str
+    duration_ms: float
+    row_counts: dict[str, int] | None
+    errors: list[str]
+    hash_mismatch: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RunRecordContext:
+    context: MaterializationRecordContext
+    target: OutputTarget
+    options_hash: str | None
 
 
 def record_from_duckdb_materialization(
@@ -542,195 +575,244 @@ def record_from_file_artifact_materializations(
 
 def record_from_materializations(
     *,
-    env: BuildEnv,
-    graph: TargetGraph,
-    target_name: str,
+    context: MaterializationRecordContext,
     artifact_materializations: Mapping[str, MaterializationMetadata] | None,
     table_materializations: Mapping[str, MaterializationMetadata] | None,
-    change_delta: Mapping[str, object] | None = None,
 ) -> TargetRunRecord:
-    """Build a TargetRunRecord from mixed artifact/table materializations."""
-    options_hash = options_hash_for_target(env, target_name)
-    target = graph.get(target_name)
-    if target is None:
-        msg = f"Target not found: {target_name}"
-        return TargetRunRecord(
-            target=target_name,
-            plugin_name=f"native:{target_name}",
-            status="failed",
-            input_hash="",
-            options_hash=options_hash,
-            duration_ms=0.0,
-            row_counts={},
-            error=msg,
-            datasets=(),
-            artifacts=(),
-        )
+    """Build a TargetRunRecord from mixed artifact/table materializations.
 
+    Parameters
+    ----------
+    context
+        Context containing the build environment and target metadata.
+    artifact_materializations
+        Saver metadata for artifact outputs.
+    table_materializations
+        Saver metadata for table outputs.
+
+    Returns
+    -------
+    TargetRunRecord
+        Run record synthesized from the provided materialization metadata.
+    """
+    options_hash = options_hash_for_target(context.env, context.target_name)
+    target = context.graph.get(context.target_name)
+    if target is None:
+        return _missing_target_record(target_name=context.target_name, options_hash=options_hash)
+
+    record_context = _RunRecordContext(
+        context=context,
+        target=target,
+        options_hash=options_hash,
+    )
     expected_table_keys = _expected_table_keys(
-        env,
+        context.env,
         target.name,
         tuple(target.contract.table_keys),
     )
     expected_artifact_names = _expected_artifact_names(
-        env,
+        context.env,
         target.name,
         tuple(target.contract.artifact_names),
     )
+    inputs = _normalize_materializations(
+        record=record_context,
+        expected_table_keys=expected_table_keys,
+        expected_artifact_names=expected_artifact_names,
+        artifact_materializations=artifact_materializations,
+        table_materializations=table_materializations,
+    )
+    if isinstance(inputs, TargetRunRecord):
+        return inputs
 
+    parsed_tables = _parse_expected_table_materializations(
+        expected_table_keys,
+        inputs.table_materializations,
+    )
+    parsed_artifacts = _parse_expected_artifact_materializations(
+        expected_artifact_names,
+        inputs.artifact_materializations,
+    )
+    summary = _summarize_materializations(parsed_tables, parsed_artifacts)
+    failure_record = _build_failure_record(record=record_context, summary=summary)
+    if failure_record is not None:
+        return failure_record
+
+    run = NativeRunInfo(
+        input_hash=summary.input_hash,
+        options_hash=options_hash,
+        duration_ms=summary.duration_ms,
+        row_counts=summary.row_counts,
+    )
+    record = create_run_record(
+        target,
+        "succeeded",
+        summary.input_hash,
+        inputs=RunRecordInputs(env=context.env, run=run),
+    )
+    record = _apply_file_artifact_results(record, parsed_artifacts)
+    save_manifest(context.env, record, change_delta=context.change_delta)
+    return record
+
+
+def _missing_target_record(*, target_name: str, options_hash: str | None) -> TargetRunRecord:
+    msg = f"Target not found: {target_name}"
+    return TargetRunRecord(
+        target=target_name,
+        plugin_name=f"native:{target_name}",
+        status="failed",
+        input_hash="",
+        options_hash=options_hash,
+        duration_ms=0.0,
+        row_counts={},
+        error=msg,
+        datasets=(),
+        artifacts=(),
+    )
+
+
+def _error_run_record(
+    *,
+    record: _RunRecordContext,
+    message: str,
+    input_hash: str = "",
+    duration_ms: float = 0.0,
+    row_counts: dict[str, int] | None = None,
+) -> TargetRunRecord:
+    run = NativeRunInfo(
+        input_hash=input_hash,
+        options_hash=record.options_hash,
+        duration_ms=duration_ms,
+        row_counts=row_counts,
+    )
+    return create_run_record(
+        record.target,
+        "failed",
+        input_hash,
+        inputs=RunRecordInputs(
+            env=record.context.env,
+            run=run,
+            error=RuntimeError(message),
+        ),
+    )
+
+
+def _normalize_materializations(
+    *,
+    record: _RunRecordContext,
+    expected_table_keys: tuple[str, ...],
+    expected_artifact_names: tuple[str, ...],
+    artifact_materializations: Mapping[str, MaterializationMetadata] | None,
+    table_materializations: Mapping[str, MaterializationMetadata] | None,
+) -> _MaterializationInputs | TargetRunRecord:
     if table_materializations is None:
         if expected_table_keys:
             msg = f"Missing materialization metadata for tables: {list(expected_table_keys)}"
-            run = NativeRunInfo(
-                input_hash="",
-                options_hash=options_hash,
-                duration_ms=0.0,
-                row_counts=None,
-            )
-            return create_run_record(
-                target,
-                "failed",
-                "",
-                inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
+            return _error_run_record(
+                record=record,
+                message=msg,
             )
         table_materializations = {}
 
     if artifact_materializations is None:
         if expected_artifact_names:
-            msg = (
-                "Missing materialization metadata for artifacts: "
-                f"{list(expected_artifact_names)}"
-            )
-            run = NativeRunInfo(
-                input_hash="",
-                options_hash=options_hash,
-                duration_ms=0.0,
-                row_counts=None,
-            )
-            return create_run_record(
-                target,
-                "failed",
-                "",
-                inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
+            msg = f"Missing materialization metadata for artifacts: {list(expected_artifact_names)}"
+            return _error_run_record(
+                record=record,
+                message=msg,
             )
         artifact_materializations = {}
 
     extra_table_keys = set(table_materializations) - set(expected_table_keys)
     if extra_table_keys:
         msg = f"Unexpected materialization metadata for tables: {sorted(extra_table_keys)}"
-        run = NativeRunInfo(
-            input_hash="",
-            options_hash=options_hash,
-            duration_ms=0.0,
-            row_counts=None,
-        )
-        return create_run_record(
-            target,
-            "failed",
-            "",
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
+        return _error_run_record(
+            record=record,
+            message=msg,
         )
 
     extra_artifacts = set(artifact_materializations) - set(expected_artifact_names)
     if extra_artifacts:
         msg = f"Unexpected materialization metadata for artifacts: {sorted(extra_artifacts)}"
-        run = NativeRunInfo(
-            input_hash="",
-            options_hash=options_hash,
-            duration_ms=0.0,
-            row_counts=None,
-        )
-        return create_run_record(
-            target,
-            "failed",
-            "",
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
+        return _error_run_record(
+            record=record,
+            message=msg,
         )
 
-    parsed_tables = _parse_expected_table_materializations(
-        expected_table_keys,
-        dict(table_materializations),
-    )
-    parsed_artifacts = _parse_expected_artifact_materializations(
-        expected_artifact_names,
-        dict(artifact_materializations),
+    return _MaterializationInputs(
+        table_materializations=dict(table_materializations),
+        artifact_materializations=dict(artifact_materializations),
     )
 
+
+def _resolve_input_hash(
+    table_input_hash: str,
+    artifact_input_hash: str,
+) -> tuple[str, str | None]:
+    input_hashes = {table_input_hash, artifact_input_hash}
+    input_hashes.discard("")
+    if len(input_hashes) > 1:
+        return "", f"Materialization input_hash mismatch: {sorted(input_hashes)}"
+    return next(iter(input_hashes), ""), None
+
+
+def _summarize_materializations(
+    parsed_tables: dict[str, DuckDBMaterializationMetadata],
+    parsed_artifacts: dict[str, FileArtifactMaterializationMetadata],
+) -> _MaterializationSummary:
     table_statuses, table_input_hash, table_duration, row_counts = _summarize_table_results(
         parsed_tables
     )
     artifact_statuses, artifact_input_hash, artifact_duration = _summarize_file_artifact_results(
         parsed_artifacts
     )
-
-    statuses = table_statuses | artifact_statuses
-    input_hashes = {table_input_hash, artifact_input_hash}
-    input_hashes.discard("")
-    if len(input_hashes) > 1:
-        msg = f"Materialization input_hash mismatch: {sorted(input_hashes)}"
-        run = NativeRunInfo(
-            input_hash="",
-            options_hash=options_hash,
-            duration_ms=table_duration + artifact_duration,
-            row_counts=None,
-        )
-        return create_run_record(
-            target,
-            "failed",
-            "",
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
-        )
-
-    input_hash = next(iter(input_hashes), "")
+    input_hash, mismatch = _resolve_input_hash(table_input_hash, artifact_input_hash)
     duration_ms = table_duration + artifact_duration
-
-    if "failed" in statuses:
-        errors = _materialization_errors(parsed_tables) + _materialization_errors(
-            parsed_artifacts
-        )
-        message = errors[0] if errors else "One or more writes failed"
-        run = NativeRunInfo(
-            input_hash=input_hash,
-            options_hash=options_hash,
-            duration_ms=duration_ms,
-            row_counts=None,
-        )
-        return create_run_record(
-            target,
-            "failed",
-            input_hash,
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(message)),
-        )
-
-    if statuses == {"skipped"} or not statuses:
-        run = NativeRunInfo(
-            input_hash=input_hash,
-            options_hash=options_hash,
-            duration_ms=duration_ms,
-            row_counts=None,
-        )
-        return create_run_record(
-            target,
-            "skipped",
-            input_hash,
-            inputs=RunRecordInputs(env=env, run=run),
-        )
-
-    run = NativeRunInfo(
+    statuses = cast("set[MaterializationStatus]", table_statuses | artifact_statuses)
+    errors = _materialization_errors(parsed_tables) + _materialization_errors(parsed_artifacts)
+    return _MaterializationSummary(
+        statuses=statuses,
         input_hash=input_hash,
-        options_hash=options_hash,
         duration_ms=duration_ms,
         row_counts=row_counts,
+        errors=errors,
+        hash_mismatch=mismatch,
     )
-    record = create_run_record(
-        target,
-        "succeeded",
-        input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
-    )
-    record = _apply_file_artifact_results(record, parsed_artifacts)
-    save_manifest(env, record, change_delta=change_delta)
-    return record
+
+
+def _build_failure_record(
+    *,
+    record: _RunRecordContext,
+    summary: _MaterializationSummary,
+) -> TargetRunRecord | None:
+    if summary.hash_mismatch is not None:
+        return _error_run_record(
+            record=record,
+            message=summary.hash_mismatch,
+            duration_ms=summary.duration_ms,
+        )
+    if "failed" in summary.statuses:
+        message = summary.errors[0] if summary.errors else "One or more writes failed"
+        return _error_run_record(
+            record=record,
+            message=message,
+            input_hash=summary.input_hash,
+            duration_ms=summary.duration_ms,
+        )
+    if summary.statuses == {"skipped"} or not summary.statuses:
+        run = NativeRunInfo(
+            input_hash=summary.input_hash,
+            options_hash=record.options_hash,
+            duration_ms=summary.duration_ms,
+            row_counts=None,
+        )
+        return create_run_record(
+            record.target,
+            "skipped",
+            summary.input_hash,
+            inputs=RunRecordInputs(env=record.context.env, run=run),
+        )
+    return None
 
 
 def _parse_expected_artifact_materializations(
@@ -865,11 +947,11 @@ def _summarize_table_results(
 def _materialization_errors(
     parsed: Mapping[str, DuckDBMaterializationMetadata | FileArtifactMaterializationMetadata],
 ) -> list[str]:
-    errors: list[str] = []
-    for result in parsed.values():
-        if result.status == "failed" and result.error:
-            errors.append(result.error)
-    return errors
+    return [
+        result.error
+        for result in parsed.values()
+        if result.status == "failed" and result.error is not None
+    ]
 
 
 def _apply_file_artifact_results(
@@ -914,6 +996,7 @@ def _apply_file_artifact_results(
 
 __all__ = [
     "FileArtifactRecordContext",
+    "MaterializationRecordContext",
     "MaterializationStatus",
     "record_from_duckdb_materialization",
     "record_from_duckdb_materializations",

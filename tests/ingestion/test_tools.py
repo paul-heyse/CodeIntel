@@ -67,6 +67,8 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.fakes.tools import (
+    FakeToolRunner,
+    FakeToolRunnerConfig,
     PresetRunner,
     ToolRunResultOptions,
     make_tool_run_result,
@@ -147,16 +149,14 @@ def _write_sleep_script(path: Path, *, sleep_s: float) -> None:
             "#!/usr/bin/env python3",
             "import time",
             f"time.sleep({sleep_s})",
-            "print(\"done\")",
+            'print("done")',
         ]
     )
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
 
 
-def test_tool_runner_emits_heartbeat_logs(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_tool_runner_emits_heartbeat_logs(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     """ToolRunner emits heartbeat logs for long-running tools."""
     script_path = tmp_path / "sleep_tool.py"
     _write_sleep_script(script_path, sleep_s=0.1)
@@ -767,6 +767,36 @@ def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
     expect_true(executed is False)
 
 
+def test_pytest_plugin_skips_without_json_report(tmp_path: Path) -> None:
+    """PytestPlugin should skip when json-report support is missing."""
+    runner = FakeToolRunner(
+        tmp_path,
+        config=FakeToolRunnerConfig(payloads={"pytest": "usage: pytest [options]"}),
+    )
+    plugin = PytestPlugin(runner=runner, tools_config=ToolsConfig.default())
+
+    result = asyncio.run(plugin.run(repo_root=tmp_path, json_report_path=tmp_path / "report.json"))
+
+    expect_equal(result.status, ToolStatus.SKIPPED)
+
+
+def test_tool_service_run_pytest_report_skips_when_missing_json_report(
+    tmp_path: Path,
+) -> None:
+    """ToolService.run_pytest_report should skip when json-report is unavailable."""
+    runner = FakeToolRunner(
+        tmp_path,
+        config=FakeToolRunnerConfig(payloads={"pytest": "usage: pytest [options]"}),
+    )
+    service = ToolService(runner, ToolsConfig.default())
+
+    executed = asyncio.run(
+        service.run_pytest_report(tmp_path, json_report_path=tmp_path / "report.json")
+    )
+
+    expect_true(executed is False)
+
+
 def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
     """ToolService.run_scip_full should raise when scip not found."""
     tools_cfg = ToolsConfig.default()
@@ -948,9 +978,7 @@ def test_parse_scip_range_three_elements(tmp_path: Path) -> None:
         documents=[
             {
                 "relative_path": "mod.py",
-                "occurrences": [
-                    {"symbol": "pkg#func", "range": [10, 5, 15], "symbol_roles": 1}
-                ],
+                "occurrences": [{"symbol": "pkg#func", "range": [10, 5, 15], "symbol_roles": 1}],
             }
         ],
     )
@@ -978,9 +1006,7 @@ def test_parse_scip_range_four_elements(tmp_path: Path) -> None:
         documents=[
             {
                 "relative_path": "mod.py",
-                "occurrences": [
-                    {"symbol": "pkg#func", "range": [10, 5, 12, 8], "symbol_roles": 0}
-                ],
+                "occurrences": [{"symbol": "pkg#func", "range": [10, 5, 12, 8], "symbol_roles": 0}],
             }
         ],
     )

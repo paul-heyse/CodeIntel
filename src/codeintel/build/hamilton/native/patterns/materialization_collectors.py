@@ -59,10 +59,14 @@ def make_artifact_materializations_collector(
     artifacts: Sequence[str],
     node_name: str | None = None,
 ) -> Callable[..., dict[str, MaterializationMetadata]]:
-    """Return a collector for artifact saver metadata."""
-    mapping = {
-        artifact: materialize_node(f"artifact.{artifact}") for artifact in artifacts
-    }
+    """Return a collector for artifact saver metadata.
+
+    Returns
+    -------
+    Callable[..., dict[str, MaterializationMetadata]]
+        Collector that gathers artifact materialization metadata.
+    """
+    mapping = {artifact: materialize_node(f"artifact.{artifact}") for artifact in artifacts}
     return _build_collector(
         domain=domain,
         target=target,
@@ -78,7 +82,13 @@ def make_table_materializations_collector(
     table_keys: Sequence[str],
     node_name: str | None = None,
 ) -> Callable[..., dict[str, MaterializationMetadata]]:
-    """Return a collector for table saver metadata."""
+    """Return a collector for table saver metadata.
+
+    Returns
+    -------
+    Callable[..., dict[str, MaterializationMetadata]]
+        Collector that gathers table materialization metadata.
+    """
     mapping = {table_key: materialize_node(table_key) for table_key in table_keys}
     return _build_collector(
         domain=domain,
@@ -96,10 +106,14 @@ def make_mixed_materializations_collector(
     table_keys: Sequence[str],
     node_name: str | None = None,
 ) -> Callable[..., dict[str, MaterializationMetadata]]:
-    """Return a collector for mixed artifact/table saver metadata."""
-    mapping = {
-        artifact: materialize_node(f"artifact.{artifact}") for artifact in artifacts
-    }
+    """Return a collector for mixed artifact/table saver metadata.
+
+    Returns
+    -------
+    Callable[..., dict[str, MaterializationMetadata]]
+        Collector that gathers artifact and table materialization metadata.
+    """
+    mapping = {artifact: materialize_node(f"artifact.{artifact}") for artifact in artifacts}
     mapping.update({table_key: materialize_node(table_key) for table_key in table_keys})
     return _build_collector(
         domain=domain,

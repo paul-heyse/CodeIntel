@@ -234,7 +234,9 @@ class ScipPlugin(ToolPlugin):
             options=ToolRunOptions(
                 cwd=repo_root,
                 output_path=output_scip,
-                timeout_s=timeout_s if timeout_s is not None else self.tools_config.default_timeout_s,
+                timeout_s=timeout_s
+                if timeout_s is not None
+                else self.tools_config.default_timeout_s,
             ),
         )
         if not result.ok:

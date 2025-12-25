@@ -45,7 +45,9 @@ def resolve_materialize_options(
         Resolved options with write policy and upsert configuration applied.
     """
     schema = get_schema_service().get_table_schema(table_key)
-    policy = schema.write_policy if schema and schema.write_policy is not None else TableWritePolicy()
+    policy = (
+        schema.write_policy if schema and schema.write_policy is not None else TableWritePolicy()
+    )
     resolved_columns = _resolve_columns(schema, column_names)
     upsert_config = _build_upsert_config(policy, schema, resolved_columns)
     return materialize_options(

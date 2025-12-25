@@ -48,9 +48,7 @@ def proto_source_path() -> Path:
     Path
         Filesystem path to scip.proto.
     """
-    return (
-        _repo_root() / "src" / "codeintel" / "ingestion" / "scip" / "proto" / "scip.proto"
-    )
+    return _repo_root() / "src" / "codeintel" / "ingestion" / "scip" / "proto" / "scip.proto"
 
 
 def _run_protoc(proto_path: Path, out_dir: Path) -> None:
@@ -83,8 +81,10 @@ def ensure_proto_module(tmp_path: Path | None = None) -> Path:
     FileNotFoundError
         If the generated module is missing on disk.
     """
-    out_dir = tmp_path / "scip_proto" if tmp_path is not None else Path(
-        tempfile.mkdtemp(prefix="scip_proto_")
+    out_dir = (
+        tmp_path / "scip_proto"
+        if tmp_path is not None
+        else Path(tempfile.mkdtemp(prefix="scip_proto_"))
     )
     cached = _PROTO_CACHE.get(out_dir)
     if cached is not None and cached.is_file():

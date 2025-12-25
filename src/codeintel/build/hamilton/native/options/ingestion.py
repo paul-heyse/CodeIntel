@@ -66,6 +66,10 @@ class ScipIngestOptions:
         Count threshold that triggers a full rebuild when exceeded.
     full_rebuild_threshold_ratio
         Ratio threshold (changed/total) that triggers a full rebuild.
+    full_rebuild_ratio_min_modules
+        Minimum total modules before ratio thresholds are applied.
+    full_rebuild_ratio_min_changed
+        Minimum changed modules before ratio thresholds are applied.
     """
 
     scope_paths: list[str] | None = None
@@ -78,6 +82,8 @@ class ScipIngestOptions:
     batch_max_bytes: int = 50_000_000
     full_rebuild_threshold_count: int = 1000
     full_rebuild_threshold_ratio: float = 0.3
+    full_rebuild_ratio_min_modules: int = 200
+    full_rebuild_ratio_min_changed: int = 25
 
     def should_include_references(self) -> bool:
         """Check if references should be included.
