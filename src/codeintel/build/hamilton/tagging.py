@@ -58,7 +58,13 @@ def apply_tags[TCallable](
     *,
     tags: Mapping[TagKey, TagValue],
 ) -> TCallable:
-    """Apply canonical tag metadata to a callable."""
+    """Apply canonical tag metadata to a callable.
+
+    Returns
+    -------
+    TCallable
+        Callable wrapped with tag metadata.
+    """
     if not tags:
         return fn
     tags_kwargs: dict[TagKey, TagValue] = dict(tags)
@@ -71,7 +77,13 @@ def tag_from_spec(
     *,
     target_: str | Collection[str] | None = None,
 ) -> Decorator[P, R]:
-    """Create a Hamilton tag decorator from a TagSpec."""
+    """Create a Hamilton tag decorator from a TagSpec.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying TagSpec metadata.
+    """
     validate_tag_spec(spec)
     tags = spec.to_tags()
     return _tag(cast("_HamiltonTagKwargs", tags), target_=target_)
@@ -95,7 +107,13 @@ def tag_compute(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a compute node with canonical build tags."""
+    """Tag a compute node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying compute node tags.
+    """
     spec = TagSpec.for_compute(domain=domain, target=target, extra_tags=extra_tags)
     return tag_from_spec(spec, target_=target_)
 
@@ -107,7 +125,13 @@ def tag_materialize(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a materialize node with canonical build tags."""
+    """Tag a materialize node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying materialize node tags.
+    """
     spec = TagSpec.for_materialize(domain=domain, target=target, extra_tags=extra_tags)
     return tag_from_spec(spec, target_=target_)
 
@@ -120,8 +144,16 @@ def tag_dataset(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a dataset-producing node with canonical build tags."""
-    spec = TagSpec.for_dataset(domain=domain, target=target, table_key=table_key, extra_tags=extra_tags)
+    """Tag a dataset-producing node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying dataset node tags.
+    """
+    spec = TagSpec.for_dataset(
+        domain=domain, target=target, table_key=table_key, extra_tags=extra_tags
+    )
     return tag_from_spec(spec, target_=target_)
 
 
@@ -133,7 +165,13 @@ def tag_artifact(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag an artifact-producing node with canonical build tags."""
+    """Tag an artifact-producing node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying artifact node tags.
+    """
     spec = TagSpec.for_artifact(
         domain=domain,
         target=target,
@@ -150,7 +188,13 @@ def tag_tool(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a tool/external-boundary node with canonical build tags."""
+    """Tag a tool/external-boundary node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying tool node tags.
+    """
     spec = TagSpec.for_tool(domain=domain, target=target, extra_tags=extra_tags)
     return tag_from_spec(spec, target_=target_)
 
@@ -163,7 +207,13 @@ def tag_loader_query(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a loader/query node with canonical build tags."""
+    """Tag a loader/query node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying loader query tags.
+    """
     spec = TagSpec.for_loader_query(
         domain=domain,
         target=target,
@@ -181,7 +231,13 @@ def tag_loader_dataframe(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a loader/dataframe node with canonical build tags."""
+    """Tag a loader/dataframe node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying loader dataframe tags.
+    """
     spec = TagSpec.for_loader_dataframe(
         domain=domain,
         target=target,
@@ -198,7 +254,13 @@ def tag_helper(
     target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a helper node with canonical build tags."""
+    """Tag a helper node with canonical build tags.
+
+    Returns
+    -------
+    Decorator[P, R]
+        Decorator applying helper node tags.
+    """
     spec = TagSpec.for_helper(domain=domain, target=target, extra_tags=extra_tags)
     return tag_from_spec(spec, target_=target_)
 

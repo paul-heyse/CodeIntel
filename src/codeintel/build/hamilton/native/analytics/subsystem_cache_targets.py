@@ -76,14 +76,43 @@ class SubsystemCachesComputeResult:
     error: str | None = None
 
 
-@tag_compute(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
-def t__subsystem_caches__compute(
-    env: BuildEnv,
-    graph: TargetGraph,
+@dataclass(frozen=True)
+class SubsystemCacheInputs:
+    """Bundled inputs for subsystem cache computation."""
+
+    gateway: StorageGateway
+    subsystems: TargetRunRecord
+    subsystem_graph_metrics: TargetRunRecord
+    test_profile: TargetRunRecord
+
+
+@tag_helper(domain="analytics")
+def subsystem_caches__inputs(
     gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
     t__subsystem_graph_metrics: TargetRunRecord,
     t__test_profile: TargetRunRecord,
+) -> SubsystemCacheInputs:
+    """Bundle subsystem cache inputs for reuse.
+
+    Returns
+    -------
+    SubsystemCacheInputs
+        Bundled inputs for subsystem cache computation.
+    """
+    return SubsystemCacheInputs(
+        gateway=gateway,
+        subsystems=t__subsystems,
+        subsystem_graph_metrics=t__subsystem_graph_metrics,
+        test_profile=t__test_profile,
+    )
+
+
+@tag_compute(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
+def t__subsystem_caches__compute(
+    env: BuildEnv,
+    graph: TargetGraph,
+    subsystem_caches__inputs: SubsystemCacheInputs,
 ) -> SubsystemCachesComputeResult | None:
     """Compute subsystem cache rows from base subsystem tables.
 
@@ -93,14 +122,8 @@ def t__subsystem_caches__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup and skip checks.
-    gateway
-        Storage gateway for analytics queries.
-    t__subsystems
-        Upstream subsystems target result.
-    t__subsystem_graph_metrics
-        Upstream subsystem graph metrics result.
-    t__test_profile
-        Upstream test profile result.
+    subsystem_caches__inputs
+        Bundled inputs including gateway and upstream target results.
 
     Returns
     -------
@@ -108,6 +131,7 @@ def t__subsystem_caches__compute(
         Computed cache rows or None when skipped.
     """
     target = graph.get(SUBSYSTEM_CACHES_TARGET_NAME)
+    gateway = subsystem_caches__inputs.gateway
     if target is not None:
         options_hash = options_hash_for_target(env, SUBSYSTEM_CACHES_TARGET_NAME)
         hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
@@ -121,28 +145,33 @@ def t__subsystem_caches__compute(
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    if t__subsystems.status != "succeeded":
+    if subsystem_caches__inputs.subsystems.status != "succeeded":
         return SubsystemCachesComputeResult(
             profile_rows=None,
             coverage_rows=None,
-            error=f"Upstream subsystems target failed: {t__subsystems.error}",
+            error=(
+                f"Upstream subsystems target failed: {subsystem_caches__inputs.subsystems.error}"
+            ),
         )
 
-    if t__subsystem_graph_metrics.status != "succeeded":
+    if subsystem_caches__inputs.subsystem_graph_metrics.status != "succeeded":
         return SubsystemCachesComputeResult(
             profile_rows=None,
             coverage_rows=None,
             error=(
                 "Upstream subsystem_graph_metrics target failed: "
-                f"{t__subsystem_graph_metrics.error}"
+                f"{subsystem_caches__inputs.subsystem_graph_metrics.error}"
             ),
         )
 
-    if t__test_profile.status != "succeeded":
+    if subsystem_caches__inputs.test_profile.status != "succeeded":
         return SubsystemCachesComputeResult(
             profile_rows=None,
             coverage_rows=None,
-            error=f"Upstream test_profile target failed: {t__test_profile.error}",
+            error=(
+                "Upstream test_profile target failed: "
+                f"{subsystem_caches__inputs.test_profile.error}"
+            ),
         )
 
     try:

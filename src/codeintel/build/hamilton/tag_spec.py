@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import TYPE_CHECKING, Literal, cast
 
 from codeintel.core.hamilton import tags as ht
@@ -42,7 +42,7 @@ _PRIMARY_TAG_KEYS: set[TagKey] = {
 }
 
 
-class NodeType(str, Enum):
+class NodeType(StrEnum):
     """Canonical node type values for Hamilton tags."""
 
     LOADER_QUERY = ht.NODE_TYPE_LOADER_QUERY
@@ -74,6 +74,13 @@ class TagSpec:
         target: str | None = None,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for compute nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a compute node.
+        """
         return cls(
             node_type=NodeType.COMPUTE,
             domain=domain,
@@ -89,6 +96,13 @@ class TagSpec:
         target: str | None = None,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for materialize nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a materialize node.
+        """
         return cls(
             node_type=NodeType.MATERIALIZE,
             domain=domain,
@@ -105,6 +119,13 @@ class TagSpec:
         table_key: str,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for dataset nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a dataset node.
+        """
         return cls(
             node_type=NodeType.DATASET,
             domain=domain,
@@ -122,6 +143,13 @@ class TagSpec:
         artifact_name: str,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for artifact nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for an artifact node.
+        """
         return cls(
             node_type=NodeType.ARTIFACT,
             domain=domain,
@@ -138,6 +166,13 @@ class TagSpec:
         target: str | None = None,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for tool nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a tool node.
+        """
         return cls(
             node_type=NodeType.TOOL,
             domain=domain,
@@ -153,6 +188,13 @@ class TagSpec:
         target: str | None = None,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for helper nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a helper node.
+        """
         return cls(
             node_type=NodeType.HELPER,
             domain=domain,
@@ -169,6 +211,13 @@ class TagSpec:
         table_key: str,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for loader query nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a loader query node.
+        """
         return cls(
             node_type=NodeType.LOADER_QUERY,
             domain=domain,
@@ -186,6 +235,13 @@ class TagSpec:
         table_key: str,
         extra_tags: Mapping[TagKey, TagValue] | None = None,
     ) -> TagSpec:
+        """Create a TagSpec for loader dataframe nodes.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification for a loader dataframe node.
+        """
         return cls(
             node_type=NodeType.LOADER_DATAFRAME,
             domain=domain,
@@ -195,22 +251,39 @@ class TagSpec:
         )
 
     def with_extra_tags(self, extra_tags: Mapping[TagKey, TagValue] | None) -> TagSpec:
-        """Return a new TagSpec with additional tags merged in."""
+        """Return a new TagSpec with additional tags merged in.
+
+        Returns
+        -------
+        TagSpec
+            Tag specification with merged extra tags.
+        """
         if not extra_tags:
             return self
-        merged = dict(self.extra_tags)
-        merged.update(extra_tags)
+        merged = dict(cast("Mapping[str, TagValue]", self.extra_tags))
+        merged.update(cast("Mapping[str, TagValue]", extra_tags))
         return TagSpec(
             node_type=self.node_type,
             domain=self.domain,
             target=self.target,
             table_key=self.table_key,
             artifact_name=self.artifact_name,
-            extra_tags=merged,
+            extra_tags=cast("dict[TagKey, TagValue]", merged),
         )
 
     def to_tags(self) -> dict[TagKey, TagValue]:
-        """Render TagSpec into a Hamilton tag mapping."""
+        """Render TagSpec into a Hamilton tag mapping.
+
+        Returns
+        -------
+        dict[TagKey, TagValue]
+            Tag mapping for Hamilton nodes.
+
+        Raises
+        ------
+        ValueError
+            If extra tags attempt to override primary tags.
+        """
         validate_tag_spec(self)
         tags: dict[TagKey, TagValue] = {
             cast("TagKey", ht.TAG_NODE_TYPE): self.node_type.value,
@@ -233,7 +306,13 @@ class TagSpec:
 
 
 def validate_tag_spec(tag_spec: TagSpec) -> None:
-    """Validate TagSpec for required fields and tag consistency."""
+    """Validate TagSpec for required fields and tag consistency.
+
+    Raises
+    ------
+    ValueError
+        If required fields are missing for the node type.
+    """
     if not tag_spec.domain:
         msg = "TagSpec.domain is required"
         raise ValueError(msg)
@@ -247,7 +326,13 @@ def validate_tag_spec(tag_spec: TagSpec) -> None:
 
 
 def tag_spec_from_tags(tags: Mapping[str, TagValue]) -> TagSpec | None:
-    """Build a TagSpec from a raw tag mapping."""
+    """Build a TagSpec from a raw tag mapping.
+
+    Returns
+    -------
+    TagSpec | None
+        Parsed TagSpec, or None when tags are invalid.
+    """
     node_type_value = tags.get(ht.TAG_NODE_TYPE)
     if not isinstance(node_type_value, str):
         return None
@@ -295,7 +380,8 @@ def _required_fields(node_type: NodeType) -> tuple[str, ...]:
 def _copy_extra_tags(extra_tags: Mapping[TagKey, TagValue] | None) -> dict[TagKey, TagValue]:
     if not extra_tags:
         return {}
-    return dict(extra_tags)
+    copied = dict(cast("Mapping[str, TagValue]", extra_tags))
+    return cast("dict[TagKey, TagValue]", copied)
 
 
 def _tag_key_set() -> set[str]:

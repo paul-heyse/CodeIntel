@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -29,14 +30,14 @@ def _node_has_type_tag(tags: object) -> bool:
     return TAG_NODE_TYPE in tags
 
 
-def _collect_nodes_missing_tags(nodes: dict[str, object]) -> tuple[str, ...]:
+def _collect_nodes_missing_tags(nodes: Mapping[str, object]) -> tuple[str, ...]:
     missing = [
         name for name, node in nodes.items() if not _node_has_type_tag(getattr(node, "tags", None))
     ]
     return tuple(sorted(missing))
 
 
-def _collect_invalid_identifiers(nodes: dict[str, object]) -> tuple[str, ...]:
+def _collect_invalid_identifiers(nodes: Mapping[str, object]) -> tuple[str, ...]:
     invalid = [name for name in nodes if not name.isidentifier()]
     return tuple(sorted(invalid))
 
@@ -54,7 +55,10 @@ def _collect_targets_missing_schemas() -> tuple[str, ...]:
 def _write_json(output_path: Path, diagnostics: DagDiagnostics) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = asdict(diagnostics)
-    output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    output_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> None:

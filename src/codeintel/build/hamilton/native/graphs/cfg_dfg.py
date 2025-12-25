@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import ibis.expr.types as ir
 from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.env import BuildEnv
@@ -38,14 +39,12 @@ from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
-    from codeintel.storage.gateway import StorageGateway
-
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
@@ -220,7 +219,7 @@ class DFGExtractResult:
     error: str | None = None
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
     """Convert cfg extract result to the executor boundary type.
 
@@ -232,7 +231,7 @@ def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
     return to_execution_result(t__cfg__extract, default_error="CFG extraction failed")
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
     """Convert dfg extract result to the executor boundary type.
 
@@ -244,9 +243,9 @@ def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
     return to_execution_result(t__dfg__extract, default_error="DFG extraction failed")
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _load_functions(
-    gateway: StorageGateway,
+    q__core__goids: ir.Table,
     repo: str,
     commit: str,
 ) -> list[FunctionInfo]:
@@ -254,8 +253,8 @@ def _load_functions(
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
+    q__core__goids
+        Ibis table expression for core.goids.
     repo
         Repository identifier.
     commit
@@ -267,18 +266,17 @@ def _load_functions(
         Function information for CFG construction.
     """
     try:
-        goids_tbl = ibis_facade.table(gateway, "core.goids")
         expr = filter_by(
-            goids_tbl,
-            goids_tbl.repo == repo,
-            goids_tbl.commit == commit,
-            isin_values(goids_tbl.kind, ["function", "method"]),
+            q__core__goids,
+            q__core__goids.repo == repo,
+            q__core__goids.commit == commit,
+            isin_values(q__core__goids.kind, ["function", "method"]),
         ).select(
-            goids_tbl.goid_h128,
-            goids_tbl.qualname,
-            goids_tbl.rel_path,
-            goids_tbl.start_line,
-            goids_tbl.end_line,
+            q__core__goids.goid_h128,
+            q__core__goids.qualname,
+            q__core__goids.rel_path,
+            q__core__goids.start_line,
+            q__core__goids.end_line,
         )
         rows = expr.execute()
 
@@ -296,7 +294,7 @@ def _load_functions(
         return []
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _parse_file_functions(
     file_path: Path,
 ) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
@@ -343,7 +341,7 @@ def _parse_file_functions(
     return functions
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _build_cfg_dfg_for_function(
     goid: int,
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -376,7 +374,7 @@ def _build_cfg_dfg_for_function(
     return cfg_result, list(block_rows), list(edge_rows)
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _process_all_files(
     functions: list[FunctionInfo],
     source_root: Path,
@@ -478,6 +476,7 @@ def _materialize_cfg_outputs(
 def t__cfg__extract(
     env: BuildEnv,
     gateway: StorageGateway,
+    q__core__goids: ir.Table,
     t__goids: TargetRunRecord,
 ) -> CFGExtractResult:
     """Execute CFG extraction for all functions.
@@ -491,6 +490,8 @@ def t__cfg__extract(
         Build environment with gateway and snapshot.
     gateway
         Storage gateway for graph data access.
+    q__core__goids
+        Ibis table expression for core.goids.
     t__goids
         Upstream GOIDs target result (for dependency).
 
@@ -516,7 +517,7 @@ def t__cfg__extract(
         opts = load_target_options(env, target_name=CFG_TARGET_NAME, options_type=CfgDfgOptions)
 
         functions = _filter_functions_for_scope(
-            _load_functions(gateway, snapshot.repo, snapshot.commit),
+            _load_functions(q__core__goids, snapshot.repo, snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 

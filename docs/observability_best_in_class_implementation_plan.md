@@ -61,6 +61,187 @@ Notes:
 - Build a single parser with strict validation (warn + ignore invalid values).
 - Ensure config file mode overrides env vars except env‑substitution inside the file.
 
+#### Current defaults from runtime settings (CodeIntel today)
+
+These defaults are derived from `src/codeintel/core/runtime/loader.py` and
+`src/codeintel/core/config/settings.py` as of now.
+
+| Env var | Settings field | Default | Notes |
+| --- | --- | --- | --- |
+| `OTEL_SDK_DISABLED` | `observability.enabled` | `false` | Enabled when unset. |
+| `OTEL_SERVICE_NAME` | `observability.service_name` | `None` | Unset means SDK default. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `observability.otlp_endpoint` | `None` | Unset means SDK default. |
+| `CODEINTEL_EXPORT_TRACES` | `observability.export_traces` | `true` | Trace exporter on. |
+| `CODEINTEL_EXPORT_METRICS` | `observability.export_metrics` | `true` | Metrics exporter on. |
+| `CODEINTEL_CONSOLE_TELEMETRY` | `observability.console_export` | `false` | Console exporter off. |
+| `CODEINTEL_PROMETHEUS_METRICS` | `observability.prometheus_enabled` | `false` | Prometheus reader off. |
+| `CODEINTEL_OBSERVABILITY_TEARDOWN_ENABLED` | `observability.teardown_enabled` | `true` | Teardown telemetry on. |
+| `CODEINTEL_OBSERVABILITY_TEARDOWN_TASK_SAMPLE_LIMIT` | `observability.teardown_task_sample_limit` | `5` | Pending task sample size. |
+| `CODEINTEL_OBSERVABILITY_TEARDOWN_THREAD_SAMPLE_LIMIT` | `observability.teardown_thread_sample_limit` | `5` | Thread sample size. |
+| `CODEINTEL_OBSERVABILITY_TEARDOWN_SUBPROCESS_SAMPLE_LIMIT` | `observability.teardown_subprocess_sample_limit` | `5` | Subprocess sample size. |
+| `CODEINTEL_OBSERVABILITY_CLI_ENABLED` | `observability.cli_enabled` | `true` | CLI telemetry on. |
+| `CODEINTEL_OBSERVABILITY_CLI_ARGS_ALLOWLIST` | `observability.cli_args_allowlist` | empty | No allowlisted args. |
+| `CODEINTEL_OBSERVABILITY_CLI_ARGS_CAPTURE_MODE` | `observability.cli_args_capture_mode` | `names-only` | Names-only capture. |
+| `CODEINTEL_OTEL_DUCKDB_TRACING` | `observability.duckdb_tracing_enabled` | `true` | DuckDB spans on. |
+| `CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT` | `observability.duckdb_require_parent_span` | `true` | Require parent span. |
+| `CODEINTEL_OTEL_DB_STATEMENT_MODE` | `observability.duckdb_statement_mode` | `hash` | Allowed: full/hash/operation/none. |
+| `CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN` | `observability.duckdb_statement_hash_len` | `16` | Hash length. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_LEN` | `observability.duckdb_query_summary_max_len` | `255` | Summary length cap. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS` | `observability.duckdb_query_summary_max_targets` | `6` | Target cap. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_EMIT_ELLIPSIS` | `observability.duckdb_query_summary_emit_ellipsis` | `true` | Ellipsis on truncation. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_SUSPICIOUS` | `observability.duckdb_query_summary_hash_suspicious_targets` | `true` | Hash suspicious targets. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_LEN` | `observability.duckdb_query_summary_hash_len` | `12` | Summary hash length. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_MIN_LEN` | `observability.duckdb_query_summary_hash_min_len` | `64` | Minimum length to hash. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_SUBQUERY_OPS` | `observability.duckdb_query_summary_include_subquery_operations` | `true` | Include subquery ops. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_MULTI_STATEMENT` | `observability.duckdb_query_summary_include_multi_statement` | `true` | Include multi-statement. |
+| `CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK` | `observability.db_query_summary_span_name_hook` | `false` | Span name hook off. |
+| `CODEINTEL_OTEL_DB_QUERY_TEXT_POLICY` | `observability.duckdb_query_text_policy` | `never` | Allowed: never/parameterized/redacted/parameterized_or_redacted/full. |
+| `CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN` | `observability.duckdb_query_text_max_len` | `4096` | Query text cap. |
+| `CODEINTEL_OTEL_DB_QUERY_TEXT_STRIP_COMMENTS` | `observability.duckdb_query_text_strip_comments` | `true` | Comment stripping on. |
+| `CODEINTEL_OTEL_DB_QUERY_TEXT_COLLAPSE_IN_LISTS` | `observability.duckdb_query_text_collapse_in_lists` | `true` | In-list collapse on. |
+| `CODEINTEL_OTEL_DB_QUERY_PARAMETER_ENABLED` | `observability.duckdb_query_parameter_enabled` | `false` | Parameter capture off. |
+| `CODEINTEL_OTEL_DB_QUERY_PARAMETER_KEYS` | `observability.duckdb_query_parameter_keys` | empty | No keys captured. |
+| `CODEINTEL_OTEL_DB_QUERY_PARAMETER_HASH_KEYS` | `observability.duckdb_query_parameter_hash_keys` | empty | No hash keys. |
+| `CODEINTEL_OTEL_DB_QUERY_PARAMETER_REQUIRE_IN_SQL` | `observability.duckdb_query_parameter_require_in_sql` | `true` | Require param in SQL. |
+| `CODEINTEL_OTEL_DB_QUERY_PARAMETER_MAX_STRLEN` | `observability.duckdb_query_parameter_max_str_len` | `80` | Param string cap. |
+
+#### SDK default reference (OpenTelemetry Python)
+
+These defaults come from the OpenTelemetry Python SDK. They apply when CodeIntel does not
+explicitly override a setting via code or env.
+
+| SDK surface | Env vars | Default | Notes |
+| --- | --- | --- | --- |
+| Traces sampler | `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio` | Head sampler baseline. |
+| Traces sampler arg | `OTEL_TRACES_SAMPLER_ARG` | `1.0` | Sample all by default. |
+| BatchSpanProcessor schedule delay | `OTEL_BSP_SCHEDULE_DELAY` | `5000` ms | Span export interval. |
+| BatchSpanProcessor max queue | `OTEL_BSP_MAX_QUEUE_SIZE` | `2048` | Span buffer capacity. |
+| BatchSpanProcessor max batch | `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` | `512` | Export batch size. |
+| BatchSpanProcessor export timeout | `OTEL_BSP_EXPORT_TIMEOUT` | `30000` ms | Export timeout. |
+| Periodic metric export interval | `OTEL_METRIC_EXPORT_INTERVAL` | `60000` ms | Default metric interval. |
+| Periodic metric export timeout | `OTEL_METRIC_EXPORT_TIMEOUT` | `30000` ms | Metric export timeout. |
+| LogRecord processor schedule delay | `OTEL_BLRP_SCHEDULE_DELAY` | `5000` ms | Log export interval. |
+| LogRecord processor max queue | `OTEL_BLRP_MAX_QUEUE_SIZE` | `2048` | Log buffer capacity. |
+| LogRecord processor max batch | `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE` | `512` | Log export batch. |
+| LogRecord processor export timeout | `OTEL_BLRP_EXPORT_TIMEOUT` | `30000` ms | Log export timeout. |
+| Attribute value length limit | `OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT` | SDK default | Enforced via SpanLimits. |
+| Attribute count limit | `OTEL_ATTRIBUTE_COUNT_LIMIT` | SDK default | Per-span/log attributes. |
+| Span event count limit | `OTEL_SPAN_EVENT_COUNT_LIMIT` | SDK default | Per-span events. |
+| Span link count limit | `OTEL_SPAN_LINK_COUNT_LIMIT` | SDK default | Per-span links. |
+| Event attribute count limit | `OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT` | SDK default | Per-event attrs. |
+| Link attribute count limit | `OTEL_LINK_ATTRIBUTE_COUNT_LIMIT` | SDK default | Per-link attrs. |
+| LogRecord attribute count limit | `OTEL_LOGRECORD_ATTRIBUTE_COUNT_LIMIT` | SDK default | Per-log attrs. |
+| LogRecord value length limit | `OTEL_LOGRECORD_ATTRIBUTE_VALUE_LENGTH_LIMIT` | SDK default | Per-log values. |
+
+Notes:
+- The Python SDK resolves these via `SpanLimits` and processor defaults. Use this table to
+  confirm behavior when env vars are not set.
+- When `OTEL_EXPERIMENTAL_CONFIG_FILE` is used, SDK defaults come from the config file instead.
+
+### K) Collector Config Blueprint
+
+Add an explicit collector pipeline blueprint that matches CodeIntel’s defaults:
+
+1) **Receivers**
+   - `otlp` receiver with gRPC (4317) and HTTP (4318).
+
+2) **Processors**
+   - `batch` with explicit queue sizes/timeouts aligned to SDK defaults.
+   - `memory_limiter` to avoid process OOM during bursts.
+   - `attributes` for redaction / allowlist of `codeintel.*` keys.
+   - `resource` to inject `deployment.environment.name` if missing.
+   - `tail_sampling` (optional in prod) with:
+     - error‑based sampling
+     - latency‑based sampling
+     - route‑based sampling for high‑value operations
+
+3) **Exporters**
+   - OTLP exporters to vendor backends.
+   - `logging` exporter (dev only).
+
+4) **Connectors**
+   - `spanmetrics` connector (optional) to generate RED metrics from traces.
+
+Provide a reference collector YAML file in `docs/observability/collector_reference.yaml`.
+
+### L) Attribute Taxonomy + Schemas
+
+Define and document the exact attribute schema for each surface:
+
+- **CLI**
+  - Required: `cli.invocation_id`, `cli.command`, `cli.exit_code`, `cli.duration_ms`.
+  - Optional: `cli.error_type`, `cli.is_parse_error`, `cli.arg_count`, `cli.arg_names`.
+
+- **Build**
+  - Required: `build.run_id`, `build.repo`, `build.commit`, `build.targets`.
+  - Optional: `build.duration_ms`, `build.status`, `build.error`.
+
+- **Storage / DB**
+  - Required: `db.system`, `db.operation`, `db.query.summary`.
+  - Optional: `db.query.hash`, `db.statement` (redacted or hashed).
+
+- **Hamilton**
+  - Required: `dag.name`, `dag.version`, `dag.project_id`, `run.id`.
+  - Optional: `trace.id`, `run.tags`.
+
+- **gRPC**
+  - Required: `grpc.method`, `grpc.status`.
+  - Optional: `grpc.target` (filtered), `grpc.lb.*`.
+
+Also define max cardinality rules (e.g., allowlist for CLI args and method names).
+
+### M) Sampling + Cost Model
+
+Create an explicit sampler policy matrix:
+
+| Environment | Traces sampler | Rate | Logs gating | Notes |
+| --- | --- | --- | --- | --- |
+| Dev | `parentbased_traceidratio` | `1.0` | off | Full fidelity. |
+| Staging | `parentbased_traceidratio` | `0.2` | on | Validate costs. |
+| Prod | `parentbased_traceidratio` | `0.05` | on | Tail sampling in collector. |
+
+Include guidance for:
+- “always keep errors”
+- “keep slow operations”
+- “raise sampling for targeted troubleshooting windows”
+
+### N) Metric View Specifications
+
+Define explicit metric view settings for:
+
+- `codeintel.operation.duration_ms` histogram buckets.
+- HTTP latency histograms (aligned with HTTP semconv buckets).
+- gRPC call duration histograms (aligned with gRPC semconv).
+
+Provide a reference table with buckets and rationale.
+
+### O) Operational Runbooks
+
+Add a runbook section:
+
+1) **Telemetry missing**
+   - Check `OTEL_*` env vars.
+   - Confirm collector endpoint reachability.
+   - Confirm exporter errors in logs.
+
+2) **High drop rate**
+   - Increase BSP/BLRP queue size or reduce sampling.
+   - Enable tail‑sampling at collector.
+
+3) **Unexpected cardinality**
+   - Review attribute allowlists.
+   - Verify argument redaction.
+
+### P) Version Pin + Compatibility Matrix
+
+Document supported versions and constraints:
+
+- OTel SDK version pin.
+- `grpcio-observability` Linux‑only note and tested version.
+- Hamilton UI tracker version compatibility.
+
+Include a “known gaps” list for grpc.aio metrics and logs pipeline maturity.
+
 ### B) Ownership + Lifecycle Graph
 
 Define clear module ownership and init/shutdown ordering:

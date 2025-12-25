@@ -45,6 +45,12 @@ JOBS_OUTPUT_PATH: CommandPath = ("jobs", "output")
 JOBS_CANCEL_PATH: CommandPath = ("jobs", "cancel")
 JOBS_CLEANUP_PATH: CommandPath = ("jobs", "cleanup")
 
+_JOBS_LIST_FLAGS_FIELD = shared_flags_field(JOBS_LIST_PATH)
+_JOBS_STATUS_FLAGS_FIELD = shared_flags_field(JOBS_STATUS_PATH)
+_JOBS_OUTPUT_FLAGS_FIELD = shared_flags_field(JOBS_OUTPUT_PATH)
+_JOBS_CANCEL_FLAGS_FIELD = shared_flags_field(JOBS_CANCEL_PATH)
+_JOBS_CLEANUP_FLAGS_FIELD = shared_flags_field(JOBS_CLEANUP_PATH)
+
 
 @result_type
 @dataclass(frozen=True)
@@ -115,7 +121,7 @@ class ListJobs(Command[ListResult[JobInfo]]):
         option_param(JOBS_STATUS_FILTER, command_path=JOBS_LIST_PATH),
     ] = None
     limit: Annotated[int, option_param(JOBS_LIMIT, command_path=JOBS_LIST_PATH)] = 20
-    flags: SharedFlags = shared_flags_field(JOBS_LIST_PATH)
+    flags: SharedFlags = _JOBS_LIST_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[ListResult[JobInfo]]:
         """Execute job listing.
@@ -164,7 +170,7 @@ class GetJobStatus(Command[JobInfo]):
     __operation_id__ = "jobs.status"
 
     job_id: Annotated[str, option_param(JOBS_JOB_ID, command_path=JOBS_STATUS_PATH)]
-    flags: SharedFlags = shared_flags_field(JOBS_STATUS_PATH)
+    flags: SharedFlags = _JOBS_STATUS_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[JobInfo]:
         """Execute job status query.
@@ -212,7 +218,7 @@ class GetJobOutput(Command[JobOutputResult]):
     __operation_id__ = "jobs.output"
 
     job_id: Annotated[str, option_param(JOBS_JOB_ID, command_path=JOBS_OUTPUT_PATH)]
-    flags: SharedFlags = shared_flags_field(JOBS_OUTPUT_PATH)
+    flags: SharedFlags = _JOBS_OUTPUT_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[JobOutputResult]:
         """Execute job output retrieval.
@@ -261,7 +267,7 @@ class CancelJob(Command[ActionResult]):
     __operation_id__ = "jobs.cancel"
 
     job_id: Annotated[str, option_param(JOBS_JOB_ID, command_path=JOBS_CANCEL_PATH)]
-    flags: SharedFlags = shared_flags_field(JOBS_CANCEL_PATH)
+    flags: SharedFlags = _JOBS_CANCEL_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[ActionResult]:
         """Execute job cancellation.
@@ -309,7 +315,7 @@ class CleanupJobs(Command[ActionResult]):
         int,
         option_param(JOBS_MAX_AGE_DAYS, command_path=JOBS_CLEANUP_PATH),
     ] = 7
-    flags: SharedFlags = shared_flags_field(JOBS_CLEANUP_PATH)
+    flags: SharedFlags = _JOBS_CLEANUP_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[ActionResult]:
         """Execute job cleanup.

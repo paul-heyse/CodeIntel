@@ -29,6 +29,8 @@ health_app = App(name="health", help="Check CLI environment health")
 
 HEALTH_CHECK_PATH: CommandPath = ("health",)
 
+_HEALTH_CHECK_FLAGS_FIELD = shared_flags_field(HEALTH_CHECK_PATH)
+
 
 @cli_command("health.check", require_storage=False)
 @health_app.default
@@ -43,7 +45,7 @@ class HealthCheck(Command[HealthCheckResult]):
 
     __operation_id__ = "health.check"
 
-    flags: SharedFlags = shared_flags_field(HEALTH_CHECK_PATH)
+    flags: SharedFlags = _HEALTH_CHECK_FLAGS_FIELD
 
     def execute(self, ctx: CommandContext) -> CliResult[HealthCheckResult]:
         """Execute health checks.

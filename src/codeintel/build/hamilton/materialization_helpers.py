@@ -22,7 +22,7 @@ _HAMILTON_TYPE_HINTS = (
 )
 
 
-@tag_materialize()
+@tag_materialize(domain="core")
 def executor_materialize(
     env: BuildEnv,
     graph: TargetGraph,

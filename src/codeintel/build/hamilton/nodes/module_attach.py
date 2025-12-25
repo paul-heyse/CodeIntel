@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from types import ModuleType
-from typing import Protocol, cast
+from typing import Protocol, cast, get_args
 
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue, tag_spec_from_tags
 from codeintel.build.hamilton.tagging import apply_tags, validate_tag_spec
@@ -18,6 +18,9 @@ class _NamedCallable(Protocol):
     __dict__: dict[str, object]
 
 
+_TAG_KEY_SET = set(cast("tuple[str, ...]", get_args(TagKey)))
+
+
 def attach_node(module: ModuleType, *, node_name: str, fn: Callable[..., object]) -> None:
     """Attach a callable to a module under a stable node name."""
     named = cast("_NamedCallable", fn)
@@ -26,8 +29,8 @@ def attach_node(module: ModuleType, *, node_name: str, fn: Callable[..., object]
     setattr(module, node_name, fn)
 
 
-def _extract_tag_metadata(fn: object) -> dict[str, TagValue]:
-    tags: dict[str, TagValue] = {}
+def _extract_tag_metadata(fn: object) -> dict[TagKey, TagValue]:
+    tags: dict[TagKey, TagValue] = {}
     meta = getattr(fn, "__dict__", None)
     if not isinstance(meta, dict):
         return tags
@@ -39,12 +42,12 @@ def _extract_tag_metadata(fn: object) -> dict[str, TagValue]:
         if not isinstance(decorated_tags, dict):
             continue
         for key, value in decorated_tags.items():
-            if not isinstance(key, str) or key in tags:
+            if not isinstance(key, str) or key not in _TAG_KEY_SET or key in tags:
                 continue
             if isinstance(value, str) or (
                 isinstance(value, list) and value and all(isinstance(item, str) for item in value)
             ):
-                tags[key] = value
+                tags[cast("TagKey", key)] = value
     return tags
 
 
@@ -79,13 +82,15 @@ def tagged_attach_node(
             msg = f"Conflicting tag {key} for {node_name}"
             raise ValueError(msg)
 
-    tags_to_add = {key: value for key, value in desired_tags.items() if key not in existing_tags}
+    tags_to_add: dict[TagKey, TagValue] = {
+        key: value for key, value in desired_tags.items() if key not in existing_tags
+    }
     tagged_fn = fn
     if tags_to_add:
         tagged_fn = apply_tags(fn, tags=tags_to_add)
 
     if existing_tags:
-        existing_spec = tag_spec_from_tags(existing_tags)
+        existing_spec = tag_spec_from_tags(cast("Mapping[str, TagValue]", existing_tags))
         if existing_spec is not None and existing_spec.node_type != resolved_spec.node_type:
             msg = f"Existing node_type tag mismatch for {node_name}"
             raise ValueError(msg)

@@ -321,7 +321,7 @@ def _build_contract_graph() -> TargetGraph:
         Graph containing all registered build targets.
     """
     native_mods = load_native_modules()
-    dr = h_driver.Builder().with_modules(*native_mods).build()
+    dr = h_driver.Builder().with_modules(*native_mods).allow_module_overrides().build()
     targets = compile_output_targets_from_driver(dr, strict=True)
 
     base_graph = TargetGraph()

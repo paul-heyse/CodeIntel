@@ -55,6 +55,8 @@ _DOCS_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 DOCS_EXPORT_PATH: CommandPath = ("docs", "export")
 
+_DOCS_EXPORT_FLAGS_FIELD = shared_flags_field(DOCS_EXPORT_PATH)
+
 
 @cli_command("docs.export", handler=docs_export_handler, config=_DOCS_CONFIG)
 @docs_app.command(name="export")
@@ -129,7 +131,7 @@ class DocsExportCommand:
         option_param(DOCS_PREREQ_MODE, command_path=DOCS_EXPORT_PATH),
     ] = "run"
 
-    flags: SharedFlags = shared_flags_field(DOCS_EXPORT_PATH)
+    flags: SharedFlags = _DOCS_EXPORT_FLAGS_FIELD
 
 
 __all__ = ["docs_app"]

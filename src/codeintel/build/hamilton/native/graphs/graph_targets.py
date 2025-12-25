@@ -96,7 +96,7 @@ from codeintel.graphs.runtime import (
     GraphMetricsOptions,
     build_graph_runtime,
 )
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
@@ -106,8 +106,6 @@ if TYPE_CHECKING:
         AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
     )
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
-    from codeintel.storage.gateway import StorageGateway
-
 log = logging.getLogger(__name__)
 LOG = log
 
@@ -335,7 +333,7 @@ class SymbolUsesExtractResult:
     error: str | None = None
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def goids__execution_result(t__goids__extract: GoidExtractResult) -> ExecutionResult:
     """Convert goids extract result to the executor boundary type.
 
@@ -347,7 +345,7 @@ def goids__execution_result(t__goids__extract: GoidExtractResult) -> ExecutionRe
     return to_execution_result(t__goids__extract, default_error="GOID extraction failed")
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def symbol_uses__execution_result(
     t__symbol_uses__extract: SymbolUsesExtractResult,
 ) -> ExecutionResult:
@@ -393,19 +391,132 @@ class GraphValidationResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class GraphValidationInputs:
+    """Input tables required for graph_validation checks."""
+
+    call_graph_edges: ir.Table
+    call_graph_nodes: ir.Table
+    import_graph_edges: ir.Table
+    import_modules: ir.Table
+    cfg_edges: ir.Table
+    cfg_blocks: ir.Table
+
+
+@dataclass(frozen=True)
+class CallGraphTables:
+    """Call graph tables needed for validation checks."""
+
+    edges: ir.Table
+    nodes: ir.Table
+
+
+@dataclass(frozen=True)
+class ImportGraphTables:
+    """Import graph tables needed for validation checks."""
+
+    edges: ir.Table
+    modules: ir.Table
+
+
+@dataclass(frozen=True)
+class CfgTables:
+    """CFG tables needed for validation checks."""
+
+    edges: ir.Table
+    blocks: ir.Table
+
+
+@tag_helper(domain="graphs")
+def graph_validation__call_graph_tables(
+    q__graph__call_graph_edges: ir.Table,
+    q__graph__call_graph_nodes: ir.Table,
+) -> CallGraphTables:
+    """Bundle call graph tables for validation.
+
+    Returns
+    -------
+    CallGraphTables
+        Tables required for call graph integrity checks.
+    """
+    return CallGraphTables(
+        edges=q__graph__call_graph_edges,
+        nodes=q__graph__call_graph_nodes,
+    )
+
+
+@tag_helper(domain="graphs")
+def graph_validation__import_graph_tables(
+    q__graph__import_graph_edges: ir.Table,
+    q__graph__import_modules: ir.Table,
+) -> ImportGraphTables:
+    """Bundle import graph tables for validation.
+
+    Returns
+    -------
+    ImportGraphTables
+        Tables required for import graph integrity checks.
+    """
+    return ImportGraphTables(
+        edges=q__graph__import_graph_edges,
+        modules=q__graph__import_modules,
+    )
+
+
+@tag_helper(domain="graphs")
+def graph_validation__cfg_tables(
+    q__graph__cfg_edges: ir.Table,
+    q__graph__cfg_blocks: ir.Table,
+) -> CfgTables:
+    """Bundle CFG tables for validation.
+
+    Returns
+    -------
+    CfgTables
+        Tables required for CFG integrity checks.
+    """
+    return CfgTables(
+        edges=q__graph__cfg_edges,
+        blocks=q__graph__cfg_blocks,
+    )
+
+
+@tag_helper(domain="graphs")
+def graph_validation__inputs(
+    graph_validation__call_graph_tables: CallGraphTables,
+    graph_validation__import_graph_tables: ImportGraphTables,
+    graph_validation__cfg_tables: CfgTables,
+) -> GraphValidationInputs:
+    """Bundle tables required for graph_validation checks.
+
+    Returns
+    -------
+    GraphValidationInputs
+        Combined tables for validation checks.
+    """
+    return GraphValidationInputs(
+        call_graph_edges=graph_validation__call_graph_tables.edges,
+        call_graph_nodes=graph_validation__call_graph_tables.nodes,
+        import_graph_edges=graph_validation__import_graph_tables.edges,
+        import_modules=graph_validation__import_graph_tables.modules,
+        cfg_edges=graph_validation__cfg_tables.edges,
+        cfg_blocks=graph_validation__cfg_tables.blocks,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Helper functions for goids target
 # ---------------------------------------------------------------------------
 
 
-@tag_helper()
-def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[str]:
+@tag_helper(domain="graphs")
+def _get_tracked_files(q__core__modules: ir.Table, repo: str, commit: str) -> list[str]:
     """Get list of tracked Python files from core.modules.
 
     Parameters
     ----------
-    gateway
-        Storage gateway.
+    q__core__modules
+        Ibis table expression for core.modules.
     repo
         Repository identifier.
     commit
@@ -417,12 +528,15 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
         List of relative paths to Python files.
     """
     try:
-        modules = ibis_facade.table(gateway, "core.modules")
         expr = (
-            filter_by(modules, modules.repo == repo, modules.commit == commit)
-            .select(modules.path)
+            filter_by(
+                q__core__modules,
+                q__core__modules.repo == repo,
+                q__core__modules.commit == commit,
+            )
+            .select(q__core__modules.path)
             .distinct()
-            .order_by(modules.path)
+            .order_by(q__core__modules.path)
         )
         df = expr.execute()
         return [str(path) for (path,) in df.itertuples(index=False, name=None)]
@@ -430,7 +544,7 @@ def _get_tracked_files(gateway: StorageGateway, repo: str, commit: str) -> list[
         return []
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _path_to_module_name(rel_path: str) -> str:
     """Convert relative path to module name.
 
@@ -453,7 +567,7 @@ def _path_to_module_name(rel_path: str) -> str:
     return ".".join(parts)
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _process_ast_node(
     node: ast.AST,
     parent_qualname: str | None,
@@ -541,7 +655,7 @@ def _process_ast_node(
             )
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _extract_entities_from_file(
     file_path: Path,
     context: GoidExtractionInputs,
@@ -614,9 +728,38 @@ def _extract_entities_from_file(
 # ---------------------------------------------------------------------------
 
 
-@tag_helper()
+@dataclass(frozen=True)
+class SymbolUsesInputs:
+    """Input tables required for symbol_uses extraction."""
+
+    scip_occurrences: ir.Table
+    modules: ir.Table
+    goids: ir.Table
+
+
+@tag_helper(domain="graphs")
+def symbol_uses__inputs(
+    q__core__scip_occurrences: ir.Table,
+    q__core__modules: ir.Table,
+    q__core__goids: ir.Table,
+) -> SymbolUsesInputs:
+    """Bundle tables required for symbol_uses extraction.
+
+    Returns
+    -------
+    SymbolUsesInputs
+        Tables required for symbol_uses extraction.
+    """
+    return SymbolUsesInputs(
+        scip_occurrences=q__core__scip_occurrences,
+        modules=q__core__modules,
+        goids=q__core__goids,
+    )
+
+
+@tag_helper(domain="graphs")
 def _load_symbol_occurrences(
-    gateway: StorageGateway,
+    q__core__scip_occurrences: ir.Table,
     repo: str,
     commit: str,
 ) -> list[symbols_compute.SymbolOccurrence]:
@@ -628,9 +771,15 @@ def _load_symbol_occurrences(
         Parsed symbol occurrences for the snapshot.
     """
     try:
-        scip_tbl = ibis_facade.table(gateway, "core.scip_occurrences")
-        expr = filter_by(scip_tbl, scip_tbl.repo == repo, scip_tbl.commit == commit).select(
-            scip_tbl.symbol, scip_tbl.rel_path, scip_tbl.line, scip_tbl.roles
+        expr = filter_by(
+            q__core__scip_occurrences,
+            q__core__scip_occurrences.repo == repo,
+            q__core__scip_occurrences.commit == commit,
+        ).select(
+            q__core__scip_occurrences.symbol,
+            q__core__scip_occurrences.rel_path,
+            q__core__scip_occurrences.line,
+            q__core__scip_occurrences.roles,
         )
         rows = expr.execute()
 
@@ -647,9 +796,9 @@ def _load_symbol_occurrences(
         return []
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _load_module_map(
-    gateway: StorageGateway,
+    q__core__modules: ir.Table,
     repo: str,
     commit: str,
 ) -> dict[str, str]:
@@ -661,10 +810,11 @@ def _load_module_map(
         Mapping of normalized relative paths to module names.
     """
     try:
-        modules_tbl = ibis_facade.table(gateway, "core.modules")
         expr = filter_by(
-            modules_tbl, modules_tbl.repo == repo, modules_tbl.commit == commit
-        ).select(modules_tbl.path, modules_tbl.module)
+            q__core__modules,
+            q__core__modules.repo == repo,
+            q__core__modules.commit == commit,
+        ).select(q__core__modules.path, q__core__modules.module)
         rows = expr.execute()
         return {
             normalize_path(str(path)): str(module)
@@ -674,9 +824,9 @@ def _load_module_map(
         return {}
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _load_path_to_goid_map(
-    gateway: StorageGateway,
+    q__core__goids: ir.Table,
     repo: str,
     commit: str,
 ) -> dict[str, int]:
@@ -688,13 +838,12 @@ def _load_path_to_goid_map(
         Mapping of normalized relative paths to module GOIDs.
     """
     try:
-        goids_tbl = ibis_facade.table(gateway, GOIDS_GOIDS_TABLE_KEY)
         expr = filter_by(
-            goids_tbl,
-            goids_tbl.repo == repo,
-            goids_tbl.commit == commit,
-            goids_tbl.kind == "module",
-        ).select(goids_tbl.rel_path, goids_tbl.goid_h128)
+            q__core__goids,
+            q__core__goids.repo == repo,
+            q__core__goids.commit == commit,
+            q__core__goids.kind == "module",
+        ).select(q__core__goids.rel_path, q__core__goids.goid_h128)
         rows = expr.execute()
         return {
             normalize_path(str(rel_path)): int(goid)
@@ -704,7 +853,7 @@ def _load_path_to_goid_map(
         return {}
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _enrich_edges_with_goids(
     edges: list[symbols_compute.SymbolUseEdge],
     path_to_goid: dict[str, int],
@@ -734,7 +883,7 @@ def _enrich_edges_with_goids(
     return enriched
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _filter_symbol_occurrences(
     occurrences: list[symbols_compute.SymbolOccurrence],
     *,
@@ -791,9 +940,10 @@ class GraphMetricsMaterializations:
 # ---------------------------------------------------------------------------
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _validate_call_graph_integrity(
-    gateway: StorageGateway,
+    q__graph__call_graph_edges: ir.Table,
+    q__graph__call_graph_nodes: ir.Table,
     repo: str,
     commit: str,
 ) -> list[str]:
@@ -807,8 +957,8 @@ def _validate_call_graph_integrity(
     errors: list[str] = []
 
     try:
-        edges = ibis_facade.table(gateway, "graph.call_graph_edges")
-        nodes = ibis_facade.table(gateway, "graph.call_graph_nodes")
+        edges = q__graph__call_graph_edges
+        nodes = q__graph__call_graph_nodes
 
         scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
 
@@ -838,9 +988,10 @@ def _validate_call_graph_integrity(
     return errors
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _validate_import_graph_integrity(
-    gateway: StorageGateway,
+    q__graph__import_graph_edges: ir.Table,
+    q__graph__import_modules: ir.Table,
     repo: str,
     commit: str,
 ) -> list[str]:
@@ -854,8 +1005,8 @@ def _validate_import_graph_integrity(
     errors: list[str] = []
 
     try:
-        edges = ibis_facade.table(gateway, "graph.import_graph_edges")
-        modules = ibis_facade.table(gateway, "graph.import_modules")
+        edges = q__graph__import_graph_edges
+        modules = q__graph__import_modules
         scoped_edges = filter_by(edges, edges.repo == repo, edges.commit == commit)
 
         joined = scoped_edges.left_join(
@@ -877,9 +1028,10 @@ def _validate_import_graph_integrity(
     return errors
 
 
-@tag_helper()
+@tag_helper(domain="graphs")
 def _validate_cfg_integrity(
-    gateway: StorageGateway,
+    q__graph__cfg_edges: ir.Table,
+    q__graph__cfg_blocks: ir.Table,
     _repo: str,
     _commit: str,
 ) -> list[str]:
@@ -893,8 +1045,8 @@ def _validate_cfg_integrity(
     errors: list[str] = []
 
     try:
-        edges = ibis_facade.table(gateway, "graph.cfg_edges")
-        blocks = ibis_facade.table(gateway, "graph.cfg_blocks")
+        edges = q__graph__cfg_edges
+        blocks = q__graph__cfg_blocks
 
         joined = edges.left_join(
             blocks,
@@ -923,6 +1075,7 @@ def _validate_cfg_integrity(
 def t__goids__extract(
     env: BuildEnv,
     gateway: StorageGateway,
+    q__core__modules: ir.Table,
     t__modules: TargetRunRecord,
 ) -> GoidExtractResult:
     """Execute GOID extraction on repository modules.
@@ -937,6 +1090,8 @@ def t__goids__extract(
         Build environment with gateway and snapshot.
     gateway
         Storage gateway for graph data access.
+    q__core__modules
+        Ibis table expression for core.modules.
     t__modules
         Upstream modules target result (for dependency).
 
@@ -969,7 +1124,7 @@ def t__goids__extract(
         source_root = env.snapshot.repo_root or get_source_root(gateway, repo, commit)
 
         tracked_files = filter_paths(
-            _get_tracked_files(gateway, repo, commit),
+            _get_tracked_files(q__core__modules, repo, commit),
             scope_paths=opts.scope_paths,
             include_tests=opts.include_tests,
         )
@@ -1088,7 +1243,7 @@ def t__goids(
 @tag_tool(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses__extract(
     env: BuildEnv,
-    gateway: StorageGateway,
+    symbol_uses__inputs: SymbolUsesInputs,
     t__scip: TargetRunRecord,
     t__modules: TargetRunRecord,
     t__goids: TargetRunRecord,
@@ -1116,7 +1271,11 @@ def t__symbol_uses__extract(
             options_type=SymbolUsesOptions,
         )
 
-        occurrences = _load_symbol_occurrences(gateway, repo, commit)
+        occurrences = _load_symbol_occurrences(
+            symbol_uses__inputs.scip_occurrences,
+            repo,
+            commit,
+        )
 
         if not occurrences:
             log.info("symbol_uses: No SCIP occurrences found, skipping")
@@ -1128,8 +1287,8 @@ def t__symbol_uses__extract(
 
         occurrences = _filter_symbol_occurrences(occurrences, options=opts)
 
-        module_map = _load_module_map(gateway, repo, commit)
-        path_to_goid = _load_path_to_goid_map(gateway, repo, commit)
+        module_map = _load_module_map(symbol_uses__inputs.modules, repo, commit)
+        path_to_goid = _load_path_to_goid_map(symbol_uses__inputs.goids, repo, commit)
 
         def_map = symbols_compute.build_def_map(occurrences)
         edges = symbols_compute.build_use_edges(
@@ -1906,7 +2065,7 @@ def graph_metrics__materializations(
 @tag_tool(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation__check(
     env: BuildEnv,
-    gateway: StorageGateway,
+    graph_validation__inputs: GraphValidationInputs,
     t__call_graph: TargetRunRecord,
     t__import_graph: TargetRunRecord,
     t__cfg: TargetRunRecord,
@@ -1932,13 +2091,28 @@ def t__graph_validation__check(
 
         all_errors: list[str] = []
 
-        call_graph_errors = _validate_call_graph_integrity(gateway, repo, commit)
+        call_graph_errors = _validate_call_graph_integrity(
+            graph_validation__inputs.call_graph_edges,
+            graph_validation__inputs.call_graph_nodes,
+            repo,
+            commit,
+        )
         all_errors.extend(call_graph_errors)
 
-        import_graph_errors = _validate_import_graph_integrity(gateway, repo, commit)
+        import_graph_errors = _validate_import_graph_integrity(
+            graph_validation__inputs.import_graph_edges,
+            graph_validation__inputs.import_modules,
+            repo,
+            commit,
+        )
         all_errors.extend(import_graph_errors)
 
-        cfg_errors = _validate_cfg_integrity(gateway, repo, commit)
+        cfg_errors = _validate_cfg_integrity(
+            graph_validation__inputs.cfg_edges,
+            graph_validation__inputs.cfg_blocks,
+            repo,
+            commit,
+        )
         all_errors.extend(cfg_errors)
 
         for error in all_errors:

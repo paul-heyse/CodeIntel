@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.core.schemas.primitives import TableSchema
@@ -139,6 +140,46 @@ class SchemaIndex:
         """
         for table_key in sorted(self._inference_errors):
             yield table_key, self._inference_errors[table_key]
+
+    def iter_inference_error_rows(
+        self,
+        *,
+        repo: str,
+        commit: str,
+        run_id: str,
+        occurred_at: datetime | None = None,
+    ) -> Iterable[Mapping[str, object]]:
+        """Iterate inference error rows with run metadata.
+
+        Parameters
+        ----------
+        repo
+            Repository slug for the build run.
+        commit
+            Commit SHA for the build run.
+        run_id
+            Unique run identifier for the build execution.
+        occurred_at
+            Timestamp to stamp on each row. Defaults to now in UTC.
+
+        Yields
+        ------
+        Mapping[str, object]
+            Row mapping for core.schema_inference_errors.
+        """
+        if not self._inference_errors:
+            return
+
+        timestamp = occurred_at or datetime.now(tz=UTC)
+        for table_key, error in self.iter_inference_errors():
+            yield {
+                "table_key": table_key,
+                "repo": repo,
+                "commit": commit,
+                "error": error,
+                "occurred_at": timestamp,
+                "run_id": run_id,
+            }
 
     def inference_status_for(
         self,

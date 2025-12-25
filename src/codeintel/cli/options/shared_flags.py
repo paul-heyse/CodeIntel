@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import field, make_dataclass
-from typing import TYPE_CHECKING, Annotated, Protocol, cast
+from pathlib import Path
+from typing import Annotated, Protocol, cast
 
 from cyclopts import Parameter
 
@@ -11,9 +12,6 @@ from codeintel.cli.options.registry import JSON_FLAG, OUTPUT_FORMAT, PROJECT_ROO
 from codeintel.cli.options.types import CommandPath, option_param
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.observability.cli import RunContext
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class SharedFlags(Protocol):
@@ -33,7 +31,13 @@ _SHARED_FLAGS_CACHE: dict[CommandPath, type[SharedFlags]] = {}
 
 
 def shared_flags_type(command_path: CommandPath) -> type[SharedFlags]:
-    """Return a cached SharedFlags dataclass for a command path."""
+    """Return a cached SharedFlags dataclass for a command path.
+
+    Returns
+    -------
+    type[SharedFlags]
+        Generated SharedFlags dataclass type for the command path.
+    """
     cached = _SHARED_FLAGS_CACHE.get(command_path)
     if cached is not None:
         return cached
@@ -77,7 +81,13 @@ def shared_flags_type(command_path: CommandPath) -> type[SharedFlags]:
 
 
 def shared_flags_field(command_path: CommandPath) -> SharedFlags:
-    """Create a SharedFlags field with Cyclopts metadata for nested flattening."""
+    """Create a SharedFlags field with Cyclopts metadata for nested flattening.
+
+    Returns
+    -------
+    SharedFlags
+        Field instance configured for nested parameter flattening.
+    """
     flags_type = shared_flags_type(command_path)
     return field(default_factory=flags_type, metadata=SHARED_FLAGS_METADATA)
 

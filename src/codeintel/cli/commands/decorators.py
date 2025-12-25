@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeGuard, TypeVar, cast
@@ -389,6 +390,8 @@ def _build_flags_from_context(
     if not dataclasses.is_dataclass(default_flags):
         return None
 
+    flags = cast("SharedFlags", default_flags)
+
     field_names = {field.name for field in dataclasses.fields(default_flags)}
     replace_kwargs: dict[str, object] = {}
     if "output_format" in field_names:
@@ -403,8 +406,22 @@ def _build_flags_from_context(
         replace_kwargs["run_context"] = ctx.run_context
 
     if not replace_kwargs:
-        return cast(SharedFlags, default_flags)
-    return cast(SharedFlags, dataclasses.replace(default_flags, **replace_kwargs))
+        return flags
+    return _replace_dataclass_instance(flags, replace_kwargs)
+
+
+def _replace_dataclass_instance[TDataclass](
+    instance: TDataclass,
+    updates: Mapping[str, object],
+) -> TDataclass:
+    field_map = getattr(instance, "__dataclass_fields__", None)
+    if not isinstance(field_map, dict):
+        msg = "Expected a dataclass instance for flag updates"
+        raise TypeError(msg)
+    values = {name: getattr(instance, name) for name in field_map}
+    values.update(updates)
+    instance_type = cast("type[TDataclass]", type(instance))
+    return instance_type(**values)
 
 
 def _execute_new_command[T](

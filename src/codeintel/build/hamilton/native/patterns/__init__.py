@@ -48,9 +48,9 @@ from codeintel.build.hamilton.native.patterns.tool_target import (
 __all__ = [
     "ArtifactOutputSpec",
     "ArtifactSaveSpec",
+    "DataAccessSpec",
     "IbisTableSaveSpec",
     "IngestStep",
-    "DataAccessSpec",
     "OutputRole",
     "SaverContext",
     "TableOutputSpec",
