@@ -35,12 +35,13 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
@@ -59,10 +60,17 @@ SEMANTIC_ROLES_MODULES_TABLE_KEY = "analytics.semantic_roles_modules"
 TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
 
 
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for classification nodes."""
+    return env.gateway
+
+
 @tag_compute(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def t__semantic_roles__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__modules: TargetRunRecord,
     t__function_ast_features: TargetRunRecord,
 ) -> SemanticRolesResult | None:
@@ -111,7 +119,7 @@ def t__semantic_roles__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -119,7 +127,7 @@ def t__semantic_roles__compute(
             return None
 
     registry = build_registry(
-        gateway=env.gateway,
+        gateway=gateway,
         snapshot=env.snapshot,
         registry_options=ProviderRegistryOptions(include_graphs=False),
     )
@@ -138,7 +146,7 @@ def t__semantic_roles__compute(
 
         # Compute semantic roles (pure compute - no persistence)
         return build_semantic_roles_rows(
-            env.gateway,
+            gateway,
             env.snapshot,
             module_by_path=module_by_path,
             ast_map=ast_map,
@@ -288,6 +296,7 @@ class TestProfileComputeResult:
 @tag_compute(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def t__test_profile__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__coverage_test_edges: TargetRunRecord,
 ) -> TestProfileComputeResult:
     """Build per-test profiles with coverage and subsystem context.
@@ -304,7 +313,7 @@ def t__test_profile__compute(
         )
 
     try:
-        build_result = build_test_profile_result(env.gateway, env.snapshot)
+        build_result = build_test_profile_result(gateway, env.snapshot)
         return TestProfileComputeResult(result=build_result)
     except Exception as exc:
         log.exception("Test profile computation failed")

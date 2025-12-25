@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from cyclopts import config as cyclopts_config
 
+from codeintel.cli.config.env_vars import CodeIntelEnv
 from codeintel.cli.config.loader import apply_overrides, load_config
 from codeintel.config.models import CliConfigOptions, CodeIntelConfig, RepoConfig
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
@@ -113,7 +114,7 @@ def _make_env_config() -> object:
     object
         Cyclopts config loader that reads CODEINTEL_* environment variables.
     """
-    return cyclopts_config.Env(prefix="CODEINTEL_", command=True, show=True)
+    return CodeIntelEnv(prefix="CODEINTEL_", command=True, show=True)
 
 
 @dataclass(frozen=True)

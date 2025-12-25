@@ -21,7 +21,8 @@ from codeintel.cli.commands.jobs import jobs_app
 from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
-from codeintel.cli.errors import OutputFormat, handle_cli_error
+from codeintel.cli.errors import OutputFormat
+from codeintel.observability.cli import run_cli_with_telemetry
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -95,22 +96,12 @@ def _initialize_cli() -> None:
 
 
 def main() -> None:
-    """Entry point used by console_scripts.
-
-    Raises
-    ------
-    SystemExit
-        Propagated with normalized CLI exit codes on failure.
-    """
+    """Entry point used by console_scripts."""
     output_format = _detect_output_format()
 
     _initialize_cli()
 
-    try:
-        app()
-    except BaseException as exc:
-        exit_code = handle_cli_error(exc, sys.stderr, output_format=output_format)
-        raise SystemExit(exit_code) from exc
+    run_cli_with_telemetry(app, output_format=output_format)
 
 
 __all__ = [

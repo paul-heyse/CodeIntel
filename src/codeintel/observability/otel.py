@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING, Protocol, cast
@@ -202,7 +204,7 @@ class ObservabilityRuntime:
     enabled: bool
     tracer: TracerType | None
     meter: MeterType | None
-    shutdown: Callable[[], None] | None
+    shutdown: Callable[[], ObservabilityShutdownResult] | None
     prometheus_enabled: bool = False
     duckdb_tracing_enabled: bool = True
     duckdb_require_parent_span: bool = True
@@ -231,6 +233,30 @@ class ObservabilityRuntime:
 
 class _ObservabilityHolder(SingletonHolder[ObservabilityRuntime]):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class ObservabilityShutdownResult:
+    """Shutdown flush summary for observability runtime."""
+
+    flush_ok: bool
+    flush_ms: float
+    errors: tuple[str, ...] = ()
+
+    def to_log_payload(self) -> dict[str, object]:
+        """Return a JSON-serializable payload for shutdown flush results.
+
+        Returns
+        -------
+        dict[str, object]
+            Structured payload for logging.
+        """
+        return {
+            "event": "telemetry.flush",
+            "telemetry.flush.ok": self.flush_ok,
+            "telemetry.flush.duration_ms": self.flush_ms,
+            "errors": list(self.errors),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -488,16 +514,27 @@ def _build_meter_provider(
 def _build_shutdown(
     tracer_provider: TracerProviderType,
     meter_provider: MeterProviderType,
-) -> Callable[[], None]:
-    def _shutdown() -> None:
+) -> Callable[[], ObservabilityShutdownResult]:
+    def _shutdown() -> ObservabilityShutdownResult:
+        start = time.perf_counter()
+        errors: list[str] = []
+        flush_ok = True
         try:
             tracer_provider.shutdown()
-        except RuntimeError:
-            LOG.debug("Tracer provider shutdown skipped")
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            flush_ok = False
+            errors.append(f"tracer:{exc}")
         try:
             meter_provider.shutdown()
-        except RuntimeError:
-            LOG.debug("Meter provider shutdown skipped")
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            flush_ok = False
+            errors.append(f"meter:{exc}")
+        duration_ms = (time.perf_counter() - start) * 1000
+        return ObservabilityShutdownResult(
+            flush_ok=flush_ok,
+            flush_ms=duration_ms,
+            errors=tuple(errors),
+        )
 
     return _shutdown
 
@@ -613,18 +650,44 @@ def get_observability() -> ObservabilityRuntime:
     )
 
 
-def shutdown_observability() -> None:
-    """Shut down the active observability runtime, if available."""
+def shutdown_observability() -> ObservabilityShutdownResult | None:
+    """Shut down the active observability runtime, if available.
+
+    Returns
+    -------
+    ObservabilityShutdownResult | None
+        Structured flush results, or None if observability is inactive.
+    """
     runtime = _ObservabilityHolder.get_or_none()
     if runtime is None or runtime.shutdown is None:
-        return
-    runtime.shutdown()
+        return None
+    result: ObservabilityShutdownResult | None = None
+    try:
+        result = runtime.shutdown()
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        result = ObservabilityShutdownResult(
+            flush_ok=False,
+            flush_ms=0.0,
+            errors=(str(exc),),
+        )
+    if result is not None:
+        _log_shutdown_result(result)
     _ObservabilityHolder.reset()
+    return result
+
+
+def _log_shutdown_result(result: ObservabilityShutdownResult) -> None:
+    payload = json.dumps(result.to_log_payload(), sort_keys=True)
+    if result.flush_ok:
+        LOG.info("telemetry.flush %s", payload)
+    else:
+        LOG.warning("telemetry.flush %s", payload)
 
 
 __all__ = [
     "ObservabilityConfig",
     "ObservabilityRuntime",
+    "ObservabilityShutdownResult",
     "bootstrap_observability",
     "get_observability",
     "observability_config_from_settings",

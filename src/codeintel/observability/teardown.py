@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.observability.otel import get_observability
@@ -45,18 +46,25 @@ class SubprocessSample:
         dict[str, object]
             JSON-serializable subprocess payload.
         """
-        return {"pid": self.pid, "command": self.command}
+        return {"pid": self.pid, "command": _redact_command_value(self.command)}
 
 
 @dataclass(frozen=True, slots=True)
 class TeardownTelemetry:
     """Telemetry payload for teardown logging and spans."""
 
-    run_id: str | None
-    repo: str | None
-    commit: str | None
+    component: str = "build"
+    operation: str = "shutdown"
+    run_id: str | None = None
+    repo: str | None = None
+    commit: str | None = None
     targets: tuple[str, ...] = field(default_factory=tuple)
     duration_ms: float | None = None
+    cli_invocation_id: str | None = None
+    cli_command: str | None = None
+    cli_exit_code: int | None = None
+    cli_is_parse_error: bool | None = None
+    cli_error_type: str | None = None
     shutdown_status: str = "unknown"
     pending_tasks_count: int | None = None
     pending_task_samples: tuple[str, ...] = field(default_factory=tuple)
@@ -78,11 +86,18 @@ class TeardownTelemetry:
         targets = ",".join(self.targets) if self.targets else None
         return _prune_none(
             {
+                "codeintel.component": self.component,
+                "codeintel.operation": self.operation,
                 "build.run_id": self.run_id,
                 "build.repo": self.repo,
                 "build.commit": self.commit,
                 "build.targets": targets,
                 "build.duration_ms": self.duration_ms,
+                "cli.invocation_id": self.cli_invocation_id,
+                "cli.command": _redact_command_value(self.cli_command),
+                "cli.exit_code": self.cli_exit_code,
+                "cli.is_parse_error": self.cli_is_parse_error,
+                "cli.error_type": self.cli_error_type,
                 "shutdown.status": self.shutdown_status,
                 "shutdown.pending_tasks_count": self.pending_tasks_count,
                 "shutdown.active_threads_count": self.active_threads_count,
@@ -101,7 +116,8 @@ class TeardownTelemetry:
             Event attribute payload for teardown telemetry.
         """
         subprocess_samples = [
-            f"{sample.pid}:{sample.command}" for sample in self.subprocess_samples
+            f"{sample.pid}:{_redact_command_value(sample.command)}"
+            for sample in self.subprocess_samples
         ]
         return _prune_none(
             {
@@ -121,24 +137,36 @@ class TeardownTelemetry:
         """
         return {
             "event": event,
+            "component": self.component,
+            "operation": self.operation,
             "run_id": self.run_id,
             "repo": self.repo,
             "commit": self.commit,
             "targets": [*self.targets],
             "duration_ms": self.duration_ms,
+            "cli_invocation_id": self.cli_invocation_id,
+            "cli_command": _redact_command_value(self.cli_command),
+            "cli_exit_code": self.cli_exit_code,
+            "cli_is_parse_error": self.cli_is_parse_error,
+            "cli_error_type": self.cli_error_type,
             "shutdown_status": self.shutdown_status,
             "pending_tasks_count": self.pending_tasks_count,
             "pending_task_samples": [*self.pending_task_samples],
             "active_threads_count": self.active_threads_count,
             "active_thread_names": [*self.active_thread_names],
             "subprocess_count": self.subprocess_count,
-            "subprocess_samples": [sample.to_payload() for sample in self.subprocess_samples],
+            "subprocess_samples": [
+                sample.to_payload() for sample in self.subprocess_samples
+            ],
             "telemetry_flush_status": self.telemetry_flush_status,
             "telemetry_flush_ms": self.telemetry_flush_ms,
         }
 
 
-def snapshot_pending_tasks(*, sample_limit: int | None = None) -> tuple[int | None, tuple[str, ...]]:
+def snapshot_pending_tasks(
+    *,
+    sample_limit: int | None = None,
+) -> tuple[int | None, tuple[str, ...]]:
     """Collect pending asyncio tasks for teardown telemetry.
 
     Parameters
@@ -200,6 +228,7 @@ def snapshot_active_threads(
     return count, tuple(names)
 
 
+
 def emit_teardown_telemetry(
     telemetry: TeardownTelemetry,
     *,
@@ -216,13 +245,20 @@ def emit_teardown_telemetry(
             _add_span_event(span, "shutdown.summary", telemetry.event_attributes())
     log_payload = telemetry.to_log_payload()
     log_target = logger or log
-    log_target.info("build.shutdown %s", json.dumps(log_payload, sort_keys=True))
+    payload = json.dumps(log_payload, sort_keys=True)
+    if telemetry.shutdown_status == "succeeded":
+        log_target.info("build.shutdown %s", payload)
+    else:
+        log_target.warning("build.shutdown %s", payload)
+
+
 
 def _set_span_attributes(span: Span, attributes: Mapping[str, SpanAttributeValue]) -> None:
     for key, value in attributes.items():
         attr_value = _coerce_span_value(value)
         if attr_value is not None:
             span.set_attribute(key, attr_value)
+
 
 
 def _add_span_event(
@@ -239,6 +275,7 @@ def _add_span_event(
         span.add_event(name, attributes=event_attrs)
 
 
+
 def _coerce_span_value(value: object) -> SpanAttributeValue | None:
     if value is None:
         return None
@@ -249,6 +286,14 @@ def _coerce_span_value(value: object) -> SpanAttributeValue | None:
             return list(value)
         return [str(item) for item in value]
     return str(value)
+
+
+
+def _redact_command_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    path = Path(value)
+    return path.name or value
 
 
 def _prune_none(values: Mapping[str, SpanAttributeValue | None]) -> dict[str, SpanAttributeValue]:

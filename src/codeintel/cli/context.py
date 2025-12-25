@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
     from codeintel.cli.config.model import CliConfig
     from codeintel.cli.resolution.types import ResolvedRuntime
+    from codeintel.observability.cli import RunContext
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
@@ -83,6 +84,8 @@ class CommandContext:
         Output format for rendering results.
     verbosity
         Logging verbosity level (0=WARNING, 1=INFO, 2+=DEBUG).
+    run_context
+        Optional CLI run context for telemetry correlation.
 
     Examples
     --------
@@ -98,6 +101,7 @@ class CommandContext:
     operation_id: str
     output_format: OutputFormat = OutputFormat.TEXT
     verbosity: int = 0
+    run_context: RunContext | None = None
 
     _runtime: RuntimeService | None = field(default=None, repr=False)
     _storage: StorageService | None = field(default=None, repr=False)
@@ -223,6 +227,7 @@ class CommandContextBuilder:
         self._operation_id: str | None = None
         self._logger: logging.Logger | None = None
         self._injected_gateway: StorageGateway | None = None
+        self._run_context: RunContext | None = None
 
     def with_runtime(self, *, project_root: Path | None = None) -> Self:
         """Enable runtime resolution.
@@ -343,6 +348,22 @@ class CommandContextBuilder:
         self._logger = logger
         return self
 
+    def with_run_context(self, run_context: RunContext | None) -> Self:
+        """Set CLI invocation run context.
+
+        Parameters
+        ----------
+        run_context
+            Optional RunContext for telemetry correlation.
+
+        Returns
+        -------
+        Self
+            Self for chaining.
+        """
+        self._run_context = run_context
+        return self
+
     def with_injected_gateway(self, gateway: StorageGateway) -> Self:
         """Inject a pre-built gateway (for testing).
 
@@ -403,6 +424,7 @@ class CommandContextBuilder:
                 operation_id=operation_id,
                 output_format=self._output_format,
                 verbosity=self._verbosity,
+                run_context=self._run_context,
                 _runtime=runtime_service,
                 _storage=storage_service,
                 _owns_storage=True,

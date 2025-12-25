@@ -2004,3 +2004,708 @@ If you want the next section after this, the natural continuation is **G) Semant
 [16]: https://opentelemetry.io/docs/specs/opamp/ "Open Agent Management Protocol | OpenTelemetry"
 [17]: https://opentelemetry.io/blog/2023/opamp-status/ "Open Agent Management Protocol (OpAMP) State of the Nation 2023 | OpenTelemetry"
 [18]: https://pkg.go.dev/go.opentelemetry.io/collector/featuregate "featuregate package - go.opentelemetry.io/collector/featuregate - Go Packages"
+
+# G) Semantic conventions & schema governance (beyond HTTP/DB)
+
+## Mental model (SemConv = semantic ABI; SchemaURL = version tag; governance = drift control)
+
+* **Semantic Conventions (SemConv)** define *meaningful* names/structures for spans, metrics, logs/events, and resource/entity attributes; they’re a cross-service **semantic ABI** (your backends/dashboards/alerts assume these keys/units/names). ([OpenTelemetry][1])
+* SemConv is versioned + mixed-stability; schema evolution is handled via **Telemetry Schemas**: emitted data can include a **Schema URL** so consumers (Collector/backends) can transform to the version they expect. ([OpenTelemetry][2])
+* Governance problem: *instrumentation upgrades* and *Collector/backend configs* are tightly coupled by attribute names. The “right” fix is **schema-aware translation**, not ad-hoc renames sprinkled everywhere. ([Go Packages][3])
+
+---
+
+## G1) SemConv surface map (domains you need beyond HTTP/DB)
+
+SemConv exists **per signal** (traces/metrics/logs/events/profiles/resources) ([OpenTelemetry][1]) and **per domain**. A non-exhaustive-but-broad domain index (use as your doc’s TOC spine):
+
+* **General**: naming, attribute/metric requirement levels, logs/events guidance, recording errors. ([OpenTelemetry][4])
+* **CICD**, **CLI programs**, **CloudEvents**, **Feature Flags** (events), **GraphQL**. ([OpenTelemetry][4])
+* **Messaging** (Kafka/RabbitMQ/SQS/SNS/PubSub/etc), **RPC** (gRPC/JSON-RPC/Connect), **DNS**. ([OpenTelemetry][4])
+* **Exceptions** (spans + logs), **URL**, **User agent**. ([OpenTelemetry][4])
+* **FaaS** (Lambda etc), **Runtime environment** (CPython/JVM/Node/.NET), **System/Container/Kubernetes**, **Hardware** metrics. ([OpenTelemetry][4])
+* **Generative AI** (LLM spans/events/metrics; vendor subpages incl. OpenAI). ([OpenTelemetry][4])
+* **Resource & Entities** (service/cloud/container/deployment/device/host/k8s/process/etc) for “what produced this telemetry?” identity enrichment. ([OpenTelemetry][4])
+
+**Doc segmentation pattern (high signal):** *Domain* × *Signal*:
+
+* “Messaging spans” vs “Messaging metrics” aren’t the same artifact set; SemConv explicitly splits by signals. ([OpenTelemetry][4])
+
+---
+
+## G2) Reserved attributes/events: hard interoperability anchors
+
+The SemConv spec requires certain “reserved” attributes (e.g., `service.name`, `telemetry.sdk.*`, `exception.*`, `server.address`, `url.scheme`, etc.) and requires the `exception` event. These are ecosystem glue; treat them as **non-negotiable invariants** across migrations. ([OpenTelemetry][5])
+
+---
+
+## G3) SemConv “group” model + stability rules (governance primitives)
+
+SemConv is organized into **groups** (not just flat attribute lists). Group types include `span`, `metric`, `event`, `entity`, plus `attribute_group` for auxiliary grouping. ([OpenTelemetry][6])
+
+Each group carries:
+
+* `id`, `brief/note`, `stability`, optional `deprecated`, and references to registry attributes. ([OpenTelemetry][6])
+
+Stability semantics (this is what you enforce in codegen + migrations):
+
+* Stability levels: `development`, `alpha`, `beta`, `release_candidate`, `stable` (default = `development`). ([OpenTelemetry][6])
+* **Stable must not regress** (cannot move from `stable` to any other), and groups must not be removed (preserves codegen/docs for legacy instrumentations); rename/withdraw via **deprecation**. ([OpenTelemetry][6])
+
+**Practical governance consequence:** “schema governance” is mostly “group governance”: keep group IDs stable, use deprecations, and formalize translations rather than “silent key swaps”.
+
+---
+
+## G4) SemConv migration controls: `OTEL_SEMCONV_STABILITY_OPT_IN`
+
+SemConv stabilization is rolled out via opt-in categories. For HTTP (and explicitly framed as a pattern for categories like `databases`, `messaging`), instrumentations should use `OTEL_SEMCONV_STABILITY_OPT_IN` as a comma-separated list: ([OpenTelemetry][7])
+
+* `http`: emit new stable HTTP/networking conventions, stop old experimental ones
+* `http/dup`: emit **both** old and new (phased rollout); `http/dup` has precedence if both are present ([OpenTelemetry][7])
+
+**Fleet rollout idiom (env-only):**
+
+```bash
+# phase 1: dual emit (lets dashboards/alerts migrate safely)
+export OTEL_SEMCONV_STABILITY_OPT_IN="http/dup"
+
+# phase 2: stable-only
+export OTEL_SEMCONV_STABILITY_OPT_IN="http"
+```
+
+(Exact semantics + precedence are defined in the SemConv HTTP guidance.) ([OpenTelemetry][7])
+
+---
+
+## G5) Telemetry Schemas: version tagging + transformation contract
+
+Telemetry schemas exist specifically so SemConv can evolve without brittle pipelines: ([OpenTelemetry][2])
+
+* Schemas are **versioned**; each version has a unique **Schema URL**.
+* Telemetry sources (instrumentations/apps) include Schema URL in emitted telemetry (work-in-progress across ecosystems).
+* Consumers (Collector/backends/dashboards) may transform received telemetry from its schema version to a **target schema version** expected at point of use.
+* OpenTelemetry publishes the schema transformations at a well-known URL path `/schemas/<version>`. ([OpenTelemetry][2])
+
+Schema URL mechanics:
+
+* It is an HTTP(S) URL for a retrievable schema file; redirects must be followed; the URL encodes **Schema Family** (prefix) + **Schema Version** (final path segment). ([OpenTelemetry][2])
+
+---
+
+## G6) Schema File Format (v1.0.0): what transformations exist (and therefore what “governance” can automate)
+
+A schema file is YAML describing a schema version and the transformations required to convert from older compatible versions in the same family. ([OpenTelemetry][8])
+
+Core structure:
+
+* `file_format: 1.0.0`, `schema_url: /schemas/<ver>`, and `versions:` map. ([OpenTelemetry][8])
+* Per version, transformations are split by target: `all`, `resources`, `spans`, `span_events`, `metrics`, `logs`. ([OpenTelemetry][8])
+
+Supported transformation types (this defines the “governable delta”):
+
+* `rename_attributes` (global + per-signal scoped) ([OpenTelemetry][8])
+* `rename_events` (span event name changes) ([OpenTelemetry][8])
+* `rename_metrics` (metric name changes) ([OpenTelemetry][8])
+
+Ordering rules matter (don’t hand-wave):
+
+* `all` runs before type-specific sections; `spans` transforms before `span_events`; reverse conversion applies reverse order; non-reversible renames (many→one) are breaking and should bump schema major. ([OpenTelemetry][8])
+
+---
+
+## G7) Collector schema translation: `schemaprocessor` (schema-aware drift firewall)
+
+Collector-contrib provides a **Schema Processor** that translates incoming telemetry to configured target schema URLs: ([Go Packages][3])
+
+* Matches signals by incoming **Schema URL**; on match, fetches the schema translation file (with optional `prefetch` caching) and applies transformations to emit data as the **target semantic convention version**. ([Go Packages][3])
+* Targets cannot include duplicate schema families (error). ([Go Packages][3])
+* Guidance: use it **at the very start** of pipelines; avoid “downgrade more than last 3 versions” (keep configs/backends updated). ([Go Packages][3])
+
+**Minimal “schema firewall first” pipeline:**
+
+```yaml
+processors:
+  schema:
+    prefetch:
+      - https://opentelemetry.io/schemas/1.38.0
+    targets:
+      - https://opentelemetry.io/schemas/1.38.0
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [schema, batch]
+      exporters: [otlp]
+    metrics:
+      receivers: [otlp]
+      processors: [schema, batch]
+      exporters: [otlp]
+    logs:
+      receivers: [otlp]
+      processors: [schema, batch]
+      exporters: [otlp]
+```
+
+(Use schema targets to define the canonical SemConv version your Collector config assumes.) ([Go Packages][3])
+
+---
+
+## G8) SchemaURL hygiene: “if you mutate telemetry, you may invalidate its SchemaURL”
+
+If you use processors to rename/alter telemetry that carries a valid Schema URL, you can create data that **no longer conforms** to that schema (explicitly called out by collector-contrib maintainers as a real hazard). ([GitHub][9])
+
+Governance rule of thumb:
+
+* If you run **schema-aware translation** (schemaprocessor) and then keep semconv-consistent transforms, SchemaURL remains meaningful.
+* If you run ad-hoc transforms that “undo” schema-defined mappings, you should treat SchemaURL as untrustworthy (and may need to drop/clear it depending on pipeline semantics). ([GitHub][9])
+
+---
+
+## G9) Codegen + language packaging: eliminating stringly-typed SemConv usage
+
+SemConv code can be auto-generated; languages may ship a stable subset or a preview superset. ([OpenTelemetry][10])
+Python-specific packaging note: unstable attributes are exposed under `opentelemetry.semconv._incubating` (underscore indicates “internal/unstable”). ([OpenTelemetry][10])
+
+**Governance pattern:** wrap SemConv keys behind a tiny internal “semconv facade” module, so changing keys becomes a single-point diff when SemConv shifts.
+
+---
+
+## G10) Events are LogRecords; event name is schema key (low-cardinality contract)
+
+Standalone “Events” are represented as `LogRecord`s conforming to SemConv; an event **must** have an event name, which should be low-cardinality and uniquely defines the event’s structure (attrs + body type). ([OpenTelemetry][11])
+Governance: never bake user IDs / request IDs into event names; keep names stable and put specifics in attributes/body.
+
+---
+
+## G11) Metric SemConv governance: hierarchy + discoverability
+
+Metric SemConv recommends nesting metrics in hierarchies (OS cpu/network, runtime GC, etc.) to support discovery and ad-hoc comparison. ([OpenTelemetry][12])
+This interacts directly with:
+
+* View-based renames in SDKs
+* Collector-side metric transforms
+* Schema file `rename_metrics` rules ([OpenTelemetry][8])
+
+---
+
+## G12) SemConv contains explicit “sensitive info” rules (URL is the canonical example)
+
+* `url.full` must not include credentials; if present, username/password should be redacted. ([OpenTelemetry][13])
+* URL conventions explicitly warn about security risk: user/password must not be recorded; sensitive query params must be scrubbed; consumers may need to redact entirely if they can’t identify sensitivity. ([OpenTelemetry][14])
+
+This is where SemConv governance meets security governance: “semantic correctness” includes “don’t standardize exfiltration.”
+
+---
+
+# H) Security, privacy, and data governance “advanced” topics
+
+## Mental model (end-to-end responsibility + defense in depth)
+
+OpenTelemetry can’t infer what’s sensitive for your org; implementers are responsible for compliance, consent, and reviewing what instrumentation emits. ([OpenTelemetry][15])
+Security governance is layered:
+
+1. **Don’t collect** (minimization)
+2. **Scrub at source** (SDK/instrumentation config)
+3. **Scrub in pipeline** (Collector processors)
+4. **Secure transport + endpoints** (TLS/mTLS/auth, network binding)
+5. **Secure storage + access** (backend RBAC, retention, encryption) ([OpenTelemetry][15])
+
+---
+
+## H1) Sensitive-data threat surface inventory (what actually leaks)
+
+Common leak vectors explicitly called out in OTel security guidance:
+
+* PII, credentials, session tokens, financial/health data, behavioral data. ([OpenTelemetry][15])
+* **URLs**: user/password must not be recorded; sensitive query params must be scrubbed. ([OpenTelemetry][14])
+* **Baggage**: is propagated across services and commonly sent in HTTP headers by auto-instrumentation; sensitive baggage can leak to third-party APIs (network-visible). ([OpenTelemetry][16])
+* **Collector config/secrets**: API tokens, TLS private keys can live in config; treat the config file as sensitive. ([OpenTelemetry][17])
+
+---
+
+## H2) Data minimization as a *continuous control*
+
+Principle: collect only what serves an observability purpose; avoid personal info unless necessary; prefer aggregated/anonymized; regularly review attributes. ([OpenTelemetry][15])
+Operationally, this implies:
+
+* “Attribute budget” reviews (what keys exist, who set them, why)
+* Default-deny capture for high-risk surfaces (headers, query params, bodies)
+* Strict conventions for tenant/user identifiers (hashing/truncation, never raw)
+
+---
+
+## H3) Collector-side scrub primitives (mechanical, policy-driven)
+
+### H3.1 Attribute processor: delete/hash specific keys
+
+OpenTelemetry’s handling-sensitive-data guide gives a canonical pattern: hash `user.email`, delete `user.full_name`. ([OpenTelemetry][15])
+
+```yaml
+processors:
+  attributes/example:
+    actions:
+      - key: user.email
+        action: hash
+      - key: user.full_name
+        action: delete
+```
+
+### H3.2 Transform processor (OTTL): computed anonymization + structural rewrites
+
+Replace `user.id` with `user.hash` (SHA256 + delete), and truncate IPv4 last octet: ([OpenTelemetry][15])
+
+```yaml
+processors:
+  transform:
+    trace_statements:
+      - context: span
+        statements:
+          - set(attributes["user.hash"], SHA256(attributes["user.id"]))
+          - delete_key(attributes, "user.id")
+          - replace_pattern(attributes["client.address"], "\\.\\d+$", ".0")
+```
+
+Note: the same doc cautions hashing may be reversible if the input space is small/predictable (e.g., sequential numeric IDs). ([OpenTelemetry][15])
+
+### H3.3 Redaction processor: allowlist keys + block patterns on values
+
+Collector config best practices describe redaction as: remove attributes not in allowed list, then mask blocked values on remaining allowed keys. ([OpenTelemetry][17])
+
+```yaml
+processors:
+  redaction:
+    allow_all_keys: false
+    allowed_keys: [description, group, id, name]
+    blocked_values:
+      - '4[0-9]{12}(?:[0-9]{3})?'   # Visa-like pattern
+      - '(5[1-5][0-9]{14})'         # MasterCard-like pattern
+```
+
+(Also supports `ignored_keys` and summaries.) ([OpenTelemetry][17])
+
+### H3.4 Filter processor: drop whole telemetry items
+
+Security guidance explicitly recommends filtering spans/metrics containing sensitive data; config best practices show filter used to drop unwanted spans (example: drop spans missing HTTP method). ([OpenTelemetry][15])
+
+### H3.5 Governance framing
+
+Collector is explicitly positioned as a convenient place to transform telemetry for **data quality, governance, cost, and security** reasons. ([OpenTelemetry][18])
+
+---
+
+## H4) Securing the Collector itself (endpoints, config, permissions)
+
+### H4.1 Config secret management
+
+Collector config can contain API tokens and TLS private keys; store on encrypted FS/secret store; leverage env-var expansion to avoid hardcoding secrets. ([OpenTelemetry][17])
+
+### H4.2 Reduce attack surface (binary + config)
+
+Minimize components to what you use (attack surface reduction); build custom distributions if needed. ([OpenTelemetry][17])
+
+### H4.3 Least privilege + “server-like component” control
+
+* Avoid running as root; apply least privilege. ([OpenTelemetry][17])
+* Receivers/exporters can be server-like; limit access by enabling authentication extensions and restricting IPs/interfaces. ([OpenTelemetry][19])
+
+### H4.4 DoS posture: bind narrowly (localhost/pod IP)
+
+Security best practices recommend binding endpoints to limited interfaces (localhost/pod IP) instead of `0.0.0.0`; Collector’s defaults have moved toward localhost in recent versions and can be forced via feature gate in earlier versions. ([OpenTelemetry][17])
+
+---
+
+## H5) Transport security: OTLP channel guarantees + exporter/receiver expectations
+
+* OTLP is stable for traces/metrics/logs; supports gRPC and HTTP transports; supports `none` and `gzip` compression options. ([OpenTelemetry][20])
+* OTLP exporter spec: endpoint URL scheme `https` indicates secure connection; per-signal endpoints override base endpoint behavior. ([OpenTelemetry][21])
+* In practice: enforce TLS/mTLS between SDKs/agents/collectors/backends; treat “insecure dev flags” as production-prohibited.
+
+---
+
+## H6) Baggage governance: the “silent exfil” vector
+
+Baggage is propagated across services/processes and is often automatically injected into network requests; sensitive baggage can be shared with unintended resources because it travels in headers and can be forwarded outside your network. ([OpenTelemetry][16])
+Governance rules:
+
+* Never put secrets/tokens in baggage.
+* Treat baggage keys as “public metadata” unless proven otherwise.
+* If you need user/tenant identifiers, prefer hashed/truncated forms and explicitly add them as attributes only where required.
+
+---
+
+## H7) URL governance: SemConv mandates scrubbing
+
+URL SemConv explicitly forbids recording user/password and requires scrubbing known-sensitive query params; where you can’t reliably identify sensitivity, redaction may be necessary. ([OpenTelemetry][14])
+This should become an org-level policy: “URL attributes are sanitized at source or in Collector, always.”
+
+---
+
+## H8) Putting it together: “secure telemetry pipeline” minimal blueprint
+
+1. **Minimize capture** (no raw IDs/headers/bodies by default) ([OpenTelemetry][15])
+2. **Normalize SemConv** (schema processor early) so downstream rules don’t break on drift ([Go Packages][3])
+3. **Scrub** (attributes/transform/redaction/filter processors) ([OpenTelemetry][15])
+4. **Secure Collector hosting** (secrets, least privilege, restricted binds) ([OpenTelemetry][17])
+5. **Secure transport** (TLS/mTLS/auth) and monitor Collector’s own telemetry for drops/backpressure (resource + security) ([OpenTelemetry][17])
+
+[1]: https://opentelemetry.io/docs/concepts/semantic-conventions/ "Semantic Conventions | OpenTelemetry"
+[2]: https://opentelemetry.io/docs/specs/otel/schemas/ "Telemetry Schemas | OpenTelemetry"
+[3]: https://pkg.go.dev/github.com/open-telemetry/opentelemetry-collector-contrib/processor/schemaprocessor "schemaprocessor package - github.com/open-telemetry/opentelemetry-collector-contrib/processor/schemaprocessor - Go Packages"
+[4]: https://opentelemetry.io/docs/specs/semconv/ "OpenTelemetry semantic conventions 1.38.0 | OpenTelemetry"
+[5]: https://opentelemetry.io/docs/specs/otel/semantic-conventions/ "Semantic Conventions | OpenTelemetry"
+[6]: https://opentelemetry.io/docs/specs/semconv/general/semantic-convention-groups/ "Semantic convention groups | OpenTelemetry"
+[7]: https://opentelemetry.io/docs/specs/semconv/http/http-metrics/ "Semantic conventions for HTTP metrics | OpenTelemetry"
+[8]: https://opentelemetry.io/docs/specs/otel/schemas/file_format_v1.0.0/ "Schema File Format 1.0.0 | OpenTelemetry"
+[9]: https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/19472?utm_source=chatgpt.com "Processors should remove SchemaURL when ..."
+[10]: https://opentelemetry.io/docs/specs/semconv/non-normative/code-generation/ "Generating semantic convention libraries | OpenTelemetry"
+[11]: https://opentelemetry.io/docs/specs/semconv/general/events/ "Semantic conventions for events | OpenTelemetry"
+[12]: https://opentelemetry.io/docs/specs/semconv/general/metrics/ "Metrics semantic conventions | OpenTelemetry"
+[13]: https://opentelemetry.io/docs/specs/semconv/registry/attributes/url/ "URL | OpenTelemetry"
+[14]: https://opentelemetry.io/docs/specs/semconv/url/ "Semantic conventions for URL | OpenTelemetry"
+[15]: https://opentelemetry.io/docs/security/handling-sensitive-data/ "Handling sensitive data | OpenTelemetry"
+[16]: https://opentelemetry.io/docs/concepts/signals/baggage/ "Baggage | OpenTelemetry"
+[17]: https://opentelemetry.io/docs/security/config-best-practices/ "Collector configuration best practices | OpenTelemetry"
+[18]: https://opentelemetry.io/docs/collector/transforming-telemetry/ "Transforming telemetry | OpenTelemetry"
+[19]: https://opentelemetry.io/docs/security/hosting-best-practices/ "Collector hosting best practices | OpenTelemetry"
+[20]: https://opentelemetry.io/docs/specs/otlp/ "OTLP Specification 1.9.0 | OpenTelemetry"
+[21]: https://opentelemetry.io/docs/specs/otel/protocol/exporter/ "OpenTelemetry Protocol Exporter | OpenTelemetry"
+
+# I) Testing, troubleshooting, and “debuggability at scale”
+
+## Mental model (why OTel is “hard to test”)
+
+Telemetry pipelines are **asynchronous + stateful + multi-stage**:
+
+* **SDK stage**: spans/logs/metrics are buffered (Batch processors, periodic readers) and only become externally visible on **flush/export cadence**. ([OpenTelemetry Python][1])
+* **Collector stage**: receiver→processor→exporter adds buffering/backpressure and can drop/transform data; you debug by **hop-by-hop validation**. ([OpenTelemetry][2])
+* **Scale stage**: correctness depends on process model (fork/reload), queue sizing, and “control plane drift” (config/env var mismatches). ([OpenTelemetry][3])
+
+Design target for tests/debug: make each stage **observable in isolation** (in-memory / console / debug exporter), then re-compose.
+
+---
+
+## I1) Unit-test harnesses (SDK-only): deterministic capture by signal
+
+### I1.1 Traces: “end-span → capture → assert” without external IO
+
+**Primitives**
+
+* `ConsoleSpanExporter` exists explicitly for diagnostic output to stdout. ([OpenTelemetry Python][1])
+* `SpanExporter` contract requires wiring through `SimpleSpanProcessor` or `BatchSpanProcessor`; processor callbacks are synchronous on start/end (don’t block). ([OpenTelemetry Python][1])
+* `BatchSpanProcessor` is env-var configurable (`OTEL_BSP_*`) and uses background work; tests should avoid depending on its timing unless you explicitly `force_flush()`. ([OpenTelemetry Python][1])
+* `InMemorySpanExporter` exists for testing and stores exported spans in-memory retrievable via `get_finished_spans`. ([GitHub][4])
+
+**Fixture pattern (pytest)**
+
+```python
+import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+@pytest.fixture
+def span_capture():
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    try:
+        yield exporter
+    finally:
+        provider.shutdown()  # drains processors/exporters
+        exporter.clear()     # avoid cross-test leakage (method exists on exporter)
+```
+
+(Exporter lifecycle correctness depends on flush/shutdown; `SpanExporter.force_flush()`/`shutdown()` are first-class. ([OpenTelemetry Python][1]))
+
+**Assertion discipline**
+
+* Assert against **ended spans** (captured by exporter), not “current span” references, unless you control span end synchronously. (`start_as_current_span` ends on context manager exit.) ([OpenTelemetry Python][5])
+* If you *must* assert against “active spans” (async end elsewhere), treat it as a distinct test style: you’re validating **context propagation**, not exporter output (and this is a known pain-point in real projects). ([GitHub][6])
+
+---
+
+### I1.2 Metrics: never rely on background periodic collection in unit tests
+
+**Primitives**
+
+* `InMemoryMetricReader.get_metrics_data()` is explicitly “useful for unit tests.” ([OpenTelemetry Python][7])
+* `ConsoleMetricExporter` exists for diagnostics (stdout). ([OpenTelemetry Python][7])
+* Auto-instrumentation + pre-fork servers can break metrics generation because `PeriodicExportingMetricReader` spawns a thread; forked workers inherit inconsistent locks/threads. ([OpenTelemetry][3])
+
+**Fixture pattern**
+
+```python
+import pytest
+from opentelemetry import metrics
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+@pytest.fixture
+def metric_capture():
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(metric_readers=[reader])
+    metrics.set_meter_provider(provider)
+    try:
+        yield reader
+    finally:
+        provider.shutdown()
+```
+
+**Assertion discipline**
+
+* Pull via `reader.get_metrics_data()` at a deterministic point; avoid “sleep until exported”. ([OpenTelemetry Python][7])
+* When your production pipeline uses delta temporality / special aggregations, mirror those via reader/exporter “preferred temporality/aggregation” so your unit test output matches production semantics. ([OpenTelemetry Python][7])
+
+---
+
+### I1.3 Logs: test the *OTel logs pipeline*, not the stdlib formatter
+
+**Primitives**
+
+* Python “manual instrumentation” docs show wiring `LoggerProvider` + `BatchLogRecordProcessor` + `ConsoleLogRecordExporter` (note naming drift: older versions had `ConsoleLogExporter`). ([OpenTelemetry][8])
+* Logs are still flagged as development/experimental in Python-facing docs; treat the types and import paths as drift-prone and pin versions aggressively. ([OpenTelemetry Python][9])
+* Stdout exporters have **unspecified output format** (don’t snapshot raw text unless you control formatter). ([OpenTelemetry][10])
+
+**Fixture pattern**
+
+```python
+import logging, pytest
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, ConsoleLogRecordExporter
+
+@pytest.fixture
+def otel_log_pipeline():
+    provider = LoggerProvider()
+    set_logger_provider(provider)
+    provider.add_log_record_processor(BatchLogRecordProcessor(ConsoleLogRecordExporter()))
+    handler = LoggingHandler(logger_provider=provider)
+
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        yield
+    finally:
+        provider.shutdown()
+        root.removeHandler(handler)
+```
+
+(Use this to validate “OTel sees my log records” independent of how your app formats logs.) ([OpenTelemetry][8])
+
+---
+
+## I2) “Debug exporters” as a systematic bisect tool (SDK + Collector)
+
+### I2.1 SDK console exporters (fastest local truth)
+
+* Python docs explicitly recommend console exporters “to debug your instrumentation” and show `ConsoleSpanExporter`/`ConsoleMetricExporter`. ([OpenTelemetry][11])
+* `ConsoleSpanExporter`/`ConsoleMetricExporter` are explicitly “diagnostic purposes.” ([OpenTelemetry Python][1])
+
+### I2.2 Agent-level: console + OTLP side-by-side
+
+Zero-code doc supports multi-exporter (e.g., `--traces_exporter console,otlp`) and env-based equivalents. ([OpenTelemetry][12])
+This is the “least-effort bisect”: if console shows data but OTLP doesn’t, your failure is **egress** not **instrumentation**.
+
+---
+
+### I2.3 Collector “debug exporter” (the canonical hop validator)
+
+Collector troubleshooting docs recommend using the **debug exporter** to confirm receive/process/export and show `verbosity: detailed` printing full payloads. ([OpenTelemetry][2])
+The Python distro docs also provide a local collector config using `debug` exporter (and note the legacy name change: older Collector versions used `logging` exporter instead of `debug`). ([OpenTelemetry][13])
+
+---
+
+## I3) Troubleshooting workflow: pipeline bisection (mechanical checklist)
+
+### I3.1 Stage 0 — verify the agent + distro wiring exists
+
+* Auto-instrumentation requires installing a distro package (`opentelemetry-distro` is the default). ([OpenTelemetry][12])
+
+### I3.2 Stage 1 — prove the SDK is emitting
+
+* Switch to console exporters (stdout): `ConsoleSpanExporter` / `ConsoleMetricExporter`. ([OpenTelemetry][11])
+* If using the agent: configure console exporters via CLI or env (doc shows both). ([OpenTelemetry][12])
+
+### I3.3 Stage 2 — prove OTLP transport to Collector
+
+* Run a minimal Collector that just receives OTLP and exports to debug. ([OpenTelemetry][13])
+* Ensure endpoint/path semantics are correct (especially OTLP/HTTP `/v1/*` path handling); if unsure, force per-signal endpoints.
+
+### I3.4 Stage 3 — prove Collector topology and component availability
+
+Collector troubleshooting gives the exact “topology hazards” and tools:
+
+* A receiver defined but not referenced in `service.pipelines` means “Collector not receiving data.” ([OpenTelemetry][2])
+* `otelcol components` lists which receivers/processors/exporters exist in your distribution and their stability. ([OpenTelemetry][2])
+* Enable extensions for deep debugging:
+
+  * `pprof` (profiling; port 1777) ([OpenTelemetry][2])
+  * `zpages` (live receiver/exporter inspection; TraceZ shows running spans that don’t end, latency issues, errors; configurable endpoint). ([OpenTelemetry][2])
+
+### I3.5 Stage 4 — confirm “scale failure modes”
+
+Collector troubleshooting enumerates common root causes:
+
+* Drops often caused by undersizing or slow/unavailable exporter destination; mitigate via exporter queued retry options / sending queue batch settings. ([OpenTelemetry][2])
+
+---
+
+## I4) High-frequency Python failure modes you should explicitly document (because they look like “OTel is broken”)
+
+### I4.1 Dev servers / reloaders
+
+Flask debug mode enables a reloader; the OTel troubleshooting guide notes this can break instrumentation unless `use_reloader=False`. ([OpenTelemetry][3])
+
+### I4.2 Pre-fork servers (Gunicorn, multi-worker) + metrics
+
+Python troubleshooting notes multi-worker pre-fork setups can break metrics due to `PeriodicExportingMetricReader` spawning threads and forking causing inconsistent thread/lock state; issues are tracked upstream. ([OpenTelemetry][3])
+**Takeaway for tests/bench**: prefer `InMemoryMetricReader` and explicit `shutdown()`/collection in unit tests; treat periodic readers as integration/runtime-only. ([OpenTelemetry][3])
+
+### I4.3 Output format instability
+
+Stdout exporters’ output format is explicitly unspecified and can vary; don’t write “golden file” snapshots over raw console exporter output without a stable formatter layer. ([OpenTelemetry][10])
+
+---
+
+## I5) Debuggability at scale: what to monitor when “some telemetry disappears”
+
+At scale, you don’t ask “did we export?”—you ask “where did it stop?”:
+
+* **Collector internal telemetry**: first-line signal for backpressure, queue growth, exporter errors. ([OpenTelemetry][2])
+* **Debug exporter sampling**: send a small known payload through and confirm it survives each hop (Collector docs include a Zipkin payload injection example and expected debug logs). ([OpenTelemetry][2])
+* **Hop checklist**: Collector docs provide a concrete “verify ingestion / modification / export / format / next hop / network policy” checklist—use this as your standard incident runbook skeleton. ([OpenTelemetry][2])
+
+---
+
+# J) Distro / vendor distribution ecosystem (optional but real-world important)
+
+## Mental model (distribution ≠ fork; distros are “opinionated wrappers”)
+
+OpenTelemetry defines a **distribution** as a **customized wrapper** around an upstream OTel component (language libs or Collector), explicitly “not a fork.” ([OpenTelemetry][14])
+Allowed customization classes include: scripts, default settings, packaging options, extra test/security coverage, added capabilities, or removed capabilities. ([OpenTelemetry][14])
+
+OTel categorizes distributions:
+
+* **Pure**: same functionality as upstream, just easier packaging/defaults
+* **Plus**: adds capabilities beyond upstream (extra exporters/instrumentations/features)
+* **Minus**: removes upstream capabilities (supportability/security surface reduction) ([OpenTelemetry][14])
+
+Governance disclaimers are explicit:
+
+* OTel does not validate/endorse third-party distros; support comes from distro authors; evaluate vendor lock-in. ([OpenTelemetry][14])
+
+---
+
+## J1) Upstream Python distro mechanics (what the default `opentelemetry-distro` actually does)
+
+The Python distro docs state `opentelemetry-distro` configures (by default):
+
+* SDK `TracerProvider`
+* `BatchSpanProcessor`
+* OTLP `SpanExporter` to send to an OTel Collector ([OpenTelemetry][13])
+
+It also defines the extensibility mechanism:
+
+* auto-instrumentation loads distro/configuration interfaces via **entry points** `opentelemetry_distro` and `opentelemetry_configurator`, executed **before any other code**. ([OpenTelemetry][13])
+  And zero-code docs emphasize: you must install a distro package for auto-instrumentation to work. ([OpenTelemetry][12])
+
+---
+
+## J2) Selecting/customizing Python distros in-process (entry point discovery)
+
+The `opentelemetry-instrumentation` packaging guidance notes:
+
+* if multiple distros/configurators are present, select via `OTEL_PYTHON_DISTRO` and `OTEL_PYTHON_CONFIGURATOR`. ([PyPI][15])
+
+**Environment introspection snippet (no magic):**
+
+```python
+import importlib.metadata as md
+
+print([ep.name for ep in md.entry_points(group="opentelemetry_distro")])
+print([ep.name for ep in md.entry_points(group="opentelemetry_configurator")])
+```
+
+(Useful when an agent runtime “mysteriously” sets defaults you didn’t configure.)
+
+---
+
+## J3) Third-party distro ecosystem: where to look + what “vendor distro” typically changes
+
+OpenTelemetry maintains an ecosystem list of third-party distributions and the component they customize (including Python distros like AWS ADOT). ([OpenTelemetry][16])
+
+Typical “vendor distro” customizations you should catalog (because they affect debugging and migrations):
+
+* **Default exporter + endpoint + protocol** (often OTLP/gRPC to a local vendor Collector)
+* **Default propagators** (W3C vs B3, etc.)
+* **Resource enrichment** (cloud/platform metadata)
+* **Additional instrumentation / hooks** (response header injection, log correlation)
+* **Support policy and release cadence** (vendor may ship fixes before upstream) ([Splunk Docs][17])
+
+Concrete Python examples (representative):
+
+### Splunk Distribution of OpenTelemetry Python
+
+Splunk describes its distro as a wrapper around upstream Python auto-instrumentation, adds features (server trace info in HTTP responses, automatic log trace-metadata injection), and sets defaults including OTLP gRPC exporter to a local Splunk OTel Collector. ([Splunk Docs][17])
+
+### AWS Distro for OpenTelemetry (ADOT) Python
+
+AWS describes ADOT Python as enabling instrumentation once and sending correlated telemetry to AWS monitoring solutions, requiring both an OTel SDK configured for X-Ray and an ADOT Collector configured for X-Ray. ([AWS Documentation][18])
+
+### Azure Monitor OpenTelemetry Distro (Python)
+
+Microsoft’s package description emphasizes bundling OTel + Azure Monitor components and providing a `configure_azure_monitor` entry point; docs note automatic instrumentation is not yet supported (so it’s “manual-first”). ([Microsoft Learn][19])
+
+### Lumigo OpenTelemetry Distribution for Python (example of “plus distro”)
+
+Lumigo describes a no-code distro built from upstream packages with additional customizations and optional log correlation support. ([GitHub][20])
+
+---
+
+## J4) Collector distributions (vendor vs custom builds)
+
+Distributions apply equally to the Collector binary. OTel’s distro concept page explicitly calls out Collector binaries as reference implementations that can be customized. ([OpenTelemetry][14])
+The ecosystem distro list distinguishes non-collector distros vs Collector distributions (separate lists). ([OpenTelemetry][16])
+
+Operational implication: “Collector behavior” depends on **which distribution** you run (component set, defaults, enabled extensions).
+
+---
+
+## J5) Evaluation matrix for choosing a distro (what advanced agents must verify)
+
+Because OTel does not certify distros and support is from authors: ([OpenTelemetry][14])
+Verify (mechanically) before committing:
+
+* Component coverage: which signals are stable/beta in that distro (logs often differ)
+* Defaults: exporters/protocols/endpoints/sampling/propagators
+* Added behaviors: response header injection, log correlation, secret masking
+* Escape hatches: can you revert to upstream config knobs (`OTEL_*`) cleanly?
+* Lock-in surface: do you emit vendor-specific attributes, or can you run through a generic Collector?
+
+---
+
+If you want the next continuation after I/J, the natural remaining “advanced backlog” chapters are: **K) Cross-signal correlation patterns (trace↔metrics exemplars, logs trace-based gating, baggage governance)** and **L) Performance/cost engineering (cardinality budgets, sampling + tail-sampling topology, queue sizing, and failure-mode testing)**—but I’ll stop here per your request.
+
+[1]: https://opentelemetry-python.readthedocs.io/en/latest/sdk/trace.export.html "opentelemetry.sdk.trace.export — OpenTelemetry Python  documentation"
+[2]: https://opentelemetry.io/docs/collector/troubleshooting/ "Troubleshooting | OpenTelemetry"
+[3]: https://opentelemetry.io/docs/zero-code/python/troubleshooting/ "Troubleshooting Python automatic instrumentation issues | OpenTelemetry"
+[4]: https://github.com/open-telemetry/opentelemetry-python/blob/main/opentelemetry-sdk/src/opentelemetry/sdk/trace/export/in_memory_span_exporter.py?utm_source=chatgpt.com "open-telemetry/opentelemetry-python"
+[5]: https://opentelemetry-python.readthedocs.io/en/latest/api/trace.html?utm_source=chatgpt.com "opentelemetry.trace package"
+[6]: https://github.com/open-telemetry/opentelemetry-python/issues/3999?utm_source=chatgpt.com "trace.get_current_span doesn't provide active span under ..."
+[7]: https://opentelemetry-python.readthedocs.io/en/latest/sdk/metrics.export.html "opentelemetry.sdk.metrics.export — OpenTelemetry Python  documentation"
+[8]: https://opentelemetry.io/docs/languages/python/instrumentation/?utm_source=chatgpt.com "Instrumentation"
+[9]: https://opentelemetry-python.readthedocs.io/en/stable/examples/logs/README.html?utm_source=chatgpt.com "OpenTelemetry Logs SDK"
+[10]: https://opentelemetry.io/docs/specs/otel/logs/sdk_exporters/stdout/?utm_source=chatgpt.com "Logs Exporter - Standard output"
+[11]: https://opentelemetry.io/docs/languages/python/exporters/?utm_source=chatgpt.com "Exporters"
+[12]: https://opentelemetry.io/docs/zero-code/python/ "Python zero-code instrumentation | OpenTelemetry"
+[13]: https://opentelemetry.io/docs/languages/python/distro/ "OpenTelemetry Distro | OpenTelemetry"
+[14]: https://opentelemetry.io/docs/concepts/distributions/ "Distributions | OpenTelemetry"
+[15]: https://pypi.org/project/opentelemetry-instrumentation/?utm_source=chatgpt.com "opentelemetry-instrumentation"
+[16]: https://opentelemetry.io/ecosystem/distributions/ "Third-party distributions | OpenTelemetry"
+[17]: https://help.splunk.com/en/splunk-observability-cloud/manage-data/available-data-sources/supported-integrations-in-splunk-observability-cloud/apm-instrumentation/instrument-a-python-application/about-splunk-otel-python?utm_source=chatgpt.com "About the Splunk Distribution of OpenTelemetry Python"
+[18]: https://docs.aws.amazon.com/xray/latest/devguide/xray-python-opentel-sdk.html?utm_source=chatgpt.com "AWS Distro for OpenTelemetry Python - AWS X-Ray"
+[19]: https://learn.microsoft.com/en-us/python/api/overview/azure/monitor-opentelemetry-readme?view=azure-python&utm_source=chatgpt.com "Azure Monitor Opentelemetry Distro client library for Python"
+[20]: https://github.com/lumigo-io/opentelemetry-python-distro?utm_source=chatgpt.com "lumigo-io/opentelemetry-python-distro"

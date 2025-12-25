@@ -72,6 +72,12 @@ CALL_GRAPH_TABLE_KEYS = (
 )
 
 
+@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for call graph nodes."""
+    return env.gateway
+
+
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(CALL_GRAPH_NODES_TABLE_KEY),
@@ -533,6 +539,7 @@ def _serialize_call_graph_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraph
 @tag_tool(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph__extract(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__goids: TargetRunRecord,
 ) -> CallGraphExtractResult:
     """Execute call graph extraction on repository modules.
@@ -573,11 +580,9 @@ def t__call_graph__extract(
             options_type=CallGraphOptions,
         )
 
-        _log_repo_state(env.gateway, snapshot.repo, snapshot.commit)
+        _log_repo_state(gateway, snapshot.repo, snapshot.commit)
 
-        function_index = load_function_index(
-            env.gateway, repo=snapshot.repo, commit=snapshot.commit
-        )
+        function_index = load_function_index(gateway, repo=snapshot.repo, commit=snapshot.commit)
         paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
 
         if not paths:
@@ -594,10 +599,10 @@ def t__call_graph__extract(
 
         collection_ctx = _EdgeCollectionState(
             function_index=function_index,
-            global_callees=_build_global_callee_lookup(env.gateway, snapshot.repo, snapshot.commit),
-            def_goids_by_path=_build_def_goids_by_path(env.gateway, snapshot.repo, snapshot.commit),
+            global_callees=_build_global_callee_lookup(gateway, snapshot.repo, snapshot.commit),
+            def_goids_by_path=_build_def_goids_by_path(gateway, snapshot.repo, snapshot.commit),
             source_root=snapshot.repo_root
-            or get_source_root(env.gateway, snapshot.repo, snapshot.commit),
+            or get_source_root(gateway, snapshot.repo, snapshot.commit),
             repo=snapshot.repo,
             commit=snapshot.commit,
             use_libcst=opts.use_libcst,
@@ -611,7 +616,7 @@ def t__call_graph__extract(
         node_count = _rows_written(
             env.warehouse.materialize_mappings(
                 CALL_GRAPH_NODES_TABLE_KEY,
-                _build_nodes_from_goids(env.gateway, snapshot.repo, snapshot.commit),
+                _build_nodes_from_goids(gateway, snapshot.repo, snapshot.commit),
                 options=options,
             )
         )
