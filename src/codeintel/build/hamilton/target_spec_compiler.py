@@ -45,6 +45,14 @@ class TargetSpecOverride:
     description: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _OutputTargetContext:
+    derived_outputs: DerivedTargetOutputs
+    derived_tools: Mapping[str, tuple[str, ...]]
+    overrides_by_target: Mapping[str, TargetSpecOverride]
+    strict: bool
+
+
 class TargetSpecError(RuntimeError):
     """Error raised when target spec compilation fails."""
 
@@ -521,31 +529,28 @@ def _build_output_target(
     *,
     target_name: str,
     node: Node,
-    derived_outputs: DerivedTargetOutputs,
-    derived_tools: Mapping[str, tuple[str, ...]],
-    overrides_by_target: Mapping[str, TargetSpecOverride],
-    strict: bool,
+    context: _OutputTargetContext,
 ) -> OutputTarget:
     tags = cast("dict[str, object]", node.tags)
-    override = overrides_by_target.get(target_name)
+    override = context.overrides_by_target.get(target_name)
 
-    domain = _resolve_domain(tags=tags, target_name=target_name, strict=strict)
+    domain = _resolve_domain(tags=tags, target_name=target_name, strict=context.strict)
     description = _resolve_description(
         node,
         target_name=target_name,
         override=override,
-        strict=strict,
+        strict=context.strict,
     )
-    _validate_spec_version(tags=tags, target_name=target_name, strict=strict)
+    _validate_spec_version(tags=tags, target_name=target_name, strict=context.strict)
 
-    resources = _resources_from_tags(tags=tags, target_name=target_name, strict=strict)
-    execution = _execution_from_tags(tags=tags, target_name=target_name, strict=strict)
-    parameters = _parameters_from_tags(tags=tags, target_name=target_name, strict=strict)
+    resources = _resources_from_tags(tags=tags, target_name=target_name, strict=context.strict)
+    execution = _execution_from_tags(tags=tags, target_name=target_name, strict=context.strict)
+    parameters = _parameters_from_tags(tags=tags, target_name=target_name, strict=context.strict)
 
     if override and override.resources is not None:
         resources = override.resources
     elif not resources.tools:
-        tools = derived_tools.get(target_name)
+        tools = context.derived_tools.get(target_name)
         if tools:
             resources = TargetResources(
                 tracker=resources.tracker,
@@ -558,18 +563,18 @@ def _build_output_target(
     if override and override.parameters is not None:
         parameters = override.parameters
 
-    table_keys = derived_outputs.datasets_by_target.get(target_name, ())
+    table_keys = context.derived_outputs.datasets_by_target.get(target_name, ())
     tables = _resolve_table_schemas(
         target_name=target_name,
         table_keys=table_keys,
-        strict=strict,
+        strict=context.strict,
     )
 
-    artifact_names = derived_outputs.artifacts_by_target.get(target_name, ())
+    artifact_names = context.derived_outputs.artifacts_by_target.get(target_name, ())
     artifacts = _artifact_specs(
         target_name=target_name,
         artifact_names=artifact_names,
-        templates_by_target=derived_outputs.artifact_templates_by_target,
+        templates_by_target=context.derived_outputs.artifact_templates_by_target,
     )
 
     contract = OutputContract(tables=tables, artifacts=artifacts)
@@ -621,15 +626,18 @@ def compile_output_targets_from_driver(
         target_name: _derive_tools_from_nodes(nodes, target_name=target_name)
         for target_name in anchors
     }
+    context = _OutputTargetContext(
+        derived_outputs=derived_outputs,
+        derived_tools=derived_tools,
+        overrides_by_target=overrides_by_target,
+        strict=strict,
+    )
 
     results = [
         _build_output_target(
             target_name=target_name,
             node=anchors[target_name],
-            derived_outputs=derived_outputs,
-            derived_tools=derived_tools,
-            overrides_by_target=overrides_by_target,
-            strict=strict,
+            context=context,
         )
         for target_name in sorted(anchors)
     ]

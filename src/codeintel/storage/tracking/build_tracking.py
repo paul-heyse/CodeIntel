@@ -52,7 +52,11 @@ class ScipRunRecord:
     batch_size: int | None
     batch_count: int
     decision: str | None
+    ratio_gate_applied: bool | None
+    ratio_gate_min_modules: int | None
+    ratio_gate_min_changed: int | None
     hash_source: str | None
+    hash_source_breakdown: str | None
     hash_reused: int
     hash_computed: int
     plan_ms: float | None
@@ -653,7 +657,11 @@ class BuildTracking:
                     record.batch_size,
                     record.batch_count,
                     record.decision,
+                    record.ratio_gate_applied,
+                    record.ratio_gate_min_modules,
+                    record.ratio_gate_min_changed,
                     record.hash_source,
+                    record.hash_source_breakdown,
                     record.hash_reused,
                     record.hash_computed,
                     record.plan_ms,
@@ -683,7 +691,11 @@ class BuildTracking:
                 "batch_size",
                 "batch_count",
                 "decision",
+                "ratio_gate_applied",
+                "ratio_gate_min_modules",
+                "ratio_gate_min_changed",
                 "hash_source",
+                "hash_source_breakdown",
                 "hash_reused",
                 "hash_computed",
                 "plan_ms",
@@ -711,7 +723,11 @@ class BuildTracking:
                     "batch_size",
                     "batch_count",
                     "decision",
+                    "ratio_gate_applied",
+                    "ratio_gate_min_modules",
+                    "ratio_gate_min_changed",
                     "hash_source",
+                    "hash_source_breakdown",
                     "hash_reused",
                     "hash_computed",
                     "plan_ms",

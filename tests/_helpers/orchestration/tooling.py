@@ -299,9 +299,7 @@ def _run_scip_index(context: ToolingContext, build_dir: Path) -> Path:
         output_scip=output_scip,
         proto_module_path=proto_module_path,
     )
-    result = asyncio.run(
-        context.service.run_scip_full(request)
-    )
+    result = asyncio.run(context.service.run_scip_full(request))
     scip_index = result.index_scip_path or output_scip
     if not scip_index.is_file():
         message = f"SCIP artifact missing at {scip_index}"

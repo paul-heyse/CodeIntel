@@ -67,6 +67,7 @@ class DuckDBIbisTableSaver(DataSaver):
     target_name: str
     table_key: str
     hash_options: InputHashOptions | None = None
+    output_role: Literal["contract", "internal"] | None = None
 
     @classmethod
     def name(cls) -> str:

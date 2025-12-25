@@ -38,8 +38,16 @@ class ScipRunTelemetry:
         Number of scip-python runs performed for shards.
     decision
         Decision reason (options mismatch, threshold, force, etc.).
+    ratio_gate_applied
+        Whether ratio gating was applied to rebuild decisions.
+    ratio_gate_min_modules
+        Minimum module count required for ratio-based rebuilds.
+    ratio_gate_min_changed
+        Minimum changed modules required for ratio-based rebuilds.
     hash_source
         Hash source used (file_state, computed, mixed).
+    hash_source_breakdown
+        Breakdown of hash sources used.
     hash_reused
         Count of hashes reused from file state.
     hash_computed
@@ -81,7 +89,11 @@ class ScipRunTelemetry:
     batch_size: int | None
     batch_count: int
     decision: str | None
+    ratio_gate_applied: bool | None
+    ratio_gate_min_modules: int | None
+    ratio_gate_min_changed: int | None
     hash_source: str | None
+    hash_source_breakdown: str | None
     hash_reused: int
     hash_computed: int
     plan_ms: float | None
@@ -118,7 +130,11 @@ class ScipRunTelemetry:
             "batch_size": self.batch_size,
             "batch_count": self.batch_count,
             "decision": self.decision,
+            "ratio_gate_applied": self.ratio_gate_applied,
+            "ratio_gate_min_modules": self.ratio_gate_min_modules,
+            "ratio_gate_min_changed": self.ratio_gate_min_changed,
             "hash_source": self.hash_source,
+            "hash_source_breakdown": self.hash_source_breakdown,
             "hash_reused": self.hash_reused,
             "hash_computed": self.hash_computed,
             "plan_ms": self.plan_ms,
@@ -164,7 +180,11 @@ class ScipRunTelemetry:
             batch_size=None,
             batch_count=0,
             decision=None,
+            ratio_gate_applied=None,
+            ratio_gate_min_modules=None,
+            ratio_gate_min_changed=None,
             hash_source=None,
+            hash_source_breakdown=None,
             hash_reused=0,
             hash_computed=0,
             plan_ms=None,

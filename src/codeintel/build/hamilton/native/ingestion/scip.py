@@ -335,9 +335,7 @@ def scip__run_config(
 
 def _scip_run_precheck(inputs: ScipModuleInputs) -> ExecutionResult | None:
     if inputs.modules.status not in {"succeeded", "skipped"}:
-        return ExecutionResult.failed(
-            f"Upstream modules target failed: {inputs.modules.error}"
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {inputs.modules.error}")
     if not inputs.scan.success:
         return ExecutionResult.failed(inputs.scan.error or "Module scan failed")
     return None
@@ -497,7 +495,11 @@ def _persist_scip_telemetry(env: BuildEnv, telemetry: ScipRunTelemetry) -> None:
         batch_size=telemetry.batch_size,
         batch_count=telemetry.batch_count,
         decision=telemetry.decision,
+        ratio_gate_applied=telemetry.ratio_gate_applied,
+        ratio_gate_min_modules=telemetry.ratio_gate_min_modules,
+        ratio_gate_min_changed=telemetry.ratio_gate_min_changed,
         hash_source=telemetry.hash_source,
+        hash_source_breakdown=telemetry.hash_source_breakdown,
         hash_reused=telemetry.hash_reused,
         hash_computed=telemetry.hash_computed,
         plan_ms=telemetry.plan_ms,
@@ -544,9 +546,7 @@ def _execute_scip_incremental(
         )
 
     change_set, force_full_rebuild = _resolve_change_set(module_inputs.scan)
-    run_id = (
-        env.run_context.run_id if env.run_context is not None else new_run_id("scip")
-    )
+    run_id = env.run_context.run_id if env.run_context is not None else new_run_id("scip")
     telemetry = ScipRunTelemetry.create(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
@@ -574,7 +574,10 @@ def _execute_scip_incremental(
             batch_max_bytes=run_config.options.batch_max_bytes,
             full_rebuild_threshold_count=run_config.options.full_rebuild_threshold_count,
             full_rebuild_threshold_ratio=run_config.options.full_rebuild_threshold_ratio,
+            full_rebuild_ratio_min_modules=run_config.options.full_rebuild_ratio_min_modules,
+            full_rebuild_ratio_min_changed=run_config.options.full_rebuild_ratio_min_changed,
             file_state_by_path=file_state_by_path,
+            module_state_by_path=None,
             telemetry=telemetry,
         )
         result = update_index_incremental(config=config)
@@ -690,9 +693,7 @@ def scip__ingest_inputs(
 
 def _scip_ingest_precheck(inputs: ScipIngestInputs) -> ExecutionResult | None:
     if inputs.modules.status not in {"succeeded", "skipped"}:
-        return ExecutionResult.failed(
-            f"Upstream modules target failed: {inputs.modules.error}"
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {inputs.modules.error}")
     if inputs.run.result.skipped:
         return ExecutionResult.skip("SCIP target skipped")
     if not inputs.run.result.success:
@@ -796,9 +797,7 @@ def _build_scip_ingest_result(env: BuildEnv, inputs: ScipIngestInputs) -> ScipIn
 
     if not payload.symbol_rows or not payload.occurrence_rows:
         return ScipIngestResult(
-            result=ExecutionResult.failed(
-                "SCIP ingestion produced empty symbols or occurrences"
-            )
+            result=ExecutionResult.failed("SCIP ingestion produced empty symbols or occurrences")
         )
 
     table_counts = _scip_table_counts(payload)
@@ -829,7 +828,6 @@ def t__scip__ingest(
         Ingestion status and row tuples.
     """
     return _build_scip_ingest_result(env, scip__ingest_inputs)
-
 
 
 @dataclass(frozen=True)
@@ -954,7 +952,6 @@ def scip__rows_for_table(
         Row tuples for the configured table, or None when ingestion skipped or failed.
     """
     return _resolve_scip_ingest_rows(t__scip__ingest, rows_attr)
-
 
 
 @SaveToObjectMetadataDecorator(
@@ -1179,9 +1176,7 @@ def _summarize_scip_table_materializations(
         resources=TargetResources(
             tracker=True,
             modules=True,
-            tools=(
-                "scip-python",
-            ),
+            tools=("scip-python",),
         ),
         execution=TOOL_EXECUTION,
     ),
@@ -1207,14 +1202,10 @@ def t__scip(
     )
     if scip__target_inputs.modules.status not in {"succeeded", "skipped"}:
         return executor.fail(
-            RuntimeError(
-                scip__target_inputs.modules.error or "Upstream modules target failed"
-            )
+            RuntimeError(scip__target_inputs.modules.error or "Upstream modules target failed")
         )
     if not scip__inputs.run.result.success:
-        return executor.fail(
-            RuntimeError(scip__inputs.run.result.error or "SCIP execution failed")
-        )
+        return executor.fail(RuntimeError(scip__inputs.run.result.error or "SCIP execution failed"))
     if not scip__inputs.ingest.result.success and not scip__inputs.ingest.result.skipped:
         return executor.fail(
             RuntimeError(scip__inputs.ingest.result.error or "SCIP ingestion failed")

@@ -259,9 +259,7 @@ def _resolve_shard_updated_at(
     if updated_at_by_path is None:
         return None
     timestamps = [
-        updated_at_by_path.get(doc.relative_path)
-        for doc in shard.documents
-        if doc.relative_path
+        updated_at_by_path.get(doc.relative_path) for doc in shard.documents if doc.relative_path
     ]
     resolved = [stamp for stamp in timestamps if stamp is not None]
     if not resolved:

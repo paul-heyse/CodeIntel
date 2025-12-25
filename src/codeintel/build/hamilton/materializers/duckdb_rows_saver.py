@@ -76,6 +76,7 @@ class DuckDBRowsSaver(DataSaver):
     table_key: str
     columns: tuple[str, ...] | DeferredColumns
     hash_options: InputHashOptions | None = None
+    output_role: Literal["contract", "internal"] | None = None
 
     @classmethod
     def name(cls) -> str:

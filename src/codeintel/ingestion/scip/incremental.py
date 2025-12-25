@@ -13,7 +13,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.ingestion.adapters.hash_change_detection import HashChangeDetectionAdapter
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
@@ -21,6 +20,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolRunOptions,
 )
 from codeintel.ingestion.scip.cli import build_scip_python_args
+from codeintel.ingestion.scip.hash_resolver import FileDigestResolver
 from codeintel.ingestion.scip.index_store import (
     MergeIndexContext,
     load_index_proto,
@@ -37,6 +37,11 @@ from codeintel.ingestion.scip.manifest import (
     write_manifest,
 )
 from codeintel.ingestion.scip.paths import resolve_target_base, scip_relative_path
+from codeintel.ingestion.scip.policy import (
+    ScipIncrementalDecision,
+    ScipIncrementalInputs,
+    ScipIncrementalPolicy,
+)
 from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
 
 if TYPE_CHECKING:
@@ -102,7 +107,10 @@ class ScipIncrementalConfig:
     batch_max_bytes: int = 50_000_000
     full_rebuild_threshold_count: int = 1000
     full_rebuild_threshold_ratio: float = 0.3
+    full_rebuild_ratio_min_modules: int = 200
+    full_rebuild_ratio_min_changed: int = 25
     file_state_by_path: Mapping[str, FileDigest] | None = None
+    module_state_by_path: Mapping[str, FileDigest] | None = None
     telemetry: ScipRunTelemetry | None = None
 
 
@@ -134,10 +142,20 @@ class _ModuleShardPlan:
 
 
 @dataclass(frozen=True)
+class _BatchPlan:
+    batch_id: str
+    plans: tuple[_ModuleShardPlan, ...]
+    size_bytes: int
+    rel_paths: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class _ShardPlanStats:
     total_candidates: int
-    computed_hashes: int
-    reused_hashes: int
+    hash_computed: int
+    hash_reused: int
+    hash_source: str | None
+    hash_source_breakdown: str | None
     computed_ms: float
 
 
@@ -212,15 +230,10 @@ def update_index_incremental(
     start_total = time.perf_counter()
     context = _build_run_context(config)
     telemetry = context.config.telemetry
-    decision = _resolve_full_rebuild_decision(
-        config=context.config,
-        manifest_file=context.manifest_file,
-        changed_count=context.changed_count,
-        changed_ratio=context.changed_ratio,
-    )
+    decision = _resolve_decision(context)
     _initialize_telemetry(context, decision)
     _log_plan_summary(context, decision)
-    if decision is not None:
+    if decision.mode == "full":
         result = _full_rebuild(
             run_config=context.run_config,
             output_scip=context.config.output_scip,
@@ -313,7 +326,10 @@ def _build_run_context(config: ScipIncrementalConfig) -> _IncrementalRunContext:
     )
 
 
-def _initialize_telemetry(context: _IncrementalRunContext, decision: str | None) -> None:
+def _initialize_telemetry(
+    context: _IncrementalRunContext,
+    decision: ScipIncrementalDecision,
+) -> None:
     telemetry = context.config.telemetry
     if telemetry is None:
         return
@@ -322,7 +338,10 @@ def _initialize_telemetry(context: _IncrementalRunContext, decision: str | None)
     telemetry.deleted_modules = len(context.deleted_modules)
     telemetry.changed_ratio = context.changed_ratio
     telemetry.batch_size = context.config.batch_size
-    telemetry.decision = decision
+    telemetry.decision = decision.reason
+    telemetry.ratio_gate_applied = decision.ratio_gate_applied
+    telemetry.ratio_gate_min_modules = decision.ratio_gate_min_modules
+    telemetry.ratio_gate_min_changed = decision.ratio_gate_min_changed
     telemetry.output_scip = str(context.config.output_scip)
 
 
@@ -372,15 +391,19 @@ def _build_incremental_plan(
         max_file_size_kb=context.config.max_file_size_kb,
         scip_dir=context.scip_dir,
     )
+    resolver = FileDigestResolver(
+        file_state_by_path=context.config.file_state_by_path,
+        module_state_by_path=context.config.module_state_by_path,
+    )
     plan_started = time.perf_counter()
     changed_plans, plan_stats = _build_shard_plans(
         plan_context,
         modules=context.changed_modules,
-        file_state_by_path=context.config.file_state_by_path,
+        resolver=resolver,
     )
     deleted_paths = _filter_deleted_paths(plan_context, modules=context.deleted_modules)
     plan_ms = _elapsed_ms(plan_started)
-    hash_source = _hash_source_label(plan_stats)
+    hash_source = plan_stats.hash_source
     _record_plan_metrics(
         context.config.telemetry,
         plan_ms=plan_ms,
@@ -417,9 +440,10 @@ def _record_plan_metrics(
         return
     telemetry.plan_ms = plan_ms
     telemetry.hash_ms = plan_stats.computed_ms
-    telemetry.hash_reused = plan_stats.reused_hashes
-    telemetry.hash_computed = plan_stats.computed_hashes
+    telemetry.hash_reused = plan_stats.hash_reused
+    telemetry.hash_computed = plan_stats.hash_computed
     telemetry.hash_source = hash_source
+    telemetry.hash_source_breakdown = plan_stats.hash_source_breakdown
 
 
 def _maybe_skip_incremental_plan(plan: _IncrementalPlan) -> ScipIncrementalResult | None:
@@ -554,12 +578,8 @@ def _apply_incremental_merge(
     *,
     telemetry: ScipRunTelemetry | None,
 ) -> ScipIncrementalResult:
-    base_updated_at = {
-        path: record.updated_at for path, record in inputs.manifest.records.items()
-    }
-    shard_updated_at = {
-        path: record.updated_at for path, record in inputs.shard_updates.items()
-    }
+    base_updated_at = {path: record.updated_at for path, record in inputs.manifest.records.items()}
+    shard_updated_at = {path: record.updated_at for path, record in inputs.shard_updates.items()}
     merge_context = MergeIndexContext(
         shard_updated_at=shard_updated_at,
         base_updated_at=base_updated_at,
@@ -607,70 +627,73 @@ def _options_mismatch(manifest: ScipShardManifest, options_hash: str | None) -> 
     return any(record.options_hash != options_hash for record in manifest.records.values())
 
 
-def _resolve_full_rebuild_decision(
+def _build_policy(config: ScipIncrementalConfig) -> ScipIncrementalPolicy:
+    return ScipIncrementalPolicy(
+        full_rebuild_threshold_count=config.full_rebuild_threshold_count,
+        full_rebuild_threshold_ratio=config.full_rebuild_threshold_ratio,
+        ratio_gate_min_modules=config.full_rebuild_ratio_min_modules,
+        ratio_gate_min_changed=config.full_rebuild_ratio_min_changed,
+    )
+
+
+def _resolve_decision(context: _IncrementalRunContext) -> ScipIncrementalDecision:
+    policy = _build_policy(context.config)
+    options_mismatch = _options_mismatch_for_decision(
+        manifest_file=context.manifest_file,
+        options_hash=context.config.options_hash,
+    )
+    inputs = ScipIncrementalInputs(
+        total_modules=context.total_modules,
+        changed_count=context.changed_count,
+        changed_ratio=context.changed_ratio,
+        output_exists=context.config.output_scip.is_file(),
+        options_mismatch=options_mismatch,
+        force_full_rebuild=context.config.force_full_rebuild,
+    )
+    decision = policy.decide(inputs)
+    if decision.mode == "full":
+        log.info("SCIP decision %s; forcing full rebuild", decision.reason)
+    return decision
+
+
+def _options_mismatch_for_decision(
     *,
-    config: ScipIncrementalConfig,
     manifest_file: Path,
-    changed_count: int,
-    changed_ratio: float | None,
-) -> str | None:
-    if config.force_full_rebuild or not config.output_scip.is_file():
-        return "force_full_rebuild"
-
-    if manifest_file.is_file():
-        manifest = load_manifest(manifest_file)
-        if _options_mismatch(manifest, config.options_hash):
-            log.info("SCIP options changed; forcing full rebuild")
-            return "options_mismatch"
-
-    if (
-        config.full_rebuild_threshold_count > 0
-        and changed_count >= config.full_rebuild_threshold_count
-    ):
-        log.info(
-            "SCIP change count %d exceeds threshold %d; forcing full rebuild",
-            changed_count,
-            config.full_rebuild_threshold_count,
-        )
-        return "threshold_count"
-
-    if (
-        changed_ratio is not None
-        and config.full_rebuild_threshold_ratio > 0
-        and changed_ratio >= config.full_rebuild_threshold_ratio
-    ):
-        log.info(
-            "SCIP change ratio %.2f exceeds threshold %.2f; forcing full rebuild",
-            changed_ratio,
-            config.full_rebuild_threshold_ratio,
-        )
-        return "threshold_ratio"
-
-    return None
+    options_hash: str | None,
+) -> bool:
+    if options_hash is None or not manifest_file.is_file():
+        return False
+    manifest = load_manifest(manifest_file)
+    if _options_mismatch(manifest, options_hash):
+        log.info("SCIP options changed; forcing full rebuild")
+        return True
+    return False
 
 
 def _elapsed_ms(start_ts: float) -> float:
     return (time.perf_counter() - start_ts) * 1000
 
 
-def _log_plan_summary(context: _IncrementalRunContext, decision: str | None) -> None:
-    ratio_label = (
-        f"{context.changed_ratio:.2f}" if context.changed_ratio is not None else "n/a"
-    )
-    decision_label = decision or "incremental"
+def _log_plan_summary(
+    context: _IncrementalRunContext,
+    decision: ScipIncrementalDecision,
+) -> None:
+    ratio_label = f"{context.changed_ratio:.2f}" if context.changed_ratio is not None else "n/a"
+    gate_label = "on" if decision.ratio_gate_applied else "off"
     log.info(
         "SCIP incremental plan: total=%d changed=%d deleted=%d ratio=%s "
         "decision=%s batch_size=%d batch_max_bytes=%d "
-        "threshold_count=%d threshold_ratio=%.2f",
+        "threshold_count=%d threshold_ratio=%.2f ratio_gate=%s",
         context.total_modules,
         len(context.changed_modules),
         len(context.deleted_modules),
         ratio_label,
-        decision_label,
+        decision.reason,
         context.config.batch_size,
         context.config.batch_max_bytes,
         context.config.full_rebuild_threshold_count,
         context.config.full_rebuild_threshold_ratio,
+        gate_label,
     )
 
 
@@ -683,11 +706,9 @@ def _build_shard_plans(
     context: _ShardPlanContext,
     *,
     modules: Sequence[ModuleRecord],
-    file_state_by_path: Mapping[str, FileDigest] | None,
+    resolver: FileDigestResolver,
 ) -> tuple[tuple[_ModuleShardPlan, ...], _ShardPlanStats]:
     plans: list[_ModuleShardPlan] = []
-    computed_hashes = 0
-    reused_hashes = 0
     computed_start = time.perf_counter()
     for module in modules:
         if not _in_scope(module.rel_path, context.scope_paths):
@@ -699,13 +720,9 @@ def _build_shard_plans(
         )
         if scip_rel is None:
             continue
-        digest = _resolve_file_digest(module, file_state_by_path=file_state_by_path)
+        digest = resolver.resolve(module)
         if digest is None:
             continue
-        if file_state_by_path and module.rel_path in file_state_by_path:
-            reused_hashes += 1
-        else:
-            computed_hashes += 1
         if context.max_file_size_kb > 0 and digest.size_bytes > context.max_file_size_kb * 1024:
             continue
         shard_file = shard_path(
@@ -724,12 +741,15 @@ def _build_shard_plans(
             )
         )
     computed_ms = (time.perf_counter() - computed_start) * 1000
+    summary = resolver.summary()
     return (
         tuple(plans),
         _ShardPlanStats(
             total_candidates=len(modules),
-            computed_hashes=computed_hashes,
-            reused_hashes=reused_hashes,
+            hash_computed=summary.hash_computed,
+            hash_reused=summary.hash_reused,
+            hash_source=summary.hash_source,
+            hash_source_breakdown=summary.breakdown,
             computed_ms=computed_ms,
         ),
     )
@@ -755,62 +775,53 @@ def _filter_deleted_paths(
     return tuple(sorted(set(deleted)))
 
 
-def _resolve_file_digest(
-    module: ModuleRecord,
-    *,
-    file_state_by_path: Mapping[str, FileDigest] | None,
-) -> FileDigest | None:
-    if file_state_by_path is not None:
-        digest = file_state_by_path.get(module.rel_path)
-        if digest is not None:
-            return digest
-    return HashChangeDetectionAdapter.compute_file_digest(module.file_path)
-
-
-def _hash_source_label(stats: _ShardPlanStats) -> str | None:
-    if stats.computed_hashes and stats.reused_hashes:
-        return "mixed"
-    if stats.reused_hashes:
-        return "file_state"
-    if stats.computed_hashes:
-        return "computed"
-    return None
-
-
-def _partition_plans(
+def _build_batches(
     plans: Sequence[_ModuleShardPlan],
     *,
     batch_size: int,
     max_batch_bytes: int,
-) -> tuple[tuple[_ModuleShardPlan, ...], ...]:
-    batches: list[list[_ModuleShardPlan]] = []
+) -> tuple[_BatchPlan, ...]:
+    sorted_plans = sorted(plans, key=lambda plan: plan.scip_rel_path)
+    batches: list[_BatchPlan] = []
     current: list[_ModuleShardPlan] = []
     current_bytes = 0
 
-    for plan in plans:
+    def _flush_batch() -> None:
+        if not current:
+            return
+        rel_paths = tuple(plan.scip_rel_path for plan in current)
+        batch_id = _hash_batch(current)
+        batches.append(
+            _BatchPlan(
+                batch_id=batch_id,
+                plans=tuple(current),
+                size_bytes=current_bytes,
+                rel_paths=rel_paths,
+            )
+        )
+
+    for plan in sorted_plans:
         plan_bytes = plan.size_bytes
         exceeds_size = max_batch_bytes > 0 and current_bytes + plan_bytes > max_batch_bytes
         exceeds_count = batch_size > 0 and len(current) >= batch_size
         if current and (exceeds_size or exceeds_count):
-            batches.append(current)
+            _flush_batch()
             current = []
             current_bytes = 0
         current.append(plan)
         current_bytes += plan_bytes
 
-    if current:
-        batches.append(current)
+    _flush_batch()
 
-    return tuple(tuple(batch) for batch in batches)
+    return tuple(batches)
 
 
-def _batch_shard_path(batch: Sequence[_ModuleShardPlan]) -> Path:
-    if not batch:
+def _batch_shard_path(batch: _BatchPlan) -> Path:
+    if not batch.plans:
         msg = "batch_shard_path requires at least one plan"
         raise ValueError(msg)
-    digest = _hash_batch(batch)
-    shard_dir = batch[0].shard_path.parent
-    return shard_dir / f"batch_{digest}.scip"
+    shard_dir = batch.plans[0].shard_path.parent
+    return shard_dir / f"batch_{batch.batch_id}.scip"
 
 
 def _hash_batch(batch: Sequence[_ModuleShardPlan]) -> str:
@@ -831,14 +842,24 @@ def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
         request.telemetry.tool_version = tool_version
     tool_ms = 0.0
     parse_ms = 0.0
-    batches = _partition_plans(
+    batches = _build_batches(
         request.plans,
         batch_size=max(1, request.batch_size),
         max_batch_bytes=max(0, request.batch_max_bytes),
     )
+    batch_bytes = sum(batch.size_bytes for batch in batches)
+    batch_ids = ",".join(batch.batch_id for batch in batches)
+    log.info(
+        "SCIP batch plan (batches=%d, batch_size=%d, max_bytes=%d, total_bytes=%d, ids=%s)",
+        len(batches),
+        request.batch_size,
+        request.batch_max_bytes,
+        batch_bytes,
+        batch_ids or "none",
+    )
     for idx, batch in enumerate(batches, start=1):
         batch_path = _batch_shard_path(batch)
-        rel_paths = [plan.scip_rel_path for plan in batch]
+        rel_paths = list(batch.rel_paths)
         tool_start = time.perf_counter()
         _run_scip_python(
             run_config=request.run_config,
@@ -855,7 +876,7 @@ def _index_changed_modules(request: _ShardIndexRequest) -> _ShardIndexResult:
         parse_ms += _elapsed_ms(parse_start)
         shard_indexes.append(shard_index)
         updated_at = datetime.now(tz=UTC)
-        for plan in batch:
+        for plan in batch.plans:
             shard_updates[plan.scip_rel_path] = ScipShardRecord(
                 rel_path=plan.scip_rel_path,
                 content_hash=plan.content_hash,

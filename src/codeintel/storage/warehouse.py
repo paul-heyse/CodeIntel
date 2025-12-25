@@ -293,9 +293,7 @@ class Warehouse:
             if active.use_staging:
                 with registered_temp_relation(self.gateway.con, df, prefix="ci_df_") as temp_name:
                     select_expr = exp.Select(
-                        expressions=[
-                            exp.Column(this=exp.to_identifier(col)) for col in df.columns
-                        ],
+                        expressions=[exp.Column(this=exp.to_identifier(col)) for col in df.columns],
                     ).from_(exp.Table(this=exp.to_identifier(temp_name)))
                     if active.mode == "upsert" and active.upsert is not None:
                         self.gateway.policy.upsert_select(
@@ -390,7 +388,9 @@ class Warehouse:
                 frame = pd.DataFrame.from_records(rows, columns=resolved_columns)
                 if frame.empty:
                     return 0
-                with registered_temp_relation(self.gateway.con, frame, prefix="ci_rows_") as temp_name:
+                with registered_temp_relation(
+                    self.gateway.con, frame, prefix="ci_rows_"
+                ) as temp_name:
                     select_expr = exp.Select(
                         expressions=[
                             exp.Column(this=exp.to_identifier(col)) for col in resolved_columns

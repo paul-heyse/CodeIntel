@@ -12,6 +12,10 @@ from codeintel.build.hamilton.native.patterns.paths import (
     resolve_artifact_output_paths,
 )
 from codeintel.build.hamilton.native.patterns.savers import (
+    ArtifactSaveSpec,
+    IbisTableSaveSpec,
+    SaverContext,
+    TableSaveSpec,
     save_artifact,
     save_artifact_internal,
     save_ibis_table,
@@ -26,6 +30,8 @@ from codeintel.build.hamilton.native.patterns.specs import (
 )
 from codeintel.build.hamilton.native.patterns.tool_target import (
     IngestStep,
+    ToolFinalizeContext,
+    ToolRunContext,
     attach_tool_target_template,
     finalize_target_from_materializations,
     run_tool_and_ingest,
@@ -34,9 +40,15 @@ from codeintel.build.hamilton.native.patterns.tool_target import (
 
 __all__ = [
     "ArtifactOutputSpec",
+    "ArtifactSaveSpec",
+    "IbisTableSaveSpec",
     "IngestStep",
     "OutputRole",
+    "SaverContext",
     "TableOutputSpec",
+    "TableSaveSpec",
+    "ToolFinalizeContext",
+    "ToolRunContext",
     "ToolTargetSpec",
     "attach_tool_target_template",
     "finalize_target_from_materializations",

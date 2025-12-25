@@ -279,7 +279,13 @@ def _create_artifact_path_node_function(
     target_name: str,
     domain: str,
 ) -> Callable[..., Path | None]:
-    """Create a `p__*` node that returns a Path from an ArtifactRef."""
+    """Create a `p__*` node that returns a Path from an ArtifactRef.
+
+    Returns
+    -------
+    Callable[..., Path | None]
+        Hamilton node function that maps ArtifactRef to a filesystem path.
+    """
     p_name = path_node(artifact_name)
     a_name = artifact_node(artifact_name)
 
