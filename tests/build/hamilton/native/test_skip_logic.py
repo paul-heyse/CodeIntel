@@ -27,12 +27,19 @@ class TestSkipCheckRequest:
     def test_skip_check_request_frozen() -> None:
         """Verify SkipCheckRequest is immutable."""
 
-        class MockGateway:
-            def __getattr__(self, name: str) -> object:
+        class MockManifestService:
+            @staticmethod
+            def load_manifest(
+                *,
+                target: str,
+                repo: str,
+                commit: str,
+            ) -> OutputManifest | None:
+                del target, repo, commit
                 return None
 
         request = SkipCheckRequest(
-            gateway=MockGateway(),  # type: ignore[arg-type]
+            manifest_service=MockManifestService(),
             target="test_target",
             repo="test/repo",
             commit="abc123",
@@ -48,8 +55,15 @@ class TestSkipCheckRequest:
     def test_skip_check_with_manifest_index() -> None:
         """Verify manifest_index is used when provided."""
 
-        class MockGateway:
-            def __getattr__(self, name: str) -> object:
+        class MockManifestService:
+            @staticmethod
+            def load_manifest(
+                *,
+                target: str,
+                repo: str,
+                commit: str,
+            ) -> OutputManifest | None:
+                del target, repo, commit
                 return None
 
         manifest = OutputManifest(
@@ -64,7 +78,7 @@ class TestSkipCheckRequest:
         manifest_index = {"test_target": manifest}
 
         request = SkipCheckRequest(
-            gateway=MockGateway(),  # type: ignore[arg-type]
+            manifest_service=MockManifestService(),
             target="test_target",
             repo="test/repo",
             commit="abc123",
@@ -79,16 +93,19 @@ class TestSkipCheckRequest:
     def test_skip_check_no_manifest_returns_false() -> None:
         """Verify should_skip returns False when no manifest exists."""
 
-        class MockBuild:
+        class MockManifestService:
             @staticmethod
-            def load_manifest(**_kwargs: object) -> None:
+            def load_manifest(
+                *,
+                target: str,
+                repo: str,
+                commit: str,
+            ) -> OutputManifest | None:
+                del target, repo, commit
                 return None
 
-        class MockGateway:
-            build = MockBuild()
-
         request = SkipCheckRequest(
-            gateway=MockGateway(),  # type: ignore[arg-type]
+            manifest_service=MockManifestService(),
             target="test_target",
             repo="test/repo",
             commit="abc123",

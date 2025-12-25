@@ -8,6 +8,7 @@ the parsed domain objects.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from anyio import to_thread
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from codeintel.config.models import ToolsConfig
     from codeintel.ingestion.engine.infrastructure import (
         ToolRunner,
+        ToolRunResult,
     )
     from codeintel.ingestion.engine.plugins import (
         ToolPlugin,
@@ -44,6 +46,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_PYTEST_NO_TESTS_EXIT_CODE = 5
+
 
 def _unlink_missing(path: Path) -> None:
     path.unlink(missing_ok=True)
@@ -51,6 +55,36 @@ def _unlink_missing(path: Path) -> None:
 
 def _path_is_file(path: Path) -> bool:
     return path.is_file()
+
+
+@dataclass(frozen=True)
+class PytestReportResult:
+    """Structured result for pytest JSON report generation."""
+
+    status: ToolStatus
+    executed: bool
+    report_path: Path
+    run: ToolRunResult | None
+    error: Exception | None
+    reason: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Return True when the report is ready for use."""
+        return self.status is ToolStatus.OK
+
+
+def _infer_pytest_skip_reason(run: ToolRunResult | None) -> str:
+    if run is None:
+        return "capability_missing"
+    if run.returncode == _PYTEST_NO_TESTS_EXIT_CODE:
+        return "no_tests"
+    combined = f"{run.stdout}\n{run.stderr}".lower()
+    if "--json-report" in combined and (
+        "unrecognized arguments" in combined or "unknown option" in combined
+    ):
+        return "capability_missing"
+    return "skipped"
 
 
 class ToolService:
@@ -312,7 +346,7 @@ class ToolService:
         repo_root: Path,
         *,
         json_report_path: Path,
-    ) -> bool:
+    ) -> PytestReportResult:
         """
         Generate a pytest JSON report when missing.
 
@@ -325,51 +359,93 @@ class ToolService:
 
         Returns
         -------
-        bool
-            True when pytest was executed to produce the report, False when reused.
-            Returns False when the pytest JSON report is skipped due to missing capability.
-
-        Raises
-        ------
-        ToolExecutionError
-            Raised when pytest execution fails or does not create a report.
-        ToolNotFoundError
-            Raised when the pytest binary cannot be resolved.
-        RuntimeError
-            Raised when a plugin result is missing the expected run metadata.
+        PytestReportResult
+            Structured result describing execution, status, and any errors.
         """
-        if await to_thread.run_sync(_path_is_file, json_report_path):
-            return False
+        report_exists = await to_thread.run_sync(_path_is_file, json_report_path)
+        if report_exists:
+            result = PytestReportResult(
+                status=ToolStatus.SKIPPED,
+                executed=False,
+                report_path=json_report_path,
+                run=None,
+                error=None,
+                reason="report_exists",
+            )
+        else:
+            plugin_result = await self.run_plugin(
+                "pytest",
+                repo_root=repo_root,
+                json_report_path=json_report_path,
+            )
 
-        plugin_result = await self.run_plugin(
-            "pytest",
-            repo_root=repo_root,
-            json_report_path=json_report_path,
-        )
-
-        if plugin_result.status is ToolStatus.NOT_FOUND:
-            raise ToolNotFoundError(ToolName.PYTEST, self.tools_config.pytest_bin)
-
-        if plugin_result.status is ToolStatus.SKIPPED:
-            log.warning("pytest json report skipped; status=%s", plugin_result.status)
-            return False
-
-        if plugin_result.status is not ToolStatus.OK:
-            err = plugin_result.error
-            if isinstance(err, ToolExecutionError):
-                raise err
-            if plugin_result.run is not None:
-                raise ToolExecutionError(plugin_result.run)
-            message = "pytest plugin failed without ToolRunResult"
-            raise RuntimeError(message)
-
-        if plugin_result.run is None:
-            message = "pytest plugin returned no run metadata"
-            raise RuntimeError(message)
-        exists = await to_thread.run_sync(_path_is_file, json_report_path)
-        if not exists:
-            raise ToolExecutionError(plugin_result.run)
-        return True
+            if plugin_result.status is ToolStatus.NOT_FOUND:
+                error = plugin_result.error or ToolNotFoundError(
+                    ToolName.PYTEST, self.tools_config.pytest_bin
+                )
+                result = PytestReportResult(
+                    status=ToolStatus.NOT_FOUND,
+                    executed=False,
+                    report_path=json_report_path,
+                    run=None,
+                    error=error,
+                    reason="not_found",
+                )
+            elif plugin_result.status is ToolStatus.SKIPPED:
+                log.warning("pytest json report skipped; status=%s", plugin_result.status)
+                result = PytestReportResult(
+                    status=ToolStatus.SKIPPED,
+                    executed=plugin_result.run is not None,
+                    report_path=json_report_path,
+                    run=plugin_result.run,
+                    error=None,
+                    reason=_infer_pytest_skip_reason(plugin_result.run),
+                )
+            elif plugin_result.status is not ToolStatus.OK:
+                err = plugin_result.error
+                if isinstance(err, ToolExecutionError):
+                    error = err
+                elif plugin_result.run is not None:
+                    error = ToolExecutionError(plugin_result.run)
+                else:
+                    error = RuntimeError("pytest plugin failed without ToolRunResult")
+                result = PytestReportResult(
+                    status=ToolStatus.FAILED,
+                    executed=plugin_result.run is not None,
+                    report_path=json_report_path,
+                    run=plugin_result.run,
+                    error=error,
+                    reason="plugin_failed",
+                )
+            elif plugin_result.run is None:
+                result = PytestReportResult(
+                    status=ToolStatus.FAILED,
+                    executed=False,
+                    report_path=json_report_path,
+                    run=None,
+                    error=RuntimeError("pytest plugin returned no run metadata"),
+                    reason="missing_run_metadata",
+                )
+            else:
+                exists = await to_thread.run_sync(_path_is_file, json_report_path)
+                if not exists:
+                    result = PytestReportResult(
+                        status=ToolStatus.FAILED,
+                        executed=True,
+                        report_path=json_report_path,
+                        run=plugin_result.run,
+                        error=ToolExecutionError(plugin_result.run),
+                        reason="missing_report",
+                    )
+                else:
+                    result = PytestReportResult(
+                        status=ToolStatus.OK,
+                        executed=True,
+                        report_path=json_report_path,
+                        run=plugin_result.run,
+                        error=None,
+                    )
+        return result
 
     async def run_scip_full(self, request: ScipRunRequest) -> ScipIndexResult:
         """

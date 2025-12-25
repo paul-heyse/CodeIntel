@@ -7,10 +7,13 @@ statistics, materializing rows via Hamilton-native DuckDB row savers.
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 from typing import TYPE_CHECKING
 
+import ibis.expr.types as ir
 from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.hotspots import ChurnSummary, compute_hotspot_rows, parse_git_log_lines
@@ -21,7 +24,9 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
+from codeintel.build.hamilton.native.patterns import load_table
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.nodes.module_attach import tagged_attach_node
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -29,25 +34,50 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-
-    from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
 
 HOTSPOTS_TARGET_NAME = "hotspots"
 HOTSPOTS_TABLE_KEY = "analytics.hotspots"
+AST_METRICS_TABLE_KEY = "core.ast_metrics"
+MODULES_TABLE_KEY = "core.modules"
 MAX_STDERR_CHARS = 500
+
+_MODULE: ModuleType = sys.modules[__name__]
+
+hotspots__ast_metrics_table = load_table(
+    domain="analytics",
+    target=HOTSPOTS_TARGET_NAME,
+    table_key=AST_METRICS_TABLE_KEY,
+    node_name="hotspots__ast_metrics_table",
+)
+tagged_attach_node(
+    _MODULE,
+    node_name=hotspots__ast_metrics_table.__name__,
+    fn=hotspots__ast_metrics_table,
+)
+hotspots__modules_table = load_table(
+    domain="analytics",
+    target=HOTSPOTS_TARGET_NAME,
+    table_key=MODULES_TABLE_KEY,
+    node_name="hotspots__modules_table",
+)
+tagged_attach_node(
+    _MODULE,
+    node_name=hotspots__modules_table.__name__,
+    fn=hotspots__modules_table,
+)
 
 
 @dataclass(frozen=True)
@@ -103,6 +133,7 @@ def _run_git_log(
     return result.stdout.splitlines()
 
 
+@tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def collect_git_file_stats(
     repo_root: Path,
     *,
@@ -121,13 +152,30 @@ def collect_git_file_stats(
     return parse_git_log_lines(git_lines)
 
 
-def _load_ast_metrics(gateway: StorageGateway) -> list[tuple[str, float]] | None:
+def _load_module_paths(modules_table: ir.Table) -> set[str] | None:
     try:
-        df = (
-            ibis_facade.table(gateway, "core.ast_metrics")
-            .select("rel_path", "complexity")
-            .execute()
-        )
+        df = modules_table.select("path").execute()
+    except DuckDBError as exc:
+        LOG.warning("Failed to read core.modules for hotspots: %s", exc)
+        return None
+    if getattr(df, "empty", True):
+        LOG.info("No rows in core.modules; skipping hotspots.")
+        return None
+
+    paths: set[str] = set()
+    for _, row in df.iterrows():
+        path = row["path"]
+        if path is not None:
+            paths.add(str(path))
+    return paths
+
+
+def _load_ast_metrics(
+    ast_metrics_table: ir.Table,
+    module_paths: set[str],
+) -> list[tuple[str, float]] | None:
+    try:
+        df = ast_metrics_table.select("rel_path", "complexity").execute()
     except DuckDBError as exc:
         LOG.warning("Failed to read core.ast_metrics for hotspots: %s", exc)
         return None
@@ -138,6 +186,8 @@ def _load_ast_metrics(gateway: StorageGateway) -> list[tuple[str, float]] | None
     rows: list[tuple[str, float]] = []
     for _, row in df.iterrows():
         rel_path = str(row["rel_path"])
+        if module_paths and rel_path not in module_paths:
+            continue
         complexity = float(row["complexity"]) if row["complexity"] is not None else 0.0
         rows.append((rel_path, complexity))
     return rows
@@ -153,6 +203,8 @@ def _rows_to_tuples(
 def t__hotspots__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    hotspots__ast_metrics_table: ir.Table,
+    hotspots__modules_table: ir.Table,
 ) -> HotspotsResult:
     """Compute file hotspot metrics.
 
@@ -162,6 +214,10 @@ def t__hotspots__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for manifest-driven skip checks.
+    hotspots__ast_metrics_table
+        Loader node for core.ast_metrics.
+    hotspots__modules_table
+        Loader node for core.modules.
 
     Returns
     -------
@@ -182,7 +238,11 @@ def t__hotspots__compute(
         if should_skip_native_target(env, target, input_hash):
             return HotspotsResult(rows=None)
 
-    ast_metrics = _load_ast_metrics(env.gateway)
+    module_paths = _load_module_paths(hotspots__modules_table)
+    if not module_paths:
+        return HotspotsResult(rows=None)
+
+    ast_metrics = _load_ast_metrics(hotspots__ast_metrics_table, module_paths)
     if not ast_metrics:
         return HotspotsResult(rows=None)
 
@@ -259,4 +319,10 @@ def t__hotspots(
     )
 
 
-__all__ = ["hotspots__rows", "t__hotspots", "t__hotspots__compute"]
+__all__ = [
+    "hotspots__ast_metrics_table",
+    "hotspots__modules_table",
+    "hotspots__rows",
+    "t__hotspots",
+    "t__hotspots__compute",
+]

@@ -739,14 +739,16 @@ def test_tool_service_run_coverage_not_found(tmp_path: Path) -> None:
 
 
 def test_tool_service_run_pytest_raises_not_found(tmp_path: Path) -> None:
-    """ToolService.run_pytest_report should raise when pytest not found."""
+    """ToolService.run_pytest_report should report NOT_FOUND when pytest is missing."""
     tools_cfg = ToolsConfig.default()
     exc = ToolNotFoundError(ToolName.PYTEST, tools_cfg.pytest_bin)
     runner = PresetRunner(exc)
     service = ToolService(runner, tools_cfg)
     json_path = tmp_path / "report.json"
-    with pytest.raises(ToolNotFoundError):
-        asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+    result = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+    expect_equal(result.status, ToolStatus.NOT_FOUND)
+    expect_true(result.executed is False)
+    expect_is_instance(result.error, ToolNotFoundError)
 
 
 def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
@@ -763,8 +765,9 @@ def test_tool_service_run_pytest_skips_if_exists(tmp_path: Path) -> None:
     )
     runner = PresetRunner(run)
     service = ToolService(runner)
-    executed = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
-    expect_true(executed is False)
+    result = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+    expect_equal(result.status, ToolStatus.SKIPPED)
+    expect_true(result.executed is False)
 
 
 def test_pytest_plugin_skips_without_json_report(tmp_path: Path) -> None:
@@ -790,11 +793,12 @@ def test_tool_service_run_pytest_report_skips_when_missing_json_report(
     )
     service = ToolService(runner, ToolsConfig.default())
 
-    executed = asyncio.run(
+    result = asyncio.run(
         service.run_pytest_report(tmp_path, json_report_path=tmp_path / "report.json")
     )
 
-    expect_true(executed is False)
+    expect_equal(result.status, ToolStatus.SKIPPED)
+    expect_true(result.executed is False)
 
 
 def test_tool_service_run_scip_not_found(tmp_path: Path) -> None:
@@ -1282,6 +1286,7 @@ def test_pytest_plugin_execution_error() -> None:
 
     expect_true(result.status == ToolStatus.FAILED)
     expect_true(isinstance(result.error, ToolExecutionError))
+    expect_is_not_none(result.run)
 
 
 # =============================================================================
@@ -1425,20 +1430,23 @@ def test_tool_service_run_pytest_report_creates_file(tmp_path: Path) -> None:
     runner = PresetRunner(run)
     service = ToolService(runner)
 
-    executed = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+    result = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
 
     # Since file exists beforehand, should return False (reused)
-    expect_true(executed is False)
+    expect_equal(result.status, ToolStatus.SKIPPED)
+    expect_true(result.executed is False)
 
 
 def test_tool_service_run_pytest_report_execution_error(tmp_path: Path) -> None:
-    """ToolService.run_pytest_report should raise ToolExecutionError on failure."""
+    """ToolService.run_pytest_report should return FAILED on execution error."""
     runner = PresetRunner(RuntimeError("pytest failed"))
     service = ToolService(runner)
     json_path = tmp_path / "report.json"
 
-    with pytest.raises(ToolExecutionError):
-        asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+    result = asyncio.run(service.run_pytest_report(tmp_path, json_report_path=json_path))
+    expect_equal(result.status, ToolStatus.FAILED)
+    expect_true(result.executed)
+    expect_is_instance(result.error, ToolExecutionError)
 
 
 def test_tool_service_run_scip_full_not_found_raises(tmp_path: Path) -> None:

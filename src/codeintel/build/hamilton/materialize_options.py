@@ -24,6 +24,8 @@ class MaterializeOptionsConfig:
         Upsert configuration when using upsert mode.
     use_staging
         Whether to use a staging relation for writes.
+    fallback_upsert_on_conflict
+        Whether to fallback to upsert when a duplicate key constraint is hit.
     """
 
     mode: WriteMode = "replace"
@@ -31,6 +33,7 @@ class MaterializeOptionsConfig:
     input_hash: str | None = None
     upsert: UpsertConfig | None = None
     use_staging: bool = False
+    fallback_upsert_on_conflict: bool = False
 
 
 def materialize_options(
@@ -64,6 +67,7 @@ def materialize_options(
         input_hash=resolved.input_hash,
         upsert=resolved.upsert,
         use_staging=resolved.use_staging,
+        fallback_upsert_on_conflict=resolved.fallback_upsert_on_conflict,
     )
 
 
@@ -93,6 +97,7 @@ def append_materialize_options(options: MaterializeOptions) -> MaterializeOption
         asset_type=options.asset_type,
         upsert=options.upsert,
         use_staging=options.use_staging,
+        fallback_upsert_on_conflict=options.fallback_upsert_on_conflict,
     )
 
 

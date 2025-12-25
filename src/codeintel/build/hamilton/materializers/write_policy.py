@@ -15,6 +15,8 @@ from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.schemas.primitives import TableSchema, TableWritePolicy
 from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig
 
+_FILE_STATE_TABLE_KEY = "core.file_state"
+
 
 def resolve_materialize_options(
     *,
@@ -50,6 +52,7 @@ def resolve_materialize_options(
     )
     resolved_columns = _resolve_columns(schema, column_names)
     upsert_config = _build_upsert_config(policy, schema, resolved_columns)
+    fallback_upsert = table_key == _FILE_STATE_TABLE_KEY
     return materialize_options(
         env,
         owner_target=target_name,
@@ -59,6 +62,7 @@ def resolve_materialize_options(
             input_hash=input_hash,
             upsert=upsert_config,
             use_staging=policy.use_staging,
+            fallback_upsert_on_conflict=fallback_upsert,
         ),
     )
 

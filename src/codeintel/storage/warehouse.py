@@ -12,6 +12,7 @@ Implementation intentionally composes existing primitives (`StorageGateway`,
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -48,6 +49,8 @@ WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
 
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +111,7 @@ class MaterializeOptions:
     asset_type: str = "table"
     upsert: UpsertConfig | None = None
     use_staging: bool = False
+    fallback_upsert_on_conflict: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,8 +358,8 @@ class Warehouse:
         rows
             Row tuples matching the provided columns.
         columns
-            Column names matching the row tuple positions. When omitted, column order is derived from the
-            configured schema provider.
+            Column names matching the row tuple positions. When omitted, column order is derived
+            from the configured schema provider.
         options
             Materialization options, including snapshot identity and write mode.
 
@@ -381,58 +385,13 @@ class Warehouse:
         )
 
         def _write() -> int | None:
-            if not rows:
-                return 0
-
-            if active.use_staging:
-                frame = pd.DataFrame.from_records(rows, columns=resolved_columns)
-                if frame.empty:
-                    return 0
-                with registered_temp_relation(
-                    self.gateway.con, frame, prefix="ci_rows_"
-                ) as temp_name:
-                    select_expr = exp.Select(
-                        expressions=[
-                            exp.Column(this=exp.to_identifier(col)) for col in resolved_columns
-                        ],
-                    ).from_(exp.Table(this=exp.to_identifier(temp_name)))
-                    if active.mode == "upsert" and active.upsert is not None:
-                        self.gateway.policy.upsert_select(
-                            table_key,
-                            columns=resolved_columns,
-                            select_sql=select_expr,
-                            upsert=UpsertSpec(
-                                conflict_columns=active.upsert.conflict_columns,
-                                update_columns=active.upsert.update_columns,
-                                update_condition=active.upsert.update_condition,
-                            ),
-                        )
-                        return len(frame)
-                    self.gateway.policy.insert_select(
-                        table_key,
-                        columns=resolved_columns,
-                        select_sql=select_expr,
-                    )
-                    return len(frame)
-
-            if active.mode == "upsert" and active.upsert is not None:
-                on_conflict = OnConflict(
-                    conflict_columns=active.upsert.conflict_columns,
-                    update_columns=active.upsert.update_columns,
-                    update_condition=active.upsert.update_condition,
-                )
-                result = self.gateway.ibis.write(
-                    table_key,
-                    rows,
-                    columns=resolved_columns,
-                    on_conflict=on_conflict,
-                )
-                return result.rows_affected
-
-            rows_written = len(rows)
-            if rows_written:
-                self.gateway.ibis.write(table_key, rows, columns=resolved_columns)
-            return rows_written
+            return _write_rows(
+                gateway=self.gateway,
+                table_key=table_key,
+                rows=rows,
+                resolved_columns=resolved_columns,
+                options=active,
+            )
 
         ctx = _MaterializeWriterContext(
             gateway=self.gateway,
@@ -475,7 +434,8 @@ class Warehouse:
             active,
             supports_upsert=False,
             upsert_unsupported_message=(
-                "materialize_mappings does not support mode='upsert'; use materialize_rows/dataframe"
+                "materialize_mappings does not support mode='upsert'; "
+                "use materialize_rows/dataframe"
             ),
         )
 
@@ -753,6 +713,32 @@ def _validate_materialize_options(
         raise ValueError(upsert_unsupported_message)
 
 
+def _resolve_fallback_upsert(
+    gateway: StorageGateway,
+    *,
+    table_key: str,
+    resolved_columns: Sequence[str],
+) -> UpsertConfig | None:
+    provider = gateway.policy.schema_provider
+    if provider is None:
+        return None
+    schema = provider.get_table_schema(table_key)
+    if schema is None or not schema.primary_key:
+        return None
+    conflict_columns = tuple(schema.primary_key)
+    if not conflict_columns:
+        return None
+    if not resolved_columns:
+        return None
+    update_columns = tuple(col for col in resolved_columns if col not in conflict_columns)
+    if not update_columns:
+        update_columns = None
+    return UpsertConfig(
+        conflict_columns=conflict_columns,
+        update_columns=update_columns,
+    )
+
+
 def _contract_schema_metadata(
     gateway: StorageGateway,
     *,
@@ -828,6 +814,131 @@ def _materialize_with_writer(
         schema_version=ctx.schema_version,
         profiling_artifact=str(profiling_path) if profiling_path is not None else None,
     )
+
+
+def _write_rows(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    resolved_columns: Sequence[str],
+    options: MaterializeOptions,
+) -> int | None:
+    if not rows:
+        return 0
+    if options.use_staging:
+        return _write_rows_with_staging(
+            gateway=gateway,
+            table_key=table_key,
+            rows=rows,
+            resolved_columns=resolved_columns,
+            options=options,
+        )
+    if options.mode == "upsert" and options.upsert is not None:
+        return _write_rows_upsert(
+            gateway=gateway,
+            table_key=table_key,
+            rows=rows,
+            resolved_columns=resolved_columns,
+            upsert=options.upsert,
+        )
+    return _write_rows_insert(
+        gateway=gateway,
+        table_key=table_key,
+        rows=rows,
+        resolved_columns=resolved_columns,
+        options=options,
+    )
+
+
+def _write_rows_with_staging(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    resolved_columns: Sequence[str],
+    options: MaterializeOptions,
+) -> int:
+    frame = pd.DataFrame.from_records(rows, columns=list(resolved_columns))
+    if frame.empty:
+        return 0
+    with registered_temp_relation(gateway.con, frame, prefix="ci_rows_") as temp_name:
+        select_expr = exp.Select(
+            expressions=[exp.Column(this=exp.to_identifier(col)) for col in resolved_columns],
+        ).from_(exp.Table(this=exp.to_identifier(temp_name)))
+        if options.mode == "upsert" and options.upsert is not None:
+            gateway.policy.upsert_select(
+                table_key,
+                columns=resolved_columns,
+                select_sql=select_expr,
+                upsert=UpsertSpec(
+                    conflict_columns=options.upsert.conflict_columns,
+                    update_columns=options.upsert.update_columns,
+                    update_condition=options.upsert.update_condition,
+                ),
+            )
+            return len(frame)
+        gateway.policy.insert_select(
+            table_key,
+            columns=resolved_columns,
+            select_sql=select_expr,
+        )
+        return len(frame)
+
+
+def _write_rows_upsert(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    resolved_columns: Sequence[str],
+    upsert: UpsertConfig,
+) -> int | None:
+    on_conflict = OnConflict(
+        conflict_columns=upsert.conflict_columns,
+        update_columns=upsert.update_columns,
+        update_condition=upsert.update_condition,
+    )
+    result = gateway.ibis.write(
+        table_key,
+        rows,
+        columns=resolved_columns,
+        on_conflict=on_conflict,
+    )
+    return result.rows_affected
+
+
+def _write_rows_insert(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    resolved_columns: Sequence[str],
+    options: MaterializeOptions,
+) -> int:
+    if options.fallback_upsert_on_conflict:
+        upsert = _resolve_fallback_upsert(
+            gateway,
+            table_key=table_key,
+            resolved_columns=resolved_columns,
+        )
+        if upsert is not None:
+            log.warning("Using upsert fallback for %s row write", table_key)
+            rows_affected = _write_rows_upsert(
+                gateway=gateway,
+                table_key=table_key,
+                rows=rows,
+                resolved_columns=resolved_columns,
+                upsert=upsert,
+            )
+            return coerce_int(
+                rows_affected,
+                ctx=f"{table_key} upsert rows_affected",
+            ) or 0
+        log.warning("Upsert fallback requested for %s, but no primary key found", table_key)
+
+    gateway.ibis.write(table_key, rows, columns=resolved_columns)
+    return len(rows)
 
 
 __all__ = [

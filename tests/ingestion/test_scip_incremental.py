@@ -347,9 +347,7 @@ def test_batch_shard_paths_stable_across_runs(tmp_path: Path) -> None:
     expect_true(result.success)
     manifest_second = load_manifest(manifest_path(output_scip.parent))
 
-    shard_paths_first = {
-        path: record.shard_path for path, record in manifest_first.records.items()
-    }
+    shard_paths_first = {path: record.shard_path for path, record in manifest_first.records.items()}
     shard_paths_second = {
         path: record.shard_path for path, record in manifest_second.records.items()
     }

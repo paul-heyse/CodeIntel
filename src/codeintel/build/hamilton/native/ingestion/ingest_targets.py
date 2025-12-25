@@ -101,6 +101,8 @@ TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
 
+_DUPLICATE_SAMPLE_LIMIT = 5
+
 
 @dataclass(frozen=True)
 class ModuleScanResult:
@@ -298,14 +300,7 @@ def modules__module_rows(
     if not t__modules__scan.success:
         return None
     rows = t__modules__scan.module_rows
-    if not rows:
-        return rows
-    schema = get_schema_service().require_table_schema(MODULES_TABLE_KEY)
-    key_columns = schema.primary_key
-    if not key_columns:
-        return rows
-    columns = tuple(schema.column_names())
-    return _dedupe_rows_by_keys(rows, columns=columns, key_columns=key_columns)
+    return _dedupe_rows_for_table(rows, table_key=MODULES_TABLE_KEY)
 
 
 @SaveToObjectMetadataDecorator(
@@ -331,7 +326,12 @@ def modules__file_state_rows(
     """
     if not t__modules__scan.success:
         return None
-    return t__modules__scan.file_state_rows
+    rows = t__modules__scan.file_state_rows
+    return _dedupe_rows_for_table(
+        rows,
+        table_key=FILE_STATE_TABLE_KEY,
+        prefer_columns=("mtime_ns", "content_hash"),
+    )
 
 
 @SaveToObjectMetadataDecorator(
@@ -360,26 +360,88 @@ def modules__repo_map_rows(
     return t__modules__scan.repo_map_rows
 
 
+def _dedupe_rows_for_table(
+    rows: tuple[tuple[object, ...], ...],
+    *,
+    table_key: str,
+    prefer_columns: tuple[str, ...] | None = None,
+) -> tuple[tuple[object, ...], ...]:
+    if not rows:
+        return rows
+    schema = get_schema_service().get_table_schema(table_key)
+    if schema is None or not schema.primary_key:
+        return rows
+    columns = tuple(schema.column_names())
+    return _dedupe_rows_by_keys(
+        rows,
+        table_key=table_key,
+        columns=columns,
+        key_columns=tuple(schema.primary_key),
+        prefer_columns=prefer_columns,
+    )
+
+
 def _dedupe_rows_by_keys(
     rows: tuple[tuple[object, ...], ...],
     *,
+    table_key: str,
     columns: tuple[str, ...],
     key_columns: tuple[str, ...],
+    prefer_columns: tuple[str, ...] | None = None,
 ) -> tuple[tuple[object, ...], ...]:
-    key_indexes = tuple(columns.index(col) for col in key_columns)
+    try:
+        key_indexes = tuple(columns.index(col) for col in key_columns)
+    except ValueError as exc:
+        log.warning("Unable to dedupe %s rows: missing key column (%s)", table_key, exc)
+        return rows
+    prefer_indexes = ()
+    if prefer_columns:
+        columns_set = set(columns)
+        prefer_indexes = tuple(columns.index(col) for col in prefer_columns if col in columns_set)
     deduped: dict[tuple[object, ...], tuple[object, ...]] = {}
+    duplicate_count = 0
+    sample_keys: list[tuple[object, ...]] = []
     for row in rows:
         key = tuple(row[idx] for idx in key_indexes)
-        if key not in deduped:
+        existing = deduped.get(key)
+        if existing is None:
             deduped[key] = row
-    if len(deduped) != len(rows):
+            continue
+        duplicate_count += 1
+        if len(sample_keys) < _DUPLICATE_SAMPLE_LIMIT and key not in sample_keys:
+            sample_keys.append(key)
+        if prefer_indexes and _is_preferred_row(row, existing, prefer_indexes):
+            deduped[key] = row
+    if duplicate_count:
         log.warning(
-            "Deduplicated %d rows for %s using keys %s",
-            len(rows) - len(deduped),
-            MODULES_TABLE_KEY,
-            key_columns,
+            "Duplicate rows detected for %s (duplicates=%d, sample_keys=%s)",
+            table_key,
+            duplicate_count,
+            sample_keys,
         )
     return tuple(deduped.values())
+
+
+def _is_preferred_row(
+    candidate: tuple[object, ...],
+    existing: tuple[object, ...],
+    prefer_indexes: tuple[int, ...],
+) -> bool:
+    for idx in prefer_indexes:
+        candidate_value = candidate[idx]
+        existing_value = existing[idx]
+        if candidate_value == existing_value:
+            continue
+        if existing_value is None and candidate_value is not None:
+            return True
+        if candidate_value is None:
+            return False
+        if isinstance(candidate_value, (int, float)) and isinstance(existing_value, (int, float)):
+            return candidate_value > existing_value
+        if isinstance(candidate_value, str) and isinstance(existing_value, str):
+            return candidate_value > existing_value
+        return str(candidate_value) > str(existing_value)
+    return False
 
 
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
