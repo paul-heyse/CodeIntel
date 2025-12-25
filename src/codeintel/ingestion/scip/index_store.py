@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -16,7 +18,7 @@ from codeintel.ingestion.scip.proto_types import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 
 def load_index_proto(index_path: Path, *, proto_module_path: Path) -> IndexProto:
@@ -41,12 +43,21 @@ def write_index_proto(index: IndexProto, output_path: Path) -> None:
     tmp_path.replace(output_path)
 
 
+@dataclass(frozen=True)
+class MergeIndexContext:
+    """Context metadata for merge decisions."""
+
+    shard_updated_at: Mapping[str, datetime] | None = None
+    base_updated_at: Mapping[str, datetime] | None = None
+
+
 def merge_indexes(
     *,
     base_index: IndexProto,
     shard_indexes: Sequence[IndexProto],
     deleted_paths: Iterable[str],
     proto_module_path: Path,
+    context: MergeIndexContext | None = None,
 ) -> IndexProto:
     """Merge changed shard indexes into a base index.
 
@@ -68,11 +79,21 @@ def merge_indexes(
     }
     for rel_path in deleted_paths:
         docs_by_path.pop(rel_path, None)
+    shard_updated_at = context.shard_updated_at if context is not None else None
+    base_updated_at = context.base_updated_at if context is not None else None
+
     for shard in shard_indexes:
         for doc in shard.documents:
             existing = docs_by_path.get(doc.relative_path)
+            shard_updated = _resolve_updated_at(shard_updated_at, doc.relative_path)
+            base_updated = _resolve_updated_at(base_updated_at, doc.relative_path)
             if existing is not None:
-                docs_by_path[doc.relative_path] = _merge_document_symbols(existing, doc)
+                docs_by_path[doc.relative_path] = _merge_document_symbols(
+                    existing,
+                    doc,
+                    base_updated_at=base_updated,
+                    shard_updated_at=shard_updated,
+                )
             else:
                 docs_by_path[doc.relative_path] = doc
 
@@ -82,7 +103,10 @@ def merge_indexes(
 
     merged_external = _merge_external_symbols(
         base_index.external_symbols,
-        (shard.external_symbols for shard in shard_indexes),
+        (
+            (shard.external_symbols, _resolve_shard_updated_at(shard, shard_updated_at))
+            for shard in shard_indexes
+        ),
     )
     for symbol in sorted(merged_external):
         ext_msg = merged.external_symbols.add()
@@ -100,27 +124,46 @@ def _has_metadata(index: IndexProto) -> bool:
 
 def _merge_external_symbols(
     base_symbols: ExternalSymbolListProto,
-    shard_symbol_iters: Iterable[ExternalSymbolListProto],
+    shard_symbol_iters: Iterable[tuple[ExternalSymbolListProto, datetime | None]],
 ) -> dict[str, ExternalSymbolProto]:
-    merged: dict[str, ExternalSymbolProto] = {sym.symbol: sym for sym in base_symbols}
-    for shard_symbols in shard_symbol_iters:
+    merged: dict[str, tuple[ExternalSymbolProto, datetime | None]] = {
+        sym.symbol: (sym, None) for sym in base_symbols
+    }
+    for shard_symbols, shard_updated in shard_symbol_iters:
         for sym in shard_symbols:
             existing = merged.get(sym.symbol)
-            if existing is None or _prefer_external_symbol(existing, sym) is sym:
-                merged[sym.symbol] = sym
-    return merged
+            if existing is None:
+                merged[sym.symbol] = (sym, shard_updated)
+                continue
+            chosen = _prefer_external_symbol(
+                existing[0],
+                sym,
+                base_updated_at=existing[1],
+                shard_updated_at=shard_updated,
+            )
+            if chosen is sym:
+                merged[sym.symbol] = (sym, shard_updated)
+    return {symbol: entry[0] for symbol, entry in merged.items()}
 
 
 def _merge_document_symbols(
     base_doc: DocumentProto,
     shard_doc: DocumentProto,
+    *,
+    base_updated_at: datetime | None,
+    shard_updated_at: datetime | None,
 ) -> DocumentProto:
     base_symbols = {sym.symbol: sym for sym in base_doc.symbols}
     shard_symbols = {sym.symbol: sym for sym in shard_doc.symbols}
     merged: dict[str, SymbolInfoProto] = {}
     for symbol, shard_sym in shard_symbols.items():
         base_sym = base_symbols.get(symbol)
-        merged[symbol] = _prefer_symbol_info(base_sym, shard_sym)
+        merged[symbol] = _prefer_symbol_info(
+            base_sym,
+            shard_sym,
+            base_updated_at=base_updated_at,
+            shard_updated_at=shard_updated_at,
+        )
 
     _clear_field(shard_doc, "symbols")
     for symbol in sorted(merged):
@@ -132,16 +175,21 @@ def _merge_document_symbols(
 def _prefer_symbol_info(
     base_sym: SymbolInfoProto | None,
     shard_sym: SymbolInfoProto,
+    *,
+    base_updated_at: datetime | None,
+    shard_updated_at: datetime | None,
 ) -> SymbolInfoProto:
     if base_sym is None:
         return shard_sym
     base_score = _symbol_info_score(base_sym)
     shard_score = _symbol_info_score(shard_sym)
-    if shard_score > base_score:
-        return shard_sym
-    if shard_score < base_score:
+    if shard_score <= base_score:
         return base_sym
-    return shard_sym
+    if base_updated_at is None or shard_updated_at is None:
+        return shard_sym
+    if shard_updated_at > base_updated_at:
+        return shard_sym
+    return base_sym
 
 
 def _symbol_info_score(sym: SymbolInfoProto) -> int:
@@ -178,6 +226,9 @@ def _signature_text(sym: SymbolInfoProto) -> str:
 def _prefer_external_symbol(
     base_sym: ExternalSymbolProto,
     shard_sym: ExternalSymbolProto,
+    *,
+    base_updated_at: datetime | None,
+    shard_updated_at: datetime | None,
 ) -> ExternalSymbolProto:
     base_score = _external_symbol_score(base_sym.symbol)
     shard_score = _external_symbol_score(shard_sym.symbol)
@@ -185,7 +236,37 @@ def _prefer_external_symbol(
         return shard_sym
     if shard_score < base_score:
         return base_sym
-    return shard_sym
+    if base_updated_at is None or shard_updated_at is None:
+        return shard_sym
+    if shard_updated_at > base_updated_at:
+        return shard_sym
+    return base_sym
+
+
+def _resolve_updated_at(
+    updated_at_by_path: Mapping[str, datetime] | None,
+    rel_path: str,
+) -> datetime | None:
+    if updated_at_by_path is None:
+        return None
+    return updated_at_by_path.get(rel_path)
+
+
+def _resolve_shard_updated_at(
+    shard: IndexProto,
+    updated_at_by_path: Mapping[str, datetime] | None,
+) -> datetime | None:
+    if updated_at_by_path is None:
+        return None
+    timestamps = [
+        updated_at_by_path.get(doc.relative_path)
+        for doc in shard.documents
+        if doc.relative_path
+    ]
+    resolved = [stamp for stamp in timestamps if stamp is not None]
+    if not resolved:
+        return None
+    return max(resolved)
 
 
 def _external_symbol_score(symbol: str) -> int:

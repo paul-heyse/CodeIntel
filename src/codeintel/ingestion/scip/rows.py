@@ -181,7 +181,14 @@ def build_symbol_information_rows(
         Serialized row tuples for symbol information.
     """
     rows: list[tuple[object, ...]] = []
+    seen: dict[str, ScipSymbolInfo] = {}
     for info in symbol_infos:
+        existing = seen.get(info.symbol)
+        if existing is None:
+            seen[info.symbol] = info
+            continue
+        seen[info.symbol] = _prefer_symbol_info(existing, info)
+    for info in seen.values():
         payload = {
             "repo": context.repo,
             "commit": context.commit,
@@ -210,6 +217,27 @@ def build_symbol_information_rows(
                 )
             )
     return rows
+
+
+def _symbol_info_score(info: ScipSymbolInfo) -> int:
+    score = 0
+    if info.documentation:
+        score += 1
+    if info.display_name:
+        score += 1
+    if info.signature:
+        score += 1
+    if info.enclosing_symbol:
+        score += 1
+    if info.kind is not None:
+        score += 1
+    return score
+
+
+def _prefer_symbol_info(current: ScipSymbolInfo, candidate: ScipSymbolInfo) -> ScipSymbolInfo:
+    if _symbol_info_score(candidate) > _symbol_info_score(current):
+        return candidate
+    return current
 
 
 def build_symbol_relationship_rows(
