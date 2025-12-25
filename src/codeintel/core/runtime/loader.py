@@ -268,6 +268,12 @@ def _load_observability_settings() -> ObservabilitySettings:
         value = get_str(name, default=None)
         return value.strip() if value else None
 
+    def _opt_non_negative_int(name: str, default: int) -> int:
+        value = get_int(name, default=default)
+        if value is None or value < 0:
+            return default
+        return int(value)
+
     def _parse_csv(value: str | None) -> tuple[str, ...]:
         if not value:
             return ()
@@ -293,6 +299,13 @@ def _load_observability_settings() -> ObservabilitySettings:
     }:
         query_text_policy_value = "never"
 
+    cli_args_capture_mode = _opt_str(
+        "CODEINTEL_OBSERVABILITY_CLI_ARGS_CAPTURE_MODE"
+    ) or "names-only"
+    cli_args_capture_mode_value = cli_args_capture_mode.strip().lower()
+    if cli_args_capture_mode_value not in {"names-only", "allowlist"}:
+        cli_args_capture_mode_value = "names-only"
+
     return ObservabilitySettings(
         enabled=enabled,
         service_name=_opt_str("OTEL_SERVICE_NAME"),
@@ -301,6 +314,26 @@ def _load_observability_settings() -> ObservabilitySettings:
         export_metrics=bool(get_bool("CODEINTEL_EXPORT_METRICS", default=True)),
         console_export=bool(get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
         prometheus_enabled=bool(get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
+        teardown_enabled=bool(
+            get_bool("CODEINTEL_OBSERVABILITY_TEARDOWN_ENABLED", default=True)
+        ),
+        teardown_task_sample_limit=_opt_non_negative_int(
+            "CODEINTEL_OBSERVABILITY_TEARDOWN_TASK_SAMPLE_LIMIT",
+            default=5,
+        ),
+        teardown_thread_sample_limit=_opt_non_negative_int(
+            "CODEINTEL_OBSERVABILITY_TEARDOWN_THREAD_SAMPLE_LIMIT",
+            default=5,
+        ),
+        teardown_subprocess_sample_limit=_opt_non_negative_int(
+            "CODEINTEL_OBSERVABILITY_TEARDOWN_SUBPROCESS_SAMPLE_LIMIT",
+            default=5,
+        ),
+        cli_enabled=bool(get_bool("CODEINTEL_OBSERVABILITY_CLI_ENABLED", default=True)),
+        cli_args_allowlist=_parse_csv(
+            get_str("CODEINTEL_OBSERVABILITY_CLI_ARGS_ALLOWLIST", default=None)
+        ),
+        cli_args_capture_mode=cli_args_capture_mode_value,
         duckdb_tracing_enabled=bool(get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)),
         duckdb_require_parent_span=bool(
             get_bool("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", default=True)

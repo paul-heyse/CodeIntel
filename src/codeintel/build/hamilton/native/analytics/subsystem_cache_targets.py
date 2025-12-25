@@ -26,11 +26,12 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
@@ -54,6 +55,12 @@ SUBSYSTEM_CACHE_TABLE_KEYS = (
 )
 
 
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for subsystem cache nodes."""
+    return env.gateway
+
+
 @dataclass(frozen=True)
 class SubsystemCachesComputeResult:
     """Result from subsystem cache computation."""
@@ -67,6 +74,7 @@ class SubsystemCachesComputeResult:
 def t__subsystem_caches__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
     t__subsystem_graph_metrics: TargetRunRecord,
     t__test_profile: TargetRunRecord,
@@ -98,7 +106,7 @@ def t__subsystem_caches__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -130,8 +138,8 @@ def t__subsystem_caches__compute(
         )
 
     try:
-        profile_rows = build_subsystem_profile_cache_rows(env.gateway, env.snapshot)
-        coverage_rows = build_subsystem_coverage_cache_rows(env.gateway, env.snapshot)
+        profile_rows = build_subsystem_profile_cache_rows(gateway, env.snapshot)
+        coverage_rows = build_subsystem_coverage_cache_rows(gateway, env.snapshot)
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         log.exception("subsystem_caches: build cache rows failed")
         return SubsystemCachesComputeResult(

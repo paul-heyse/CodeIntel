@@ -63,12 +63,13 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
@@ -106,8 +107,18 @@ if TYPE_CHECKING:
     from codeintel.analytics.profiles.types import FunctionProfileInputs
 
 
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for analytics metadata nodes."""
+    return env.gateway
+
+
 @tag_compute(domain="analytics", target=DATA_MODELS_TARGET_NAME)
-def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResult | None:
+def t__data_models__compute(
+    env: BuildEnv,
+    graph: TargetGraph,
+    gateway: StorageGateway,
+) -> DataModelsResult | None:
     """Compute data models for all classes in the snapshot.
 
     This is a pure compute node with no side effects. It reads class
@@ -143,13 +154,13 @@ def t__data_models__compute(env: BuildEnv, graph: TargetGraph) -> DataModelsResu
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
-    return compute_data_models_pure(env.gateway, env.snapshot)
+    return compute_data_models_pure(gateway, env.snapshot)
 
 
 @SaveToObjectMetadataDecorator(
@@ -306,6 +317,7 @@ def t__data_models(
 def t__data_model_usage__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.data_model_usage.
 
@@ -329,7 +341,7 @@ def t__data_model_usage__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -337,7 +349,7 @@ def t__data_model_usage__compute(
             return None
 
     registry = build_registry(
-        gateway=env.gateway,
+        gateway=gateway,
         snapshot=env.snapshot,
         registry_options=ProviderRegistryOptions(
             include_graphs=False,
@@ -349,7 +361,7 @@ def t__data_model_usage__compute(
     ast_data = registry.require(AstProvider).get()
 
     return build_data_model_usage_rows(
-        env.gateway,
+        gateway,
         env.snapshot,
         module_map=module_map_provider.module_map,
         ast_by_goid=ast_data.function_ast_map,
@@ -403,7 +415,10 @@ class AstFeaturesResult:
 
 
 @tag_compute(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
-def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
+def t__function_ast_features__compute(
+    env: BuildEnv,
+    gateway: StorageGateway,
+) -> AstFeaturesResult:
     """Compute AST-derived semantic features for functions.
 
     Returns
@@ -412,7 +427,7 @@ def t__function_ast_features__compute(env: BuildEnv) -> AstFeaturesResult:
         Feature map and optional error message.
     """
     registry = build_registry(
-        gateway=env.gateway,
+        gateway=gateway,
         snapshot=env.snapshot,
         registry_options=ProviderRegistryOptions(
             include_graphs=False,
@@ -564,6 +579,7 @@ def _build_function_profile_views(
 def t__profiles__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
     t__symbol_uses: TargetRunRecord,
 ) -> ProfilesComputeResult | None:
@@ -593,7 +609,7 @@ def t__profiles__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -601,7 +617,7 @@ def t__profiles__compute(
             return None
 
     registry = build_registry(
-        gateway=env.gateway,
+        gateway=gateway,
         snapshot=env.snapshot,
         registry_options=ProviderRegistryOptions(include_graphs=False),
     )
@@ -617,7 +633,7 @@ def t__profiles__compute(
 
     try:
         module_table = seed_catalog_modules(
-            env.gateway,
+            gateway,
             catalog,
             env.snapshot.repo,
             env.snapshot.commit,
@@ -644,6 +660,7 @@ def t__profiles__compute(
 )
 def function_profile__rows(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__profiles__compute: ProfilesComputeResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Extract rows for analytics.function_profile table.
@@ -657,7 +674,7 @@ def function_profile__rows(
         return None
 
     module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
-    inputs = compute_function_profile_inputs(env.gateway, env.snapshot)
+    inputs = compute_function_profile_inputs(gateway, env.snapshot)
     views = _build_function_profile_views(inputs, module_table)
     rows = build_function_profile_rows(inputs, views=views)
     return tuple(row_to_tuple(FUNCTION_PROFILE_TABLE_KEY, row) for row in rows)
@@ -679,6 +696,7 @@ def function_profile__rows(
 )
 def file_profile__rows(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__profiles__compute: ProfilesComputeResult | None,
     m__analytics__function_profile: MaterializationMetadata,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -700,7 +718,7 @@ def file_profile__rows(
         return None
 
     module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
-    inputs = compute_file_profile_inputs(env.gateway, env.snapshot)
+    inputs = compute_file_profile_inputs(gateway, env.snapshot)
     rows = build_file_profile_rows(inputs, module_table=module_table)
     if rows is None:
         return None
@@ -723,6 +741,7 @@ def file_profile__rows(
 )
 def module_profile__rows(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__profiles__compute: ProfilesComputeResult | None,
     m__analytics__file_profile: MaterializationMetadata,
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -744,7 +763,7 @@ def module_profile__rows(
         return None
 
     module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
-    inputs = compute_module_profile_inputs(env.gateway, env.snapshot)
+    inputs = compute_module_profile_inputs(gateway, env.snapshot)
     rows = build_module_profile_rows(inputs, module_table=module_table)
     if rows is None:
         return None

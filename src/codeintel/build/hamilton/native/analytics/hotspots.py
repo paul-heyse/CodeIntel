@@ -40,7 +40,7 @@ from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -78,6 +78,12 @@ tagged_attach_node(
     node_name=hotspots__modules_table.__name__,
     fn=hotspots__modules_table,
 )
+
+
+@tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for hotspots nodes."""
+    return env.gateway
 
 
 @dataclass(frozen=True)
@@ -202,6 +208,7 @@ def _rows_to_tuples(
 @tag_compute(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def t__hotspots__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     graph: TargetGraph,
     hotspots__ast_metrics_table: ir.Table,
     hotspots__modules_table: ir.Table,
@@ -231,7 +238,7 @@ def t__hotspots__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )

@@ -54,6 +54,12 @@ IMPORT_GRAPH_TABLE_KEYS = (
 )
 
 
+@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for import graph nodes."""
+    return env.gateway
+
+
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(IMPORT_MODULES_TABLE_KEY),
@@ -272,6 +278,7 @@ def _materialize_import_graph(
 @tag_tool(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph__extract(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__modules: TargetRunRecord,
 ) -> ImportGraphExtractResult:
     """Execute import graph extraction on repository modules.
@@ -313,12 +320,12 @@ def t__import_graph__extract(
         )
 
         source_root = snapshot.repo_root or get_source_root(
-            env.gateway,
+            gateway,
             snapshot.repo,
             snapshot.commit,
         )
         module_by_path = filter_mapping(
-            _load_modules(env.gateway, snapshot.repo, snapshot.commit),
+            _load_modules(gateway, snapshot.repo, snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 

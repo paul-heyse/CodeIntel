@@ -45,6 +45,7 @@ from codeintel.build.targets import TargetGraph
 from codeintel.core.hamilton.records import TargetRunRecord
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.graphs.runtime import resolve_graph_runtime
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.graphs.config_data_flow import ConfigDataFlowResult
@@ -86,6 +87,12 @@ CFG_DFG_METRICS_TABLE_KEYS = (
 )
 
 
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for config graph nodes."""
+    return env.gateway
+
+
 @dataclass(frozen=True)
 class ConfigDataFlowComputeResult:
     """Combined result from config data flow and graph metrics computation.
@@ -108,6 +115,7 @@ class ConfigDataFlowComputeResult:
 @tag_compute(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def t__config_data_flow__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
     t__goids: TargetRunRecord,
 ) -> ConfigDataFlowComputeResult:
@@ -157,7 +165,7 @@ def t__config_data_flow__compute(
         call_graph: nx.DiGraph = nx.DiGraph()
         try:
             graph_runtime = resolve_graph_runtime(
-                env.gateway,
+                gateway,
                 env.snapshot,
                 load_graph_runtime_options(env, target_name=CONFIG_DATA_FLOW_TARGET_NAME),
             )
@@ -170,7 +178,7 @@ def t__config_data_flow__compute(
         ast_by_goid: dict[int, FunctionAst] = {}
         missing_goids: set[int] = set()
         registry = build_registry(
-            gateway=env.gateway,
+            gateway=gateway,
             snapshot=env.snapshot,
             registry_options=ProviderRegistryOptions(
                 include_graphs=False,
@@ -186,7 +194,7 @@ def t__config_data_flow__compute(
 
         # Compute config data flow (pure compute, no persistence)
         data_flow_result = compute_config_data_flow_result(
-            env.gateway,
+            gateway,
             env.snapshot,
             call_graph=call_graph,
             ast_by_goid=ast_by_goid,
@@ -195,7 +203,7 @@ def t__config_data_flow__compute(
 
         # Compute config graph metrics (pure compute, no persistence)
         graph_metrics_result = compute_config_graph_metrics_result(
-            env.gateway,
+            gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             runtime=None,  # Use default runtime
@@ -477,7 +485,11 @@ _CFG_DFG_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult,
 
 
 @tag_compute(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
-def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMetricsResult | None:
+def t__cfg_dfg_metrics__compute_cfg(
+    env: BuildEnv,
+    graph: TargetGraph,
+    gateway: StorageGateway,
+) -> CfgMetricsResult | None:
     """Compute CFG metrics for all functions in the snapshot.
 
     Returns
@@ -492,21 +504,25 @@ def t__cfg_dfg_metrics__compute_cfg(env: BuildEnv, graph: TargetGraph) -> CfgMet
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
     return compute_cfg_metrics_pure(
-        env.gateway,
+        gateway,
         env.snapshot.repo,
         env.snapshot.commit,
     )
 
 
 @tag_compute(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
-def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMetricsResult | None:
+def t__cfg_dfg_metrics__compute_dfg(
+    env: BuildEnv,
+    graph: TargetGraph,
+    gateway: StorageGateway,
+) -> DfgMetricsResult | None:
     """Compute DFG metrics for all functions in the snapshot.
 
     Returns
@@ -521,14 +537,14 @@ def t__cfg_dfg_metrics__compute_dfg(env: BuildEnv, graph: TargetGraph) -> DfgMet
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
     return compute_dfg_metrics_pure(
-        env.gateway,
+        gateway,
         env.snapshot.repo,
         env.snapshot.commit,
     )

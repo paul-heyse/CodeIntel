@@ -47,13 +47,14 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.graphs.runtime import resolve_graph_runtime
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
@@ -63,6 +64,12 @@ FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 
 FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
+
+
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for function detail nodes."""
+    return env.gateway
 
 
 @dataclass(frozen=True)
@@ -96,6 +103,7 @@ class FunctionContractsResult:
 def t__function_contracts__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__goids: TargetRunRecord,
 ) -> FunctionContractsResult:
     """Compute pre/postconditions and nullability contracts for functions.
@@ -137,7 +145,7 @@ def t__function_contracts__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -146,7 +154,7 @@ def t__function_contracts__compute(
 
     try:
         registry = build_registry(
-            gateway=env.gateway,
+            gateway=gateway,
             snapshot=env.snapshot,
             registry_options=ProviderRegistryOptions(
                 include_graphs=False,
@@ -174,7 +182,7 @@ def t__function_contracts__compute(
 
         # Compute contracts (pure compute - no persistence)
         rows = build_function_contracts_rows(
-            env.gateway,
+            gateway,
             env.snapshot,
             function_ast_map=function_ast_map,
             catalog=catalog,
@@ -292,6 +300,7 @@ class FunctionEffectsResult:
 def t__function_effects__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
 ) -> FunctionEffectsResult:
     """Compute side effects classification for functions.
@@ -314,7 +323,7 @@ def t__function_effects__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -322,7 +331,7 @@ def t__function_effects__compute(
             return FunctionEffectsResult(rows=None)
 
     registry = build_registry(
-        gateway=env.gateway,
+        gateway=gateway,
         snapshot=env.snapshot,
         registry_options=ProviderRegistryOptions(include_graphs=False),
     )
@@ -336,7 +345,7 @@ def t__function_effects__compute(
 
         try:
             graph_runtime = resolve_graph_runtime(
-                env.gateway,
+                gateway,
                 env.snapshot,
                 load_graph_runtime_options(env, target_name=FUNCTION_EFFECTS_TARGET_NAME),
             )
@@ -357,7 +366,7 @@ def t__function_effects__compute(
         )
 
         rows = build_function_effects_rows(
-            env.gateway,
+            gateway,
             env.snapshot,
             options=opts,
             inputs=inputs,

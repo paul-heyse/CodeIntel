@@ -138,6 +138,12 @@ CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE = "call_graph_function_call_counts"
 CALL_GRAPH_DEPTH_STATS_NAMESPACE = "call_graph_call_depth_stats"
 
 
+@tag_helper(domain="graphs")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for graph targets."""
+    return env.gateway
+
+
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(GOIDS_GOIDS_TABLE_KEY),
@@ -910,6 +916,7 @@ def _validate_cfg_integrity(
 @tag_tool(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids__extract(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__modules: TargetRunRecord,
 ) -> GoidExtractResult:
     """Execute GOID extraction on repository modules.
@@ -951,10 +958,10 @@ def t__goids__extract(
             options_type=GoidBuilderOptions,
         )
 
-        source_root = env.snapshot.repo_root or get_source_root(env.gateway, repo, commit)
+        source_root = env.snapshot.repo_root or get_source_root(gateway, repo, commit)
 
         tracked_files = filter_paths(
-            _get_tracked_files(env.gateway, repo, commit),
+            _get_tracked_files(gateway, repo, commit),
             scope_paths=opts.scope_paths,
             include_tests=opts.include_tests,
         )
@@ -1073,6 +1080,7 @@ def t__goids(
 @tag_tool(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses__extract(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__scip: TargetRunRecord,
     t__modules: TargetRunRecord,
     t__goids: TargetRunRecord,
@@ -1092,7 +1100,6 @@ def t__symbol_uses__extract(
             )
 
     try:
-        gateway = env.gateway
         repo = env.snapshot.repo
         commit = env.snapshot.commit
         opts = load_target_options(
@@ -1516,6 +1523,7 @@ def t__call_graph_views(
 def t__graph_metrics__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
 ) -> GraphMetricsComputeResult | None:
     """Compute graph metrics rows from call graph data.
@@ -1550,7 +1558,7 @@ def t__graph_metrics__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -1569,11 +1577,11 @@ def t__graph_metrics__compute(
             snapshot=env.snapshot,
             backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
         )
-        runtime = build_graph_runtime(env.gateway, runtime_options)
-        filters = build_graph_metric_filters(env.gateway, env.snapshot)
+        runtime = build_graph_runtime(gateway, runtime_options)
+        filters = build_graph_metric_filters(gateway, env.snapshot)
 
         metrics_rows = build_graph_metrics_rows(
-            env.gateway,
+            gateway,
             env.snapshot,
             options=load_target_options(
                 env,
@@ -1587,28 +1595,29 @@ def t__graph_metrics__compute(
             ),
         )
         functions_ext_rows = build_graph_metrics_functions_ext_rows(
-            env.gateway,
+            gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             runtime=runtime,
             filters=filters,
         )
         modules_ext_rows = build_graph_metrics_modules_ext_rows(
-            env.gateway,
+            gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             runtime=runtime,
             filters=filters,
         )
         graph_stats_rows = build_graph_stats_rows(
-            env.gateway,
+            gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             runtime=runtime,
         )
 
         log.info(
-            "graph_metrics: rows built functions=%d modules=%d functions_ext=%d modules_ext=%d stats=%d",
+            "graph_metrics: rows built functions=%d modules=%d functions_ext=%d "
+            "modules_ext=%d stats=%d",
             len(metrics_rows.function_rows),
             len(metrics_rows.module_rows),
             len(functions_ext_rows),
@@ -1887,6 +1896,7 @@ def graph_metrics__materializations(
 @tag_tool(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation__check(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
     t__import_graph: TargetRunRecord,
     t__cfg: TargetRunRecord,
@@ -1907,7 +1917,6 @@ def t__graph_validation__check(
             )
 
     try:
-        gateway = env.gateway
         repo = env.snapshot.repo
         commit = env.snapshot.commit
 

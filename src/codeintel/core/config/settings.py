@@ -53,6 +53,13 @@ class ObservabilitySettings:
     export_metrics: bool = True
     console_export: bool = False
     prometheus_enabled: bool = False
+    teardown_enabled: bool = True
+    teardown_task_sample_limit: int = 5
+    teardown_thread_sample_limit: int = 5
+    teardown_subprocess_sample_limit: int = 5
+    cli_enabled: bool = True
+    cli_args_allowlist: tuple[str, ...] = ()
+    cli_args_capture_mode: str = "names-only"
     duckdb_tracing_enabled: bool = True
     duckdb_require_parent_span: bool = True
     duckdb_statement_mode: str = "hash"

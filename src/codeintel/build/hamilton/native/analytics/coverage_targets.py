@@ -46,12 +46,13 @@ from codeintel.build.hamilton.native.materialization_records import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.generated_rows.analytics import (
@@ -69,6 +70,12 @@ BEHAVIORAL_COVERAGE_TARGET_NAME = "behavioral_coverage"
 COVERAGE_FUNCTIONS_TABLE_KEY = "analytics.coverage_functions"
 TEST_COVERAGE_EDGES_TABLE_KEY = "analytics.test_coverage_edges"
 BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
+
+
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for coverage nodes."""
+    return env.gateway
 
 
 # -----------------------------------------------------------------------------
@@ -280,6 +287,7 @@ class CoverageTestEdgesComputeResult:
 @tag_compute(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
 def t__coverage_test_edges__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__goids: TargetRunRecord,
 ) -> CoverageTestEdgesComputeResult:
     """Compute test-to-function coverage edges.
@@ -303,7 +311,7 @@ def t__coverage_test_edges__compute(
         )
 
     registry = build_registry(
-        gateway=env.gateway,
+        gateway=gateway,
         snapshot=env.snapshot,
         registry_options=ProviderRegistryOptions(include_graphs=False),
     )
@@ -316,7 +324,7 @@ def t__coverage_test_edges__compute(
             catalog = None
 
         rows = build_test_coverage_edges_rows(
-            env.gateway,
+            gateway,
             env.snapshot,
             catalog_provider=catalog,
         )
@@ -425,6 +433,7 @@ class BehavioralCoverageComputeResult:
 @tag_compute(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
 def t__behavioral_coverage__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__test_profile: TargetRunRecord,
 ) -> BehavioralCoverageComputeResult:
     """Assign heuristic behavior tags to tests.
@@ -449,7 +458,7 @@ def t__behavioral_coverage__compute(
 
     try:
         rows = build_behavior_rows(
-            env.gateway,
+            gateway,
             env.snapshot,
             llm_runner=None,
         )

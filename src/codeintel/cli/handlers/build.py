@@ -8,6 +8,7 @@ from __future__ import annotations
 import json as _json
 import logging
 import shutil
+import time
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -67,6 +68,14 @@ from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
+from codeintel.observability.runtime_registry import count_subprocesses, snapshot_subprocesses
+from codeintel.observability.teardown import (
+    SubprocessSample,
+    TeardownTelemetry,
+    emit_teardown_telemetry,
+    snapshot_active_threads,
+    snapshot_pending_tasks,
+)
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 
 if TYPE_CHECKING:
@@ -79,9 +88,27 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
     from codeintel.core.build_manifest import BuildRunRecord
+    from codeintel.observability.cli import RunContext
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
+_TEARDOWN_DAEMON_ALLOWLIST: set[str] = set()
+_CLI_INTERNAL_ERROR_STATUS_THRESHOLD = 500
+
+
+@dataclass(slots=True)
+class _BuildRunTelemetryState:
+    run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _BuildTeardownInputs:
+    runtime: ResolvedRuntime | None
+    goals: list[str]
+    result: CliResult[BuildRunResult] | None
+    run_id: str | None
+    run_context: RunContext | None
+    duration_ms: float
 
 
 class RunMode(Enum):
@@ -834,54 +861,225 @@ def build_run_handler(
     CliResult[BuildRunResult]
         Structured result with build execution information.
     """
-    params = _extract_build_run_params(ctx)
-    validation_error = _validate_build_run_params(params)
-    if validation_error is not None:
-        return validation_error
+    start = time.perf_counter()
+    telemetry_state = _BuildRunTelemetryState()
+    runtime: ResolvedRuntime | None = None
+    goals: list[str] = []
+    result: CliResult[BuildRunResult] | None = None
+    run_context = ctx.run_context
 
     try:
-        runtime = ctx.runtime
-    except ResolutionError as e:
-        return fail_project_error("build", str(e))
+        params = _extract_build_run_params(ctx)
+        validation_error = _validate_build_run_params(params)
+        if validation_error is not None:
+            result = validation_error
+        else:
+            try:
+                runtime = ctx.runtime
+            except ResolutionError as e:
+                result = fail_project_error("build", str(e))
+            else:
+                graph = get_target_metadata_service().system.graph
+                scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
 
-    graph = get_target_metadata_service().system.graph
-    scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
+                try:
+                    goals = _resolve_goals(params.targets, params.module, scope, graph)
+                except ValidationError as e:
+                    result = fail_invalid_targets(str(e))
+                else:
+                    if params.publish_serving_snapshot and "serving_artifacts" not in goals:
+                        goals.append("serving_artifacts")
 
+                    LOG.info(
+                        "build.run repo=%s commit=%s targets=%s",
+                        runtime.snapshot.repo,
+                        runtime.snapshot.commit,
+                        goals,
+                    )
+
+                    execution_args = BuildExecutionArgs(
+                        goals=goals,
+                        force=params.force,
+                        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
+                        validate_outputs=params.validate_outputs,
+                        strict_contracts=params.strict_contracts,
+                        publish_serving_snapshot=params.publish_serving_snapshot,
+                        parallel_backend=params.parallel_backend,
+                        max_workers=params.max_workers,
+                        enable_cache=params.enable_cache,
+                        cache_dir=params.cache_dir,
+                        clear_cache=params.clear_cache,
+                        cache_report=params.cache_report,
+                    )
+                    result = _execute_and_format_result(
+                        runtime,
+                        execution_args,
+                        telemetry_state=telemetry_state,
+                    )
+    finally:
+        teardown_inputs = _BuildTeardownInputs(
+            runtime=runtime,
+            goals=goals,
+            result=result,
+            run_id=telemetry_state.run_id,
+            run_context=run_context,
+            duration_ms=(time.perf_counter() - start) * 1000,
+        )
+        _emit_build_teardown(inputs=teardown_inputs)
+    if result is None:
+        return fail_execution_failed("build", "Build run failed to produce a result.")
+    return result
+
+
+def _emit_build_teardown(
+    *,
+    inputs: _BuildTeardownInputs,
+) -> None:
+    """Emit teardown telemetry for build.run.
+
+    Parameters
+    ----------
+    inputs
+        Aggregated teardown inputs for telemetry emission.
+    """
+    settings = load_runtime_settings().observability
+    if not settings.teardown_enabled:
+        return
     try:
-        goals = _resolve_goals(params.targets, params.module, scope, graph)
-    except ValidationError as e:
-        return fail_invalid_targets(str(e))
+        pending_tasks_count, pending_task_samples = snapshot_pending_tasks(
+            sample_limit=settings.teardown_task_sample_limit,
+        )
+        active_threads_count, active_thread_names = snapshot_active_threads(
+            sample_limit=settings.teardown_thread_sample_limit,
+            allowlisted_daemon_names=_TEARDOWN_DAEMON_ALLOWLIST,
+        )
+        subprocess_records = snapshot_subprocesses(
+            limit=settings.teardown_subprocess_sample_limit,
+        )
+        subprocess_samples = tuple(
+            SubprocessSample(pid=record.pid, command=record.command)
+            for record in subprocess_records
+        )
+        cli_command = _format_cli_command(inputs.run_context)
+        cli_invocation_id = (
+            inputs.run_context.invocation_id if inputs.run_context is not None else None
+        )
+        cli_is_parse_error = False if inputs.run_context is not None else None
+        repo = inputs.runtime.snapshot.repo if inputs.runtime is not None else None
+        commit = inputs.runtime.snapshot.commit if inputs.runtime is not None else None
+        telemetry = TeardownTelemetry(
+            component="build",
+            operation="shutdown",
+            run_id=inputs.run_id,
+            repo=repo,
+            commit=commit,
+            targets=tuple(inputs.goals),
+            duration_ms=inputs.duration_ms,
+            cli_invocation_id=cli_invocation_id,
+            cli_command=cli_command,
+            cli_exit_code=_resolve_cli_exit_code(inputs.result),
+            cli_is_parse_error=cli_is_parse_error,
+            cli_error_type=_resolve_cli_error_type(inputs.result),
+            shutdown_status=_resolve_shutdown_status(inputs.result),
+            pending_tasks_count=pending_tasks_count,
+            pending_task_samples=pending_task_samples,
+            active_threads_count=active_threads_count,
+            active_thread_names=active_thread_names,
+            subprocess_count=count_subprocesses(),
+            subprocess_samples=subprocess_samples,
+        )
+        emit_teardown_telemetry(telemetry, logger=LOG)
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        LOG.warning("Failed to emit build teardown telemetry: %s", exc)
 
-    if params.publish_serving_snapshot and "serving_artifacts" not in goals:
-        goals.append("serving_artifacts")
 
-    LOG.info(
-        "build.run repo=%s commit=%s targets=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
-        goals,
-    )
+def _resolve_shutdown_status(result: CliResult[BuildRunResult] | None) -> str:
+    """Resolve teardown status from a build run result.
 
-    execution_args = BuildExecutionArgs(
-        goals=goals,
-        force=params.force,
-        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
-        validate_outputs=params.validate_outputs,
-        strict_contracts=params.strict_contracts,
-        publish_serving_snapshot=params.publish_serving_snapshot,
-        parallel_backend=params.parallel_backend,
-        max_workers=params.max_workers,
-        enable_cache=params.enable_cache,
-        cache_dir=params.cache_dir,
-        clear_cache=params.clear_cache,
-        cache_report=params.cache_report,
-    )
-    return _execute_and_format_result(runtime, execution_args)
+    Parameters
+    ----------
+    result
+        CLI result produced by build.run.
+
+    Returns
+    -------
+    str
+        Status label for teardown telemetry.
+    """
+    if result is None:
+        return "unknown"
+    if not result.success:
+        return "failed"
+    data = result.data
+    if data is not None and data.failed:
+        return "partial"
+    return "succeeded"
+
+
+def _resolve_cli_exit_code(result: CliResult[BuildRunResult] | None) -> int | None:
+    """Resolve CLI exit code from a build run result.
+
+    Parameters
+    ----------
+    result
+        CLI result produced by build.run.
+
+    Returns
+    -------
+    int | None
+        Exit code when result is present, otherwise None.
+    """
+    if result is None:
+        return None
+    if result.success:
+        return 0
+    error = result.error
+    if error is None:
+        return 1
+    return 2 if error.status >= _CLI_INTERNAL_ERROR_STATUS_THRESHOLD else 1
+
+
+def _resolve_cli_error_type(result: CliResult[BuildRunResult] | None) -> str | None:
+    """Resolve CLI error type identifier from a build run result.
+
+    Parameters
+    ----------
+    result
+        CLI result produced by build.run.
+
+    Returns
+    -------
+    str | None
+        Error type identifier when available.
+    """
+    if result is None or result.error is None:
+        return None
+    return result.error.type
+
+
+def _format_cli_command(run_context: RunContext | None) -> str | None:
+    """Format CLI command chain for telemetry.
+
+    Parameters
+    ----------
+    run_context
+        Optional CLI run context.
+
+    Returns
+    -------
+    str | None
+        Dot-delimited command chain string.
+    """
+    if run_context is None or not run_context.command_chain:
+        return None
+    return ".".join(run_context.command_chain)
 
 
 def _execute_and_format_result(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
+    *,
+    telemetry_state: _BuildRunTelemetryState | None = None,
 ) -> CliResult[BuildRunResult]:
     """Execute build and format result.
 
@@ -891,6 +1089,8 @@ def _execute_and_format_result(
         Resolved runtime.
     execution
         BuildExecutionArgs capturing mode, validation, and goal selection.
+    telemetry_state
+        Optional telemetry state to populate with execution metadata.
 
     Returns
     -------
@@ -924,6 +1124,9 @@ def _execute_and_format_result(
                 duration_seconds=0.0,
             )
         )
+
+    if telemetry_state is not None:
+        telemetry_state.run_id = outcome.result.run_id
 
     cache_report = outcome.cache_report
 

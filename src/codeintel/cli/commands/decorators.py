@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
     from codeintel.cli.context import CommandContext
     from codeintel.cli.core import CliResult
+    from codeintel.observability.cli import RunContext
 
 LOG = logging.getLogger(__name__)
 
@@ -362,6 +363,7 @@ def _reconstruct_command_from_context(
                 output_format=ctx.output_format,
                 verbose=ctx.verbosity,
                 project_root=ctx.runtime.root if ctx.runtime else None,
+                run_context=ctx.run_context,
             )
         elif fld.name in ctx.params.raw:
             kwargs[fld.name] = ctx.params.raw[fld.name]
@@ -398,6 +400,7 @@ def _execute_new_command[T](
         .with_output_format(infra.output_format)
         .with_verbosity(infra.verbosity)
         .with_operation_id(getattr(command, "__operation_id__", "unknown"))
+        .with_run_context(infra.run_context)
     )
 
     if require_storage:
@@ -457,6 +460,7 @@ def _execute_handler_command[R](
         .with_output_format(infra.output_format)
         .with_verbosity(infra.verbosity)
         .with_operation_id(operation_id)
+        .with_run_context(infra.run_context)
     )
 
     if config.require_runtime:
@@ -495,6 +499,7 @@ class _InfrastructureValues:
     project_root: Path | None
     database_path: Path | None
     index_path: Path | None
+    run_context: RunContext | None
 
 
 def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:
@@ -521,10 +526,12 @@ def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:
             json_flag=getattr(flags, "json", False),
         )
         project_root = _convert_to_path(getattr(flags, "project_root", None))
+        run_context = getattr(flags, "run_context", None)
     else:
         verbosity = getattr(command, "verbose", 0)
         output_format = _get_output_format(command)
         project_root = _get_path_field(command, "project", "project_root")
+        run_context = getattr(command, "run_context", None)
 
     database_path = _get_path_field(command, "db_path", "database_path")
     index_path = _get_path_field(command, "index_path")
@@ -535,6 +542,7 @@ def _extract_infrastructure(command: CommandInstance) -> _InfrastructureValues:
         project_root=project_root,
         database_path=database_path,
         index_path=index_path,
+        run_context=run_context,
     )
 
 

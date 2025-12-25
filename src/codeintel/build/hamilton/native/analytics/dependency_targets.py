@@ -56,7 +56,9 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
+from codeintel.config.primitives import SnapshotRef
 from codeintel.core.resources import ResourceNotFoundError
+from codeintel.storage.gateway import StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.analytics.ast_features.model import FunctionAstFeatures
@@ -86,7 +88,17 @@ ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
 ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
 
 
-def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for analytics targets."""
+    return env.gateway
+
+
+def _build_inputs(
+    *,
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> ExternalDependencyInputs | None:
     """Build inputs for external dependency analysis.
 
     Loads function ASTs and builds the ExternalDependencyInputs structure
@@ -94,8 +106,10 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
 
     Parameters
     ----------
-    env
-        Build environment with gateway, snapshot, and providers.
+    gateway
+        Storage gateway for loading catalog and AST resources.
+    snapshot
+        Snapshot reference used by resource providers.
 
     Returns
     -------
@@ -103,8 +117,8 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
         Inputs for dependency analysis, or None if unavailable.
     """
     registry = build_registry(
-        gateway=env.gateway,
-        snapshot=env.snapshot,
+        gateway=gateway,
+        snapshot=snapshot,
         registry_options=ProviderRegistryOptions(
             include_graphs=False,
             include_asts=True,
@@ -145,6 +159,7 @@ def _build_inputs(env: BuildEnv) -> ExternalDependencyInputs | None:
 @tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def external_deps_inputs(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
 ) -> ExternalDependencyInputs | None:
     """Build and cache inputs for external dependency analysis.
@@ -156,13 +171,14 @@ def external_deps_inputs(
     """
     if t__call_graph.status != "succeeded":
         return None
-    return _build_inputs(env)
+    return _build_inputs(gateway=gateway, snapshot=env.snapshot)
 
 
 @tag_compute(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def t__external_deps__compute_calls(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     external_deps_inputs: ExternalDependencyInputs | None,
 ) -> DependencyCallsResult | None:
     """Compute external dependency calls for all functions in the snapshot.
@@ -199,7 +215,7 @@ def t__external_deps__compute_calls(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -210,7 +226,7 @@ def t__external_deps__compute_calls(
         return None
 
     return compute_dependency_calls_pure(
-        env.gateway,
+        gateway,
         env.snapshot,
         external_deps_inputs,
     )
@@ -259,6 +275,7 @@ def external_deps__calls_rows(
 )
 def external_deps__dependencies_rows(
     env: BuildEnv,
+    gateway: StorageGateway,
     m__analytics__external_dependency_calls: MaterializationMetadata,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.external_dependencies after calls are written.
@@ -275,7 +292,7 @@ def external_deps__dependencies_rows(
     if meta.status != "succeeded":
         return None
 
-    result = compute_external_dependencies_pure(env.gateway, env.snapshot)
+    result = compute_external_dependencies_pure(gateway, env.snapshot)
     return tuple(result.rows)
 
 
@@ -350,7 +367,11 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
-def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
+def _build_entrypoint_inputs(
+    *,
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+) -> EntrypointBuildInputs | None:
     """Build inputs for entrypoint detection.
 
     Returns
@@ -359,8 +380,8 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
         Prepared inputs, or None when required data is unavailable.
     """
     registry = build_registry(
-        gateway=env.gateway,
-        snapshot=env.snapshot,
+        gateway=gateway,
+        snapshot=snapshot,
         registry_options=ProviderRegistryOptions(
             include_graphs=False,
             include_features=True,
@@ -392,6 +413,7 @@ def _build_entrypoint_inputs(env: BuildEnv) -> EntrypointBuildInputs | None:
 @tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints_inputs(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__goids: TargetRunRecord,
     t__semantic_roles: TargetRunRecord,
     t__test_profile: TargetRunRecord,
@@ -409,13 +431,14 @@ def entrypoints_inputs(
         return None
     if t__test_profile.status != "succeeded":
         return None
-    return _build_entrypoint_inputs(env)
+    return _build_entrypoint_inputs(gateway=gateway, snapshot=env.snapshot)
 
 
 @tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def t__entrypoints__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     entrypoints_inputs: EntrypointBuildInputs | None,
 ) -> EntrypointsResult | None:
     """Compute entrypoints for all modules in the snapshot.
@@ -432,7 +455,7 @@ def t__entrypoints__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -442,7 +465,7 @@ def t__entrypoints__compute(
     if entrypoints_inputs is None:
         return None
 
-    return compute_entrypoints_pure(env.gateway, env.snapshot, entrypoints_inputs)
+    return compute_entrypoints_pure(gateway, env.snapshot, entrypoints_inputs)
 
 
 @SaveToObjectMetadataDecorator(

@@ -58,6 +58,12 @@ CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 
 
+@tag_helper(domain="graphs", target=CFG_TARGET_NAME)
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for CFG/DFG nodes."""
+    return env.gateway
+
+
 @SaveToObjectMetadataDecorator(
     [DuckDBRowsSaver],
     output_name_=materialize_node(CFG_BLOCKS_TABLE_KEY),
@@ -465,6 +471,7 @@ def _materialize_cfg_outputs(
 @tag_tool(domain="graphs", target=CFG_TARGET_NAME)
 def t__cfg__extract(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__goids: TargetRunRecord,
 ) -> CFGExtractResult:
     """Execute CFG extraction for all functions.
@@ -501,7 +508,7 @@ def t__cfg__extract(
         opts = load_target_options(env, target_name=CFG_TARGET_NAME, options_type=CfgDfgOptions)
 
         functions = _filter_functions_for_scope(
-            _load_functions(env.gateway, snapshot.repo, snapshot.commit),
+            _load_functions(gateway, snapshot.repo, snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 
@@ -519,7 +526,7 @@ def t__cfg__extract(
             )
 
         source_root = snapshot.repo_root or get_source_root(
-            env.gateway,
+            gateway,
             snapshot.repo,
             snapshot.commit,
         )

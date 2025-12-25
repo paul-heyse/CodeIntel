@@ -24,6 +24,7 @@ from cyclopts import App, Parameter
 
 from codeintel.cli.config import ConfigService
 from codeintel.cli.rendering.types import OutputFormat
+from codeintel.observability.cli import RunContext
 
 
 def make_root_app() -> App:
@@ -232,6 +233,12 @@ class SharedFlags:
     output_format: OutputFmt = OutputFormat.TEXT
     json: JsonFlag = False
     verbose: Verbose = 0
+    run_context: Annotated[
+        RunContext | None,
+        Parameter(
+            parse=False,
+        ),
+    ] = None
 
 
 _DEFAULT_SHARED_FLAGS = SharedFlags()

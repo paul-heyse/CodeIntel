@@ -30,10 +30,11 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,12 @@ SUBSYSTEMS_TARGET_NAME = "subsystems"
 
 SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
+
+
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for subsystem nodes."""
+    return env.gateway
 
 
 @dataclass(frozen=True)
@@ -57,6 +64,7 @@ class SubsystemsComputeResult:
 def t__subsystems__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
     t__import_graph: TargetRunRecord,
     t__semantic_roles: TargetRunRecord,
 ) -> SubsystemsComputeResult | None:
@@ -85,7 +93,7 @@ def t__subsystems__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
@@ -109,7 +117,7 @@ def t__subsystems__compute(
         )
 
     try:
-        rows = build_subsystem_rows(env.gateway, env.snapshot)
+        rows = build_subsystem_rows(gateway, env.snapshot)
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         log.exception("subsystems: build_subsystem_rows failed")
         return SubsystemsComputeResult(rows=None, error=str(exc))

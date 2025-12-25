@@ -48,6 +48,7 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.gateway import StorageGateway
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
@@ -72,6 +73,12 @@ FUNCTION_METRICS_SAVE_CONTEXT = SaverContext(
     target=FUNCTION_METRICS_TARGET_NAME,
     hash_options_node="function_metrics__hash_options",
 )
+
+
+@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for function metrics nodes."""
+    return env.gateway
 
 
 @tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
@@ -114,6 +121,7 @@ def function_metrics__skip(
 @tag_compute(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     *,
     function_metrics__skip: bool,
 ) -> FunctionAnalyticsResult | None:
@@ -151,7 +159,7 @@ def t__function_metrics__compute(
         options_type=FunctionAnalyticsOptions,
     )
     return compute_function_analytics_result(
-        env.gateway,
+        gateway,
         env.snapshot,
         options=options,
     )

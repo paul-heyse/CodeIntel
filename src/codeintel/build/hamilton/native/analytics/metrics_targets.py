@@ -57,11 +57,12 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
+from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -106,7 +107,18 @@ TEST_GRAPH_METRICS_TABLE_KEYS = (
 # -----------------------------------------------------------------------------
 
 
-def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | None:
+@tag_helper(domain="analytics")
+def gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for metrics nodes."""
+    return env.gateway
+
+
+def _get_graph_runtime(
+    env: BuildEnv,
+    *,
+    target_name: str,
+    gateway: StorageGateway,
+) -> GraphRuntime | None:
     """Resolve graph runtime from build environment.
 
     Parameters
@@ -123,7 +135,7 @@ def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | Non
     """
     try:
         options = load_graph_runtime_options(env, target_name=target_name)
-        return resolve_graph_runtime(env.gateway, env.snapshot, options)
+        return resolve_graph_runtime(gateway, env.snapshot, options)
     except (RuntimeError, ValueError) as exc:
         log.warning("Failed to resolve graph runtime: %s", exc)
         return None
@@ -151,6 +163,7 @@ def _get_graph_runtime(env: BuildEnv, *, target_name: str) -> GraphRuntime | Non
 def t__function_history__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute function history metrics for all functions.
 
@@ -184,14 +197,14 @@ def t__function_history__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
     return build_function_history_rows(
-        env.gateway,
+        gateway,
         env.snapshot,
         runner=env.providers.tool_runner,
     )
@@ -340,6 +353,7 @@ class SubsystemAgreementComputeResult:
 @tag_compute(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
 ) -> SubsystemGraphMetricsComputeResult:
     """Compute graph metrics for subsystems.
@@ -363,14 +377,18 @@ def t__subsystem_graph_metrics__compute(
         )
 
     try:
-        graph_runtime = _get_graph_runtime(env, target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
+        graph_runtime = _get_graph_runtime(
+            env,
+            target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+            gateway=gateway,
+        )
         log.info(
             "Computing subsystem graph metrics for %s@%s",
             env.snapshot.repo,
             env.snapshot.commit,
         )
         rows = build_subsystem_graph_metrics_rows(
-            env.gateway,
+            gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
             runtime=graph_runtime,
@@ -468,6 +486,7 @@ def t__subsystem_graph_metrics(
 @tag_compute(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__symbol_uses: TargetRunRecord,
 ) -> SymbolGraphMetricsComputeResult:
     """Compute graph metrics from symbol usage patterns.
@@ -496,14 +515,18 @@ def t__symbol_graph_metrics__compute(
     errors: list[str] = []
 
     try:
-        graph_runtime = _get_graph_runtime(env, target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME)
+        graph_runtime = _get_graph_runtime(
+            env,
+            target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+            gateway=gateway,
+        )
         repo = env.snapshot.repo
         commit = env.snapshot.commit
 
         try:
             log.info("Computing symbol graph metrics (modules) for %s@%s", repo, commit)
             module_rows = build_symbol_graph_metrics_module_rows(
-                env.gateway,
+                gateway,
                 repo=repo,
                 commit=commit,
                 runtime=graph_runtime,
@@ -515,7 +538,7 @@ def t__symbol_graph_metrics__compute(
         try:
             log.info("Computing symbol graph metrics (functions) for %s@%s", repo, commit)
             function_rows = build_symbol_graph_metrics_function_rows(
-                env.gateway,
+                gateway,
                 repo=repo,
                 commit=commit,
                 runtime=graph_runtime,
@@ -668,6 +691,7 @@ def t__symbol_graph_metrics(
 @tag_compute(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement__compute(
     env: BuildEnv,
+    gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
 ) -> SubsystemAgreementComputeResult:
     """Compare subsystem assignments with import community labels.
@@ -697,7 +721,7 @@ def t__subsystem_agreement__compute(
             env.snapshot.commit,
         )
         rows = build_subsystem_agreement_rows(
-            env.gateway,
+            gateway,
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
@@ -794,6 +818,7 @@ def t__subsystem_agreement(
 def t__test_graph_metrics__compute(
     env: BuildEnv,
     graph: TargetGraph,
+    gateway: StorageGateway,
 ) -> TestGraphMetricsResult | None:
     """Compute test graph metrics for all tests and functions.
 
@@ -816,17 +841,21 @@ def t__test_graph_metrics__compute(
         input_hash = compute_input_hash(
             target=target,
             snapshot=env.snapshot,
-            gateway=env.gateway,
+            gateway=gateway,
             settings=env.settings,
             options=hash_options,
         )
         if should_skip_native_target(env, target, input_hash):
             return None
 
-    runtime = _get_graph_runtime(env, target_name=TEST_GRAPH_METRICS_TARGET_NAME)
+    runtime = _get_graph_runtime(
+        env,
+        target_name=TEST_GRAPH_METRICS_TARGET_NAME,
+        gateway=gateway,
+    )
     if runtime is None:
         return TestGraphMetricsResult(test_rows=(), function_rows=())
-    return compute_test_graph_metrics_pure(env.gateway, env.snapshot, runtime)
+    return compute_test_graph_metrics_pure(gateway, env.snapshot, runtime)
 
 
 @SaveToObjectMetadataDecorator(
