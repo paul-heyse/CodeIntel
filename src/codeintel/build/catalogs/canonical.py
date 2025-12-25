@@ -95,6 +95,12 @@ def _build_contract_catalog() -> dict[str, DatasetContract]:
     return {key: _attach_row_binding(contract) for key, contract in contracts.items()}
 
 
+def _strip_target_dependencies(target: OutputTarget) -> OutputTarget:
+    if not target.dependencies:
+        return target
+    return replace(target, dependencies=())
+
+
 def _build_target_catalog() -> dict[str, OutputTarget]:
     module = importlib.import_module("codeintel.build.hamilton.driver_factory")
     build_driver_fn_raw = getattr(module, "build_driver", None)
@@ -103,7 +109,9 @@ def _build_target_catalog() -> dict[str, OutputTarget]:
         raise TypeError(msg)
     build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
     runtime = build_driver_fn()
-    targets = {target.name: target for target in runtime.graph.all_targets}
+    targets = {
+        target.name: _strip_target_dependencies(target) for target in runtime.graph.all_targets
+    }
     return dict(sorted(targets.items(), key=lambda item: item[0]))
 
 

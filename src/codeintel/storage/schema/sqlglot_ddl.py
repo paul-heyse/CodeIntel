@@ -11,27 +11,39 @@ from collections.abc import Sequence
 
 import sqlglot.expressions as exp
 
+from codeintel.storage.helpers.table_key import split_table_key
+
 __all__ = [
     "create_index_if_not_exists_ast",
     "create_schema_if_not_exists_ast",
 ]
 
 
-def create_schema_if_not_exists_ast(schema_name: str) -> exp.Create:
+def create_schema_if_not_exists_ast(
+    schema_name: str,
+    *,
+    catalog: str | None = None,
+) -> exp.Create:
     """Build a SQLGlot schema-create expression with IF NOT EXISTS semantics.
 
     Parameters
     ----------
     schema_name
         Schema name to create.
+    catalog
+        Optional catalog name to qualify the schema.
 
     Returns
     -------
     exp.Create
         SQLGlot expression for schema creation with IF NOT EXISTS.
     """
-    return exp.Create(
+    schema_expr = exp.Schema(
         this=exp.to_identifier(schema_name),
+        db=exp.to_identifier(catalog) if catalog is not None else None,
+    )
+    return exp.Create(
+        this=schema_expr,
         kind="SCHEMA",
         exists=True,
     )
@@ -40,10 +52,10 @@ def create_schema_if_not_exists_ast(schema_name: str) -> exp.Create:
 def create_index_if_not_exists_ast(
     *,
     index_name: str,
-    table_schema: str,
-    table_name: str,
+    table_key: str,
     columns: Sequence[str],
     unique: bool = False,
+    catalog: str | None = None,
 ) -> exp.Create:
     """Build a SQLGlot index-create expression with IF NOT EXISTS semantics.
 
@@ -51,23 +63,25 @@ def create_index_if_not_exists_ast(
     ----------
     index_name
         Index name.
-    table_schema
-        Schema containing the indexed table.
-    table_name
-        Table name.
+    table_key
+        Schema-qualified table key (e.g., "core.modules").
     columns
         Indexed column names, in order.
     unique
         When True, create a UNIQUE index.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
     exp.Create
         SQLGlot expression for index creation with IF NOT EXISTS.
     """
+    table_schema, table_name = split_table_key(table_key)
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),
         db=exp.to_identifier(table_schema),
+        catalog=exp.to_identifier(catalog) if catalog is not None else None,
     )
 
     index_columns = [exp.Ordered(this=exp.Column(this=exp.to_identifier(col))) for col in columns]

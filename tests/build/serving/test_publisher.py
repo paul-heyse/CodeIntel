@@ -53,18 +53,7 @@ def _write_text(path: Path, payload: dict[str, object]) -> None:
 def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> None:
     ensure_production_schemas(con)
     con.execute(
-        """
-        CREATE TABLE core.modules (
-            repo VARCHAR,
-            commit VARCHAR,
-            module VARCHAR,
-            path VARCHAR,
-            row_hash VARCHAR
-        )
-        """
-    )
-    con.execute(
-        "INSERT INTO core.modules VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO core.modules (repo, commit, module, path, row_hash) VALUES (?, ?, ?, ?, ?)",
         [repo, commit, "pkg.foo", "foo.py", "seed"],
     )
 
@@ -203,7 +192,7 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
     ensure_production_schemas(con)
     con.execute(
         """
-        CREATE TABLE core.modules (
+        CREATE TABLE IF NOT EXISTS core.modules (
             repo VARCHAR,
             commit VARCHAR,
             module VARCHAR,
@@ -245,6 +234,8 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     _seed_modules(con, repo="demo/repo", commit="c1")
+    con.execute("DROP TABLE IF EXISTS metadata.derived_lineage_edges")
+    con.execute("DROP TABLE IF EXISTS metadata.derived_lineage_columns")
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con

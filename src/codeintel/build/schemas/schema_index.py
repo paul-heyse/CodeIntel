@@ -105,6 +105,20 @@ class SchemaIndex:
         self._cache.clear()
         self._inference_errors.clear()
 
+    def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None:
+        """Prefill the inference cache with known schemas.
+
+        Parameters
+        ----------
+        schemas
+            Mapping of table_key to schema to seed into the cache.
+        """
+        if not schemas:
+            return
+        self._cache.update(schemas)
+        for table_key in schemas:
+            self._clear_inference_error(table_key)
+
     def get_inference_error(self, table_key: str) -> str | None:
         """Return the most recent inference error for a table key.
 
@@ -209,12 +223,12 @@ class SchemaIndex:
             )
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             self._record_inference_error(table_key, exc)
-            if derivation.override_schema is None:
-                msg = f"Schema inference failed without explicit override for {table_key}: {exc}"
-                raise RuntimeError(msg) from exc
+            override_schema = derivation.override_schema
+            if override_schema is None:
+                return None
             if not self.fallback_to_override_on_error:
                 raise
-            return derivation.override_schema
+            return override_schema
 
         self._clear_inference_error(table_key)
         self._cache[table_key] = inferred

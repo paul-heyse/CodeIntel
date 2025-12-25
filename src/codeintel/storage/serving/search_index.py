@@ -9,10 +9,16 @@ from __future__ import annotations
 import duckdb
 
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.storage.duckdb_policy_backend import duckdb_schema_exists
+from codeintel.storage.duckdb_policy_backend import (
+    duckdb_default_catalog,
+    duckdb_schema_exists,
+)
 from codeintel.storage.gateway.extensions import require_extension
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
-from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.helpers.table_key import (
+    fully_qualified_table_ref,
+    split_table_key,
+)
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 
@@ -42,14 +48,27 @@ __all__ = [
 
 def build_search_documents_table(con: DuckDBConnection) -> None:
     """Create and populate ``docs.search_documents`` in the current database."""
+    catalog = duckdb_default_catalog(con)
+    search_documents_ref = fully_qualified_table_ref(
+        "docs.search_documents",
+        catalog=catalog,
+    )
+    modules_ref = fully_qualified_table_ref("core.modules", catalog=catalog)
+    docstrings_ref = fully_qualified_table_ref("core.docstrings", catalog=catalog)
+    function_metrics_ref = fully_qualified_table_ref(
+        "analytics.function_metrics",
+        catalog=catalog,
+    )
+    scip_symbols_ref = fully_qualified_table_ref("core.scip_symbols", catalog=catalog)
+
     backend = MinimalStorageGateway(con).policy
     backend.create_schema_if_not_exists("docs")
     backend.create_table_from_schema(_SEARCH_DOCUMENTS_SCHEMA, drop_existing=True)
 
     if backend.table_exists(schema="core", table="modules"):
         backend.execute_sql(
-            """
-            INSERT INTO docs.search_documents
+            f"""
+            INSERT INTO {search_documents_ref}
             SELECT
                 'module:' || COALESCE(repo, '') || ':' || COALESCE(commit, '') || ':' ||
                     COALESCE(module, '') || ':' || COALESCE(path, '') AS doc_id,
@@ -61,14 +80,14 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
                 NULL AS ref_goid_h128,
                 repo,
                 commit
-            FROM core.modules
+            FROM {modules_ref}
             """,
         )
 
     if backend.table_exists(schema="core", table="docstrings"):
         backend.execute_sql(
-            """
-            INSERT INTO docs.search_documents
+            f"""
+            INSERT INTO {search_documents_ref}
             SELECT
                 'docstring:' || repo || ':' || commit || ':' || rel_path || ':' ||
                     module || ':' || qualname || ':' || COALESCE(kind, '') || ':' ||
@@ -83,14 +102,14 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
                 NULL AS ref_goid_h128,
                 repo,
                 commit
-            FROM core.docstrings
+            FROM {docstrings_ref}
             """,
         )
 
     if backend.table_exists(schema="analytics", table="function_metrics"):
         backend.execute_sql(
-            """
-            INSERT INTO docs.search_documents
+            f"""
+            INSERT INTO {search_documents_ref}
             SELECT
                 'function:' || COALESCE(CAST(function_goid_h128 AS VARCHAR), '') || ':' ||
                     COALESCE(repo, '') || ':' || COALESCE(commit, '') AS doc_id,
@@ -103,14 +122,14 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
                 CAST(function_goid_h128 AS VARCHAR) AS ref_goid_h128,
                 repo,
                 commit
-            FROM analytics.function_metrics
+            FROM {function_metrics_ref}
             """,
         )
 
     if backend.table_exists(schema="core", table="scip_symbols"):
         backend.execute_sql(
-            """
-            INSERT INTO docs.search_documents
+            f"""
+            INSERT INTO {search_documents_ref}
             SELECT
                 'symbol:' || repo || ':' || commit || ':' || rel_path || ':' || symbol AS doc_id,
                 'symbol' AS kind,
@@ -121,7 +140,7 @@ def build_search_documents_table(con: DuckDBConnection) -> None:
                 NULL AS ref_goid_h128,
                 repo,
                 commit
-            FROM core.scip_symbols
+            FROM {scip_symbols_ref}
             """,
         )
 

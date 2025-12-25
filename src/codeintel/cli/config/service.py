@@ -113,7 +113,7 @@ def _make_env_config() -> object:
     object
         Cyclopts config loader that reads CODEINTEL_* environment variables.
     """
-    return cyclopts_config.Env(prefix="CODEINTEL_", command=False)
+    return cyclopts_config.Env(prefix="CODEINTEL_", command=True, show=True)
 
 
 @dataclass(frozen=True)

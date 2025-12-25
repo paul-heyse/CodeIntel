@@ -931,10 +931,13 @@ def _write_rows_insert(
                 resolved_columns=resolved_columns,
                 upsert=upsert,
             )
-            return coerce_int(
-                rows_affected,
-                ctx=f"{table_key} upsert rows_affected",
-            ) or 0
+            return (
+                coerce_int(
+                    rows_affected,
+                    ctx=f"{table_key} upsert rows_affected",
+                )
+                or 0
+            )
         log.warning("Upsert fallback requested for %s, but no primary key found", table_key)
 
     gateway.ibis.write(table_key, rows, columns=resolved_columns)

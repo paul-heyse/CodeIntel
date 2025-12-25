@@ -17,12 +17,7 @@ from codeintel.build.schemas.contract_service import (
     ContractResolutionSettings,
 )
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
-from codeintel.build.schemas.inference_service import (
-    HamiltonSchemaProvider,
-    infer_schema_for_table_key,
-    infer_table_schemas,
-    inferable_native_table_keys,
-)
+from codeintel.build.schemas.inference_service import infer_table_schemas
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
     ExportArtifact,
@@ -31,7 +26,6 @@ from codeintel.build.schemas.manifest import (
 )
 from codeintel.build.schemas.provider_unified import (
     UnifiedSchemaProvider,
-    non_inferable_schema_provider,
 )
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.schemas.contract_service import iter_contracts
@@ -239,9 +233,9 @@ def _apply_native_inference(
     *,
     provider: SchemaProvider,
     request: SchemaManifestRequest,
-    graph: TargetGraph,
     table_keys: Iterable[str],
     batch_inferer: NativeBatchInferer | None,
+    schema_index: SchemaIndex,
 ) -> SchemaProvider:
     """Wrap the schema provider with native inference when requested.
 
@@ -251,12 +245,12 @@ def _apply_native_inference(
         Base schema provider used for declared schemas.
     request
         Manifest request controlling inference options.
-    graph
-        Target graph used to discover inferable native table keys.
     table_keys
         Selected table keys for the manifest.
     batch_inferer
         Optional batch inference implementation.
+    schema_index
+        Schema index used to prioritize DAG-derived outputs.
 
     Returns
     -------
@@ -264,42 +258,37 @@ def _apply_native_inference(
         Provider potentially wrapped with native inference.
     """
     if isinstance(provider, UnifiedSchemaProvider):
-        return provider.with_inference(allow_inference=request.infer_native)
+        declared_provider = provider.declared
+        schema_index = provider.schema_index
+        unified_provider = provider.with_inference(allow_inference=request.infer_native)
+    else:
+        declared_provider = provider
+        unified_provider = UnifiedSchemaProvider(
+            declared=declared_provider,
+            schema_index=schema_index,
+            allow_inference=request.infer_native,
+        )
+
     if not request.infer_native:
-        if isinstance(provider, (HamiltonSchemaProvider, UnifiedSchemaProvider)):
-            return non_inferable_schema_provider()
-        return provider
-    if isinstance(provider, (HamiltonSchemaProvider, UnifiedSchemaProvider)):
-        return provider
+        return unified_provider
 
-    inferable = set(inferable_native_table_keys(graph=graph))
-    selected_inferable = frozenset(k for k in table_keys if k in inferable)
-    if not selected_inferable:
-        return provider
-
-    def _infer(table_key: str) -> TableSchema:
-        return infer_schema_for_table_key(table_key=table_key, declared_provider=provider)
-
-    hamilton_provider = HamiltonSchemaProvider(
-        declared=provider,
-        inferer=_infer,
-        inferable_table_keys=selected_inferable,
-        fallback_to_declared_on_error=False,
-    )
+    selected_table_keys = tuple(sorted(set(table_keys)))
+    if not selected_table_keys:
+        return unified_provider
 
     if request.batch_infer_native:
         try:
             batch = infer_table_schemas if batch_inferer is None else batch_inferer
-            inferred = batch(selected_inferable, declared_provider=provider)
+            inferred = batch(selected_table_keys, declared_provider=declared_provider)
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             _logger.warning(
                 "Batch inference failed; falling back to per-table inference: %s",
                 exc,
             )
         else:
-            hamilton_provider.prefill_cache(inferred)
+            schema_index.prefill_cache(inferred)
 
-    return hamilton_provider
+    return unified_provider
 
 
 def _ensure_v2(version: str) -> None:
@@ -677,9 +666,9 @@ def compile_schema_manifest(
     active_provider = _apply_native_inference(
         provider=provider,
         request=req,
-        graph=service.system.graph,
         table_keys=table_keys,
         batch_inferer=batch_inferer,
+        schema_index=service.schema_index,
     )
     extras, version = _resolve_v2_extras(request=req, con=con)
 

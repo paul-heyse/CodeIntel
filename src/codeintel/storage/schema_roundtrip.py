@@ -186,7 +186,12 @@ def _require_dtype_expression(
     return part
 
 
-def create_table_ast(table: TableSchema, *, if_not_exists: bool) -> exp.Create:
+def create_table_ast(
+    table: TableSchema,
+    *,
+    if_not_exists: bool,
+    catalog: str | None = None,
+) -> exp.Create:
     """Build a DuckDB table-creation DDL AST from `TableSchema`.
 
     Parameters
@@ -195,6 +200,8 @@ def create_table_ast(table: TableSchema, *, if_not_exists: bool) -> exp.Create:
         Canonical schema contract.
     if_not_exists
         When True, includes an "IF NOT EXISTS" guard.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -204,13 +211,12 @@ def create_table_ast(table: TableSchema, *, if_not_exists: bool) -> exp.Create:
     ibis_schema = ibis_schema_from_table_schema(table)
     column_defs = ibis_schema.to_sqlglot_column_defs(dialect=DUCKDB_DIALECT)
 
-    schema_expr = exp.Schema(
-        this=exp.Table(
-            this=exp.to_identifier(table.name),
-            db=exp.to_identifier(table.schema),
-        ),
-        expressions=column_defs,
+    table_expr = exp.Table(
+        this=exp.to_identifier(table.name),
+        db=exp.to_identifier(table.schema),
+        catalog=exp.to_identifier(catalog) if catalog is not None else None,
     )
+    schema_expr = exp.Schema(this=table_expr, expressions=column_defs)
 
     if table.primary_key:
         schema_expr.expressions.append(

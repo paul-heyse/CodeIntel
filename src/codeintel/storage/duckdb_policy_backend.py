@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
@@ -47,6 +47,7 @@ from codeintel.core.schemas.row_models import normalize_row_value
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import (
+    fully_qualified_table_ref,
     split_table_key,
     split_table_key_or_default,
 )
@@ -73,6 +74,7 @@ if TYPE_CHECKING:
 __all__ = [
     "DUCKDB_DIALECT",
     "DuckDBPolicyBackend",
+    "duckdb_default_catalog",
     "duckdb_schema_exists",
 ]
 
@@ -88,6 +90,28 @@ def _duckdb_table_exists(con: DuckDBPyConnection, *, schema: str, table: str) ->
         [schema, table],
     ).fetchone()
     return row is not None
+
+
+def duckdb_default_catalog(con: DuckDBPyConnection) -> str | None:
+    """Return the primary catalog name for a DuckDB connection.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection to query.
+
+    Returns
+    -------
+    str | None
+        Primary catalog name, or None when unavailable.
+    """
+    row = con.execute("PRAGMA database_list").fetchone()
+    if row is None:
+        return None
+    catalog = row[1]
+    if isinstance(catalog, str) and catalog.strip():
+        return catalog
+    return None
 
 
 def duckdb_schema_exists(con: DuckDBPyConnection, *, schema: str) -> bool:
@@ -132,7 +156,12 @@ def _infer_table_alias(where_ast: exp.Where) -> str | None:
     return None
 
 
-def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> exp.Create:
+def _build_create_table(
+    table: TableSchema,
+    *,
+    if_not_exists: bool = False,
+    catalog: str | None = None,
+) -> exp.Create:
     """Build a SQLGlot CREATE TABLE expression from a TableSchema.
 
     Parameters
@@ -141,22 +170,26 @@ def _build_create_table(table: TableSchema, *, if_not_exists: bool = False) -> e
         Table schema definition.
     if_not_exists
         When True, adds IF NOT EXISTS clause.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
     exp.Create
         SQLGlot CREATE TABLE expression.
     """
-    return create_table_ast(table, if_not_exists=if_not_exists)
+    return create_table_ast(table, if_not_exists=if_not_exists, catalog=catalog)
 
 
-def _build_drop_table(table: TableSchema) -> exp.Drop:
+def _build_drop_table(table: TableSchema, *, catalog: str | None = None) -> exp.Drop:
     """Build a SQLGlot DROP TABLE IF EXISTS expression.
 
     Parameters
     ----------
     table
         Table schema definition.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -167,6 +200,7 @@ def _build_drop_table(table: TableSchema) -> exp.Drop:
         this=exp.Table(
             this=exp.to_identifier(table.name),
             db=exp.to_identifier(table.schema),
+            catalog=exp.to_identifier(catalog) if catalog is not None else None,
         ),
         kind="TABLE",
         exists=True,
@@ -177,6 +211,8 @@ def _build_delete(
     table_schema: str,
     table_name: str,
     conditions: dict[str, str],
+    *,
+    catalog: str | None = None,
 ) -> exp.Delete:
     """Build a SQLGlot DELETE expression with parameterized conditions.
 
@@ -188,6 +224,8 @@ def _build_delete(
         Table name.
     conditions
         Column name to placeholder mapping for WHERE clause.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -197,6 +235,7 @@ def _build_delete(
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),
         db=exp.to_identifier(table_schema),
+        catalog=exp.to_identifier(catalog) if catalog is not None else None,
     )
 
     where_conditions: list[exp.Expression] = []
@@ -224,6 +263,8 @@ def _build_insert(
     table_schema: str,
     table_name: str,
     columns: Sequence[str],
+    *,
+    catalog: str | None = None,
 ) -> exp.Insert:
     """Build a SQLGlot INSERT expression with placeholders.
 
@@ -235,6 +276,8 @@ def _build_insert(
         Table name.
     columns
         Column names for the INSERT.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -244,6 +287,7 @@ def _build_insert(
     table_expr = exp.Table(
         this=exp.to_identifier(table_name),
         db=exp.to_identifier(table_schema),
+        catalog=exp.to_identifier(catalog) if catalog is not None else None,
     )
 
     schema = exp.Schema(
@@ -266,6 +310,7 @@ def _build_insert_select(
     columns: Sequence[str],
     *,
     select_sql: str,
+    catalog: str | None = None,
 ) -> exp.Insert:
     """Build a SQLGlot INSERT...SELECT expression.
 
@@ -279,6 +324,8 @@ def _build_insert_select(
         Column names for the INSERT.
     select_sql
         SQL SELECT statement to insert from.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -290,6 +337,7 @@ def _build_insert_select(
         this=exp.Table(
             this=exp.to_identifier(table_name),
             db=exp.to_identifier(table_schema),
+            catalog=exp.to_identifier(catalog) if catalog is not None else None,
         ),
         expressions=[exp.to_identifier(col) for col in columns],
     )
@@ -305,6 +353,7 @@ def _build_insert_select_ast(
     columns: Sequence[str],
     *,
     select_ast: exp.Expression,
+    catalog: str | None = None,
 ) -> exp.Insert:
     """Build a SQLGlot INSERT...SELECT expression from a pre-built SELECT AST.
 
@@ -318,6 +367,8 @@ def _build_insert_select_ast(
         Column names for the INSERT.
     select_ast
         SQLGlot AST for the SELECT statement to insert from.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -328,6 +379,7 @@ def _build_insert_select_ast(
         this=exp.Table(
             this=exp.to_identifier(table_name),
             db=exp.to_identifier(table_schema),
+            catalog=exp.to_identifier(catalog) if catalog is not None else None,
         ),
         expressions=[exp.to_identifier(col) for col in columns],
     )
@@ -342,6 +394,8 @@ def _build_upsert(
     table_name: str,
     columns: Sequence[str],
     upsert: UpsertSpec,
+    *,
+    catalog: str | None = None,
 ) -> str:
     """Build an INSERT ... ON CONFLICT DO UPDATE statement.
 
@@ -361,6 +415,8 @@ def _build_upsert(
         All column names for the INSERT.
     upsert
         Upsert specification defining conflict columns and update behavior.
+    catalog
+        Optional catalog name to qualify the table.
 
     Returns
     -------
@@ -373,7 +429,7 @@ def _build_upsert(
         else [col for col in upsert.update_columns if col not in upsert.conflict_columns]
     )
 
-    insert_expr = _build_insert(table_schema, table_name, columns)
+    insert_expr = _build_insert(table_schema, table_name, columns, catalog=catalog)
     conflict_keys = [exp.to_identifier(col) for col in upsert.conflict_columns]
 
     if cols_to_update:
@@ -441,6 +497,7 @@ class DuckDBPolicyBackend:
 
     gateway: MinimalGateway
     schema_provider: SchemaProvider | None = None
+    _catalog: str | None = field(default=None, init=False, repr=False)
 
     @property
     def con(self) -> DuckDBPyConnection:
@@ -451,6 +508,48 @@ class DuckDBPolicyBackend:
     def ibis(self) -> IbisGateway:
         """Return the Ibis gateway via the gateway reference."""
         return self.gateway.ibis
+
+    def _default_catalog(self) -> str | None:
+        """Return the primary DuckDB catalog name for this connection.
+
+        Returns
+        -------
+        str | None
+            Primary catalog name, or None when unavailable.
+        """
+        if self._catalog is not None:
+            return self._catalog
+        catalog = duckdb_default_catalog(self.con)
+        if catalog is None:
+            return None
+        self._catalog = catalog
+        return catalog
+
+    def _qualified_table_ref(self, schema: str, table: str) -> str:
+        """Return a catalog-qualified table reference for SQL string contexts.
+
+        Returns
+        -------
+        str
+            Table reference with catalog prefix when available.
+        """
+        return fully_qualified_table_ref(
+            f"{schema}.{table}",
+            catalog=self._default_catalog(),
+        )
+
+    def _quoted_table_ref(self, schema: str, table: str) -> str:
+        """Return a quoted table reference with optional catalog qualification.
+
+        Returns
+        -------
+        str
+            Quoted table reference with catalog prefix when available.
+        """
+        catalog = self._default_catalog()
+        if catalog is None:
+            return f'"{schema}"."{table}"'
+        return f'"{catalog}"."{schema}"."{table}"'
 
     def _run(self, expr: exp.Expression) -> None:
         """Execute a single SQLGlot expression.
@@ -573,12 +672,14 @@ class DuckDBPolicyBackend:
             SQL SELECT statement (string) or SQLGlot AST to insert from.
         """
         table_schema, table_name = split_table_key(table_key)
+        catalog = self._default_catalog()
         if isinstance(select_sql, exp.Expression):
             insert_expr = _build_insert_select_ast(
                 table_schema,
                 table_name,
                 columns,
                 select_ast=select_sql,
+                catalog=catalog,
             )
         else:
             insert_expr = _build_insert_select(
@@ -586,6 +687,7 @@ class DuckDBPolicyBackend:
                 table_name,
                 columns,
                 select_sql=select_sql,
+                catalog=catalog,
             )
         self._run(insert_expr)
 
@@ -611,12 +713,14 @@ class DuckDBPolicyBackend:
             Upsert specification defining conflict columns and update behavior.
         """
         table_schema, table_name = split_table_key(table_key)
+        catalog = self._default_catalog()
         if isinstance(select_sql, exp.Expression):
             insert_expr = _build_insert_select_ast(
                 table_schema,
                 table_name,
                 columns,
                 select_ast=select_sql,
+                catalog=catalog,
             )
         else:
             insert_expr = _build_insert_select(
@@ -624,6 +728,7 @@ class DuckDBPolicyBackend:
                 table_name,
                 columns,
                 select_sql=select_sql,
+                catalog=catalog,
             )
 
         cols_to_update = (
@@ -680,9 +785,11 @@ class DuckDBPolicyBackend:
         if where is not None:
             alias = _infer_table_alias(where)
 
+        catalog = self._default_catalog()
         table_expr = exp.Table(
             this=exp.to_identifier(table_name),
             db=exp.to_identifier(table_schema),
+            catalog=exp.to_identifier(catalog) if catalog is not None else None,
             alias=exp.TableAlias(this=exp.to_identifier(alias)) if alias is not None else None,
         )
         delete_expr = exp.Delete(this=table_expr, where=where)
@@ -696,7 +803,7 @@ class DuckDBPolicyBackend:
         schema_name
             Name of the schema to create.
         """
-        self._run(create_schema_if_not_exists_ast(schema_name))
+        self._run(create_schema_if_not_exists_ast(schema_name, catalog=self._default_catalog()))
 
     def create_table_from_schema(
         self,
@@ -716,9 +823,10 @@ class DuckDBPolicyBackend:
         if_not_exists
             When True, uses CREATE TABLE IF NOT EXISTS.
         """
+        catalog = self._default_catalog()
         if drop_existing and not if_not_exists:
-            self._run(_build_drop_table(table))
-        self._run(_build_create_table(table, if_not_exists=if_not_exists))
+            self._run(_build_drop_table(table, catalog=catalog))
+        self._run(_build_create_table(table, if_not_exists=if_not_exists, catalog=catalog))
 
     def create_indexes_from_schema(self, table: TableSchema) -> None:
         """Create all indexes defined in a TableSchema.
@@ -728,14 +836,15 @@ class DuckDBPolicyBackend:
         table
             Table schema definition with indexes.
         """
+        catalog = self._default_catalog()
         for index in table.indexes:
             self._run(
                 create_index_if_not_exists_ast(
                     index_name=index.name,
-                    table_schema=table.schema,
-                    table_name=table.name,
+                    table_key=table.table_key,
                     columns=index.columns,
                     unique=index.unique,
+                    catalog=catalog,
                 )
             )
 
@@ -759,7 +868,12 @@ class DuckDBPolicyBackend:
         commit
             Commit identifier.
         """
-        delete_expr = _build_delete(schema, table, {"repo": "repo", "commit": "commit"})
+        delete_expr = _build_delete(
+            schema,
+            table,
+            {"repo": "repo", "commit": "commit"},
+            catalog=self._default_catalog(),
+        )
         sql = delete_expr.sql(dialect=DUCKDB_DIALECT)
 
         sql = (
@@ -803,14 +917,24 @@ class DuckDBPolicyBackend:
             return
 
         if "repo" in columns:
-            delete_expr = _build_delete(schema, table, {"repo": "repo"})
+            delete_expr = _build_delete(
+                schema,
+                table,
+                {"repo": "repo"},
+                catalog=self._default_catalog(),
+            )
             sql = delete_expr.sql(dialect=DUCKDB_DIALECT)
             sql = sql.replace(":repo", "?").replace("$repo", "?")
             self._run_sql(sql, (repo,))
             return
 
         if "commit" in columns:
-            delete_expr = _build_delete(schema, table, {"commit": "commit"})
+            delete_expr = _build_delete(
+                schema,
+                table,
+                {"commit": "commit"},
+                catalog=self._default_catalog(),
+            )
             sql = (
                 delete_expr.sql(dialect=DUCKDB_DIALECT)
                 .replace(":commit", "?")
@@ -819,10 +943,12 @@ class DuckDBPolicyBackend:
             self._run_sql(sql, (commit,))
             return
 
+        catalog = self._default_catalog()
         delete_expr = exp.Delete(
             this=exp.Table(
                 this=exp.to_identifier(table),
                 db=exp.to_identifier(schema),
+                catalog=exp.to_identifier(catalog) if catalog is not None else None,
             )
         )
         self._run_sql(delete_expr.sql(dialect=DUCKDB_DIALECT))
@@ -1039,12 +1165,16 @@ class DuckDBPolicyBackend:
             message = f"Missing table {table_schema.table_key}"
             raise RuntimeError(message)
 
-        create_stmt = _build_create_table(table_schema, if_not_exists=True)
+        create_stmt = _build_create_table(
+            table_schema,
+            if_not_exists=True,
+            catalog=self._default_catalog(),
+        )
         self.con.execute(create_stmt.sql(dialect=DUCKDB_DIALECT))
         return True
 
     def _ensure_table_columns(self, table_key: str, table_schema: TableSchema) -> None:
-        qualified_name = f"{table_schema.schema}.{table_schema.name}"
+        qualified_name = self._qualified_table_ref(table_schema.schema, table_schema.name)
         actual_columns = self._fetch_table_columns(qualified_name)
         expected_columns = [col.name for col in table_schema.columns]
         if actual_columns == expected_columns:
@@ -1070,7 +1200,7 @@ class DuckDBPolicyBackend:
         return [row[1] for row in info]
 
     def _add_missing_columns(self, table_schema: TableSchema, *, start_index: int) -> None:
-        qualified_name = f'"{table_schema.schema}"."{table_schema.name}"'
+        qualified_name = self._quoted_table_ref(table_schema.schema, table_schema.name)
         missing_columns = table_schema.columns[start_index:]
         for col in missing_columns:
             col_type = col.type
@@ -1130,7 +1260,7 @@ class DuckDBPolicyBackend:
             if table_schema is not None:
                 columns = [col.name for col in table_schema.columns]
             elif _duckdb_table_exists(self.con, schema=schema, table=table):
-                qualified_name = f"{schema}.{table}"
+                qualified_name = self._qualified_table_ref(schema, table)
                 info = self.con.execute(
                     "SELECT * FROM pragma_table_info(?)",
                     [qualified_name],
@@ -1140,7 +1270,7 @@ class DuckDBPolicyBackend:
                 message = f"Missing table {table_key}"
                 raise RuntimeError(message)
 
-        insert_expr = _build_insert(schema, table, columns)
+        insert_expr = _build_insert(schema, table, columns, catalog=self._default_catalog())
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
         columns_tuple = tuple(columns)
         column_type_by_name: dict[str, str] = (
@@ -1288,7 +1418,7 @@ class DuckDBPolicyBackend:
 
         schema, table = split_table_key(table_key)
 
-        sql = _build_upsert(schema, table, columns, upsert)
+        sql = _build_upsert(schema, table, columns, upsert, catalog=self._default_catalog())
 
         log.debug("Upsert into %s: %d rows", table_key, len(rows))
         self.con.executemany(sql, rows)

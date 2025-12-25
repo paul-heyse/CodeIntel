@@ -60,7 +60,7 @@ from codeintel.build.hamilton.helpers import (
 from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.naming import materialize_node, pipeline_node_name
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materializations,
@@ -133,6 +133,9 @@ GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
 
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
+
+CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE = "call_graph_function_call_counts"
+CALL_GRAPH_DEPTH_STATS_NAMESPACE = "call_graph_call_depth_stats"
 
 
 @SaveToObjectMetadataDecorator(
@@ -1346,10 +1349,25 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
     table_key=value(CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
 )
 @pipe_input(
-    step(_call_graph_views_filter_edges, env=source("env")),
-    step(_call_graph_views_build_call_count_stats),
-    step(_call_graph_views_finalize_call_counts, env=source("env")),
-    namespace="call_graph_function_call_counts",
+    step(_call_graph_views_filter_edges, env=source("env")).named(
+        pipeline_node_name(
+            CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE,
+            _call_graph_views_filter_edges.__name__,
+        ),
+    ),
+    step(_call_graph_views_build_call_count_stats).named(
+        pipeline_node_name(
+            CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE,
+            _call_graph_views_build_call_count_stats.__name__,
+        ),
+    ),
+    step(_call_graph_views_finalize_call_counts, env=source("env")).named(
+        pipeline_node_name(
+            CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE,
+            _call_graph_views_finalize_call_counts.__name__,
+        ),
+    ),
+    namespace=None,
     on_input="q__graph__call_graph_edges",
 )
 @tag_compute(
@@ -1402,10 +1420,25 @@ def call_graph_function_call_counts(
     table_key=value(CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
 )
 @pipe_input(
-    step(_call_graph_views_filter_edges, env=source("env")),
-    step(_call_graph_views_prepare_depth_tables),
-    step(_call_graph_views_finalize_depth_stats, env=source("env")),
-    namespace="call_graph_call_depth_stats",
+    step(_call_graph_views_filter_edges, env=source("env")).named(
+        pipeline_node_name(
+            CALL_GRAPH_DEPTH_STATS_NAMESPACE,
+            _call_graph_views_filter_edges.__name__,
+        ),
+    ),
+    step(_call_graph_views_prepare_depth_tables).named(
+        pipeline_node_name(
+            CALL_GRAPH_DEPTH_STATS_NAMESPACE,
+            _call_graph_views_prepare_depth_tables.__name__,
+        ),
+    ),
+    step(_call_graph_views_finalize_depth_stats, env=source("env")).named(
+        pipeline_node_name(
+            CALL_GRAPH_DEPTH_STATS_NAMESPACE,
+            _call_graph_views_finalize_depth_stats.__name__,
+        ),
+    ),
+    namespace=None,
     on_input="q__graph__call_graph_edges",
 )
 @tag_compute(

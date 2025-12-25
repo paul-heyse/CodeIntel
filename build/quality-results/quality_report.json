@@ -1,8 +1,8 @@
 {
   "suite": "quality_checks",
-  "generated_at": "2025-12-25T09:14:34.986234+00:00",
-  "overall_status": "failed",
-  "duration_seconds": 25.459753,
+  "generated_at": "2025-12-25T10:41:08.855615+00:00",
+  "overall_status": "passed",
+  "duration_seconds": 31.006508,
   "results": [
     {
       "name": "guardrails",
@@ -13,15 +13,13 @@
         "-m",
         "tools.guardrails"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-25T09:14:09.526096+00:00",
-      "ended_at": "2025-12-25T09:14:11.973261+00:00",
-      "duration_seconds": 2.447165,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-25T10:40:37.848597+00:00",
+      "ended_at": "2025-12-25T10:40:43.224309+00:00",
+      "duration_seconds": 5.375712,
       "stdout": [],
-      "stderr": [
-        "src/codeintel/build/hamilton/nodes/module_attach.py:9: build_direct_hamilton_tag: Direct imports of Hamilton's @tag decorator are forbidden; use codeintel.build.hamilton.tagging helpers."
-      ]
+      "stderr": []
     },
     {
       "name": "ruff_check",
@@ -32,24 +30,13 @@
         "check",
         "--fix"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-25T09:14:11.973291+00:00",
-      "ended_at": "2025-12-25T09:14:12.032581+00:00",
-      "duration_seconds": 0.05929,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-25T10:40:43.224352+00:00",
+      "ended_at": "2025-12-25T10:40:43.276875+00:00",
+      "duration_seconds": 0.052523,
       "stdout": [
-        "src/codeintel/build/hamilton/native/patterns/loaders.py:",
-        "  76:5 DOC501 Raised exception `ValueError` missing from docstring",
-        "",
-        "src/codeintel/build/hamilton/nodes/module_attach.py:",
-        "  62:5 PLR0913 Too many arguments in function definition (8 > 5)",
-        "  73:5 DOC501 Raised exception `TypeError` missing from docstring",
-        "  73:5 DOC501 Raised exception `ValueError` missing from docstring",
-        "",
-        "src/codeintel/build/hamilton/tagging.py:",
-        "  178:5 DOC201 `return` is not documented in docstring",
-        "",
-        "Found 5 errors."
+        "All checks passed!"
       ],
       "stderr": []
     },
@@ -64,9 +51,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-25T09:14:12.032613+00:00",
-      "ended_at": "2025-12-25T09:14:15.309519+00:00",
-      "duration_seconds": 3.276906,
+      "started_at": "2025-12-25T10:40:43.276911+00:00",
+      "ended_at": "2025-12-25T10:40:46.267395+00:00",
+      "duration_seconds": 2.990484,
       "stdout": [],
       "stderr": []
     },
@@ -81,9 +68,9 @@
       ],
       "status": "passed",
       "return_code": 0,
-      "started_at": "2025-12-25T09:14:15.309556+00:00",
-      "ended_at": "2025-12-25T09:14:17.590668+00:00",
-      "duration_seconds": 2.281112,
+      "started_at": "2025-12-25T10:40:46.267432+00:00",
+      "ended_at": "2025-12-25T10:40:48.831372+00:00",
+      "duration_seconds": 2.56394,
       "stdout": [],
       "stderr": []
     },
@@ -96,17 +83,13 @@
         "--warnings",
         "--pythonversion=3.13"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-25T09:14:17.590706+00:00",
-      "ended_at": "2025-12-25T09:14:33.132468+00:00",
-      "duration_seconds": 15.541762,
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-25T10:40:48.831430+00:00",
+      "ended_at": "2025-12-25T10:41:07.014703+00:00",
+      "duration_seconds": 18.183273,
       "stdout": [
-        "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/nodes/module_attach.py",
-        "  /Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/build/hamilton/nodes/module_attach.py:107:29 - error: Argument of type \"TagValue\" cannot be assigned to parameter \"bypass_reserved_namespaces_\" of type \"bool\" in function \"__init__\"",
-        "  \u00a0\u00a0Type \"TagValue\" is not assignable to type \"bool\"",
-        "  \u00a0\u00a0\u00a0\u00a0\"str\" is not assignable to \"bool\" (reportArgumentType)",
-        "1 error, 0 warnings, 0 informations"
+        "0 errors, 0 warnings, 0 informations"
       ],
       "stderr": []
     },
@@ -118,22 +101,15 @@
         "pyrefly",
         "check"
       ],
-      "status": "failed",
-      "return_code": 1,
-      "started_at": "2025-12-25T09:14:33.132579+00:00",
-      "ended_at": "2025-12-25T09:14:34.985849+00:00",
-      "duration_seconds": 1.85327,
-      "stdout": [
-        "ERROR Unpacked keyword argument `list[str] | str` is not assignable to parameter `bypass_reserved_namespaces_` with type `bool` in function `hamilton.function_modifiers.metadata.tag.__init__` [bad-argument-type]",
-        "   --> src/codeintel/build/hamilton/nodes/module_attach.py:107:27",
-        "    |",
-        "107 |         tagged_fn = h_tag(**tags_to_add)(fn)",
-        "    |                           ^^^^^^^^^^^^^",
-        "    |"
-      ],
+      "status": "passed",
+      "return_code": 0,
+      "started_at": "2025-12-25T10:41:07.014786+00:00",
+      "ended_at": "2025-12-25T10:41:08.855105+00:00",
+      "duration_seconds": 1.840319,
+      "stdout": [],
       "stderr": [
         " INFO Checking project configured at `/Users/paulheyse/CodeIntel/CodeIntel/pyrefly.toml`",
-        " INFO 1 error (143 suppressed)"
+        " INFO 0 errors (143 suppressed)"
       ]
     }
   ],

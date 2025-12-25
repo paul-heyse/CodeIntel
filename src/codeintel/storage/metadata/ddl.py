@@ -32,8 +32,7 @@ def _ensure_metadata_table(con: DuckDBPyConnection, table: TableSchema) -> None:
     for index in table.indexes:
         index_sql = create_index_if_not_exists_ast(
             index_name=index.name,
-            table_schema=table.schema,
-            table_name=table.name,
+            table_key=table.table_key,
             columns=index.columns,
             unique=index.unique,
         ).sql(dialect=DUCKDB_DIALECT)
