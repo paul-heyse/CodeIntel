@@ -39,7 +39,8 @@ from tests._helpers.modules_expectations import (
     module_paths_expected_from_repo_tree,
     modules_expected_from_env,
 )
-from tests._helpers.scip_proto import ensure_proto_module, write_scip_index as write_proto_index
+from tests._helpers.scip_proto import ensure_proto_module
+from tests._helpers.scip_proto import write_scip_index as write_proto_index
 from tests._helpers.tool_payloads import pytest_report_payload
 
 if TYPE_CHECKING:

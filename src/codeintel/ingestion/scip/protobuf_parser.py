@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import cast
 
 from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence, ScipSymbol
 from codeintel.ingestion.scip.models import (
@@ -15,9 +14,15 @@ from codeintel.ingestion.scip.models import (
     ScipSymbolRelationship,
 )
 from codeintel.ingestion.scip.proto import load_generated_module
-
-if TYPE_CHECKING:
-    from types import ModuleType
+from codeintel.ingestion.scip.proto_types import (
+    DocumentProto,
+    ExternalSymbolProto,
+    IndexProto,
+    IntListProto,
+    OccurrenceProto,
+    ScipProtoModule,
+    SymbolInfoProto,
+)
 
 
 @dataclass(frozen=True)
@@ -31,28 +36,34 @@ class ScipParsedIndex:
     external_symbols: tuple[ScipExternalSymbol, ...]
 
 
-def load_proto_module(proto_module_path: Path) -> ModuleType:
+_RANGE_LEN_SAME_LINE = 3
+_RANGE_LEN_FULL = 4
+_PACKAGE_TOKEN_COUNT = 4
+
+
+def load_proto_module(proto_module_path: Path) -> ScipProtoModule:
     """Load scip_pb2 from the generated file path.
 
     Returns
     -------
-    ModuleType
+    ScipProtoModule
         Imported protobuf module.
     """
-    return load_generated_module(proto_module_path)
+    module = load_generated_module(proto_module_path)
+    return cast("ScipProtoModule", module)
 
 
-def load_index(index_path: Path, proto_module_path: Path) -> object:
+def load_index(index_path: Path, proto_module_path: Path) -> IndexProto:
     """Load a SCIP index using generated protobuf bindings.
 
     Returns
     -------
-    object
+    IndexProto
         Parsed protobuf Index instance.
     """
     module = load_proto_module(proto_module_path)
     index = module.Index()
-    index.ParseFromString(index_path.read_bytes())
+    _parse_from_string(index, index_path.read_bytes())
     return index
 
 
@@ -66,7 +77,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
     """
     module = load_proto_module(proto_module_path)
     index = module.Index()
-    index.ParseFromString(index_path.read_bytes())
+    _parse_from_string(index, index_path.read_bytes())
 
     documents = tuple(_parse_document(doc) for doc in index.documents)
     symbol_infos: list[ScipSymbolInfo] = []
@@ -91,7 +102,7 @@ def parse_index(index_path: Path, proto_module_path: Path) -> ScipParsedIndex:
     )
 
 
-def _parse_document(doc: object) -> ScipDocument:
+def _parse_document(doc: DocumentProto) -> ScipDocument:
     symbols = tuple(_parse_symbol(sym) for sym in doc.symbols)
     occurrences_list: list[ScipOccurrence] = []
     for occ in doc.occurrences:
@@ -105,12 +116,12 @@ def _parse_document(doc: object) -> ScipDocument:
     )
 
 
-def _parse_symbol(sym: object) -> ScipSymbol:
+def _parse_symbol(sym: SymbolInfoProto) -> ScipSymbol:
     documentation = "\n".join(sym.documentation) if sym.documentation else None
     return ScipSymbol(symbol=sym.symbol, documentation=documentation)
 
 
-def _parse_occurrence(occ: object) -> ScipOccurrence | None:
+def _parse_occurrence(occ: OccurrenceProto) -> ScipOccurrence | None:
     range_tuple = _parse_range(occ.range)
     if range_tuple is None:
         return None
@@ -124,18 +135,16 @@ def _parse_occurrence(occ: object) -> ScipOccurrence | None:
     )
 
 
-def _parse_range(rng: object) -> tuple[int, int, int, int] | None:
-    if not isinstance(rng, Sequence):
-        return None
+def _parse_range(rng: IntListProto) -> tuple[int, int, int, int] | None:
     length = len(rng)
-    if length == 3:
+    if length == _RANGE_LEN_SAME_LINE:
         return (int(rng[0]), int(rng[1]), int(rng[0]), int(rng[2]))
-    if length == 4:
+    if length == _RANGE_LEN_FULL:
         return (int(rng[0]), int(rng[1]), int(rng[2]), int(rng[3]))
     return None
 
 
-def _parse_symbol_info(sym: object) -> ScipSymbolInfo:
+def _parse_symbol_info(sym: SymbolInfoProto) -> ScipSymbolInfo:
     documentation = "\n".join(sym.documentation) if sym.documentation else None
     signature = _signature_text(sym)
     return ScipSymbolInfo(
@@ -148,7 +157,7 @@ def _parse_symbol_info(sym: object) -> ScipSymbolInfo:
     )
 
 
-def _signature_text(sym: object) -> str | None:
+def _signature_text(sym: SymbolInfoProto) -> str | None:
     sig_doc = sym.signature_documentation
     if sig_doc is None:
         return None
@@ -156,7 +165,7 @@ def _signature_text(sym: object) -> str | None:
     return text or None
 
 
-def _parse_relationships(sym: object) -> list[ScipSymbolRelationship]:
+def _parse_relationships(sym: SymbolInfoProto) -> list[ScipSymbolRelationship]:
     relationships: list[ScipSymbolRelationship] = []
     for rel in sym.relationships:
         if rel.is_reference:
@@ -195,8 +204,8 @@ def _parse_relationships(sym: object) -> list[ScipSymbolRelationship]:
 
 
 def _parse_document_diagnostics(
-    module: ModuleType,
-    doc: object,
+    module: ScipProtoModule,
+    doc: DocumentProto,
     rel_path: str,
 ) -> list[ScipDiagnostic]:
     diagnostics: list[ScipDiagnostic] = []
@@ -222,14 +231,18 @@ def _parse_document_diagnostics(
     return diagnostics
 
 
-def _severity_name(module: ModuleType, value: int) -> str:
+def _severity_name(module: ScipProtoModule, value: int) -> str:
+    severity = getattr(module, "Severity", None)
+    name_fn = getattr(severity, "Name", None)
+    if not callable(name_fn):
+        return "Unspecified"
     try:
-        return module.Severity.Name(value)
-    except (AttributeError, ValueError):
+        return str(name_fn(value))
+    except (TypeError, ValueError):
         return "Unspecified"
 
 
-def _parse_external_symbol(sym: object) -> ScipExternalSymbol:
+def _parse_external_symbol(sym: ExternalSymbolProto) -> ScipExternalSymbol:
     manager, name, version = _parse_package_triple(sym.symbol)
     return ScipExternalSymbol(
         symbol=sym.symbol,
@@ -239,11 +252,19 @@ def _parse_external_symbol(sym: object) -> ScipExternalSymbol:
     )
 
 
+def _parse_from_string(index: IndexProto, payload: bytes) -> None:
+    parse_fn = getattr(index, "ParseFromString", None)
+    if not callable(parse_fn):
+        message = "SCIP protobuf ParseFromString is unavailable"
+        raise TypeError(message)
+    parse_fn(payload)
+
+
 def _parse_package_triple(symbol: str) -> tuple[str | None, str | None, str | None]:
     if symbol.startswith("local "):
         return None, None, None
     tokens = _split_tokens_with_double_space_escape(symbol)
-    if len(tokens) < 4:
+    if len(tokens) < _PACKAGE_TOKEN_COUNT:
         return None, None, None
     manager, name, version = tokens[1], tokens[2], tokens[3]
     return (

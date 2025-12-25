@@ -252,6 +252,22 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
         "modules_changed_ratio": [_check_ratio()],
         "modules_deleted_ratio": [_check_ratio()],
     },
+    "core.scip_occurrences": {
+        "start_line": [_check_non_negative()],
+        "start_col": [_check_non_negative()],
+        "end_line": [_check_non_negative()],
+        "end_col": [_check_non_negative()],
+        "roles": [_check_non_negative()],
+    },
+    "core.scip_symbol_information": {
+        "kind": [_check_non_negative()],
+    },
+    "core.scip_diagnostics": {
+        "start_line": [_check_non_negative()],
+        "start_col": [_check_non_negative()],
+        "end_line": [_check_non_negative()],
+        "end_col": [_check_non_negative()],
+    },
     "analytics.function_metrics": {
         "function_goid_h128": [_check_non_negative()],
         "loc": [_check_non_negative()],

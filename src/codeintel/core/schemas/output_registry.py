@@ -318,6 +318,26 @@ SCIP_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         indexes=(Index("idx_core_scip_external_symbol", ("symbol",)),),
         description="External SCIP symbols referenced by the index",
     ),
+    TableSchema(
+        schema="core",
+        name="scip_module_state",
+        columns=[
+            Column("repo", "VARCHAR", nullable=False),
+            Column("commit", "VARCHAR", nullable=False),
+            Column("rel_path", "VARCHAR", nullable=False),
+            Column("content_hash", "VARCHAR", nullable=False),
+            Column("options_hash", "VARCHAR"),
+            Column("tool_version", "VARCHAR"),
+            Column("shard_path", "VARCHAR", nullable=False),
+            Column("updated_at", "TIMESTAMP", nullable=False),
+        ],
+        primary_key=("repo", "commit", "rel_path"),
+        indexes=(
+            Index("idx_core_scip_module_state_path", ("rel_path",)),
+            Index("idx_core_scip_module_state_repo_commit", ("repo", "commit")),
+        ),
+        description="Per-module SCIP shard state for incremental updates",
+    ),
 )
 
 TYPING_OVERRIDE_TABLES: tuple[TableSchema, ...] = (

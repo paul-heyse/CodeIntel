@@ -230,6 +230,34 @@ class ScipResult:
 
 
 @dataclass(frozen=True)
+class ScipRunRequest:
+    """Request payload for running SCIP indexing.
+
+    Attributes
+    ----------
+    repo_root
+        Repository root directory.
+    output_scip
+        Path for SCIP index output.
+    proto_module_path
+        Path to generated scip_pb2 module.
+    target_dir
+        Optional repo subdirectory to index.
+    rel_paths
+        Optional repo-relative paths to index.
+    timeout_s
+        Optional timeout override (seconds).
+    """
+
+    repo_root: Path
+    output_scip: Path
+    proto_module_path: Path
+    target_dir: Path | None = None
+    rel_paths: Sequence[str] | None = None
+    timeout_s: float | None = None
+
+
+@dataclass(frozen=True)
 class TestCase:
     """A single test case result.
 
@@ -357,32 +385,13 @@ class IngestToolPort(Protocol):
         """
         ...
 
-    async def run_scip(
-        self,
-        repo_root: Path,
-        *,
-        output_scip: Path,
-        proto_module_path: Path,
-        target_dir: Path | None = None,
-        rel_paths: Sequence[str] | None = None,
-        timeout_s: float | None = None,
-    ) -> ScipResult:
+    async def run_scip(self, request: ScipRunRequest) -> ScipResult:
         """Run SCIP indexing.
 
         Parameters
         ----------
-        repo_root
-            Repository root directory.
-        output_scip
-            Path for SCIP index output.
-        proto_module_path
-            Path to generated scip_pb2 module.
-        target_dir
-            Optional repo subdirectory to index.
-        rel_paths
-            Optional repo-relative paths to index.
-        timeout_s
-            Optional timeout override (seconds).
+        request
+            SCIP run request payload.
 
         Returns
         -------
@@ -401,6 +410,7 @@ __all__ = [
     "ScipDocument",
     "ScipOccurrence",
     "ScipResult",
+    "ScipRunRequest",
     "ScipSymbol",
     "TestCase",
     "TestResult",

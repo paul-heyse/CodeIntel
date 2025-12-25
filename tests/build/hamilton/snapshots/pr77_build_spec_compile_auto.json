@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "7b33b9f20765ffaa90647cdecb94ed59afe0f7a82e7b710fb6b1150fba2a6f03",
+  "buildspec_hash": "5de90640b2209b701895bb13dc002354f4d954cd63d94e3f2de7d2574e716cfc",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -266,8 +266,28 @@
       "table_key": "core.repo_map"
     },
     {
+      "schema_hash": "83d4d2268089d38319f7102a39b9bb36243fbe9dbd0ab0825c70215179cc72c0",
+      "table_key": "core.scip_diagnostics"
+    },
+    {
+      "schema_hash": "9da90223074134c26813b5cd6f03cfe1d0f83951a6b8eab567ffbf2b09a5bcd5",
+      "table_key": "core.scip_external_symbols"
+    },
+    {
+      "schema_hash": "3f65d61fa1b0f4e78dfe5cb40632786f65d836c95a4b730dd8053ea4efc3cc96",
+      "table_key": "core.scip_module_state"
+    },
+    {
       "schema_hash": "84a88848c63c72d43aea83a224b5e02e4acd27f9f0200d3b00f3a53ecb974740",
       "table_key": "core.scip_occurrences"
+    },
+    {
+      "schema_hash": "c9bcfef6e2a91661d2e1f38771dedc87e18efcfba3f9423b7ce3e00a166988a3",
+      "table_key": "core.scip_symbol_information"
+    },
+    {
+      "schema_hash": "8090fd224c11fcae0357db31b34d1e60ca67210857513e10b62ed0239aaed03c",
+      "table_key": "core.scip_symbol_relationships"
     },
     {
       "schema_hash": "fec4c4ac83a25a249e4a750685e5d59dda2982a969723d1ec55c06528e1bc617",
@@ -319,7 +339,8 @@
     {
       "artifacts": [],
       "deps": [
-        "modules"
+        "modules",
+        "scip_proto"
       ],
       "domain": "ingestion",
       "impl_kind": "native",
@@ -767,7 +788,12 @@
       "impl_kind": "native",
       "name": "scip",
       "outputs": [
+        "core.scip_diagnostics",
+        "core.scip_external_symbols",
+        "core.scip_module_state",
         "core.scip_occurrences",
+        "core.scip_symbol_information",
+        "core.scip_symbol_relationships",
         "core.scip_symbols"
       ]
     },

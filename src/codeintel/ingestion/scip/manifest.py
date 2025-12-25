@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
+from typing import Any
 
 MANIFEST_VERSION = 1
 
@@ -190,11 +187,35 @@ def update_manifest(
         Updated manifest with applied shard changes.
     """
     records = dict(manifest.records)
-    for rel_path, record in updates.items():
-        records[rel_path] = record
+    records.update(updates)
     if deleted:
         for rel_path in deleted:
             records.pop(rel_path, None)
+    return ScipShardManifest(records=records, generated_at=datetime.now(tz=UTC))
+
+
+def manifest_from_state_rows(rows: Sequence[Mapping[str, object]]) -> ScipShardManifest:
+    """Build a shard manifest from module-state rows.
+
+    Returns
+    -------
+    ScipShardManifest
+        Manifest populated from the provided rows.
+    """
+    records: dict[str, ScipShardRecord] = {}
+    for row in rows:
+        rel_path = row.get("rel_path")
+        if not isinstance(rel_path, str) or not rel_path:
+            continue
+        updated_at = _coerce_datetime(row.get("updated_at"))
+        records[rel_path] = ScipShardRecord(
+            rel_path=rel_path,
+            content_hash=str(row.get("content_hash", "")),
+            options_hash=_coerce_optional_str(row.get("options_hash")),
+            tool_version=_coerce_optional_str(row.get("tool_version")),
+            shard_path=str(row.get("shard_path", "")),
+            updated_at=updated_at,
+        )
     return ScipShardManifest(records=records, generated_at=datetime.now(tz=UTC))
 
 
@@ -205,10 +226,27 @@ def _coerce_optional_str(value: object) -> str | None:
     return text if text else None
 
 
+def _coerce_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    to_pydatetime = getattr(value, "to_pydatetime", None)
+    if callable(to_pydatetime):
+        resolved = to_pydatetime()
+        if isinstance(resolved, datetime):
+            return resolved
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return datetime.now(tz=UTC)
+    return datetime.now(tz=UTC)
+
+
 __all__ = [
     "ScipShardManifest",
     "ScipShardRecord",
     "load_manifest",
+    "manifest_from_state_rows",
     "manifest_path",
     "shard_path",
     "update_manifest",

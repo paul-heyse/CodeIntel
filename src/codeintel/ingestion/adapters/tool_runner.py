@@ -41,6 +41,7 @@ from codeintel.ingestion.ports.tools import (
     ScipDocument,
     ScipOccurrence,
     ScipResult,
+    ScipRunRequest,
     ScipSymbol,
     ToolStatus,
 )
@@ -271,32 +272,13 @@ class ToolRunnerAdapter:
                 duration_s=duration,
             )
 
-    async def run_scip(
-        self,
-        repo_root: Path,
-        *,
-        output_scip: Path,
-        proto_module_path: Path,
-        target_dir: Path | None = None,
-        rel_paths: Sequence[str] | None = None,
-        timeout_s: float | None = None,
-    ) -> ScipResult:
+    async def run_scip(self, request: ScipRunRequest) -> ScipResult:
         """Run SCIP indexing.
 
         Parameters
         ----------
-        repo_root
-            Repository root directory.
-        output_scip
-            Path for SCIP index output.
-        proto_module_path
-            Path to generated scip_pb2 module.
-        target_dir
-            Optional repo subdirectory to index.
-        rel_paths
-            Optional repo-relative paths to index.
-        timeout_s
-            Optional timeout override (seconds).
+        request
+            SCIP run request payload.
 
         Returns
         -------
@@ -306,19 +288,14 @@ class ToolRunnerAdapter:
         start = time.perf_counter()
         try:
             scip_result = await self._service.run_scip_full(
-                repo_root,
-                output_scip=output_scip,
-                proto_module_path=proto_module_path,
-                target_dir=target_dir,
-                rel_paths=rel_paths,
-                timeout_s=timeout_s,
+                request,
             )
 
             duration = time.perf_counter() - start
 
             documents = _convert_scip_documents(scip_result.documents or [])
 
-            scip_path = scip_result.index_scip_path or output_scip
+            scip_path = scip_result.index_scip_path or request.output_scip
             scip_exists = _check_file_exists(scip_path)
 
             return ScipResult(

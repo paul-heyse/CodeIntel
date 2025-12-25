@@ -1,0 +1,272 @@
+"""Tests for incremental SCIP indexing behavior."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from codeintel.config.models import ToolsConfig
+from codeintel.ingestion.engine.infrastructure import (
+    ToolExecutionError,
+    ToolName,
+    ToolRunOptions,
+    ToolRunResult,
+)
+from codeintel.ingestion.engine.infrastructure.runner import ToolRunner
+from codeintel.ingestion.ports.change_detection import ChangeSet
+from codeintel.ingestion.ports.discovery import ModuleRecord
+from codeintel.ingestion.scip.incremental import ScipIncrementalConfig, update_index_incremental
+from codeintel.ingestion.scip.index_store import load_index_proto
+from codeintel.ingestion.scip.manifest import load_manifest, manifest_path
+from tests._helpers.assertions import expect_equal, expect_true
+from tests._helpers.scip_proto import ensure_proto_module, write_scip_index
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+
+@dataclass(frozen=True)
+class _ProtoIndexRunnerConfig:
+    proto_module_path: Path
+    doc_map: Mapping[str, Mapping[str, object]]
+    version_stdout: str = "scip-python 0.1.0"
+    fail_target_only: bool = False
+
+
+class ProtoIndexToolRunner(ToolRunner):
+    """ToolRunner that emits real SCIP protobufs for tests."""
+
+    def __init__(self, cache_dir: Path, *, config: _ProtoIndexRunnerConfig) -> None:
+        super().__init__(cache_dir=cache_dir, tools_config=ToolsConfig.default())
+        self.config = config
+
+    async def run_async(
+        self,
+        tool: ToolName | str,
+        args: Sequence[str],
+        *,
+        options: ToolRunOptions | None = None,
+    ) -> ToolRunResult:
+        """Run scip-python for tests and write a protobuf index.
+
+        Returns
+        -------
+        ToolRunResult
+            Tool run metadata for the invocation.
+
+        Raises
+        ------
+        ValueError
+            If an unsupported tool is requested or the output path is missing.
+        ToolExecutionError
+            If the runner is configured to fail target-only calls.
+        """
+        tool_enum = tool if isinstance(tool, ToolName) else ToolName(str(tool))
+        args_list = list(args)
+        run_options = options or ToolRunOptions()
+        if tool_enum is not ToolName.SCIP_PYTHON:
+            msg = f"Unsupported tool: {tool_enum.value}"
+            raise ValueError(msg)
+        if "--version" in args_list:
+            return ToolRunResult(
+                tool=tool_enum,
+                args=tuple(args_list),
+                returncode=0,
+                stdout=self.config.version_stdout,
+                stderr="",
+                output_path=run_options.output_path,
+                duration_s=0.0,
+            )
+
+        output_path = run_options.output_path
+        if output_path is None:
+            message = "Output path required for scip-python test runner"
+            raise ValueError(message)
+
+        target_only = _extract_target_only(args_list)
+        if target_only and self.config.fail_target_only:
+            result = ToolRunResult(
+                tool=tool_enum,
+                args=tuple(args_list),
+                returncode=1,
+                stdout="",
+                stderr="failed",
+                output_path=output_path,
+                duration_s=0.0,
+            )
+            raise ToolExecutionError(result)
+
+        if target_only:
+            docs = [_doc_payload(self.config.doc_map, rel_path) for rel_path in target_only]
+        else:
+            docs = list(self.config.doc_map.values())
+
+        write_scip_index(
+            output_path,
+            proto_module_path=self.config.proto_module_path,
+            documents=docs,
+        )
+        return ToolRunResult(
+            tool=tool_enum,
+            args=tuple(args_list),
+            returncode=0,
+            stdout="",
+            stderr="",
+            output_path=output_path,
+            duration_s=0.0,
+        )
+
+
+def _extract_target_only(args: Sequence[str]) -> list[str]:
+    targets: list[str] = []
+    for idx, arg in enumerate(args):
+        if arg != "--target-only":
+            continue
+        if idx + 1 < len(args):
+            targets.append(args[idx + 1])
+    return targets
+
+
+def _doc_payload(
+    doc_map: Mapping[str, Mapping[str, object]],
+    rel_path: str,
+) -> Mapping[str, object]:
+    payload = doc_map.get(rel_path)
+    if payload is None:
+        msg = f"Missing document payload for {rel_path}"
+        raise ValueError(msg)
+    return payload
+
+
+def _module_record(repo_root: Path, rel_path: str, index: int, total: int) -> ModuleRecord:
+    return ModuleRecord(
+        rel_path=rel_path,
+        module_name=rel_path.replace("/", ".").removesuffix(".py"),
+        file_path=repo_root / rel_path,
+        index=index,
+        total=total,
+    )
+
+
+def _write_module(repo_root: Path, rel_path: str, body: str) -> None:
+    path = repo_root / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def test_incremental_updates_and_deletes_documents(tmp_path: Path) -> None:
+    """Incremental updates should replace changed docs and drop deleted ones."""
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+    _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "build" / "scip" / "index.scip"
+    base_docs = {
+        "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+        "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+    }
+    write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+
+    change_set = ChangeSet(
+        modified=[_module_record(repo_root, "a.py", 1, 2)],
+        deleted=[_module_record(repo_root, "b.py", 2, 2)],
+    )
+    runner = ProtoIndexToolRunner(
+        cache_dir=tmp_path,
+        config=_ProtoIndexRunnerConfig(
+            proto_module_path=proto_module_path,
+            doc_map={"a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA_new"}]}},
+        ),
+    )
+    config = ScipIncrementalConfig(
+        repo_root=repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+        change_set=change_set,
+        modules=(
+            _module_record(repo_root, "a.py", 1, 2),
+            _module_record(repo_root, "b.py", 2, 2),
+        ),
+        options_hash="options-hash",
+        tools_config=runner.tools_config,
+        tool_runner=runner,
+        scope_paths=None,
+        max_file_size_kb=1024,
+        timeout_seconds=30,
+        target_dir=None,
+    )
+
+    result = update_index_incremental(config=config)
+    expect_true(result.success)
+    expect_true(result.full_rebuild is False)
+
+    merged = load_index_proto(output_scip, proto_module_path=proto_module_path)
+    rel_paths = sorted(doc.relative_path for doc in merged.documents)
+    expect_equal(rel_paths, ["a.py"])
+    symbols = [sym.symbol for sym in merged.documents[0].symbols]
+    expect_equal(symbols, ["symA_new"])
+
+    manifest = load_manifest(manifest_path(output_scip.parent))
+    expect_true("a.py" in manifest.records)
+    expect_true("b.py" not in manifest.records)
+
+
+def test_incremental_falls_back_to_full_rebuild(tmp_path: Path) -> None:
+    """Failures during per-module indexing should trigger a full rebuild."""
+    repo_root = tmp_path / "repo"
+    _write_module(repo_root, "a.py", "def a():\n    return 1\n")
+    _write_module(repo_root, "b.py", "def b():\n    return 2\n")
+
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "build" / "scip" / "index.scip"
+    base_docs = {
+        "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA"}]},
+        "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB"}]},
+    }
+    write_scip_index(output_scip, proto_module_path=proto_module_path, documents=base_docs.values())
+
+    change_set = ChangeSet(
+        modified=[_module_record(repo_root, "a.py", 1, 2)],
+    )
+    full_docs = {
+        "a.py": {"relative_path": "a.py", "symbols": [{"symbol": "symA_full"}]},
+        "b.py": {"relative_path": "b.py", "symbols": [{"symbol": "symB_full"}]},
+    }
+    runner = ProtoIndexToolRunner(
+        cache_dir=tmp_path,
+        config=_ProtoIndexRunnerConfig(
+            proto_module_path=proto_module_path,
+            doc_map=full_docs,
+            fail_target_only=True,
+        ),
+    )
+    config = ScipIncrementalConfig(
+        repo_root=repo_root,
+        output_scip=output_scip,
+        proto_module_path=proto_module_path,
+        change_set=change_set,
+        modules=(
+            _module_record(repo_root, "a.py", 1, 2),
+            _module_record(repo_root, "b.py", 2, 2),
+        ),
+        options_hash="options-hash",
+        tools_config=runner.tools_config,
+        tool_runner=runner,
+        scope_paths=None,
+        max_file_size_kb=1024,
+        timeout_seconds=30,
+        target_dir=None,
+    )
+
+    result = update_index_incremental(config=config)
+    expect_true(result.success)
+    expect_true(result.full_rebuild)
+
+    merged = load_index_proto(output_scip, proto_module_path=proto_module_path)
+    rel_paths = sorted(doc.relative_path for doc in merged.documents)
+    expect_equal(rel_paths, ["a.py", "b.py"])
+    symbols = {sym.symbol for doc in merged.documents for sym in doc.symbols}
+    expect_true("symA_full" in symbols)
+    expect_true("symB_full" in symbols)

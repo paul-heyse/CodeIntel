@@ -13,6 +13,23 @@ def test_scip_target_writes_tables(build_harness: HamiltonBuildHarness) -> None:
     assert_target_ok(record)
     assert_row_count(record.row_counts, "core.scip_symbols", min_rows=1)
     assert_row_count(record.row_counts, "core.scip_occurrences", min_rows=1)
+    assert_row_count(record.row_counts, "core.scip_symbol_information", min_rows=1)
+    expect_true(
+        "core.scip_symbol_relationships" in record.row_counts,
+        message="Expected scip symbol relationships row counts to be recorded",
+    )
+    expect_true(
+        "core.scip_diagnostics" in record.row_counts,
+        message="Expected scip diagnostics row counts to be recorded",
+    )
+    expect_true(
+        "core.scip_external_symbols" in record.row_counts,
+        message="Expected scip external symbols row counts to be recorded",
+    )
+    expect_true(
+        "core.scip_module_state" in record.row_counts,
+        message="Expected scip module state row counts to be recorded",
+    )
 
     scip_dir = build_harness.artifacts.paths.scip_dir
     index_scip = scip_dir / "index.scip"
