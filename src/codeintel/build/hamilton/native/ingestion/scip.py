@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from numbers import Integral
 from pathlib import Path
@@ -40,7 +40,6 @@ from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
     codeintel_target,
 )
-from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -51,6 +50,7 @@ from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
@@ -84,6 +84,10 @@ from codeintel.ingestion.scip.manifest import (
     write_manifest,
 )
 from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
+from codeintel.observability.teardown import (
+    ScipTeardownTelemetry,
+    emit_scip_teardown_telemetry,
+)
 from codeintel.storage.io import IbisIOConfig, load_table_as_dataframe
 from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
@@ -118,7 +122,24 @@ SCIP_TABLE_KEYS = (
 _FILE_STATE_ROW_MIN_COLUMNS = 7
 
 
-ScipRunResult = ToolStepOutput
+@dataclass(frozen=True)
+class ScipRunResult:
+    """Outcome for a SCIP tool run with telemetry metadata."""
+
+    result: ExecutionResult
+    outputs: Mapping[str, Path] = field(default_factory=dict)
+    run_id: str = ""
+    mode: str = "unknown"
+
+    def path_for(self, name: str) -> Path | None:
+        """Return the path for a named output.
+
+        Returns
+        -------
+        Path | None
+            Path to the named output, or None if missing.
+        """
+        return self.outputs.get(name)
 
 
 @dataclass(frozen=True)
@@ -186,7 +207,7 @@ class ScipIngestInputs:
     """Inputs required to build SCIP ingestion rows."""
 
     modules: TargetRunRecord
-    run: ToolStepOutput
+    run: ScipRunResult
     proto_module_path: Path | None
     options: ScipIngestOptions
 
@@ -203,7 +224,7 @@ class ScipTargetInputs:
 class ScipMaterializationInputs:
     """Aggregated inputs for scip materialization."""
 
-    run: ToolStepOutput
+    run: ScipRunResult
     ingest: ScipIngestResult
     artifact_materializations: dict[str, MaterializationMetadata]
     table_materializations: dict[str, MaterializationMetadata]
@@ -341,18 +362,26 @@ def _scip_run_precheck(inputs: ScipModuleInputs) -> ExecutionResult | None:
     return None
 
 
+def _resolve_scip_run_id(env: BuildEnv) -> str:
+    if env.run_context is not None:
+        return env.run_context.run_id
+    return new_run_id("scip")
+
+
 def _scip_output_path(env: BuildEnv, options: ScipIngestOptions) -> Path:
     output_dir = options.scip_output_dir or env.paths.scip_dir
     return output_dir / "index.scip"
 
 
-def _scip_index_output(run: ToolStepOutput) -> Path | None:
+def _scip_index_output(run: ScipRunResult) -> Path | None:
     return run.path_for(SCIP_ARTIFACT_INDEX)
 
 
 def _skip_scip_run(
     executor: NativeTargetExecutor,
     output_scip: Path,
+    *,
+    run_id: str,
 ) -> ScipRunResult | None:
     if not executor.should_skip():
         return None
@@ -360,6 +389,8 @@ def _skip_scip_run(
         return ScipRunResult(
             result=ExecutionResult.skip("SCIP target skipped"),
             outputs={SCIP_ARTIFACT_INDEX: output_scip},
+            run_id=run_id,
+            mode="skipped",
         )
     log.warning("SCIP target marked up-to-date but index.scip is missing; rebuilding")
     return None
@@ -539,14 +570,17 @@ def _execute_scip_incremental(
     run_config: ScipRunConfig,
     module_inputs: ScipModuleInputs,
     output_scip: Path,
+    *,
+    run_id: str,
 ) -> ScipRunResult:
     if run_config.proto_module_path is None:
         return ScipRunResult(
             result=ExecutionResult.failed("SCIP proto module path is missing"),
+            run_id=run_id,
+            mode="unknown",
         )
 
     change_set, force_full_rebuild = _resolve_change_set(module_inputs.scan)
-    run_id = env.run_context.run_id if env.run_context is not None else new_run_id("scip")
     telemetry = ScipRunTelemetry.create(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
@@ -587,7 +621,11 @@ def _execute_scip_incremental(
         telemetry.error_summary = str(exc)
         telemetry.total_ms = 0.0
         _persist_scip_telemetry_safe(env, telemetry)
-        return ScipRunResult(result=ExecutionResult.failed(str(exc)))
+        return ScipRunResult(
+            result=ExecutionResult.failed(str(exc)),
+            run_id=run_id,
+            mode=telemetry.mode or "incremental",
+        )
 
     if not result.success:
         telemetry.status = "failed"
@@ -595,11 +633,15 @@ def _execute_scip_incremental(
         _persist_scip_telemetry_safe(env, telemetry)
         return ScipRunResult(
             result=ExecutionResult.failed(result.error or "SCIP indexing failed"),
+            run_id=run_id,
+            mode=telemetry.mode or "incremental",
         )
     _persist_scip_telemetry_safe(env, telemetry)
     return ScipRunResult(
         result=ExecutionResult.ok(),
         outputs={SCIP_ARTIFACT_INDEX: result.index_path or output_scip},
+        run_id=run_id,
+        mode=telemetry.mode or "incremental",
     )
 
 
@@ -617,9 +659,14 @@ def t__scip__run(
     ScipRunResult
         Run outcome including output paths or error details.
     """
+    run_id = _resolve_scip_run_id(env)
     precheck = _scip_run_precheck(scip__module_inputs)
     if precheck is not None:
-        return ScipRunResult(result=precheck)
+        return ScipRunResult(
+            result=precheck,
+            run_id=run_id,
+            mode="precheck_failed",
+        )
 
     output_scip = _scip_output_path(env, scip__run_config.options)
     _ensure_manifest_from_module_state(env, output_scip.parent)
@@ -629,7 +676,7 @@ def t__scip__run(
         SCIP_TARGET_NAME,
         hash_options=scip__run_config.hash_options,
     )
-    skipped = _skip_scip_run(executor, output_scip)
+    skipped = _skip_scip_run(executor, output_scip, run_id=run_id)
     if skipped is not None:
         return skipped
 
@@ -638,6 +685,7 @@ def t__scip__run(
         scip__run_config,
         scip__module_inputs,
         output_scip,
+        run_id=run_id,
     )
 
 
@@ -1174,6 +1222,46 @@ def _summarize_scip_table_materializations(
     return "succeeded", row_counts, None
 
 
+def _should_emit_scip_teardown(run: ScipRunResult) -> bool:
+    if run.result.skipped:
+        return False
+    return run.mode not in {"skipped", "precheck_failed"}
+
+
+def _emit_scip_teardown(
+    env: BuildEnv,
+    run: ScipRunResult,
+    record: TargetRunRecord,
+) -> None:
+    settings = load_runtime_settings().observability
+    if not settings.teardown_enabled:
+        return
+    if not _should_emit_scip_teardown(run):
+        return
+    error_summary = record.error or run.result.error
+    telemetry = ScipTeardownTelemetry(
+        run_id=run.run_id or None,
+        repo=env.snapshot.repo,
+        commit=env.snapshot.commit,
+        scip_mode=run.mode or None,
+        status=record.status,
+        error_summary=error_summary,
+        duration_ms=record.duration_ms,
+    )
+    emit_scip_teardown_telemetry(telemetry, logger=log)
+
+
+def _emit_scip_teardown_safe(
+    env: BuildEnv,
+    run: ScipRunResult,
+    record: TargetRunRecord,
+) -> None:
+    try:
+        _emit_scip_teardown(env, run, record)
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        log.warning("Failed to emit SCIP teardown telemetry: %s", exc)
+
+
 @codeintel_target(
     domain="ingestion",
     target=SCIP_TARGET_NAME,
@@ -1206,29 +1294,41 @@ def t__scip(
         hash_options=scip__target_inputs.hash_options,
     )
     if scip__target_inputs.modules.status not in {"succeeded", "skipped"}:
-        return executor.fail(
+        record = executor.fail(
             RuntimeError(scip__target_inputs.modules.error or "Upstream modules target failed")
         )
+        _emit_scip_teardown_safe(env, scip__inputs.run, record)
+        return record
     if not scip__inputs.run.result.success:
-        return executor.fail(RuntimeError(scip__inputs.run.result.error or "SCIP execution failed"))
+        record = executor.fail(
+            RuntimeError(scip__inputs.run.result.error or "SCIP execution failed")
+        )
+        _emit_scip_teardown_safe(env, scip__inputs.run, record)
+        return record
     if not scip__inputs.ingest.result.success and not scip__inputs.ingest.result.skipped:
-        return executor.fail(
+        record = executor.fail(
             RuntimeError(scip__inputs.ingest.result.error or "SCIP ingestion failed")
         )
+        _emit_scip_teardown_safe(env, scip__inputs.run, record)
+        return record
 
     table_status, row_counts, table_error = _summarize_scip_table_materializations(
         scip__inputs.table_materializations
     )
     if table_status == "failed":
-        return executor.fail(RuntimeError(table_error or "SCIP table writes failed"))
+        record = executor.fail(RuntimeError(table_error or "SCIP table writes failed"))
+        _emit_scip_teardown_safe(env, scip__inputs.run, record)
+        return record
 
-    return record_from_file_artifact_materializations(
+    record = record_from_file_artifact_materializations(
         env=env,
         graph=graph,
         target_name="scip",
         materializations=scip__inputs.artifact_materializations,
         row_counts=row_counts,
     )
+    _emit_scip_teardown_safe(env, scip__inputs.run, record)
+    return record
 
 
 __all__ = [

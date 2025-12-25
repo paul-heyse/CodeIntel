@@ -48,7 +48,13 @@ SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for subsystem nodes."""
+    """Expose the storage gateway for subsystem nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -76,6 +82,8 @@ def t__subsystems__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup and skip detection.
+    gateway
+        Storage gateway for analytics queries.
     t__import_graph
         Upstream import graph record.
     t__semantic_roles

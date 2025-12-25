@@ -299,9 +299,9 @@ def _load_observability_settings() -> ObservabilitySettings:
     }:
         query_text_policy_value = "never"
 
-    cli_args_capture_mode = _opt_str(
-        "CODEINTEL_OBSERVABILITY_CLI_ARGS_CAPTURE_MODE"
-    ) or "names-only"
+    cli_args_capture_mode = (
+        _opt_str("CODEINTEL_OBSERVABILITY_CLI_ARGS_CAPTURE_MODE") or "names-only"
+    )
     cli_args_capture_mode_value = cli_args_capture_mode.strip().lower()
     if cli_args_capture_mode_value not in {"names-only", "allowlist"}:
         cli_args_capture_mode_value = "names-only"
@@ -314,9 +314,7 @@ def _load_observability_settings() -> ObservabilitySettings:
         export_metrics=bool(get_bool("CODEINTEL_EXPORT_METRICS", default=True)),
         console_export=bool(get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
         prometheus_enabled=bool(get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
-        teardown_enabled=bool(
-            get_bool("CODEINTEL_OBSERVABILITY_TEARDOWN_ENABLED", default=True)
-        ),
+        teardown_enabled=bool(get_bool("CODEINTEL_OBSERVABILITY_TEARDOWN_ENABLED", default=True)),
         teardown_task_sample_limit=_opt_non_negative_int(
             "CODEINTEL_OBSERVABILITY_TEARDOWN_TASK_SAMPLE_LIMIT",
             default=5,

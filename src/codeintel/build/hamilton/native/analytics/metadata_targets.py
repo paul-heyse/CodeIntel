@@ -109,7 +109,13 @@ if TYPE_CHECKING:
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for analytics metadata nodes."""
+    """Expose the storage gateway for analytics metadata nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -131,6 +137,8 @@ def t__data_models__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for manifest-driven skip checks.
+    gateway
+        Storage gateway for analytics queries.
 
     Returns
     -------
@@ -327,6 +335,8 @@ def t__data_model_usage__compute(
         Build environment with gateway and snapshot info.
     graph
         Target graph for manifest-driven skip checks.
+    gateway
+        Storage gateway for analytics queries.
 
     Returns
     -------

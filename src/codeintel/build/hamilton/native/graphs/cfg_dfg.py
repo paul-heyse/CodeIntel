@@ -60,7 +60,13 @@ DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for CFG/DFG nodes."""
+    """Expose the storage gateway for CFG/DFG nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -483,6 +489,8 @@ def t__cfg__extract(
     ----------
     env
         Build environment with gateway and snapshot.
+    gateway
+        Storage gateway for graph data access.
     t__goids
         Upstream GOIDs target result (for dependency).
 

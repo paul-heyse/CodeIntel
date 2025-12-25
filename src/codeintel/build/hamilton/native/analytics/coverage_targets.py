@@ -74,7 +74,13 @@ BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for coverage nodes."""
+    """Expose the storage gateway for coverage nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -296,6 +302,8 @@ def t__coverage_test_edges__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     t__goids
         Upstream goids target result (for dependency).
 
@@ -442,6 +450,8 @@ def t__behavioral_coverage__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     t__test_profile
         Upstream test_profile target result (for dependency).
 

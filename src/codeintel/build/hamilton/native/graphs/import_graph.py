@@ -56,7 +56,13 @@ IMPORT_GRAPH_TABLE_KEYS = (
 
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for import graph nodes."""
+    """Expose the storage gateway for import graph nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -291,6 +297,8 @@ def t__import_graph__extract(
     ----------
     env
         Build environment with gateway and snapshot.
+    gateway
+        Storage gateway for graph data access.
     t__modules
         Upstream modules target result (for dependency).
 

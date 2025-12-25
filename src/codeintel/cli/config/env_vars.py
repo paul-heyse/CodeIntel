@@ -15,7 +15,13 @@ _ENV_PREFIX = "CODEINTEL_"
 
 
 def _normalize_env_token(value: str) -> str:
-    """Normalize a command/argument token to env-var format."""
+    """Normalize a command/argument token to env-var format.
+
+    Returns
+    -------
+    str
+        Normalized token suitable for env-var naming.
+    """
     return value.upper().replace("-", "_").replace(".", "_").lstrip("_")
 
 
@@ -33,6 +39,8 @@ def build_env_var_name(
         Command path segments (e.g., ("build", "run")).
     argument_name
         Raw argument name from Cyclopts.
+    prefix
+        Env var prefix to apply (defaults to CODEINTEL_).
 
     Returns
     -------

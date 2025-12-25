@@ -90,7 +90,13 @@ ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
 
 @tag_helper(domain="analytics")
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for analytics targets."""
+    """Expose the storage gateway for analytics targets.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -192,6 +198,8 @@ def t__external_deps__compute_calls(
         Build environment with gateway and snapshot info.
     graph
         Target graph for manifest-driven skip checks.
+    gateway
+        Storage gateway for analytics queries.
     external_deps_inputs
         Pre-built AST and module inputs for dependency analysis.
 

@@ -82,7 +82,13 @@ tagged_attach_node(
 
 @tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for hotspots nodes."""
+    """Expose the storage gateway for hotspots nodes.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway for the current build environment.
+    """
     return env.gateway
 
 
@@ -219,6 +225,8 @@ def t__hotspots__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
+    gateway
+        Storage gateway for analytics queries.
     graph
         Target graph for manifest-driven skip checks.
     hotspots__ast_metrics_table
