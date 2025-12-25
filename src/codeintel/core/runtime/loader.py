@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
@@ -15,12 +16,20 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.core.config.settings import (
+    BatchProcessorSettings,
     BuildSettings,
     CliSettings,
     ExportAuditSettings,
+    GrpcObservabilitySettings,
     HamiltonExecutionSettings,
+    HamiltonTrackerSettings,
+    LogLimitSettings,
+    MetricExportSettings,
+    MetricViewSettings,
     ObservabilitySettings,
+    OtlpExporterSettings,
     ServingSettings,
+    SpanLimitSettings,
 )
 from codeintel.core.env import (
     get_bool,
@@ -35,6 +44,8 @@ from codeintel.core.execution.context import ExecutionContext, RunContext
 from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
 from codeintel.core.tools import ToolBinaries
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -268,11 +279,38 @@ def _load_observability_settings() -> ObservabilitySettings:
         value = get_str(name, default=None)
         return value.strip() if value else None
 
-    def _opt_non_negative_int(name: str, default: int) -> int:
-        value = get_int(name, default=default)
-        if value is None or value < 0:
+    def _safe_get_bool(name: str, *, default: bool | None) -> bool | None:
+        try:
+            return get_bool(name, default=default)
+        except ValueError as exc:
+            LOG.warning("Invalid boolean for %s: %s", name, exc)
             return default
-        return int(value)
+
+    def _safe_get_int(
+        name: str,
+        *,
+        default: int | None,
+        min_value: int | None = None,
+        max_value: int | None = None,
+    ) -> int | None:
+        try:
+            return get_int(name, default=default, min_value=min_value, max_value=max_value)
+        except ValueError as exc:
+            LOG.warning("Invalid integer for %s: %s", name, exc)
+            return default
+
+    def _safe_get_float(
+        name: str,
+        *,
+        default: float | None,
+        min_value: float | None = None,
+        max_value: float | None = None,
+    ) -> float | None:
+        try:
+            return get_float(name, default=default, min_value=min_value, max_value=max_value)
+        except ValueError as exc:
+            LOG.warning("Invalid float for %s: %s", name, exc)
+            return default
 
     def _parse_csv(value: str | None) -> tuple[str, ...]:
         if not value:
@@ -280,7 +318,79 @@ def _load_observability_settings() -> ObservabilitySettings:
         items = [item.strip() for item in value.split(",") if item.strip()]
         return tuple(items)
 
-    sdk_disabled = get_bool("OTEL_SDK_DISABLED", default=False)
+    def _parse_kv_pairs(value: str | None) -> tuple[tuple[str, str], ...]:
+        if not value:
+            return ()
+        pairs: list[tuple[str, str]] = []
+        for raw in value.split(","):
+            part = raw.strip()
+            if not part:
+                continue
+            if "=" not in part:
+                LOG.warning("Skipping invalid key/value pair in %s: %s", value, part)
+                continue
+            key, val = part.split("=", 1)
+            key = key.strip()
+            val = val.strip()
+            if not key or not val:
+                LOG.warning("Skipping invalid key/value pair in %s: %s", value, part)
+                continue
+            pairs.append((key, val))
+        return tuple(pairs)
+
+    def _parse_float_csv(name: str) -> tuple[float, ...]:
+        raw = _opt_str(name)
+        if not raw:
+            return ()
+        values: list[float] = []
+        for item in raw.split(","):
+            part = item.strip()
+            if not part:
+                continue
+            try:
+                values.append(float(part))
+            except ValueError:
+                LOG.warning("Invalid float value in %s: %s", name, part)
+                return ()
+        return tuple(values)
+
+    def _normalize_protocol(value: str | None) -> str | None:
+        if not value:
+            return None
+        normalized = value.strip().lower()
+        if normalized in {"grpc", "http/protobuf"}:
+            return normalized
+        LOG.warning("Unsupported OTLP protocol %s; ignoring", value)
+        return None
+
+    def _normalize_compression(value: str | None) -> str | None:
+        if not value:
+            return None
+        normalized = value.strip().lower()
+        if normalized:
+            return normalized
+        return None
+
+    def _parse_otlp_settings(prefix: str) -> OtlpExporterSettings:
+        return OtlpExporterSettings(
+            endpoint=_opt_str(f"{prefix}_ENDPOINT"),
+            protocol=_normalize_protocol(_opt_str(f"{prefix}_PROTOCOL")),
+            headers=_parse_kv_pairs(_opt_str(f"{prefix}_HEADERS")),
+            timeout_s=_safe_get_float(f"{prefix}_TIMEOUT", default=None, min_value=0.0),
+            compression=_normalize_compression(_opt_str(f"{prefix}_COMPRESSION")),
+            certificate=_opt_str(f"{prefix}_CERTIFICATE"),
+            client_certificate=_opt_str(f"{prefix}_CLIENT_CERTIFICATE"),
+            client_key=_opt_str(f"{prefix}_CLIENT_KEY"),
+            insecure=_safe_get_bool(f"{prefix}_INSECURE", default=None),
+        )
+
+    def _opt_non_negative_int(name: str, default: int) -> int:
+        value = _safe_get_int(name, default=default, min_value=0)
+        if value is None:
+            return default
+        return int(value)
+
+    sdk_disabled = _safe_get_bool("OTEL_SDK_DISABLED", default=False)
     enabled = not bool(sdk_disabled)
 
     statement_mode = get_str("CODEINTEL_OTEL_DB_STATEMENT_MODE", default=None)
@@ -306,15 +416,149 @@ def _load_observability_settings() -> ObservabilitySettings:
     if cli_args_capture_mode_value not in {"names-only", "allowlist"}:
         cli_args_capture_mode_value = "names-only"
 
+    logs_exporter_raw = _opt_str("OTEL_LOGS_EXPORTER")
+    export_logs = bool(_safe_get_bool("CODEINTEL_EXPORT_LOGS", default=False))
+    if logs_exporter_raw:
+        logs_exporter = logs_exporter_raw.strip().lower()
+        if logs_exporter == "none":
+            export_logs = False
+        else:
+            export_logs = True
+
+    tracker_enabled = bool(_safe_get_bool("CODEINTEL_HAMILTON_TRACKER_ENABLED", default=False))
+    hamilton_project_id = _opt_str("HAMILTON_PROJECT_ID")
+    hamilton_username = _opt_str("HAMILTON_USERNAME")
+    if not tracker_enabled and hamilton_project_id and hamilton_username:
+        tracker_enabled = True
+
+    hamilton_tags_raw = _opt_str("HAMILTON_TAGS") or _opt_str("CODEINTEL_HAMILTON_TAGS")
+
     return ObservabilitySettings(
         enabled=enabled,
         service_name=_opt_str("OTEL_SERVICE_NAME"),
-        otlp_endpoint=_opt_str("OTEL_EXPORTER_OTLP_ENDPOINT"),
-        export_traces=bool(get_bool("CODEINTEL_EXPORT_TRACES", default=True)),
-        export_metrics=bool(get_bool("CODEINTEL_EXPORT_METRICS", default=True)),
-        console_export=bool(get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
-        prometheus_enabled=bool(get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
-        teardown_enabled=bool(get_bool("CODEINTEL_OBSERVABILITY_TEARDOWN_ENABLED", default=True)),
+        service_version=_opt_str("CODEINTEL_SERVICE_VERSION"),
+        deployment_environment=_opt_str("CODEINTEL_DEPLOYMENT_ENVIRONMENT"),
+        resource_attributes=_parse_kv_pairs(_opt_str("OTEL_RESOURCE_ATTRIBUTES")),
+        propagators=split_csv(_opt_str("OTEL_PROPAGATORS")),
+        traces_sampler=_opt_str("OTEL_TRACES_SAMPLER"),
+        traces_sampler_arg=_safe_get_float("OTEL_TRACES_SAMPLER_ARG", default=None, min_value=0.0),
+        config_file=get_path("OTEL_EXPERIMENTAL_CONFIG_FILE", default=None),
+        otlp=_parse_otlp_settings("OTEL_EXPORTER_OTLP"),
+        otlp_traces=_parse_otlp_settings("OTEL_EXPORTER_OTLP_TRACES"),
+        otlp_metrics=_parse_otlp_settings("OTEL_EXPORTER_OTLP_METRICS"),
+        otlp_logs=_parse_otlp_settings("OTEL_EXPORTER_OTLP_LOGS"),
+        export_traces=bool(_safe_get_bool("CODEINTEL_EXPORT_TRACES", default=True)),
+        export_metrics=bool(_safe_get_bool("CODEINTEL_EXPORT_METRICS", default=True)),
+        export_logs=export_logs,
+        console_export=bool(_safe_get_bool("CODEINTEL_CONSOLE_TELEMETRY", default=False)),
+        prometheus_enabled=bool(_safe_get_bool("CODEINTEL_PROMETHEUS_METRICS", default=False)),
+        logs_auto_instrument=bool(
+            _safe_get_bool("OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED", default=False)
+        ),
+        log_correlation=bool(_safe_get_bool("OTEL_PYTHON_LOG_CORRELATION", default=False)),
+        logs_trace_filter=bool(_safe_get_bool("CODEINTEL_OTEL_LOGS_TRACE_FILTER", default=False)),
+        traces_batch=BatchProcessorSettings(
+            schedule_delay_ms=_safe_get_int("OTEL_BSP_SCHEDULE_DELAY", default=None, min_value=0),
+            max_queue_size=_safe_get_int("OTEL_BSP_MAX_QUEUE_SIZE", default=None, min_value=0),
+            max_export_batch_size=_safe_get_int(
+                "OTEL_BSP_MAX_EXPORT_BATCH_SIZE",
+                default=None,
+                min_value=0,
+            ),
+            export_timeout_ms=_safe_get_int(
+                "OTEL_BSP_EXPORT_TIMEOUT",
+                default=None,
+                min_value=0,
+            ),
+        ),
+        logs_batch=BatchProcessorSettings(
+            schedule_delay_ms=_safe_get_int("OTEL_BLRP_SCHEDULE_DELAY", default=None, min_value=0),
+            max_queue_size=_safe_get_int("OTEL_BLRP_MAX_QUEUE_SIZE", default=None, min_value=0),
+            max_export_batch_size=_safe_get_int(
+                "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE",
+                default=None,
+                min_value=0,
+            ),
+            export_timeout_ms=_safe_get_int(
+                "OTEL_BLRP_EXPORT_TIMEOUT",
+                default=None,
+                min_value=0,
+            ),
+        ),
+        metrics_export=MetricExportSettings(
+            export_interval_ms=_safe_get_int(
+                "OTEL_METRIC_EXPORT_INTERVAL",
+                default=None,
+                min_value=0,
+            ),
+            export_timeout_ms=_safe_get_int(
+                "OTEL_METRIC_EXPORT_TIMEOUT",
+                default=None,
+                min_value=0,
+            ),
+        ),
+        span_limits=SpanLimitSettings(
+            attribute_count_limit=_safe_get_int(
+                "OTEL_ATTRIBUTE_COUNT_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+            attribute_value_length_limit=_safe_get_int(
+                "OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+            span_event_count_limit=_safe_get_int(
+                "OTEL_SPAN_EVENT_COUNT_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+            span_link_count_limit=_safe_get_int(
+                "OTEL_SPAN_LINK_COUNT_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+            event_attribute_count_limit=_safe_get_int(
+                "OTEL_EVENT_ATTRIBUTE_COUNT_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+            link_attribute_count_limit=_safe_get_int(
+                "OTEL_LINK_ATTRIBUTE_COUNT_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+        ),
+        log_limits=LogLimitSettings(
+            attribute_count_limit=_safe_get_int(
+                "OTEL_LOGRECORD_ATTRIBUTE_COUNT_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+            attribute_value_length_limit=_safe_get_int(
+                "OTEL_LOGRECORD_ATTRIBUTE_VALUE_LENGTH_LIMIT",
+                default=None,
+                min_value=0,
+            ),
+        ),
+        metrics_exemplar_filter=_opt_str("OTEL_METRICS_EXEMPLAR_FILTER"),
+        metric_views=MetricViewSettings(
+            operation_duration_ms_buckets=_parse_float_csv(
+                "CODEINTEL_OTEL_METRIC_BUCKETS_OPERATION_DURATION_MS"
+            ),
+            query_duration_ms_buckets=_parse_float_csv(
+                "CODEINTEL_OTEL_METRIC_BUCKETS_QUERY_DURATION_MS"
+            ),
+            http_duration_s_buckets=_parse_float_csv(
+                "CODEINTEL_OTEL_METRIC_BUCKETS_HTTP_DURATION_S"
+            ),
+            grpc_duration_s_buckets=_parse_float_csv(
+                "CODEINTEL_OTEL_METRIC_BUCKETS_GRPC_DURATION_S"
+            ),
+        ),
+        teardown_enabled=bool(
+            _safe_get_bool("CODEINTEL_OBSERVABILITY_TEARDOWN_ENABLED", default=True)
+        ),
         teardown_task_sample_limit=_opt_non_negative_int(
             "CODEINTEL_OBSERVABILITY_TEARDOWN_TASK_SAMPLE_LIMIT",
             default=5,
@@ -327,58 +571,91 @@ def _load_observability_settings() -> ObservabilitySettings:
             "CODEINTEL_OBSERVABILITY_TEARDOWN_SUBPROCESS_SAMPLE_LIMIT",
             default=5,
         ),
-        cli_enabled=bool(get_bool("CODEINTEL_OBSERVABILITY_CLI_ENABLED", default=True)),
+        cli_enabled=bool(_safe_get_bool("CODEINTEL_OBSERVABILITY_CLI_ENABLED", default=True)),
         cli_args_allowlist=_parse_csv(
             get_str("CODEINTEL_OBSERVABILITY_CLI_ARGS_ALLOWLIST", default=None)
         ),
         cli_args_capture_mode=cli_args_capture_mode_value,
-        duckdb_tracing_enabled=bool(get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)),
+        grpc_observability=GrpcObservabilitySettings(
+            enabled=bool(_safe_get_bool("CODEINTEL_GRPC_OBSERVABILITY_ENABLED", default=False)),
+            method_allowlist=_parse_csv(_opt_str("CODEINTEL_GRPC_METHOD_ALLOWLIST")),
+            target_allowlist=_parse_csv(_opt_str("CODEINTEL_GRPC_TARGET_ALLOWLIST")),
+            other_method_label=_opt_str("CODEINTEL_GRPC_OTHER_METHOD_LABEL") or "other",
+            other_target_label=_opt_str("CODEINTEL_GRPC_OTHER_TARGET_LABEL") or "other",
+        ),
+        hamilton_tracker=HamiltonTrackerSettings(
+            enabled=tracker_enabled,
+            project_id=hamilton_project_id,
+            username=hamilton_username,
+            dag_name=_opt_str("HAMILTON_DAG_NAME"),
+            tags=_parse_kv_pairs(hamilton_tags_raw),
+            api_url=_opt_str("HAMILTON_API_URL"),
+            ui_url=_opt_str("HAMILTON_UI_URL"),
+            capture_data_statistics=_safe_get_bool(
+                "HAMILTON_CAPTURE_DATA_STATISTICS",
+                default=None,
+            ),
+            max_list_length=_safe_get_int(
+                "HAMILTON_MAX_LIST_LENGTH_CAPTURE",
+                default=None,
+                min_value=0,
+            ),
+            max_dict_length=_safe_get_int(
+                "HAMILTON_MAX_DICT_LENGTH_CAPTURE",
+                default=None,
+                min_value=0,
+            ),
+        ),
+        duckdb_tracing_enabled=bool(_safe_get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)),
         duckdb_require_parent_span=bool(
-            get_bool("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DUCKDB_REQUIRE_PARENT", default=True)
         ),
         duckdb_statement_mode=statement_mode_value,
         duckdb_statement_hash_len=int(
-            get_int("CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN", default=16) or 16
+            _safe_get_int("CODEINTEL_OTEL_DB_STATEMENT_HASH_LEN", default=16, min_value=1) or 16
         ),
         duckdb_query_summary_max_len=int(
-            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_LEN", default=255) or 255
+            _safe_get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_LEN", default=255, min_value=1)
+            or 255
         ),
         duckdb_query_summary_max_targets=int(
-            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS", default=6) or 6
+            _safe_get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_MAX_TARGETS", default=6, min_value=1)
+            or 6
         ),
         duckdb_query_summary_emit_ellipsis=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_EMIT_ELLIPSIS", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_EMIT_ELLIPSIS", default=True)
         ),
         duckdb_query_summary_hash_suspicious_targets=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_SUSPICIOUS", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_SUSPICIOUS", default=True)
         ),
         duckdb_query_summary_hash_len=int(
-            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_LEN", default=12) or 12
+            _safe_get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_LEN", default=12, min_value=1) or 12
         ),
         duckdb_query_summary_hash_min_len=int(
-            get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_MIN_LEN", default=64) or 64
+            _safe_get_int("CODEINTEL_OTEL_DB_QUERY_SUMMARY_HASH_MIN_LEN", default=64, min_value=1)
+            or 64
         ),
         duckdb_query_summary_include_subquery_operations=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_SUBQUERY_OPS", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_SUBQUERY_OPS", default=True)
         ),
         duckdb_query_summary_include_multi_statement=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_MULTI_STATEMENT", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_INCLUDE_MULTI_STATEMENT", default=True)
         ),
         db_query_summary_span_name_hook=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK", default=False)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_SUMMARY_SPAN_NAME_HOOK", default=False)
         ),
         duckdb_query_text_policy=query_text_policy_value,
         duckdb_query_text_max_len=int(
-            get_int("CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN", default=4096) or 4096
+            _safe_get_int("CODEINTEL_OTEL_DB_QUERY_TEXT_MAX_LEN", default=4096, min_value=1) or 4096
         ),
         duckdb_query_text_strip_comments=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_TEXT_STRIP_COMMENTS", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_TEXT_STRIP_COMMENTS", default=True)
         ),
         duckdb_query_text_collapse_in_lists=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_TEXT_COLLAPSE_IN_LISTS", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_TEXT_COLLAPSE_IN_LISTS", default=True)
         ),
         duckdb_query_parameter_enabled=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_PARAMETER_ENABLED", default=False)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_PARAMETER_ENABLED", default=False)
         ),
         duckdb_query_parameter_keys=_parse_csv(
             get_str("CODEINTEL_OTEL_DB_QUERY_PARAMETER_KEYS", default=None)
@@ -387,10 +664,11 @@ def _load_observability_settings() -> ObservabilitySettings:
             get_str("CODEINTEL_OTEL_DB_QUERY_PARAMETER_HASH_KEYS", default=None)
         ),
         duckdb_query_parameter_require_in_sql=bool(
-            get_bool("CODEINTEL_OTEL_DB_QUERY_PARAMETER_REQUIRE_IN_SQL", default=True)
+            _safe_get_bool("CODEINTEL_OTEL_DB_QUERY_PARAMETER_REQUIRE_IN_SQL", default=True)
         ),
         duckdb_query_parameter_max_str_len=int(
-            get_int("CODEINTEL_OTEL_DB_QUERY_PARAMETER_MAX_STRLEN", default=80) or 80
+            _safe_get_int("CODEINTEL_OTEL_DB_QUERY_PARAMETER_MAX_STRLEN", default=80, min_value=1)
+            or 80
         ),
     )
 

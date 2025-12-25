@@ -49,7 +49,6 @@ def _configure_tracing(
         ObservabilityConfig(
             enabled=True,
             service_name="codeintel-test",
-            otlp_endpoint=None,
             export_traces=False,
             export_metrics=False,
             console_export=False,

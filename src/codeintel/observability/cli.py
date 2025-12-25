@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
 import sys
 import time
@@ -10,6 +11,7 @@ import uuid
 from contextlib import nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, get_args, get_origin
+from weakref import WeakKeyDictionary
 
 from cyclopts import App
 from cyclopts.exceptions import CycloptsError
@@ -39,7 +41,7 @@ if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from inspect import BoundArguments
 
-    from opentelemetry.metrics import Meter
+    from opentelemetry.metrics import Counter, Histogram, Meter
     from opentelemetry.trace import Span, Tracer
 
     from codeintel.core.runtime import RuntimeSettings
@@ -70,6 +72,7 @@ class _InvocationState:
     arg_names: tuple[str, ...] = ()
     is_parse_error: bool = False
     error_type: str | None = None
+    parse_duration_ms: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +81,17 @@ class _InvocationOptions:
     cli_enabled: bool
     arg_capture_mode: str
     arg_allowlist: set[str]
+
+
+@dataclass(slots=True)
+class _CliInstruments:
+    invocation_count: Counter
+    invocation_duration_ms: Histogram
+    parse_duration_ms: Histogram
+    parse_errors: Counter
+
+
+_CLI_INSTRUMENTS: WeakKeyDictionary[Meter, _CliInstruments] = WeakKeyDictionary()
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +164,13 @@ def run_cli_with_telemetry(
             )
     finally:
         _finalize_span(span, state=state, exit_code=exit_code)
+        _record_cli_metrics(
+            obs,
+            state=state,
+            exit_code=exit_code,
+            enabled=options.cli_enabled,
+        )
+        _emit_cli_log(state, exit_code=exit_code, enabled=options.cli_enabled)
         resolved_deps.shutdown()
     raise SystemExit(exit_code)
 
@@ -161,12 +182,14 @@ def _execute_invocation(
     span: Span | None,
     context: _InvocationContext,
 ) -> int:
+    parse_start = time.perf_counter()
     try:
         command, bound, ignored = app.parse_args(
             argv,
             exit_on_error=False,
             print_error=context.options.output_format == OutputFormat.TEXT,
         )
+        context.state.parse_duration_ms = (time.perf_counter() - parse_start) * 1000
         bound_args: BoundArguments = bound
         context.state.command_chain = _command_chain(command)
         if context.options.cli_enabled:
@@ -189,6 +212,7 @@ def _execute_invocation(
         context.state.error_type = type(exc).__name__
         return _exit_code_from_system_exit(exc)
     except CycloptsError as exc:
+        context.state.parse_duration_ms = (time.perf_counter() - parse_start) * 1000
         context.state.is_parse_error = True
         context.state.error_type = type(exc).__name__
         if span is not None:
@@ -208,6 +232,8 @@ def _execute_invocation(
         TypeError,
         OSError,
     ) as exc:
+        if context.state.parse_duration_ms is None:
+            context.state.parse_duration_ms = (time.perf_counter() - parse_start) * 1000
         context.state.error_type = type(exc).__name__
         if span is not None:
             span.record_exception(exc)
@@ -239,6 +265,12 @@ def _set_span_context(
         span.set_attribute("cli.arg_names", [*arg_names])
 
 
+def _command_label(command_chain: tuple[str, ...]) -> str:
+    if command_chain:
+        return ".".join(command_chain)
+    return "<unknown>"
+
+
 def _finalize_span(span: Span | None, *, state: _InvocationState, exit_code: int) -> None:
     if span is None:
         return
@@ -246,8 +278,93 @@ def _finalize_span(span: Span | None, *, state: _InvocationState, exit_code: int
     span.set_attribute("cli.exit_code", exit_code)
     span.set_attribute("cli.duration_ms", duration_ms)
     span.set_attribute("cli.is_parse_error", state.is_parse_error)
+    if state.parse_duration_ms is not None:
+        span.set_attribute("cli.parse_duration_ms", state.parse_duration_ms)
     if state.error_type is not None:
         span.set_attribute("cli.error_type", state.error_type)
+
+
+def _get_cli_instruments(meter: Meter) -> _CliInstruments:
+    instruments = _CLI_INSTRUMENTS.get(meter)
+    if instruments is not None:
+        return instruments
+    instruments = _CliInstruments(
+        invocation_count=meter.create_counter(
+            "codeintel.cli.invocations",
+            unit="1",
+            description="Count of CLI invocations by command and outcome",
+        ),
+        invocation_duration_ms=meter.create_histogram(
+            "codeintel.cli.invocation.duration_ms",
+            unit="ms",
+            description="Duration of CLI invocations (ms)",
+        ),
+        parse_duration_ms=meter.create_histogram(
+            "codeintel.cli.parse.duration_ms",
+            unit="ms",
+            description="Argument parsing duration for CLI invocations (ms)",
+        ),
+        parse_errors=meter.create_counter(
+            "codeintel.cli.parse.errors",
+            unit="1",
+            description="Count of CLI parse errors by command",
+        ),
+    )
+    _CLI_INSTRUMENTS[meter] = instruments
+    return instruments
+
+
+def _record_cli_metrics(
+    obs: ObservabilityRuntime,
+    *,
+    state: _InvocationState,
+    exit_code: int,
+    enabled: bool,
+) -> None:
+    if not enabled or not obs.enabled or obs.meter is None:
+        return
+    instruments = _get_cli_instruments(obs.meter)
+    command = _command_label(state.command_chain)
+    attrs: dict[str, object] = {
+        "cli.command": command,
+        "cli.exit_code": exit_code,
+        "cli.is_parse_error": state.is_parse_error,
+    }
+    if state.error_type is not None:
+        attrs["cli.error_type"] = state.error_type
+    instruments.invocation_count.add(1, attributes=attrs)
+    invocation_duration_ms = (time.perf_counter() - state.start_ts) * 1000
+    instruments.invocation_duration_ms.record(invocation_duration_ms, attributes=attrs)
+    if state.parse_duration_ms is not None:
+        instruments.parse_duration_ms.record(
+            state.parse_duration_ms,
+            attributes={"cli.command": command},
+        )
+    if state.is_parse_error:
+        error_attrs: dict[str, object] = {"cli.command": command}
+        if state.error_type is not None:
+            error_attrs["cli.error_type"] = state.error_type
+        instruments.parse_errors.add(1, attributes=error_attrs)
+
+
+def _emit_cli_log(state: _InvocationState, *, exit_code: int, enabled: bool) -> None:
+    if not enabled:
+        return
+    payload = {
+        "event": "cli.invocation",
+        "invocation_id": state.invocation_id,
+        "command": _command_label(state.command_chain),
+        "exit_code": exit_code,
+        "duration_ms": (time.perf_counter() - state.start_ts) * 1000,
+        "parse_duration_ms": state.parse_duration_ms,
+        "is_parse_error": state.is_parse_error,
+        "error_type": state.error_type,
+    }
+    message = json.dumps(payload, sort_keys=True)
+    if state.is_parse_error:
+        log.warning("cli.parse_error %s", message)
+    else:
+        log.info("cli.invocation %s", message)
 
 
 def _resolve_verbosity(bound: BoundArguments) -> int:
@@ -263,6 +380,21 @@ def _resolve_verbosity(bound: BoundArguments) -> int:
     return 0
 
 
+def _flatten_arg_names(arguments: Mapping[str, object], ignored_names: set[str]) -> list[str]:
+    names: list[str] = []
+    for name, value in arguments.items():
+        if name in ignored_names:
+            continue
+        if name == "flags" and dataclasses.is_dataclass(value):
+            for field in dataclasses.fields(value):
+                if field.name == "run_context":
+                    continue
+                names.append(f"flags.{field.name}")
+            continue
+        names.append(name)
+    return list(dict.fromkeys(names))
+
+
 def _safe_arg_names(
     bound: BoundArguments,
     ignored: Mapping[str, object] | None,
@@ -275,7 +407,7 @@ def _safe_arg_names(
         return ()
     arguments = getattr(bound, "arguments", {})
     ignored_names = set(ignored or {})
-    names = [name for name in arguments if name not in ignored_names]
+    names = _flatten_arg_names(arguments, ignored_names)
     if capture_mode == _CLI_CAPTURE_MODE_ALLOWLIST:
         return tuple(name for name in names if name in allowlist)
     return tuple(names)
@@ -367,7 +499,13 @@ def _normalize_capture_mode(value: str) -> str:
 
 
 def _normalize_allowlist(values: tuple[str, ...]) -> set[str]:
-    return {value.strip() for value in values if value.strip()}
+    normalized = {value.strip() for value in values if value.strip()}
+    expanded: set[str] = set()
+    for value in normalized:
+        expanded.add(value)
+        if "." not in value:
+            expanded.add(f"flags.{value}")
+    return expanded
 
 
 __all__ = ["RunContext", "run_cli_with_telemetry"]

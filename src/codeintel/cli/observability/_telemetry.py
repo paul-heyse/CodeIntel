@@ -9,13 +9,16 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.singleton import SingletonHolder
-from codeintel.observability.otel import ObservabilityConfig, bootstrap_observability
+from codeintel.observability.otel import (
+    bootstrap_observability,
+    observability_config_from_settings,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -81,7 +84,7 @@ class TelemetryConfig:
             export_traces=settings.export_traces,
             export_metrics=settings.export_metrics,
             console_export=settings.console_export,
-            otlp_endpoint=settings.otlp_endpoint,
+            otlp_endpoint=settings.otlp.endpoint,
             duckdb_tracing_enabled=settings.duckdb_tracing_enabled,
             duckdb_statement_mode=settings.duckdb_statement_mode,
             duckdb_statement_hash_len=settings.duckdb_statement_hash_len,
@@ -190,7 +193,7 @@ class TelemetryProvider:
     """Provider for OpenTelemetry instrumentation.
 
     Manage tracer and meter instances, providing a facade
-    that gracefully degrades when OTEL is not available.
+    that respects runtime enablement toggles.
 
     This class integrates tracing and metrics for CLI operations.
     """
@@ -225,11 +228,21 @@ class TelemetryProvider:
         if self._initialized or not self._config.enabled:
             return
 
+        base = observability_config_from_settings(
+            load_runtime_settings().observability,
+            default_service_name=self._config.service_name,
+        )
+        otlp_override = (
+            replace(base.otlp, endpoint=self._config.otlp_endpoint)
+            if self._config.otlp_endpoint
+            else base.otlp
+        )
         runtime = bootstrap_observability(
-            ObservabilityConfig(
+            replace(
+                base,
                 enabled=self._config.enabled,
                 service_name=self._config.service_name,
-                otlp_endpoint=self._config.otlp_endpoint,
+                otlp=otlp_override,
                 export_traces=self._config.export_traces,
                 export_metrics=self._config.export_metrics,
                 console_export=self._config.console_export,

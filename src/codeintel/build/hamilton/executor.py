@@ -14,6 +14,7 @@ Design Principles
 
 from __future__ import annotations
 
+import importlib
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -21,16 +22,24 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import hamilton.base as h_base
+from opentelemetry import trace as otel_trace
 
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
+from codeintel.build.hamilton.hooks import (
+    ContractEnforcementHook,
+    NodeTelemetryHook,
+    ValidationSummary,
+    build_hooks,
+)
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.run_writer import BuildRunWriter
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.context import run_context
 
 if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
@@ -38,6 +47,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetGraph
+    from codeintel.core.config.settings import HamiltonTrackerSettings
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -53,6 +63,7 @@ class _RunState:
     run_id: str
     start_time: float
     started_at: datetime
+    domain: str | None
 
     @property
     def duration_ms(self) -> float:
@@ -69,6 +80,108 @@ def _generate_run_id() -> str:
         Unique run identifier for this Hamilton execution.
     """
     return new_run_id("hamilton")
+
+
+def _coerce_project_id(value: str) -> int | str:
+    if value.isdigit():
+        return int(value)
+    return value
+
+
+def _current_trace_id() -> str | None:
+    span = otel_trace.get_current_span()
+    context = span.get_span_context()
+    if not context.is_valid:
+        return None
+    if context.trace_id == 0:
+        return None
+    return f"{context.trace_id:032x}"
+
+
+def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
+    try:
+        tracking_constants = importlib.import_module("hamilton_sdk.tracking.constants")
+    except ModuleNotFoundError as exc:
+        log.warning("Hamilton tracker constants unavailable: %s", exc)
+        return
+    if settings.capture_data_statistics is not None:
+        tracking_constants.CAPTURE_DATA_STATISTICS = bool(settings.capture_data_statistics)
+    if settings.max_list_length is not None:
+        tracking_constants.MAX_LIST_LENGTH_CAPTURE = settings.max_list_length
+    if settings.max_dict_length is not None:
+        tracking_constants.MAX_DICT_LENGTH_CAPTURE = settings.max_dict_length
+
+
+def _build_tracker_tags(
+    *,
+    settings: HamiltonTrackerSettings,
+    env: BuildEnv,
+    run_id: str,
+    domain: str | None,
+    deployment_environment: str | None,
+) -> dict[str, str]:
+    tags = dict(settings.tags)
+    if deployment_environment and "environment" not in tags:
+        tags["environment"] = deployment_environment
+    tags.setdefault("repo", env.snapshot.repo)
+    tags.setdefault("commit", env.snapshot.commit)
+    tags.setdefault("run_id", run_id)
+    if domain and "domain" not in tags:
+        tags["domain"] = domain
+    return tags
+
+
+def _build_hamilton_tracker_adapter(
+    *,
+    env: BuildEnv,
+    run_id: str,
+    domain: str | None,
+) -> object | None:
+    runtime_settings = load_runtime_settings().observability
+    tracker_settings = runtime_settings.hamilton_tracker
+    if not tracker_settings.enabled:
+        return None
+    if not tracker_settings.project_id or not tracker_settings.username:
+        log.warning("Hamilton tracker enabled but project_id/username are not configured")
+        return None
+    try:
+        hamilton_adapters = importlib.import_module("hamilton_sdk.adapters")
+    except ModuleNotFoundError as exc:
+        log.warning("Hamilton tracker enabled but hamilton_sdk is missing: %s", exc)
+        return None
+
+    tracker_cls = getattr(hamilton_adapters, "HamiltonTracker", None)
+    if tracker_cls is None:
+        log.warning("HamiltonTracker adapter is unavailable in hamilton_sdk.adapters")
+        return None
+
+    _apply_tracker_constants(tracker_settings)
+    tags = _build_tracker_tags(
+        settings=tracker_settings,
+        env=env,
+        run_id=run_id,
+        domain=domain,
+        deployment_environment=runtime_settings.deployment_environment,
+    )
+    trace_id = _current_trace_id()
+    if trace_id and "trace_id" not in tags:
+        tags["trace_id"] = trace_id
+    dag_name = tracker_settings.dag_name or env.snapshot.repo
+    kwargs = {
+        "project_id": _coerce_project_id(tracker_settings.project_id),
+        "username": tracker_settings.username,
+        "dag_name": dag_name,
+        "tags": tags,
+    }
+    if tracker_settings.api_url:
+        kwargs["hamilton_api_url"] = tracker_settings.api_url
+    if tracker_settings.ui_url:
+        kwargs["hamilton_ui_url"] = tracker_settings.ui_url
+    try:
+        return tracker_cls(**kwargs)
+    except (TypeError, ValueError) as exc:
+        log.warning("Failed to initialize HamiltonTracker: %s", exc)
+        return None
 
 
 def _categorize_outputs(
@@ -158,6 +271,8 @@ class HamiltonBuildResult:
         Unique identifier for this build run.
     runtime
         Reference to the HamiltonRuntime for mapping lookups.
+    validation_summary
+        Optional validation summary produced by ContractEnforcementHook.
     """
 
     requested: tuple[str, ...]
@@ -171,6 +286,7 @@ class HamiltonBuildResult:
     error: str | None = None
     run_id: str = ""
     runtime: HamiltonRuntime | None = None
+    validation_summary: ValidationSummary | None = None
 
     def get_record(self, target_name: str) -> TargetRunRecord | None:
         """Get the execution record for a target.
@@ -234,8 +350,18 @@ class HamiltonBuildExecutor:
         *,
         env: BuildEnv,
         targets: list[str],
+        domain: str | None = None,
     ) -> HamiltonBuildResult:
         """Execute build targets using Hamilton.
+
+        Parameters
+        ----------
+        env
+            Build environment for this execution.
+        targets
+            Target names to execute.
+        domain
+            Optional domain identifier for telemetry context.
 
         Returns
         -------
@@ -244,7 +370,12 @@ class HamiltonBuildExecutor:
         """
         run_id = _generate_run_id()
         writer = BuildRunWriter(env.gateway)
-        runtime, telemetry_hook = self._build_runtime(env=env, run_id=run_id, writer=writer)
+        runtime, telemetry_hook, contract_hook = self._build_runtime(
+            env=env,
+            run_id=run_id,
+            writer=writer,
+            domain=domain,
+        )
 
         context = _RunState(
             env=env,
@@ -253,11 +384,13 @@ class HamiltonBuildExecutor:
             run_id=run_id,
             start_time=time.perf_counter(),
             started_at=datetime.now(tz=UTC),
+            domain=domain,
         )
         return self._run_with_state(
             context=context,
             writer=writer,
             telemetry_hook=telemetry_hook,
+            contract_hook=contract_hook,
         )
 
     def _run_with_state(
@@ -266,6 +399,7 @@ class HamiltonBuildExecutor:
         context: _RunState,
         writer: BuildRunWriter,
         telemetry_hook: NodeTelemetryHook | None,
+        contract_hook: ContractEnforcementHook | None,
     ) -> HamiltonBuildResult:
         graph = context.runtime.graph
         requested_targets = list(context.targets)
@@ -306,13 +440,7 @@ class HamiltonBuildExecutor:
             return self._make_missing_result(context, closure, missing)
 
         try:
-            outputs, error = self._execute_dag(
-                context.runtime,
-                final_vars,
-                context.env,
-                context.run_id,
-                graph=graph,
-            )
+            outputs, error = self._execute_dag(context, final_vars)
         finally:
             if telemetry_hook is not None:
                 telemetry_hook.flush()
@@ -347,6 +475,10 @@ class HamiltonBuildExecutor:
             duration_ms,
         )
 
+        validation_summary = (
+            contract_hook.get_validation_summary() if contract_hook is not None else None
+        )
+
         return HamiltonBuildResult(
             requested=context.targets,
             closure=closure,
@@ -359,6 +491,7 @@ class HamiltonBuildExecutor:
             error=error,
             run_id=context.run_id,
             runtime=context.runtime,
+            validation_summary=validation_summary,
         )
 
     def _effective_max_workers(self, graph: TargetGraph) -> int | None:
@@ -370,7 +503,8 @@ class HamiltonBuildExecutor:
         env: BuildEnv,
         run_id: str,
         writer: BuildRunWriter,
-    ) -> tuple[HamiltonRuntime, NodeTelemetryHook | None]:
+        domain: str | None,
+    ) -> tuple[HamiltonRuntime, NodeTelemetryHook | None, ContractEnforcementHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
 
         Returns
@@ -380,11 +514,13 @@ class HamiltonBuildExecutor:
         """
         config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
         telemetry_hook: NodeTelemetryHook | None = None
+        contract_hook: ContractEnforcementHook | None = None
 
         hook_options = self._options.hook_options(env=env)
 
         def _adapter_factory(graph: TargetGraph) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
+            nonlocal contract_hook
             adapters: list[LifecycleAdapter] = []
             effective_max_workers = self._effective_max_workers(graph)
             parallel_adapter = create_parallel_adapter(
@@ -401,7 +537,17 @@ class HamiltonBuildExecutor:
             for hook in hooks:
                 if isinstance(hook, NodeTelemetryHook):
                     telemetry_hook = hook
+                if isinstance(hook, ContractEnforcementHook):
+                    contract_hook = hook
                 adapters.append(cast("LifecycleAdapter", hook))
+
+            tracker_adapter = _build_hamilton_tracker_adapter(
+                env=env,
+                run_id=run_id,
+                domain=domain,
+            )
+            if tracker_adapter is not None:
+                adapters.append(cast("LifecycleAdapter", tracker_adapter))
             return adapters
 
         runtime = build_driver(
@@ -410,7 +556,7 @@ class HamiltonBuildExecutor:
             enable_cache=self._options.enable_hamilton_cache,
             cache_dir=str(self._options.resolved_cache_dir(env=env)),
         )
-        return runtime, telemetry_hook
+        return runtime, telemetry_hook, contract_hook
 
     @staticmethod
     def _compute_closure(
@@ -480,27 +626,17 @@ class HamiltonBuildExecutor:
 
     @staticmethod
     def _execute_dag(
-        runtime: HamiltonRuntime,
+        context: _RunState,
         final_vars: list[str],
-        env: BuildEnv,
-        run_id: str,
-        *,
-        graph: TargetGraph,
     ) -> tuple[dict[str, Any], str | None]:
         """Execute the Hamilton DAG, returning (outputs, error).
 
         Parameters
         ----------
-        runtime
-            Hamilton runtime with driver and graph.
+        context
+            Execution state for this run.
         final_vars
             List of node names to execute.
-        env
-            Build environment.
-        run_id
-            Run identifier for tracking.
-        graph
-            Target graph for dependency and contract lookups.
 
         Returns
         -------
@@ -508,20 +644,21 @@ class HamiltonBuildExecutor:
             Outputs keyed by node name, and optional error string.
         """
         try:
-            execution_env = env
-            if env.strict_contracts:
-                wrapped_gateway = ContractEnforcingStorageGateway(env.gateway)
+            execution_env = context.env
+            if context.env.strict_contracts:
+                wrapped_gateway = ContractEnforcingStorageGateway(context.env.gateway)
                 execution_env = replace(
-                    env,
+                    context.env,
                     gateway=cast("StorageGateway", wrapped_gateway),
                 )
 
-            outputs = runtime.dr.execute(
-                list(final_vars),
-                inputs={"env": execution_env, "graph": graph},
-            )
+            with run_context(run_id=context.run_id, domain=context.domain):
+                outputs = context.runtime.dr.execute(
+                    list(final_vars),
+                    inputs={"env": execution_env, "graph": context.runtime.graph},
+                )
         except Exception as exc:
-            log.exception("build.hamilton.executor.error run_id=%s", run_id)
+            log.exception("build.hamilton.executor.error run_id=%s", context.run_id)
             return {}, str(exc)
         else:
             return outputs, None

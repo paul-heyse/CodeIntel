@@ -22,6 +22,7 @@ from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.otel import flush_observability, get_observability
 from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:
@@ -292,6 +293,72 @@ def _check_telemetry() -> CheckResult:
     )
 
 
+def _check_telemetry_pipeline() -> CheckResult:
+    """Emit a telemetry heartbeat and force-flush exporters.
+
+    Returns
+    -------
+    CheckResult
+        Telemetry pipeline health result.
+    """
+    obs = get_observability()
+    if not obs.enabled:
+        return CheckResult(
+            name="telemetry_pipeline",
+            status=CheckStatus.SKIP,
+            message="Telemetry disabled",
+        )
+    if obs.tracer is None:
+        return CheckResult(
+            name="telemetry_pipeline",
+            status=CheckStatus.WARN,
+            message="Telemetry tracer unavailable",
+        )
+
+    try:
+        with obs.tracer.start_as_current_span("health.telemetry_pipeline") as span:
+            is_health_check = True
+            span.set_attribute("codeintel.health_check", is_health_check)
+            LOG.info("telemetry.pipeline.check")
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        return CheckResult(
+            name="telemetry_pipeline",
+            status=CheckStatus.FAIL,
+            message=f"Telemetry span/log emission failed: {exc}",
+        )
+
+    flush_result = flush_observability()
+    if obs.meter is not None:
+        counter = obs.meter.create_counter(
+            "codeintel.telemetry.pipeline.checks",
+            unit="1",
+            description="Count of telemetry pipeline checks by status",
+        )
+        status_label = "ok" if flush_result is not None and flush_result.flush_ok else "error"
+        counter.add(1, attributes={"status": status_label})
+
+    if flush_result is None:
+        return CheckResult(
+            name="telemetry_pipeline",
+            status=CheckStatus.WARN,
+            message="Telemetry flush unavailable",
+        )
+    if not flush_result.flush_ok:
+        return CheckResult(
+            name="telemetry_pipeline",
+            status=CheckStatus.FAIL,
+            message="Telemetry flush reported errors",
+            details={"errors": list(flush_result.errors)},
+        )
+
+    return CheckResult(
+        name="telemetry_pipeline",
+        status=CheckStatus.OK,
+        message="Telemetry pipeline flushed",
+        details={"flush_ms": flush_result.flush_ms},
+    )
+
+
 _HEALTH_CHECKS: list[tuple[str, CheckFunction]] = [
     ("python_version", _check_python_version),
     ("config_file", _check_config_file),
@@ -299,6 +366,7 @@ _HEALTH_CHECKS: list[tuple[str, CheckFunction]] = [
     ("project_discovery", _check_project),
     ("operation_registry", _check_registry),
     ("telemetry", _check_telemetry),
+    ("telemetry_pipeline", _check_telemetry_pipeline),
 ]
 
 

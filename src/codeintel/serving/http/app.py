@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastmcp.server.event_store import EventStore
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -40,14 +41,6 @@ from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.meta.service import build_kernel_meta_payload
 from codeintel.serving.runtime import build_runtime
 from codeintel.serving.settings import ServingSettings
-
-try:
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-
-    _FASTAPI_INSTRUMENTOR_AVAILABLE = True
-except ImportError:
-    _FASTAPI_INSTRUMENTOR_AVAILABLE = False
-    FastAPIInstrumentor = None
 
 try:
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -207,8 +200,6 @@ def _install_middlewares(app: FastAPI, cfg: ServingSettings) -> None:
 
 
 def _instrument_fastapi(app: FastAPI) -> None:
-    if not _FASTAPI_INSTRUMENTOR_AVAILABLE or FastAPIInstrumentor is None:
-        return
     FastAPIInstrumentor.instrument_app(app)
 
 

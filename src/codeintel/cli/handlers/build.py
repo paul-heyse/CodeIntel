@@ -9,7 +9,7 @@ import json as _json
 import logging
 import shutil
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
 from enum import Enum
 from pathlib import Path
@@ -25,6 +25,7 @@ from codeintel.build.assets.impact import compute_impact
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import HamiltonBuildExecutor
 from codeintel.build.hamilton.decision_trace import (
+    DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_TARGET_NAME,
     default_decision_trace_path,
     read_decision_trace,
@@ -74,9 +75,11 @@ from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
+from codeintel.core.hamilton import tags as ht
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
 from codeintel.observability.otel import flush_observability
 from codeintel.observability.teardown import (
+    ArtifactSummary,
     ShutdownStatus,
     TeardownSnapshotOptions,
     TeardownTelemetry,
@@ -97,6 +100,7 @@ if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
     from codeintel.core.build_manifest import BuildRunRecord
+    from codeintel.core.hamilton.records import ArtifactRefProtocol
     from codeintel.observability.cli import RunContext
     from codeintel.storage.gateway import StorageGateway
 
@@ -108,6 +112,12 @@ _CLI_INTERNAL_ERROR_STATUS_THRESHOLD = 500
 @dataclass(slots=True)
 class _BuildRunTelemetryState:
     run_id: str | None = None
+    decision_trace_artifact: ArtifactSummary | None = None
+    decision_trace_path: str | None = None
+    validation_mode: str | None = None
+    validation_issue_count: int | None = None
+    schema_inference_errors_count: int | None = None
+    domain: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +128,12 @@ class _BuildTeardownInputs:
     run_id: str | None
     run_context: RunContext | None
     duration_ms: float
+    decision_trace_artifact: ArtifactSummary | None
+    decision_trace_path: str | None
+    validation_mode: str | None
+    validation_issue_count: int | None
+    schema_inference_errors_count: int | None
+    domain: str | None
 
 
 class RunMode(Enum):
@@ -158,6 +174,7 @@ class BuildExecutionArgs:
     """Build execution options for Hamilton engine."""
 
     goals: list[str]
+    domain: str | None
     force: list[str] | None
     run_mode: RunMode
     validate_outputs: bool
@@ -266,6 +283,32 @@ def _resolve_goals(
 
     msg = "Specify targets, --module, or --all"
     raise ValidationError(msg)
+
+
+def _resolve_domain_for_goals(goals: Sequence[str]) -> str | None:
+    if not goals:
+        return None
+    service = get_target_metadata_service()
+    runtime = service.system.runtime
+    tag_index = service.tag_index
+    domains: set[str] = set()
+    for target_name in goals:
+        node_name = runtime.target_to_node.get(target_name)
+        if not node_name:
+            continue
+        tags = tag_index.tags_by_node.get(node_name)
+        if tags is None:
+            continue
+        domain = tags.get(ht.TAG_DOMAIN)
+        if isinstance(domain, str) and domain:
+            domains.add(domain)
+    if len(domains) == 1:
+        return next(iter(domains))
+    if "export" in domains:
+        non_export = domains - {"export"}
+        if len(non_export) == 1:
+            return next(iter(non_export))
+    return None
 
 
 def _group_targets_by_status(
@@ -444,6 +487,7 @@ def _execute_build_hamilton(
     hamilton_result = executor.run(
         env=env,
         targets=_with_decision_trace_targets(execution.goals),
+        domain=execution.domain,
     )
 
     cache_report: dict[str, object] | None = None
@@ -784,7 +828,7 @@ def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
     try:
         return ContractValidationMode(normalized)
     except ValueError as exc:
-        msg = "Invalid value for \"--validation-mode\""
+        msg = 'Invalid value for "--validation-mode"'
         raise ValidationError(msg) from exc
 
 
@@ -921,6 +965,12 @@ def build_run_handler(
             run_id=telemetry_state.run_id,
             run_context=run_context,
             duration_ms=(time.perf_counter() - start) * 1000,
+            decision_trace_artifact=telemetry_state.decision_trace_artifact,
+            decision_trace_path=telemetry_state.decision_trace_path,
+            validation_mode=telemetry_state.validation_mode,
+            validation_issue_count=telemetry_state.validation_issue_count,
+            schema_inference_errors_count=telemetry_state.schema_inference_errors_count,
+            domain=telemetry_state.domain,
         )
         _emit_build_teardown(inputs=teardown_inputs)
     if result is None:
@@ -959,6 +1009,9 @@ def _build_run_result(
     if params.publish_serving_snapshot and "serving_artifacts" not in goals:
         goals.append("serving_artifacts")
 
+    domain = _resolve_domain_for_goals(goals)
+    telemetry_state.domain = domain
+
     LOG.info(
         "build.run repo=%s commit=%s targets=%s",
         runtime.snapshot.repo,
@@ -968,6 +1021,7 @@ def _build_run_result(
 
     execution_args = BuildExecutionArgs(
         goals=goals,
+        domain=domain,
         force=params.force,
         run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
         validate_outputs=params.validate_outputs,
@@ -1035,6 +1089,12 @@ def _emit_build_teardown(
             cli_exit_code=_resolve_cli_exit_code(inputs.result),
             cli_is_parse_error=cli_is_parse_error,
             cli_error_type=_resolve_cli_error_type(inputs.result),
+            domain=inputs.domain,
+            decision_trace_artifact=inputs.decision_trace_artifact,
+            decision_trace_path=inputs.decision_trace_path,
+            validation_mode=inputs.validation_mode,
+            validation_issue_count=inputs.validation_issue_count,
+            schema_inference_errors_count=inputs.schema_inference_errors_count,
             shutdown_status=_resolve_shutdown_status(inputs.result),
             pending_tasks_count=snapshot.pending_tasks_count,
             pending_task_samples=snapshot.pending_task_samples,
@@ -1146,6 +1206,63 @@ def _format_cli_command(run_context: RunContext | None) -> str | None:
     return ".".join(run_context.command_chain)
 
 
+def _artifact_size_bytes(artifact: ArtifactRefProtocol) -> int | None:
+    metadata = getattr(artifact, "metadata", None)
+    if isinstance(metadata, Mapping):
+        size_raw = metadata.get("size_bytes")
+        if isinstance(size_raw, int):
+            return size_raw
+    if artifact.path:
+        try:
+            return Path(artifact.path).stat().st_size
+        except OSError:
+            return None
+    return None
+
+
+def _resolve_decision_trace_artifact(
+    runtime: ResolvedRuntime,
+    result: HamiltonBuildResult,
+) -> tuple[ArtifactSummary | None, str | None]:
+    record = result.get_record(DECISION_TRACE_TARGET_NAME)
+    if record is None:
+        return None, None
+    artifact = next(
+        (
+            item
+            for item in record.artifacts
+            if item.name == DECISION_TRACE_ARTIFACT_NAME
+        ),
+        None,
+    )
+    if artifact is None:
+        return None, None
+    summary = ArtifactSummary(
+        name=artifact.name,
+        artifact_type=artifact.artifact_type,
+        path=artifact.path,
+        size_bytes=_artifact_size_bytes(artifact),
+    )
+    path = artifact.path
+    if path is None:
+        default_path = default_decision_trace_path(runtime.paths.build_dir)
+        if default_path.exists():
+            path = str(default_path)
+    return summary, path
+
+
+def _validation_issue_count(result: HamiltonBuildResult) -> int | None:
+    summary = result.validation_summary
+    if summary is None:
+        return None
+    return summary.failed_count
+
+
+def _schema_inference_error_count() -> int:
+    schema_index = get_target_metadata_service().schema_index
+    return sum(1 for _ in schema_index.iter_inference_errors())
+
+
 def _execute_and_format_result(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
@@ -1202,6 +1319,15 @@ def _execute_and_format_result(
 
     if telemetry_state is not None:
         telemetry_state.run_id = outcome.result.run_id
+        telemetry_state.validation_mode = execution.validation_mode.value
+        telemetry_state.validation_issue_count = _validation_issue_count(outcome.result)
+        telemetry_state.schema_inference_errors_count = _schema_inference_error_count()
+        decision_trace_artifact, decision_trace_path = _resolve_decision_trace_artifact(
+            runtime,
+            outcome.result,
+        )
+        telemetry_state.decision_trace_artifact = decision_trace_artifact
+        telemetry_state.decision_trace_path = decision_trace_path
 
     cache_report = outcome.cache_report
 

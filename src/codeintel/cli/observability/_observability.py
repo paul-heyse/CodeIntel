@@ -10,18 +10,14 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from opentelemetry import trace as otel_trace
+
 LOG = logging.getLogger(__name__)
-
-
-try:
-    from opentelemetry import trace as _otel_trace
-except ImportError:
-    _otel_trace = None
 
 
 @runtime_checkable
 class TraceAdapter(Protocol):
-    """Adapter interface for optional tracing backends."""
+    """Adapter interface for tracing backends."""
 
     def get_trace_context(self) -> dict[str, str] | None:
         """Return current trace context identifiers if available.
@@ -34,29 +30,11 @@ class TraceAdapter(Protocol):
         ...
 
 
-class NullTraceAdapter:
-    """Fallback adapter when tracing is unavailable."""
-
-    def get_trace_context(self) -> dict[str, str] | None:
-        """Tracing disabled.
-
-        Returns
-        -------
-        None
-            Always returns None; tracing is not active.
-        """
-        _ = self
-        return None
-
-
 class OTELTraceAdapter:
     """Adapter that extracts trace context from OpenTelemetry."""
 
     def __init__(self) -> None:
-        if _otel_trace is None:
-            msg = "opentelemetry is not installed"
-            raise ImportError(msg)
-        self._trace = _otel_trace
+        self._trace = otel_trace
 
     def get_trace_context(self) -> dict[str, str] | None:
         """Return trace_id/span_id from the current span.
@@ -162,17 +140,14 @@ class StructuredLogFormatter(logging.Formatter):
 
 
 def get_trace_adapter() -> TraceAdapter:
-    """Return an active TraceAdapter (OTEL or Null).
+    """Return an active TraceAdapter.
 
     Returns
     -------
     TraceAdapter
-        Adapter backed by OpenTelemetry if available, else a null adapter.
+        Adapter backed by OpenTelemetry.
     """
-    try:
-        return OTELTraceAdapter()
-    except ImportError:
-        return NullTraceAdapter()
+    return OTELTraceAdapter()
 
 
 def configure_structured_logging(

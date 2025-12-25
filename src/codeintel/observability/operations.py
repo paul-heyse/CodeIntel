@@ -9,17 +9,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 from weakref import WeakKeyDictionary
 
-from codeintel.observability.context import get_correlation_id
+from opentelemetry import trace as otel_trace
+
+from codeintel.observability.context import get_correlation_id, get_domain, get_run_id
 from codeintel.observability.otel import get_observability
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Counter, Histogram, Meter
     from opentelemetry.trace import Span
-
-try:
-    from opentelemetry import trace as otel_trace
-except ImportError:
-    otel_trace = None
 
 SpanAttributeValue = (
     str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
@@ -156,12 +153,18 @@ def _apply_span_attributes(
     span: Span,
     *,
     correlation_id: str | None,
+    run_id: str | None,
+    domain: str | None,
     component: str,
     operation: str,
     attributes: dict[str, object] | None,
 ) -> None:
     if correlation_id:
         span.set_attribute("codeintel.correlation_id", correlation_id)
+    if run_id:
+        span.set_attribute("codeintel.run_id", run_id)
+    if domain:
+        span.set_attribute("codeintel.domain", domain)
     span.set_attribute("codeintel.component", component)
     span.set_attribute("codeintel.operation", operation)
     if not attributes:
@@ -183,11 +186,17 @@ def record_operation_metrics(
     instruments = _get_instruments()
     if instruments is None:
         return
+    run_id = get_run_id()
+    domain = get_domain()
     attrs = {
         "codeintel.component": component,
         "codeintel.operation": operation,
         "codeintel.success": bool(success),
     }
+    if run_id:
+        attrs["codeintel.run_id"] = run_id
+    if domain:
+        attrs["codeintel.domain"] = domain
     instruments.op_calls.add(1, attributes=attrs)
     instruments.op_duration_ms.record(duration_ms, attributes=attrs)
 
@@ -208,6 +217,8 @@ def observe_operation(
     """
     obs = get_observability()
     cid = get_correlation_id()
+    run_id = get_run_id()
+    domain = get_domain()
 
     if obs.enabled and obs.tracer is not None:
         span_cm = obs.tracer.start_as_current_span(f"{component}.{operation}")
@@ -224,6 +235,8 @@ def observe_operation(
                 _apply_span_attributes(
                     span,
                     correlation_id=cid,
+                    run_id=run_id,
+                    domain=domain,
                     component=component,
                     operation=operation,
                     attributes=attributes,
@@ -248,6 +261,8 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
     """Record query metrics via OpenTelemetry and attach span attributes."""
     instruments = _get_instruments()
     obs = get_observability()
+    run_id = get_run_id()
+    domain = get_domain()
 
     normalized_endpoint = _normalize_endpoint(metrics.endpoint)
     component = _infer_component(metrics.endpoint)
@@ -255,6 +270,10 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
         "codeintel.endpoint": normalized_endpoint,
         "codeintel.component": component,
     }
+    if run_id:
+        attrs["codeintel.run_id"] = run_id
+    if domain:
+        attrs["codeintel.domain"] = domain
 
     if instruments is not None:
         instruments.query_calls.add(1, attributes=attrs)
@@ -263,7 +282,7 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
         if metrics.truncated:
             instruments.query_truncated.add(1, attributes=attrs)
 
-    if not obs.enabled or otel_trace is None:
+    if not obs.enabled:
         return
 
     span = otel_trace.get_current_span()

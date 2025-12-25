@@ -56,7 +56,7 @@ def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
     try:
         return ContractValidationMode(normalized)
     except ValueError as exc:
-        msg = "Invalid value for \"--validation-mode\""
+        msg = 'Invalid value for "--validation-mode"'
         raise ValidationError(msg) from exc
 
 

@@ -833,6 +833,45 @@ PLUGINS_PATH = OptionSpec(
 
 
 # ---------------------------------------------------------------------------
+# Registry command options
+# ---------------------------------------------------------------------------
+
+REGISTRY_INVENTORY_PATH = OptionSpec(
+    arg_name="inventory_path",
+    names=("--inventory-path",),
+    help="Override the DAG output inventory path.",
+)
+REGISTRY_OUTPUTS_DOMAIN = OptionSpec(
+    arg_name="domain",
+    names=("--domain",),
+    help="Filter outputs by domain (analytics, graphs, ingestion, export).",
+    show_choices=True,
+)
+REGISTRY_OUTPUTS_MATERIALIZATION = OptionSpec(
+    arg_name="materialization",
+    names=("--materialization",),
+    help="Filter outputs by materialization kind (table, artifact, mixed).",
+    show_choices=True,
+)
+REGISTRY_OUTPUTS_TARGETS = OptionSpec(
+    arg_name="targets",
+    names=("--target",),
+    help="Filter to specific output targets (repeatable).",
+)
+REGISTRY_OUTPUTS_TABLE_KEY = OptionSpec(
+    arg_name="table_key",
+    names=("--table-key",),
+    help="Filter outputs that produce the specified table key.",
+)
+REGISTRY_OUTPUTS_PILOT_ONLY = OptionSpec(
+    arg_name="pilot_only",
+    names=("--pilot-only",),
+    help="Limit results to outputs marked as pilot.",
+    negative=(),
+)
+
+
+# ---------------------------------------------------------------------------
 # Serve command options
 # ---------------------------------------------------------------------------
 
