@@ -6,13 +6,8 @@ from collections.abc import Callable, Mapping
 from types import ModuleType
 from typing import Protocol, cast
 
-from codeintel.build.hamilton.tagging import (
-    TagAttachContext,
-    TagKey,
-    TagValue,
-    apply_tags,
-    build_tag_kwargs,
-)
+from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue, tag_spec_from_tags
+from codeintel.build.hamilton.tagging import apply_tags, validate_tag_spec
 
 
 class _NamedCallable(Protocol):
@@ -53,24 +48,12 @@ def _extract_tag_metadata(fn: object) -> dict[str, TagValue]:
     return tags
 
 
-def _merge_extra_tags(
-    context: TagAttachContext | None,
-    extra_tags: Mapping[TagKey, TagValue] | None,
-) -> dict[TagKey, TagValue]:
-    merged: dict[TagKey, TagValue] = {}
-    if context is not None and context.extra_tags is not None:
-        merged.update(context.extra_tags)
-    if extra_tags is not None:
-        merged.update(extra_tags)
-    return merged
-
-
 def tagged_attach_node(
     module: ModuleType,
     *,
     node_name: str,
     fn: Callable[..., object],
-    context: TagAttachContext | None = None,
+    tag_spec: TagSpec,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> None:
     """Attach a callable to a module while enforcing canonical tag metadata.
@@ -80,41 +63,33 @@ def tagged_attach_node(
     TypeError
         If the provided object is not callable.
     ValueError
-        If no node_type can be resolved for tagging.
+        If required tags are missing or existing tags conflict with TagSpec.
     """
     if not callable(fn):
         msg = f"tagged_attach_node expects a callable for {node_name}"
         raise TypeError(msg)
+
+    resolved_spec = tag_spec.with_extra_tags(extra_tags)
+    validate_tag_spec(resolved_spec)
+    desired_tags = resolved_spec.to_tags()
+
     existing_tags = _extract_tag_metadata(fn)
-    merged_extra_tags = _merge_extra_tags(context, extra_tags)
+    for key, value in desired_tags.items():
+        if key in existing_tags and existing_tags[key] != value:
+            msg = f"Conflicting tag {key} for {node_name}"
+            raise ValueError(msg)
 
-    node_type_from_tags = existing_tags.get("node_type")
-    node_type_from_extra = merged_extra_tags.get("node_type")
-    resolved_node_type = context.node_type if context is not None else None
-    if resolved_node_type is None and isinstance(node_type_from_extra, str):
-        resolved_node_type = node_type_from_extra
-        merged_extra_tags.pop(cast("TagKey", "node_type"), None)
-    if resolved_node_type is None and isinstance(node_type_from_tags, str):
-        resolved_node_type = node_type_from_tags
-    if resolved_node_type is None:
-        msg = f"tagged_attach_node requires node_type for {node_name}"
-        raise ValueError(msg)
-
-    resolved_domain = context.domain if context else None
-    resolved_target = context.target if context else None
-    merged_extra_tags = merged_extra_tags or None
-    desired_tags = build_tag_kwargs(
-        node_type=resolved_node_type,
-        domain=resolved_domain,
-        target=resolved_target,
-        extra_tags=merged_extra_tags,
-    )
-    tags_to_add: dict[TagKey, TagValue] = {
-        key: value for key, value in desired_tags.items() if key not in existing_tags
-    }
+    tags_to_add = {key: value for key, value in desired_tags.items() if key not in existing_tags}
     tagged_fn = fn
     if tags_to_add:
         tagged_fn = apply_tags(fn, tags=tags_to_add)
+
+    if existing_tags:
+        existing_spec = tag_spec_from_tags(existing_tags)
+        if existing_spec is not None and existing_spec.node_type != resolved_spec.node_type:
+            msg = f"Existing node_type tag mismatch for {node_name}"
+            raise ValueError(msg)
+
     attach_node(module, node_name=node_name, fn=tagged_fn)
 
 

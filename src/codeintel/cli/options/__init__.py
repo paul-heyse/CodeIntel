@@ -10,12 +10,12 @@ from codeintel.cli.options.registry import (
 from codeintel.cli.options.types import CommandPath, OptionGroup, OptionSpec, option_param
 
 __all__ = [
-    "CommandPath",
     "JSON_FLAG",
     "OUTPUT_FORMAT",
     "PROJECT_ROOT",
     "SHARED_FLAGS",
     "VERBOSE",
+    "CommandPath",
     "OptionGroup",
     "OptionSpec",
     "option_param",

@@ -28,7 +28,11 @@ from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.base import CodeIntelError
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import ObservabilityRuntime, get_observability
+from codeintel.observability.otel import (
+    ObservabilityRuntime,
+    get_observability,
+    shutdown_observability,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -121,6 +125,7 @@ def run_cli_with_telemetry(
             )
     finally:
         _finalize_span(span, state=state, exit_code=exit_code)
+        shutdown_observability()
     raise SystemExit(exit_code)
 
 

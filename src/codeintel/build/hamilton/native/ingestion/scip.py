@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from numbers import Integral
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import hamilton.node as h_node
 from hamilton.function_modifiers import parameterize_values, source, value
@@ -85,8 +85,10 @@ from codeintel.ingestion.scip.manifest import (
 )
 from codeintel.ingestion.scip.telemetry import ScipRunTelemetry
 from codeintel.observability.teardown import (
+    ScipTeardownStatus,
     ScipTeardownTelemetry,
     emit_scip_teardown_telemetry,
+    emit_shutdown_error_event,
 )
 from codeintel.storage.io import IbisIOConfig, load_table_as_dataframe
 from codeintel.storage.tracking.build_tracking import ScipRunRecord
@@ -99,6 +101,8 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, Path, TargetRunRecord)
+
+ScipRunMode = Literal["incremental", "full", "skipped", "precheck_failed", "unknown"]
 
 SCIP_TARGET_NAME = "scip"
 SCIP_ARTIFACT_INDEX = "scip_index"
@@ -129,7 +133,7 @@ class ScipRunResult:
     result: ExecutionResult
     outputs: Mapping[str, Path] = field(default_factory=dict)
     run_id: str = ""
-    mode: str = "unknown"
+    mode: ScipRunMode = "unknown"
 
     def path_for(self, name: str) -> Path | None:
         """Return the path for a named output.
@@ -624,7 +628,7 @@ def _execute_scip_incremental(
         return ScipRunResult(
             result=ExecutionResult.failed(str(exc)),
             run_id=run_id,
-            mode=telemetry.mode or "incremental",
+            mode=_normalize_scip_run_mode(telemetry.mode or "incremental"),
         )
 
     if not result.success:
@@ -634,14 +638,14 @@ def _execute_scip_incremental(
         return ScipRunResult(
             result=ExecutionResult.failed(result.error or "SCIP indexing failed"),
             run_id=run_id,
-            mode=telemetry.mode or "incremental",
+            mode=_normalize_scip_run_mode(telemetry.mode or "incremental"),
         )
     _persist_scip_telemetry_safe(env, telemetry)
     return ScipRunResult(
         result=ExecutionResult.ok(),
         outputs={SCIP_ARTIFACT_INDEX: result.index_path or output_scip},
         run_id=run_id,
-        mode=telemetry.mode or "incremental",
+        mode=_normalize_scip_run_mode(telemetry.mode or "incremental"),
     )
 
 
@@ -1228,6 +1232,26 @@ def _should_emit_scip_teardown(run: ScipRunResult) -> bool:
     return run.mode not in {"skipped", "precheck_failed"}
 
 
+def _normalize_scip_run_mode(mode: str | None) -> ScipRunMode:
+    if mode == "full":
+        return "full"
+    if mode == "incremental":
+        return "incremental"
+    if mode == "precheck_failed":
+        return "precheck_failed"
+    if mode == "skipped":
+        return "skipped"
+    if mode == "unknown":
+        return "unknown"
+    return "unknown"
+
+
+def _normalize_scip_teardown_status(status: str) -> ScipTeardownStatus:
+    if status in {"failed", "skipped", "succeeded"}:
+        return cast("ScipTeardownStatus", status)
+    return "unknown"
+
+
 def _emit_scip_teardown(
     env: BuildEnv,
     run: ScipRunResult,
@@ -1244,7 +1268,7 @@ def _emit_scip_teardown(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
         scip_mode=run.mode or None,
-        status=record.status,
+        status=_normalize_scip_teardown_status(record.status),
         error_summary=error_summary,
         duration_ms=record.duration_ms,
     )
@@ -1259,6 +1283,21 @@ def _emit_scip_teardown_safe(
     try:
         _emit_scip_teardown(env, run, record)
     except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        emit_shutdown_error_event(
+            span_name="scip.teardown",
+            error=exc,
+            logger=log,
+            attributes={
+                key: value
+                for key, value in {
+                    "scip.run_id": run.run_id or None,
+                    "scip.repo": env.snapshot.repo,
+                    "scip.commit": env.snapshot.commit,
+                    "scip.mode": run.mode or None,
+                }.items()
+                if value is not None
+            },
+        )
         log.warning("Failed to emit SCIP teardown telemetry: %s", exc)
 
 

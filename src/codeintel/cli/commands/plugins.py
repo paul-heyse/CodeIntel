@@ -8,13 +8,12 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
@@ -31,6 +30,9 @@ from codeintel.cli.plugins import (
     create_plugin_scaffold,
     get_plugin_manager,
 )
+from codeintel.cli.options.registry import PLUGINS_NAME, PLUGINS_OUTPUT_DIR, PLUGINS_PATH
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -38,6 +40,14 @@ if TYPE_CHECKING:
 LOG = logging.getLogger(__name__)
 
 plugins_app = App(name="plugins", help="Manage CLI plugins")
+
+PLUGINS_LIST_PATH: CommandPath = ("plugins", "list")
+PLUGINS_DISCOVER_PATH: CommandPath = ("plugins", "discover")
+PLUGINS_INFO_PATH: CommandPath = ("plugins", "info")
+PLUGINS_PATHS_PATH: CommandPath = ("plugins", "paths")
+PLUGINS_NEW_PATH: CommandPath = ("plugins", "new")
+PLUGINS_TEST_PATH: CommandPath = ("plugins", "test")
+PLUGINS_VALIDATE_PATH: CommandPath = ("plugins", "validate")
 
 
 @result_type
@@ -239,7 +249,7 @@ class PluginsList(Command[PluginsListResult]):
 
     __operation_id__ = "plugins.list"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(PLUGINS_LIST_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginsListResult]:
         """Execute plugin listing.
@@ -278,7 +288,7 @@ class PluginsDiscover(Command[PluginsDiscoverResult]):
 
     __operation_id__ = "plugins.discover"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(PLUGINS_DISCOVER_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginsDiscoverResult]:
         """Execute plugin discovery.
@@ -335,8 +345,8 @@ class PluginsInfo(Command[PluginInfoResult]):
 
     __operation_id__ = "plugins.info"
 
-    name: Annotated[str, Parameter(help="Plugin name")]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    name: Annotated[str, option_param(PLUGINS_NAME, command_path=PLUGINS_INFO_PATH)]
+    flags: SharedFlags = shared_flags_field(PLUGINS_INFO_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginInfoResult]:
         """Execute plugin info query.
@@ -384,7 +394,7 @@ class PluginsPaths(Command[PluginPathsResult]):
 
     __operation_id__ = "plugins.paths"
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(PLUGINS_PATHS_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginPathsResult]:
         """Execute paths listing.
@@ -425,12 +435,12 @@ class PluginsNew(Command[PluginNewResult]):
 
     __operation_id__ = "plugins.new"
 
-    name: Annotated[str, Parameter(help="Plugin name")]
+    name: Annotated[str, option_param(PLUGINS_NAME, command_path=PLUGINS_NEW_PATH)]
     output: Annotated[
         Path | None,
-        Parameter(name="--output", help="Output directory"),
+        option_param(PLUGINS_OUTPUT_DIR, command_path=PLUGINS_NEW_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(PLUGINS_NEW_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginNewResult]:
         """Execute plugin scaffold creation.
@@ -473,8 +483,8 @@ class PluginsTest(Command[PluginTestResult]):
 
     __operation_id__ = "plugins.test"
 
-    path: Annotated[Path, Parameter(help="Plugin directory")]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    path: Annotated[Path, option_param(PLUGINS_PATH, command_path=PLUGINS_TEST_PATH)]
+    flags: SharedFlags = shared_flags_field(PLUGINS_TEST_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginTestResult]:
         """Execute plugin tests.
@@ -542,8 +552,8 @@ class PluginsValidate(Command[PluginValidateResult]):
 
     __operation_id__ = "plugins.validate"
 
-    path: Annotated[Path, Parameter(help="Plugin directory")]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    path: Annotated[Path, option_param(PLUGINS_PATH, command_path=PLUGINS_VALIDATE_PATH)]
+    flags: SharedFlags = shared_flags_field(PLUGINS_VALIDATE_PATH)
 
     def execute(self, ctx: CommandContext) -> CliResult[PluginValidateResult]:
         """Execute manifest validation.

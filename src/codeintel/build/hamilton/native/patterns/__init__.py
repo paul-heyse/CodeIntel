@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+from codeintel.build.hamilton.native.patterns.access import (
+    DataAccessSpec,
+    load_access,
+    load_query_spec,
+    load_table_spec,
+)
 from codeintel.build.hamilton.native.patterns.loaders import load_query, load_table
 from codeintel.build.hamilton.native.patterns.materialization_collectors import (
     make_artifact_materializations_collector,
@@ -44,6 +50,7 @@ __all__ = [
     "ArtifactSaveSpec",
     "IbisTableSaveSpec",
     "IngestStep",
+    "DataAccessSpec",
     "OutputRole",
     "SaverContext",
     "TableOutputSpec",
@@ -53,8 +60,11 @@ __all__ = [
     "ToolTargetSpec",
     "attach_tool_target_template",
     "finalize_target_from_materializations",
+    "load_access",
     "load_query",
+    "load_query_spec",
     "load_table",
+    "load_table_spec",
     "make_artifact_materializations_collector",
     "make_mixed_materializations_collector",
     "make_table_materializations_collector",

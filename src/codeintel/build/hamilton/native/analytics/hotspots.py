@@ -24,7 +24,7 @@ from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.patterns import load_table
+from codeintel.build.hamilton.native.patterns import DataAccessSpec, load_table_spec
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.nodes.module_attach import tagged_attach_node
 from codeintel.build.hamilton.options_loading import load_target_options
@@ -34,6 +34,7 @@ from codeintel.build.hamilton.run_records import (
     should_skip_native_target,
 )
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
@@ -56,27 +57,41 @@ MAX_STDERR_CHARS = 500
 
 _MODULE: ModuleType = sys.modules[__name__]
 
-hotspots__ast_metrics_table = load_table(
-    domain="analytics",
-    target=HOTSPOTS_TARGET_NAME,
-    table_key=AST_METRICS_TABLE_KEY,
-    node_name="hotspots__ast_metrics_table",
+hotspots__ast_metrics_table = load_table_spec(
+    DataAccessSpec(
+        domain="analytics",
+        target=HOTSPOTS_TARGET_NAME,
+        table_key=AST_METRICS_TABLE_KEY,
+        node_name="hotspots__ast_metrics_table",
+    )
 )
 tagged_attach_node(
     _MODULE,
     node_name=hotspots__ast_metrics_table.__name__,
     fn=hotspots__ast_metrics_table,
+    tag_spec=TagSpec.for_loader_query(
+        domain="analytics",
+        target=HOTSPOTS_TARGET_NAME,
+        table_key=AST_METRICS_TABLE_KEY,
+    ),
 )
-hotspots__modules_table = load_table(
-    domain="analytics",
-    target=HOTSPOTS_TARGET_NAME,
-    table_key=MODULES_TABLE_KEY,
-    node_name="hotspots__modules_table",
+hotspots__modules_table = load_table_spec(
+    DataAccessSpec(
+        domain="analytics",
+        target=HOTSPOTS_TARGET_NAME,
+        table_key=MODULES_TABLE_KEY,
+        node_name="hotspots__modules_table",
+    )
 )
 tagged_attach_node(
     _MODULE,
     node_name=hotspots__modules_table.__name__,
     fn=hotspots__modules_table,
+    tag_spec=TagSpec.for_loader_query(
+        domain="analytics",
+        target=HOTSPOTS_TARGET_NAME,
+        table_key=MODULES_TABLE_KEY,
+    ),
 )
 
 

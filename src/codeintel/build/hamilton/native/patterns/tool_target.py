@@ -34,6 +34,7 @@ from codeintel.build.hamilton.native.tool_results import HasExecutionResult, Too
 from codeintel.build.hamilton.nodes.module_attach import tagged_attach_node
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
@@ -274,11 +275,25 @@ def attach_tool_target_template(
         target=spec.target_name,
         extra_tags=spec.tool_tags,
     )(run_fn)
-    tagged_attach_node(module, node_name=run_node, fn=tagged_run)
+    tagged_attach_node(
+        module,
+        node_name=run_node,
+        fn=tagged_run,
+        tag_spec=TagSpec.for_tool(
+            domain=spec.domain,
+            target=spec.target_name,
+            extra_tags=spec.tool_tags,
+        ),
+    )
 
     if ingest_fn is not None:
         tagged_ingest = tag_compute(domain=spec.domain, target=spec.target_name)(ingest_fn)
-        tagged_attach_node(module, node_name=ingest_node, fn=tagged_ingest)
+        tagged_attach_node(
+            module,
+            node_name=ingest_node,
+            fn=tagged_ingest,
+            tag_spec=TagSpec.for_compute(domain=spec.domain, target=spec.target_name),
+        )
 
     saver_context = SaverContext(
         domain=spec.domain,
@@ -313,7 +328,12 @@ def attach_tool_target_template(
         artifacts=[artifact.name for artifact in spec.artifacts],
         node_name=artifact_collector_node,
     )
-    tagged_attach_node(module, node_name=artifact_collector_node, fn=artifact_collector)
+    tagged_attach_node(
+        module,
+        node_name=artifact_collector_node,
+        fn=artifact_collector,
+        tag_spec=TagSpec.for_helper(domain=spec.domain, target=spec.target_name),
+    )
 
     table_collector = make_table_materializations_collector(
         domain=spec.domain,
@@ -321,7 +341,12 @@ def attach_tool_target_template(
         table_keys=[table.table_key for table in spec.tables],
         node_name=table_collector_node,
     )
-    tagged_attach_node(module, node_name=table_collector_node, fn=table_collector)
+    tagged_attach_node(
+        module,
+        node_name=table_collector_node,
+        fn=table_collector,
+        tag_spec=TagSpec.for_helper(domain=spec.domain, target=spec.target_name),
+    )
 
     anchor = _build_anchor(
         inputs=_AnchorInputs(
@@ -333,7 +358,12 @@ def attach_tool_target_template(
             hash_options_node=hash_options_node,
         ),
     )
-    tagged_attach_node(module, node_name=f"t__{spec.target_name}", fn=anchor)
+    tagged_attach_node(
+        module,
+        node_name=f"t__{spec.target_name}",
+        fn=anchor,
+        tag_spec=TagSpec.for_materialize(domain=spec.domain, target=spec.target_name),
+    )
 
 
 def _attach_artifact_node(
@@ -371,7 +401,12 @@ def _attach_artifact_node(
             output_role=artifact_spec.output_role,
         ),
     )
-    tagged_attach_node(context.module, node_name=artifact_fn.__name__, fn=decorator(artifact_fn))
+    tagged_attach_node(
+        context.module,
+        node_name=artifact_fn.__name__,
+        fn=decorator(artifact_fn),
+        tag_spec=TagSpec.for_compute(domain=context.domain, target=context.target_name),
+    )
 
 
 def _attach_table_rows_node(
@@ -418,7 +453,12 @@ def _attach_table_rows_node(
             output_role=table_spec.output_role,
         ),
     )
-    tagged_attach_node(context.module, node_name=node_name, fn=decorator(rows_fn))
+    tagged_attach_node(
+        context.module,
+        node_name=node_name,
+        fn=decorator(rows_fn),
+        tag_spec=TagSpec.for_compute(domain=context.domain, target=context.target_name),
+    )
 
 
 def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:

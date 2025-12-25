@@ -5,12 +5,11 @@ Note: Dataset ops commands require runtime/gateway access via handler pattern.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.ops import (
     dataset_constraints_handler,
@@ -20,6 +19,9 @@ from codeintel.cli.handlers.ops import (
     dataset_list_handler,
     dataset_verify_handler,
 )
+from codeintel.cli.options.registry import DATASET_TABLE_KEY
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 dataset_app = App(
     name="dataset",
@@ -31,6 +33,13 @@ _DATASET_NO_RUNTIME_CONFIG = CommandConfig(require_runtime=False, require_gatewa
 
 _DATASET_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
+DATASET_LIST_PATH: CommandPath = ("dataset", "list")
+DATASET_DESCRIBE_PATH: CommandPath = ("dataset", "describe")
+DATASET_VERIFY_PATH: CommandPath = ("dataset", "verify")
+DATASET_INFO_PATH: CommandPath = ("dataset", "info")
+DATASET_FLOW_PATH: CommandPath = ("dataset", "flow")
+DATASET_CONSTRAINTS_PATH: CommandPath = ("dataset", "constraints")
+
 
 @cli_command("dataset.list", handler=dataset_list_handler, config=_DATASET_NO_RUNTIME_CONFIG)
 @dataset_app.command(name="list")
@@ -38,7 +47,7 @@ _DATASET_RUNTIME_CONFIG = CommandConfig(require_runtime=True, require_gateway=Tr
 class DatasetListCommand:
     """List datasets from the registry."""
 
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DATASET_LIST_PATH)
 
 
 @cli_command(
@@ -51,12 +60,9 @@ class DatasetDescribeCommand:
 
     table_key: Annotated[
         str,
-        Parameter(
-            name=None,
-            help="Dataset table key (e.g., 'core.goids').",
-        ),
+        option_param(DATASET_TABLE_KEY, command_path=DATASET_DESCRIBE_PATH),
     ]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DATASET_DESCRIBE_PATH)
 
 
 @cli_command("dataset.verify", handler=dataset_verify_handler, config=_DATASET_RUNTIME_CONFIG)
@@ -67,12 +73,9 @@ class DatasetVerifyCommand:
 
     table_key: Annotated[
         str | None,
-        Parameter(
-            name=None,
-            help="Dataset table key to verify (verifies all if not specified).",
-        ),
+        option_param(DATASET_TABLE_KEY, command_path=DATASET_VERIFY_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DATASET_VERIFY_PATH)
 
 
 @cli_command("dataset.info", handler=dataset_info_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -91,12 +94,9 @@ class DatasetInfoCommand:
 
     table_key: Annotated[
         str,
-        Parameter(
-            name=None,
-            help="Dataset table key (e.g., 'analytics.function_metrics').",
-        ),
+        option_param(DATASET_TABLE_KEY, command_path=DATASET_INFO_PATH),
     ]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DATASET_INFO_PATH)
 
 
 @cli_command("dataset.flow", handler=dataset_flow_handler, config=_DATASET_NO_RUNTIME_CONFIG)
@@ -111,12 +111,9 @@ class DatasetFlowCommand:
 
     table_key: Annotated[
         str,
-        Parameter(
-            name=None,
-            help="Dataset table key (e.g., 'analytics.function_metrics').",
-        ),
+        option_param(DATASET_TABLE_KEY, command_path=DATASET_FLOW_PATH),
     ]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DATASET_FLOW_PATH)
 
 
 @cli_command(
@@ -138,12 +135,9 @@ class DatasetConstraintsCommand:
 
     table_key: Annotated[
         str,
-        Parameter(
-            name=None,
-            help="Dataset table key (e.g., 'analytics.function_metrics').",
-        ),
+        option_param(DATASET_TABLE_KEY, command_path=DATASET_CONSTRAINTS_PATH),
     ]
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(DATASET_CONSTRAINTS_PATH)
 
 
 __all__ = [

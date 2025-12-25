@@ -259,6 +259,18 @@ class ObservabilityShutdownResult:
         }
 
 
+def _force_flush_provider(provider: object, *, label: str, errors: list[str]) -> bool:
+    force_flush = getattr(provider, "force_flush", None)
+    if force_flush is None:
+        return True
+    try:
+        force_flush()
+    except (RuntimeError, ValueError, TypeError, OSError) as exc:
+        errors.append(f"{label}:{exc}")
+        return False
+    return True
+
+
 @dataclass(frozen=True, slots=True)
 class _OtelComponents:
     set_meter_provider: Callable[[MeterProviderApiType], None]
@@ -676,6 +688,44 @@ def shutdown_observability() -> ObservabilityShutdownResult | None:
     return result
 
 
+def flush_observability() -> ObservabilityShutdownResult | None:
+    """Force-flush the active observability runtime without shutting it down.
+
+    Returns
+    -------
+    ObservabilityShutdownResult | None
+        Structured flush results, or None if observability is inactive.
+    """
+    runtime = _ObservabilityHolder.get_or_none()
+    if runtime is None or not runtime.enabled:
+        return None
+    if otel_trace is None or otel_metrics is None:
+        return None
+    start = time.perf_counter()
+    errors: list[str] = []
+    flush_ok = True
+    tracer_provider = otel_trace.get_tracer_provider()
+    meter_provider = otel_metrics.get_meter_provider()
+    if tracer_provider is not None:
+        flush_ok = _force_flush_provider(
+            tracer_provider,
+            label="tracer",
+            errors=errors,
+        ) and flush_ok
+    if meter_provider is not None:
+        flush_ok = _force_flush_provider(
+            meter_provider,
+            label="meter",
+            errors=errors,
+        ) and flush_ok
+    duration_ms = (time.perf_counter() - start) * 1000
+    return ObservabilityShutdownResult(
+        flush_ok=flush_ok,
+        flush_ms=duration_ms,
+        errors=tuple(errors),
+    )
+
+
 def _log_shutdown_result(result: ObservabilityShutdownResult) -> None:
     payload = json.dumps(result.to_log_payload(), sort_keys=True)
     if result.flush_ok:
@@ -689,6 +739,7 @@ __all__ = [
     "ObservabilityRuntime",
     "ObservabilityShutdownResult",
     "bootstrap_observability",
+    "flush_observability",
     "get_observability",
     "observability_config_from_settings",
     "shutdown_observability",

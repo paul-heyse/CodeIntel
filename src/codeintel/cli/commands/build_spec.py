@@ -6,14 +6,20 @@ These CLI commands expose compilation for CI gating and human inspection.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.build_spec import build_spec_compile_handler
+from codeintel.cli.options.registry import (
+    BUILD_SPEC_FORMAT,
+    BUILD_SPEC_INCLUDE_COLUMNS,
+    BUILD_SPEC_OUTPUT,
+)
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 build_spec_app = App(
     name="spec",
@@ -21,6 +27,8 @@ build_spec_app = App(
 )
 
 _SPEC_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+
+BUILD_SPEC_COMPILE_PATH: CommandPath = ("build", "spec", "compile")
 
 
 @cli_command("build.spec.compile", handler=build_spec_compile_handler, config=_SPEC_CONFIG)
@@ -31,27 +39,17 @@ class BuildSpecCompileCommand:
 
     include_columns: Annotated[
         bool,
-        Parameter(
-            name=["--include-columns"],
-            help="Include dataset column names in the compiled spec.",
-            negative=["--no-include-columns"],
-        ),
+        option_param(BUILD_SPEC_INCLUDE_COLUMNS, command_path=BUILD_SPEC_COMPILE_PATH),
     ] = False
     output_format: Annotated[
         str,
-        Parameter(
-            name=["--format"],
-            help="Output format: json (default).",
-        ),
+        option_param(BUILD_SPEC_FORMAT, command_path=BUILD_SPEC_COMPILE_PATH),
     ] = "json"
     output_file: Annotated[
         str | None,
-        Parameter(
-            name=["--output", "-o"],
-            help="Output file path (stdout if not specified).",
-        ),
+        option_param(BUILD_SPEC_OUTPUT, command_path=BUILD_SPEC_COMPILE_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(BUILD_SPEC_COMPILE_PATH)
 
 
 __all__ = [

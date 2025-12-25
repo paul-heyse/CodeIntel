@@ -1,76 +1,32 @@
-"""Canonical Hamilton tagging helpers for build nodes.
-
-This module provides small wrappers around Hamilton's ``@tag`` decorator using the canonical tag
-keys and node type values defined in ``codeintel.core.hamilton.tags``.
-
-The intent is to prevent "tag drift" by making common tagging patterns easy and consistent while
-still allowing controlled extension via ``extra_tags``.
-"""
+"""Canonical Hamilton tagging helpers for build nodes."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, ParamSpec, Protocol, TypedDict, TypeVar, cast
+from collections.abc import Callable, Collection, Mapping
+from typing import ParamSpec, Protocol, TypeVar, cast
 
 from hamilton.function_modifiers import tag as h_tag
 
-from codeintel.core.hamilton.tags import (
-    NODE_TYPE_ARTIFACT,
-    NODE_TYPE_COMPUTE,
-    NODE_TYPE_DATASET,
-    NODE_TYPE_HELPER,
-    NODE_TYPE_LOADER_DATAFRAME,
-    NODE_TYPE_LOADER_QUERY,
-    NODE_TYPE_MATERIALIZE,
-    NODE_TYPE_TOOL,
-    TAG_ARTIFACT,
-    TAG_TABLE_KEY,
+from codeintel.build.hamilton.tag_spec import (
+    NodeType,
+    TagKey,
+    TagSpec,
+    TagValue,
+    tag_spec_from_tags,
+    validate_tag_spec,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Collection, Mapping
-    from types import EllipsisType
 
 P = ParamSpec("P")
 R = TypeVar("R")
 Decorator = Callable[[Callable[P, R]], Callable[P, R]]
-TagValue = str | list[str]
-TagKey = Literal[
-    "domain",
-    "target",
-    "table_key",
-    "artifact",
-    "node_type",
-    "output_kind",
-    "semantic_id",
-    "entity",
-    "grain",
-    "mcp_visible",
-    "tools",
-    "target_resources",
-    "target_execution",
-    "target_parameters",
-    "target_estimated_duration_ms",
-    "target_spec_version",
-]
 
 
-@dataclass(frozen=True, slots=True)
-class TagAttachContext:
-    """Context for attaching canonical tags to dynamic nodes."""
-
-    domain: str | None = None
-    target: str | None = None
-    node_type: str | None = None
-    extra_tags: Mapping[TagKey, TagValue] | None = None
-
-
-class _HamiltonTagKwargs(TypedDict, total=False):
+class _HamiltonTagKwargs(Protocol):
     domain: TagValue
     target: TagValue
     table_key: TagValue
     artifact: TagValue
+    artifact_path_template: TagValue
     node_type: TagValue
     output_kind: TagValue
     semantic_id: TagValue
@@ -89,7 +45,7 @@ class _TagDecoratorFactory(Protocol):
     def __call__(
         self,
         *,
-        target_: str | Collection[str] | EllipsisType | None = None,
+        target_: str | Collection[str] | None = None,
         **tags: TagValue,
     ) -> object: ...
 
@@ -97,112 +53,12 @@ class _TagDecoratorFactory(Protocol):
 _TAG_DECORATOR_FACTORY = cast("_TagDecoratorFactory", h_tag)
 
 
-def _set_tag_primary(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> bool:
-    match key:
-        case "domain":
-            tags["domain"] = value
-        case "target":
-            tags["target"] = value
-        case "table_key":
-            tags["table_key"] = value
-        case "artifact":
-            tags["artifact"] = value
-        case "node_type":
-            tags["node_type"] = value
-        case _:
-            return False
-    return True
-
-
-_SECONDARY_TAGS: dict[TagKey, TagKey] = {
-    "output_kind": "output_kind",
-    "semantic_id": "semantic_id",
-    "entity": "entity",
-    "grain": "grain",
-    "mcp_visible": "mcp_visible",
-    "tools": "tools",
-    "target_resources": "target_resources",
-    "target_execution": "target_execution",
-    "target_parameters": "target_parameters",
-    "target_estimated_duration_ms": "target_estimated_duration_ms",
-    "target_spec_version": "target_spec_version",
-}
-
-
-def _set_tag_secondary(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> None:
-    mapped = _SECONDARY_TAGS.get(key)
-    if mapped is None:
-        return
-    tags[mapped] = value
-
-
-def _set_tag(tags: _HamiltonTagKwargs, *, key: TagKey, value: TagValue) -> None:
-    if _set_tag_primary(tags, key=key, value=value):
-        return
-    _set_tag_secondary(tags, key=key, value=value)
-
-
-def _merge_extra_tags(
-    base: _HamiltonTagKwargs,
-    extra_tags: Mapping[TagKey, TagValue] | None,
-) -> _HamiltonTagKwargs:
-    if extra_tags is None:
-        return base
-    for key, value in extra_tags.items():
-        _set_tag(base, key=key, value=value)
-    return base
-
-
-def _build_common_tags(
-    *,
-    node_type: str,
-    domain: str | None,
-    target: str | None,
-    extra_tags: Mapping[TagKey, TagValue] | None,
-) -> _HamiltonTagKwargs:
-    base: _HamiltonTagKwargs = {"node_type": node_type}
-    if domain is not None:
-        base["domain"] = domain
-    if target is not None:
-        base["target"] = target
-    return _merge_extra_tags(base, extra_tags)
-
-
-def build_tag_kwargs(
-    *,
-    node_type: str,
-    domain: str | None = None,
-    target: str | None = None,
-    extra_tags: Mapping[TagKey, TagValue] | None = None,
-) -> dict[TagKey, TagValue]:
-    """Return canonical tag keyword arguments for node attachment.
-
-    Returns
-    -------
-    dict[TagKey, TagValue]
-        Tag mapping suitable for Hamilton tag decorators.
-    """
-    tags = _build_common_tags(
-        node_type=node_type,
-        domain=domain,
-        target=target,
-        extra_tags=extra_tags,
-    )
-    return cast("dict[TagKey, TagValue]", tags)
-
-
 def apply_tags[TCallable](
     fn: TCallable,
     *,
     tags: Mapping[TagKey, TagValue],
 ) -> TCallable:
-    """Apply canonical tag metadata to a callable.
-
-    Returns
-    -------
-    TCallable
-        Callable decorated with Hamilton tag metadata.
-    """
+    """Apply canonical tag metadata to a callable."""
     if not tags:
         return fn
     tags_kwargs: dict[TagKey, TagValue] = dict(tags)
@@ -210,10 +66,21 @@ def apply_tags[TCallable](
     return cast("TCallable", decorator(cast("Callable[..., object]", fn)))
 
 
+def tag_from_spec(
+    spec: TagSpec,
+    *,
+    target_: str | Collection[str] | None = None,
+) -> Decorator[P, R]:
+    """Create a Hamilton tag decorator from a TagSpec."""
+    validate_tag_spec(spec)
+    tags = spec.to_tags()
+    return _tag(cast("_HamiltonTagKwargs", tags), target_=target_)
+
+
 def _tag(
     tags: _HamiltonTagKwargs,
     *,
-    target_: str | Collection[str] | EllipsisType | None,
+    target_: str | Collection[str] | None,
 ) -> Decorator[P, R]:
     tags_kwargs = cast("dict[TagKey, TagValue]", tags)
     if target_ is None:
@@ -223,207 +90,135 @@ def _tag(
 
 def tag_compute(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a compute node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical compute tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_COMPUTE,
-        domain=domain,
-        target=target,
-        extra_tags=extra_tags,
-    )
-    return _tag(tags, target_=target_)
+    """Tag a compute node with canonical build tags."""
+    spec = TagSpec.for_compute(domain=domain, target=target, extra_tags=extra_tags)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_materialize(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a materialize node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical materialize tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_MATERIALIZE,
-        domain=domain,
-        target=target,
-        extra_tags=extra_tags,
-    )
-    return _tag(tags, target_=target_)
+    """Tag a materialize node with canonical build tags."""
+    spec = TagSpec.for_materialize(domain=domain, target=target, extra_tags=extra_tags)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_dataset(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
     table_key: str,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a dataset-producing node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical dataset tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_DATASET,
-        domain=domain,
-        target=target,
-        extra_tags=extra_tags,
-    )
-    tags[cast("TagKey", TAG_TABLE_KEY)] = table_key
-    return _tag(tags, target_=target_)
+    """Tag a dataset-producing node with canonical build tags."""
+    spec = TagSpec.for_dataset(domain=domain, target=target, table_key=table_key, extra_tags=extra_tags)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_artifact(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
     artifact: str,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag an artifact-producing node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical artifact tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_ARTIFACT,
+    """Tag an artifact-producing node with canonical build tags."""
+    spec = TagSpec.for_artifact(
         domain=domain,
         target=target,
+        artifact_name=artifact,
         extra_tags=extra_tags,
     )
-    tags[cast("TagKey", TAG_ARTIFACT)] = artifact
-    return _tag(tags, target_=target_)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_tool(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a tool/external-boundary node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical tool tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_TOOL,
-        domain=domain,
-        target=target,
-        extra_tags=extra_tags,
-    )
-    return _tag(tags, target_=target_)
+    """Tag a tool/external-boundary node with canonical build tags."""
+    spec = TagSpec.for_tool(domain=domain, target=target, extra_tags=extra_tags)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_loader_query(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
     table_key: str,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a loader/query node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical loader-query tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_LOADER_QUERY,
+    """Tag a loader/query node with canonical build tags."""
+    spec = TagSpec.for_loader_query(
         domain=domain,
         target=target,
+        table_key=table_key,
         extra_tags=extra_tags,
     )
-    tags[cast("TagKey", TAG_TABLE_KEY)] = table_key
-    return _tag(tags, target_=target_)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_loader_dataframe(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
     table_key: str,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a loader/dataframe node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical loader-dataframe tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_LOADER_DATAFRAME,
+    """Tag a loader/dataframe node with canonical build tags."""
+    spec = TagSpec.for_loader_dataframe(
         domain=domain,
         target=target,
+        table_key=table_key,
         extra_tags=extra_tags,
     )
-    tags[cast("TagKey", TAG_TABLE_KEY)] = table_key
-    return _tag(tags, target_=target_)
+    return tag_from_spec(spec, target_=target_)
 
 
 def tag_helper(
     *,
-    domain: str | None = None,
+    domain: str,
     target: str | None = None,
-    target_: str | Collection[str] | EllipsisType | None = None,
+    target_: str | Collection[str] | None = None,
     extra_tags: Mapping[TagKey, TagValue] | None = None,
 ) -> Decorator[P, R]:
-    """Tag a helper node with canonical build tags.
-
-    Returns
-    -------
-    Decorator
-        Hamilton decorator that applies the canonical helper tags.
-    """
-    tags = _build_common_tags(
-        node_type=NODE_TYPE_HELPER,
-        domain=domain,
-        target=target,
-        extra_tags=extra_tags,
-    )
-    return _tag(tags, target_=target_)
+    """Tag a helper node with canonical build tags."""
+    spec = TagSpec.for_helper(domain=domain, target=target, extra_tags=extra_tags)
+    return tag_from_spec(spec, target_=target_)
 
 
 __all__ = [
     "Decorator",
-    "TagAttachContext",
+    "NodeType",
+    "TagKey",
+    "TagSpec",
+    "TagValue",
     "apply_tags",
-    "build_tag_kwargs",
     "tag_artifact",
     "tag_compute",
     "tag_dataset",
+    "tag_from_spec",
     "tag_helper",
     "tag_loader_dataframe",
     "tag_loader_query",
     "tag_materialize",
+    "tag_spec_from_tags",
     "tag_tool",
+    "validate_tag_spec",
 ]

@@ -9,9 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated
 
-from cyclopts import App, Parameter
+from cyclopts import App
 
-from codeintel.cli.commands._common import SHARED_FLAGS_METADATA, SharedFlags
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.storage import (
     export_database_handler,
@@ -19,6 +18,14 @@ from codeintel.cli.handlers.storage import (
     profile_storage_handler,
     validate_macros_handler,
 )
+from codeintel.cli.options.registry import (
+    STORAGE_DB_PATH,
+    STORAGE_INCLUDE_VIEWS,
+    STORAGE_INPUT_DIR,
+    STORAGE_OUTPUT_DIR,
+)
+from codeintel.cli.options.shared_flags import SharedFlags, shared_flags_field
+from codeintel.cli.options.types import CommandPath, option_param
 
 storage_app = App(
     name="storage",
@@ -27,6 +34,10 @@ storage_app = App(
 
 
 _STORAGE_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
+STORAGE_VALIDATE_PATH: CommandPath = ("storage", "validate-macros")
+STORAGE_PROFILE_PATH: CommandPath = ("storage", "profile")
+STORAGE_EXPORT_PATH: CommandPath = ("storage", "export-db")
+STORAGE_IMPORT_PATH: CommandPath = ("storage", "import-db")
 
 
 @cli_command("storage.validate_macros", handler=validate_macros_handler, config=_STORAGE_CONFIG)
@@ -37,12 +48,9 @@ class ValidateMacrosCommand:
 
     db_path: Annotated[
         Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database.",
-        ),
+        option_param(STORAGE_DB_PATH, command_path=STORAGE_VALIDATE_PATH),
     ] = None
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(STORAGE_VALIDATE_PATH)
 
 
 @cli_command("storage.profile", handler=profile_storage_handler, config=_STORAGE_CONFIG)
@@ -53,27 +61,17 @@ class ProfileStorageCommand:
 
     db_path: Annotated[
         Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database.",
-        ),
+        option_param(STORAGE_DB_PATH, command_path=STORAGE_PROFILE_PATH),
     ] = None
     output_dir: Annotated[
         Path,
-        Parameter(
-            name="--output-dir",
-            help="Output directory for profile report.",
-        ),
+        option_param(STORAGE_OUTPUT_DIR, command_path=STORAGE_PROFILE_PATH),
     ] = field(default_factory=lambda: Path("build/storage_profile"))
     include_views: Annotated[
         bool,
-        Parameter(
-            name="--include-views",
-            help="Include views in profiling.",
-            negative=(),
-        ),
+        option_param(STORAGE_INCLUDE_VIEWS, command_path=STORAGE_PROFILE_PATH),
     ] = False
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(STORAGE_PROFILE_PATH)
 
 
 @cli_command("storage.export_db", handler=export_database_handler, config=_STORAGE_CONFIG)
@@ -84,19 +82,13 @@ class ExportDatabaseCommand:
 
     db_path: Annotated[
         Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database.",
-        ),
+        option_param(STORAGE_DB_PATH, command_path=STORAGE_EXPORT_PATH),
     ] = None
     output_dir: Annotated[
         Path,
-        Parameter(
-            name="--output-dir",
-            help="Directory to write the export into.",
-        ),
+        option_param(STORAGE_OUTPUT_DIR, command_path=STORAGE_EXPORT_PATH),
     ] = field(default_factory=lambda: Path("build/db_export"))
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(STORAGE_EXPORT_PATH)
 
 
 @cli_command("storage.import_db", handler=import_database_handler, config=_STORAGE_CONFIG)
@@ -107,19 +99,13 @@ class ImportDatabaseCommand:
 
     db_path: Annotated[
         Path | None,
-        Parameter(
-            name="--db-path",
-            help="Path to DuckDB database.",
-        ),
+        option_param(STORAGE_DB_PATH, command_path=STORAGE_IMPORT_PATH),
     ] = None
     input_dir: Annotated[
         Path,
-        Parameter(
-            name="--input-dir",
-            help="Directory containing a DuckDB EXPORT DATABASE dump.",
-        ),
+        option_param(STORAGE_INPUT_DIR, command_path=STORAGE_IMPORT_PATH),
     ] = field(default_factory=lambda: Path("build/db_export"))
-    flags: SharedFlags = field(default=SharedFlags(), metadata=SHARED_FLAGS_METADATA)
+    flags: SharedFlags = shared_flags_field(STORAGE_IMPORT_PATH)
 
 
 __all__ = ["storage_app"]
