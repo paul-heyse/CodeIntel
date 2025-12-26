@@ -16,6 +16,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunOptions,
+    ToolSpec,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -88,6 +89,7 @@ class PytestPlugin(ToolPlugin):
             produces_artifacts=("pytest_json_report",),
             consumes_configs=("pytest_bin",),
             datasets=("analytics.test_catalog",),
+            spec=ToolSpec(required_kwargs=("json_report_path",)),
         )
     )
     _capability_probe: ToolCapabilityProbe | None = field(

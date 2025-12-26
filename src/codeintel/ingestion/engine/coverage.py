@@ -17,6 +17,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunOptions,
+    ToolSpec,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -98,6 +99,10 @@ class CoveragePlugin(ToolPlugin):
             produces_artifacts=("coverage_json",),
             consumes_configs=("coverage_bin",),
             datasets=("analytics.coverage_lines",),
+            spec=ToolSpec(
+                required_kwargs=("output_path",),
+                optional_kwargs=("coverage_file",),
+            ),
         )
     )
 

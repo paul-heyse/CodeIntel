@@ -20,8 +20,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.analytics.functions.function_effects import (
     FunctionEffectsInputs,
@@ -34,22 +32,27 @@ from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
@@ -64,6 +67,55 @@ FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
 
 FUNCTION_CONTRACTS_TABLE_KEY = "analytics.function_contracts"
 FUNCTION_EFFECTS_TABLE_KEY = "analytics.function_effects"
+FUNCTION_CONTRACTS_TABLE_KEYS = (FUNCTION_CONTRACTS_TABLE_KEY,)
+FUNCTION_EFFECTS_TABLE_KEYS = (FUNCTION_EFFECTS_TABLE_KEY,)
+FUNCTION_CONTRACTS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=FUNCTION_CONTRACTS_TARGET_NAME,
+    hash_options_node="function_contracts__hash_options",
+)
+FUNCTION_EFFECTS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=FUNCTION_EFFECTS_TARGET_NAME,
+    hash_options_node="function_effects__hash_options",
+)
+
+
+@tag_helper(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
+def function_contracts__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for function_contracts execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, FUNCTION_CONTRACTS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
+def function_contracts__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    function_contracts__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when function_contracts should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        FUNCTION_CONTRACTS_TARGET_NAME,
+        hash_options=function_contracts__hash_options,
+    )
+    return executor.should_skip()
 
 
 @tag_helper(domain="analytics")
@@ -108,9 +160,10 @@ class FunctionContractsResult:
 @tag_compute(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
 def t__function_contracts__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     t__goids: TargetRunRecord,
+    *,
+    function_contracts__skip: bool,
 ) -> FunctionContractsResult:
     """Compute pre/postconditions and nullability contracts for functions.
 
@@ -146,19 +199,8 @@ def t__function_contracts__compute(
             error=f"Upstream goids target failed: {t__goids.error}",
         )
 
-    target = graph.get(FUNCTION_CONTRACTS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, FUNCTION_CONTRACTS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return FunctionContractsResult(rows=None)
+    if function_contracts__skip:
+        return FunctionContractsResult(rows=None)
 
     try:
         registry = build_registry(
@@ -206,14 +248,9 @@ def t__function_contracts__compute(
         )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_CONTRACTS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_CONTRACTS_TARGET_NAME),
-    table_key=value(FUNCTION_CONTRACTS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_CONTRACTS_TABLE_KEY)),
+@save_rows(
+    context=FUNCTION_CONTRACTS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_CONTRACTS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -248,7 +285,7 @@ def function_contracts__rows(
 def t__function_contracts(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_contracts: MaterializationMetadata,
+    function_contracts__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Infer function pre/postconditions.
 
@@ -269,12 +306,14 @@ def t__function_contracts(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=FUNCTION_CONTRACTS_TARGET_NAME,
-        expected_table_key=FUNCTION_CONTRACTS_TABLE_KEY,
-        materialization=m__analytics__function_contracts,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=FUNCTION_CONTRACTS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=function_contracts__table_materializations,
     )
 
 
@@ -307,9 +346,10 @@ class FunctionEffectsResult:
 @tag_compute(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
 def t__function_effects__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
+    *,
+    function_effects__skip: bool,
 ) -> FunctionEffectsResult:
     """Compute side effects classification for functions.
 
@@ -324,19 +364,8 @@ def t__function_effects__compute(
             error=f"Upstream call_graph target failed: {t__call_graph.error}",
         )
 
-    target = graph.get(FUNCTION_EFFECTS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, FUNCTION_EFFECTS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return FunctionEffectsResult(rows=None)
+    if function_effects__skip:
+        return FunctionEffectsResult(rows=None)
 
     registry = build_registry(
         gateway=gateway,
@@ -386,14 +415,9 @@ def t__function_effects__compute(
         return FunctionEffectsResult(rows=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_EFFECTS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_EFFECTS_TARGET_NAME),
-    table_key=value(FUNCTION_EFFECTS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_EFFECTS_TABLE_KEY)),
+@save_rows(
+    context=FUNCTION_EFFECTS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_EFFECTS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -421,7 +445,7 @@ def function_effects__rows(
 def t__function_effects(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_effects: MaterializationMetadata,
+    function_effects__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Analyze function purity and side effects.
 
@@ -430,22 +454,84 @@ def t__function_effects(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=FUNCTION_EFFECTS_TARGET_NAME,
-        expected_table_key=FUNCTION_EFFECTS_TABLE_KEY,
-        materialization=m__analytics__function_effects,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=FUNCTION_EFFECTS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=function_effects__table_materializations,
     )
+
+
+function_effects__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=FUNCTION_EFFECTS_TARGET_NAME,
+    table_keys=FUNCTION_EFFECTS_TABLE_KEYS,
+)
 
 
 __all__ = [
     "FunctionContractsResult",
     "FunctionEffectsResult",
+    "function_contracts__hash_options",
     "function_contracts__rows",
+    "function_contracts__skip",
+    "function_contracts__table_materializations",
+    "function_effects__hash_options",
     "function_effects__rows",
+    "function_effects__skip",
+    "function_effects__table_materializations",
     "t__function_contracts",
     "t__function_contracts__compute",
     "t__function_effects",
     "t__function_effects__compute",
 ]
+function_contracts__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=FUNCTION_CONTRACTS_TARGET_NAME,
+    table_keys=FUNCTION_CONTRACTS_TABLE_KEYS,
+)
+
+
+# ---------------------------------------------------------------------------
+# function_effects target
+# ---------------------------------------------------------------------------
+
+
+@tag_helper(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
+def function_effects__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for function_effects execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, FUNCTION_EFFECTS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
+def function_effects__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    function_effects__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when function_effects should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        FUNCTION_EFFECTS_TARGET_NAME,
+        hash_options=function_effects__hash_options,
+    )
+    return executor.should_skip()

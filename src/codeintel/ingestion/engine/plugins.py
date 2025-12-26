@@ -47,6 +47,7 @@ from codeintel.core.plugins.types import (
 )
 from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
+    ToolSpec,
 )
 from codeintel.ingestion.engine.results import DiagnosticReport
 from codeintel.ingestion.engine.status import ToolStatus
@@ -120,6 +121,8 @@ class ToolPluginMetadata:
         Optional explicit binary name for the tool.
     description
         Human-readable description of the plugin.
+    spec
+        ToolSpec describing expected keyword arguments.
     """
 
     name: str
@@ -128,6 +131,7 @@ class ToolPluginMetadata:
     datasets: tuple[str, ...] = ()
     tool_binary: str | None = None
     description: str | None = None
+    spec: ToolSpec = field(default_factory=ToolSpec)
 
     def to_core_metadata(self) -> CorePluginMetadata:
         """Convert to core PluginMetadata for unified introspection.
@@ -318,8 +322,16 @@ class ToolPluginRegistry:
         ----------
         plugin
             Plugin instance to register.
+
+        Raises
+        ------
+        TypeError
+            If the plugin metadata does not include a ToolSpec instance.
         """
         name = plugin.metadata.name
+        if not isinstance(plugin.metadata.spec, ToolSpec):
+            message = f"Tool plugin {name} missing ToolSpec metadata"
+            raise TypeError(message)
         self._plugins[name] = plugin
         log.debug("Registered tool plugin %s", name)
 

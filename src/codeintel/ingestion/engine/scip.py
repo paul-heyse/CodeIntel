@@ -16,6 +16,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunOptions,
+    ToolSpec,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolPlugin,
@@ -105,6 +106,10 @@ class ScipPlugin(ToolPlugin):
             produces_artifacts=("index_scip",),
             consumes_configs=("scip_python_bin",),
             datasets=("core.scip_symbols", "core.goid_crosswalk"),
+            spec=ToolSpec(
+                required_kwargs=("output_scip", "proto_module_path"),
+                optional_kwargs=("target_dir", "rel_paths", "timeout_s"),
+            ),
         )
     )
 

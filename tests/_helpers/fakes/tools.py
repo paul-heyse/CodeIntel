@@ -168,9 +168,6 @@ class FakeToolRunner(ToolRunner):
         str
             Text payload used for stdout.
         """
-        if tool is ToolName.SCIP:
-            payload = self.payloads.get("scip_print_stdout", "")
-            return self._stringify_payload(payload)
         payload = self.payloads.get(tool.value, "")
         return self._stringify_payload(payload)
 
@@ -193,9 +190,6 @@ class FakeToolRunner(ToolRunner):
             return self._stringify_payload(payload)
         if tool is ToolName.SCIP_PYTHON:
             payload = self.payloads.get("scip_binary", "scip-binary")
-            return self._stringify_payload(payload)
-        if tool is ToolName.SCIP:
-            payload = self.payloads.get("scip_print_stdout", "{}")
             return self._stringify_payload(payload)
         payload = self.payloads.get(tool.value, "")
         return self._stringify_payload(payload)

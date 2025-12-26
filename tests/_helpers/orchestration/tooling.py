@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import inspect
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -545,11 +546,41 @@ def generate_coverage_for_function(
         if not callable(attribute):
             message = f"Attribute {function_name} on {module_import} is not callable"
             raise TypeError(message)
-        attribute()
+        signature = inspect.signature(attribute)
+        args: list[object] = []
+        kwargs: dict[str, object] = {}
+        for param in signature.parameters.values():
+            if param.kind in {inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD}:
+                continue
+            if param.default is not inspect.Parameter.empty:
+                value = param.default
+            else:
+                value = _placeholder_value(param)
+            if param.kind in {
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            }:
+                args.append(value)
+            else:
+                kwargs[param.name] = value
+        attribute(*args, **kwargs)
     finally:
         coverage.stop()
         coverage.save()
     return CoverageArtifact(repo_root=repo_root, coverage_file=target_cov)
+
+
+def _placeholder_value(param: inspect.Parameter) -> object:
+    annotation = param.annotation
+    if annotation is float:
+        return 0.0
+    if annotation is int:
+        return 0
+    if annotation is bool:
+        return False
+    if annotation is str:
+        return ""
+    return 0
 
 
 __all__ = [

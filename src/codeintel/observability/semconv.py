@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codeintel.observability.attributes import shape_attributes
+from codeintel.observability.attributes import SpanAttributeValue, shape_attributes
 from codeintel.observability.policy import ObservabilityPolicy
 
 
@@ -11,8 +11,14 @@ def http_span_attributes(
     method: str,
     route: str,
     policy: ObservabilityPolicy,
-) -> dict[str, object]:
-    """Return normalized HTTP span attributes."""
+) -> dict[str, SpanAttributeValue]:
+    """Return normalized HTTP span attributes.
+
+    Returns
+    -------
+    dict[str, SpanAttributeValue]
+        Normalized HTTP span attributes.
+    """
     normalized_route = _truncate(route, policy.http_route_max_len)
     attrs = {
         "http.method": method,
@@ -26,8 +32,14 @@ def mcp_span_attributes(
     method: str,
     tool_name: str | None,
     policy: ObservabilityPolicy,
-) -> dict[str, object]:
-    """Return normalized MCP span attributes."""
+) -> dict[str, SpanAttributeValue]:
+    """Return normalized MCP span attributes.
+
+    Returns
+    -------
+    dict[str, SpanAttributeValue]
+        Normalized MCP span attributes.
+    """
     normalized_tool = None
     if tool_name:
         normalized_tool = _truncate(tool_name, policy.mcp_tool_name_max_len)

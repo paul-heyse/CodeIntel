@@ -252,7 +252,6 @@ class ToolsConfig(BaseModel):
         description="Project name passed to scip-python for stable SCIP identity",
     )
     scip_python_bin: str = Field("scip-python", description="Path to scip-python binary")
-    scip_bin: str = Field("scip", description="Path to scip binary")
     protoc_bin: str = Field(
         "python",
         description="Python executable for grpc_tools.protoc",
@@ -341,7 +340,6 @@ class ToolsConfig(BaseModel):
         """
         return ToolBinaries(
             scip_python_bin=self.scip_python_bin,
-            scip_bin=self.scip_bin,
             protoc_bin=self.protoc_bin,
             pyright_bin=self.pyright_bin,
             pyrefly_bin=self.pyrefly_bin,

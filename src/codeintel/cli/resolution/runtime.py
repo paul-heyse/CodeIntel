@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import configparser
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -45,8 +46,15 @@ from codeintel.serving.config import ServingConfig
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from typing import Literal
 
 LOG = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _FallbackSelection:
+    source: Literal['git', 'src']
+    repo_root: Path
 
 
 def _to_path_or_none(value: object) -> Path | None:
@@ -136,6 +144,30 @@ def _resolve_git_dir(repo_root: Path) -> Path | None:
     return (repo_root / git_dir).resolve()
 
 
+def _find_git_root(start: Path) -> Path | None:
+    resolved = start.resolve()
+    for candidate in (resolved, *resolved.parents):
+        git_path = candidate / ".git"
+        if git_path.is_dir() or git_path.is_file():
+            return candidate
+    return None
+
+
+def _select_fallback_repo_root(base: Path) -> _FallbackSelection | None:
+    git_root = _find_git_root(base)
+    if git_root is not None:
+        return _FallbackSelection(source="git", repo_root=git_root)
+
+    if base.name == "src" and base.is_dir():
+        return _FallbackSelection(source="src", repo_root=base.resolve())
+
+    src_root = base / "src"
+    if src_root.is_dir():
+        return _FallbackSelection(source="src", repo_root=src_root.resolve())
+
+    return None
+
+
 def _infer_repo_from_git_remote(repo_root: Path) -> str | None:
     git_dir = _resolve_git_dir(repo_root)
     if git_dir is None:
@@ -180,6 +212,9 @@ def _apply_default_scip_project_name(
 
 
 _MSG_NO_PROJECT_NO_FALLBACK = "No codeintel.yaml found and fallback disabled"
+_MSG_NO_PROJECT_NO_SOURCE = (
+    "No codeintel.yaml found and no git repo or src/ directory detected."
+)
 _MSG_MISSING_PARAMS = (
     "No codeintel.yaml found. Provide --repo explicitly or set project.repo/project.name."
 )
@@ -237,17 +272,37 @@ def resolve_from_params(
     project_root = _to_path_or_none(project_root_raw)
     fallback_enabled = _should_allow_fallback(params) if allow_fallback is None else allow_fallback
 
+    missing_project_error: ProjectNotFoundError | None = None
     try:
         return _resolve_from_project(project_root)
     except ProjectNotFoundError as exc:
         if not fallback_enabled:
             raise ResolutionError(_MSG_NO_PROJECT_NO_FALLBACK) from exc
+        missing_project_error = exc
 
-    return _resolve_from_params_dict(params)
+    resolved_params = dict(params)
+    selection: _FallbackSelection | None = None
+    if resolved_params.get("repo_root") is None:
+        base = project_root or Path.cwd()
+        selection = _select_fallback_repo_root(base)
+        if selection is None:
+            raise ResolutionError(_MSG_NO_PROJECT_NO_SOURCE) from missing_project_error
+        resolved_params["repo_root"] = selection.repo_root
+
+    runtime = _resolve_from_params_dict(resolved_params)
+    if selection is not None:
+        _log_fallback_selection(selection, runtime)
+    return runtime
 
 
 def _should_allow_fallback(params: Mapping[str, object] | Mapping[str, str]) -> bool:
-    return bool(params.get("repo") or params.get("commit") or params.get("db_path"))
+    if params.get("repo") or params.get("commit") or params.get("db_path"):
+        return True
+    base = _to_path_or_none(params.get("project_root")) or _to_path_or_none(
+        params.get("repo_root")
+    )
+    base = base or Path.cwd()
+    return _select_fallback_repo_root(base) is not None
 
 
 def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:
@@ -432,6 +487,10 @@ def _extract_required_params_dict(
     resolved_root = repo_root.resolve()
 
     if repo is None:
+        env_repo = os.environ.get("CODEINTEL_REPO")
+        if env_repo is not None:
+            repo = env_repo.strip() or None
+    if repo is None:
         repo = _infer_repo_from_git_remote(resolved_root) or (resolved_root.name or None)
 
     if commit is None:
@@ -476,6 +535,21 @@ def _build_config(params: _ConfigParams) -> CodeIntelConfig:
         repo_cfg=repo_cfg,
         paths_cfg=paths_cfg,
         options=options,
+    )
+
+
+def _log_fallback_selection(
+    selection: _FallbackSelection,
+    runtime: ResolvedRuntime,
+) -> None:
+    LOG.warning(
+        "Selection flag: auto-selected %s root=%s (repo=%s, commit=%s). "
+        "To override, pass --root or set project.root/project.repo/project.commit "
+        "in codeintel.toml, ~/.codeintel/config.yaml, or codeintel.yaml.",
+        selection.source,
+        runtime.repo_root,
+        runtime.repo,
+        runtime.commit,
     )
 
 

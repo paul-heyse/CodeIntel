@@ -15,7 +15,6 @@ class ToolName(StrEnum):
     PYTEST = "pytest"
     GIT = "git"
     SCIP_PYTHON = "scip-python"
-    SCIP = "scip"
     PROTOC = "protoc"
 
 

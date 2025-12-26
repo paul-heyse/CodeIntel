@@ -13,26 +13,29 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.subsystems.materialize import SubsystemRows, build_subsystem_rows
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.storage.gateway import StorageGateway
 
@@ -44,6 +47,15 @@ SUBSYSTEMS_TARGET_NAME = "subsystems"
 
 SUBSYSTEMS_TABLE_KEY = "analytics.subsystems"
 SUBSYSTEM_MODULES_TABLE_KEY = "analytics.subsystem_modules"
+SUBSYSTEMS_TABLE_KEYS = (
+    SUBSYSTEMS_TABLE_KEY,
+    SUBSYSTEM_MODULES_TABLE_KEY,
+)
+SUBSYSTEMS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=SUBSYSTEMS_TARGET_NAME,
+    hash_options_node="subsystems__hash_options",
+)
 
 
 @tag_helper(domain="analytics")
@@ -58,6 +70,43 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
+@tag_helper(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
+def subsystems__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for subsystems execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, SUBSYSTEMS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
+def subsystems__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    subsystems__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when subsystems should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SUBSYSTEMS_TARGET_NAME,
+        hash_options=subsystems__hash_options,
+    )
+    return executor.should_skip()
+
+
 @dataclass(frozen=True)
 class SubsystemsComputeResult:
     """Result from subsystem inference computation."""
@@ -69,10 +118,11 @@ class SubsystemsComputeResult:
 @tag_compute(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
 def t__subsystems__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     t__import_graph: TargetRunRecord,
     t__semantic_roles: TargetRunRecord,
+    *,
+    subsystems__skip: bool,
 ) -> SubsystemsComputeResult | None:
     """Compute subsystems by executing the subsystem inference pipeline.
 
@@ -80,8 +130,6 @@ def t__subsystems__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup and skip detection.
     gateway
         Storage gateway for analytics queries.
     t__import_graph
@@ -94,19 +142,8 @@ def t__subsystems__compute(
     SubsystemsComputeResult | None
         Computed subsystem rows or None when skipped.
     """
-    target = graph.get(SUBSYSTEMS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, SUBSYSTEMS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if subsystems__skip:
+        return None
 
     if t__import_graph.status != "succeeded":
         return SubsystemsComputeResult(
@@ -133,14 +170,9 @@ def t__subsystems__compute(
     return SubsystemsComputeResult(rows=rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SUBSYSTEMS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SUBSYSTEMS_TARGET_NAME),
-    table_key=value(SUBSYSTEMS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SUBSYSTEMS_TABLE_KEY)),
+@save_rows(
+    context=SUBSYSTEMS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SUBSYSTEMS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -166,14 +198,9 @@ def subsystems__rows(
     return tuple(t__subsystems__compute.rows.subsystem_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SUBSYSTEM_MODULES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SUBSYSTEMS_TARGET_NAME),
-    table_key=value(SUBSYSTEM_MODULES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SUBSYSTEM_MODULES_TABLE_KEY)),
+@save_rows(
+    context=SUBSYSTEMS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SUBSYSTEM_MODULES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -204,8 +231,7 @@ def t__subsystems(
     env: BuildEnv,
     graph: TargetGraph,
     t__subsystems__compute: SubsystemsComputeResult | None,
-    m__analytics__subsystems: MaterializationMetadata,
-    m__analytics__subsystem_modules: MaterializationMetadata,
+    subsystems__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Infer architectural subsystems.
 
@@ -217,10 +243,8 @@ def t__subsystems(
         Target graph for metadata lookup and skip detection.
     t__subsystems__compute
         Computed subsystem rows and optional error.
-    m__analytics__subsystems
-        Materialization metadata for analytics.subsystems.
-    m__analytics__subsystem_modules
-        Materialization metadata for analytics.subsystem_modules.
+    subsystems__table_materializations
+        Materialization metadata for subsystem tables.
 
     Returns
     -------
@@ -242,20 +266,30 @@ def t__subsystems(
             artifacts=(),
         )
 
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=SUBSYSTEMS_TARGET_NAME,
-        materializations={
-            SUBSYSTEMS_TABLE_KEY: m__analytics__subsystems,
-            SUBSYSTEM_MODULES_TABLE_KEY: m__analytics__subsystem_modules,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SUBSYSTEMS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=subsystems__table_materializations,
     )
+
+
+subsystems__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=SUBSYSTEMS_TARGET_NAME,
+    table_keys=SUBSYSTEMS_TABLE_KEYS,
+)
 
 
 __all__ = [
     "SubsystemsComputeResult",
+    "subsystems__hash_options",
     "subsystem_modules__rows",
+    "subsystems__skip",
+    "subsystems__table_materializations",
     "subsystems__rows",
     "t__subsystems",
     "t__subsystems__compute",

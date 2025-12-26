@@ -6,29 +6,32 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.subsystems.cache import (
     build_subsystem_coverage_cache_rows,
     build_subsystem_profile_cache_rows,
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -53,6 +56,11 @@ SUBSYSTEM_CACHE_TABLE_KEYS = (
     SUBSYSTEM_PROFILE_CACHE_TABLE_KEY,
     SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY,
 )
+SUBSYSTEM_CACHES_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=SUBSYSTEM_CACHES_TARGET_NAME,
+    hash_options_node="subsystem_caches__hash_options",
+)
 
 
 @tag_helper(domain="analytics")
@@ -65,6 +73,43 @@ def gateway(env: BuildEnv) -> StorageGateway:
         Storage gateway for the current build environment.
     """
     return env.gateway
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
+def subsystem_caches__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for subsystem_caches execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, SUBSYSTEM_CACHES_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
+def subsystem_caches__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    subsystem_caches__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when subsystem_caches should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SUBSYSTEM_CACHES_TARGET_NAME,
+        hash_options=subsystem_caches__hash_options,
+    )
+    return executor.should_skip()
 
 
 @dataclass(frozen=True)
@@ -111,8 +156,9 @@ def subsystem_caches__inputs(
 @tag_compute(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
 def t__subsystem_caches__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     subsystem_caches__inputs: SubsystemCacheInputs,
+    *,
+    subsystem_caches__skip: bool,
 ) -> SubsystemCachesComputeResult | None:
     """Compute subsystem cache rows from base subsystem tables.
 
@@ -120,8 +166,6 @@ def t__subsystem_caches__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup and skip checks.
     subsystem_caches__inputs
         Bundled inputs including gateway and upstream target results.
 
@@ -130,20 +174,10 @@ def t__subsystem_caches__compute(
     SubsystemCachesComputeResult | None
         Computed cache rows or None when skipped.
     """
-    target = graph.get(SUBSYSTEM_CACHES_TARGET_NAME)
+    if subsystem_caches__skip:
+        return None
+
     gateway = subsystem_caches__inputs.gateway
-    if target is not None:
-        options_hash = options_hash_for_target(env, SUBSYSTEM_CACHES_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
 
     if subsystem_caches__inputs.subsystems.status != "succeeded":
         return SubsystemCachesComputeResult(
@@ -191,14 +225,9 @@ def t__subsystem_caches__compute(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SUBSYSTEM_CACHES_TARGET_NAME),
-    table_key=value(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SUBSYSTEM_PROFILE_CACHE_TABLE_KEY)),
+@save_rows(
+    context=SUBSYSTEM_CACHES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SUBSYSTEM_PROFILE_CACHE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -227,14 +256,9 @@ def subsystem_profile_cache__rows(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SUBSYSTEM_CACHES_TARGET_NAME),
-    table_key=value(SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY)),
+@save_rows(
+    context=SUBSYSTEM_CACHES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -268,8 +292,7 @@ def t__subsystem_caches(
     env: BuildEnv,
     graph: TargetGraph,
     t__subsystem_caches__compute: SubsystemCachesComputeResult | None,
-    m__analytics__subsystem_profile_cache: MaterializationMetadata,
-    m__analytics__subsystem_coverage_cache: MaterializationMetadata,
+    subsystem_caches__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize cached subsystem profile and coverage tables.
 
@@ -293,21 +316,31 @@ def t__subsystem_caches(
             artifacts=(),
         )
 
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=SUBSYSTEM_CACHES_TARGET_NAME,
-        materializations={
-            SUBSYSTEM_PROFILE_CACHE_TABLE_KEY: m__analytics__subsystem_profile_cache,
-            SUBSYSTEM_COVERAGE_CACHE_TABLE_KEY: m__analytics__subsystem_coverage_cache,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SUBSYSTEM_CACHES_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=subsystem_caches__table_materializations,
     )
+
+
+subsystem_caches__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=SUBSYSTEM_CACHES_TARGET_NAME,
+    table_keys=SUBSYSTEM_CACHE_TABLE_KEYS,
+)
 
 
 __all__ = [
     "SubsystemCachesComputeResult",
+    "subsystem_caches__hash_options",
     "subsystem_coverage_cache__rows",
     "subsystem_profile_cache__rows",
+    "subsystem_caches__skip",
+    "subsystem_caches__table_materializations",
     "t__subsystem_caches",
     "t__subsystem_caches__compute",
 ]

@@ -16,26 +16,31 @@ from hamilton.function_modifiers import (
     check_output_custom,
     pipe_input,
     schema,
-    source,
     step,
-    value,
 )
 
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    IbisTableSaveSpec,
+    SaverContext,
+    save_ibis_table,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
 )
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import add, cast_dtype, ge, gt, ibis_bool, truediv
 
@@ -43,6 +48,12 @@ _HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
 
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
+RISK_FACTORS_TABLE_KEYS = (RISK_FACTORS_TABLE_KEY,)
+RISK_FACTORS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=RISK_FACTORS_TARGET_NAME,
+    hash_options_node="risk_factors__hash_options",
+)
 
 
 COMPLEXITY_THRESHOLD = 10
@@ -227,13 +238,24 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBIbisTableSaver],
-    output_name_=materialize_node(RISK_FACTORS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(RISK_FACTORS_TARGET_NAME),
-    table_key=value(RISK_FACTORS_TABLE_KEY),
+@tag_helper(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
+def risk_factors__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for risk_factors execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, RISK_FACTORS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@save_ibis_table(
+    context=RISK_FACTORS_SAVE_CONTEXT,
+    spec=IbisTableSaveSpec(table_key=RISK_FACTORS_TABLE_KEY),
 )
 @pipe_input(
     step(
@@ -317,11 +339,18 @@ def t__risk_factors__compute(
     return q__analytics__function_metrics
 
 
+risk_factors__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=RISK_FACTORS_TARGET_NAME,
+    table_keys=RISK_FACTORS_TABLE_KEYS,
+)
+
+
 @codeintel_target(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
 def t__risk_factors(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__goid_risk_factors: MaterializationMetadata,
+    risk_factors__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Compute composite risk factors per function.
 
@@ -336,25 +365,28 @@ def t__risk_factors(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__goid_risk_factors
-        Materialization metadata dict produced by the DuckDB saver node.
+    risk_factors__table_materializations
+        Materialization metadata for analytics.goid_risk_factors.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=RISK_FACTORS_TARGET_NAME,
-        expected_table_key=RISK_FACTORS_TABLE_KEY,
-        materialization=m__analytics__goid_risk_factors,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=RISK_FACTORS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=risk_factors__table_materializations,
     )
 
 
 # Export node names for Hamilton discovery
 __all__ = [
+    "risk_factors__hash_options",
     "t__risk_factors",
     "t__risk_factors__compute",
 ]

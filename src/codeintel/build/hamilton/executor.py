@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 import hamilton.base as h_base
 from opentelemetry import trace as otel_trace
 
+from codeintel.build.errors import BuildError
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
@@ -39,18 +40,24 @@ from codeintel.build.hamilton.hooks import (
     ValidationSummary,
     build_hooks,
 )
-from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.run_records import (
+    RunRecordInputs,
+    TargetRunRecord,
+    compute_target_input_hash,
+    create_run_record,
+)
 from codeintel.build.hamilton.run_writer import BuildRunWriter
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.context import run_context
+from codeintel.storage.gateway import StorageError
 
 if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.config.settings import HamiltonTrackerSettings
     from codeintel.storage.gateway import StorageGateway
 
@@ -233,6 +240,68 @@ def _categorize_outputs(
             failed.append(target)
 
     return computed, skipped, failed
+
+
+def _safe_input_hash(target: OutputTarget, env: BuildEnv) -> str:
+    try:
+        return compute_target_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=env.gateway,
+            settings=env.settings,
+        )
+    except (BuildError, KeyError, RuntimeError, StorageError, ValueError):
+        return "MISSING"
+
+
+def _failure_record(
+    *,
+    target_name: str,
+    env: BuildEnv,
+    graph: TargetGraph,
+    error: str,
+) -> TargetRunRecord:
+    exc = RuntimeError(error)
+    try:
+        target = graph.get(target_name)
+    except KeyError:
+        return TargetRunRecord(
+            target=target_name,
+            plugin_name="native:missing",
+            status="failed",
+            input_hash=None,
+            error=str(exc),
+        )
+    input_hash = _safe_input_hash(target, env)
+    return create_run_record(
+        target,
+        "failed",
+        input_hash,
+        inputs=RunRecordInputs(error=exc),
+    )
+
+
+def _ensure_failure_records(
+    *,
+    env: BuildEnv,
+    runtime: HamiltonRuntime,
+    closure: tuple[str, ...],
+    outputs: dict[str, Any],
+    error: str,
+) -> None:
+    for target in closure:
+        node_name = target_to_node_name(target, runtime=runtime)
+        existing = outputs.get(node_name) if node_name is not None else None
+        if isinstance(existing, TargetRunRecord):
+            continue
+        record = _failure_record(
+            target_name=target,
+            env=env,
+            graph=runtime.graph,
+            error=error,
+        )
+        key = node_name or f"__failed__{target}"
+        outputs[key] = record
 
 
 def _map_closure_to_nodes(
@@ -461,6 +530,15 @@ class HamiltonBuildExecutor:
             if telemetry_hook is not None:
                 telemetry_hook.flush()
 
+        if error:
+            _ensure_failure_records(
+                env=context.env,
+                runtime=context.runtime,
+                closure=closure,
+                outputs=outputs,
+                error=error,
+            )
+
         computed, skipped, failed = _categorize_outputs(closure, outputs, context.runtime)
         duration_ms = context.duration_ms
         success = not failed and error is None
@@ -605,8 +683,18 @@ class HamiltonBuildExecutor:
         HamiltonBuildResult
             Error result indicating failed closure computation.
         """
+        outputs: dict[str, Any] = {}
+        for target in context.targets:
+            record = _failure_record(
+                target_name=target,
+                env=context.env,
+                graph=context.runtime.graph,
+                error=error,
+            )
+            outputs[f"__failed__{target}"] = record
         return HamiltonBuildResult(
             requested=context.targets,
+            outputs=outputs,
             success=False,
             failed_targets=context.targets,
             duration_ms=context.duration_ms,
@@ -629,9 +717,19 @@ class HamiltonBuildExecutor:
             Error result indicating missing node mappings.
         """
         log.error("build.hamilton.executor.missing_targets targets=%s", missing)
+        outputs: dict[str, Any] = {}
+        for target in missing:
+            record = _failure_record(
+                target_name=target,
+                env=context.env,
+                graph=context.runtime.graph,
+                error=f"Missing node mappings for: {missing}",
+            )
+            outputs[f"__missing__{target}"] = record
         return HamiltonBuildResult(
             requested=context.targets,
             closure=closure,
+            outputs=outputs,
             success=False,
             failed_targets=tuple(missing),
             duration_ms=context.duration_ms,

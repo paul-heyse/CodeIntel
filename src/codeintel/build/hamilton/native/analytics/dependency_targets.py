@@ -22,7 +22,6 @@ import logging
 from typing import TYPE_CHECKING
 
 from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.dependencies.compute import (
     DependencyCallsResult,
     compute_dependency_calls_pure,
@@ -38,23 +37,27 @@ from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.resources import ResourceNotFoundError
@@ -86,6 +89,16 @@ EXTERNAL_DEPS_TABLE_KEYS = (
 ENTRYPOINTS_TABLE_KEY = "analytics.entrypoints"
 ENTRYPOINT_TESTS_TABLE_KEY = "analytics.entrypoint_tests"
 ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
+EXTERNAL_DEPS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=EXTERNAL_DEPS_TARGET_NAME,
+    hash_options_node="external_deps__hash_options",
+)
+ENTRYPOINTS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    hash_options_node="entrypoints__hash_options",
+)
 
 
 @tag_helper(domain="analytics")
@@ -98,6 +111,80 @@ def gateway(env: BuildEnv) -> StorageGateway:
         Storage gateway for the current build environment.
     """
     return env.gateway
+
+
+@tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
+def external_deps__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for external_deps execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, EXTERNAL_DEPS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
+def external_deps__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    external_deps__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when external_deps should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        EXTERNAL_DEPS_TARGET_NAME,
+        hash_options=external_deps__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
+def entrypoints__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for entrypoints execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, ENTRYPOINTS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
+def entrypoints__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    entrypoints__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when entrypoints should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        ENTRYPOINTS_TARGET_NAME,
+        hash_options=entrypoints__hash_options,
+    )
+    return executor.should_skip()
 
 
 def _build_inputs(
@@ -183,9 +270,10 @@ def external_deps_inputs(
 @tag_compute(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def t__external_deps__compute_calls(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     external_deps_inputs: ExternalDependencyInputs | None,
+    *,
+    external_deps__skip: bool,
 ) -> DependencyCallsResult | None:
     """Compute external dependency calls for all functions in the snapshot.
 
@@ -196,8 +284,6 @@ def t__external_deps__compute_calls(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for manifest-driven skip checks.
     gateway
         Storage gateway for analytics queries.
     external_deps_inputs
@@ -216,19 +302,8 @@ def t__external_deps__compute_calls(
     - Usage modes (read, write, admin, etc.)
     - Evidence with code snippets
     """
-    target = graph.get(EXTERNAL_DEPS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, EXTERNAL_DEPS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if external_deps__skip:
+        return None
 
     if external_deps_inputs is None:
         return None
@@ -240,14 +315,9 @@ def t__external_deps__compute_calls(
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(EXTERNAL_DEPS_TARGET_NAME),
-    table_key=value(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY)),
+@save_rows(
+    context=EXTERNAL_DEPS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME, target_="external_deps__calls_rows"
@@ -267,14 +337,9 @@ def external_deps__calls_rows(
     return tuple(t__external_deps__compute_calls.rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(EXTERNAL_DEPENDENCIES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(EXTERNAL_DEPS_TARGET_NAME),
-    table_key=value(EXTERNAL_DEPENDENCIES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(EXTERNAL_DEPENDENCIES_TABLE_KEY)),
+@save_rows(
+    context=EXTERNAL_DEPS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=EXTERNAL_DEPENDENCIES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -309,8 +374,7 @@ def t__external_deps(
     env: BuildEnv,
     graph: TargetGraph,
     t__call_graph: TargetRunRecord,
-    m__analytics__external_dependency_calls: MaterializationMetadata,
-    m__analytics__external_dependencies: MaterializationMetadata,
+    external_deps__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """External library dependency analysis.
 
@@ -326,10 +390,8 @@ def t__external_deps(
         Target graph for metadata lookup.
     t__call_graph
         Upstream call graph record (must succeed for correct attribution).
-    m__analytics__external_dependency_calls
-        Materialization metadata for analytics.external_dependency_calls.
-    m__analytics__external_dependencies
-        Materialization metadata for analytics.external_dependencies.
+    external_deps__table_materializations
+        Materialization metadata for external dependency tables.
 
     Returns
     -------
@@ -350,15 +412,22 @@ def t__external_deps(
         return executor.fail(
             RuntimeError(f"Upstream call_graph target failed: {t__call_graph.error}")
         )
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=EXTERNAL_DEPS_TARGET_NAME,
-        materializations={
-            EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY: m__analytics__external_dependency_calls,
-            EXTERNAL_DEPENDENCIES_TABLE_KEY: m__analytics__external_dependencies,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=EXTERNAL_DEPS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=external_deps__table_materializations,
     )
+
+
+external_deps__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=EXTERNAL_DEPS_TARGET_NAME,
+    table_keys=EXTERNAL_DEPS_TABLE_KEYS,
+)
 
 
 # Export node names for Hamilton discovery
@@ -445,9 +514,10 @@ def entrypoints_inputs(
 @tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def t__entrypoints__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     entrypoints_inputs: EntrypointBuildInputs | None,
+    *,
+    entrypoints__skip: bool,
 ) -> EntrypointsResult | None:
     """Compute entrypoints for all modules in the snapshot.
 
@@ -456,19 +526,8 @@ def t__entrypoints__compute(
     EntrypointsResult | None
         Computed entrypoints, or None when skipped or inputs are unavailable.
     """
-    target = graph.get(ENTRYPOINTS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, ENTRYPOINTS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if entrypoints__skip:
+        return None
 
     if entrypoints_inputs is None:
         return None
@@ -476,14 +535,9 @@ def t__entrypoints__compute(
     return compute_entrypoints_pure(gateway, env.snapshot, entrypoints_inputs)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(ENTRYPOINTS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(ENTRYPOINTS_TARGET_NAME),
-    table_key=value(ENTRYPOINTS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(ENTRYPOINTS_TABLE_KEY)),
+@save_rows(
+    context=ENTRYPOINTS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=ENTRYPOINTS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__entrypoint_rows"
@@ -503,14 +557,9 @@ def entrypoints__entrypoint_rows(
     return tuple(t__entrypoints__compute.entrypoint_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(ENTRYPOINT_TESTS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(ENTRYPOINTS_TARGET_NAME),
-    table_key=value(ENTRYPOINT_TESTS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(ENTRYPOINT_TESTS_TABLE_KEY)),
+@save_rows(
+    context=ENTRYPOINTS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=ENTRYPOINT_TESTS_TABLE_KEY),
 )
 @tag_compute(domain="analytics", target=ENTRYPOINTS_TARGET_NAME, target_="entrypoints__test_rows")
 def entrypoints__test_rows(
@@ -550,22 +599,11 @@ def entrypoints__upstream_error(
     return None
 
 
-@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
-def entrypoints__materializations(
-    m__analytics__entrypoints: MaterializationMetadata,
-    m__analytics__entrypoint_tests: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect entrypoints materialization payloads into a single mapping.
-
-    Returns
-    -------
-    dict[str, MaterializationMetadata]
-        Materialization metadata keyed by table key.
-    """
-    return {
-        ENTRYPOINTS_TABLE_KEY: m__analytics__entrypoints,
-        ENTRYPOINT_TESTS_TABLE_KEY: m__analytics__entrypoint_tests,
-    }
+entrypoints__materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=ENTRYPOINTS_TARGET_NAME,
+    table_keys=ENTRYPOINTS_TABLE_KEYS,
+)
 
 
 @codeintel_target(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
@@ -586,9 +624,12 @@ def t__entrypoints(
         executor = NativeTargetExecutor.for_target(env, graph, ENTRYPOINTS_TARGET_NAME)
         return executor.fail(RuntimeError(entrypoints__upstream_error))
 
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=ENTRYPOINTS_TARGET_NAME,
-        materializations=entrypoints__materializations,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=ENTRYPOINTS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=entrypoints__materializations,
     )

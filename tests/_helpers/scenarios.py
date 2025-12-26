@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Self
 
-from tests._helpers.env import create_test_env
+from tests._helpers.context import create_test_context
 from tests._helpers.env_options import EnvOptions
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.seeds import CORE_PACK, COVERAGE_PACK, GRAPH_PACK, METRICS_PACK
@@ -234,7 +234,7 @@ class TestScenario:
         TestContext
             Configured and seeded test context.
         """
-        ctx = create_test_env(
+        ctx = create_test_context(
             tmp_path,
             options=EnvOptions(
                 file_backed=self.config.file_backed,

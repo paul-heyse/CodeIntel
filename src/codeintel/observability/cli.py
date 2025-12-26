@@ -249,9 +249,15 @@ def _invoke_command(command: Callable[..., object], bound: BoundArguments) -> ob
     args = getattr(bound, "args", None)
     kwargs = getattr(bound, "kwargs", None)
     if args is not None and kwargs is not None:
-        return command(*args, **kwargs)
+        result = command(*args, **kwargs)
+        if dataclasses.is_dataclass(result) and callable(result):
+            return result()
+        return result
     arguments = getattr(bound, "arguments", {})
-    return command(**arguments)
+    result = command(**arguments)
+    if dataclasses.is_dataclass(result) and callable(result):
+        return result()
+    return result
 
 
 def _set_span_context(

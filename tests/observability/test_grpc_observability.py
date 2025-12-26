@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
 from types import ModuleType
 from typing import cast
 
-import pytest
 from opentelemetry.sdk.metrics import MeterProvider
 
 from codeintel.core.config.settings import GrpcObservabilitySettings
@@ -60,18 +58,16 @@ def test_grpc_observability_disabled_records_suppressed() -> None:
     assert records[0].status == "suppressed"
 
 
-def test_grpc_observability_unavailable_on_non_linux(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_grpc_observability_unavailable_on_non_linux() -> None:
     """Non-Linux platforms should report grpcio-observability as unavailable."""
     registry = InstrumentationRegistry()
     settings = GrpcObservabilitySettings(enabled=True)
-    monkeypatch.setattr(sys, "platform", "darwin")
 
     handle = register_grpc_observability(
         settings,
         meter_provider=MeterProvider(),
         registry=registry,
+        platform_override="darwin",
     )
 
     assert handle is None
@@ -80,9 +76,7 @@ def test_grpc_observability_unavailable_on_non_linux(
     assert records[0].status == "unavailable"
 
 
-def test_grpc_observability_registers_plugin(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_grpc_observability_registers_plugin() -> None:
     """Enabled settings should register the plugin and apply filters."""
     registry = InstrumentationRegistry()
     settings = GrpcObservabilitySettings(
@@ -90,13 +84,13 @@ def test_grpc_observability_registers_plugin(
         method_allowlist=("service/Method",),
         target_allowlist=("127.0.0.1",),
     )
-    monkeypatch.setattr(sys, "platform", "linux")
-    monkeypatch.setitem(sys.modules, "grpc_observability", _make_stub_module())
 
     handle = register_grpc_observability(
         settings,
         meter_provider=MeterProvider(),
         registry=registry,
+        platform_override="linux",
+        module_loader=lambda _name: _make_stub_module(),
     )
 
     assert handle is not None

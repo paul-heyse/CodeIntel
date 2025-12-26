@@ -24,6 +24,8 @@ from codeintel.ingestion.engine.infrastructure.runner import (
     ToolRunner,
     ToolRunOptions,
     ToolRunResult,
+    ToolSpec,
+    ToolSpecError,
 )
 
 __all__ = [
@@ -33,4 +35,6 @@ __all__ = [
     "ToolRunOptions",
     "ToolRunResult",
     "ToolRunner",
+    "ToolSpec",
+    "ToolSpecError",
 ]

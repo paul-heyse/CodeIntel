@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -50,6 +51,8 @@ _DEFAULT_DUCKDB_PRAGMAS: dict[str, bool] = {
     "enable_object_cache": True,
     "enable_progress_bar": False,
 }
+_DUCKDB_CONFIG_REGISTRY_LOCK = threading.Lock()
+_DUCKDB_CONFIG_REGISTRY: dict[Path, tuple[tuple[str, DuckDBConnectConfigValue], ...]] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,11 +106,9 @@ class DuckDBSession:
             apply_schema=False,
         )
         resolved = self._resolve_duckdb_config()
-        readonly_duckdb_config = dict(resolved) if resolved else {}
-        readonly_duckdb_config.update(_READ_ONLY_DUCKDB_CONFIG_DEFAULTS)
         con = _open_connection(
             cfg,
-            duckdb_config=readonly_duckdb_config or None,
+            duckdb_config=resolved,
         )
         _apply_duckdb_pragmas(con)
         load_required_extensions(con, allow_install=False)
@@ -144,9 +145,9 @@ class DuckDBSession:
 
     def _resolve_duckdb_config(self) -> DuckDBConnectConfig | None:
         env_cfg = _duckdb_connect_config_from_env()
-        if self.duckdb_config is None:
-            return env_cfg if env_cfg else None
-        merged: DuckDBConnectConfig = {**env_cfg, **self.duckdb_config}
+        merged: DuckDBConnectConfig = {**env_cfg, **(self.duckdb_config or {})}
+        for key, value in _READ_ONLY_DUCKDB_CONFIG_DEFAULTS.items():
+            merged.setdefault(key, value)
         return merged if merged else None
 
     @staticmethod
@@ -294,6 +295,7 @@ def _open_primary_connection(
     duckdb_config: DuckDBConnectConfig | None = None,
 ) -> DuckDBConnection:
     cfg = duckdb_config
+    _register_duckdb_config(config.db_path, cfg)
     if not config.read_only and config.db_path != Path(":memory:") and not config.db_path.exists():
         con = duckdb.connect(str(Path(":memory:")))
         db_path_str = str(config.db_path).replace("'", "''")
@@ -330,6 +332,39 @@ def _apply_schema(con: DuckDBConnection, config: StorageConfig) -> None:
 def _apply_duckdb_pragmas(con: DuckDBConnection) -> None:
     for pragma, value in _DEFAULT_DUCKDB_PRAGMAS.items():
         con.execute(f"PRAGMA {pragma}=?", [value])
+
+
+def _register_duckdb_config(
+    db_path: Path,
+    duckdb_config: DuckDBConnectConfig | None,
+) -> None:
+    resolved_path = db_path.resolve()
+    if resolved_path == Path(":memory:"):
+        return
+    normalized = _normalize_duckdb_config(duckdb_config)
+    with _DUCKDB_CONFIG_REGISTRY_LOCK:
+        existing = _DUCKDB_CONFIG_REGISTRY.get(resolved_path)
+        if existing is not None and existing != normalized:
+            msg = (
+                "DuckDB connection config mismatch for "
+                f"{resolved_path}: existing={existing} new={normalized}"
+            )
+            raise ValueError(msg)
+        _DUCKDB_CONFIG_REGISTRY[resolved_path] = normalized
+
+
+def _normalize_duckdb_config(
+    duckdb_config: DuckDBConnectConfig | None,
+) -> tuple[tuple[str, DuckDBConnectConfigValue], ...]:
+    if duckdb_config is None:
+        return ()
+    normalized_items: list[tuple[str, DuckDBConnectConfigValue]] = []
+    for key, value in duckdb_config.items():
+        normalized_value: DuckDBConnectConfigValue = value
+        if isinstance(value, list):
+            normalized_value = list(value)
+        normalized_items.append((key, normalized_value))
+    return tuple(sorted(normalized_items))
 
 
 def _run_init_sql_from_env(con: DuckDBConnection) -> None:

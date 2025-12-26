@@ -24,7 +24,22 @@ _REQUIRED_ROOT_KEYS: frozenset[str] = frozenset(
 
 
 def validate_otel_config_file(path: Path) -> Mapping[str, object]:
-    """Validate and load an OpenTelemetry SDK config file."""
+    """Validate and load an OpenTelemetry SDK config file.
+
+    Returns
+    -------
+    Mapping[str, object]
+        Parsed configuration payload.
+
+    Raises
+    ------
+    FileNotFoundError
+        Raised when the config file does not exist.
+    ValueError
+        Raised when the config file is empty or malformed.
+    TypeError
+        Raised when the config payload is not a mapping.
+    """
     if not path.exists():
         message = f"OpenTelemetry config file not found: {path}"
         raise FileNotFoundError(message)
@@ -32,7 +47,10 @@ def validate_otel_config_file(path: Path) -> Mapping[str, object]:
     if not text:
         message = f"OpenTelemetry config file is empty: {path}"
         raise ValueError(message)
-    payload = _parse_config_payload(path, text)
+    try:
+        payload = _parse_config_payload(path, text)
+    except TypeError as exc:
+        raise TypeError(str(exc)) from exc
     _validate_root_keys(payload, path)
     return payload
 
@@ -52,7 +70,7 @@ def _parse_json_payload(text: str, path: Path) -> Mapping[str, object]:
         raise ValueError(message) from exc
     if not isinstance(payload, dict):
         message = f"OpenTelemetry config file {path} must contain a mapping"
-        raise ValueError(message)
+        raise TypeError(message)
     return payload
 
 
@@ -64,7 +82,7 @@ def _parse_yaml_payload(text: str, path: Path) -> Mapping[str, object]:
         raise ValueError(message) from exc
     if not isinstance(payload, dict):
         message = f"OpenTelemetry config file {path} must contain a mapping"
-        raise ValueError(message)
+        raise TypeError(message)
     return payload
 
 

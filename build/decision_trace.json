@@ -1,0 +1,71 @@
+[
+  {
+    "index": 0,
+    "target": "modules",
+    "node": "t__modules",
+    "module": "ingestion",
+    "status": "compute",
+    "reason": "no_manifest",
+    "input_hash": "e8e8bbe97568d2a6",
+    "options_hash": null,
+    "prior_input_hash": null,
+    "dependencies": [],
+    "table_keys": [
+      "core.file_state",
+      "core.modules",
+      "core.repo_map"
+    ],
+    "artifact_keys": [],
+    "dep_hashes": {},
+    "prior_dep_hashes": {},
+    "impl_kind": "native"
+  },
+  {
+    "index": 1,
+    "target": "scip_proto",
+    "node": "t__scip_proto",
+    "module": "ingestion",
+    "status": "compute",
+    "reason": "no_manifest",
+    "input_hash": "4b48f60b264f947d",
+    "options_hash": null,
+    "prior_input_hash": null,
+    "dependencies": [],
+    "table_keys": [],
+    "artifact_keys": [],
+    "dep_hashes": {},
+    "prior_dep_hashes": {},
+    "impl_kind": "native"
+  },
+  {
+    "index": 2,
+    "target": "scip",
+    "node": "t__scip",
+    "module": "ingestion",
+    "status": "compute",
+    "reason": "no_manifest",
+    "input_hash": "37ccd95642c57521",
+    "options_hash": null,
+    "prior_input_hash": null,
+    "dependencies": [
+      "modules",
+      "scip_proto"
+    ],
+    "table_keys": [
+      "core.scip_diagnostics",
+      "core.scip_external_symbols",
+      "core.scip_module_state",
+      "core.scip_occurrences",
+      "core.scip_symbol_information",
+      "core.scip_symbol_relationships",
+      "core.scip_symbols"
+    ],
+    "artifact_keys": [],
+    "dep_hashes": {
+      "modules": "MISSING",
+      "scip_proto": "MISSING"
+    },
+    "prior_dep_hashes": {},
+    "impl_kind": "native"
+  }
+]

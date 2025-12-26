@@ -14,6 +14,7 @@ from functools import partial
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
+from weakref import WeakKeyDictionary
 
 import grpc
 from opentelemetry import metrics as otel_metrics
@@ -85,12 +86,12 @@ from codeintel.core.config.settings import (
 from codeintel.core.singleton import SingletonHolder
 from codeintel.observability.attributes import shape_attributes
 from codeintel.observability.config_validation import validate_otel_config_file
-from codeintel.observability.policy import ObservabilityPolicy, policy_from_settings
 from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
 from codeintel.observability.instrumentation_registry import (
     InstrumentationRegistry,
     get_instrumentation_registry,
 )
+from codeintel.observability.policy import ObservabilityPolicy, policy_from_settings
 from codeintel.observability.test_mode import TestTelemetryMode, resolve_test_telemetry_mode
 
 if TYPE_CHECKING:
@@ -241,19 +242,40 @@ class PipelineHealthState:
 class ObservabilityRuntimeManager:
     """Lifecycle manager for observability runtime state."""
 
-    def bootstrap(self, config: ObservabilityConfig) -> ObservabilityRuntime:
-        """Initialize and return the observability runtime."""
+    @staticmethod
+    def bootstrap(config: ObservabilityConfig) -> ObservabilityRuntime:
+        """Initialize and return the observability runtime.
+
+        Returns
+        -------
+        ObservabilityRuntime
+            Initialized observability runtime.
+        """
         return _ObservabilityHolder.get(lambda: _init_observability(config))
 
-    def get(self) -> ObservabilityRuntime:
-        """Return the current runtime, or a disabled runtime."""
+    @staticmethod
+    def get() -> ObservabilityRuntime:
+        """Return the current runtime, or a disabled runtime.
+
+        Returns
+        -------
+        ObservabilityRuntime
+            Active runtime or a disabled runtime when uninitialized.
+        """
         runtime = _ObservabilityHolder.get_or_none()
         if runtime is not None:
             return runtime
         return _disabled_runtime()
 
-    def shutdown(self) -> ObservabilityShutdownResult | None:
-        """Shut down the runtime and reset state."""
+    @staticmethod
+    def shutdown() -> ObservabilityShutdownResult | None:
+        """Shut down the runtime and reset state.
+
+        Returns
+        -------
+        ObservabilityShutdownResult | None
+            Flush summary for the runtime or None when inactive.
+        """
         runtime = _ObservabilityHolder.get_or_none()
         if runtime is None or runtime.shutdown is None:
             return None
@@ -273,8 +295,15 @@ class ObservabilityRuntimeManager:
         _ObservabilityHolder.reset()
         return result
 
-    def flush(self) -> ObservabilityShutdownResult | None:
-        """Force-flush the runtime without shutdown."""
+    @staticmethod
+    def flush() -> ObservabilityShutdownResult | None:
+        """Force-flush the runtime without shutdown.
+
+        Returns
+        -------
+        ObservabilityShutdownResult | None
+            Flush summary for the runtime or None when inactive.
+        """
         runtime = _ObservabilityHolder.get_or_none()
         if runtime is None or not runtime.enabled:
             return None
@@ -307,13 +336,16 @@ class ObservabilityRuntimeManager:
         _record_pipeline_metrics(result, action="flush")
         return result
 
-    def reset(self) -> None:
+    @staticmethod
+    def reset() -> None:
         """Clear any cached runtime state."""
         _ObservabilityHolder.reset()
 
 
 _RUNTIME_MANAGER = ObservabilityRuntimeManager()
 _PIPELINE_HEALTH_STATE = PipelineHealthState()
+
+
 @dataclass(frozen=True, slots=True)
 class ObservabilityShutdownResult:
     """Shutdown flush summary for observability runtime."""
@@ -880,7 +912,20 @@ def _build_logger_provider(
     config: ObservabilityConfig,
     resource: Resource,
 ) -> tuple[_LoggerProvider | None, logging.Handler | None]:
-    if not config.export_logs and not config.logs_auto_instrument:
+    return _build_logger_provider_with_handler(
+        config,
+        resource,
+        force_handler=False,
+    )
+
+
+def _build_logger_provider_with_handler(
+    config: ObservabilityConfig,
+    resource: Resource,
+    *,
+    force_handler: bool,
+) -> tuple[_LoggerProvider | None, logging.Handler | None]:
+    if not config.export_logs and not config.logs_auto_instrument and not force_handler:
         return None, None
 
     log_limits = _build_log_limits(config.log_limits)
@@ -919,6 +964,13 @@ def _build_logger_provider(
 
 
 def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRegistry) -> None:
+    if config.log_correlation or config.logs_auto_instrument:
+        root_logger = logging.getLogger()
+        if not root_logger.handlers:
+            logging.basicConfig(level=logging.INFO)
+        elif root_logger.level > logging.INFO:
+            root_logger.setLevel(logging.INFO)
+
     def _instrument(name: str, instrumentor: object, **kwargs: object) -> None:
         instrument = getattr(instrumentor, "instrument", None)
         if not callable(instrument):
@@ -932,7 +984,16 @@ def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRe
             registry.record_enabled(name)
 
     if config.log_correlation or config.logs_auto_instrument:
-        _instrument("logging", LoggingInstrumentor(), set_logging_format=False)
+        logging_instrumentor = LoggingInstrumentor()
+        instrument = getattr(logging_instrumentor, "instrument", None)
+        if callable(instrument):
+            logging_kwargs = _filter_kwargs(
+                instrument,
+                {"set_logging_format": config.logs_auto_instrument},
+            )
+        else:
+            logging_kwargs = {}
+        _instrument("logging", logging_instrumentor, **logging_kwargs)
     else:
         registry.record_suppressed("logging")
 
@@ -1248,6 +1309,14 @@ def _apply_collector_local_config(config: ObservabilityConfig) -> ObservabilityC
     )
 
 
+def _is_sdk_tracer_provider(provider: object) -> bool:
+    return hasattr(provider, "add_span_processor") and hasattr(provider, "shutdown")
+
+
+def _is_sdk_meter_provider(provider: object) -> bool:
+    return hasattr(provider, "force_flush") and hasattr(provider, "shutdown")
+
+
 def _runtime_from_in_memory(
     config: ObservabilityConfig,
     registry: InstrumentationRegistry,
@@ -1346,11 +1415,25 @@ def _runtime_from_config_file(
         message = f"Invalid OpenTelemetry config file: {exc}"
         raise RuntimeError(message) from exc
 
-    configured = _apply_config_file(config.config_file)
+    try:
+        configured = _apply_config_file(config.config_file)
+    except RuntimeError as exc:
+        LOG.warning("Failed to apply OTEL config file %s: %s", config.config_file, exc)
+        return None
     if not configured:
         LOG.warning(
             "Failed to apply OTEL config file %s; using manual config",
             config.config_file,
+        )
+        return None
+
+    tracer_provider = otel_trace.get_tracer_provider()
+    meter_provider = otel_metrics.get_meter_provider()
+    if not _is_sdk_tracer_provider(tracer_provider) or not _is_sdk_meter_provider(
+        meter_provider
+    ):
+        LOG.warning(
+            "OTEL config file did not initialize SDK providers; falling back to manual config"
         )
         return None
 
@@ -1394,6 +1477,8 @@ def _runtime_from_config_file(
 def _runtime_from_manual_config(
     config: ObservabilityConfig,
     registry: InstrumentationRegistry,
+    *,
+    force_log_handler: bool = False,
 ) -> ObservabilityRuntime:
     resource = _build_resource(config)
 
@@ -1405,7 +1490,11 @@ def _runtime_from_manual_config(
     otel_metrics.set_meter_provider(meter_provider)
     meter = otel_metrics.get_meter(config.service_name)
 
-    logger_provider, log_handler = _build_logger_provider(config, resource)
+    logger_provider, log_handler = _build_logger_provider_with_handler(
+        config,
+        resource,
+        force_handler=force_log_handler,
+    )
     if logger_provider is not None:
         logs_api = _load_otel_logs_api()
         set_logger_provider = getattr(logs_api, "set_logger_provider", None)
@@ -1494,7 +1583,11 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
     runtime = _runtime_from_config_file(config, registry)
     if runtime is not None:
         return runtime
-    return _runtime_from_manual_config(config, registry)
+    return _runtime_from_manual_config(
+        config,
+        registry,
+        force_log_handler=config.config_file is not None,
+    )
 
 
 def bootstrap_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
@@ -1542,7 +1635,13 @@ def flush_observability() -> ObservabilityShutdownResult | None:
 
 
 def get_runtime_manager() -> ObservabilityRuntimeManager:
-    """Return the global observability runtime manager."""
+    """Return the global observability runtime manager.
+
+    Returns
+    -------
+    ObservabilityRuntimeManager
+        Global runtime manager instance.
+    """
     return _RUNTIME_MANAGER
 
 
@@ -1615,7 +1714,13 @@ def _record_pipeline_health(result: ObservabilityShutdownResult) -> None:
 
 
 def get_pipeline_health_state() -> PipelineHealthState:
-    """Return the last telemetry pipeline flush summary."""
+    """Return the last telemetry pipeline flush summary.
+
+    Returns
+    -------
+    PipelineHealthState
+        Snapshot of the last pipeline flush attempt.
+    """
     return PipelineHealthState(
         last_flush_ok=_PIPELINE_HEALTH_STATE.last_flush_ok,
         last_flush_ms=_PIPELINE_HEALTH_STATE.last_flush_ms,
@@ -1704,16 +1809,16 @@ def observability_config_from_settings(
 __all__ = [
     "ObservabilityConfig",
     "ObservabilityRuntime",
-    "ObservabilityShutdownResult",
     "ObservabilityRuntimeManager",
+    "ObservabilityShutdownResult",
     "PipelineHealthState",
     "TestTelemetryHandles",
     "bootstrap_observability",
     "build_exemplar_filter",
     "build_metric_views",
     "flush_observability",
-    "get_pipeline_health_state",
     "get_observability",
+    "get_pipeline_health_state",
     "get_runtime_manager",
     "observability_config_from_settings",
     "shutdown_observability",

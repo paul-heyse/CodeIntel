@@ -9,6 +9,8 @@ from fastmcp.server.middleware.middleware import Middleware
 from codeintel.core.execution.ids import new_uuid_hex
 from codeintel.observability import operations
 from codeintel.observability.context import correlation_context
+from codeintel.observability.otel import get_observability
+from codeintel.observability.semconv import mcp_span_attributes
 
 if TYPE_CHECKING:
     from fastmcp.server.middleware.middleware import CallNext, MiddlewareContext
@@ -51,7 +53,18 @@ class McpOpenTelemetryMiddleware(Middleware):
             if isinstance(tool_name_obj, str) and tool_name_obj:
                 tool_name = tool_name_obj
 
-        operation = f"{method}:{tool_name}" if tool_name else method
+        policy = get_observability().policy
+        mcp_attrs = mcp_span_attributes(
+            method=method,
+            tool_name=tool_name,
+            policy=policy,
+        )
+        normalized_tool = mcp_attrs.get("mcp.tool_name")
+        operation = (
+            f"{method}:{normalized_tool}"
+            if isinstance(normalized_tool, str) and normalized_tool
+            else method
+        )
 
         fastmcp_ctx = context.fastmcp_context
         session_id: str | None = None
@@ -71,8 +84,7 @@ class McpOpenTelemetryMiddleware(Middleware):
                 component="mcp",
                 operation=operation,
                 attributes={
-                    "mcp.method": method,
-                    "mcp.tool_name": tool_name or "",
+                    **mcp_attrs,
                 },
             ),
         ):

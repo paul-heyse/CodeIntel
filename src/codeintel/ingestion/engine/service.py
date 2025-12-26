@@ -17,6 +17,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
     ToolName,
     ToolNotFoundError,
+    ToolSpecError,
 )
 from codeintel.ingestion.engine.plugins import (
     ToolStatus,
@@ -138,10 +139,15 @@ class ToolService:
         ------
         KeyError
             If no plugin is registered under the provided name.
+        ToolSpecError
+            If required plugin arguments are missing or unexpected.
         """
         if name not in self._plugins.names():
             raise KeyError(name)
         plugin = self.get_plugin(name)
+        missing, extra = plugin.metadata.spec.validate_kwargs(kwargs)
+        if missing or extra:
+            raise ToolSpecError(plugin.metadata.name, missing=missing, extra=extra)
         return await plugin.run(repo_root=repo_root, **kwargs)
 
     async def run_pyright(self, repo_root: Path) -> Mapping[str, int]:

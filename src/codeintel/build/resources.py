@@ -10,7 +10,7 @@ Example
 >>> resources = TargetResources(
 ...     tracker=True,
 ...     modules=True,
-...     tools=("scip-python", "scip"),
+...     tools=("scip-python",),
 ... )
 >>> execution = TargetExecution(
 ...     cpu_intensive=True,
@@ -64,7 +64,7 @@ class TargetResources:
     >>> resources = TargetResources(
     ...     tracker=True,
     ...     modules=True,
-    ...     tools=("scip-python", "scip"),
+    ...     tools=("scip-python",),
     ... )
     """
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -12,7 +12,7 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind as _SpanKind
 from opentelemetry.trace.status import Status, StatusCode
 
-from codeintel.observability.attributes import shape_attributes
+from codeintel.observability.attributes import coerce_attribute_value, shape_attributes
 from codeintel.observability.context import (
     get_commit,
     get_correlation_id,
@@ -27,11 +27,6 @@ if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
 
 _SPAN_KIND_CLIENT: SpanKind | None = _SpanKind.CLIENT
-
-SpanAttributeValue = (
-    str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
-)
-
 
 @dataclass(frozen=True, slots=True)
 class DbSpanEmitterConfig:
@@ -108,18 +103,6 @@ class DbSpanEmitter:
                 raise
 
 
-def _coerce_attribute_value(value: object) -> SpanAttributeValue | None:
-    if value is None:
-        return None
-    if isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, (list, tuple)):
-        if all(isinstance(item, (str, bool, int, float)) for item in value):
-            return list(value)
-        return str(value)
-    return str(value)
-
-
 def _start_span(tracer: Tracer, operation: str) -> AbstractContextManager[Span]:
     if _SPAN_KIND_CLIENT is None:
         return tracer.start_as_current_span(operation)
@@ -128,7 +111,7 @@ def _start_span(tracer: Tracer, operation: str) -> AbstractContextManager[Span]:
 
 def _set_span_attributes(span: Span, attrs: Mapping[str, object]) -> None:
     for key, value in attrs.items():
-        attr_value = _coerce_attribute_value(value)
+        attr_value = coerce_attribute_value(value)
         if attr_value is not None:
             span.set_attribute(key, attr_value)
 

@@ -263,11 +263,16 @@ def build_symbol_relationship_rows(
         Serialized row tuples for symbol relationships.
     """
     rows: list[tuple[object, ...]] = []
+    seen: set[tuple[str, str, str]] = set()
     for rel in relationships:
         if not context.include_references and rel.relationship_kind == "reference":
             continue
         if not context.include_implementations and rel.relationship_kind == "implementation":
             continue
+        key = (rel.symbol, rel.related_symbol, rel.relationship_kind)
+        if key in seen:
+            continue
+        seen.add(key)
         payload = {
             "repo": context.repo,
             "commit": context.commit,

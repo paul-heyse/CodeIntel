@@ -45,7 +45,13 @@ class CorrelationBundle:
     commit: str | None
 
     def span_attributes(self) -> dict[str, str]:
-        """Return span attributes derived from the bundle."""
+        """Return span attributes derived from the bundle.
+
+        Returns
+        -------
+        dict[str, str]
+            Span attributes for the current bundle.
+        """
         attrs: dict[str, str] = {}
         if self.correlation_id:
             attrs["codeintel.correlation_id"] = self.correlation_id
@@ -60,7 +66,13 @@ class CorrelationBundle:
         return attrs
 
     def metric_attributes(self) -> dict[str, str]:
-        """Return low-cardinality metric attributes derived from the bundle."""
+        """Return low-cardinality metric attributes derived from the bundle.
+
+        Returns
+        -------
+        dict[str, str]
+            Metric attributes for the current bundle.
+        """
         attrs: dict[str, str] = {}
         if self.run_id:
             attrs["codeintel.run_id"] = self.run_id
@@ -74,7 +86,13 @@ class CorrelationBundle:
 
 
 def current_correlation_bundle() -> CorrelationBundle:
-    """Return the current correlation bundle from context."""
+    """Return the current correlation bundle from context.
+
+    Returns
+    -------
+    CorrelationBundle
+        Current correlation identifiers.
+    """
     return CorrelationBundle(
         correlation_id=_CORRELATION_ID.get(),
         run_id=_RUN_ID.get(),
@@ -282,12 +300,12 @@ def run_context(
 __all__ = [
     "CorrelationBundle",
     "correlation_context",
+    "current_correlation_bundle",
     "get_commit",
     "get_correlation_id",
     "get_domain",
     "get_repo",
     "get_run_id",
-    "current_correlation_bundle",
     "run_context",
     "set_commit",
     "set_correlation_id",

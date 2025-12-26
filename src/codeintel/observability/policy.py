@@ -48,7 +48,13 @@ class ObservabilityPolicy:
     redaction: RedactionPolicy = field(default_factory=RedactionPolicy)
 
     def operation_allowlist_for(self, component: str, operation: str) -> frozenset[str]:
-        """Return allowlist for a specific component/operation combination."""
+        """Return allowlist for a specific component/operation combination.
+
+        Returns
+        -------
+        frozenset[str]
+            Attribute allowlist for the component and operation.
+        """
         if not self.operation_attribute_overrides:
             return self.operation_attribute_allowlist
         key = f"{component}.{operation}"
@@ -62,7 +68,13 @@ class ObservabilityPolicy:
 
 
 def policy_from_settings(settings: ObservabilitySettings) -> ObservabilityPolicy:
-    """Build an observability policy from runtime settings."""
+    """Build an observability policy from runtime settings.
+
+    Returns
+    -------
+    ObservabilityPolicy
+        Policy with settings-derived overrides.
+    """
     overrides = _normalize_overrides(settings.operation_attribute_allowlist_overrides)
     return ObservabilityPolicy(
         operation_attribute_overrides=overrides,

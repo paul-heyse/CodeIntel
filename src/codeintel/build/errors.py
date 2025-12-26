@@ -536,7 +536,6 @@ class ToolNotAvailableError(ResourceError):
         """Return suggestion for fixing the error."""
         hints: dict[str, str] = {
             "scip-python": "Install with: npm install -g @aspect/scip-python",
-            "scip": "Install with: npm install -g @sourcegraph/scip",
             "protoc": "Install with: pip install grpcio-tools",
             "pyright": "Install with: pip install pyright",
             "pyrefly": "Install with: pip install pyrefly",
