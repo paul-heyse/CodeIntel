@@ -11,16 +11,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastmcp.server.event_store import EventStore
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.runtime import (
-    bootstrap_observability,
-    get_observability,
-    observability_config_from_settings,
-)
+from codeintel.observability.lifecycle import ObservabilityLifecycle
+from codeintel.observability.runtime import get_observability
 from codeintel.serving.auth.policy import require_http_auth
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.http.errors import (
@@ -110,12 +106,8 @@ def create_serving_app(
     app.state.serving = state
 
     observability_settings = load_runtime_settings().observability
-    bootstrap_observability(
-        observability_config_from_settings(
-            observability_settings,
-            default_service_name="codeintel-serving",
-        )
-    )
+    lifecycle = ObservabilityLifecycle(default_service_name="codeintel-serving")
+    lifecycle.bootstrap(observability_settings)
 
     _install_exception_handlers(app)
     _install_middlewares(app, cfg)
@@ -123,7 +115,7 @@ def create_serving_app(
     _install_observability_routes(app, db_manager=runtime.db_manager, settings=cfg)
     _maybe_mount_mcp(app, kernel=runtime.kernel, settings=cfg, features=features, enabled=mount_mcp)
 
-    _instrument_fastapi(app)
+    lifecycle.attach_fastapi(app)
 
     app.openapi = lambda: _custom_openapi(app)
     return app
@@ -197,10 +189,6 @@ def _install_middlewares(app: FastAPI, cfg: ServingSettings) -> None:
         app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(cfg.trusted_hosts))
 
     app.middleware("http")(correlation_id_and_timing_middleware)
-
-
-def _instrument_fastapi(app: FastAPI) -> None:
-    FastAPIInstrumentor.instrument_app(app)
 
 
 def _install_observability_routes(

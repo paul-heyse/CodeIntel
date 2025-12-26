@@ -6,6 +6,16 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING
 
+from codeintel.observability.semconv_keys import (
+    CODEINTEL_CORRELATION_ID,
+    CODEINTEL_HEALTH_CHECK,
+    CODEINTEL_OUTPUT_FORMAT,
+    HTTP_METHOD,
+    HTTP_ROUTE,
+    MCP_METHOD,
+    MCP_TOOL_NAME,
+)
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -13,12 +23,13 @@ if TYPE_CHECKING:
 
 OPERATION_ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "codeintel.correlation_id",
-        "codeintel.output_format",
-        "http.method",
-        "http.route",
-        "mcp.method",
-        "mcp.tool_name",
+        CODEINTEL_CORRELATION_ID,
+        CODEINTEL_HEALTH_CHECK,
+        CODEINTEL_OUTPUT_FORMAT,
+        HTTP_METHOD,
+        HTTP_ROUTE,
+        MCP_METHOD,
+        MCP_TOOL_NAME,
     }
 )
 

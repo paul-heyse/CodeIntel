@@ -123,22 +123,6 @@ class ProjectConfigSection:
 
 
 @dataclass(frozen=True)
-class PluginsConfigSection:
-    """Plugin system configuration.
-
-    Parameters
-    ----------
-    directories
-        Additional directories to search for plugins.
-    disabled
-        Plugin names to disable.
-    """
-
-    directories: tuple[Path, ...] = ()
-    disabled: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
 class CliConfig:
     """Complete CLI configuration - single source of truth.
 
@@ -165,8 +149,6 @@ class CliConfig:
         Storage backend configuration.
     project
         Project identification configuration.
-    plugins
-        Plugin system configuration.
 
     Examples
     --------
@@ -187,8 +169,6 @@ class CliConfig:
     retry: RetryConfig = field(default_factory=RetryConfig)
     storage: StorageConfigSection = field(default_factory=StorageConfigSection)
     project: ProjectConfigSection = field(default_factory=ProjectConfigSection)
-    plugins: PluginsConfigSection = field(default_factory=PluginsConfigSection)
-
     _sources: tuple[str, ...] = field(default=(), repr=False, compare=False)
 
     SCHEMA_ID: ClassVar[str] = "https://codeintel.dev/schemas/cli-config.json"
@@ -251,7 +231,6 @@ __all__ = [
     "ConfigValidationError",
     "LogLevel",
     "OutputFormat",
-    "PluginsConfigSection",
     "ProgressConfig",
     "ProjectConfigSection",
     "RetryConfig",

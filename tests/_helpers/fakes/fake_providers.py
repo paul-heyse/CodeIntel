@@ -6,7 +6,7 @@ enabling fast and deterministic tests.
 Example
 -------
 >>> fake_scip = FakeScipIndexer(
-...     symbols=[ScipSymbol("my_func", "my_func", "function")],
+...     symbols=[ScipSymbol("my_func")],
 ... )
 >>> result = await fake_scip.index(Path("/repo"), Path("/output/index.scip"))
 >>> result.success
@@ -14,12 +14,22 @@ Example
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-from codeintel.build.types import ScipIndexResult, ScipParseResult, TypeCheckResult
 from codeintel.ingestion.engine.service import ToolService
+from codeintel.ingestion.engine.status import ToolStatus
+from codeintel.ingestion.ports.tools import (
+    CoverageFileData,
+    DiagnosticEntry,
+    DiagnosticResult,
+    ScipDocument,
+    ScipOccurrence,
+    ScipResult,
+    ScipSymbol,
+    TestCase,
+)
 from tests._helpers.fakes.tools import FakeToolRunner as IngestionFakeToolRunner
 from tests._helpers.records import (
     CallRecorder,
@@ -31,18 +41,6 @@ from tests._helpers.records import (
     TypeCheckCall,
 )
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from codeintel.build.types import (
-        CoverageData,
-        GitLogEntry,
-        ScipOccurrence,
-        ScipSymbol,
-        TestResult,
-        TypeDiagnostic,
-    )
-
 __all__ = [
     "FakeCoverageCollector",
     "FakeGitHistoryProvider",
@@ -52,6 +50,20 @@ __all__ = [
     "FakeToolRunner",
     "FakeTypeChecker",
 ]
+
+
+@dataclass(frozen=True)
+class GitLogEntry:
+    """Minimal git log entry used in tests."""
+
+    sha: str
+    author: str
+    author_email: str
+    date: str
+    message: str
+    files_changed: int = 0
+    insertions: int = 0
+    deletions: int = 0
 
 
 @dataclass
@@ -92,7 +104,7 @@ class FakeScipIndexer:
         *,
         include_patterns: Sequence[str] | None = None,
         exclude_patterns: Sequence[str] | None = None,
-    ) -> ScipIndexResult:
+    ) -> ScipResult:
         """Return pre-configured index result.
 
         Parameters
@@ -108,7 +120,7 @@ class FakeScipIndexer:
 
         Returns
         -------
-        ScipIndexResult
+        ScipResult
             Pre-configured result.
         """
         self.index_calls.record(
@@ -120,21 +132,24 @@ class FakeScipIndexer:
             )
         )
         if self.index_success:
-            return ScipIndexResult(
-                success=True,
-                index_path=output_path,
-                duration_ms=100,
+            return ScipResult(
+                status=ToolStatus.OK,
+                documents=[],
+                index_scip_path=output_path,
+                duration_s=0.1,
             )
-        return ScipIndexResult(
-            success=False,
-            error_message="Fake SCIP indexing failed",
+        return ScipResult(
+            status=ToolStatus.FAILED,
+            documents=[],
+            error="Fake SCIP indexing failed",
+            duration_s=0.0,
         )
 
     async def parse(
         self,
         scip_path: Path,
         output_json_path: Path,
-    ) -> ScipParseResult:
+    ) -> ScipResult:
         """Return pre-configured parse result.
 
         Parameters
@@ -146,22 +161,30 @@ class FakeScipIndexer:
 
         Returns
         -------
-        ScipParseResult
+        ScipResult
             Pre-configured result with symbols and occurrences.
         """
         self.parse_calls.record(
             ScipParseCall(scip_path=scip_path, output_json_path=output_json_path)
         )
         if self.parse_success:
-            return ScipParseResult(
-                success=True,
-                symbols=self.symbols,
-                occurrences=self.occurrences,
-                json_path=output_json_path,
+            document = ScipDocument(
+                relative_path=output_json_path.name,
+                symbols=list(self.symbols),
+                occurrences=list(self.occurrences),
             )
-        return ScipParseResult(
-            success=False,
-            error_message="Fake SCIP parsing failed",
+            return ScipResult(
+                status=ToolStatus.OK,
+                documents=[document],
+                index_scip_path=scip_path,
+                duration_s=0.1,
+            )
+        return ScipResult(
+            status=ToolStatus.FAILED,
+            documents=[],
+            index_scip_path=scip_path,
+            error="Fake SCIP parsing failed",
+            duration_s=0.0,
         )
 
 
@@ -177,7 +200,7 @@ class FakeTypeChecker:
         Whether check should succeed (no errors).
     """
 
-    diagnostics: tuple[TypeDiagnostic, ...] = ()
+    diagnostics: tuple[DiagnosticEntry, ...] = ()
     success: bool = True
     calls: CallRecorder[TypeCheckCall] = field(default_factory=CallRecorder)
 
@@ -187,7 +210,7 @@ class FakeTypeChecker:
         *,
         paths: Sequence[Path] | None = None,
         config_path: Path | None = None,
-    ) -> TypeCheckResult:
+    ) -> DiagnosticResult:
         """Return pre-configured type check result.
 
         Parameters
@@ -201,19 +224,19 @@ class FakeTypeChecker:
 
         Returns
         -------
-        TypeCheckResult
+        DiagnosticResult
             Pre-configured result.
         """
         self.calls.record(TypeCheckCall(repo_root=repo_root, paths=paths, config_path=config_path))
         error_count = sum(1 for d in self.diagnostics if d.severity == "error")
-        warning_count = sum(1 for d in self.diagnostics if d.severity == "warning")
+        status = ToolStatus.OK if self.success and error_count == 0 else ToolStatus.FAILED
+        error_message = None if status is ToolStatus.OK else "Fake type checking failed"
 
-        return TypeCheckResult(
-            success=self.success and error_count == 0,
-            diagnostics=self.diagnostics,
-            error_count=error_count,
-            warning_count=warning_count,
-            duration_ms=50,
+        return DiagnosticResult(
+            status=status,
+            diagnostics=list(self.diagnostics),
+            error=error_message,
+            duration_s=0.05,
         )
 
 
@@ -227,13 +250,13 @@ class FakeCoverageCollector:
         Coverage data by file path.
     """
 
-    coverage_data: dict[str, CoverageData] = field(default_factory=dict)
+    coverage_data: dict[str, CoverageFileData] = field(default_factory=dict)
     collect_calls: CallRecorder[CollectCall] = field(default_factory=CallRecorder)
 
     async def collect(
         self,
         coverage_file: Path,
-    ) -> Mapping[str, CoverageData]:
+    ) -> Mapping[str, CoverageFileData]:
         """Return pre-configured coverage data.
 
         Parameters
@@ -243,7 +266,7 @@ class FakeCoverageCollector:
 
         Returns
         -------
-        Mapping[str, CoverageData]
+        Mapping[str, CoverageFileData]
             Pre-configured coverage data.
         """
         self.collect_calls.record(CollectCall(path=coverage_file))
@@ -260,13 +283,13 @@ class FakeTestReporter:
         Test results to return.
     """
 
-    test_results: tuple[TestResult, ...] = ()
+    test_results: tuple[TestCase, ...] = ()
     collect_calls: CallRecorder[CollectCall] = field(default_factory=CallRecorder)
 
     async def collect(
         self,
         report_path: Path,
-    ) -> tuple[TestResult, ...]:
+    ) -> tuple[TestCase, ...]:
         """Return pre-configured test results.
 
         Parameters
@@ -276,7 +299,7 @@ class FakeTestReporter:
 
         Returns
         -------
-        tuple[TestResult, ...]
+        tuple[TestCase, ...]
             Pre-configured results.
         """
         self.collect_calls.record(CollectCall(path=report_path))

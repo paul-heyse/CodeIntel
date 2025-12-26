@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -15,7 +14,8 @@ from codeintel.observability.attribute_sanitizer import (
     redact_command_value,
     redact_path_value,
 )
-from codeintel.observability.events import add_span_event, set_span_attributes
+from codeintel.observability.attribute_schema import build_attribute_normalizer
+from codeintel.observability.events import TelemetryEvent, emit_event
 from codeintel.observability.runtime import get_observability
 from codeintel.observability.runtime_registry import count_subprocesses, snapshot_subprocesses
 from codeintel.observability.semconv_keys import (
@@ -36,8 +36,17 @@ from codeintel.observability.semconv_keys import (
     CODEINTEL_COMPONENT,
     CODEINTEL_DOMAIN,
     CODEINTEL_OPERATION,
+    SCIP_COMMIT,
+    SCIP_DURATION_MS,
+    SCIP_ERROR,
+    SCIP_MODE,
+    SCIP_REPO,
+    SCIP_RUN_ID,
+    SCIP_STATUS,
     SHUTDOWN_ACTIVE_THREAD_NAMES,
     SHUTDOWN_ACTIVE_THREADS_COUNT,
+    SHUTDOWN_ERROR_MESSAGE,
+    SHUTDOWN_ERROR_TYPE,
     SHUTDOWN_PENDING_TASK_SAMPLES,
     SHUTDOWN_PENDING_TASKS_COUNT,
     SHUTDOWN_STATUS,
@@ -192,7 +201,7 @@ class TeardownTelemetry:
             }
         )
 
-    def to_log_payload(self, *, event: str = "build.shutdown") -> dict[str, object]:
+    def to_log_payload(self) -> dict[str, object]:
         """Return a JSON-serializable payload for structured logs.
 
         Returns
@@ -201,7 +210,6 @@ class TeardownTelemetry:
             Structured log payload for teardown telemetry.
         """
         return {
-            "event": event,
             "component": self.component,
             "operation": self.operation,
             "run_id": self.run_id,
@@ -306,8 +314,8 @@ class ScipTeardownTelemetry:
         """
         return prune_none(
             {
-                "scip.status": self.status,
-                "scip.error": self.error_summary,
+                SCIP_STATUS: self.status,
+                SCIP_ERROR: self.error_summary,
             }
         )
 
@@ -321,17 +329,17 @@ class ScipTeardownTelemetry:
         """
         return prune_none(
             {
-                "scip.run_id": self.run_id,
-                "scip.repo": self.repo,
-                "scip.commit": self.commit,
-                "scip.mode": self.scip_mode,
-                "scip.status": self.status,
-                "scip.error": self.error_summary,
-                "scip.duration_ms": self.duration_ms,
+                SCIP_RUN_ID: self.run_id,
+                SCIP_REPO: self.repo,
+                SCIP_COMMIT: self.commit,
+                SCIP_MODE: self.scip_mode,
+                SCIP_STATUS: self.status,
+                SCIP_ERROR: self.error_summary,
+                SCIP_DURATION_MS: self.duration_ms,
             }
         )
 
-    def to_log_payload(self, *, event: str = "scip.teardown") -> dict[str, object]:
+    def to_log_payload(self) -> dict[str, object]:
         """Return a JSON-serializable payload for structured logs.
 
         Returns
@@ -340,7 +348,6 @@ class ScipTeardownTelemetry:
             Payload suitable for structured logging.
         """
         return {
-            "event": event,
             "run_id": self.run_id,
             "repo": self.repo,
             "commit": self.commit,
@@ -466,20 +473,59 @@ def emit_teardown_telemetry(
     """
     obs = get_observability()
     span: Span | None = None
+    normalizer = build_attribute_normalizer(obs.policy)
+    log_level = logging.INFO if telemetry.shutdown_status == "succeeded" else logging.WARNING
     if obs.enabled and obs.tracer is not None:
         with obs.tracer.start_as_current_span(span_name) as active_span:
             span = active_span
-            set_span_attributes(span, telemetry.span_attributes())
-            add_span_event(span, "shutdown.summary", telemetry.event_attributes())
+            summary_event = TelemetryEvent(
+                name="shutdown.summary",
+                span_attributes=telemetry.span_attributes(),
+                event_attributes=telemetry.event_attributes(),
+                log_payload=telemetry.to_log_payload(),
+                span_event_name="shutdown.summary",
+                log_event_name="build.shutdown",
+                log_level=log_level,
+            )
+            emit_event(
+                event=summary_event,
+                span=span,
+                normalizer=normalizer,
+                logger=logger,
+            )
             if telemetry.shutdown_status != "succeeded":
-                add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
-    log_payload = telemetry.to_log_payload()
-    log_target = logger or log
-    payload = json.dumps(log_payload, sort_keys=True)
-    if telemetry.shutdown_status == "succeeded":
-        log_target.info("build.shutdown %s", payload)
-    else:
-        log_target.warning("build.shutdown %s", payload)
+                error_event = TelemetryEvent(
+                    name="shutdown.error",
+                    span_attributes=telemetry.span_attributes(),
+                    event_attributes=telemetry.shutdown_error_attributes(),
+                    log_payload=telemetry.to_log_payload(),
+                    span_event_name="shutdown.error",
+                    log_event_name="build.shutdown",
+                    log_level=log_level,
+                )
+                emit_event(
+                    event=error_event,
+                    span=span,
+                    normalizer=normalizer,
+                    logger=logger,
+                )
+            return
+
+    summary_event = TelemetryEvent(
+        name="shutdown.summary",
+        span_attributes=telemetry.span_attributes(),
+        event_attributes=telemetry.event_attributes(),
+        log_payload=telemetry.to_log_payload(),
+        span_event_name="shutdown.summary",
+        log_event_name="build.shutdown",
+        log_level=log_level,
+    )
+    emit_event(
+        event=summary_event,
+        span=None,
+        normalizer=normalizer,
+        logger=logger,
+    )
 
 
 def emit_scip_teardown_telemetry(
@@ -501,19 +547,59 @@ def emit_scip_teardown_telemetry(
     """
     obs = get_observability()
     span: Span | None = None
+    normalizer = build_attribute_normalizer(obs.policy)
+    log_level = logging.INFO if telemetry.status == "succeeded" else logging.WARNING
     if obs.enabled and obs.tracer is not None:
         with obs.tracer.start_as_current_span(span_name) as active_span:
             span = active_span
-            set_span_attributes(span, telemetry.span_attributes())
+            summary_event = TelemetryEvent(
+                name="scip.teardown",
+                span_attributes=telemetry.span_attributes(),
+                event_attributes={},
+                log_payload=telemetry.to_log_payload(),
+                span_event_name="scip.teardown",
+                log_event_name="scip.teardown",
+                log_level=log_level,
+            )
+            emit_event(
+                event=summary_event,
+                span=span,
+                normalizer=normalizer,
+                logger=logger,
+            )
             if telemetry.status != "succeeded":
-                add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
-    log_payload = telemetry.to_log_payload()
-    log_target = logger or log
-    payload = json.dumps(log_payload, sort_keys=True)
-    if telemetry.status == "succeeded":
-        log_target.info("scip.teardown %s", payload)
-    else:
-        log_target.warning("scip.teardown %s", payload)
+                error_event = TelemetryEvent(
+                    name="shutdown.error",
+                    span_attributes=telemetry.span_attributes(),
+                    event_attributes=telemetry.shutdown_error_attributes(),
+                    log_payload=telemetry.to_log_payload(),
+                    span_event_name="shutdown.error",
+                    log_event_name="scip.teardown",
+                    log_level=log_level,
+                )
+                emit_event(
+                    event=error_event,
+                    span=span,
+                    normalizer=normalizer,
+                    logger=logger,
+                )
+            return
+
+    summary_event = TelemetryEvent(
+        name="scip.teardown",
+        span_attributes=telemetry.span_attributes(),
+        event_attributes={},
+        log_payload=telemetry.to_log_payload(),
+        span_event_name="scip.teardown",
+        log_event_name="scip.teardown",
+        log_level=log_level,
+    )
+    emit_event(
+        event=summary_event,
+        span=None,
+        normalizer=normalizer,
+        logger=logger,
+    )
 
 
 def emit_shutdown_error_event(
@@ -538,20 +624,33 @@ def emit_shutdown_error_event(
     """
     obs = get_observability()
     event_attrs = dict(attributes or {})
-    event_attrs["shutdown.error_type"] = type(error).__name__
-    event_attrs["shutdown.error_message"] = str(error)
+    event_attrs[SHUTDOWN_ERROR_TYPE] = type(error).__name__
+    event_attrs[SHUTDOWN_ERROR_MESSAGE] = str(error)
+    normalizer = build_attribute_normalizer(obs.policy)
+    event = TelemetryEvent(
+        name="shutdown.error",
+        span_attributes=event_attrs,
+        event_attributes=event_attrs,
+        log_payload=prune_none(event_attrs),
+        span_event_name="shutdown.error",
+        log_event_name="shutdown.error",
+        log_level=logging.WARNING,
+    )
     if obs.enabled and obs.tracer is not None:
         with obs.tracer.start_as_current_span(span_name) as span:
-            add_span_event(span, "shutdown.error", prune_none(event_attrs))
-    log_target = logger or log
-    payload = json.dumps(
-        {
-            "event": "shutdown.error",
-            **prune_none(event_attrs),
-        },
-        sort_keys=True,
-    )
-    log_target.warning("shutdown.error %s", payload)
+            emit_event(
+                event=event,
+                span=span,
+                normalizer=normalizer,
+                logger=logger,
+            )
+    else:
+        emit_event(
+            event=event,
+            span=None,
+            normalizer=normalizer,
+            logger=logger,
+        )
 
 
 def _redact_command_value(value: str | None) -> str | None:

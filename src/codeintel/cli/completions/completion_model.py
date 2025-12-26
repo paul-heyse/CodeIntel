@@ -230,7 +230,6 @@ def build_completion_model(registry: OperationRegistry | None = None) -> Complet
         [
             CommandSpec(name="config", description="Configuration management"),
             CommandSpec(name="health", description="Health checks"),
-            CommandSpec(name="plugins", description="Plugin management"),
             CommandSpec(name="completions", description="Shell completion generation"),
         ],
     )

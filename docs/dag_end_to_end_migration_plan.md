@@ -119,6 +119,11 @@ Notes on schema behavior:
   a single source of truth for target metadata.
 - Inventory validation must fail fast on duplicate targets and mismatched materialization rules
   to avoid downstream schema mismatches.
+- Tooling preflight should live alongside registry inventory loading to keep CLI and build
+  resolution consistent; use runtime-resolved ToolsConfig when available and fall back to
+  defaults when not.
+- Tool resolution should distinguish missing tools (configured but not found) from unrecognized
+  tool names (not in the ToolName enum) to keep diagnostics actionable.
 
 ## Phase 0: Inventory and candidate selection
 Deliverables:
@@ -280,6 +285,173 @@ Acceptance criteria:
 - Downstream consumers (serving or CLI) operate with only materialized outputs.
 - Contract validation behavior is stable in lenient and strict modes.
 
+## Ingestion replication pattern and implementation plan
+Ingestion targets are heterogeneous (filesystem scan, parser extractors, and external tools),
+but we can keep them DAG-first by standardizing on the tool-target pattern, shared
+materialization helpers, and contract-driven schemas.
+
+### Ingestion scope inventory (current targets)
+- modules: core.modules, core.file_state, core.repo_map (foundation for downstream ingestion).
+- config_ingest: analytics.config_values.
+- coverage_ingest: analytics.coverage_lines.
+- tests_ingest: analytics.test_catalog.
+- typing: analytics.typedness, analytics.static_diagnostics.
+- ast: core.ast_nodes, core.ast_metrics.
+- cst: core.cst_nodes.
+- docstrings: core.docstrings.
+- scip_proto: artifact scip_pb2 (generated scip_pb2.py).
+- scip: artifact scip_index plus core.scip_symbols, core.scip_occurrences,
+  core.scip_symbol_information, core.scip_symbol_relationships, core.scip_diagnostics,
+  core.scip_external_symbols, core.scip_module_state.
+
+### Ingestion tooling inventory artifact
+Maintain tool dependencies separately from output inventory so build, CLI, and tests
+have a single source of truth for tool availability, config keys, and install hints.
+
+Canonical artifact: `src/codeintel/core/registry/ingestion_tooling_inventory.yaml`.
+
+Template:
+```yaml
+version: 1
+generated_at: "YYYY-MM-DD"
+tools:
+  - tool_name: "scip-python"
+    display_name: "scip-python"
+    kind: "binary"
+    cli: "scip"
+    config_key: "scip_python_bin"
+    required_by:
+      - "ingestion.scip"
+    packages:
+      - "scip-python"
+    version_probe: "scip --version"
+    notes: "CLI entrypoint provided by scip-python package."
+```
+Notes:
+- Loader validates tool kinds, detects duplicates, and normalizes display fields.
+- CLI preflight (`registry tools`) reports status: available, missing, unrecognized.
+
+### Standard ingestion target template (DAG-first)
+1) Inputs: module inventory, scan profile, tool options, and hash options.
+2) Tool step: run_tool_step/run_tool_and_ingest with ToolRunContext (skip via manifest plus
+   options hash).
+3) Ingest step: pure transformation from tool output to row payloads (IngestStep[Payload]).
+4) Materialization: save_rows for tables and save_artifact for tool outputs.
+5) Anchor: finalize_target_from_materializations with record_from_materializations and
+   change_delta when available.
+
+Notes:
+- Pure Python steps (repo scan, AST/CST extraction) still fit the tool-step template; treat the
+  compute step as the "tool" so skip and error handling is consistent.
+- Multi-table outputs should use TableSaveSpec in tool_target to eliminate per-table decorators.
+- Artifact outputs should be declared once and reused by downstream nodes (avoid duplicate
+  path logic).
+
+### Supporting functionality to fold into the standard framework
+- Tool registry and availability: canonical tool names (use scip-python CLI consistently),
+  preflight availability checks, and explicit failure reasons when tools are missing.
+- Hash and skip semantics: use InputHashOptions (file state plus options hash) for all ingestion
+  targets; avoid ad hoc skip logic.
+- Shared module inventory nodes: use module_paths and module_records as the single source for
+  module lists; avoid filesystem scans in downstream targets.
+- Uniform artifact paths: use saver helpers to resolve paths under the build artifact root and
+  record them in TargetRunRecord.
+- Contract-first row building: row serializers and schema services drive output column sets and
+  validation behavior (lenient default, strict in CI).
+
+### Recommended migration order (simple to complex)
+1) Foundation: modules (enables consistent inputs for all other ingestion targets).
+2) Simple pilot: docstrings (single table, pure Python, minimal dependencies).
+3) Parser extractors: ast then cst (multi-table then single table).
+4) Multi-table ingestion: coverage_ingest, tests_ingest, typing (file-based inputs, diagnostics).
+5) External tool: scip_proto then scip (artifact plus multi-table, external tool execution).
+
+### Phase I: Ingestion metadata and prerequisites
+Tasks:
+- Ensure ingestion outputs are complete in the inventory and flagged with upstream targets.
+- Document tool dependencies per target in the ingestion tooling inventory artifact.
+- Confirm contract/schema entries exist for each ingestion table.
+
+Deliverables:
+- Inventory entries for all ingestion targets with correct table keys and anchor names.
+- Tool dependency list for ingestion targets with config keys and CLI entrypoints.
+- Ingestion tooling inventory artifact checked in at the canonical path.
+
+Acceptance criteria:
+- Inventory validation passes.
+- No ingestion target references missing contracts or schemas.
+
+### Phase II: Core ingestion helpers aligned to tool_target
+Tasks:
+- Replace per-target SaveToObjectMetadataDecorator usage with save_rows/save_artifact and
+  table or artifact collectors from native/patterns/tool_target.py.
+- Normalize tool execution and ingest steps to return ToolStepOutput/IngestStep.
+- Standardize skip logic via ToolRunContext plus InputHashOptions.
+
+Deliverables:
+- Shared helper nodes for inputs (options, hash, module records) reused across ingestion targets.
+- Updated ingestion targets emit TargetRunRecord via finalize_target_from_materializations.
+
+Acceptance criteria:
+- Ingestion targets produce materializations via shared savers only.
+- Skip behavior is consistent across ingestion targets.
+
+### Phase III: Simple ingestion pilot migration
+Tasks:
+- Migrate docstrings to the tool_target template.
+- Add a focused harness test validating table materialization and contract compliance.
+- Validate CLI listing and inventory alignment for the target.
+
+Deliverables:
+- Target anchor uses tool_target patterns end-to-end.
+- Test proves output rows and schema for the pilot.
+
+Acceptance criteria:
+- Pilot target runs via build harness with deterministic output.
+- Contract validation passes in lenient mode for the pilot.
+
+### Phase IV: Parser extractors and multi-table ingestion
+Tasks:
+- Migrate ast and cst to the shared tool_target template.
+- Migrate coverage_ingest, tests_ingest, typing with consistent tool and ingest steps.
+- Ensure diagnostics and warnings are surfaced via ExecutionResult warnings.
+
+Deliverables:
+- AST/CST and ingestion targets fully aligned with shared materialization helpers.
+- Consistent table counts and materialization metadata in TargetRunRecord.
+
+Acceptance criteria:
+- Harness tests validate each target individually.
+- No direct filesystem scanning outside shared discovery helpers.
+
+### Phase V: External tool ingestion (scip_proto, scip)
+Tasks:
+- Align scip_proto with tool_target artifact saver patterns.
+- Align scip tool execution to the tool registry with canonical scip-python CLI naming.
+- Ensure artifact and table materializations are recorded via shared collectors.
+- Capture tool telemetry and per-table row counts in TargetRunRecord metadata.
+
+Deliverables:
+- scip_proto and scip targets use the same run/ingest/finalize pattern.
+- Tool availability errors are explicit and actionable.
+
+Acceptance criteria:
+- scip targets run end-to-end when the tool is available.
+- Missing tool results in a clear, deterministic failure or skip as configured.
+
+### Phase VI: Integration and replication checklist
+Tasks:
+- Add a small ingestion end-to-end test that runs modules -> docstrings (or config_ingest).
+- Update CLI help or registry output if ingestion metadata is exposed.
+- Refresh goldens or fixtures if ingestion schema changes occur.
+
+Replication checklist for each ingestion target:
+- Anchor t__* node uses tool_target patterns and record_from_materializations.
+- Inputs derive from module inventory or explicit tool options nodes.
+- Materializations use save_rows/save_artifact with schema-driven columns.
+- TargetRunRecord includes tool metadata and table counts when relevant.
+- Harness test exists and validates contract compliance.
+
 ## Work completed so far (implementation status)
 - Added canonical inventory artifact: `src/codeintel/core/registry/dag_output_inventory.yaml`.
 - Added inventory loader and validation types: `src/codeintel/core/registry/service.py`.
@@ -290,12 +462,21 @@ Acceptance criteria:
   `tests/core/test_dag_output_inventory.py`, `tests/cli/test_registry_cli.py`.
 - Added shared-flags flattening for Command[T] commands so `--output-format` works
   consistently across new command groups.
+- Added ingestion tooling inventory artifact:
+  `src/codeintel/core/registry/ingestion_tooling_inventory.yaml`.
+- Added ingestion tooling loader and validation helpers:
+  `src/codeintel/core/registry/service.py`.
+- Added `registry tools` CLI preflight with resolution status and filters:
+  `src/codeintel/cli/commands/registry.py`.
+- Added tests for tooling inventory loading and CLI output:
+  `tests/core/test_ingestion_tooling_inventory.py`, `tests/cli/test_registry_cli.py`.
 
 ## Open follow-ups and validation
 - Resolve the OpenTelemetry import dependency used during CLI/test import
   (`opentelemetry.propagators.baggage`) so pytest can run without import errors.
 - Re-run the focused tests:
-  `uv run pytest -q tests/core/test_dag_output_inventory.py tests/cli/test_registry_cli.py`.
+  `uv run pytest -q tests/core/test_dag_output_inventory.py tests/cli/test_registry_cli.py
+  tests/core/test_ingestion_tooling_inventory.py`.
 
 ## Risks and mitigations
 - Contract/schema drift: enforce contract-first updates and tighten CI checks.

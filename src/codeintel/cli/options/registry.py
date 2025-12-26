@@ -869,6 +869,22 @@ REGISTRY_OUTPUTS_PILOT_ONLY = OptionSpec(
     help="Limit results to outputs marked as pilot.",
     negative=(),
 )
+REGISTRY_TOOLING_PATH = OptionSpec(
+    arg_name="inventory_path",
+    names=("--inventory-path",),
+    help="Override the ingestion tooling inventory path.",
+)
+REGISTRY_TOOLS_NAMES = OptionSpec(
+    arg_name="tools",
+    names=("--tool",),
+    help="Filter to specific tools (repeatable).",
+)
+REGISTRY_TOOLS_MISSING_ONLY = OptionSpec(
+    arg_name="missing_only",
+    names=("--missing-only",),
+    help="Limit results to tools that are not resolved on this host.",
+    negative=(),
+)
 
 
 # ---------------------------------------------------------------------------

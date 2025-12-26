@@ -10,9 +10,16 @@ from typing import TYPE_CHECKING, Literal
 from weakref import WeakKeyDictionary
 
 from codeintel.core.singleton import SingletonHolder
+from codeintel.observability.attribute_schema import build_attribute_normalizer
+from codeintel.observability.semconv_keys import (
+    TELEMETRY_INSTRUMENTATION_NAME,
+    TELEMETRY_INSTRUMENTATION_STATUS,
+)
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Counter, Meter
+
+    from codeintel.observability.policy import ObservabilityPolicy
 
 LOG = logging.getLogger(__name__)
 
@@ -145,27 +152,35 @@ class InstrumentationRegistry:
         }
         log_target.info("telemetry.instrumentation %s", json.dumps(payload, sort_keys=True))
 
-    def emit_metrics(self, meter: Meter) -> None:
+    def emit_metrics(self, meter: Meter, *, policy: ObservabilityPolicy) -> None:
         """Emit instrumentation status metrics using the supplied meter.
 
         Parameters
         ----------
         meter
             OpenTelemetry meter to emit metrics with.
+        policy
+            Attribute policy used to normalize instrumentation labels.
         """
         with self._lock:
             if meter in self._emitted_metrics:
                 return
             self._emitted_metrics[meter] = True
 
+        normalizer = build_attribute_normalizer(policy)
+        allowed = frozenset({TELEMETRY_INSTRUMENTATION_NAME, TELEMETRY_INSTRUMENTATION_STATUS})
         instruments = _get_instruments(meter)
         for record in self.snapshot():
+            attrs = normalizer.normalize(
+                {
+                    TELEMETRY_INSTRUMENTATION_NAME: record.name,
+                    TELEMETRY_INSTRUMENTATION_STATUS: record.status,
+                },
+                allowed_keys=allowed,
+            )
             instruments.count.add(
                 1,
-                attributes={
-                    "instrumentation": record.name,
-                    "status": record.status,
-                },
+                attributes=attrs,
             )
 
     def clear(self) -> None:

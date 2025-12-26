@@ -19,14 +19,16 @@ from codeintel.cli.config import DEFAULT_CONFIG_PATHS
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
-from codeintel.cli.observability import TelemetryConfig
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.runtime import (
     flush_observability,
     get_observability,
     get_pipeline_health_state,
+    resolve_observability_config,
 )
+from codeintel.observability.semconv_keys import CODEINTEL_HEALTH_CHECK, CODEINTEL_SUCCESS
 from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:
@@ -281,14 +283,17 @@ def _check_telemetry() -> CheckResult:
         Check result.
     """
     settings = load_runtime_settings().observability
-    config = TelemetryConfig.from_settings(settings, default_service_name="codeintel-cli")
+    config = resolve_observability_config(
+        settings,
+        default_service_name="codeintel-cli",
+    ).config
 
     if config.enabled:
         return CheckResult(
             name="telemetry",
             status=CheckStatus.OK,
             message="Telemetry enabled",
-            details={"service_name": config.service_name},
+            details={"service_name": config.resources.service_name},
         )
     return CheckResult(
         name="telemetry",
@@ -319,10 +324,15 @@ def _check_telemetry_pipeline() -> CheckResult:
             message="Telemetry tracer unavailable",
         )
 
+    normalizer = build_attribute_normalizer(obs.policy)
     try:
         with obs.tracer.start_as_current_span("health.telemetry_pipeline") as span:
-            is_health_check = True
-            span.set_attribute("codeintel.health_check", is_health_check)
+            attrs = normalizer.normalize(
+                {CODEINTEL_HEALTH_CHECK: True},
+                allowed_keys=frozenset({CODEINTEL_HEALTH_CHECK}),
+            )
+            for key, value in attrs.items():
+                span.set_attribute(key, value)
             LOG.info("telemetry.pipeline.check")
     except (RuntimeError, ValueError, TypeError, OSError) as exc:
         return CheckResult(
@@ -344,8 +354,12 @@ def _check_telemetry_pipeline() -> CheckResult:
             unit="1",
             description="Count of telemetry pipeline checks by status",
         )
-        status_label = "ok" if flush_result is not None and flush_result.flush_ok else "error"
-        counter.add(1, attributes={"status": status_label})
+        success = flush_result is not None and flush_result.flush_ok
+        metric_attrs = normalizer.normalize(
+            {CODEINTEL_SUCCESS: success},
+            allowed_keys=frozenset({CODEINTEL_SUCCESS}),
+        )
+        counter.add(1, attributes=metric_attrs)
 
     if flush_result is None:
         return CheckResult(

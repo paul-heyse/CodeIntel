@@ -19,7 +19,6 @@ import yaml
 from codeintel.cli.config.model import (
     CliConfig,
     ConfigLoadError,
-    PluginsConfigSection,
     ProgressConfig,
     ProjectConfigSection,
     RetryConfig,
@@ -137,8 +136,6 @@ def dict_to_config(
     retry = _parse_retry(data)
     storage = _parse_storage(data)
     project = _parse_project(data)
-    plugins = _parse_plugins(data)
-
     output_format_raw = _get_string(data, "output_format", "text")
     output_format_value: OutputFormat = cast(
         "OutputFormat",
@@ -158,7 +155,6 @@ def dict_to_config(
         retry=retry,
         storage=storage,
         project=project,
-        plugins=plugins,
         _sources=sources,
     )
 
@@ -280,31 +276,6 @@ def _parse_project(data: dict[str, object]) -> ProjectConfigSection:
             commit=_get_optional_string(project_data, "commit"),
         )
     return ProjectConfigSection()
-
-
-def _parse_plugins(data: dict[str, object]) -> PluginsConfigSection:
-    """Parse plugins config section.
-
-    Parameters
-    ----------
-    data
-        Raw configuration dictionary.
-
-    Returns
-    -------
-    PluginsConfigSection
-        Parsed plugins configuration.
-    """
-    plugins_data = data.get("plugins", {})
-    if isinstance(plugins_data, dict):
-        directories = plugins_data.get("directories", [])
-        disabled = plugins_data.get("disabled", [])
-        if isinstance(directories, list) and isinstance(disabled, list):
-            return PluginsConfigSection(
-                directories=tuple(Path(str(d)) for d in directories),
-                disabled=tuple(str(d) for d in disabled),
-            )
-    return PluginsConfigSection()
 
 
 def _get_string(data: dict[str, object], key: str, default: str) -> str:
@@ -494,10 +465,6 @@ def config_to_dict(config: CliConfig) -> dict[str, object]:
     if project_dict:
         result["project"] = project_dict
 
-    plugins_dict = _build_plugins_dict(config)
-    if plugins_dict:
-        result["plugins"] = plugins_dict
-
     return result
 
 
@@ -570,29 +537,6 @@ def _build_project_dict(config: CliConfig) -> dict[str, object]:
         result["root"] = str(config.project.root)
     if config.project.commit:
         result["commit"] = config.project.commit
-    return result
-
-
-def _build_plugins_dict(config: CliConfig) -> dict[str, object]:
-    """Build plugins section dictionary.
-
-    Parameters
-    ----------
-    config
-        Configuration to convert.
-
-    Returns
-    -------
-    dict[str, object]
-        Plugins dictionary (empty if no values set).
-    """
-    if not config.plugins.directories and not config.plugins.disabled:
-        return {}
-    result: dict[str, object] = {}
-    if config.plugins.directories:
-        result["directories"] = [str(d) for d in config.plugins.directories]
-    if config.plugins.disabled:
-        result["disabled"] = list(config.plugins.disabled)
     return result
 
 

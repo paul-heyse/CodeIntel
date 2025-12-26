@@ -21,10 +21,22 @@ from codeintel.cli.options.registry import (
     REGISTRY_OUTPUTS_PILOT_ONLY,
     REGISTRY_OUTPUTS_TABLE_KEY,
     REGISTRY_OUTPUTS_TARGETS,
+    REGISTRY_TOOLING_PATH,
+    REGISTRY_TOOLS_MISSING_ONLY,
+    REGISTRY_TOOLS_NAMES,
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
-from codeintel.core.registry.service import DagOutputInventory, DagOutputSpec, RegistryService
+from codeintel.config.models import ToolsConfig
+from codeintel.core.registry.service import (
+    DagOutputInventory,
+    DagOutputSpec,
+    IngestionToolInventory,
+    IngestionToolSpec,
+    RegistryService,
+)
+from codeintel.core.tools.names import ToolName
+from codeintel.core.tools.resolver import ToolResolveConfig, resolve_tool
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -38,9 +50,11 @@ registry_app = App(
 
 REGISTRY_OUTPUTS_PATH: CommandPath = ("registry", "outputs")
 REGISTRY_VALIDATE_PATH: CommandPath = ("registry", "validate")
+REGISTRY_TOOLS_PATH: CommandPath = ("registry", "tools")
 
 _REGISTRY_OUTPUTS_FLAGS_FIELD = shared_flags_field(REGISTRY_OUTPUTS_PATH)
 _REGISTRY_VALIDATE_FLAGS_FIELD = shared_flags_field(REGISTRY_VALIDATE_PATH)
+_REGISTRY_TOOLS_FLAGS_FIELD = shared_flags_field(REGISTRY_TOOLS_PATH)
 
 RegistryDomain = Literal["analytics", "graphs", "ingestion", "export"]
 MaterializationKind = Literal["table", "artifact", "mixed"]
@@ -94,6 +108,39 @@ class DagOutputValidateResult:
     generated_at: str | None = None
 
 
+@result_type
+@dataclass(frozen=True)
+class IngestionToolInfo:
+    """Summary information about an ingestion tool dependency."""
+
+    tool_name: str
+    display_name: str
+    kind: str
+    cli: str | None
+    aliases: list[str]
+    config_key: str | None
+    configured_path: str | None
+    resolved_path: str | None
+    resolution_origin: str | None
+    status: str
+    required_by: list[str]
+    packages: list[str]
+    version_probe: str | None
+    notes: str | None = None
+
+
+@result_type
+@dataclass(frozen=True)
+class IngestionToolListResult:
+    """Result from listing ingestion tooling inventory."""
+
+    tools: list[IngestionToolInfo]
+    count: int
+    missing_count: int
+    unrecognized_count: int
+    inventory_path: str
+
+
 def _inventory_path_or_default(path: Path | None) -> Path:
     return path or RegistryService.default_dag_output_inventory_path()
 
@@ -102,6 +149,22 @@ def _load_inventory(path: Path) -> DagOutputInventory:
     if not path.exists():
         raise FileNotFoundError(path)
     return RegistryService.load_dag_output_inventory(path=path)
+
+
+def _tooling_inventory_path_or_default(path: Path | None) -> Path:
+    return path or RegistryService.default_ingestion_tooling_inventory_path()
+
+
+def _load_tooling_inventory(path: Path) -> IngestionToolInventory:
+    if not path.exists():
+        raise FileNotFoundError(path)
+    return RegistryService.load_ingestion_tooling_inventory(path=path)
+
+
+def _resolve_tool_context(ctx: CommandContext) -> tuple[ToolsConfig, Path | None]:
+    if ctx.has_runtime:
+        return ctx.runtime.tools, ctx.runtime.repo_root
+    return ToolsConfig.default(), None
 
 
 def _spec_matches_filters(
@@ -118,6 +181,27 @@ def _spec_matches_filters(
     if filters.table_key is not None and filters.table_key not in spec.table_keys:
         return False
     return not (filters.pilot_only and not spec.pilot)
+
+
+def _resolve_tool_spec(
+    spec: IngestionToolSpec,
+    *,
+    tools_config: ToolsConfig,
+    repo_root: Path | None,
+) -> tuple[str, str | None, str | None, str | None]:
+    resolve_cfg = ToolResolveConfig.from_env()
+    if repo_root is not None:
+        resolve_cfg = resolve_cfg.with_repo_root(repo_root)
+    try:
+        tool_enum = ToolName(spec.tool_name)
+    except ValueError:
+        return "unrecognized", None, None, None
+
+    resolution = resolve_tool(tool_enum, config=tools_config, resolve_cfg=resolve_cfg)
+    status = "available" if resolution.resolved is not None else "missing"
+    configured = resolution.configured
+    resolved = str(resolution.resolved) if resolution.resolved is not None else None
+    return status, configured, resolved, resolution.origin
 
 
 @cli_command("registry.outputs", require_storage=False)
@@ -286,11 +370,121 @@ class RegistryValidate(Command[DagOutputValidateResult]):
         )
 
 
+@cli_command("registry.tools", require_storage=False)
+@registry_app.command(name="tools")
+@dataclass(frozen=True)
+class RegistryTools(Command[IngestionToolListResult]):
+    """List ingestion tooling inventory entries with resolution status."""
+
+    __operation_id__ = "registry.tools"
+
+    inventory_path: Annotated[
+        Path | None,
+        option_param(REGISTRY_TOOLING_PATH, command_path=REGISTRY_TOOLS_PATH),
+    ] = None
+    tools: Annotated[
+        list[str] | None,
+        option_param(REGISTRY_TOOLS_NAMES, command_path=REGISTRY_TOOLS_PATH),
+    ] = None
+    missing_only: Annotated[
+        bool,
+        option_param(REGISTRY_TOOLS_MISSING_ONLY, command_path=REGISTRY_TOOLS_PATH),
+    ] = False
+    flags: SharedFlagsProtocol = _REGISTRY_TOOLS_FLAGS_FIELD
+
+    def execute(self, ctx: CommandContext) -> CliResult[IngestionToolListResult]:
+        """Execute ingestion tooling inventory listing.
+
+        Parameters
+        ----------
+        ctx
+            CLI execution context.
+
+        Returns
+        -------
+        CliResult[IngestionToolListResult]
+            Tool inventory listing result.
+        """
+        _ = self.flags
+        LOG.info("Listing ingestion tools (missing_only=%s)", self.missing_only)
+
+        inventory_path = _tooling_inventory_path_or_default(self.inventory_path)
+        try:
+            inventory = _load_tooling_inventory(inventory_path)
+        except FileNotFoundError:
+            return fail_not_found("tooling_inventory", str(inventory_path))
+        except ValueError as exc:
+            return fail_invalid_value(
+                "inventory_path",
+                str(inventory_path),
+                str(exc),
+            )
+
+        tools_config, repo_root = _resolve_tool_context(ctx)
+        tool_filter = set(self.tools) if self.tools else None
+
+        entries: list[IngestionToolInfo] = []
+        missing_count = 0
+        unrecognized_count = 0
+
+        for spec in inventory.tools:
+            if tool_filter is not None:
+                names = {spec.tool_name, *spec.aliases}
+                if names.isdisjoint(tool_filter):
+                    continue
+
+            status, configured, resolved, origin = _resolve_tool_spec(
+                spec,
+                tools_config=tools_config,
+                repo_root=repo_root,
+            )
+            if self.missing_only and status != "missing":
+                continue
+            if status == "missing":
+                missing_count += 1
+            elif status == "unrecognized":
+                unrecognized_count += 1
+
+            entries.append(
+                IngestionToolInfo(
+                    tool_name=spec.tool_name,
+                    display_name=spec.display_name,
+                    kind=spec.kind,
+                    cli=spec.cli,
+                    aliases=list(spec.aliases),
+                    config_key=spec.config_key,
+                    configured_path=configured,
+                    resolved_path=resolved,
+                    resolution_origin=origin,
+                    status=status,
+                    required_by=list(spec.required_by),
+                    packages=list(spec.packages),
+                    version_probe=spec.version_probe,
+                    notes=spec.notes,
+                )
+            )
+
+        entries.sort(key=lambda item: item.tool_name)
+
+        return CliResult.ok(
+            IngestionToolListResult(
+                tools=entries,
+                count=len(entries),
+                missing_count=missing_count,
+                unrecognized_count=unrecognized_count,
+                inventory_path=str(inventory_path),
+            )
+        )
+
+
 __all__ = [
     "DagOutputInfo",
     "DagOutputListResult",
     "DagOutputValidateResult",
+    "IngestionToolInfo",
+    "IngestionToolListResult",
     "RegistryOutputs",
+    "RegistryTools",
     "RegistryValidate",
     "registry_app",
 ]

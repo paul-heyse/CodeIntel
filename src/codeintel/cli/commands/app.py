@@ -18,7 +18,6 @@ from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
-from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.registry import registry_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
@@ -26,16 +25,7 @@ from codeintel.cli.errors import OutputFormat
 from codeintel.observability.cli import run_cli_with_telemetry
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from cyclopts import App
-
-
-_init_plugins: Callable[..., object] | None
-try:
-    from codeintel.cli.plugins import initialize_plugins as _init_plugins
-except ImportError:
-    _init_plugins = None
 
 app: App = build_patched_app(make_root_app)
 
@@ -61,7 +51,6 @@ app.command(datasets_ext_app, name="datasets")
 app.command(config_app, name="config")
 app.command(health_app, name="health")
 app.command(jobs_app, name="jobs")
-app.command(plugins_app, name="plugins")
 app.command(registry_app, name="registry")
 app.command(completions_app, name="completions")
 app.command(help_commands_app, name="help-ops")
@@ -88,20 +77,9 @@ def _detect_output_format() -> OutputFormat:
     return OutputFormat.TEXT
 
 
-def _initialize_cli() -> None:
-    """Initialize CLI infrastructure.
-
-    Register operations and load plugins before running commands.
-    """
-    if _init_plugins is not None:
-        _init_plugins()
-
-
 def main() -> None:
     """Entry point used by console_scripts."""
     output_format = _detect_output_format()
-
-    _initialize_cli()
 
     run_cli_with_telemetry(app, output_format=output_format)
 
@@ -118,7 +96,6 @@ __all__ = [
     "help_commands_app",
     "history_app",
     "jobs_app",
-    "plugins_app",
     "registry_app",
     "serve_app",
     "storage_app",

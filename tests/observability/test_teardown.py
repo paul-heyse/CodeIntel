@@ -9,6 +9,7 @@ from codeintel.observability.teardown import (
     snapshot_active_threads,
     snapshot_pending_tasks,
 )
+from tests.observability.conftest import TelemetryContract
 
 _FLUSH_MS = 12.5
 
@@ -55,3 +56,21 @@ def test_collect_teardown_snapshot_includes_flush() -> None:
     )
     assert snapshot.telemetry_flush_ok is True
     assert snapshot.telemetry_flush_ms == _FLUSH_MS
+
+
+def test_teardown_telemetry_attributes_match_schema(
+    telemetry_contract: TelemetryContract,
+) -> None:
+    """Teardown telemetry attributes should conform to the registry schema."""
+    telemetry = TeardownTelemetry(
+        run_id="run-1",
+        repo="demo/repo",
+        commit="abc123",
+        targets=("modules", "call_graph"),
+        shutdown_status="succeeded",
+        pending_task_samples=("task-a",),
+        active_thread_names=("thread-1",),
+        subprocess_samples=(),
+    )
+    telemetry_contract.assert_valid_attributes(telemetry.span_attributes())
+    telemetry_contract.assert_valid_attributes(telemetry.event_attributes())

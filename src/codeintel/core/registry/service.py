@@ -26,7 +26,9 @@ if TYPE_CHECKING:
 
 
 _DAG_OUTPUT_INVENTORY_PATH = Path(__file__).with_name("dag_output_inventory.yaml")
+_INGESTION_TOOLING_INVENTORY_PATH = Path(__file__).with_name("ingestion_tooling_inventory.yaml")
 _VALID_MATERIALIZATIONS = {"artifact", "mixed", "table"}
+_VALID_TOOL_KINDS = {"binary", "library", "python_module"}
 
 
 class RegistryTypeError(TypeError):
@@ -162,6 +164,66 @@ class RegistryValidationError(ValueError):
         message = f"Duplicate output target '{target}'."
         return cls(message)
 
+    @classmethod
+    def tooling_load_failed(cls, path: Path) -> RegistryValidationError:
+        """Build a validation error for failed tooling inventory loads.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
+        message = f"Failed to load ingestion tooling inventory: {path}"
+        return cls(message)
+
+    @classmethod
+    def tooling_inventory_empty(cls, path: Path) -> RegistryValidationError:
+        """Build a validation error for empty tooling inventory files.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
+        message = f"Ingestion tooling inventory is empty: {path}"
+        return cls(message)
+
+    @classmethod
+    def tools_not_list(cls) -> RegistryValidationError:
+        """Build a validation error for invalid tooling payloads.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
+        message = "Expected 'tools' to be a list of mappings."
+        return cls(message)
+
+    @classmethod
+    def duplicate_tool(cls, tool_name: str) -> RegistryValidationError:
+        """Build a validation error for duplicate tool entries.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
+        message = f"Duplicate tool '{tool_name}'."
+        return cls(message)
+
+    @classmethod
+    def unsupported_tool_kind(cls, kind: str) -> RegistryValidationError:
+        """Build a validation error for unsupported tool kinds.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
+        message = f"Unsupported tool kind '{kind}'."
+        return cls(message)
+
 
 class RegistryLookupError(KeyError):
     """Lookup errors for registry entities."""
@@ -203,6 +265,18 @@ class RegistryLookupError(KeyError):
             Constructed lookup error instance.
         """
         message = f"Unknown output target: {name}"
+        return cls(message)
+
+    @classmethod
+    def missing_tool(cls, name: str) -> RegistryLookupError:
+        """Build a lookup error for missing tool entries.
+
+        Returns
+        -------
+        RegistryLookupError
+            Constructed lookup error instance.
+        """
+        message = f"Unknown ingestion tool: {name}"
         return cls(message)
 
     @classmethod
@@ -444,6 +518,163 @@ class DagOutputInventory:
 
 
 @dataclass(frozen=True, slots=True)
+class IngestionToolSpec:
+    """Structured metadata for ingestion tooling inventory entries."""
+
+    tool_name: str
+    display_name: str
+    kind: str
+    cli: str | None
+    aliases: tuple[str, ...]
+    config_key: str | None
+    required_by: tuple[str, ...]
+    packages: tuple[str, ...]
+    version_probe: str | None
+    notes: str | None
+
+    @classmethod
+    def from_mapping(cls, raw: dict[str, object]) -> IngestionToolSpec:
+        """Parse and validate an ingestion tool mapping.
+
+        Parameters
+        ----------
+        raw
+            Raw mapping from the tooling inventory payload.
+
+        Returns
+        -------
+        IngestionToolSpec
+            Parsed tool specification.
+
+        Raises
+        ------
+        RegistryValidationError.unsupported_tool_kind
+            If the tool kind is unsupported.
+        """
+        tool_name = _require_str(raw.get("tool_name"), field="tool_name")
+        kind = _require_str(raw.get("kind"), field="kind")
+        if kind not in _VALID_TOOL_KINDS:
+            raise RegistryValidationError.unsupported_tool_kind(kind)
+
+        display_name = _optional_str(raw.get("display_name"), field="display_name") or tool_name
+        cli = _optional_str(raw.get("cli"), field="cli")
+        aliases = _optional_str_list(raw.get("aliases"), field="aliases")
+        config_key = _optional_str(raw.get("config_key"), field="config_key")
+        required_by = _optional_str_list(raw.get("required_by"), field="required_by")
+        packages = _optional_str_list(raw.get("packages"), field="packages")
+        version_probe = _optional_str(raw.get("version_probe"), field="version_probe")
+        notes = _optional_str(raw.get("notes"), field="notes")
+
+        return cls(
+            tool_name=tool_name,
+            display_name=display_name,
+            kind=kind,
+            cli=cli,
+            aliases=aliases,
+            config_key=config_key,
+            required_by=required_by,
+            packages=packages,
+            version_probe=version_probe,
+            notes=notes,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class IngestionToolInventory:
+    """Inventory for ingestion tooling dependencies."""
+
+    version: int
+    generated_at: str | None
+    tools: tuple[IngestionToolSpec, ...]
+
+    @classmethod
+    def from_path(cls, path: Path) -> IngestionToolInventory:
+        """Load and validate an ingestion tooling inventory file.
+
+        Parameters
+        ----------
+        path
+            Path to the inventory YAML file.
+
+        Returns
+        -------
+        IngestionToolInventory
+            Parsed inventory data.
+
+        Raises
+        ------
+        RegistryValidationError.tooling_load_failed
+            If the inventory file cannot be loaded.
+        RegistryValidationError.tooling_inventory_empty
+            If the inventory file is empty.
+        RegistryValidationError.tools_not_list
+            If the tools payload is not a list.
+        RegistryValidationError.duplicate_tool
+            If tool entries are duplicated.
+        """
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf8"))
+        except (OSError, yaml.YAMLError) as exc:
+            raise RegistryValidationError.tooling_load_failed(path) from exc
+
+        if raw is None:
+            raise RegistryValidationError.tooling_inventory_empty(path)
+
+        payload = _require_mapping(raw, field="inventory")
+        version = _require_int(payload.get("version"), field="version")
+        generated_at = _optional_str(payload.get("generated_at"), field="generated_at")
+
+        tools_raw = payload.get("tools")
+        if not isinstance(tools_raw, list):
+            raise RegistryValidationError.tools_not_list()
+
+        tools: list[IngestionToolSpec] = []
+        seen: set[str] = set()
+        for item in tools_raw:
+            tool_raw = _require_mapping(item, field="tools")
+            spec = IngestionToolSpec.from_mapping(tool_raw)
+            if spec.tool_name in seen:
+                raise RegistryValidationError.duplicate_tool(spec.tool_name)
+            seen.add(spec.tool_name)
+            tools.append(spec)
+
+        return cls(version=version, generated_at=generated_at, tools=tuple(tools))
+
+    def by_tool_name(self, tool_name: str) -> IngestionToolSpec:
+        """Return the tool spec for a tool name.
+
+        Parameters
+        ----------
+        tool_name
+            Tool name to resolve.
+
+        Returns
+        -------
+        IngestionToolSpec
+            Tool spec for the requested tool name.
+
+        Raises
+        ------
+        missing_tool
+            If the tool name is not present in the inventory.
+        """
+        for spec in self.tools:
+            if spec.tool_name == tool_name:
+                return spec
+        raise RegistryLookupError.missing_tool(tool_name)
+
+    def iter_tools(self) -> Iterable[IngestionToolSpec]:
+        """Iterate all tool specs.
+
+        Returns
+        -------
+        Iterable[IngestionToolSpec]
+            Tool specifications in the inventory.
+        """
+        return self.tools
+
+
+@dataclass(frozen=True, slots=True)
 class RegistryService:
     """Registry service for catalog and semantic discovery."""
 
@@ -545,6 +776,36 @@ class RegistryService:
             Default inventory file path.
         """
         return _DAG_OUTPUT_INVENTORY_PATH
+
+    @staticmethod
+    def load_ingestion_tooling_inventory(
+        path: Path | None = None,
+    ) -> IngestionToolInventory:
+        """Load the ingestion tooling inventory from disk.
+
+        Parameters
+        ----------
+        path
+            Optional path override for the inventory file.
+
+        Returns
+        -------
+        IngestionToolInventory
+            Parsed ingestion tooling inventory.
+        """
+        inventory_path = path or _INGESTION_TOOLING_INVENTORY_PATH
+        return IngestionToolInventory.from_path(inventory_path)
+
+    @staticmethod
+    def default_ingestion_tooling_inventory_path() -> Path:
+        """Return the canonical ingestion tooling inventory path.
+
+        Returns
+        -------
+        Path
+            Default tooling inventory file path.
+        """
+        return _INGESTION_TOOLING_INVENTORY_PATH
 
     def get_contract(self, table_key: str) -> DatasetContract:
         """Return the dataset contract for a table key.
@@ -657,6 +918,8 @@ class RegistryService:
 __all__ = [
     "DagOutputInventory",
     "DagOutputSpec",
+    "IngestionToolInventory",
+    "IngestionToolSpec",
     "RegistryLookupError",
     "RegistryService",
     "RegistryTypeError",

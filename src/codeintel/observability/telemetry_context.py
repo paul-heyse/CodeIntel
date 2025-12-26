@@ -13,6 +13,7 @@ from opentelemetry.context import attach as _otel_attach
 from opentelemetry.context import detach as _otel_detach
 
 from codeintel.observability.semconv_keys import (
+    CODEINTEL_ACTOR,
     CODEINTEL_COMMIT,
     CODEINTEL_CORRELATION_ID,
     CODEINTEL_DOMAIN,
@@ -40,6 +41,10 @@ _COMMIT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "codeintel_commit",
     default=None,
 )
+_ACTOR: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "codeintel_actor",
+    default=None,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +56,7 @@ class TelemetryContext:
     domain: str | None
     repo: str | None
     commit: str | None
+    actor: str | None
 
     def span_attributes(self) -> dict[str, str]:
         """Return span attributes derived from the context.
@@ -71,6 +77,8 @@ class TelemetryContext:
             attrs[CODEINTEL_REPO] = self.repo
         if self.commit:
             attrs[CODEINTEL_COMMIT] = self.commit
+        if self.actor:
+            attrs[CODEINTEL_ACTOR] = self.actor
         return attrs
 
     def metric_attributes(self) -> dict[str, str]:
@@ -93,6 +101,14 @@ class TelemetryContext:
         return attrs
 
 
+@dataclass(frozen=True, slots=True)
+class RepoCommitContext:
+    """Repository identity context for telemetry attributes."""
+
+    repo: str | None
+    commit: str | None
+
+
 def current_telemetry_context() -> TelemetryContext:
     """Return the current telemetry context from context variables.
 
@@ -107,6 +123,7 @@ def current_telemetry_context() -> TelemetryContext:
         domain=_DOMAIN.get(),
         repo=_REPO.get(),
         commit=_COMMIT.get(),
+        actor=_ACTOR.get(),
     )
 
 
@@ -116,15 +133,18 @@ def telemetry_context(
     correlation_id: str | None = None,
     run_id: str | None = None,
     domain: str | None = None,
-    repo: str | None = None,
-    commit: str | None = None,
+    repo_commit: RepoCommitContext | None = None,
+    actor: str | None = None,
 ) -> Iterator[None]:
     """Attach telemetry correlation identifiers within a context manager."""
+    repo = repo_commit.repo if repo_commit is not None else None
+    commit = repo_commit.commit if repo_commit is not None else None
     correlation_token = _CORRELATION_ID.set(correlation_id)
     run_token = _RUN_ID.set(run_id)
     domain_token = _DOMAIN.set(domain)
     repo_token = _REPO.set(repo)
     commit_token = _COMMIT.set(commit)
+    actor_token = _ACTOR.set(actor)
     baggage_token: contextvars.Token[Context] | None = None
 
     baggage = None
@@ -154,6 +174,12 @@ def telemetry_context(
             commit,
             baggage,
         )
+    if actor:
+        baggage = _otel_baggage.set_baggage(
+            CODEINTEL_ACTOR,
+            actor,
+            baggage,
+        )
     if baggage is not None:
         baggage_token = _otel_attach(baggage)
 
@@ -165,8 +191,14 @@ def telemetry_context(
         _DOMAIN.reset(domain_token)
         _REPO.reset(repo_token)
         _COMMIT.reset(commit_token)
+        _ACTOR.reset(actor_token)
         if baggage_token is not None:
             _otel_detach(baggage_token)
 
 
-__all__ = ["TelemetryContext", "current_telemetry_context", "telemetry_context"]
+__all__ = [
+    "RepoCommitContext",
+    "TelemetryContext",
+    "current_telemetry_context",
+    "telemetry_context",
+]

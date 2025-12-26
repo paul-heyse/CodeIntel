@@ -49,7 +49,10 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.run_writer import BuildRunWriter
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.telemetry_context import telemetry_context
+from codeintel.observability.telemetry_context import (
+    RepoCommitContext,
+    telemetry_context,
+)
 from codeintel.storage.gateway import StorageError
 
 if TYPE_CHECKING:
@@ -769,8 +772,10 @@ class HamiltonBuildExecutor:
             with telemetry_context(
                 run_id=context.run_id,
                 domain=context.domain,
-                repo=context.env.repo,
-                commit=context.env.commit,
+                repo_commit=RepoCommitContext(
+                    repo=context.env.repo,
+                    commit=context.env.commit,
+                ),
             ):
                 outputs = context.runtime.dr.execute(
                     list(final_vars),

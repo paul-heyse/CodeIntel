@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import duckdb
 import pytest
 
-from codeintel.build.serving.search_index import build_search_documents_table, ensure_fts_index
+from codeintel.storage.serving.search_index import build_search_documents_table, ensure_fts_index
 from tests._helpers.assertions import assert_target_ok, expect_true
 from tests._helpers.harnesses.serving_harness import ServingTargetHarness
 

@@ -31,6 +31,7 @@ from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.base import CodeIntelError
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.attribute_sanitizer import limit_cli_arg_names
+from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.policy import ObservabilityPolicy
 from codeintel.observability.runtime import (
     ObservabilityRuntime,
@@ -38,11 +39,15 @@ from codeintel.observability.runtime import (
     shutdown_observability,
 )
 from codeintel.observability.semconv_keys import (
+    CLI_ARG_COUNT,
+    CLI_ARG_NAMES,
     CLI_COMMAND,
+    CLI_DURATION_MS,
     CLI_ERROR_TYPE,
     CLI_EXIT_CODE,
     CLI_INVOCATION_ID,
     CLI_IS_PARSE_ERROR,
+    CLI_PARSE_DURATION_MS,
 )
 from codeintel.observability.test_mode import should_shutdown_observability_per_command
 
@@ -281,11 +286,16 @@ def _set_span_context(
         arg_names,
         max_len=policy.budget.cli_arg_names_max,
     )
-    span.set_attribute(CLI_INVOCATION_ID, invocation_id)
-    span.set_attribute(CLI_COMMAND, ".".join(command_chain) if command_chain else "<unknown>")
-    span.set_attribute("cli.arg_count", len(arg_names))
+    normalizer = build_attribute_normalizer(policy)
+    attrs: dict[str, object] = {
+        CLI_INVOCATION_ID: invocation_id,
+        CLI_COMMAND: ".".join(command_chain) if command_chain else "<unknown>",
+        CLI_ARG_COUNT: len(arg_names),
+    }
     if bounded_arg_names:
-        span.set_attribute("cli.arg_names", [*bounded_arg_names])
+        attrs[CLI_ARG_NAMES] = [*bounded_arg_names]
+    for key, value in normalizer.normalize(attrs).items():
+        span.set_attribute(key, value)
 
 
 def _command_label(command_chain: tuple[str, ...]) -> str:
@@ -298,13 +308,18 @@ def _finalize_span(span: Span | None, *, state: _InvocationState, exit_code: int
     if span is None:
         return
     duration_ms = (time.perf_counter() - state.start_ts) * 1000
-    span.set_attribute(CLI_EXIT_CODE, exit_code)
-    span.set_attribute("cli.duration_ms", duration_ms)
-    span.set_attribute(CLI_IS_PARSE_ERROR, state.is_parse_error)
+    normalizer = build_attribute_normalizer(get_observability().policy)
+    attrs: dict[str, object] = {
+        CLI_EXIT_CODE: exit_code,
+        CLI_DURATION_MS: duration_ms,
+        CLI_IS_PARSE_ERROR: state.is_parse_error,
+    }
     if state.parse_duration_ms is not None:
-        span.set_attribute("cli.parse_duration_ms", state.parse_duration_ms)
+        attrs[CLI_PARSE_DURATION_MS] = state.parse_duration_ms
     if state.error_type is not None:
-        span.set_attribute(CLI_ERROR_TYPE, state.error_type)
+        attrs[CLI_ERROR_TYPE] = state.error_type
+    for key, value in normalizer.normalize(attrs).items():
+        span.set_attribute(key, value)
 
 
 def _get_cli_instruments(meter: Meter) -> _CliInstruments:

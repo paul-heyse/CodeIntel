@@ -310,7 +310,7 @@ def fail_domain(
     Parameters
     ----------
     domain
-        Domain identifier (e.g., "build", "plugins").
+        Domain identifier (e.g., "build", "datasets").
     code
         Error code within the domain.
     title
@@ -659,83 +659,6 @@ def fail_build_run_not_found(message: str) -> ErrorResult:
     return fail_domain("build", "run-not-found", "Run Not Found", message, status=404)
 
 
-def fail_plugin_not_found(name: str) -> ErrorResult:
-    """Create failed result for plugin not found.
-
-    Parameters
-    ----------
-    name
-        Plugin name that was not found.
-
-    Returns
-    -------
-    CliResult
-        Failed result with plugin not found error.
-    """
-    return fail_domain(
-        "plugins", "not-found", "Plugin Not Found", f"Plugin not found: {name}", status=404
-    )
-
-
-def fail_invalid_plugin_name(reason: str) -> ErrorResult:
-    """Create failed result for invalid plugin name.
-
-    Parameters
-    ----------
-    reason
-        Description of why the name is invalid.
-
-    Returns
-    -------
-    CliResult
-        Failed result with invalid plugin name error.
-    """
-    return fail_domain("plugins", "invalid-name", "Invalid Plugin Name", reason)
-
-
-def fail_plugin_no_manifest(path: str) -> ErrorResult:
-    """Create failed result for missing plugin manifest.
-
-    Parameters
-    ----------
-    path
-        Plugin directory path where manifest was expected.
-
-    Returns
-    -------
-    CliResult
-        Failed result with no manifest error.
-    """
-    return fail_domain(
-        "plugins",
-        "no-manifest",
-        "No Plugin Manifest",
-        f"No plugin.json found in {path}",
-        status=404,
-    )
-
-
-def fail_invalid_plugin_manifest(message: str) -> ErrorResult:
-    """Create failed result for invalid plugin manifest.
-
-    Parameters
-    ----------
-    message
-        Error message from manifest parsing.
-
-    Returns
-    -------
-    CliResult
-        Failed result with invalid manifest error.
-    """
-    return fail_domain(
-        "plugins",
-        "invalid-manifest",
-        "Invalid Plugin Manifest",
-        f"Error loading manifest: {message}",
-    )
-
-
 def fail_invalid_policy(policy_type: str, value: str) -> ErrorResult:
     """Create failed result for invalid policy value.
 
@@ -920,8 +843,6 @@ __all__ = [
     "fail_invalid_module",
     "fail_invalid_param",
     "fail_invalid_param_format",
-    "fail_invalid_plugin_manifest",
-    "fail_invalid_plugin_name",
     "fail_invalid_policy",
     "fail_invalid_target_selection",
     "fail_invalid_targets",
@@ -936,8 +857,6 @@ __all__ = [
     "fail_not_found",
     "fail_operation",
     "fail_operation_not_found",
-    "fail_plugin_no_manifest",
-    "fail_plugin_not_found",
     "fail_project_error",
     "fail_storage",
     "fail_storage_connection",
