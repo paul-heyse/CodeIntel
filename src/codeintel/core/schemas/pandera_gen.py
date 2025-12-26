@@ -12,42 +12,13 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-import pandas as pd
-from pandas.api.extensions import ExtensionDtype
 from pandera import Check, DataFrameSchema
 from pandera import Column as PanderaColumn
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
-
-PanderaDtype = type | str | ExtensionDtype
-
-
-_STRING_DTYPE: PanderaDtype = pd.StringDtype()
-_INT_DTYPE: PanderaDtype = pd.Int64Dtype()
-_FLOAT_DTYPE: PanderaDtype = pd.Float64Dtype()
-_BOOL_DTYPE: PanderaDtype = pd.BooleanDtype()
-
-
-_COLUMN_TYPE_TO_DTYPE: Mapping[ColumnType, PanderaDtype] = {
-    "BOOLEAN": _BOOL_DTYPE,
-    "INTEGER": _INT_DTYPE,
-    "BIGINT": _INT_DTYPE,
-    "DOUBLE": _FLOAT_DTYPE,
-    "DECIMAL": _FLOAT_DTYPE,
-    "DECIMAL(38,0)": _INT_DTYPE,
-    "VARCHAR": _STRING_DTYPE,
-    "JSON": _STRING_DTYPE,
-    "TIMESTAMP": "datetime64[ns]",
-    "TIMESTAMPTZ": "datetime64[ns]",
-}
-
-
-def _dtype_for_column_type(col_type: ColumnType) -> PanderaDtype:
-    return _COLUMN_TYPE_TO_DTYPE[col_type]
+from codeintel.core.schemas.pandera_types import dtype_for_column_type
 
 
 def _schema_signature(schema: TableSchema) -> tuple[tuple[str, ColumnType, bool], ...]:
@@ -61,7 +32,7 @@ def _build_pandera_schema(
     primary_key: tuple[str, ...],
 ) -> DataFrameSchema:
     columns = {
-        name: PanderaColumn(_dtype_for_column_type(col_type), nullable=nullable)
+        name: PanderaColumn(dtype_for_column_type(col_type), nullable=nullable)
         for name, col_type, nullable in signature
     }
 

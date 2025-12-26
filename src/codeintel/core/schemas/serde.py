@@ -5,7 +5,15 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import cast, get_args
 
-from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
+from codeintel.core.schemas.primitives import (
+    Column,
+    ColumnType,
+    Index,
+    ReplaceScope,
+    TableSchema,
+    TableWritePolicy,
+    WriteMode,
+)
 
 
 def column_to_json_obj(column: Column) -> dict[str, object]:
@@ -59,6 +67,8 @@ def table_schema_to_json_obj(schema: TableSchema) -> dict[str, object]:
     }
     if schema.description is not None:
         payload["description"] = schema.description
+    if schema.write_policy is not None:
+        payload["write_policy"] = _write_policy_to_json_obj(schema.write_policy)
     return payload
 
 
@@ -83,6 +93,64 @@ def _parse_column_type(value: object, *, field: str) -> ColumnType:
         msg = f"Unsupported column type: {type_str}"
         raise ValueError(msg)
     return cast("ColumnType", type_str)
+
+
+def _write_policy_to_json_obj(policy: TableWritePolicy) -> dict[str, object]:
+    return {
+        "mode": policy.mode,
+        "replace_scope": policy.replace_scope,
+        "conflict_columns": list(policy.conflict_columns or ()),
+        "update_columns": list(policy.update_columns or ()),
+        "hash_column": policy.hash_column,
+        "use_staging": policy.use_staging,
+    }
+
+
+def _parse_write_mode(value: object, *, field: str) -> WriteMode:
+    mode = _require_str(value, field=field)
+    if mode not in cast("tuple[str, ...]", get_args(WriteMode)):
+        msg = f"Unsupported write mode: {mode}"
+        raise ValueError(msg)
+    return cast("WriteMode", mode)
+
+
+def _parse_replace_scope(value: object, *, field: str) -> ReplaceScope:
+    scope = _require_str(value, field=field)
+    if scope not in cast("tuple[str, ...]", get_args(ReplaceScope)):
+        msg = f"Unsupported replace scope: {scope}"
+        raise ValueError(msg)
+    return cast("ReplaceScope", scope)
+
+
+def _parse_write_policy(value: object) -> TableWritePolicy:
+    if not isinstance(value, Mapping):
+        msg = "Expected object for write_policy"
+        raise TypeError(msg)
+    conflict_obj = value.get("conflict_columns", [])
+    if not isinstance(conflict_obj, list):
+        msg = "Expected list for write_policy.conflict_columns"
+        raise TypeError(msg)
+    update_obj = value.get("update_columns", [])
+    if not isinstance(update_obj, list):
+        msg = "Expected list for write_policy.update_columns"
+        raise TypeError(msg)
+    conflict_columns = tuple(
+        _require_str(item, field="conflict_columns[]") for item in conflict_obj
+    )
+    update_columns = tuple(_require_str(item, field="update_columns[]") for item in update_obj)
+    hash_value = value.get("hash_column")
+    hash_column = hash_value if isinstance(hash_value, str) else None
+    return TableWritePolicy(
+        mode=_parse_write_mode(value.get("mode"), field="write_policy.mode"),
+        replace_scope=_parse_replace_scope(value.get("replace_scope"), field="write_policy.scope"),
+        conflict_columns=conflict_columns or None,
+        update_columns=update_columns or None,
+        hash_column=hash_column,
+        use_staging=_require_bool(
+            value.get("use_staging", False),
+            field="write_policy.use_staging",
+        ),
+    )
 
 
 def column_from_json_obj(obj: Mapping[str, object]) -> Column:
@@ -183,6 +251,8 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
 
     description_obj = obj.get("description")
     description = description_obj if isinstance(description_obj, str) else None
+    write_policy_obj = obj.get("write_policy")
+    write_policy = _parse_write_policy(write_policy_obj) if write_policy_obj is not None else None
 
     return TableSchema(
         schema=schema,
@@ -191,6 +261,7 @@ def table_schema_from_json_obj(obj: Mapping[str, object]) -> TableSchema:
         primary_key=primary_key,
         indexes=indexes,
         description=description,
+        write_policy=write_policy,
     )
 
 

@@ -30,6 +30,19 @@ def _collector_signature(param_names: Sequence[str]) -> inspect.Signature:
     )
 
 
+def _resolve_caller_module_name() -> str | None:
+    frame = inspect.currentframe()
+    if frame is None:
+        return None
+    frame = frame.f_back
+    while frame is not None:
+        module_name = frame.f_globals.get("__name__")
+        if isinstance(module_name, str) and module_name != __name__:
+            return module_name
+        frame = frame.f_back
+    return None
+
+
 def _build_collector(
     *,
     domain: str,
@@ -37,6 +50,8 @@ def _build_collector(
     node_name: str,
     mapping: Mapping[str, str],
 ) -> Callable[..., dict[str, MaterializationMetadata]]:
+    module_name = _resolve_caller_module_name()
+
     def collector(**kwargs: object) -> dict[str, MaterializationMetadata]:
         result: dict[str, MaterializationMetadata] = {}
         for key, param_name in mapping.items():
@@ -48,7 +63,12 @@ def _build_collector(
 
     collector.__name__ = node_name
     collector.__doc__ = f"Collect materialization metadata for {target}."
+    if module_name is not None:
+        # Hamilton only discovers functions that appear to belong to the module being scanned.
+        collector.__module__ = module_name
     tagged = tag_helper(domain=domain, target=target)(collector)
+    if module_name is not None:
+        tagged.__module__ = module_name
     return set_signature(tagged, _collector_signature(tuple(mapping.values())))
 
 

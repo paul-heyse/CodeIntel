@@ -6,6 +6,7 @@ Handlers for operation listing, invocation, dataset management, and server contr
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import uvicorn
@@ -40,6 +41,7 @@ from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
+    from codeintel.core.schemas.contract_primitives import DatasetContract
 
 LOG = logging.getLogger(__name__)
 
@@ -209,7 +211,7 @@ def _metadata_to_dict(
 def _downstream_consumers_for_contract(
     *,
     contract_name: str,
-    contracts: list[object],
+    contracts: Sequence[DatasetContract],
 ) -> tuple[str, ...]:
     consumers: list[str] = []
     for candidate in contracts:
@@ -277,7 +279,7 @@ def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
 
     return CliResult.ok(
         DatasetInfoResult(
-            name=contract.name,
+            name=contract.table_key,
             columns=columns,
             metadata=_metadata_to_dict(contract, downstream_consumers=downstream),
             json_schema=record.json_schema or {},
@@ -317,6 +319,10 @@ def dataset_flow_structured(*, table_key: str) -> CliResult[DatasetFlowResult]:
     CliResult[DatasetFlowResult]
         Flow result with producers and consumers.
     """
+    try:
+        _ = get_contract_for_table_key(table_key)
+    except KeyError:
+        return fail_dataset_not_found(table_key)
     producers, consumers = _flow_targets_for_table_key(table_key)
 
     return CliResult.ok(

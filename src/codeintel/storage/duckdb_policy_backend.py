@@ -1390,7 +1390,6 @@ class DuckDBPolicyBackend:
             row_list=row_list,
             resolved_columns=resolved_columns,
             column_type_by_name=column_type_by_name,
-            table_schema=table_schema,
         )
 
     def _coerce_mapping_rows_strict(
@@ -1420,21 +1419,15 @@ class DuckDBPolicyBackend:
         row_list: list[Mapping[str, object]],
         resolved_columns: tuple[str, ...],
         column_type_by_name: Mapping[str, str],
-        table_schema: TableSchema,
     ) -> list[tuple[object, ...]]:
-        nullable_by_name = {col.name: col.nullable for col in table_schema.columns}
         tuple_rows: list[tuple[object, ...]] = []
         for row in row_list:
             values: list[object] = []
             for col in resolved_columns:
-                if col in row:
-                    value = row[col]
-                else:
-                    nullable = nullable_by_name.get(col, False)
-                    if not nullable:
-                        message = f"Missing column {col} for {table_key}"
-                        raise ValueError(message)
-                    value = None
+                if col not in row:
+                    message = f"Missing column {col} for {table_key}"
+                    raise ValueError(message)
+                value = row[col]
                 values.append(self._coerce_insert_value(col, value, column_type_by_name))
             tuple_rows.append(tuple(values))
         return tuple_rows

@@ -7,15 +7,16 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
-import pandas as pd
-from pandas.api.extensions import ExtensionDtype
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
 from codeintel.build.schemas import get_schema_provider
+from codeintel.core.schemas.pandera_types import PanderaDtype, dtype_for_column_type
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+    import pandas as pd
 
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
@@ -25,26 +26,6 @@ __all__ = [
 ]
 
 
-PanderaDtype = type | str | ExtensionDtype
-
-_STRING_DTYPE: PanderaDtype = pd.StringDtype()
-_INT_DTYPE: PanderaDtype = pd.Int64Dtype()
-_FLOAT_DTYPE: PanderaDtype = pd.Float64Dtype()
-_BOOL_DTYPE: PanderaDtype = pd.BooleanDtype()
-
-
-_COLUMN_TYPE_TO_DTYPE: Mapping[str, PanderaDtype] = {
-    "BOOLEAN": _BOOL_DTYPE,
-    "INTEGER": _INT_DTYPE,
-    "BIGINT": _INT_DTYPE,
-    "DOUBLE": _FLOAT_DTYPE,
-    "DECIMAL": _FLOAT_DTYPE,
-    "DECIMAL(38,0)": _INT_DTYPE,
-    "VARCHAR": _STRING_DTYPE,
-    "JSON": object,
-    "TIMESTAMP": "datetime64[ns]",
-    "TIMESTAMPTZ": "datetime64[ns]",
-}
 
 
 _DATAFRAME_CHECKS: dict[str, list[Check]] = {
@@ -663,7 +644,7 @@ _COLUMN_CHECKS: dict[str, dict[str, list[Check]]] = {
 }
 
 
-def _dtype_for_column_type(col_type: ColumnType) -> PanderaDtype:
+def _dtype_for_column_type(col_type: ColumnType | str) -> PanderaDtype:
     """Map a DuckDB column type to a Pandera-compatible dtype.
 
     Parameters
@@ -676,10 +657,7 @@ def _dtype_for_column_type(col_type: ColumnType) -> PanderaDtype:
     PanderaDtype
         A dtype that satisfies Pandera's Column dtype parameter.
     """
-    normalized = col_type.upper()
-    if normalized.startswith("DECIMAL("):
-        return _COLUMN_TYPE_TO_DTYPE.get("DECIMAL(38,0)", _INT_DTYPE)
-    return _COLUMN_TYPE_TO_DTYPE.get(normalized, _STRING_DTYPE)
+    return dtype_for_column_type(col_type)
 
 
 def _build_columns(
@@ -1198,10 +1176,14 @@ def _get_dataset_schemas() -> dict[str, DataFrameSchema]:
         All registered dataset schemas.
     """
     schemas = _materialize_schemas()
-    schemas.update(_analytics_view_schemas())
-    schemas.update(_graph_view_schemas())
-    schemas.update(_core_view_schemas())
-    schemas.update(_docs_view_schemas())
+    for view_map in (
+        _analytics_view_schemas(),
+        _graph_view_schemas(),
+        _core_view_schemas(),
+        _docs_view_schemas(),
+    ):
+        for table_key, view_schema in view_map.items():
+            schemas.setdefault(table_key, view_schema)
     return schemas
 
 

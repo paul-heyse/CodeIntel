@@ -53,8 +53,8 @@ class BuildRunContext:
     paths: BuildPaths
     providers: Providers
     config: BuildConfig
-    config_overrides: BuildConfigOverrides | None = None
     settings: BuildSettings
+    config_overrides: BuildConfigOverrides | None = None
     execution_settings: HamiltonExecutionSettings | None = None
     execution_options: BuildExecutionOptions | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)

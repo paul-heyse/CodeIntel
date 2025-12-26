@@ -252,8 +252,8 @@ class ToolsConfig(BaseModel):
         description="Project name passed to scip-python for stable SCIP identity",
     )
     scip_python_bin: str = Field(
-        "scip",
-        description="Path to scip-python CLI (binary name is scip)",
+        "scip-python",
+        description="Path to scip-python CLI (binary name is scip-python)",
     )
     protoc_bin: str = Field(
         "python",

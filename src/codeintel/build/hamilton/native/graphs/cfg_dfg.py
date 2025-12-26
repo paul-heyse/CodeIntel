@@ -89,12 +89,28 @@ class DfgToolOutput(ToolStepOutput):
     edge_rows: tuple[DFGEdgeRow, ...] = ()
 
 
+@dataclass(frozen=True)
+class CfgRunInputs:
+    """Inputs required for CFG extraction."""
+
+    goids: ir.Table
+    goids_record: TargetRunRecord
+    source_root: Path | None
+
+
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
 def cfg__hash_options(
     env: BuildEnv,
     goids__hash_options: InputHashOptions,
 ) -> InputHashOptions:
-    """Build hash options for CFG materialization."""
+    """Build hash options for CFG materialization.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, CFG_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
@@ -108,7 +124,14 @@ def dfg__hash_options(
     env: BuildEnv,
     cfg__hash_options: InputHashOptions,
 ) -> InputHashOptions:
-    """Build hash options for DFG materialization."""
+    """Build hash options for DFG materialization.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, DFG_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
@@ -119,7 +142,14 @@ def dfg__hash_options(
 
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
 def cfg__source_root(env: BuildEnv) -> Path | None:
-    """Resolve repository root for CFG extraction."""
+    """Resolve repository root for CFG extraction.
+
+    Returns
+    -------
+    Path | None
+        Return value.
+
+    """
     repo_root = env.snapshot.repo_root
     if repo_root is not None:
         return repo_root
@@ -127,6 +157,27 @@ def cfg__source_root(env: BuildEnv) -> Path | None:
         return get_source_root(env.gateway, env.snapshot.repo, env.snapshot.commit)
     except (OSError, RuntimeError, ValueError):
         return None
+
+
+@tag_helper(domain="graphs", target=CFG_TARGET_NAME)
+def cfg__run_inputs(
+    q__core__goids: ir.Table,
+    t__goids: TargetRunRecord,
+    cfg__source_root: Path | None,
+) -> CfgRunInputs:
+    """Bundle inputs for CFG extraction.
+
+    Returns
+    -------
+    CfgRunInputs
+        Return value.
+
+    """
+    return CfgRunInputs(
+        goids=q__core__goids,
+        goids_record=t__goids,
+        source_root=cfg__source_root,
+    )
 
 
 @dataclass(frozen=True)
@@ -371,12 +422,17 @@ def _coerce_dfg_output(output: ToolStepOutput) -> DfgToolOutput:
 def t__cfg__run(
     env: BuildEnv,
     graph: TargetGraph,
-    q__core__goids: ir.Table,
-    t__goids: TargetRunRecord,
-    cfg__source_root: Path | None,
     cfg__hash_options: InputHashOptions,
+    cfg__run_inputs: CfgRunInputs,
 ) -> CfgToolOutput:
-    """Execute CFG extraction for all functions."""
+    """Execute CFG extraction for all functions.
+
+    Returns
+    -------
+    CfgToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -386,12 +442,14 @@ def t__cfg__run(
     )
 
     def _execute() -> CfgToolOutput:
-        if t__goids.status != "succeeded":
+        if cfg__run_inputs.goids_record.status != "succeeded":
             return CfgToolOutput(
-                result=ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
+                result=ExecutionResult.failed(
+                    f"Upstream goids target failed: {cfg__run_inputs.goids_record.error}"
+                )
             )
 
-        source_root = cfg__source_root
+        source_root = cfg__run_inputs.source_root
         if source_root is None:
             return CfgToolOutput(
                 result=ExecutionResult.failed("CFG source root could not be resolved")
@@ -399,7 +457,7 @@ def t__cfg__run(
 
         opts = load_target_options(env, target_name=CFG_TARGET_NAME, options_type=CfgDfgOptions)
         functions = _filter_functions_for_scope(
-            _load_functions(q__core__goids, env.snapshot.repo, env.snapshot.commit),
+            _load_functions(cfg__run_inputs.goids, env.snapshot.repo, env.snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 
@@ -442,7 +500,14 @@ def t__cfg__run(
 def t__cfg__ingest(
     t__cfg__run: CfgToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package CFG rows for table materialization."""
+    """Package CFG rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__cfg__run.result
     if result.skipped:
         return IngestStep(
@@ -480,7 +545,19 @@ def t__cfg__ingest(
 def cfg__blocks_rows(
     t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.cfg_blocks."""
+    """Extract rows for graph.cfg_blocks.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__cfg__ingest.result.skipped or not t__cfg__ingest.result.success:
         return None
     payload = t__cfg__ingest.payload
@@ -499,7 +576,19 @@ def cfg__blocks_rows(
 def cfg__edges_rows(
     t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.cfg_edges."""
+    """Extract rows for graph.cfg_edges.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__cfg__ingest.result.skipped or not t__cfg__ingest.result.success:
         return None
     payload = t__cfg__ingest.payload
@@ -518,7 +607,14 @@ def cfg__table_materializations(
     m__graph__cfg_blocks: MaterializationMetadata,
     m__graph__cfg_edges: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for CFG tables."""
+    """Collect materialization metadata for CFG tables.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Return value.
+
+    """
     return {
         CFG_BLOCKS_TABLE_KEY: m__graph__cfg_blocks,
         CFG_EDGES_TABLE_KEY: m__graph__cfg_edges,
@@ -531,7 +627,14 @@ def cfg__finalize_context(
     graph: TargetGraph,
     cfg__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for CFG."""
+    """Build finalization context for CFG.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -547,7 +650,14 @@ def t__cfg(
     t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     cfg__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct control flow graphs per function."""
+    """Construct control flow graphs per function.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=cfg__finalize_context,
         tool_step=t__cfg__run,
@@ -564,7 +674,14 @@ def t__dfg__run(
     t__cfg__run: CfgToolOutput,
     dfg__hash_options: InputHashOptions,
 ) -> DfgToolOutput:
-    """Execute DFG extraction from CFG results."""
+    """Execute DFG extraction from CFG results.
+
+    Returns
+    -------
+    DfgToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -619,7 +736,14 @@ def t__dfg__run(
 def t__dfg__ingest(
     t__dfg__run: DfgToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package DFG rows for table materialization."""
+    """Package DFG rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__dfg__run.result
     if result.skipped:
         return IngestStep(
@@ -650,7 +774,19 @@ def t__dfg__ingest(
 def dfg__edges_rows(
     t__dfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.dfg_edges."""
+    """Extract rows for graph.dfg_edges.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__dfg__ingest.result.skipped or not t__dfg__ingest.result.success:
         return None
     payload = t__dfg__ingest.payload
@@ -668,7 +804,14 @@ def dfg__edges_rows(
 def dfg__table_materializations(
     m__graph__dfg_edges: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for DFG tables."""
+    """Collect materialization metadata for DFG tables.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Return value.
+
+    """
     return {DFG_EDGES_TABLE_KEY: m__graph__dfg_edges}
 
 
@@ -678,7 +821,14 @@ def dfg__finalize_context(
     graph: TargetGraph,
     dfg__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for DFG."""
+    """Build finalization context for DFG.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -694,7 +844,14 @@ def t__dfg(
     t__dfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     dfg__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct data flow graphs per function."""
+    """Construct data flow graphs per function.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=dfg__finalize_context,
         tool_step=t__dfg__run,

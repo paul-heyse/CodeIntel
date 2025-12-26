@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.contract_validation import (
     ContractRegistry,
+    ContractValidationLookups,
     TableColumnsLookup,
+    TableSchemaLookup,
     build_contract_registry,
 )
 from codeintel.core.schemas.contract_validation import (
@@ -16,6 +18,7 @@ from codeintel.core.schemas.contract_validation import (
 from codeintel.core.schemas.contract_validation import (
     validate_contract_or_raise as validate_contract_or_raise_core,
 )
+from codeintel.core.schemas.service import get_schema_service
 from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.datasets.registry import (
     load_dataset_registry,
@@ -59,11 +62,18 @@ def get_binding_required_datasets() -> frozenset[str]:
 
 
 __all__ = [
+    "clear_contract_validation_cache",
     "collect_contract_issues",
     "collect_contract_issues_lenient",
     "get_binding_required_datasets",
     "validate_contract_or_raise",
 ]
+
+
+def clear_contract_validation_cache() -> None:
+    """Clear cached contract validation lookups."""
+    _contract_registry.cache_clear()
+    get_binding_required_datasets.cache_clear()
 
 
 def _table_columns_lookup(con: DuckDBPyConnection, *, missing_ok: bool) -> TableColumnsLookup:
@@ -108,7 +118,10 @@ def collect_contract_issues(
         contracts_by_table_key=contracts.by_table_key,
         contracts_by_name=contracts.by_name,
         include_views=include_views,
-        table_columns_lookup=_table_columns_lookup(con, missing_ok=missing_ok),
+        lookups=ContractValidationLookups(
+            table_columns=_table_columns_lookup(con, missing_ok=missing_ok),
+            table_schema=_schema_service_table_lookup(),
+        ),
     )
 
 
@@ -140,5 +153,16 @@ def validate_contract_or_raise(
         contracts_by_table_key=contracts.by_table_key,
         contracts_by_name=contracts.by_name,
         include_views=include_views,
-        table_columns_lookup=_table_columns_lookup(con, missing_ok=False),
+        lookups=ContractValidationLookups(
+            table_columns=_table_columns_lookup(con, missing_ok=False),
+            table_schema=_schema_service_table_lookup(),
+        ),
     )
+
+
+def _schema_service_table_lookup() -> TableSchemaLookup | None:
+    try:
+        service = get_schema_service()
+    except RuntimeError:
+        return None
+    return service.get_table_schema

@@ -7,9 +7,8 @@ providers, plus convenience helpers for validating and inserting rows.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pandas as pd
 from sqlglot import exp
@@ -17,7 +16,7 @@ from sqlglot import exp
 if TYPE_CHECKING:
     from codeintel.analytics.utilities.persistence import DeleteScope
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.core.schemas.primitives import ColumnType
     from codeintel.storage.gateway import StorageGateway
 
 from codeintel.build.hamilton.contracts.schemas.validation import validate_df
@@ -27,7 +26,8 @@ from codeintel.build.schemas import (
     get_contract_for_table_key,
 )
 from codeintel.config.datasets.columns import load_columns_by_table
-from codeintel.core.schemas.row_models import normalize_row_value
+from codeintel.core.schemas.row_models import normalize_row_value_for_type
+from codeintel.core.schemas.service import get_schema_service
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
@@ -196,89 +196,6 @@ def write_analytics_rows(
     )
 
 
-@dataclass(frozen=True)
-class AnalyticsTupleWriteOptions:
-    """Options for writing tuple-based analytics rows."""
-
-    delete_scope: DeleteScope | None = None
-    scope: str | None = None
-    columns: Sequence[str] | None = None
-
-
-def write_analytics_tuple_rows(
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[Mapping[str, object] | Sequence[object]],
-    *,
-    options: AnalyticsTupleWriteOptions | None = None,
-    **legacy: object,
-) -> int:
-    """Validate and write tuple rows using the canonical contract registry.
-
-    Returns
-    -------
-    int
-        Number of rows inserted.
-
-    Raises
-    ------
-    ValueError
-        If column metadata is missing, delete scopes are unsupported, or legacy
-        options are invalid.
-    """
-    if legacy:
-        if options is not None:
-            message = "Legacy arguments are incompatible with options."
-            raise ValueError(message)
-        legacy_options = {
-            "delete_scope": legacy.pop("delete_scope", None),
-            "scope": legacy.pop("scope", None),
-            "columns": legacy.pop("columns", None),
-        }
-        if legacy:
-            unsupported = ", ".join(sorted(legacy))
-            message = f"Unsupported arguments: {unsupported}"
-            raise ValueError(message)
-        resolved = AnalyticsTupleWriteOptions(
-            delete_scope=cast("DeleteScope | None", legacy_options["delete_scope"]),
-            scope=cast("str | None", legacy_options["scope"]),
-            columns=cast("Sequence[str] | None", legacy_options["columns"]),
-        )
-    else:
-        resolved = options or AnalyticsTupleWriteOptions()
-    contract = get_analytics_dataset_contract(gateway, table_key)
-    resolved_columns = (
-        tuple(resolved.columns) if resolved.columns is not None else contract.column_names()
-    )
-    if not resolved_columns:
-        message = f"Missing column metadata for tuple rows in {table_key}"
-        raise ValueError(message)
-    validated_rows = validate_tuple_rows(
-        table_key,
-        rows,
-        columns=resolved_columns,
-        schema=contract.schema,
-    )
-    backend = gateway.policy
-    backend.ensure_table(contract.table_key)
-    if resolved.delete_scope is not None:
-        if not _table_supports_snapshot_delete(contract.table_key):
-            message = f"Unsupported delete target: {contract.table_key}"
-            raise ValueError(message)
-        backend.delete_for_snapshot(
-            contract.table_key,
-            repo=resolved.delete_scope.repo,
-            commit=resolved.delete_scope.commit,
-        )
-    return (
-        backend.bulk_insert(
-            contract.table_key, list(validated_rows), columns=list(resolved_columns)
-        )
-        if validated_rows
-        else 0
-    )
-
-
 def validate_contract_rows(
     table_key: str, rows: Sequence[Mapping[str, object]]
 ) -> list[dict[str, object]]:
@@ -296,8 +213,15 @@ def validate_contract_rows(
         return []
     df = validate_df(table_key, pd.DataFrame(rows))
     records = df.to_dict(orient="records")
+    table_schema = get_schema_service().get_table_schema(table_key)
+    column_types: dict[str, ColumnType] = (
+        {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
+    )
     return [
-        {str(key): normalize_row_value(value) for key, value in record.items()}
+        {
+            str(key): normalize_row_value_for_type(value, column_types.get(str(key)))
+            for key, value in record.items()
+        }
         for record in records
     ]
 
@@ -308,66 +232,5 @@ __all__ = [
     "get_function_ast_features_contract",
     "insert_analytics_rows",
     "validate_contract_rows",
-    "validate_tuple_rows",
     "write_analytics_rows",
-    "write_analytics_tuple_rows",
 ]
-
-
-def validate_tuple_rows(
-    table_key: str,
-    rows: Sequence[Mapping[str, object] | Sequence[object]],
-    *,
-    columns: Sequence[str] | None = None,
-    schema: TableSchema | None = None,
-) -> list[tuple[object, ...]]:
-    """
-    Validate tuple rows for a dataset and return normalized tuples.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified dataset key.
-    rows
-        Iterable of rows as mappings or positional sequences.
-    columns
-        Column order corresponding to the tuples.
-    schema
-        Optional TableSchema used to derive column order.
-
-    Returns
-    -------
-    list[tuple[object, ...]]
-        Pandera-validated rows with ``None`` for missing values.
-
-    Raises
-    ------
-    ValueError
-        If both ``columns`` and ``schema`` are provided or if column names cannot be
-        determined.
-    """
-    if not rows:
-        return []
-    if columns is not None and schema is not None:
-        message = "Specify either schema or columns, not both"
-        raise ValueError(message)
-    column_names = tuple(columns or (schema.column_names() if schema else ()))
-    if not column_names:
-        message = f"Column names required to validate rows for {table_key}"
-        raise ValueError(message)
-
-    first = rows[0]
-    columns_index = pd.Index(column_names)
-    if isinstance(first, Mapping):
-        mapping_rows = cast("Sequence[Mapping[str, object]]", rows)
-        df = pd.DataFrame(mapping_rows, columns=columns_index)
-    else:
-        tuple_rows = cast("Sequence[Sequence[object]]", rows)
-        df = pd.DataFrame(tuple_rows, columns=columns_index)
-
-    validated = validate_df(table_key, df)
-    ordered = validated.loc[:, columns_index].astype("object")
-    return [
-        tuple(normalize_row_value(value) for value in row)
-        for row in ordered.itertuples(index=False, name=None)
-    ]

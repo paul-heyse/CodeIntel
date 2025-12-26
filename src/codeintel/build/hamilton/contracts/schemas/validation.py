@@ -11,12 +11,15 @@ from pandera.errors import SchemaErrors
 
 from codeintel.build.hamilton.contracts.schemas.registry import SCHEMA_REGISTRY
 from codeintel.core.schemas.json_schema_gen import pandera_to_json_schema
-from codeintel.core.schemas.row_models import normalize_row_value
+from codeintel.core.schemas.row_models import normalize_row_value_for_type
+from codeintel.core.schemas.service import get_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from pandera import DataFrameSchema
+
+    from codeintel.core.schemas.primitives import ColumnType
 
 _log = logging.getLogger(__name__)
 
@@ -139,10 +142,22 @@ def validate_rows(
 
     validated = validate_df(table_key, df, mode="strict")
     records = validated.to_dict(orient="records")
-    return [
-        {str(key): normalize_row_value(value) for key, value in record.items()}
-        for record in records
-    ]
+    try:
+        table_schema = get_schema_service().get_table_schema(table_key)
+    except RuntimeError:
+        table_schema = None
+    column_types: dict[str, ColumnType] = (
+        {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
+    )
+    normalized: list[dict[str, Any]] = []
+    for record in records:
+        normalized.append(
+            {
+                str(key): normalize_row_value_for_type(value, column_types.get(str(key)))
+                for key, value in record.items()
+            }
+        )
+    return normalized
 
 
 def dataset_json_schema(table_key: str) -> dict[str, Any] | None:

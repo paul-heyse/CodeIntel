@@ -14,7 +14,9 @@ DataFrameSchema definitions for interoperability with validation boundaries.
 
 from __future__ import annotations
 
+import ast
 import datetime as dt
+import json
 import math
 import re
 from collections.abc import Callable, Mapping
@@ -148,12 +150,64 @@ def normalize_row_value(value: object) -> object:
     return value
 
 
+def _normalize_json_value(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, set):
+        return json.dumps(sorted(value), separators=(",", ":"))
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, separators=(",", ":"))
+    if isinstance(value, str):
+        parsed: object | None = None
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            try:
+                parsed = ast.literal_eval(value)
+            except (SyntaxError, ValueError):
+                parsed = None
+        payload = parsed if parsed is not None else value
+        if isinstance(payload, set):
+            payload = sorted(payload)
+        return json.dumps(payload, separators=(",", ":"))
+    return value
+
+
+def normalize_row_value_for_type(
+    value: object, column_type: ColumnType | None
+) -> object:
+    """Normalize row values with awareness of column types.
+
+    Parameters
+    ----------
+    value
+        Raw value from a row mapping.
+    column_type
+        Column type from the table schema, when available.
+
+    Returns
+    -------
+    object
+        Normalized value for insertion/serialization.
+    """
+    normalized = normalize_row_value(value)
+    if normalized is None:
+        return None
+    if column_type == "JSON":
+        return _normalize_json_value(normalized)
+    return normalized
+
+
 @lru_cache(maxsize=2048)
 def _row_serializer_cached(signature: tuple[tuple[str, ColumnType, bool], ...]) -> RowSerializer:
-    column_names = tuple(name for name, _col_type, _nullable in signature)
+    column_types: tuple[tuple[str, ColumnType], ...] = tuple(
+        (name, col_type) for name, col_type, _nullable in signature
+    )
 
     def _serialize(row: Mapping[str, object]) -> tuple[object, ...]:
-        return tuple(normalize_row_value(row[col]) for col in column_names)
+        return tuple(
+            normalize_row_value_for_type(row[name], col_type) for name, col_type in column_types
+        )
 
     return _serialize
 
@@ -429,6 +483,7 @@ __all__ = [
     "GeneratedRowBinding",
     "RowSerializer",
     "normalize_row_value",
+    "normalize_row_value_for_type",
     "row_binding_for_table_schema",
     "row_model_for_table_schema",
     "row_serializer_for_table_schema",

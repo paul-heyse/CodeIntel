@@ -40,6 +40,7 @@ from codeintel.build.hamilton.hooks import (
     ValidationSummary,
     build_hooks,
 )
+from codeintel.build.hamilton.introspect import derive_target_io_surface
 from codeintel.build.hamilton.run_records import (
     RunRecordInputs,
     TargetRunRecord,
@@ -54,8 +55,11 @@ from codeintel.observability.telemetry_context import (
     telemetry_context,
 )
 from codeintel.storage.gateway import StorageError
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from hamilton.lifecycle.base import LifecycleAdapter
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
@@ -331,6 +335,186 @@ def _map_closure_to_nodes(
     return final_vars, missing
 
 
+def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
+    schema, table = split_table_key(table_key)
+    return env.gateway.policy.table_exists(schema=schema, table=table)
+
+
+def _preflight_missing_inputs(
+    *,
+    env: BuildEnv,
+    runtime: HamiltonRuntime,
+    closure: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    graph = runtime.graph
+    produced_table_keys = {
+        table_key for target in closure for table_key in graph.get(target).table_keys
+    }
+    surfaces = derive_target_io_surface(runtime, include_targets=closure)
+    missing_by_target: dict[str, tuple[str, ...]] = {}
+
+    for target in closure:
+        surface = surfaces.get(target)
+        if surface is None:
+            continue
+        missing: set[str] = set()
+        for read in surface.reads:
+            table_key = read.table_key
+            if table_key in produced_table_keys:
+                continue
+            if not _table_key_exists(env, table_key):
+                missing.add(table_key)
+        if missing:
+            missing_by_target[target] = tuple(sorted(missing))
+    return missing_by_target
+
+
+def _blocked_targets(graph: TargetGraph, roots: set[str]) -> set[str]:
+    blocked = set(roots)
+    queue = list(roots)
+    while queue:
+        current = queue.pop()
+        for dependent in graph.dependents_of(current):
+            if dependent in blocked:
+                continue
+            blocked.add(dependent)
+            queue.append(dependent)
+    return blocked
+
+
+def _preflight_failure_records(
+    *,
+    env: BuildEnv,
+    runtime: HamiltonRuntime,
+    closure: tuple[str, ...],
+    missing_by_target: Mapping[str, tuple[str, ...]],
+) -> tuple[dict[str, TargetRunRecord], set[str]]:
+    graph = runtime.graph
+    roots = set(missing_by_target)
+    blocked = _blocked_targets(graph, roots)
+    blocked_records: dict[str, TargetRunRecord] = {}
+    root_list = ", ".join(sorted(roots))
+
+    for target in closure:
+        if target not in blocked:
+            continue
+        if target in missing_by_target:
+            missing_tables = ", ".join(missing_by_target[target])
+            error = f"Missing input tables: {missing_tables}"
+        else:
+            error = f"Missing upstream inputs: {root_list}"
+        record = _failure_record(
+            target_name=target,
+            env=env,
+            graph=graph,
+            error=error,
+        )
+        node_name = target_to_node_name(target, runtime=runtime)
+        key = node_name or f"__preflight__{target}"
+        blocked_records[key] = record
+
+    return blocked_records, blocked
+
+
+def _apply_preflight(
+    *,
+    context: _RunState,
+    closure: tuple[str, ...],
+    final_vars: list[str],
+) -> tuple[list[str], dict[str, TargetRunRecord]]:
+    preflight_missing = _preflight_missing_inputs(
+        env=context.env,
+        runtime=context.runtime,
+        closure=closure,
+    )
+    if not preflight_missing:
+        return final_vars, {}
+
+    preflight_records, blocked_targets = _preflight_failure_records(
+        env=context.env,
+        runtime=context.runtime,
+        closure=closure,
+        missing_by_target=preflight_missing,
+    )
+    if not blocked_targets:
+        return final_vars, preflight_records
+
+    adjusted: list[str] = []
+    for target in closure:
+        if target in blocked_targets:
+            continue
+        node_name = target_to_node_name(target, runtime=context.runtime)
+        if node_name is None:
+            continue
+        adjusted.append(node_name)
+    return adjusted, preflight_records
+
+
+@dataclass(frozen=True)
+class _FinalizeInputs:
+    writer: BuildRunWriter
+    contract_hook: ContractEnforcementHook | None
+    closure: tuple[str, ...]
+    outputs: dict[str, Any]
+    error: str | None
+
+
+def _finalize_run(
+    *,
+    context: _RunState,
+    inputs: _FinalizeInputs,
+) -> HamiltonBuildResult:
+    graph = context.runtime.graph
+    computed, skipped, failed = _categorize_outputs(inputs.closure, inputs.outputs, context.runtime)
+    duration_ms = context.duration_ms
+    success = not failed and inputs.error is None
+
+    records: list[TargetRunRecord] = [
+        value for value in inputs.outputs.values() if isinstance(value, TargetRunRecord)
+    ]
+    inputs.writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
+    inputs.writer.persist_asset_catalog(
+        env=context.env,
+        run_id=context.run_id,
+        graph=graph,
+        records=records,
+    )
+
+    inputs.writer.complete_run(
+        run_id=context.run_id,
+        success=success,
+        computed_targets=computed,
+        skipped_targets=skipped,
+        error_summary=inputs.error or (f"{len(failed)} targets failed" if failed else None),
+    )
+
+    log.info(
+        "build.hamilton.executor.complete run_id=%s success=%s duration_ms=%.1f",
+        context.run_id,
+        success,
+        duration_ms,
+    )
+
+    validation_summary = (
+        inputs.contract_hook.get_validation_summary() if inputs.contract_hook else None
+    )
+
+    return HamiltonBuildResult(
+        requested=context.targets,
+        closure=inputs.closure,
+        computed_targets=tuple(computed),
+        skipped_targets=tuple(skipped),
+        failed_targets=tuple(failed),
+        outputs=inputs.outputs,
+        success=success,
+        duration_ms=duration_ms,
+        error=inputs.error,
+        run_id=context.run_id,
+        runtime=context.runtime,
+        validation_summary=validation_summary,
+    )
+
+
 @dataclass(frozen=True)
 class HamiltonBuildResult:
     """Result of a Hamilton-based build execution.
@@ -527,11 +711,22 @@ class HamiltonBuildExecutor:
             )
             return self._make_missing_result(context, closure, missing)
 
+        final_vars, preflight_records = _apply_preflight(
+            context=context,
+            closure=closure,
+            final_vars=final_vars,
+        )
+
         try:
-            outputs, error = self._execute_dag(context, final_vars)
+            if final_vars:
+                outputs, error = self._execute_dag(context, final_vars)
+            else:
+                outputs, error = {}, None
         finally:
             if telemetry_hook is not None:
                 telemetry_hook.flush()
+
+        outputs.update(preflight_records)
 
         if error:
             _ensure_failure_records(
@@ -542,53 +737,15 @@ class HamiltonBuildExecutor:
                 error=error,
             )
 
-        computed, skipped, failed = _categorize_outputs(closure, outputs, context.runtime)
-        duration_ms = context.duration_ms
-        success = not failed and error is None
-
-        records: list[TargetRunRecord] = [
-            value for value in outputs.values() if isinstance(value, TargetRunRecord)
-        ]
-        writer.save_run_targets(env=context.env, run_id=context.run_id, records=records)
-        writer.persist_asset_catalog(
-            env=context.env,
-            run_id=context.run_id,
-            graph=graph,
-            records=records,
-        )
-
-        writer.complete_run(
-            run_id=context.run_id,
-            success=success,
-            computed_targets=computed,
-            skipped_targets=skipped,
-            error_summary=error or (f"{len(failed)} targets failed" if failed else None),
-        )
-
-        log.info(
-            "build.hamilton.executor.complete run_id=%s success=%s duration_ms=%.1f",
-            context.run_id,
-            success,
-            duration_ms,
-        )
-
-        validation_summary = (
-            contract_hook.get_validation_summary() if contract_hook is not None else None
-        )
-
-        return HamiltonBuildResult(
-            requested=context.targets,
-            closure=closure,
-            computed_targets=tuple(computed),
-            skipped_targets=tuple(skipped),
-            failed_targets=tuple(failed),
-            outputs=outputs,
-            success=success,
-            duration_ms=duration_ms,
-            error=error,
-            run_id=context.run_id,
-            runtime=context.runtime,
-            validation_summary=validation_summary,
+        return _finalize_run(
+            context=context,
+            inputs=_FinalizeInputs(
+                writer=writer,
+                contract_hook=contract_hook,
+                closure=closure,
+                outputs=outputs,
+                error=error,
+            ),
         )
 
     def _effective_max_workers(self, graph: TargetGraph) -> int | None:

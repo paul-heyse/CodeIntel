@@ -107,6 +107,25 @@ def test_contract_derived_columns_match_schemas() -> None:
     )
 
 
+def test_schema_service_matches_contract_catalog() -> None:
+    """SchemaService table schemas should match contract catalog for non-view tables."""
+    schema_service = get_schema_service()
+    mismatches: list[str] = []
+    for table_key, contract in iter_contracts_by_table_key():
+        if contract.is_view or contract.schema is None or table_key.startswith("tmp_"):
+            continue
+        schema = schema_service.get_table_schema(table_key)
+        if schema is None:
+            mismatches.append(f"{table_key}: missing SchemaService schema")
+            continue
+        if schema != contract.schema:
+            mismatches.append(f"{table_key}: schema mismatch")
+    _require(
+        condition=not mismatches,
+        message=f"SchemaService mismatches: {', '.join(mismatches[:5])}",
+    )
+
+
 def test_delete_sql_covers_repo_commit_tables() -> None:
     """DELETE_SQL_BY_TABLE should cover all datasets with repo+commit columns."""
     delete_sql_by_table = get_delete_sql_by_table()
