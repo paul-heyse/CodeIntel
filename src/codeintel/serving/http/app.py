@@ -16,7 +16,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
     bootstrap_observability,
     get_observability,
     observability_config_from_settings,

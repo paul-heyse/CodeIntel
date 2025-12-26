@@ -32,6 +32,7 @@ from codeintel.analytics.testing.behavioral.tags import build_behavior_rows
 from codeintel.analytics.testing.coverage.edges import build_test_coverage_edges_rows
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -47,7 +48,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hamilton.validators import build_table_contract
@@ -423,6 +423,10 @@ def t__coverage_test_edges__compute(
         Storage gateway for analytics queries.
     t__goids
         Upstream goids target result (for dependency).
+    coverage_test_edges__skip
+        Skip flag derived from manifest-based input hash evaluation.
+    coverage_test_edges__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -579,6 +583,8 @@ def t__behavioral_coverage__compute(
         Storage gateway for analytics queries.
     t__test_profile
         Upstream test_profile target result (for dependency).
+    behavioral_coverage__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------

@@ -486,8 +486,7 @@ class RegistryService:
             ),
         )
         contracts = {
-            contract.table_key: contract
-            for contract in contract_service_factory().iter_contracts()
+            contract.table_key: contract for contract in contract_service_factory().iter_contracts()
         }
         targets = {target.name: target for target in get_target_system().graph.all_targets}
         return cls(contract_catalog=contracts, target_catalog=targets, semantic_registry=None)

@@ -15,13 +15,16 @@ from starlette.requests import Request
 
 from codeintel.cli.config.model import CliConfig, TelemetryConfig
 from codeintel.cli.execution.bootstrap import bootstrap_cli, reset_bootstrap
-from codeintel.observability.context import run_context
-from codeintel.observability.operations import observe_operation, record_query_metrics
-from codeintel.observability.otel import (
+from codeintel.observability.operation_scope import observe_operation, record_query_metrics
+from codeintel.observability.runtime import (
+    MetricConfig,
     ObservabilityConfig,
+    ResourceConfig,
+    TraceConfig,
     bootstrap_observability,
     shutdown_observability,
 )
+from codeintel.observability.telemetry_context import telemetry_context
 from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
 from codeintel.serving.mcp.middleware_stack import McpOpenTelemetryMiddleware
 from codeintel.serving.metrics import QueryMetrics
@@ -56,11 +59,9 @@ def _configure_tracing() -> InMemorySpanExporter:
     bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_traces=False,
-            export_metrics=False,
-            console_export=False,
-            prometheus_enabled=False,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            traces=TraceConfig(enabled=False, console_export=False),
+            metrics=MetricConfig(enabled=False, prometheus_enabled=False),
         )
     )
     exporter = in_memory.InMemorySpanExporter()
@@ -112,14 +113,17 @@ def test_observe_operation_includes_repo_and_commit() -> None:
     shutdown_observability()
     exporter = _configure_tracing()
 
-    with run_context(
-        run_id="run-1",
-        domain="tests",
-        repo="org/repo",
-        commit="abc123",
-    ), observe_operation(
-        component="cli",
-        operation="health",
+    with (
+        telemetry_context(
+            run_id="run-1",
+            domain="tests",
+            repo="org/repo",
+            commit="abc123",
+        ),
+        observe_operation(
+            component="cli",
+            operation="health",
+        ),
     ):
         pass
 

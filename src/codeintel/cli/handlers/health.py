@@ -22,7 +22,7 @@ from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
     flush_observability,
     get_observability,
     get_pipeline_health_state,

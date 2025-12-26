@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from codeintel.observability.db_query_parameters import (
-    DbQueryParameterConfig,
-    emit_db_query_parameters,
-)
+from codeintel.observability.db_tracing import DbQueryParameterConfig, emit_db_query_parameters
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_is_instance,

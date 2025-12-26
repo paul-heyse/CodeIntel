@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
 
+
 @contextmanager
 def temporary_env(
     overrides: Mapping[str, str | None] | None = None,

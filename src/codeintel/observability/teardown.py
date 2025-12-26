@@ -9,14 +9,43 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from codeintel.observability.attributes import (
+from codeintel.observability.attribute_sanitizer import (
     SpanAttributeValue,
-    coerce_attribute_value,
+    prune_none,
     redact_command_value,
     redact_path_value,
 )
-from codeintel.observability.otel import get_observability
+from codeintel.observability.events import add_span_event, set_span_attributes
+from codeintel.observability.runtime import get_observability
 from codeintel.observability.runtime_registry import count_subprocesses, snapshot_subprocesses
+from codeintel.observability.semconv_keys import (
+    BUILD_COMMIT,
+    BUILD_DECISION_TRACE_ARTIFACT,
+    BUILD_DURATION_MS,
+    BUILD_REPO,
+    BUILD_RUN_ID,
+    BUILD_SCHEMA_INFERENCE_ERRORS_COUNT,
+    BUILD_TARGETS,
+    BUILD_VALIDATION_ISSUE_COUNT,
+    BUILD_VALIDATION_MODE,
+    CLI_COMMAND,
+    CLI_ERROR_TYPE,
+    CLI_EXIT_CODE,
+    CLI_INVOCATION_ID,
+    CLI_IS_PARSE_ERROR,
+    CODEINTEL_COMPONENT,
+    CODEINTEL_DOMAIN,
+    CODEINTEL_OPERATION,
+    SHUTDOWN_ACTIVE_THREAD_NAMES,
+    SHUTDOWN_ACTIVE_THREADS_COUNT,
+    SHUTDOWN_PENDING_TASK_SAMPLES,
+    SHUTDOWN_PENDING_TASKS_COUNT,
+    SHUTDOWN_STATUS,
+    SHUTDOWN_SUBPROCESS_COUNT,
+    SHUTDOWN_SUBPROCESS_SAMPLES,
+    TELEMETRY_FLUSH_MS,
+    TELEMETRY_FLUSH_OK,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -44,9 +73,7 @@ class SubprocessSample:
         dict[str, SpanAttributeValue]
             JSON-serializable subprocess payload.
         """
-        return _prune_none(
-            {"pid": self.pid, "command": _redact_command_value(self.command)}
-        )
+        return prune_none({"pid": self.pid, "command": _redact_command_value(self.command)})
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +93,7 @@ class ArtifactSummary:
         dict[str, SpanAttributeValue]
             JSON-serializable artifact payload.
         """
-        return _prune_none(
+        return prune_none(
             {
                 "name": self.name,
                 "artifact_type": self.artifact_type,
@@ -117,31 +144,31 @@ class TeardownTelemetry:
             Span attribute payload for teardown telemetry.
         """
         targets = ",".join(self.targets) if self.targets else None
-        return _prune_none(
+        return prune_none(
             {
-                "codeintel.component": self.component,
-                "codeintel.operation": self.operation,
-                "build.run_id": self.run_id,
-                "build.repo": self.repo,
-                "build.commit": self.commit,
-                "build.targets": targets,
-                "build.duration_ms": self.duration_ms,
-                "cli.invocation_id": self.cli_invocation_id,
-                "cli.command": _redact_command_value(self.cli_command),
-                "cli.exit_code": self.cli_exit_code,
-                "cli.is_parse_error": self.cli_is_parse_error,
-                "cli.error_type": self.cli_error_type,
-                "codeintel.domain": self.domain,
-                "build.decision_trace_artifact": self._decision_trace_name(),
-                "build.validation_mode": self.validation_mode,
-                "build.validation_issue_count": self.validation_issue_count,
-                "build.schema_inference_errors_count": self.schema_inference_errors_count,
-                "shutdown.status": self.shutdown_status,
-                "shutdown.pending_tasks_count": self.pending_tasks_count,
-                "shutdown.active_threads_count": self.active_threads_count,
-                "shutdown.subprocess_count": self.subprocess_count,
-                "telemetry.flush.ok": self.telemetry_flush_ok,
-                "telemetry.flush.ms": self.telemetry_flush_ms,
+                CODEINTEL_COMPONENT: self.component,
+                CODEINTEL_OPERATION: self.operation,
+                BUILD_RUN_ID: self.run_id,
+                BUILD_REPO: self.repo,
+                BUILD_COMMIT: self.commit,
+                BUILD_TARGETS: targets,
+                BUILD_DURATION_MS: self.duration_ms,
+                CLI_INVOCATION_ID: self.cli_invocation_id,
+                CLI_COMMAND: _redact_command_value(self.cli_command),
+                CLI_EXIT_CODE: self.cli_exit_code,
+                CLI_IS_PARSE_ERROR: self.cli_is_parse_error,
+                CLI_ERROR_TYPE: self.cli_error_type,
+                CODEINTEL_DOMAIN: self.domain,
+                BUILD_DECISION_TRACE_ARTIFACT: self._decision_trace_name(),
+                BUILD_VALIDATION_MODE: self.validation_mode,
+                BUILD_VALIDATION_ISSUE_COUNT: self.validation_issue_count,
+                BUILD_SCHEMA_INFERENCE_ERRORS_COUNT: self.schema_inference_errors_count,
+                SHUTDOWN_STATUS: self.shutdown_status,
+                SHUTDOWN_PENDING_TASKS_COUNT: self.pending_tasks_count,
+                SHUTDOWN_ACTIVE_THREADS_COUNT: self.active_threads_count,
+                SHUTDOWN_SUBPROCESS_COUNT: self.subprocess_count,
+                TELEMETRY_FLUSH_OK: self.telemetry_flush_ok,
+                TELEMETRY_FLUSH_MS: self.telemetry_flush_ms,
             }
         )
 
@@ -157,11 +184,11 @@ class TeardownTelemetry:
             f"{sample.pid}:{_redact_command_value(sample.command)}"
             for sample in self.subprocess_samples
         ]
-        return _prune_none(
+        return prune_none(
             {
-                "shutdown.pending_task_samples": [*self.pending_task_samples],
-                "shutdown.active_thread_names": [*self.active_thread_names],
-                "shutdown.subprocess_samples": subprocess_samples or None,
+                SHUTDOWN_PENDING_TASK_SAMPLES: [*self.pending_task_samples],
+                SHUTDOWN_ACTIVE_THREAD_NAMES: [*self.active_thread_names],
+                SHUTDOWN_SUBPROCESS_SAMPLES: subprocess_samples or None,
             }
         )
 
@@ -212,11 +239,11 @@ class TeardownTelemetry:
         dict[str, SpanAttributeValue]
             Span attributes for shutdown errors.
         """
-        return _prune_none(
+        return prune_none(
             {
-                "shutdown.status": self.shutdown_status,
-                "cli.error_type": self.cli_error_type,
-                "cli.exit_code": self.cli_exit_code,
+                SHUTDOWN_STATUS: self.shutdown_status,
+                CLI_ERROR_TYPE: self.cli_error_type,
+                CLI_EXIT_CODE: self.cli_exit_code,
             }
         )
 
@@ -277,7 +304,7 @@ class ScipTeardownTelemetry:
         dict[str, SpanAttributeValue]
             Span attributes for SCIP teardown errors.
         """
-        return _prune_none(
+        return prune_none(
             {
                 "scip.status": self.status,
                 "scip.error": self.error_summary,
@@ -292,7 +319,7 @@ class ScipTeardownTelemetry:
         dict[str, SpanAttributeValue]
             Span attributes with None values pruned.
         """
-        return _prune_none(
+        return prune_none(
             {
                 "scip.run_id": self.run_id,
                 "scip.repo": self.repo,
@@ -442,10 +469,10 @@ def emit_teardown_telemetry(
     if obs.enabled and obs.tracer is not None:
         with obs.tracer.start_as_current_span(span_name) as active_span:
             span = active_span
-            _set_span_attributes(span, telemetry.span_attributes())
-            _add_span_event(span, "shutdown.summary", telemetry.event_attributes())
+            set_span_attributes(span, telemetry.span_attributes())
+            add_span_event(span, "shutdown.summary", telemetry.event_attributes())
             if telemetry.shutdown_status != "succeeded":
-                _add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
+                add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
     log_payload = telemetry.to_log_payload()
     log_target = logger or log
     payload = json.dumps(log_payload, sort_keys=True)
@@ -477,9 +504,9 @@ def emit_scip_teardown_telemetry(
     if obs.enabled and obs.tracer is not None:
         with obs.tracer.start_as_current_span(span_name) as active_span:
             span = active_span
-            _set_span_attributes(span, telemetry.span_attributes())
+            set_span_attributes(span, telemetry.span_attributes())
             if telemetry.status != "succeeded":
-                _add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
+                add_span_event(span, "shutdown.error", telemetry.shutdown_error_attributes())
     log_payload = telemetry.to_log_payload()
     log_target = logger or log
     payload = json.dumps(log_payload, sort_keys=True)
@@ -515,37 +542,17 @@ def emit_shutdown_error_event(
     event_attrs["shutdown.error_message"] = str(error)
     if obs.enabled and obs.tracer is not None:
         with obs.tracer.start_as_current_span(span_name) as span:
-            _add_span_event(span, "shutdown.error", _prune_none(event_attrs))
+            add_span_event(span, "shutdown.error", prune_none(event_attrs))
     log_target = logger or log
     payload = json.dumps(
         {
             "event": "shutdown.error",
-            **_prune_none(event_attrs),
+            **prune_none(event_attrs),
         },
         sort_keys=True,
     )
     log_target.warning("shutdown.error %s", payload)
 
-
-def _set_span_attributes(span: Span, attributes: Mapping[str, SpanAttributeValue]) -> None:
-    for key, value in attributes.items():
-        attr_value = coerce_attribute_value(value)
-        if attr_value is not None:
-            span.set_attribute(key, attr_value)
-
-
-def _add_span_event(
-    span: Span,
-    name: str,
-    attributes: Mapping[str, SpanAttributeValue],
-) -> None:
-    event_attrs: dict[str, SpanAttributeValue] = {}
-    for key, value in attributes.items():
-        attr_value = coerce_attribute_value(value)
-        if attr_value is not None:
-            event_attrs[key] = attr_value
-    if event_attrs:
-        span.add_event(name, attributes=event_attrs)
 
 def _redact_command_value(value: str | None) -> str | None:
     policy = get_observability().policy
@@ -555,10 +562,6 @@ def _redact_command_value(value: str | None) -> str | None:
 def _redact_path_value(value: str | None) -> str | None:
     policy = get_observability().policy
     return redact_path_value(value, keep_segments=policy.redaction.path_keep_segments)
-
-
-def _prune_none(values: Mapping[str, SpanAttributeValue | None]) -> dict[str, SpanAttributeValue]:
-    return {key: value for key, value in values.items() if value is not None}
 
 
 __all__ = [

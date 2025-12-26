@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from opentelemetry import trace as otel_trace
 
 from codeintel.core.execution.ids import new_uuid_hex
-from codeintel.observability.context import correlation_context
+from codeintel.observability.semconv_keys import CODEINTEL_CORRELATION_ID
+from codeintel.observability.telemetry_context import telemetry_context
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -67,10 +68,10 @@ async def correlation_id_and_timing_middleware(
     correlation_id = incoming.strip() if incoming else new_uuid_hex()
     request.state.correlation_id = correlation_id
 
-    with correlation_context(correlation_id):
+    with telemetry_context(correlation_id=correlation_id):
         span = otel_trace.get_current_span()
         if span is not None:
-            span.set_attribute("codeintel.correlation_id", correlation_id)
+            span.set_attribute(CODEINTEL_CORRELATION_ID, correlation_id)
         response = await call_next(request)
     response.headers[CORRELATION_ID_HEADER] = correlation_id
 

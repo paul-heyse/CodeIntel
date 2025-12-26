@@ -122,7 +122,12 @@ def test_coverage_test_edges_materialize_success(
     compute_result = CoverageTestEdgesComputeResult(rows=[])
     materialization = _make_materialization("analytics.test_coverage_edges", 25)
 
-    record = t__coverage_test_edges(env, graph, compute_result, materialization)
+    record = t__coverage_test_edges(
+        env,
+        graph,
+        compute_result,
+        {"analytics.test_coverage_edges": materialization},
+    )
 
     expected_count = 25
     assert_target_ok(record)
@@ -150,7 +155,12 @@ def test_coverage_test_edges_materialize_failure(
         error="Upstream goids failed",
     )
 
-    record = t__coverage_test_edges(env, graph, compute_result, materialization)
+    record = t__coverage_test_edges(
+        env,
+        graph,
+        compute_result,
+        {"analytics.test_coverage_edges": materialization},
+    )
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -175,7 +185,12 @@ def test_behavioral_coverage_materialize_success(
     compute_result = BehavioralCoverageComputeResult(rows=[])
     materialization = _make_materialization("analytics.behavioral_coverage", 15)
 
-    record = t__behavioral_coverage(env, graph, compute_result, materialization)
+    record = t__behavioral_coverage(
+        env,
+        graph,
+        compute_result,
+        {"analytics.behavioral_coverage": materialization},
+    )
 
     expected_count = 15
     assert_target_ok(record)
@@ -203,7 +218,12 @@ def test_behavioral_coverage_materialize_failure(
         error="Test profile failed",
     )
 
-    record = t__behavioral_coverage(env, graph, compute_result, materialization)
+    record = t__behavioral_coverage(
+        env,
+        graph,
+        compute_result,
+        {"analytics.behavioral_coverage": materialization},
+    )
 
     assert_target_ok(record, expected_status="failed")
     expect_true(

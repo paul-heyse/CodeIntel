@@ -493,9 +493,7 @@ def _obs_resource_attributes() -> tuple[tuple[str, str], ...]:
     tuple[tuple[str, str], ...]
         Resource attribute key/value pairs.
     """
-    resource_attributes = dict(
-        _obs_parse_kv_pairs(_obs_opt_str("OTEL_RESOURCE_ATTRIBUTES"))
-    )
+    resource_attributes = dict(_obs_parse_kv_pairs(_obs_opt_str("OTEL_RESOURCE_ATTRIBUTES")))
     repo = _obs_opt_str("CODEINTEL_REPO")
     if repo and "codeintel.repo" not in resource_attributes:
         resource_attributes["codeintel.repo"] = repo

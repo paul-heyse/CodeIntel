@@ -269,9 +269,7 @@ def t__import_graph__extract(
     - graph.import_graph_edges: Import relationships
     """
     if t__modules.status != "succeeded":
-        return ExecutionResult.failed(
-            f"Upstream modules target failed: {t__modules.error}"
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     try:
         snapshot = env.snapshot

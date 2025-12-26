@@ -20,6 +20,7 @@ from codeintel.analytics.semantic_roles.core import SemanticRolesResult, build_s
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -33,7 +34,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
@@ -150,6 +150,10 @@ def t__semantic_roles__compute(
         Upstream modules target result (for dependency).
     t__function_ast_features
         Upstream function_ast_features target result (for dependency).
+    semantic_roles__skip
+        Skip flag derived from manifest-based input hash evaluation.
+    semantic_roles__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -314,16 +318,16 @@ semantic_roles__table_materializations = make_table_materializations_collector(
 __all__ = [
     "SemanticRolesResult",
     "TestProfileComputeResult",
-    "semantic_roles__hash_options",
     "semantic_roles__functions_rows",
+    "semantic_roles__hash_options",
     "semantic_roles__modules_rows",
     "semantic_roles__skip",
     "semantic_roles__table_materializations",
     "t__semantic_roles",
     "t__semantic_roles__compute",
-    "test_profile__hash_options",
     "t__test_profile",
     "t__test_profile__compute",
+    "test_profile__hash_options",
     "test_profile__rows",
     "test_profile__skip",
     "test_profile__table_materializations",

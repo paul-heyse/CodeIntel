@@ -8,8 +8,12 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
+    DbTracingConfig,
+    MetricConfig,
     ObservabilityConfig,
+    ResourceConfig,
+    TraceConfig,
     bootstrap_observability,
     shutdown_observability,
 )
@@ -48,14 +52,14 @@ def _configure_tracing(
     bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_traces=False,
-            export_metrics=False,
-            console_export=False,
-            prometheus_enabled=False,
-            duckdb_tracing_enabled=True,
-            duckdb_require_parent_span=require_parent_span,
-            duckdb_statement_mode=statement_mode,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            traces=TraceConfig(enabled=False, console_export=False),
+            metrics=MetricConfig(enabled=False, prometheus_enabled=False),
+            db_tracing=DbTracingConfig(
+                enabled=True,
+                require_parent_span=require_parent_span,
+                statement_mode=statement_mode,
+            ),
         )
     )
 

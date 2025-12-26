@@ -16,6 +16,7 @@ from hamilton.function_modifiers import (
     check_output_custom,
     pipe_input,
     schema,
+    source,
     step,
 )
 

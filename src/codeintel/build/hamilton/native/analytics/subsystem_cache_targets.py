@@ -12,6 +12,7 @@ from codeintel.analytics.subsystems.cache import (
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -25,7 +26,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
@@ -168,6 +168,8 @@ def t__subsystem_caches__compute(
         Build environment with gateway and snapshot info.
     subsystem_caches__inputs
         Bundled inputs including gateway and upstream target results.
+    subsystem_caches__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -337,10 +339,10 @@ subsystem_caches__table_materializations = make_table_materializations_collector
 __all__ = [
     "SubsystemCachesComputeResult",
     "subsystem_caches__hash_options",
-    "subsystem_coverage_cache__rows",
-    "subsystem_profile_cache__rows",
     "subsystem_caches__skip",
     "subsystem_caches__table_materializations",
+    "subsystem_coverage_cache__rows",
+    "subsystem_profile_cache__rows",
     "t__subsystem_caches",
     "t__subsystem_caches__compute",
 ]

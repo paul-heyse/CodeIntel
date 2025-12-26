@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, TypeVar
 from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 
-from codeintel.observability import observe_operation
-from codeintel.observability.otel import get_observability
+from codeintel.observability.operation_scope import observe_operation
+from codeintel.observability.runtime import get_observability
 from codeintel.observability.semconv import http_span_attributes
+from codeintel.observability.semconv_keys import CODEINTEL_CORRELATION_ID, HTTP_ROUTE
 from codeintel.serving.http.middleware import get_correlation_id
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 
@@ -78,11 +79,9 @@ async def run_in_threadpool_with_metrics(
         route=route_label,
         policy=policy,
     )
-    normalized_route = http_attrs.get("http.route")
+    normalized_route = http_attrs.get(HTTP_ROUTE)
     operation = (
-        normalized_route
-        if isinstance(normalized_route, str) and normalized_route
-        else route_label
+        normalized_route if isinstance(normalized_route, str) and normalized_route else route_label
     )
     start = time.perf_counter()
     try:
@@ -91,7 +90,7 @@ async def run_in_threadpool_with_metrics(
             operation=operation,
             attributes={
                 **http_attrs,
-                "codeintel.correlation_id": correlation_id,
+                CODEINTEL_CORRELATION_ID: correlation_id,
             },
         ):
             result = await run_in_threadpool(fn, *args, **kwargs)

@@ -32,6 +32,7 @@ from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -45,7 +46,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -174,12 +174,12 @@ def t__function_contracts__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for skip detection.
     gateway
         Storage gateway for analytics queries.
     t__goids
         Upstream goids target result (for dependency).
+    function_contracts__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -298,8 +298,8 @@ def t__function_contracts(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__function_contracts
-        Materialization metadata for function_contracts table.
+    function_contracts__table_materializations
+        Materialization metadata keyed by table name.
 
     Returns
     -------

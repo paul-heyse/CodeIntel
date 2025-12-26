@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
-from codeintel.observability.context import (
-    correlation_context,
-    get_correlation_id,
-    set_correlation_id,
-)
+from codeintel.observability.db_tracing import RedactedSQL, SQLStatementMode, redact_sql
 from codeintel.observability.duckdb_tracing import maybe_instrument_duckdb_connection
 from codeintel.observability.mcp import McpOpenTelemetryMiddleware
-from codeintel.observability.operations import (
+from codeintel.observability.operation_scope import (
     observe_operation,
     record_operation_metrics,
     record_query_metrics,
 )
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
     ObservabilityConfig,
     bootstrap_observability,
     get_observability,
     shutdown_observability,
 )
-from codeintel.observability.sql_redaction import RedactedSQL, SQLStatementMode, redact_sql
+from codeintel.observability.telemetry_context import (
+    current_telemetry_context,
+    telemetry_context,
+)
 
 __all__ = [
     "McpOpenTelemetryMiddleware",
@@ -28,14 +27,13 @@ __all__ = [
     "RedactedSQL",
     "SQLStatementMode",
     "bootstrap_observability",
-    "correlation_context",
-    "get_correlation_id",
+    "current_telemetry_context",
     "get_observability",
     "maybe_instrument_duckdb_connection",
     "observe_operation",
     "record_operation_metrics",
     "record_query_metrics",
     "redact_sql",
-    "set_correlation_id",
     "shutdown_observability",
+    "telemetry_context",
 ]

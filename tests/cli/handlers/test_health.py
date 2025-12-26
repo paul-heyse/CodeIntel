@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from codeintel.cli.handlers import health as health_handler
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
+    LogConfig,
+    MetricConfig,
     ObservabilityConfig,
+    ResourceConfig,
+    TraceConfig,
     bootstrap_observability,
     shutdown_observability,
 )
@@ -36,10 +40,10 @@ def test_telemetry_pipeline_check_reports_flush() -> None:
     _ = bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_traces=False,
-            export_metrics=False,
-            export_logs=False,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            traces=TraceConfig(enabled=False),
+            metrics=MetricConfig(enabled=False),
+            logs=LogConfig(enabled=False),
             test_mode="in_memory",
         )
     )

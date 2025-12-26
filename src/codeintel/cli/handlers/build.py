@@ -78,7 +78,7 @@ from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
-from codeintel.observability.otel import flush_observability
+from codeintel.observability.runtime import flush_observability
 from codeintel.observability.teardown import (
     ArtifactSummary,
     ShutdownStatus,

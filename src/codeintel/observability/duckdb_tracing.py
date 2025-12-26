@@ -6,19 +6,20 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self, cast
 
-from codeintel.observability.db_query_parameters import DbQueryParameterConfig
-from codeintel.observability.db_query_text import DbQueryTextConfig, DbQueryTextPolicy
-from codeintel.observability.db_span_attributes import (
+from codeintel.observability.db_span_emitter import DbSpanEmitter, DbSpanEmitterConfig
+from codeintel.observability.db_tracing import (
+    DbQueryParameterConfig,
     DbQuerySummaryConfig,
+    DbQueryTextConfig,
+    DbQueryTextPolicy,
     DbSpanAttributeBuilder,
     DbSpanAttributeConfig,
+    SQLStatementMode,
 )
-from codeintel.observability.db_span_emitter import DbSpanEmitter, DbSpanEmitterConfig
-from codeintel.observability.otel import get_observability
-from codeintel.observability.sql_redaction import SQLStatementMode
+from codeintel.observability.runtime import get_observability
 
 if TYPE_CHECKING:
-    from codeintel.observability.otel import ObservabilityRuntime
+    from codeintel.observability.runtime import DbTracingConfig
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
@@ -180,7 +181,7 @@ def maybe_instrument_duckdb_connection(
     obs = get_observability()
     if not obs.enabled or obs.tracer is None:
         return con
-    if not obs.duckdb_tracing_enabled:
+    if not obs.db_tracing.enabled:
         return con
 
     tracer = obs.tracer
@@ -196,8 +197,8 @@ def maybe_instrument_duckdb_connection(
         db_system_name="duckdb",
         db_namespace=db_name,
         attributes=attributes,
-        span_builder=_build_span_builder(obs),
-        require_parent_span=obs.duckdb_require_parent_span,
+        span_builder=_build_span_builder(obs.db_tracing),
+        require_parent_span=obs.db_tracing.require_parent_span,
         policy=obs.policy,
     )
     tracing_config = _TracingConfig(emitter=DbSpanEmitter(emitter_config))
@@ -205,33 +206,33 @@ def maybe_instrument_duckdb_connection(
     return cast("DuckDBConnection", wrapped)
 
 
-def _build_span_builder(obs: ObservabilityRuntime) -> DbSpanAttributeBuilder:
-    query_text_policy = _coerce_query_text_policy(obs.duckdb_query_text_policy)
+def _build_span_builder(db_config: DbTracingConfig) -> DbSpanAttributeBuilder:
+    query_text_policy = _coerce_query_text_policy(db_config.query_text_policy)
     query_text_config = DbQueryTextConfig(
         policy=query_text_policy,
-        max_len=obs.duckdb_query_text_max_len,
-        strip_comments=obs.duckdb_query_text_strip_comments,
-        collapse_in_lists=obs.duckdb_query_text_collapse_in_lists,
+        max_len=db_config.query_text_max_len,
+        strip_comments=db_config.query_text_strip_comments,
+        collapse_in_lists=db_config.query_text_collapse_in_lists,
     )
     query_param_config = DbQueryParameterConfig(
-        enabled=obs.duckdb_query_parameter_enabled,
-        allowed_keys=frozenset(obs.duckdb_query_parameter_keys),
-        require_key_in_sql=obs.duckdb_query_parameter_require_in_sql,
-        max_string_len=obs.duckdb_query_parameter_max_str_len,
-        hash_string_values_for_keys=frozenset(obs.duckdb_query_parameter_hash_keys),
+        enabled=db_config.query_parameter_enabled,
+        allowed_keys=frozenset(db_config.query_parameter_keys),
+        require_key_in_sql=db_config.query_parameter_require_in_sql,
+        max_string_len=db_config.query_parameter_max_str_len,
+        hash_string_values_for_keys=frozenset(db_config.query_parameter_hash_keys),
     )
     span_config = DbSpanAttributeConfig(
-        statement_mode=cast("SQLStatementMode", obs.duckdb_statement_mode),
-        statement_hash_len=obs.duckdb_statement_hash_len,
+        statement_mode=cast("SQLStatementMode", db_config.statement_mode),
+        statement_hash_len=db_config.statement_hash_len,
         query_summary=DbQuerySummaryConfig(
-            max_len=obs.duckdb_query_summary_max_len,
-            max_targets=obs.duckdb_query_summary_max_targets,
-            emit_ellipsis=obs.duckdb_query_summary_emit_ellipsis,
-            hash_suspicious_targets=obs.duckdb_query_summary_hash_suspicious_targets,
-            hash_target_len=obs.duckdb_query_summary_hash_len,
-            hash_target_min_len=obs.duckdb_query_summary_hash_min_len,
-            include_subquery_operations=obs.duckdb_query_summary_include_subquery_operations,
-            include_multi_statement=obs.duckdb_query_summary_include_multi_statement,
+            max_len=db_config.query_summary_max_len,
+            max_targets=db_config.query_summary_max_targets,
+            emit_ellipsis=db_config.query_summary_emit_ellipsis,
+            hash_suspicious_targets=db_config.query_summary_hash_suspicious_targets,
+            hash_target_len=db_config.query_summary_hash_len,
+            hash_target_min_len=db_config.query_summary_hash_min_len,
+            include_subquery_operations=db_config.query_summary_include_subquery_operations,
+            include_multi_statement=db_config.query_summary_include_multi_statement,
         ),
         query_text=query_text_config,
         query_parameters=query_param_config,

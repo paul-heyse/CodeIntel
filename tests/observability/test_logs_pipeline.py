@@ -6,8 +6,12 @@ import logging
 
 import pytest
 
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
+    LogConfig,
+    MetricConfig,
     ObservabilityConfig,
+    ResourceConfig,
+    TraceConfig,
     bootstrap_observability,
     shutdown_observability,
 )
@@ -32,10 +36,10 @@ def test_logs_pipeline_bootstrap_adds_handler() -> None:
     runtime = bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_logs=True,
-            export_traces=False,
-            export_metrics=False,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            logs=LogConfig(enabled=True),
+            traces=TraceConfig(enabled=False),
+            metrics=MetricConfig(enabled=False),
         )
     )
     assert runtime.logger_provider is not None
@@ -50,11 +54,10 @@ def test_logs_pipeline_trace_filter_attached() -> None:
     runtime = bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_logs=True,
-            export_traces=False,
-            export_metrics=False,
-            logs_trace_filter=True,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            logs=LogConfig(enabled=True, trace_filter=True),
+            traces=TraceConfig(enabled=False),
+            metrics=MetricConfig(enabled=False),
         )
     )
     assert runtime.log_handler is not None
@@ -68,11 +71,10 @@ def test_log_correlation_injects_trace_fields() -> None:
     runtime = bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_logs=False,
-            export_traces=False,
-            export_metrics=False,
-            log_correlation=True,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            logs=LogConfig(enabled=False, correlation=True),
+            traces=TraceConfig(enabled=False),
+            metrics=MetricConfig(enabled=False),
         )
     )
     handler = _CaptureHandler()

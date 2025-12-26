@@ -6,7 +6,10 @@ from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import bootstrap_observability, observability_config_from_settings
+from codeintel.observability.runtime import (
+    bootstrap_observability,
+    observability_config_from_settings,
+)
 from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.mcp.app import build_mcp_app
 from codeintel.serving.runtime import build_db_manager, build_kernel

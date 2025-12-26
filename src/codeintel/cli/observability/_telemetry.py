@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, ClassVar, Protocol
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.singleton import SingletonHolder
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
     bootstrap_observability,
     observability_config_from_settings,
 )

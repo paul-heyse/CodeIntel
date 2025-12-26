@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from codeintel.observability.db_query_text import (
+from codeintel.observability.db_tracing import (
     DbQueryTextConfig,
     DbQueryTextPolicy,
     looks_parameterized,

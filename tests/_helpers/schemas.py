@@ -29,9 +29,7 @@ def ensure_storage_contract_catalog() -> None:
     if get_contract_catalog() is not None:
         return
     settings = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
-    contracts = {
-        contract.table_key: contract for contract in iter_contracts(settings=settings)
-    }
+    contracts = {contract.table_key: contract for contract in iter_contracts(settings=settings)}
     set_contract_catalog(contracts)
     clear_schema_provider_cache()
 

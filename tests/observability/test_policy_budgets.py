@@ -32,7 +32,5 @@ def test_operation_allowlist_override_precedence() -> None:
         )
     )
     policy = policy_from_settings(settings)
-    assert policy.operation_allowlist_for("cli", "health") == frozenset(
-        {"codeintel.output_format"}
-    )
+    assert policy.operation_allowlist_for("cli", "health") == frozenset({"codeintel.output_format"})
     assert policy.operation_allowlist_for("cli", "status") == frozenset({"http.method"})

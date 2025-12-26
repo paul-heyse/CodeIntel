@@ -12,7 +12,7 @@ from anyio import lowlevel
 from fastmcp import FastMCP
 from starlette.responses import JSONResponse, PlainTextResponse
 
-from codeintel.observability.otel import get_observability
+from codeintel.observability.runtime import get_observability
 from codeintel.serving.auth.policy import mcp_auth_provider
 from codeintel.serving.features import ServingFeatureSet
 from codeintel.serving.mcp.middleware_stack import build_mcp_middleware

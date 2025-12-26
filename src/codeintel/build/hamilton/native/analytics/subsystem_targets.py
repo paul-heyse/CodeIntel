@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from codeintel.analytics.subsystems.materialize import SubsystemRows, build_subsystem_rows
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -29,7 +30,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
@@ -136,6 +136,8 @@ def t__subsystems__compute(
         Upstream import graph record.
     t__semantic_roles
         Upstream semantic roles record.
+    subsystems__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -157,7 +159,8 @@ def t__subsystems__compute(
         return SubsystemsComputeResult(
             rows=None,
             error=(
-                f"Upstream semantic_roles target failed: {t__semantic_roles.error or 'unknown error'}"
+                "Upstream semantic_roles target failed: "
+                f"{t__semantic_roles.error or 'unknown error'}"
             ),
         )
 
@@ -286,11 +289,11 @@ subsystems__table_materializations = make_table_materializations_collector(
 
 __all__ = [
     "SubsystemsComputeResult",
-    "subsystems__hash_options",
     "subsystem_modules__rows",
+    "subsystems__hash_options",
+    "subsystems__rows",
     "subsystems__skip",
     "subsystems__table_materializations",
-    "subsystems__rows",
     "t__subsystems",
     "t__subsystems__compute",
 ]
