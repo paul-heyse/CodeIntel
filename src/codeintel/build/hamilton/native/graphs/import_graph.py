@@ -1,7 +1,8 @@
 """Native Hamilton implementation for import_graph target.
 
 This module implements import graph construction as a native Hamilton pipeline with:
-- t__import_graph__extract: Parse source files and extract imports
+- t__import_graph__run: Parse source files and extract imports
+- t__import_graph__ingest: Package row payloads for materialization
 - t__import_graph: Materialize with validators and return TargetRunRecord
 
 Phase 3: Graphs domain migration with Hamilton-native validation.
@@ -13,7 +14,6 @@ import ast
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
 
@@ -43,9 +43,6 @@ from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
 from codeintel.storage.gateway import DuckDBError
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 
@@ -239,9 +236,7 @@ def t__import_graph__run(
     def _execute() -> ImportGraphToolOutput:
         if t__modules.status != "succeeded":
             return ImportGraphToolOutput(
-                result=ExecutionResult.failed(
-                    f"Upstream modules target failed: {t__modules.error}"
-                )
+                result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
             )
 
         if import_graph__source_root is None:

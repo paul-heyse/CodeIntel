@@ -10,18 +10,17 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from codeintel.build.hamilton.contracts.schemas import (
-    SCHEMA_REGISTRY,
-    DatasetMetadata,
-    DatasetSchemaRegistry,
-)
-from codeintel.build.hamilton.contracts.schemas.constraints import extract_constraints_from_pandera
+from codeintel.build.hamilton.introspect import derive_target_io_surface
 from codeintel.build.schemas import (
     ContractResolutionMode,
     ContractResolutionSettings,
+    get_contract_for_table_key,
+    get_schema_service,
     iter_contracts,
     iter_contracts_by_table_key,
 )
+from codeintel.build.schemas.constraints import extract_constraints_from_pandera
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -164,39 +163,79 @@ def dataset_verify_handler(
     return CliResult.ok(DatasetVerifyResult(verified=len(issues) == 0, issues=issues))
 
 
-def _metadata_to_dict(metadata: object) -> dict[str, object]:
-    """Convert DatasetMetadata to a dictionary.
+def _metadata_to_dict(
+    contract: object,
+    *,
+    downstream_consumers: tuple[str, ...],
+) -> dict[str, object]:
+    """Convert dataset contract metadata to a dictionary.
 
     Parameters
     ----------
-    metadata
-        DatasetMetadata instance.
+    contract
+        DatasetContract instance.
+    downstream_consumers
+        Dataset names that consume this dataset.
 
     Returns
     -------
     dict[str, object]
         Dictionary with non-empty metadata fields.
     """
-    if not isinstance(metadata, DatasetMetadata):
+    if not hasattr(contract, "description"):
         return {}
 
     field_map: dict[str, object] = {
-        "description": metadata.description,
-        "owner": metadata.owner,
-        "family": metadata.family,
-        "freshness_sla": metadata.freshness_sla,
-        "retention_policy": metadata.retention_policy,
+        "description": getattr(contract, "description", None),
+        "owner": getattr(contract, "owner", None),
+        "family": getattr(contract, "family", None),
+        "freshness_sla": getattr(contract, "freshness_sla", None),
+        "retention_policy": getattr(contract, "retention_policy", None),
     }
     result = {k: v for k, v in field_map.items() if v}
 
-    if metadata.upstream_dependencies:
-        result["upstream_dependencies"] = list(metadata.upstream_dependencies)
-    if metadata.downstream_consumers:
-        result["downstream_consumers"] = list(metadata.downstream_consumers)
-    if metadata.tags:
-        result["tags"] = list(metadata.tags)
+    upstream_dependencies = getattr(contract, "upstream_dependencies", ())
+    if upstream_dependencies:
+        result["upstream_dependencies"] = list(upstream_dependencies)
+    if downstream_consumers:
+        result["downstream_consumers"] = list(downstream_consumers)
+    tags = getattr(contract, "tags", None)
+    if tags:
+        result["tags"] = sorted(tags)
 
     return result
+
+
+def _downstream_consumers_for_contract(
+    *,
+    contract_name: str,
+    contracts: list[object],
+) -> tuple[str, ...]:
+    consumers: list[str] = []
+    for candidate in contracts:
+        upstream = getattr(candidate, "upstream_dependencies", ())
+        if contract_name in upstream:
+            name = getattr(candidate, "name", None)
+            if isinstance(name, str) and name:
+                consumers.append(name)
+    return tuple(sorted(set(consumers)))
+
+
+def _flow_targets_for_table_key(table_key: str) -> tuple[list[str], list[str]]:
+    metadata_service = get_target_metadata_service()
+    runtime = metadata_service.system.runtime
+    surfaces = derive_target_io_surface(runtime)
+
+    producers: set[str] = set()
+    consumers: set[str] = set()
+    for target_name, surface in surfaces.items():
+        for write in surface.table_writes:
+            if write.table_key == table_key:
+                producers.add(target_name)
+        for read in surface.reads:
+            if read.table_key == table_key:
+                consumers.add(target_name)
+    return sorted(producers), sorted(consumers)
 
 
 def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
@@ -212,17 +251,37 @@ def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
     CliResult[DatasetInfoResult]
         Schema information including columns, metadata, and JSON schema.
     """
-    schema = SCHEMA_REGISTRY.get(table_key)
-    if schema is None:
+    try:
+        contract = get_contract_for_table_key(table_key)
+    except KeyError:
         return fail_dataset_not_found(table_key)
+
+    schema_service = get_schema_service()
+    record = schema_service.get_record(table_key)
+    dataset_schema = record.dataset_schema
+    table_schema = record.table_schema
+
+    if dataset_schema is not None:
+        columns = tuple(dataset_schema.pandera_schema.columns.keys())
+    elif table_schema is not None:
+        columns = tuple(table_schema.column_names())
+    else:
+        columns = ()
+
+    contracts = list(
+        iter_contracts(settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL))
+    )
+    downstream = _downstream_consumers_for_contract(
+        contract_name=contract.name, contracts=contracts
+    )
 
     return CliResult.ok(
         DatasetInfoResult(
-            name=schema.name,
-            columns=schema.column_names(),
-            metadata=_metadata_to_dict(schema.metadata),
-            json_schema=schema.json_schema(),
-            has_pandera_schema=True,
+            name=contract.name,
+            columns=columns,
+            metadata=_metadata_to_dict(contract, downstream_consumers=downstream),
+            json_schema=record.json_schema or {},
+            has_pandera_schema=dataset_schema is not None,
         )
     )
 
@@ -258,12 +317,7 @@ def dataset_flow_structured(*, table_key: str) -> CliResult[DatasetFlowResult]:
     CliResult[DatasetFlowResult]
         Flow result with producers and consumers.
     """
-    schema = SCHEMA_REGISTRY.get(table_key)
-    if schema is None:
-        return fail_dataset_not_found(table_key)
-
-    producers = DatasetSchemaRegistry.producers_of(table_key)
-    consumers = DatasetSchemaRegistry.consumers_of(table_key)
+    producers, consumers = _flow_targets_for_table_key(table_key)
 
     return CliResult.ok(
         DatasetFlowResult(
@@ -308,11 +362,12 @@ def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstr
     CliResult[DatasetConstraintsResult]
         Constraint information including kind, column, and expression.
     """
-    schema = SCHEMA_REGISTRY.get(table_key)
-    if schema is None:
+    schema_service = get_schema_service()
+    dataset_schema = schema_service.get_dataset_schema(table_key)
+    if dataset_schema is None:
         return fail_dataset_not_found(table_key)
 
-    constraint_set = extract_constraints_from_pandera(table_key, schema.pandera_schema)
+    constraint_set = extract_constraints_from_pandera(table_key, dataset_schema.pandera_schema)
 
     constraints: list[dict[str, object]] = [
         {

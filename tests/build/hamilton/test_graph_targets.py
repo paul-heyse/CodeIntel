@@ -2,7 +2,7 @@
 
 This module validates that the consolidated graph targets in
 ``codeintel.build.hamilton.native.graphs.graph_targets`` work correctly
-with the executor_materialize helper for Pattern D targets.
+with the tool-target finalize helpers.
 
 Tests cover:
 - goids target (GOID extraction)
@@ -19,14 +19,29 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.graphs.graph_targets import (
-    GraphMetricsComputeResult,
-    GraphMetricsMaterializations,
-    GraphValidationResult,
+    GOIDS_CROSSWALK_TABLE_KEY,
+    GOIDS_GOIDS_TABLE_KEY,
+    GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
+    GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+    GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
+    GRAPH_METRICS_MODULES_TABLE_KEY,
+    GRAPH_STATS_TABLE_KEY,
+    GRAPH_VALIDATION_TABLE_KEY,
+    SYMBOL_USE_EDGES_TABLE_KEY,
+    GoidsToolOutput,
+    GraphMetricsToolOutput,
+    GraphValidationToolOutput,
+    SymbolUsesToolOutput,
     t__goids,
+    t__goids__ingest,
     t__graph_metrics,
+    t__graph_metrics__ingest,
     t__graph_validation,
+    t__graph_validation__ingest,
     t__symbol_uses,
+    t__symbol_uses__ingest,
 )
+from codeintel.build.hamilton.native.patterns import ToolFinalizeContext
 from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers.assertions import (
     assert_record_row_counts,
@@ -41,7 +56,6 @@ from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 MAX_GOID_COUNT = 50
 MAX_SYMBOL_USES_COUNT = 100
 MAX_GRAPH_METRICS_COUNT = 25
-MAX_GRAPH_VALIDATION_ERRORS = 10
 
 
 def _make_env(harness: GraphTargetHarness) -> BuildEnv:
@@ -134,14 +148,22 @@ def _make_graph_metrics_materializations(
     modules: int,
     modules_ext: int,
     stats: int,
-) -> GraphMetricsMaterializations:
-    return GraphMetricsMaterializations(
-        functions=_make_materialization("analytics.graph_metrics_functions", functions),
-        functions_ext=_make_materialization("analytics.graph_metrics_functions_ext", functions_ext),
-        modules=_make_materialization("analytics.graph_metrics_modules", modules),
-        modules_ext=_make_materialization("analytics.graph_metrics_modules_ext", modules_ext),
-        graph_stats=_make_materialization("analytics.graph_stats", stats),
-    )
+) -> dict[str, MaterializationMetadata]:
+    return {
+        GRAPH_METRICS_FUNCTIONS_TABLE_KEY: _make_materialization(
+            GRAPH_METRICS_FUNCTIONS_TABLE_KEY, functions
+        ),
+        GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: _make_materialization(
+            GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, functions_ext
+        ),
+        GRAPH_METRICS_MODULES_TABLE_KEY: _make_materialization(
+            GRAPH_METRICS_MODULES_TABLE_KEY, modules
+        ),
+        GRAPH_METRICS_MODULES_EXT_TABLE_KEY: _make_materialization(
+            GRAPH_METRICS_MODULES_EXT_TABLE_KEY, modules_ext
+        ),
+        GRAPH_STATS_TABLE_KEY: _make_materialization(GRAPH_STATS_TABLE_KEY, stats),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -173,53 +195,6 @@ def test_execution_result_failure() -> None:
 
 
 # ---------------------------------------------------------------------------
-# GraphValidationResult Tests
-# ---------------------------------------------------------------------------
-
-
-def test_graph_validation_result_success() -> None:
-    """Verify GraphValidationResult dataclass for success case (no errors)."""
-    result = GraphValidationResult(
-        success=True,
-        error_count=0,
-        issues=[],
-        table_counts={"analytics.graph_validation": 0},
-    )
-    expect_true(result.success, message="Result should be successful")
-    expect_equal(result.error_count, 0)
-    expect_equal(len(result.issues), 0)
-    expect_equal(result.error, None)
-
-
-def test_graph_validation_result_with_errors() -> None:
-    """Verify GraphValidationResult dataclass when validation finds issues."""
-    validation_errors = [
-        "Found 5 call graph edges with orphan caller GOIDs",
-        "Found 3 import edges with missing source modules",
-    ]
-    result = GraphValidationResult(
-        success=False,
-        error_count=len(validation_errors),
-        issues=validation_errors,
-        table_counts={"analytics.graph_validation": len(validation_errors)},
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error_count, len(validation_errors))
-    expect_equal(len(result.issues), len(validation_errors))
-
-
-def test_graph_validation_result_fatal_failure() -> None:
-    """Verify GraphValidationResult dataclass for fatal error case."""
-    result = GraphValidationResult(
-        success=False,
-        table_counts={},
-        error="Upstream call_graph target failed",
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error, "Upstream call_graph target failed")
-
-
-# ---------------------------------------------------------------------------
 # Materialize Function Tests - goids
 # ---------------------------------------------------------------------------
 
@@ -237,17 +212,33 @@ def test_goids_materialize_success(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.ok(
-        table_counts={
-            "core.goids": MAX_GOID_COUNT,
-            "core.goid_crosswalk": MAX_GOID_COUNT,
-        }
+    goid_rows = tuple((idx,) for idx in range(MAX_GOID_COUNT))
+    crosswalk_rows = tuple((idx,) for idx in range(MAX_GOID_COUNT))
+    tool_output = GoidsToolOutput(
+        result=ExecutionResult.ok(
+            table_counts={
+                GOIDS_GOIDS_TABLE_KEY: MAX_GOID_COUNT,
+                GOIDS_CROSSWALK_TABLE_KEY: MAX_GOID_COUNT,
+            }
+        ),
+        goid_rows=goid_rows,
+        crosswalk_rows=crosswalk_rows,
+    )
+    ingest = t__goids__ingest(tool_output)
+    materializations = {
+        GOIDS_GOIDS_TABLE_KEY: _make_materialization(GOIDS_GOIDS_TABLE_KEY, MAX_GOID_COUNT),
+        GOIDS_CROSSWALK_TABLE_KEY: _make_materialization(GOIDS_CROSSWALK_TABLE_KEY, MAX_GOID_COUNT),
+    }
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="goids",
     )
 
-    record = t__goids(env, graph, compute_result)
+    record = t__goids(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record)
-    assert_record_row_counts(record, {"core.goids": MAX_GOID_COUNT})
+    assert_record_row_counts(record, {GOIDS_GOIDS_TABLE_KEY: MAX_GOID_COUNT})
 
 
 def test_goids_materialize_failure(
@@ -263,9 +254,19 @@ def test_goids_materialize_failure(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.failed("Upstream modules failed")
+    tool_output = GoidsToolOutput(result=ExecutionResult.failed("Upstream modules failed"))
+    ingest = t__goids__ingest(tool_output)
+    materializations = {
+        GOIDS_GOIDS_TABLE_KEY: _make_materialization(GOIDS_GOIDS_TABLE_KEY, 0),
+        GOIDS_CROSSWALK_TABLE_KEY: _make_materialization(GOIDS_CROSSWALK_TABLE_KEY, 0),
+    }
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="goids",
+    )
 
-    record = t__goids(env, graph, compute_result)
+    record = t__goids(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -292,14 +293,27 @@ def test_symbol_uses_materialize_success(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.ok(
-        table_counts={"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT}
+    edge_rows = tuple((idx,) for idx in range(MAX_SYMBOL_USES_COUNT))
+    tool_output = SymbolUsesToolOutput(
+        result=ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: MAX_SYMBOL_USES_COUNT}),
+        edge_rows=edge_rows,
+    )
+    ingest = t__symbol_uses__ingest(tool_output)
+    materializations = {
+        SYMBOL_USE_EDGES_TABLE_KEY: _make_materialization(
+            SYMBOL_USE_EDGES_TABLE_KEY, MAX_SYMBOL_USES_COUNT
+        )
+    }
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="symbol_uses",
     )
 
-    record = t__symbol_uses(env, graph, compute_result)
+    record = t__symbol_uses(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record)
-    assert_record_row_counts(record, {"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT})
+    assert_record_row_counts(record, {SYMBOL_USE_EDGES_TABLE_KEY: MAX_SYMBOL_USES_COUNT})
 
 
 def test_symbol_uses_materialize_failure(
@@ -315,9 +329,18 @@ def test_symbol_uses_materialize_failure(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = ExecutionResult.failed("Upstream scip failed")
+    tool_output = SymbolUsesToolOutput(result=ExecutionResult.failed("Upstream scip failed"))
+    ingest = t__symbol_uses__ingest(tool_output)
+    materializations = {
+        SYMBOL_USE_EDGES_TABLE_KEY: _make_materialization(SYMBOL_USE_EDGES_TABLE_KEY, 0)
+    }
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="symbol_uses",
+    )
 
-    record = t__symbol_uses(env, graph, compute_result)
+    record = t__symbol_uses(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -344,12 +367,22 @@ def test_graph_metrics_materialize_success(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = GraphMetricsComputeResult(
-        metrics=None,
-        functions_ext_rows=None,
-        modules_ext_rows=None,
-        graph_stats_rows=None,
+    functions_rows = tuple((idx,) for idx in range(MAX_GRAPH_METRICS_COUNT))
+    modules_rows = tuple((idx,) for idx in range(MAX_GRAPH_METRICS_COUNT))
+    tool_output = GraphMetricsToolOutput(
+        result=ExecutionResult.ok(
+            table_counts={
+                GRAPH_METRICS_FUNCTIONS_TABLE_KEY: MAX_GRAPH_METRICS_COUNT,
+                GRAPH_METRICS_MODULES_TABLE_KEY: MAX_GRAPH_METRICS_COUNT,
+                GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: 0,
+                GRAPH_METRICS_MODULES_EXT_TABLE_KEY: 0,
+                GRAPH_STATS_TABLE_KEY: 0,
+            }
+        ),
+        functions_rows=functions_rows,
+        modules_rows=modules_rows,
     )
+    ingest = t__graph_metrics__ingest(tool_output)
     materializations = _make_graph_metrics_materializations(
         functions=MAX_GRAPH_METRICS_COUNT,
         functions_ext=0,
@@ -357,11 +390,19 @@ def test_graph_metrics_materialize_success(
         modules_ext=0,
         stats=0,
     )
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="graph_metrics",
+    )
 
-    record = t__graph_metrics(env, graph, compute_result, materializations)
+    record = t__graph_metrics(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record)
-    assert_record_row_counts(record, {"analytics.graph_metrics_functions": MAX_GRAPH_METRICS_COUNT})
+    assert_record_row_counts(
+        record,
+        {GRAPH_METRICS_FUNCTIONS_TABLE_KEY: MAX_GRAPH_METRICS_COUNT},
+    )
 
 
 def test_graph_metrics_materialize_failure(
@@ -377,13 +418,10 @@ def test_graph_metrics_materialize_failure(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = GraphMetricsComputeResult(
-        metrics=None,
-        functions_ext_rows=None,
-        modules_ext_rows=None,
-        graph_stats_rows=None,
-        error="Upstream call_graph failed",
+    tool_output = GraphMetricsToolOutput(
+        result=ExecutionResult.failed("Upstream call_graph failed")
     )
+    ingest = t__graph_metrics__ingest(tool_output)
     materializations = _make_graph_metrics_materializations(
         functions=0,
         functions_ext=0,
@@ -391,8 +429,13 @@ def test_graph_metrics_materialize_failure(
         modules_ext=0,
         stats=0,
     )
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="graph_metrics",
+    )
 
-    record = t__graph_metrics(env, graph, compute_result, materializations)
+    record = t__graph_metrics(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -419,14 +462,21 @@ def test_graph_validation_materialize_success(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = GraphValidationResult(
-        success=True,
-        error_count=0,
-        issues=[],
-        table_counts={"analytics.graph_validation": 0},
+    tool_output = GraphValidationToolOutput(
+        result=ExecutionResult.ok(table_counts={GRAPH_VALIDATION_TABLE_KEY: 0}),
+        rows=(),
+    )
+    ingest = t__graph_validation__ingest(tool_output)
+    materializations = {
+        GRAPH_VALIDATION_TABLE_KEY: _make_materialization(GRAPH_VALIDATION_TABLE_KEY, 0)
+    }
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="graph_validation",
     )
 
-    record = t__graph_validation(env, graph, compute_result)
+    record = t__graph_validation(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record)
 
@@ -444,17 +494,23 @@ def test_graph_validation_materialize_failure(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = GraphValidationResult(
-        success=False,
-        error_count=2,
-        issues=["Error 1", "Error 2"],
-        table_counts={"analytics.graph_validation": 2},
+    tool_output = GraphValidationToolOutput(
+        result=ExecutionResult.failed("Upstream call_graph failed")
+    )
+    ingest = t__graph_validation__ingest(tool_output)
+    materializations = {
+        GRAPH_VALIDATION_TABLE_KEY: _make_materialization(GRAPH_VALIDATION_TABLE_KEY, 0)
+    }
+    finalize_context = ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name="graph_validation",
     )
 
-    record = t__graph_validation(env, graph, compute_result)
+    record = t__graph_validation(finalize_context, tool_output, ingest, materializations)
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
-        "Error 1" in (record.error or "") or "Error 2" in (record.error or ""),
-        message="Error messages should be propagated",
+        "Upstream call_graph failed" in (record.error or ""),
+        message="Error message should be propagated",
     )

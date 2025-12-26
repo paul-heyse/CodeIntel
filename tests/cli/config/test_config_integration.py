@@ -37,8 +37,8 @@ def test_make_root_app_has_expected_properties() -> None:
 
 def test_env_overrides_file(tmp_path: Path) -> None:
     """Verify environment variables override file config."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("color: true\n")
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("color = true\n")
 
     original_value = os.environ.get("CODEINTEL_COLOR")
     try:
@@ -76,8 +76,8 @@ def test_cli_overrides_env() -> None:
 
 def test_sources_tracking(tmp_path: Path) -> None:
     """Verify config sources are tracked correctly."""
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text("color: false\n")
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("color = false\n")
 
     service = ConfigService.load(
         config_path=config_file,

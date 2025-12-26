@@ -1,7 +1,8 @@
 """Native Hamilton implementation for call_graph target.
 
 This module implements call graph construction as a native Hamilton pipeline with:
-- t__call_graph__extract: Parse source files and collect call edges
+- t__call_graph__run: Parse source files and collect call edges
+- t__call_graph__ingest: Package row payloads for materialization
 - t__call_graph: Materialize with validators and return TargetRunRecord
 
 Phase 3: Graphs domain migration with Hamilton-native validation.
@@ -59,7 +60,6 @@ from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
 
     from codeintel.core.catalog import FunctionSpanIndex
     from codeintel.core.schemas.generated_rows.graph import (
@@ -527,9 +527,7 @@ def t__call_graph__run(
     def _execute() -> CallGraphToolOutput:
         if t__goids.status != "succeeded":
             return CallGraphToolOutput(
-                result=ExecutionResult.failed(
-                    f"Upstream goids target failed: {t__goids.error}"
-                )
+                result=ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
             )
 
         function_index = call_graph__function_index

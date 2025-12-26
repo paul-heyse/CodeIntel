@@ -27,7 +27,7 @@ True
 from __future__ import annotations
 
 from codeintel.cli.config.loader import (
-    DEFAULT_CONFIG_PATHS,
+    TOML_CONFIG_PATHS,
     apply_overrides,
     config_to_dict,
     dict_to_config,
@@ -48,7 +48,6 @@ from codeintel.cli.config.model import (
 from codeintel.cli.config.schema import export_schema, generate_schema
 from codeintel.cli.config.service import (
     CONFIG_PATH_ENV_VAR,
-    TOML_CONFIG_PATHS,
     ConfigService,
     build_config_from_options,
     build_graph_backend_config,
@@ -57,7 +56,6 @@ from codeintel.cli.config.validation import validate_config, validate_with_json_
 
 __all__ = [
     "CONFIG_PATH_ENV_VAR",
-    "DEFAULT_CONFIG_PATHS",
     "TOML_CONFIG_PATHS",
     "CliConfig",
     "ConfigLoadError",

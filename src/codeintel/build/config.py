@@ -337,11 +337,23 @@ class BuildConfigOverrides:
     per_target: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     def for_target(self, target_name: str) -> Mapping[str, object]:
-        """Return overrides for a target name."""
+        """Return overrides for a target name.
+
+        Returns
+        -------
+        Mapping[str, object]
+            Overrides for the target, or an empty mapping.
+        """
         return self.per_target.get(target_name, {})
 
     def is_empty(self) -> bool:
-        """Return True when no overrides are configured."""
+        """Return True when no overrides are configured.
+
+        Returns
+        -------
+        bool
+            True when no overrides are present.
+        """
         return not self.per_target
 
 

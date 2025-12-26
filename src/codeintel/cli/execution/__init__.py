@@ -1,7 +1,7 @@
 """Unified execution pipeline for CLI operations.
 
 This package provides a single execution infrastructure that supports
-handler-based operations and the Command[T] pattern with middleware.
+handler-based operations and the Command[T] pattern.
 
 The canonical `OperationSpec` is defined in `execution/registry.py` and
 is used by `@cli_command` decorator and the introspection system.
@@ -15,11 +15,10 @@ the supported entry points for defining and running operations. All operations s
 2. Register via `OperationSpec` with required fields (operation_id, name, description, handler, group)
 3. Use `@cli_command` decorator for command-line integration
 
-For commands, prefer the Command[T] pattern with middleware:
+For commands, prefer the Command[T] pattern:
 
 1. Define command as a frozen dataclass extending `Command[T]`
 2. Implement `execute(self, ctx: CommandContext) -> CliResult[T]`
-3. Use `ExecutionPipeline` for cross-cutting concerns
 
 Examples
 --------
@@ -42,22 +41,6 @@ Register an operation:
 >>> register_operation(spec)
 """
 
-from codeintel.cli.execution.middleware import (
-    ExecutionMiddleware,
-    ExecutionPipeline,
-    LoggingMiddleware,
-)
-from codeintel.cli.execution.progress import (
-    ProgressRenderer,
-    ProgressStreamConfig,
-    ProgressTracker,
-    configure_progress,
-    get_progress_tracker,
-    iter_with_progress,
-    progress_context,
-    progress_generator,
-    stream_progress,
-)
 from codeintel.cli.execution.registry import (
     OperationRegistry,
     OperationSpec,
@@ -66,48 +49,12 @@ from codeintel.cli.execution.registry import (
     register_operation,
     reset_registry,
 )
-from codeintel.cli.execution.types import (
-    AnyHandler,
-    AsyncHandler,
-    ProgressConfig,
-    ProgressEvent,
-    ProgressState,
-    StreamingHandler,
-    StreamingResult,
-    SyncHandler,
-    get_handler_type,
-    is_async_handler,
-    is_streaming_handler,
-)
 
 __all__ = [
-    "AnyHandler",
-    "AsyncHandler",
-    "ExecutionMiddleware",
-    "ExecutionPipeline",
-    "LoggingMiddleware",
     "OperationRegistry",
     "OperationSpec",
-    "ProgressConfig",
-    "ProgressEvent",
-    "ProgressRenderer",
-    "ProgressState",
-    "ProgressStreamConfig",
-    "ProgressTracker",
-    "StreamingHandler",
-    "StreamingResult",
-    "SyncHandler",
-    "configure_progress",
     "execute_operation",
-    "get_handler_type",
-    "get_progress_tracker",
     "get_registry",
-    "is_async_handler",
-    "is_streaming_handler",
-    "iter_with_progress",
-    "progress_context",
-    "progress_generator",
     "register_operation",
     "reset_registry",
-    "stream_progress",
 ]

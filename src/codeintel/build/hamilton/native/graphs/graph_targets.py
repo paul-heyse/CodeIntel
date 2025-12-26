@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
@@ -32,12 +32,10 @@ from hamilton.function_modifiers import (
     schema,
     source,
     step,
-    value,
 )
 
 from codeintel.analytics.graphs.graph_metrics import (
     GraphMetricsDeps,
-    GraphMetricsRows,
     build_graph_metric_filters,
     build_graph_metrics_rows,
 )
@@ -57,27 +55,37 @@ from codeintel.build.hamilton.helpers import (
     get_source_root,
     is_test_path,
 )
-from codeintel.build.hamilton.materialization_helpers import executor_materialize
-from codeintel.build.hamilton.materialize_options import materialize_options
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node, pipeline_node_name
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
+from codeintel.build.hamilton.naming import pipeline_node_name
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
 )
 from codeintel.build.hamilton.native.options.graphs import GoidBuilderOptions, SymbolUsesOptions
+from codeintel.build.hamilton.native.patterns import (
+    IbisTableSaveSpec,
+    IngestStep,
+    SaverContext,
+    TableSaveSpec,
+    ToolFinalizeContext,
+    ToolRunContext,
+    finalize_target_from_materializations,
+    run_tool_step,
+    save_ibis_table,
+    save_rows,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.ibis_typing import (
@@ -90,21 +98,16 @@ from codeintel.core.ibis_typing import (
 )
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.core.validation.reporters import GraphValidationReporter
 from codeintel.graphs.compute import goid as goid_compute
 from codeintel.graphs.compute import symbols as symbols_compute
 from codeintel.graphs.runtime import (
     GraphMetricsOptions,
     build_graph_runtime,
 )
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsFunctionsExtRow as GraphMetricsFunctionsExtRow,
-    )
-    from codeintel.core.schemas.generated_rows.analytics import (
-        AnalyticsGraphMetricsModulesExtRow as GraphMetricsModulesExtRow,
-    )
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
 log = logging.getLogger(__name__)
 LOG = log
@@ -119,121 +122,107 @@ GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
 
 GOIDS_GOIDS_TABLE_KEY = "core.goids"
 GOIDS_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
+GOIDS_TABLE_KEYS = (GOIDS_GOIDS_TABLE_KEY, GOIDS_CROSSWALK_TABLE_KEY)
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
+SYMBOL_USES_TABLE_KEYS = (SYMBOL_USE_EDGES_TABLE_KEY,)
 
 CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS = "graph.v_function_call_counts"
 CALL_GRAPH_VIEWS_CALL_DEPTH_STATS = "graph.v_call_depth_stats"
+CALL_GRAPH_VIEWS_TABLE_KEYS = (
+    CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS,
+    CALL_GRAPH_VIEWS_CALL_DEPTH_STATS,
+)
 
 GRAPH_METRICS_FUNCTIONS_TABLE_KEY = "analytics.graph_metrics_functions"
 GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY = "analytics.graph_metrics_functions_ext"
 GRAPH_METRICS_MODULES_TABLE_KEY = "analytics.graph_metrics_modules"
 GRAPH_METRICS_MODULES_EXT_TABLE_KEY = "analytics.graph_metrics_modules_ext"
 GRAPH_STATS_TABLE_KEY = "analytics.graph_stats"
+GRAPH_METRICS_TABLE_KEYS = (
+    GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
+    GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
+    GRAPH_METRICS_MODULES_TABLE_KEY,
+    GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
+    GRAPH_STATS_TABLE_KEY,
+)
 
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
+GRAPH_VALIDATION_TABLE_KEYS = (GRAPH_VALIDATION_TABLE_KEY,)
 
 CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE = "call_graph_function_call_counts"
 CALL_GRAPH_DEPTH_STATS_NAMESPACE = "call_graph_call_depth_stats"
 
-
-@tag_helper(domain="graphs")
-def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for graph targets.
-
-    Returns
-    -------
-    StorageGateway
-        Storage gateway for the current build environment.
-    """
-    return env.gateway
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GOIDS_GOIDS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GOIDS_TARGET_NAME),
-    table_key=value(GOIDS_GOIDS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GOIDS_GOIDS_TABLE_KEY)),
+GOIDS_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=GOIDS_TARGET_NAME,
+    hash_options_node="goids__hash_options",
 )
-@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME, target_="goids__rows_marker")
-def goids__rows_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare GOIDs output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GOIDS_CROSSWALK_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GOIDS_TARGET_NAME),
-    table_key=value(GOIDS_CROSSWALK_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GOIDS_CROSSWALK_TABLE_KEY)),
+SYMBOL_USES_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=SYMBOL_USES_TARGET_NAME,
+    hash_options_node="symbol_uses__hash_options",
 )
-@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME, target_="goids__crosswalk_marker")
-def goids__crosswalk_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare GOID crosswalk output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SYMBOL_USE_EDGES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SYMBOL_USES_TARGET_NAME),
-    table_key=value(SYMBOL_USE_EDGES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SYMBOL_USE_EDGES_TABLE_KEY)),
+CALL_GRAPH_VIEWS_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=CALL_GRAPH_VIEWS_TARGET_NAME,
+    hash_options_node="call_graph_views__hash_options",
 )
-@tag_compute(domain="graphs", target=SYMBOL_USES_TARGET_NAME, target_="symbol_uses__rows_marker")
-def symbol_uses__rows_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare symbol use edges output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GRAPH_VALIDATION_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GRAPH_VALIDATION_TARGET_NAME),
-    table_key=value(GRAPH_VALIDATION_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GRAPH_VALIDATION_TABLE_KEY)),
+GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    hash_options_node="graph_metrics__hash_options",
 )
-@tag_compute(
+GRAPH_VALIDATION_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=GRAPH_VALIDATION_TARGET_NAME,
-    target_="graph_validation__rows_marker",
+    hash_options_node="graph_validation__hash_options",
 )
-def graph_validation__rows_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare graph validation output for inventory checks.
 
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+
+@dataclass(frozen=True)
+class GoidsToolOutput(ToolStepOutput):
+    """Tool step output for GOID extraction."""
+
+    goid_rows: tuple[tuple[object, ...], ...] = ()
+    crosswalk_rows: tuple[tuple[object, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class SymbolUsesToolOutput(ToolStepOutput):
+    """Tool step output for symbol use extraction."""
+
+    edge_rows: tuple[tuple[object, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class GraphMetricsToolOutput(ToolStepOutput):
+    """Tool step output for graph metrics computation."""
+
+    functions_rows: tuple[tuple[object, ...], ...] = ()
+    modules_rows: tuple[tuple[object, ...], ...] = ()
+    functions_ext_rows: tuple[tuple[object, ...], ...] = ()
+    modules_ext_rows: tuple[tuple[object, ...], ...] = ()
+    graph_stats_rows: tuple[tuple[object, ...], ...] = ()
+
+
+@dataclass(frozen=True)
+class GraphValidationIssue:
+    """Structured issue detail for graph validation checks."""
+
+    graph_name: str
+    issue: str
+    detail: str
+    severity: str | None = None
+    rel_path: str | None = None
+    entity_id: str | None = None
+    metadata: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class GraphValidationToolOutput(ToolStepOutput):
+    """Tool step output for graph validation checks."""
+
+    rows: tuple[tuple[object, ...], ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -267,36 +256,6 @@ class GoidExtractionInputs:
     options: GoidBuilderOptions
     module_name: str
     normalized_path: str
-
-
-# ---------------------------------------------------------------------------
-# Result dataclasses for graph_validation target
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class GraphValidationResult:
-    """Result from graph validation.
-
-    Attributes
-    ----------
-    success
-        Whether validation passed (no errors).
-    error_count
-        Number of validation errors found.
-    issues
-        List of validation error messages.
-    table_counts
-        Row counts per output (validation errors).
-    error
-        Fatal error message if validation failed.
-    """
-
-    success: bool
-    error_count: int = 0
-    issues: list[str] = field(default_factory=list)
-    table_counts: dict[str, int] = field(default_factory=dict)
-    error: str | None = None
 
 
 @dataclass(frozen=True)
@@ -415,6 +374,32 @@ def graph_validation__inputs(
 # ---------------------------------------------------------------------------
 # Helper functions for goids target
 # ---------------------------------------------------------------------------
+
+
+@tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
+def goids__hash_options(
+    env: BuildEnv,
+    modules__hash_options: InputHashOptions,
+) -> InputHashOptions:
+    """Build input hash options for GOID materialization."""
+    options_hash = options_hash_for_target(env, GOIDS_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=modules__hash_options.file_state_hash,
+    )
+
+
+@tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
+def goids__source_root(env: BuildEnv) -> Path | None:
+    """Resolve repository root for GOID extraction."""
+    repo_root = env.snapshot.repo_root
+    if repo_root is not None:
+        return repo_root
+    try:
+        return get_source_root(env.gateway, env.snapshot.repo, env.snapshot.commit)
+    except (OSError, RuntimeError, ValueError):
+        return None
 
 
 @tag_helper(domain="graphs")
@@ -665,6 +650,20 @@ def symbol_uses__inputs(
     )
 
 
+@tag_helper(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
+def symbol_uses__hash_options(
+    env: BuildEnv,
+    goids__hash_options: InputHashOptions,
+) -> InputHashOptions:
+    """Build input hash options for symbol use materialization."""
+    options_hash = options_hash_for_target(env, SYMBOL_USES_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=goids__hash_options.file_state_hash,
+    )
+
+
 @tag_helper(domain="graphs")
 def _load_symbol_occurrences(
     q__core__scip_occurrences: ir.Table,
@@ -817,33 +816,6 @@ def _filter_symbol_occurrences(
 
 
 # ---------------------------------------------------------------------------
-# graph_metrics compute container
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class GraphMetricsComputeResult:
-    """Rows produced for graph_metrics tables plus optional error."""
-
-    metrics: GraphMetricsRows | None
-    functions_ext_rows: list[GraphMetricsFunctionsExtRow] | None
-    modules_ext_rows: list[GraphMetricsModulesExtRow] | None
-    graph_stats_rows: list[tuple[object, ...]] | None
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class GraphMetricsMaterializations:
-    """Materialization metadata bundle for graph_metrics tables."""
-
-    functions: MaterializationMetadata
-    functions_ext: MaterializationMetadata
-    modules: MaterializationMetadata
-    modules_ext: MaterializationMetadata
-    graph_stats: MaterializationMetadata
-
-
-# ---------------------------------------------------------------------------
 # Helper functions for graph_validation target
 # ---------------------------------------------------------------------------
 
@@ -854,15 +826,15 @@ def _validate_call_graph_integrity(
     q__graph__call_graph_nodes: ir.Table,
     repo: str,
     commit: str,
-) -> list[str]:
+) -> list[GraphValidationIssue]:
     """Validate call graph edge integrity.
 
     Returns
     -------
-    list[str]
-        Validation error messages.
+    list[GraphValidationIssue]
+        Validation issues for call graph integrity.
     """
-    errors: list[str] = []
+    issues: list[GraphValidationIssue] = []
 
     try:
         edges = q__graph__call_graph_edges
@@ -876,7 +848,16 @@ def _validate_call_graph_integrity(
         orphan_callers_expr = caller_join.filter(is_null(nodes.goid_h128)).count()
         orphan_callers = int(cast("SupportsInt", orphan_callers_expr.execute()))
         if orphan_callers > 0:
-            errors.append(f"Found {orphan_callers} call graph edges with orphan caller GOIDs")
+            issues.append(
+                GraphValidationIssue(
+                    graph_name="call_graph",
+                    issue="orphan_caller_goids",
+                    detail=(f"Found {orphan_callers} call graph edges with orphan caller GOIDs"),
+                    severity="error",
+                    entity_id="call_graph_edges",
+                    metadata={"orphan_count": orphan_callers},
+                )
+            )
 
         callee_join = scoped_edges.left_join(
             nodes, predicates=[(scoped_edges.callee_goid_h128, nodes.goid_h128)]
@@ -893,7 +874,7 @@ def _validate_call_graph_integrity(
     except DuckDBError as exc:
         log.debug("validation: Could not validate call graph: %s", exc)
 
-    return errors
+    return issues
 
 
 @tag_helper(domain="graphs")
@@ -902,15 +883,15 @@ def _validate_import_graph_integrity(
     q__graph__import_modules: ir.Table,
     repo: str,
     commit: str,
-) -> list[str]:
+) -> list[GraphValidationIssue]:
     """Validate import graph integrity.
 
     Returns
     -------
-    list[str]
-        Validation error messages.
+    list[GraphValidationIssue]
+        Validation issues for import graph integrity.
     """
-    errors: list[str] = []
+    issues: list[GraphValidationIssue] = []
 
     try:
         edges = q__graph__import_graph_edges
@@ -928,12 +909,21 @@ def _validate_import_graph_integrity(
         orphan_src_expr = joined.filter(is_null(modules.module)).count()
         orphan_src = int(cast("SupportsInt", orphan_src_expr.execute()))
         if orphan_src > 0:
-            errors.append(f"Found {orphan_src} import edges with missing source modules")
+            issues.append(
+                GraphValidationIssue(
+                    graph_name="import_graph",
+                    issue="missing_source_modules",
+                    detail=f"Found {orphan_src} import edges with missing source modules",
+                    severity="error",
+                    entity_id="import_graph_edges",
+                    metadata={"orphan_count": orphan_src},
+                )
+            )
 
     except DuckDBError as exc:
         log.debug("validation: Could not validate import graph: %s", exc)
 
-    return errors
+    return issues
 
 
 @tag_helper(domain="graphs")
@@ -942,15 +932,15 @@ def _validate_cfg_integrity(
     q__graph__cfg_blocks: ir.Table,
     _repo: str,
     _commit: str,
-) -> list[str]:
+) -> list[GraphValidationIssue]:
     """Validate CFG integrity.
 
     Returns
     -------
-    list[str]
-        Validation error messages.
+    list[GraphValidationIssue]
+        Validation issues for CFG integrity.
     """
-    errors: list[str] = []
+    issues: list[GraphValidationIssue] = []
 
     try:
         edges = q__graph__cfg_edges
@@ -966,12 +956,21 @@ def _validate_cfg_integrity(
         orphan_edges_expr = joined.filter(is_null(blocks.block_id)).count()
         orphan_edges = int(cast("SupportsInt", orphan_edges_expr.execute()))
         if orphan_edges > 0:
-            errors.append(f"Found {orphan_edges} CFG edges with missing source blocks")
+            issues.append(
+                GraphValidationIssue(
+                    graph_name="cfg",
+                    issue="orphan_cfg_edges",
+                    detail=f"Found {orphan_edges} CFG edges with missing source blocks",
+                    severity="error",
+                    entity_id="cfg_edges",
+                    metadata={"orphan_count": orphan_edges},
+                )
+            )
 
     except DuckDBError as exc:
         log.debug("validation: Could not validate CFG: %s", exc)
 
-    return errors
+    return issues
 
 
 # ---------------------------------------------------------------------------
@@ -979,45 +978,40 @@ def _validate_cfg_integrity(
 # ---------------------------------------------------------------------------
 
 
+def _coerce_goids_output(output: ToolStepOutput) -> GoidsToolOutput:
+    if isinstance(output, GoidsToolOutput):
+        return output
+    return GoidsToolOutput(result=output.result)
+
+
 @tag_tool(domain="graphs", target=GOIDS_TARGET_NAME)
-def t__goids__extract(
+def t__goids__run(
     env: BuildEnv,
-    gateway: StorageGateway,
+    graph: TargetGraph,
     q__core__modules: ir.Table,
     t__modules: TargetRunRecord,
-) -> ExecutionResult:
-    """Execute GOID extraction on repository modules.
+    goids__source_root: Path | None,
+    goids__hash_options: InputHashOptions,
+) -> GoidsToolOutput:
+    """Execute GOID extraction on repository modules."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=GOIDS_TARGET_NAME,
+        hash_options=goids__hash_options,
+        skip_reason="goids skipped",
+    )
 
-    This is the compute node for the goids target. It parses Python source
-    files, extracts modules, classes, and functions, and computes stable
-    GOIDs for each entity.
+    def _execute() -> GoidsToolOutput:
+        if t__modules.status != "succeeded":
+            return GoidsToolOutput(
+                result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+            )
 
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    gateway
-        Storage gateway for graph data access.
-    q__core__modules
-        Ibis table expression for core.modules.
-    t__modules
-        Upstream modules target result (for dependency).
+        source_root = goids__source_root
+        if source_root is None:
+            return GoidsToolOutput(result=ExecutionResult.failed("GOID source root not resolved"))
 
-    Returns
-    -------
-    ExecutionResult
-        Execution status and table row counts.
-
-    Notes
-    -----
-    Produces:
-    - core.goids: GOID records for all entities
-    - core.goid_crosswalk: GOID crosswalk records
-    """
-    if t__modules.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
-
-    try:
         repo = env.snapshot.repo
         commit = env.snapshot.commit
         opts = load_target_options(
@@ -1025,8 +1019,6 @@ def t__goids__extract(
             target_name=GOIDS_TARGET_NAME,
             options_type=GoidBuilderOptions,
         )
-
-        source_root = env.snapshot.repo_root or get_source_root(gateway, repo, commit)
 
         tracked_files = filter_paths(
             _get_tracked_files(q__core__modules, repo, commit),
@@ -1036,11 +1028,13 @@ def t__goids__extract(
 
         if not tracked_files:
             log.info("goids: No tracked files found, skipping")
-            return ExecutionResult.ok(
-                table_counts={
-                    GOIDS_GOIDS_TABLE_KEY: 0,
-                    GOIDS_CROSSWALK_TABLE_KEY: 0,
-                }
+            return GoidsToolOutput(
+                result=ExecutionResult.ok(
+                    table_counts={
+                        GOIDS_GOIDS_TABLE_KEY: 0,
+                        GOIDS_CROSSWALK_TABLE_KEY: 0,
+                    }
+                )
             )
 
         now = datetime.now(UTC)
@@ -1048,7 +1042,7 @@ def t__goids__extract(
         all_crosswalk_rows: list[GoidCrosswalkRow] = []
 
         for rel_path in tracked_files:
-            rows = _extract_entities_from_file(
+            goid_rows, crosswalk_rows = _extract_entities_from_file(
                 source_root / rel_path,
                 GoidExtractionInputs(
                     repo=repo,
@@ -1059,8 +1053,8 @@ def t__goids__extract(
                     normalized_path=normalize_path(rel_path),
                 ),
             )
-            all_goid_rows.extend(rows[0])
-            all_crosswalk_rows.extend(rows[1])
+            all_goid_rows.extend(goid_rows)
+            all_crosswalk_rows.extend(crosswalk_rows)
 
         log.info(
             "goids: Extracted %d GOIDs and %d crosswalk entries from %d files",
@@ -1069,66 +1063,132 @@ def t__goids__extract(
             len(tracked_files),
         )
 
-        options = materialize_options(env, owner_target=GOIDS_TARGET_NAME)
-        goid_result = env.warehouse.materialize_rows(
-            GOIDS_GOIDS_TABLE_KEY,
-            [row.to_tuple() for row in all_goid_rows],
-            columns=None,
-            options=options,
-        )
-        crosswalk_result = env.warehouse.materialize_rows(
-            GOIDS_CROSSWALK_TABLE_KEY,
-            [row.to_tuple() for row in all_crosswalk_rows],
-            columns=None,
-            options=options,
-        )
-        goid_count = int(goid_result.rows_written or 0)
-        crosswalk_count = int(crosswalk_result.rows_written or 0)
-
-        log.info(
-            "goids: Persisted %d GOIDs and %d crosswalk entries",
-            goid_count,
-            crosswalk_count,
+        goid_rows = tuple(row.to_tuple() for row in all_goid_rows)
+        crosswalk_rows = tuple(row.to_tuple() for row in all_crosswalk_rows)
+        return GoidsToolOutput(
+            result=ExecutionResult.ok(
+                table_counts={
+                    GOIDS_GOIDS_TABLE_KEY: len(goid_rows),
+                    GOIDS_CROSSWALK_TABLE_KEY: len(crosswalk_rows),
+                }
+            ),
+            goid_rows=goid_rows,
+            crosswalk_rows=crosswalk_rows,
         )
 
-        return ExecutionResult.ok(
-            table_counts={
-                GOIDS_GOIDS_TABLE_KEY: goid_count,
-                GOIDS_CROSSWALK_TABLE_KEY: crosswalk_count,
-            }
+    return _coerce_goids_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME)
+def t__goids__ingest(
+    t__goids__run: GoidsToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package GOID rows for table materialization."""
+    result = t__goids__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "goids skipped",
+                warnings=result.warnings,
+            )
+        )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "goids failed",
+                warnings=result.warnings,
+            )
         )
 
-    except Exception as exc:
-        log.exception("GOID extraction failed")
-        return ExecutionResult.failed(str(exc))
+    payload = {
+        GOIDS_GOIDS_TABLE_KEY: t__goids__run.goid_rows,
+        GOIDS_CROSSWALK_TABLE_KEY: t__goids__run.crosswalk_rows,
+    }
+    table_counts = {
+        GOIDS_GOIDS_TABLE_KEY: len(t__goids__run.goid_rows),
+        GOIDS_CROSSWALK_TABLE_KEY: len(t__goids__run.crosswalk_rows),
+    }
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
+@save_rows(context=GOIDS_SAVE_CONTEXT, spec=TableSaveSpec(table_key=GOIDS_GOIDS_TABLE_KEY))
+@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME, target_="goids__goids_rows")
+def goids__goids_rows(
+    t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for core.goids."""
+    if t__goids__ingest.result.skipped or not t__goids__ingest.result.success:
+        return None
+    payload = t__goids__ingest.payload
+    if payload is None:
+        msg = "Missing goids payload"
+        raise ValueError(msg)
+    rows = payload.get(GOIDS_GOIDS_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {GOIDS_GOIDS_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@save_rows(context=GOIDS_SAVE_CONTEXT, spec=TableSaveSpec(table_key=GOIDS_CROSSWALK_TABLE_KEY))
+@tag_compute(domain="graphs", target=GOIDS_TARGET_NAME, target_="goids__crosswalk_rows")
+def goids__crosswalk_rows(
+    t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for core.goid_crosswalk."""
+    if t__goids__ingest.result.skipped or not t__goids__ingest.result.success:
+        return None
+    payload = t__goids__ingest.payload
+    if payload is None:
+        msg = "Missing goids payload"
+        raise ValueError(msg)
+    rows = payload.get(GOIDS_CROSSWALK_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {GOIDS_CROSSWALK_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+goids__table_materializations = make_table_materializations_collector(
+    domain="graphs",
+    target=GOIDS_TARGET_NAME,
+    table_keys=GOIDS_TABLE_KEYS,
+)
+
+
+@tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
+def goids__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    goids__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for GOIDs."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=GOIDS_TARGET_NAME,
+        hash_options=goids__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__goids__extract: ExecutionResult,
+    goids__finalize_context: ToolFinalizeContext,
+    t__goids__run: GoidsToolOutput,
+    t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    goids__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Resolve GOIDs and build crosswalks.
-
-    This is the entry point for the goids target. It orchestrates
-    GOID extraction and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    t__goids__extract
-        Execution result produced by the extract node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    return executor_materialize(env, graph, GOIDS_TARGET_NAME, t__goids__extract)
+    """Resolve GOIDs and build crosswalks."""
+    return finalize_target_from_materializations(
+        context=goids__finalize_context,
+        tool_step=t__goids__run,
+        ingest_step=t__goids__ingest,
+        artifact_materializations=None,
+        table_materializations=goids__table_materializations,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1136,26 +1196,38 @@ def t__goids(
 # ---------------------------------------------------------------------------
 
 
+def _coerce_symbol_uses_output(output: ToolStepOutput) -> SymbolUsesToolOutput:
+    if isinstance(output, SymbolUsesToolOutput):
+        return output
+    return SymbolUsesToolOutput(result=output.result)
+
+
 @tag_tool(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
-def t__symbol_uses__extract(
+def t__symbol_uses__run(
     env: BuildEnv,
+    graph: TargetGraph,
     symbol_uses__inputs: SymbolUsesInputs,
     t__scip: TargetRunRecord,
     t__modules: TargetRunRecord,
     t__goids: TargetRunRecord,
-) -> ExecutionResult:
-    """Execute symbol use extraction from SCIP data.
+    symbol_uses__hash_options: InputHashOptions,
+) -> SymbolUsesToolOutput:
+    """Execute symbol use extraction from SCIP data."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=SYMBOL_USES_TARGET_NAME,
+        hash_options=symbol_uses__hash_options,
+        skip_reason="symbol_uses skipped",
+    )
 
-    Returns
-    -------
-    ExecutionResult
-        Execution status and per-table row counts.
-    """
-    for name, record in [("scip", t__scip), ("modules", t__modules), ("goids", t__goids)]:
-        if record.status != "succeeded":
-            return ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
+    def _execute() -> SymbolUsesToolOutput:
+        for name, record in [("scip", t__scip), ("modules", t__modules), ("goids", t__goids)]:
+            if record.status != "succeeded":
+                return SymbolUsesToolOutput(
+                    result=ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
+                )
 
-    try:
         repo = env.snapshot.repo
         commit = env.snapshot.commit
         opts = load_target_options(
@@ -1172,7 +1244,9 @@ def t__symbol_uses__extract(
 
         if not occurrences:
             log.info("symbol_uses: No SCIP occurrences found, skipping")
-            return ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0})
+            return SymbolUsesToolOutput(
+                result=ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0})
+            )
 
         occurrences = _filter_symbol_occurrences(occurrences, options=opts)
 
@@ -1188,33 +1262,103 @@ def t__symbol_uses__extract(
 
         enriched_edges = _enrich_edges_with_goids(edges, path_to_goid)
         rows = symbols_compute.edges_to_rows(enriched_edges)
-        row_result = env.warehouse.materialize_rows(
-            SYMBOL_USE_EDGES_TABLE_KEY,
-            [row.to_tuple() for row in rows],
-            columns=None,
-            options=materialize_options(env, owner_target=SYMBOL_USES_TARGET_NAME),
+        edge_rows = tuple(row.to_tuple() for row in rows)
+        return SymbolUsesToolOutput(
+            result=ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: len(edge_rows)}),
+            edge_rows=edge_rows,
         )
-        row_count = int(row_result.rows_written or 0)
-        return ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: row_count})
-    except (RuntimeError, ValueError, OSError, KeyError) as exc:
-        log.exception("symbol_uses: extraction failed")
-        return ExecutionResult.failed(str(exc))
+
+    return _coerce_symbol_uses_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
+def t__symbol_uses__ingest(
+    t__symbol_uses__run: SymbolUsesToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package symbol use rows for table materialization."""
+    result = t__symbol_uses__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "symbol_uses skipped",
+                warnings=result.warnings,
+            )
+        )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "symbol_uses failed",
+                warnings=result.warnings,
+            )
+        )
+
+    payload = {SYMBOL_USE_EDGES_TABLE_KEY: t__symbol_uses__run.edge_rows}
+    table_counts = {SYMBOL_USE_EDGES_TABLE_KEY: len(t__symbol_uses__run.edge_rows)}
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
+@save_rows(
+    context=SYMBOL_USES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SYMBOL_USE_EDGES_TABLE_KEY),
+)
+@tag_compute(domain="graphs", target=SYMBOL_USES_TARGET_NAME, target_="symbol_uses__rows")
+def symbol_uses__rows(
+    t__symbol_uses__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.symbol_use_edges."""
+    if t__symbol_uses__ingest.result.skipped or not t__symbol_uses__ingest.result.success:
+        return None
+    payload = t__symbol_uses__ingest.payload
+    if payload is None:
+        msg = "Missing symbol_uses payload"
+        raise ValueError(msg)
+    rows = payload.get(SYMBOL_USE_EDGES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {SYMBOL_USE_EDGES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+symbol_uses__table_materializations = make_table_materializations_collector(
+    domain="graphs",
+    target=SYMBOL_USES_TARGET_NAME,
+    table_keys=SYMBOL_USES_TABLE_KEYS,
+)
+
+
+@tag_helper(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
+def symbol_uses__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    symbol_uses__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for symbol uses."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=SYMBOL_USES_TARGET_NAME,
+        hash_options=symbol_uses__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__symbol_uses__extract: ExecutionResult,
+    symbol_uses__finalize_context: ToolFinalizeContext,
+    t__symbol_uses__run: SymbolUsesToolOutput,
+    t__symbol_uses__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    symbol_uses__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Extract symbol definition-to-use edges.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the materialization outcome.
-    """
-    return executor_materialize(env, graph, SYMBOL_USES_TARGET_NAME, t__symbol_uses__extract)
+    """Extract symbol definition-to-use edges."""
+    return finalize_target_from_materializations(
+        context=symbol_uses__finalize_context,
+        tool_step=t__symbol_uses__run,
+        ingest_step=t__symbol_uses__ingest,
+        artifact_materializations=None,
+        table_materializations=symbol_uses__table_materializations,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1252,6 +1396,16 @@ class CallGraphDepthTables:
 
     all_funcs: ir.Table
     caller_funcs: ir.Table
+
+
+@tag_helper(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
+def call_graph_views__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build input hash options for call graph views."""
+    options_hash = options_hash_for_target(env, CALL_GRAPH_VIEWS_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+    )
 
 
 def _call_graph_views_filter_edges(edges: ir.Table, env: BuildEnv) -> ir.Table:
@@ -1399,13 +1553,9 @@ def _call_graph_views_finalize_depth_stats(tables: CallGraphDepthTables, env: Bu
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBIbisTableSaver],
-    output_name_=materialize_node(CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(CALL_GRAPH_VIEWS_TARGET_NAME),
-    table_key=value(CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
+@save_ibis_table(
+    context=CALL_GRAPH_VIEWS_SAVE_CONTEXT,
+    spec=IbisTableSaveSpec(table_key=CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS),
 )
 @pipe_input(
     step(_call_graph_views_filter_edges, env=source("env")).named(
@@ -1470,13 +1620,9 @@ def call_graph_function_call_counts(
     return q__graph__call_graph_edges
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBIbisTableSaver],
-    output_name_=materialize_node(CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(CALL_GRAPH_VIEWS_TARGET_NAME),
-    table_key=value(CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
+@save_ibis_table(
+    context=CALL_GRAPH_VIEWS_SAVE_CONTEXT,
+    spec=IbisTableSaveSpec(table_key=CALL_GRAPH_VIEWS_CALL_DEPTH_STATS),
 )
 @pipe_input(
     step(_call_graph_views_filter_edges, env=source("env")).named(
@@ -1539,30 +1685,29 @@ def call_graph_depth_stats(
     return q__graph__call_graph_edges
 
 
+call_graph_views__table_materializations = make_table_materializations_collector(
+    domain="graphs",
+    target=CALL_GRAPH_VIEWS_TARGET_NAME,
+    table_keys=CALL_GRAPH_VIEWS_TABLE_KEYS,
+)
+
+
 @codeintel_target(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
 def t__call_graph_views(
     env: BuildEnv,
     graph: TargetGraph,
-    m__graph__v_function_call_counts: MaterializationMetadata,
-    m__graph__v_call_depth_stats: MaterializationMetadata,
+    call_graph_views__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Materialize derived views over the call graph for analytics.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the materialization outcome.
-    """
+    """Materialize derived views over the call graph for analytics."""
     LOG.info("Materializing call_graph_views to DuckDB")
-
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=CALL_GRAPH_VIEWS_TARGET_NAME,
-        materializations={
-            CALL_GRAPH_VIEWS_FUNCTION_CALL_COUNTS: m__graph__v_function_call_counts,
-            CALL_GRAPH_VIEWS_CALL_DEPTH_STATS: m__graph__v_call_depth_stats,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=CALL_GRAPH_VIEWS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=call_graph_views__table_materializations,
     )
 
 
@@ -1571,139 +1716,206 @@ def t__call_graph_views(
 # ---------------------------------------------------------------------------
 
 
-@tag_compute(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
-def t__graph_metrics__compute(
+@tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+def graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build input hash options for graph metrics."""
+    options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+    )
+
+
+def _coerce_graph_metrics_output(output: ToolStepOutput) -> GraphMetricsToolOutput:
+    if isinstance(output, GraphMetricsToolOutput):
+        return output
+    return GraphMetricsToolOutput(result=output.result)
+
+
+@tag_tool(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+def t__graph_metrics__run(
     env: BuildEnv,
     graph: TargetGraph,
-    gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
-) -> GraphMetricsComputeResult | None:
-    """Compute graph metrics rows from call graph data.
+    graph_metrics__hash_options: InputHashOptions,
+) -> GraphMetricsToolOutput:
+    """Compute graph metrics rows from call graph data."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=GRAPH_METRICS_TARGET_NAME,
+        hash_options=graph_metrics__hash_options,
+        skip_reason="graph_metrics skipped",
+    )
 
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph used for skip detection.
-    gateway
-        Storage gateway for graph data access.
-    t__call_graph
-        Upstream call_graph target result (for dependency).
+    def _execute() -> GraphMetricsToolOutput:
+        if t__call_graph.status != "succeeded":
+            return GraphMetricsToolOutput(
+                result=ExecutionResult.failed(
+                    f"Upstream call_graph target failed: {t__call_graph.error}"
+                )
+            )
 
-    Returns
-    -------
-    GraphMetricsComputeResult | None
-        Row bundles for graph metrics tables or None if skipped.
-    """
-    if t__call_graph.status != "succeeded":
-        return GraphMetricsComputeResult(
-            metrics=None,
-            functions_ext_rows=None,
-            modules_ext_rows=None,
-            graph_stats_rows=None,
-            error=f"Upstream call_graph target failed: {t__call_graph.error}",
-        )
+        try:
+            log.info(
+                "graph_metrics: Computing metrics for repo=%s commit=%s",
+                env.snapshot.repo,
+                env.snapshot.commit,
+            )
 
-    target = graph.get(GRAPH_METRICS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+            runtime_options = replace(
+                load_graph_runtime_options(env, target_name=GRAPH_METRICS_TARGET_NAME),
+                snapshot=env.snapshot,
+                backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
+            )
+            runtime = build_graph_runtime(env.gateway, runtime_options)
+            filters = build_graph_metric_filters(env.gateway, env.snapshot)
 
-    try:
-        log.info(
-            "graph_metrics: Computing metrics for repo=%s commit=%s",
-            env.snapshot.repo,
-            env.snapshot.commit,
-        )
-
-        runtime_options = replace(
-            load_graph_runtime_options(env, target_name=GRAPH_METRICS_TARGET_NAME),
-            snapshot=env.snapshot,
-            backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
-        )
-        runtime = build_graph_runtime(gateway, runtime_options)
-        filters = build_graph_metric_filters(gateway, env.snapshot)
-
-        metrics_rows = build_graph_metrics_rows(
-            gateway,
-            env.snapshot,
-            options=load_target_options(
-                env,
-                target_name=GRAPH_METRICS_TARGET_NAME,
-                options_type=GraphMetricsOptions,
-            ),
-            deps=GraphMetricsDeps(
-                catalog_provider=None,
+            metrics_rows = build_graph_metrics_rows(
+                env.gateway,
+                env.snapshot,
+                options=load_target_options(
+                    env,
+                    target_name=GRAPH_METRICS_TARGET_NAME,
+                    options_type=GraphMetricsOptions,
+                ),
+                deps=GraphMetricsDeps(
+                    catalog_provider=None,
+                    runtime=runtime,
+                    filters=filters,
+                ),
+            )
+            functions_ext_rows = build_graph_metrics_functions_ext_rows(
+                env.gateway,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
                 runtime=runtime,
                 filters=filters,
-            ),
+            )
+            modules_ext_rows = build_graph_metrics_modules_ext_rows(
+                env.gateway,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
+                runtime=runtime,
+                filters=filters,
+            )
+            graph_stats_rows = build_graph_stats_rows(
+                env.gateway,
+                repo=env.snapshot.repo,
+                commit=env.snapshot.commit,
+                runtime=runtime,
+            )
+
+            log.info(
+                "graph_metrics: rows built functions=%d modules=%d functions_ext=%d "
+                "modules_ext=%d stats=%d",
+                len(metrics_rows.function_rows),
+                len(metrics_rows.module_rows),
+                len(functions_ext_rows),
+                len(modules_ext_rows),
+                len(graph_stats_rows),
+            )
+
+            functions_rows = tuple(
+                row_to_tuple(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, row)
+                for row in metrics_rows.function_rows
+            )
+            modules_rows = tuple(
+                row_to_tuple(GRAPH_METRICS_MODULES_TABLE_KEY, row)
+                for row in metrics_rows.module_rows
+            )
+            functions_ext_rows_tuple = tuple(
+                row_to_tuple(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, row)
+                for row in functions_ext_rows
+            )
+            modules_ext_rows_tuple = tuple(
+                row_to_tuple(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, row) for row in modules_ext_rows
+            )
+            graph_stats_rows_tuple = tuple(graph_stats_rows)
+            table_counts = {
+                GRAPH_METRICS_FUNCTIONS_TABLE_KEY: len(functions_rows),
+                GRAPH_METRICS_MODULES_TABLE_KEY: len(modules_rows),
+                GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: len(functions_ext_rows_tuple),
+                GRAPH_METRICS_MODULES_EXT_TABLE_KEY: len(modules_ext_rows_tuple),
+                GRAPH_STATS_TABLE_KEY: len(graph_stats_rows_tuple),
+            }
+            return GraphMetricsToolOutput(
+                result=ExecutionResult.ok(table_counts=table_counts),
+                functions_rows=functions_rows,
+                modules_rows=modules_rows,
+                functions_ext_rows=functions_ext_rows_tuple,
+                modules_ext_rows=modules_ext_rows_tuple,
+                graph_stats_rows=graph_stats_rows_tuple,
+            )
+
+        except (RuntimeError, ValueError, OSError) as exc:
+            log.exception("Graph metrics computation failed")
+            return GraphMetricsToolOutput(result=ExecutionResult.failed(str(exc)))
+
+    return _coerce_graph_metrics_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+def t__graph_metrics__ingest(
+    t__graph_metrics__run: GraphMetricsToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package graph metrics rows for table materialization."""
+    result = t__graph_metrics__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "graph_metrics skipped",
+                warnings=result.warnings,
+            )
         )
-        functions_ext_rows = build_graph_metrics_functions_ext_rows(
-            gateway,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            runtime=runtime,
-            filters=filters,
-        )
-        modules_ext_rows = build_graph_metrics_modules_ext_rows(
-            gateway,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            runtime=runtime,
-            filters=filters,
-        )
-        graph_stats_rows = build_graph_stats_rows(
-            gateway,
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-            runtime=runtime,
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "graph_metrics failed",
+                warnings=result.warnings,
+            )
         )
 
-        log.info(
-            "graph_metrics: rows built functions=%d modules=%d functions_ext=%d "
-            "modules_ext=%d stats=%d",
-            len(metrics_rows.function_rows),
-            len(metrics_rows.module_rows),
-            len(functions_ext_rows),
-            len(modules_ext_rows),
-            len(graph_stats_rows),
-        )
-        return GraphMetricsComputeResult(
-            metrics=metrics_rows,
-            functions_ext_rows=functions_ext_rows,
-            modules_ext_rows=modules_ext_rows,
-            graph_stats_rows=graph_stats_rows,
-        )
-
-    except (RuntimeError, ValueError, OSError) as exc:
-        log.exception("Graph metrics computation failed")
-        return GraphMetricsComputeResult(
-            metrics=None,
-            functions_ext_rows=None,
-            modules_ext_rows=None,
-            graph_stats_rows=None,
-            error=str(exc),
-        )
+    payload = {
+        GRAPH_METRICS_FUNCTIONS_TABLE_KEY: t__graph_metrics__run.functions_rows,
+        GRAPH_METRICS_MODULES_TABLE_KEY: t__graph_metrics__run.modules_rows,
+        GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: t__graph_metrics__run.functions_ext_rows,
+        GRAPH_METRICS_MODULES_EXT_TABLE_KEY: t__graph_metrics__run.modules_ext_rows,
+        GRAPH_STATS_TABLE_KEY: t__graph_metrics__run.graph_stats_rows,
+    }
+    table_counts = {
+        GRAPH_METRICS_FUNCTIONS_TABLE_KEY: len(t__graph_metrics__run.functions_rows),
+        GRAPH_METRICS_MODULES_TABLE_KEY: len(t__graph_metrics__run.modules_rows),
+        GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: len(t__graph_metrics__run.functions_ext_rows),
+        GRAPH_METRICS_MODULES_EXT_TABLE_KEY: len(t__graph_metrics__run.modules_ext_rows),
+        GRAPH_STATS_TABLE_KEY: len(t__graph_metrics__run.graph_stats_rows),
+    }
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GRAPH_METRICS_TARGET_NAME),
-    table_key=value(GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
+def _graph_metrics_rows_payload(
+    ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    table_key: str,
+) -> tuple[tuple[object, ...], ...] | None:
+    if ingest.result.skipped or not ingest.result.success:
+        return None
+    payload = ingest.payload
+    if payload is None:
+        msg = "Missing graph_metrics payload"
+        raise ValueError(msg)
+    rows = payload.get(table_key)
+    if rows is None:
+        msg = f"Missing rows for {table_key}"
+        raise ValueError(msg)
+    return rows
+
+
+@save_rows(
+    context=GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
 )
 @tag_compute(
     domain="graphs",
@@ -1711,35 +1923,18 @@ def t__graph_metrics__compute(
     target_="graph_metrics__functions_rows",
 )
 def graph_metrics__functions_rows(
-    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+    t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract function graph metrics rows for materialization.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples ready for materialization, or ``None`` when unavailable.
-    """
-    if (
-        t__graph_metrics__compute is None
-        or t__graph_metrics__compute.error
-        or t__graph_metrics__compute.metrics is None
-    ):
-        return None
-    return tuple(
-        row_to_tuple(GRAPH_METRICS_FUNCTIONS_TABLE_KEY, row)
-        for row in t__graph_metrics__compute.metrics.function_rows
+    """Extract function graph metrics rows for materialization."""
+    return _graph_metrics_rows_payload(
+        t__graph_metrics__ingest,
+        GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GRAPH_METRICS_MODULES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GRAPH_METRICS_TARGET_NAME),
-    table_key=value(GRAPH_METRICS_MODULES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_MODULES_TABLE_KEY)),
+@save_rows(
+    context=GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=GRAPH_METRICS_MODULES_TABLE_KEY),
 )
 @tag_compute(
     domain="graphs",
@@ -1747,35 +1942,18 @@ def graph_metrics__functions_rows(
     target_="graph_metrics__modules_rows",
 )
 def graph_metrics__modules_rows(
-    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+    t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract module graph metrics rows for materialization.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples ready for materialization, or ``None`` when unavailable.
-    """
-    if (
-        t__graph_metrics__compute is None
-        or t__graph_metrics__compute.error
-        or t__graph_metrics__compute.metrics is None
-    ):
-        return None
-    return tuple(
-        row_to_tuple(GRAPH_METRICS_MODULES_TABLE_KEY, row)
-        for row in t__graph_metrics__compute.metrics.module_rows
+    """Extract module graph metrics rows for materialization."""
+    return _graph_metrics_rows_payload(
+        t__graph_metrics__ingest,
+        GRAPH_METRICS_MODULES_TABLE_KEY,
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GRAPH_METRICS_TARGET_NAME),
-    table_key=value(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY)),
+@save_rows(
+    context=GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY),
 )
 @tag_compute(
     domain="graphs",
@@ -1783,35 +1961,18 @@ def graph_metrics__modules_rows(
     target_="graph_metrics__functions_ext_rows",
 )
 def graph_metrics__functions_ext_rows(
-    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+    t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract function extended graph metric rows for materialization.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples ready for materialization, or ``None`` when unavailable.
-    """
-    if (
-        t__graph_metrics__compute is None
-        or t__graph_metrics__compute.error
-        or t__graph_metrics__compute.functions_ext_rows is None
-    ):
-        return None
-    return tuple(
-        row_to_tuple(GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY, row)
-        for row in t__graph_metrics__compute.functions_ext_rows
+    """Extract function extended graph metric rows for materialization."""
+    return _graph_metrics_rows_payload(
+        t__graph_metrics__ingest,
+        GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GRAPH_METRICS_TARGET_NAME),
-    table_key=value(GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GRAPH_METRICS_MODULES_EXT_TABLE_KEY)),
+@save_rows(
+    context=GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=GRAPH_METRICS_MODULES_EXT_TABLE_KEY),
 )
 @tag_compute(
     domain="graphs",
@@ -1819,35 +1980,18 @@ def graph_metrics__functions_ext_rows(
     target_="graph_metrics__modules_ext_rows",
 )
 def graph_metrics__modules_ext_rows(
-    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+    t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract module extended graph metric rows for materialization.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples ready for materialization, or ``None`` when unavailable.
-    """
-    if (
-        t__graph_metrics__compute is None
-        or t__graph_metrics__compute.error
-        or t__graph_metrics__compute.modules_ext_rows is None
-    ):
-        return None
-    return tuple(
-        row_to_tuple(GRAPH_METRICS_MODULES_EXT_TABLE_KEY, row)
-        for row in t__graph_metrics__compute.modules_ext_rows
+    """Extract module extended graph metric rows for materialization."""
+    return _graph_metrics_rows_payload(
+        t__graph_metrics__ingest,
+        GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(GRAPH_STATS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(GRAPH_METRICS_TARGET_NAME),
-    table_key=value(GRAPH_STATS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(GRAPH_STATS_TABLE_KEY)),
+@save_rows(
+    context=GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=GRAPH_STATS_TABLE_KEY),
 )
 @tag_compute(
     domain="graphs",
@@ -1855,90 +1999,51 @@ def graph_metrics__modules_ext_rows(
     target_="graph_metrics__stats_rows",
 )
 def graph_metrics__stats_rows(
-    t__graph_metrics__compute: GraphMetricsComputeResult | None,
+    t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract graph stats rows for materialization.
+    """Extract graph stats rows for materialization."""
+    return _graph_metrics_rows_payload(
+        t__graph_metrics__ingest,
+        GRAPH_STATS_TABLE_KEY,
+    )
 
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples ready for materialization, or ``None`` when unavailable.
-    """
-    if (
-        t__graph_metrics__compute is None
-        or t__graph_metrics__compute.error
-        or t__graph_metrics__compute.graph_stats_rows is None
-    ):
-        return None
-    return tuple(t__graph_metrics__compute.graph_stats_rows)
+
+graph_metrics__table_materializations = make_table_materializations_collector(
+    domain="graphs",
+    target=GRAPH_METRICS_TARGET_NAME,
+    table_keys=GRAPH_METRICS_TABLE_KEYS,
+)
+
+
+@tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+def graph_metrics__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    graph_metrics__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for graph metrics."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=GRAPH_METRICS_TARGET_NAME,
+        hash_options=graph_metrics__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__graph_metrics__compute: GraphMetricsComputeResult | None,
-    graph_metrics__materializations: GraphMetricsMaterializations,
+    graph_metrics__finalize_context: ToolFinalizeContext,
+    t__graph_metrics__run: GraphMetricsToolOutput,
+    t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    graph_metrics__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Compute graph topology metrics for functions and modules.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    if t__graph_metrics__compute is not None and t__graph_metrics__compute.error:
-        options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
-        return TargetRunRecord(
-            target=GRAPH_METRICS_TARGET_NAME,
-            impl_kind="native",
-            status="failed",
-            input_hash="",
-            options_hash=options_hash,
-            duration_ms=0.0,
-            row_counts={},
-            error=t__graph_metrics__compute.error,
-            datasets=(),
-            artifacts=(),
-        )
-
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=GRAPH_METRICS_TARGET_NAME,
-        materializations={
-            GRAPH_METRICS_FUNCTIONS_TABLE_KEY: graph_metrics__materializations.functions,
-            GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY: graph_metrics__materializations.functions_ext,
-            GRAPH_METRICS_MODULES_TABLE_KEY: graph_metrics__materializations.modules,
-            GRAPH_METRICS_MODULES_EXT_TABLE_KEY: graph_metrics__materializations.modules_ext,
-            GRAPH_STATS_TABLE_KEY: graph_metrics__materializations.graph_stats,
-        },
-    )
-
-
-@tag_compute(
-    domain="graphs", target=GRAPH_METRICS_TARGET_NAME, target_="graph_metrics__materializations"
-)
-def graph_metrics__materializations(
-    m__analytics__graph_metrics_functions: MaterializationMetadata,
-    m__analytics__graph_metrics_functions_ext: MaterializationMetadata,
-    m__analytics__graph_metrics_modules: MaterializationMetadata,
-    m__analytics__graph_metrics_modules_ext: MaterializationMetadata,
-    m__analytics__graph_stats: MaterializationMetadata,
-) -> GraphMetricsMaterializations:
-    """Bundle graph metrics materialization metadata for the target.
-
-    Returns
-    -------
-    GraphMetricsMaterializations
-        Grouped metadata for graph metrics materializations.
-    """
-    return GraphMetricsMaterializations(
-        functions=m__analytics__graph_metrics_functions,
-        functions_ext=m__analytics__graph_metrics_functions_ext,
-        modules=m__analytics__graph_metrics_modules,
-        modules_ext=m__analytics__graph_metrics_modules_ext,
-        graph_stats=m__analytics__graph_stats,
+    """Compute graph topology metrics for functions and modules."""
+    return finalize_target_from_materializations(
+        context=graph_metrics__finalize_context,
+        tool_step=t__graph_metrics__run,
+        ingest_step=t__graph_metrics__ingest,
+        artifact_materializations=None,
+        table_materializations=graph_metrics__table_materializations,
     )
 
 
@@ -1947,122 +2052,217 @@ def graph_metrics__materializations(
 # ---------------------------------------------------------------------------
 
 
+@tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
+def graph_validation__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build input hash options for graph validation."""
+    options_hash = options_hash_for_target(env, GRAPH_VALIDATION_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+    )
+
+
+def _coerce_graph_validation_output(output: ToolStepOutput) -> GraphValidationToolOutput:
+    if isinstance(output, GraphValidationToolOutput):
+        return output
+    return GraphValidationToolOutput(result=output.result)
+
+
 @tag_tool(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
-def t__graph_validation__check(
+def t__graph_validation__run(
     env: BuildEnv,
+    graph: TargetGraph,
     graph_validation__inputs: GraphValidationInputs,
     t__call_graph: TargetRunRecord,
     t__import_graph: TargetRunRecord,
     t__cfg: TargetRunRecord,
-) -> GraphValidationResult:
-    """Run validation checks on all graph data.
+    graph_validation__hash_options: InputHashOptions,
+) -> GraphValidationToolOutput:
+    """Run validation checks on all graph data."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=GRAPH_VALIDATION_TARGET_NAME,
+        hash_options=graph_validation__hash_options,
+        skip_reason="graph_validation skipped",
+    )
 
-    Returns
-    -------
-    GraphValidationResult
-        Validation status and any discovered issues.
-    """
-    deps = [("call_graph", t__call_graph), ("import_graph", t__import_graph), ("cfg", t__cfg)]
-    for name, record in deps:
-        if record.status != "succeeded":
-            return GraphValidationResult(
-                success=False,
-                error=f"Upstream {name} target failed: {record.error}",
-            )
+    def _execute() -> GraphValidationToolOutput:
+        deps = [("call_graph", t__call_graph), ("import_graph", t__import_graph), ("cfg", t__cfg)]
+        for name, record in deps:
+            if record.status != "succeeded":
+                return GraphValidationToolOutput(
+                    result=ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
+                )
 
-    try:
         repo = env.snapshot.repo
         commit = env.snapshot.commit
 
-        all_errors: list[str] = []
-
-        call_graph_errors = _validate_call_graph_integrity(
-            graph_validation__inputs.call_graph_edges,
-            graph_validation__inputs.call_graph_nodes,
-            repo,
-            commit,
+        issues: list[GraphValidationIssue] = []
+        issues.extend(
+            _validate_call_graph_integrity(
+                graph_validation__inputs.call_graph_edges,
+                graph_validation__inputs.call_graph_nodes,
+                repo,
+                commit,
+            )
         )
-        all_errors.extend(call_graph_errors)
-
-        import_graph_errors = _validate_import_graph_integrity(
-            graph_validation__inputs.import_graph_edges,
-            graph_validation__inputs.import_modules,
-            repo,
-            commit,
+        issues.extend(
+            _validate_import_graph_integrity(
+                graph_validation__inputs.import_graph_edges,
+                graph_validation__inputs.import_modules,
+                repo,
+                commit,
+            )
         )
-        all_errors.extend(import_graph_errors)
-
-        cfg_errors = _validate_cfg_integrity(
-            graph_validation__inputs.cfg_edges,
-            graph_validation__inputs.cfg_blocks,
-            repo,
-            commit,
+        issues.extend(
+            _validate_cfg_integrity(
+                graph_validation__inputs.cfg_edges,
+                graph_validation__inputs.cfg_blocks,
+                repo,
+                commit,
+            )
         )
-        all_errors.extend(cfg_errors)
 
-        for error in all_errors:
-            log.warning("graph_validation: %s", error)
+        reporter = GraphValidationReporter(repo=repo, commit=commit)
+        for issue in issues:
+            extras: dict[str, object] = {}
+            if issue.severity is not None:
+                extras["severity"] = issue.severity
+            if issue.rel_path is not None:
+                extras["rel_path"] = issue.rel_path
+            if issue.metadata is not None:
+                extras["metadata"] = issue.metadata
+            reporter.record(
+                graph_name=issue.graph_name,
+                issue=issue.issue,
+                detail=issue.detail,
+                entity_id=issue.entity_id,
+                extras=extras or None,
+            )
+
+        rows = reporter.to_rows() if issues else ()
+        warnings: tuple[str, ...] = ()
+        if issues:
+            warnings = (f"graph_validation: {len(issues)} issue(s) found",)
 
         log.info(
             "graph_validation: Completed with %d issues found for repo=%s commit=%s",
-            len(all_errors),
+            len(issues),
             repo,
             commit,
         )
 
-        return GraphValidationResult(
-            success=len(all_errors) == 0,
-            error_count=len(all_errors),
-            issues=all_errors,
-            table_counts={GRAPH_VALIDATION_TABLE_KEY: len(all_errors)},
+        return GraphValidationToolOutput(
+            result=ExecutionResult.ok(
+                table_counts={GRAPH_VALIDATION_TABLE_KEY: len(rows)},
+                warnings=warnings,
+            ),
+            rows=rows,
         )
 
-    except Exception as exc:
-        log.exception("Graph validation failed")
-        return GraphValidationResult(
-            success=False,
-            error=str(exc),
+    return _coerce_graph_validation_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
+def t__graph_validation__ingest(
+    t__graph_validation__run: GraphValidationToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package graph validation rows for table materialization."""
+    result = t__graph_validation__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "graph_validation skipped",
+                warnings=result.warnings,
+            )
         )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "graph_validation failed",
+                warnings=result.warnings,
+            )
+        )
+
+    payload = {GRAPH_VALIDATION_TABLE_KEY: t__graph_validation__run.rows}
+    table_counts = {GRAPH_VALIDATION_TABLE_KEY: len(t__graph_validation__run.rows)}
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
+@save_rows(
+    context=GRAPH_VALIDATION_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=GRAPH_VALIDATION_TABLE_KEY),
+)
+@tag_compute(
+    domain="graphs",
+    target=GRAPH_VALIDATION_TARGET_NAME,
+    target_="graph_validation__rows",
+)
+def graph_validation__rows(
+    t__graph_validation__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for analytics.graph_validation."""
+    if t__graph_validation__ingest.result.skipped or not t__graph_validation__ingest.result.success:
+        return None
+    payload = t__graph_validation__ingest.payload
+    if payload is None:
+        msg = "Missing graph_validation payload"
+        raise ValueError(msg)
+    rows = payload.get(GRAPH_VALIDATION_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {GRAPH_VALIDATION_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+graph_validation__table_materializations = make_table_materializations_collector(
+    domain="graphs",
+    target=GRAPH_VALIDATION_TARGET_NAME,
+    table_keys=GRAPH_VALIDATION_TABLE_KEYS,
+)
+
+
+@tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
+def graph_validation__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    graph_validation__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for graph validation."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=GRAPH_VALIDATION_TARGET_NAME,
+        hash_options=graph_validation__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__graph_validation__check: GraphValidationResult,
+    graph_validation__finalize_context: ToolFinalizeContext,
+    t__graph_validation__run: GraphValidationToolOutput,
+    t__graph_validation__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    graph_validation__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Run graph integrity validation checks.
-
-    This target requires custom error handling to join validation errors
-    into a readable message, so it does not use executor_materialize.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record describing the materialization outcome.
-    """
-    executor = NativeTargetExecutor.for_target(env, graph, GRAPH_VALIDATION_TARGET_NAME)
-
-    if executor.should_skip():
-        return executor.skip()
-
-    if t__graph_validation__check.error:
-        return executor.fail(RuntimeError(t__graph_validation__check.error))
-
-    if not t__graph_validation__check.success:
-        issues_msg = "\n".join(t__graph_validation__check.issues)
-        return executor.fail(RuntimeError(f"Graph validation failed:\n{issues_msg}"))
-
-    def compute() -> dict[str, int]:
-        return dict(t__graph_validation__check.table_counts)
-
-    return executor.execute(compute)
+    """Run graph integrity validation checks."""
+    return finalize_target_from_materializations(
+        context=graph_validation__finalize_context,
+        tool_step=t__graph_validation__run,
+        ingest_step=t__graph_validation__ingest,
+        artifact_materializations=None,
+        table_materializations=graph_validation__table_materializations,
+    )
 
 
 __all__ = [
     "GoidExtractionInputs",
-    "GraphMetricsComputeResult",
-    "GraphValidationResult",
+    "GraphMetricsToolOutput",
+    "GraphValidationIssue",
+    "GraphValidationToolOutput",
     "call_graph_depth_stats",
     "call_graph_function_call_counts",
     "graph_metrics__functions_ext_rows",
@@ -2072,11 +2272,15 @@ __all__ = [
     "graph_metrics__stats_rows",
     "t__call_graph_views",
     "t__goids",
-    "t__goids__extract",
+    "t__goids__ingest",
+    "t__goids__run",
     "t__graph_metrics",
-    "t__graph_metrics__compute",
+    "t__graph_metrics__ingest",
+    "t__graph_metrics__run",
     "t__graph_validation",
-    "t__graph_validation__check",
+    "t__graph_validation__ingest",
+    "t__graph_validation__run",
     "t__symbol_uses",
-    "t__symbol_uses__extract",
+    "t__symbol_uses__ingest",
+    "t__symbol_uses__run",
 ]

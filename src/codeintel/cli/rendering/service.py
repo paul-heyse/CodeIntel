@@ -4,7 +4,6 @@ This module provides the UnifiedRenderer which consolidates all rendering logic:
 
 - Format negotiation (TEXT/JSON/JSONL)
 - TTY detection and graceful degradation
-- Table rendering with Rich or plain text
 - Error rendering with RFC 9457 Problem Details
 - Warning and metadata handling
 
@@ -26,17 +25,13 @@ import sys
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
 from rich.console import Console
-from rich.table import Table
 from rich.theme import Theme
 
 from codeintel.cli.rendering.types import OutputFormat, RenderContext
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.cli.core import CliResult
     from codeintel.cli.errors import ProblemDetail
-    from codeintel.cli.rendering.table import TableSpec
 
 T = TypeVar("T")
 
@@ -81,22 +76,6 @@ class RenderingService(Protocol):
         """
         ...
 
-    def render_table(
-        self,
-        rows: Sequence[dict[str, object]],
-        spec: TableSpec,
-    ) -> None:
-        """Render tabular data.
-
-        Parameters
-        ----------
-        rows
-            Row data as dictionaries.
-        spec
-            Table specification.
-        """
-        ...
-
     def render_error(self, error: ProblemDetail) -> None:
         """Render error with RFC 9457 Problem Details.
 
@@ -127,7 +106,6 @@ class UnifiedRenderer:
 
     - RichRenderer from cli_render.py
     - PlainRenderer from cli_render.py
-    - StreamingRenderer from pipelines.py
     - CliResult.render() logic from results.py
 
     Parameters
@@ -194,34 +172,6 @@ class UnifiedRenderer:
             self._render_data(result.data, result.metadata)
 
         return 0
-
-    def render_table(
-        self,
-        rows: Sequence[dict[str, object]],
-        spec: TableSpec,
-    ) -> None:
-        """Render tabular data with format negotiation.
-
-        Parameters
-        ----------
-        rows
-            Row data as dictionaries.
-        spec
-            Table specification.
-        """
-        if not rows:
-            self.render_message(spec.empty_message, level="info")
-            return
-
-        if self._ctx.format == OutputFormat.JSON:
-            self._write_json([dict(row) for row in rows])
-        elif self._ctx.format == OutputFormat.JSONL:
-            for row in rows:
-                self._write_jsonl(dict(row))
-        elif self._console is not None:
-            self._render_rich_table(rows, spec)
-        else:
-            self._render_plain_table(rows, spec)
 
     def render_error(self, error: ProblemDetail) -> None:
         """Render error with RFC 9457 Problem Details.
@@ -310,61 +260,6 @@ class UnifiedRenderer:
                 progress_obj["message"] = message
             self._write_jsonl(progress_obj)
 
-    # --- Streaming Methods (for batch/pipeline output) ---
-
-    def emit_stream_result(self, result: CliResult[T]) -> None:
-        """Emit result as JSON line for streaming.
-
-        Use for batch/pipeline output where results are streamed incrementally.
-        Always writes JSONL regardless of format setting.
-
-        Parameters
-        ----------
-        result
-            Result to emit.
-        """
-        data = result.to_dict()
-        self._ctx.writer.write(json.dumps(data, default=str))
-        self._ctx.writer.write("\n")
-        self._ctx.writer.flush()
-
-    def emit_stream_progress(self, index: int, total: int, operation_id: str) -> None:
-        """Emit progress indicator for streaming.
-
-        Use for batch/pipeline progress tracking.
-
-        Parameters
-        ----------
-        index
-            Current index.
-        total
-            Total items.
-        operation_id
-            Current operation.
-        """
-        data: dict[str, object] = {
-            "type": "progress",
-            "index": index,
-            "total": total,
-            "operation_id": operation_id,
-        }
-        self._ctx.writer.write(json.dumps(data))
-        self._ctx.writer.write("\n")
-        self._ctx.writer.flush()
-
-    def emit_stream_summary(self, summary: dict[str, object]) -> None:
-        """Emit summary at end of batch.
-
-        Parameters
-        ----------
-        summary
-            Summary data.
-        """
-        data = {"type": "summary", **summary}
-        self._ctx.writer.write(json.dumps(data, default=str))
-        self._ctx.writer.write("\n")
-        self._ctx.writer.flush()
-
     # --- Private Methods ---
 
     def _emit_warning(self, warning: str) -> None:
@@ -409,69 +304,6 @@ class UnifiedRenderer:
         else:
             for key, value in data.items():
                 self._ctx.writer.write(f"{key}: {value}\n")
-
-    def _render_rich_table(
-        self,
-        rows: Sequence[dict[str, object]],
-        spec: TableSpec,
-    ) -> None:
-        """Render table using Rich."""
-        if self._console is None:
-            self._render_plain_table(rows, spec)
-            return
-
-        table = Table(
-            title=spec.title,
-            caption=spec.caption,
-            show_header=True,
-            header_style="bold",
-        )
-
-        if spec.show_row_numbers:
-            table.add_column("#", style="muted", width=4)
-
-        for col in spec.columns:
-            table.add_column(
-                col.header,
-                style=col.style,
-                justify=col.justify,
-                width=col.width,
-            )
-
-        for i, row in enumerate(rows, 1):
-            values = [str(row.get(col.key, "")) for col in spec.columns]
-            if spec.show_row_numbers:
-                values = [str(i), *values]
-            table.add_row(*values)
-
-        self._console.print(table)
-
-    def _render_plain_table(
-        self,
-        rows: Sequence[dict[str, object]],
-        spec: TableSpec,
-    ) -> None:
-        """Render table as plain text."""
-        # Calculate column widths
-        widths = {
-            col.key: max(
-                len(col.header),
-                max((len(str(row.get(col.key, ""))) for row in rows), default=0),
-            )
-            for col in spec.columns
-        }
-
-        # Header
-        header = " | ".join(col.header.ljust(widths[col.key]) for col in spec.columns)
-        self._ctx.writer.write(header + "\n")
-        self._ctx.writer.write("-" * len(header) + "\n")
-
-        # Rows
-        for row in rows:
-            line = " | ".join(
-                str(row.get(col.key, "")).ljust(widths[col.key]) for col in spec.columns
-            )
-            self._ctx.writer.write(line + "\n")
 
     def _write_json(self, obj: object) -> None:
         """Write JSON to stdout with pretty formatting."""
@@ -576,7 +408,6 @@ def render_cli_result[T](
     result: CliResult[T],
     renderer: UnifiedRenderer | None = None,
     *,
-    table_spec: TableSpec | None = None,
     output_format: OutputFormat = OutputFormat.TEXT,
 ) -> int:
     """Render a CliResult and return exit code.
@@ -590,8 +421,6 @@ def render_cli_result[T](
         CLI result to render.
     renderer
         Optional renderer. If None, creates one based on output_format.
-    table_spec
-        Optional table spec for rendering list data as tables.
     output_format
         Output format (used if renderer is None).
 
@@ -609,11 +438,6 @@ def render_cli_result[T](
     """
     if renderer is None:
         renderer = get_renderer(output_format)
-
-    # Handle table spec for list data
-    if table_spec is not None and result.success and isinstance(result.data, list):
-        renderer.render_table(result.data, table_spec)
-        return 0
 
     return renderer.render_result(result)
 

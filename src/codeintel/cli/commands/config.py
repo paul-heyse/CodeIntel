@@ -15,12 +15,7 @@ from typing import Annotated, Literal
 
 from cyclopts import App
 
-from codeintel.cli.config import (
-    DEFAULT_CONFIG_PATHS,
-    ConfigService,
-    config_to_dict,
-)
-from codeintel.cli.config.service import TOML_CONFIG_PATHS
+from codeintel.cli.config import TOML_CONFIG_PATHS, ConfigService, config_to_dict
 from codeintel.cli.options.registry import CONFIG_FORMAT, CONFIG_SOURCE, CONFIG_TARGET
 from codeintel.cli.options.types import CommandPath, option_param
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -222,7 +217,7 @@ class ConfigInitCommand:
         SystemExit
             If the config file already exists.
         """
-        target = self.target or (Path.home() / ".codeintel" / "config.yaml")
+        target = self.target or (Path.home() / ".codeintel" / "config.toml")
         writer = sys.stdout
 
         if target.exists():
@@ -233,28 +228,23 @@ class ConfigInitCommand:
         target.parent.mkdir(parents=True, exist_ok=True)
 
         default_config = """
+output_format = "text"
+color = true
+log_level = "WARNING"
 
+[progress]
+enabled = true
+threshold = 2.0
 
+[telemetry]
+enabled = true
+service_name = "codeintel-cli"
 
-output_format: text
-color: true
-progress: true
-progress_threshold: 2.0
-
-
-telemetry_enabled: true
-
-
-log_level: WARNING
-
-
-retry:
-  max_attempts: 3
-  initial_delay: 0.5
-  backoff_factor: 2.0
-
-
-
+[retry]
+max_attempts = 3
+initial_delay = 0.5
+backoff_factor = 2.0
+max_delay = 30.0
 """
 
         target.write_text(default_config)
@@ -276,7 +266,7 @@ class ConfigPathsCommand:
         writer.write("Configuration File Search Paths:\n")
         writer.write("-" * 40 + "\n")
 
-        all_paths = [*TOML_CONFIG_PATHS, *DEFAULT_CONFIG_PATHS]
+        all_paths = list(TOML_CONFIG_PATHS)
         seen: set[str] = set()
 
         for path in all_paths:

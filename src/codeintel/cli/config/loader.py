@@ -2,19 +2,17 @@
 
 Load CLI configuration with proper precedence:
 1. Built-in defaults (lowest priority)
-2. Config file (~/.codeintel/config.yaml)
+2. Config file (codeintel.toml)
 3. Command-line flags (highest priority)
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import os
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
-
-import yaml
 
 from codeintel.cli.config.model import (
     CliConfig,
@@ -36,11 +34,9 @@ if TYPE_CHECKING:
 
 LOG = logging.getLogger(__name__)
 
-DEFAULT_CONFIG_PATHS = [
-    Path.home() / ".codeintel" / "config.yaml",
-    Path.home() / ".codeintel" / "config.json",
-    Path(".codeintel.yaml"),
-    Path(".codeintel.json"),
+TOML_CONFIG_PATHS = [
+    Path("codeintel.toml"),
+    Path.home() / ".codeintel" / "config.toml",
 ]
 
 _ENV_OVERRIDE_KEYS: dict[str, str] = {
@@ -593,7 +589,7 @@ def _load_config_file(
         config = _parse_config_file(explicit_path)
         return config, f"file:{explicit_path}"
 
-    for path in DEFAULT_CONFIG_PATHS:
+    for path in TOML_CONFIG_PATHS:
         if path.exists():
             LOG.debug("Loading config from %s", path)
             config = _parse_config_file(path)
@@ -615,9 +611,8 @@ def _parse_config_file(path: Path) -> dict[str, object]:
     dict[str, object]
         Parsed configuration.
     """
-    content = path.read_text(encoding="utf-8")
-    is_yaml = path.suffix in {".yaml", ".yml"}
-    parsed = yaml.safe_load(content) if is_yaml else json.loads(content)
+    with path.open("rb") as handle:
+        parsed = tomllib.load(handle)
 
     if not isinstance(parsed, dict):
         return {}
@@ -650,7 +645,7 @@ def _deep_merge(base: dict[str, object], override: dict[str, object]) -> dict[st
 
 
 __all__ = [
-    "DEFAULT_CONFIG_PATHS",
+    "TOML_CONFIG_PATHS",
     "apply_overrides",
     "config_to_dict",
     "dict_to_config",

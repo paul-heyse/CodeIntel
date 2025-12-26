@@ -35,6 +35,12 @@ from codeintel.build.schemas.column_resolution import (
     DeferredColumns,
     deferred_columns_for_table_key,
 )
+from codeintel.build.schemas.constraints import (
+    Constraint,
+    ConstraintKind,
+    ConstraintSet,
+    extract_constraints_from_pandera,
+)
 from codeintel.build.schemas.contract_service import (
     ContractProvider,
     ContractResolutionMode,
@@ -138,6 +144,9 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "ColumnDiff",
+    "Constraint",
+    "ConstraintKind",
+    "ConstraintSet",
     "ContractProvider",
     "ContractResolutionMode",
     "ContractResolutionSettings",
@@ -161,6 +170,7 @@ __all__ = [
     "compute_schema_diff",
     "declared_schema_provider",
     "deferred_columns_for_table_key",
+    "extract_constraints_from_pandera",
     "get_composite_schemas",
     "get_contract_for_table_key",
     "get_contract_provider",
