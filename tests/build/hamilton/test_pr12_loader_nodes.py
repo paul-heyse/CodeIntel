@@ -167,7 +167,7 @@ class TestValidateOutputsBehavior:
         """
         record = TargetRunRecord(
             target="function_metrics",
-            plugin_name="analytics.function_metrics",
+            impl_kind="native",
             status="failed",
             input_hash="hash123",
             error="Validation failed: Column 'loc' has wrong type",
@@ -180,7 +180,7 @@ class TestValidateOutputsBehavior:
         """Verify TargetRunRecord can capture validation state."""
         record = TargetRunRecord(
             target="function_metrics",
-            plugin_name="analytics.function_metrics",
+            impl_kind="native",
             status="succeeded",
             input_hash="hash123",
         )

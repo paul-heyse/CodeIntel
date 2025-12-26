@@ -500,7 +500,6 @@ def _execute_build_hamilton(
         cache_dir=str(cache_dir),
     )
     overrides = BuildRunContextOverrides(
-        run_config=None,
         execution_options=execution_options,
         force_targets=frozenset(execution.force or ()),
         validate_outputs=execution.validate_outputs,
@@ -1628,7 +1627,6 @@ def build_plan_handler(
         }
 
         overrides = BuildRunContextOverrides(
-            run_config=None,
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=frozenset(plan_args.force or ()),
             manifest_index=manifest_index,
@@ -1759,7 +1757,6 @@ def _compute_plan_for_explain(
         manifest_index = {m.target: m for m in manifests_list}
 
         overrides = BuildRunContextOverrides(
-            run_config=None,
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=force_targets,
             manifest_index=manifest_index,

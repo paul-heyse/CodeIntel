@@ -27,17 +27,15 @@ def test_correlation_bundle_empty() -> None:
 
 def test_correlation_bundle_populated() -> None:
     """Context managers should populate bundle attributes."""
-    with (
-        telemetry_context(
-            correlation_id="corr-1",
-            run_id="run-1",
-            domain="tests",
-            repo_commit=RepoCommitContext(
-                repo="org/repo",
-                commit="abc123",
-            ),
-            actor="alice",
-        )
+    with telemetry_context(
+        correlation_id="corr-1",
+        run_id="run-1",
+        domain="tests",
+        repo_commit=RepoCommitContext(
+            repo="org/repo",
+            commit="abc123",
+        ),
+        actor="alice",
     ):
         bundle = current_telemetry_context()
         span_attrs = bundle.span_attributes()

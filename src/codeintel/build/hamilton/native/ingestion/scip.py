@@ -4,7 +4,7 @@ This target produces the SCIP artifacts declared in the build contract:
 - ``scip_index``: ``{scip_dir}/index.scip``
 
 Tool execution is delegated to the ingestion tool runtime (ToolRunner),
-while persistence is DAG-visible via ``FileArtifactSaver``.
+while persistence is DAG-visible via artifact saver nodes.
 """
 
 from __future__ import annotations
@@ -12,41 +12,40 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-import hamilton.node as h_node
-from hamilton.function_modifiers import parameterize_values, source, value
-from hamilton.function_modifiers.base import NodeTransformer
-
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
-from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
-from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleScanResult
-from codeintel.build.hamilton.native.materialization_records import (
-    record_from_file_artifact_materializations,
-)
+from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
+from codeintel.build.hamilton.native.patterns import (
+    ArtifactSaveSpec,
+    IngestStep,
+    SaverContext,
+    TableSaveSpec,
+    ToolFinalizeContext,
+    ToolRunContext,
+    finalize_target_from_materializations,
+    run_tool_step,
+    save_artifact,
+    save_rows,
+)
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
     codeintel_target,
 )
+from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
@@ -131,6 +130,12 @@ SCIP_TABLE_KEYS = (
 )
 _FILE_STATE_ROW_MIN_COLUMNS = 7
 
+SCIP_SAVE_CONTEXT = SaverContext(
+    domain="ingestion",
+    target=SCIP_TARGET_NAME,
+    hash_options_node="scip__hash_options",
+)
+
 
 @dataclass(frozen=True)
 class ScipRunResult(ToolStepOutput):
@@ -157,7 +162,7 @@ class ScipModuleInputs:
     """Module target inputs required for SCIP execution."""
 
     modules: TargetRunRecord
-    scan: ModuleScanResult
+    scan: ModuleToolOutput
 
 
 @dataclass(frozen=True)
@@ -177,6 +182,25 @@ class ScipIngestInputs:
     run: ScipRunResult
     proto_module_path: Path | None
     options: ScipIngestOptions
+
+
+@dataclass(frozen=True)
+class ScipSymbolTableMaterializations:
+    """Materialization metadata for symbol-related tables."""
+
+    symbols: MaterializationMetadata
+    occurrences: MaterializationMetadata
+    symbol_information: MaterializationMetadata
+
+
+@dataclass(frozen=True)
+class ScipAuxTableMaterializations:
+    """Materialization metadata for auxiliary SCIP tables."""
+
+    relationships: MaterializationMetadata
+    diagnostics: MaterializationMetadata
+    external_symbols: MaterializationMetadata
+    module_state: MaterializationMetadata
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -224,7 +248,7 @@ def _scip_options_hash(
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__hash_options(
     env: BuildEnv,
-    t__modules__scan: ModuleScanResult,
+    t__modules__run: ModuleToolOutput,
     scip__options: ScipIngestOptions,
 ) -> InputHashOptions:
     """Build input hash options for SCIP execution.
@@ -243,14 +267,14 @@ def scip__hash_options(
     return InputHashOptions(
         options_hash=options_hash,
         manifests=env.manifest_index,
-        file_state_hash=t__modules__scan.file_state_hash,
+        file_state_hash=t__modules__run.file_state_hash,
     )
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__module_inputs(
     t__modules: TargetRunRecord,
-    t__modules__scan: ModuleScanResult,
+    t__modules__run: ModuleToolOutput,
 ) -> ScipModuleInputs:
     """Bundle module target outputs for SCIP execution.
 
@@ -259,7 +283,7 @@ def scip__module_inputs(
     ScipModuleInputs
         Inputs containing module target and scan results.
     """
-    return ScipModuleInputs(modules=t__modules, scan=t__modules__scan)
+    return ScipModuleInputs(modules=t__modules, scan=t__modules__run)
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -287,8 +311,11 @@ def scip__run_config(
 def _scip_run_precheck(inputs: ScipModuleInputs) -> ExecutionResult | None:
     if inputs.modules.status not in {"succeeded", "skipped"}:
         return ExecutionResult.failed(f"Upstream modules target failed: {inputs.modules.error}")
-    if not inputs.scan.success:
-        return ExecutionResult.failed(inputs.scan.error or "Module scan failed")
+    scan_result = inputs.scan.result
+    if scan_result.skipped:
+        return ExecutionResult.skip(scan_result.skip_reason or "Module scan skipped")
+    if not scan_result.success:
+        return ExecutionResult.failed(scan_result.error or "Module scan failed")
     return None
 
 
@@ -307,26 +334,7 @@ def _scip_index_output(run: ScipRunResult) -> Path | None:
     return run.path_for(SCIP_ARTIFACT_INDEX)
 
 
-def _skip_scip_run(
-    executor: NativeTargetExecutor,
-    output_scip: Path,
-    *,
-    run_id: str,
-) -> ScipRunResult | None:
-    if not executor.should_skip():
-        return None
-    if output_scip.is_file():
-        return ScipRunResult(
-            result=ExecutionResult.skip("SCIP target skipped"),
-            outputs={SCIP_ARTIFACT_INDEX: output_scip},
-            run_id=run_id,
-            mode="skipped",
-        )
-    log.warning("SCIP target marked up-to-date but index.scip is missing; rebuilding")
-    return None
-
-
-def _resolve_change_set(scan: ModuleScanResult) -> tuple[ChangeSet, bool]:
+def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
     change_set = scan.change_set
     if change_set is None:
         log.warning("Module change set missing; forcing full SCIP rebuild")
@@ -575,6 +583,22 @@ def _execute_scip_incremental(
     )
 
 
+def _coerce_scip_run_output(
+    output: ToolStepOutput,
+    *,
+    run_id: str,
+    mode: ScipRunMode,
+) -> ScipRunResult:
+    if isinstance(output, ScipRunResult):
+        return output
+    return ScipRunResult(
+        result=output.result,
+        outputs=output.outputs,
+        run_id=run_id,
+        mode=mode,
+    )
+
+
 @tag_tool(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip__run(
     env: BuildEnv,
@@ -592,42 +616,51 @@ def t__scip__run(
     run_id = _resolve_scip_run_id(env)
     precheck = _scip_run_precheck(scip__module_inputs)
     if precheck is not None:
-        return ScipRunResult(
-            result=precheck,
-            run_id=run_id,
-            mode="precheck_failed",
-        )
+        mode = "skipped" if precheck.skipped else "precheck_failed"
+        return ScipRunResult(result=precheck, run_id=run_id, mode=mode)
 
     output_scip = _scip_output_path(env, scip__run_config.options)
     _ensure_manifest_from_module_state(env, output_scip.parent)
-    executor = NativeTargetExecutor.for_target(
-        env,
-        graph,
-        SCIP_TARGET_NAME,
+
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=SCIP_TARGET_NAME,
         hash_options=scip__run_config.hash_options,
-    )
-    skipped = _skip_scip_run(executor, output_scip, run_id=run_id)
-    if skipped is not None:
-        return skipped
-
-    return _execute_scip_incremental(
-        env,
-        scip__run_config,
-        scip__module_inputs,
-        output_scip,
-        run_id=run_id,
+        skip_reason="SCIP target skipped",
     )
 
+    def _execute() -> ScipRunResult:
+        return _execute_scip_incremental(
+            env,
+            scip__run_config,
+            scip__module_inputs,
+            output_scip,
+            run_id=run_id,
+        )
 
-@SaveToObjectMetadataDecorator(
-    [FileArtifactSaver],
-    output_name_=materialize_node("artifact.scip_index"),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SCIP_TARGET_NAME),
-    artifact_name=value(SCIP_ARTIFACT_INDEX),
-    path_template=value("{scip_dir}/index.scip"),
-    hash_options=source("scip__hash_options"),
+    output = run_tool_step(context=context, run=_execute)
+    scip_output = _coerce_scip_run_output(output, run_id=run_id, mode="unknown")
+    if scip_output.result.skipped:
+        if output_scip.is_file():
+            return ScipRunResult(
+                result=ExecutionResult.skip("SCIP target skipped"),
+                outputs={SCIP_ARTIFACT_INDEX: output_scip},
+                run_id=run_id,
+                mode="skipped",
+            )
+        log.warning("SCIP target marked up-to-date but index.scip is missing; rebuilding")
+        return _execute()
+
+    return scip_output
+
+
+@save_artifact(
+    context=SCIP_SAVE_CONTEXT,
+    spec=ArtifactSaveSpec(
+        artifact_name=SCIP_ARTIFACT_INDEX,
+        path_template="{scip_dir}/index.scip",
+    ),
 )
 @tag_compute(
     domain="ingestion",
@@ -746,7 +779,10 @@ def _build_scip_row_payload(
     )
 
 
-def _scip_table_counts(payload: ScipRowPayload) -> dict[str, int]:
+def _scip_table_counts(
+    payload: ScipRowPayload,
+    module_state_rows: tuple[tuple[object, ...], ...],
+) -> dict[str, int]:
     return {
         SCIP_SYMBOLS_TABLE_KEY: len(payload.symbol_rows),
         SCIP_OCCURRENCES_TABLE_KEY: len(payload.occurrence_rows),
@@ -754,13 +790,33 @@ def _scip_table_counts(payload: ScipRowPayload) -> dict[str, int]:
         SCIP_RELATIONSHIPS_TABLE_KEY: len(payload.relationship_rows),
         SCIP_DIAGNOSTICS_TABLE_KEY: len(payload.diagnostic_rows),
         SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: len(payload.external_symbol_rows),
+        SCIP_MODULE_STATE_TABLE_KEY: len(module_state_rows),
     }
 
 
-def _build_scip_ingest_result(env: BuildEnv, inputs: ScipIngestInputs) -> ScipIngestResult:
+def _build_module_state_rows(
+    env: BuildEnv,
+    run: ScipRunResult,
+) -> tuple[tuple[object, ...], ...]:
+    index_path = _scip_index_output(run)
+    scip_dir = index_path.parent if index_path is not None else env.paths.scip_dir
+    manifest = load_manifest(manifest_path(scip_dir))
+    rows = build_module_state_rows(
+        manifest,
+        env.snapshot.repo,
+        env.snapshot.commit,
+        serializer=row_serializer_for_table_key(SCIP_MODULE_STATE_TABLE_KEY),
+    )
+    return tuple(rows)
+
+
+def _build_scip_ingest_result(
+    env: BuildEnv,
+    inputs: ScipIngestInputs,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
     precheck = _scip_ingest_precheck(inputs)
     if precheck is not None:
-        return ScipIngestResult(result=precheck)
+        return IngestStep(result=precheck)
 
     output_scip = _scip_index_output(inputs.run) or (env.paths.scip_dir / "index.scip")
     proto_module_path = cast("Path", inputs.proto_module_path)
@@ -769,41 +825,41 @@ def _build_scip_ingest_result(env: BuildEnv, inputs: ScipIngestInputs) -> ScipIn
         payload = _build_scip_row_payload(env, parsed, inputs.options)
     except (OSError, AttributeError, TypeError, ValueError):
         log.exception("SCIP ingestion failed")
-        return ScipIngestResult(
-            result=ExecutionResult.failed("SCIP ingestion failed with exception")
-        )
+        return IngestStep(result=ExecutionResult.failed("SCIP ingestion failed with exception"))
 
     if not payload.symbol_rows or not payload.occurrence_rows:
-        return ScipIngestResult(
+        return IngestStep(
             result=ExecutionResult.failed("SCIP ingestion produced empty symbols or occurrences")
         )
 
-    table_counts = _scip_table_counts(payload)
+    module_state_rows = _build_module_state_rows(env, inputs.run)
+    table_counts = _scip_table_counts(payload, module_state_rows)
     result = ExecutionResult.ok(
         table_counts=normalize_table_counts(SCIP_TABLE_KEYS, table_counts),
     )
-    return ScipIngestResult(
-        result=result,
-        symbol_rows=payload.symbol_rows,
-        occurrence_rows=payload.occurrence_rows,
-        symbol_info_rows=payload.symbol_info_rows,
-        relationship_rows=payload.relationship_rows,
-        diagnostic_rows=payload.diagnostic_rows,
-        external_symbol_rows=payload.external_symbol_rows,
-    )
+    payload_by_table = {
+        SCIP_SYMBOLS_TABLE_KEY: payload.symbol_rows,
+        SCIP_OCCURRENCES_TABLE_KEY: payload.occurrence_rows,
+        SCIP_SYMBOL_INFO_TABLE_KEY: payload.symbol_info_rows,
+        SCIP_RELATIONSHIPS_TABLE_KEY: payload.relationship_rows,
+        SCIP_DIAGNOSTICS_TABLE_KEY: payload.diagnostic_rows,
+        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: payload.external_symbol_rows,
+        SCIP_MODULE_STATE_TABLE_KEY: module_state_rows,
+    }
+    return IngestStep(result=result, payload=payload_by_table)
 
 
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip__ingest(
     env: BuildEnv,
     scip__ingest_inputs: ScipIngestInputs,
-) -> ScipIngestResult:
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
     """Build SCIP row payloads for core.scip_* tables.
 
     Returns
     -------
-    ScipIngestResult
-        Ingestion status and row tuples.
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Ingestion status and row payloads.
     """
     return _build_scip_ingest_result(env, scip__ingest_inputs)
 
@@ -833,7 +889,13 @@ def _scip_payload_rows(
 def scip__symbol_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_symbols."""
+    """Return rows for core.scip_symbols.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_symbols, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
 
 
@@ -845,7 +907,13 @@ def scip__symbol_rows(
 def scip__occurrence_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_occurrences."""
+    """Return rows for core.scip_occurrences.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_occurrences, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
 
 
@@ -857,7 +925,13 @@ def scip__occurrence_rows(
 def scip__symbol_info_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_symbol_information."""
+    """Return rows for core.scip_symbol_information.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_symbol_information, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
 
 
@@ -869,7 +943,13 @@ def scip__symbol_info_rows(
 def scip__relationship_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_symbol_relationships."""
+    """Return rows for core.scip_symbol_relationships.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_symbol_relationships, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
 
 
@@ -881,7 +961,13 @@ def scip__relationship_rows(
 def scip__diagnostic_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_diagnostics."""
+    """Return rows for core.scip_diagnostics.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_diagnostics, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
 
 
@@ -893,7 +979,13 @@ def scip__diagnostic_rows(
 def scip__external_symbol_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_external_symbols."""
+    """Return rows for core.scip_external_symbols.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_external_symbols, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
 
 
@@ -905,7 +997,13 @@ def scip__external_symbol_rows(
 def scip__module_state_rows(
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Return rows for core.scip_module_state."""
+    """Return rows for core.scip_module_state.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Row tuples for core.scip_module_state, or None when ingestion skipped or failed.
+    """
     return _scip_payload_rows(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
 
 
@@ -926,14 +1024,52 @@ def scip__materializations(
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
-def scip__table_materializations(
+def scip__symbol_table_materializations(
     m__core__scip_symbols: MaterializationMetadata,
     m__core__scip_occurrences: MaterializationMetadata,
     m__core__scip_symbol_information: MaterializationMetadata,
+) -> ScipSymbolTableMaterializations:
+    """Collect symbol-related table materializations.
+
+    Returns
+    -------
+    ScipSymbolTableMaterializations
+        Materialization metadata for symbols, occurrences, and symbol information.
+    """
+    return ScipSymbolTableMaterializations(
+        symbols=m__core__scip_symbols,
+        occurrences=m__core__scip_occurrences,
+        symbol_information=m__core__scip_symbol_information,
+    )
+
+
+@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
+def scip__aux_table_materializations(
     m__core__scip_symbol_relationships: MaterializationMetadata,
     m__core__scip_diagnostics: MaterializationMetadata,
     m__core__scip_external_symbols: MaterializationMetadata,
     m__core__scip_module_state: MaterializationMetadata,
+) -> ScipAuxTableMaterializations:
+    """Collect auxiliary table materializations.
+
+    Returns
+    -------
+    ScipAuxTableMaterializations
+        Materialization metadata for relationships, diagnostics, external symbols, and
+        module state.
+    """
+    return ScipAuxTableMaterializations(
+        relationships=m__core__scip_symbol_relationships,
+        diagnostics=m__core__scip_diagnostics,
+        external_symbols=m__core__scip_external_symbols,
+        module_state=m__core__scip_module_state,
+    )
+
+
+@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
+def scip__table_materializations(
+    scip__symbol_table_materializations: ScipSymbolTableMaterializations,
+    scip__aux_table_materializations: ScipAuxTableMaterializations,
 ) -> dict[str, MaterializationMetadata]:
     """Collect scip table materialization payloads into a single mapping.
 
@@ -943,13 +1079,13 @@ def scip__table_materializations(
         Mapping from table key to saver metadata.
     """
     return {
-        SCIP_SYMBOLS_TABLE_KEY: m__core__scip_symbols,
-        SCIP_OCCURRENCES_TABLE_KEY: m__core__scip_occurrences,
-        SCIP_SYMBOL_INFO_TABLE_KEY: m__core__scip_symbol_information,
-        SCIP_RELATIONSHIPS_TABLE_KEY: m__core__scip_symbol_relationships,
-        SCIP_DIAGNOSTICS_TABLE_KEY: m__core__scip_diagnostics,
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: m__core__scip_external_symbols,
-        SCIP_MODULE_STATE_TABLE_KEY: m__core__scip_module_state,
+        SCIP_SYMBOLS_TABLE_KEY: scip__symbol_table_materializations.symbols,
+        SCIP_OCCURRENCES_TABLE_KEY: scip__symbol_table_materializations.occurrences,
+        SCIP_SYMBOL_INFO_TABLE_KEY: scip__symbol_table_materializations.symbol_information,
+        SCIP_RELATIONSHIPS_TABLE_KEY: scip__aux_table_materializations.relationships,
+        SCIP_DIAGNOSTICS_TABLE_KEY: scip__aux_table_materializations.diagnostics,
+        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: scip__aux_table_materializations.external_symbols,
+        SCIP_MODULE_STATE_TABLE_KEY: scip__aux_table_materializations.module_state,
     }
 
 
@@ -1035,16 +1171,16 @@ def _emit_scip_teardown_safe(
             span_name="scip.teardown",
             error=exc,
             logger=log,
-                attributes={
-                    key: value
-                    for key, value in {
-                        SCIP_RUN_ID: run.run_id or None,
-                        SCIP_REPO: env.snapshot.repo,
-                        SCIP_COMMIT: env.snapshot.commit,
-                        SCIP_MODE: run.mode or None,
-                    }.items()
-                    if value is not None
-                },
+            attributes={
+                key: value
+                for key, value in {
+                    SCIP_RUN_ID: run.run_id or None,
+                    SCIP_REPO: env.snapshot.repo,
+                    SCIP_COMMIT: env.snapshot.commit,
+                    SCIP_MODE: run.mode or None,
+                }.items()
+                if value is not None
+            },
         )
         log.warning("Failed to emit SCIP teardown telemetry: %s", exc)
 
@@ -1092,7 +1228,6 @@ def t__scip(
 
 
 __all__ = [
-    "ScipIngestResult",
     "ScipRunResult",
     "t__scip",
     "t__scip__ingest",

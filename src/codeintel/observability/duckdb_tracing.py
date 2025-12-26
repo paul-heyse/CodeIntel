@@ -255,7 +255,6 @@ def _policy_from_config(db_config: DbTracingConfig) -> DbTracingPolicy:
         require_parent_span=db_config.require_parent_span,
         query_summary=query_summary_config,
         redaction=redaction,
-        emit_legacy_db_attributes=db_config.emit_legacy_db_attributes,
     )
 
 

@@ -33,7 +33,7 @@ def _build_env(tmp_path: Path) -> BuildEnv:
 def _modules_record() -> TargetRunRecord:
     return TargetRunRecord(
         target="modules",
-        plugin_name="ingestion.modules",
+        impl_kind="native",
         status="succeeded",
         input_hash="hash",
     )
@@ -55,8 +55,7 @@ def test_scip_ingest_skips_when_run_skipped(tmp_path: Path) -> None:
     result = t__scip__ingest(env, inputs)
 
     expect_true(result.result.skipped)
-    expect_true(not result.symbol_rows)
-    expect_true(not result.occurrence_rows)
+    expect_true(result.payload is None)
 
 
 def test_scip_ingest_parses_explicit_index_path(tmp_path: Path) -> None:
@@ -80,5 +79,9 @@ def test_scip_ingest_parses_explicit_index_path(tmp_path: Path) -> None:
 
     expect_true(result.result.success)
     expect_true(not result.result.skipped)
-    expect_true(len(result.symbol_rows) > 0)
-    expect_true(len(result.occurrence_rows) > 0)
+    payload = result.payload
+    expect_true(payload is not None)
+    if payload is None:
+        return
+    expect_true(len(payload["core.scip_symbols"]) > 0)
+    expect_true(len(payload["core.scip_occurrences"]) > 0)

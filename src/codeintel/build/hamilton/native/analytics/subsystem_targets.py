@@ -258,7 +258,7 @@ def t__subsystems(
         options_hash = options_hash_for_target(env, SUBSYSTEMS_TARGET_NAME)
         return TargetRunRecord(
             target=SUBSYSTEMS_TARGET_NAME,
-            plugin_name=f"native:{SUBSYSTEMS_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

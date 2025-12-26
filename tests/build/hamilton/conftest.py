@@ -236,7 +236,7 @@ def sample_manifest() -> OutputManifest:
         target="modules",
         repo="test/repo",
         commit="abc123",
-        plugin="ingestion.modules",
+        impl_kind="native",
         computed_at=datetime.now(tz=UTC),
         duration_ms=100.0,
         input_hash="hash123456789012",

@@ -187,7 +187,6 @@ class ObservabilitySettings:
     duckdb_query_summary_include_subquery_operations: bool = True
     duckdb_query_summary_include_multi_statement: bool = True
     db_query_summary_span_name_hook: bool = False
-    duckdb_emit_legacy_db_attributes: bool = False
     duckdb_query_text_policy: str = "never"
     duckdb_query_text_max_len: int = 4096
     duckdb_query_text_strip_comments: bool = True

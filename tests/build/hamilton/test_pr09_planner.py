@@ -240,7 +240,7 @@ class TestPlanStatusMatrix:
             target="a",
             repo="test/repo",
             commit="abc123",
-            plugin="ingestion.a",
+            impl_kind="native",
             computed_at=datetime.now(tz=UTC),
             duration_ms=100.0,
             input_hash="existing_hash",

@@ -698,9 +698,7 @@ def _modules_precheck(
             ExecutionResult.failed(f"Upstream modules target {t__modules.status}: {message}"),
             (),
         )
-    warnings = (
-        f"Upstream modules target {t__modules.status}; using stored module inventory.",
-    )
+    warnings = (f"Upstream modules target {t__modules.status}; using stored module inventory.",)
     return None, warnings
 
 
@@ -765,9 +763,7 @@ def t__config_ingest__run(
     """
     if not t__config_ingest__scan.success:
         return ConfigToolOutput(
-            result=ExecutionResult.failed(
-                f"Config scan failed: {t__config_ingest__scan.error}"
-            )
+            result=ExecutionResult.failed(f"Config scan failed: {t__config_ingest__scan.error}")
         )
 
     context = ToolRunContext(

@@ -70,7 +70,7 @@ class TestSkipCheckRequest:
             target="test_target",
             repo="test/repo",
             commit="abc123",
-            plugin="test.plugin",
+            impl_kind="native",
             computed_at=datetime.now(tz=UTC),
             duration_ms=100.0,
             input_hash="hash123",
@@ -123,7 +123,7 @@ class TestTargetRunRecord:
         """Verify success record properties."""
         record = TargetRunRecord(
             target="test_target",
-            plugin_name="native:test_target",
+            impl_kind="native",
             status="succeeded",
             input_hash="hash123",
             duration_ms=100.0,
@@ -141,7 +141,7 @@ class TestTargetRunRecord:
         """Verify skipped record properties."""
         record = TargetRunRecord(
             target="test_target",
-            plugin_name="native:test_target",
+            impl_kind="native",
             status="skipped",
             input_hash="hash123",
         )
@@ -155,7 +155,7 @@ class TestTargetRunRecord:
         """Verify failed record properties."""
         record = TargetRunRecord(
             target="test_target",
-            plugin_name="native:test_target",
+            impl_kind="native",
             status="failed",
             input_hash="hash123",
             error="Something went wrong",
@@ -182,7 +182,7 @@ class TestNativeTargetExecutorSkipLogic:
         # Create a minimal mock record to verify the pattern
         record = TargetRunRecord(
             target="test_target",
-            plugin_name="native:test_target",
+            impl_kind="native",
             status="skipped",
             input_hash="test_hash",
             duration_ms=0.0,
@@ -202,7 +202,7 @@ class TestNativeTargetExecutorSkipLogic:
         # Create a success record to verify the pattern
         record = TargetRunRecord(
             target="test_target",
-            plugin_name="native:test_target",
+            impl_kind="native",
             status="succeeded",
             input_hash="test_hash",
             duration_ms=123.4,
@@ -219,7 +219,7 @@ class TestNativeTargetExecutorSkipLogic:
         """Verify fail() returns record with failed status."""
         record = TargetRunRecord(
             target="test_target",
-            plugin_name="native:test_target",
+            impl_kind="native",
             status="failed",
             input_hash="test_hash",
             error="Validation failed",

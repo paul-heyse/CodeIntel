@@ -60,7 +60,7 @@ class ManifestPriming:
             target=spec.target,
             repo=env.repo,
             commit=env.commit,
-            plugin=spec.plugin or f"native:{spec.target}",
+            impl_kind=spec.plugin or f"native:{spec.target}",
             computed_at=when,
             duration_ms=spec.duration_ms,
             input_hash=spec.input_hash,

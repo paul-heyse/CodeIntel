@@ -54,7 +54,7 @@ class TestOutputManifestOperations:
             target="test_target",
             repo="test-org/test-repo",
             commit="abc123",
-            plugin="test_plugin",
+            impl_kind="test_plugin",
             computed_at=datetime.now(tz=UTC),
             duration_ms=1234.5,
             input_hash="input123",
@@ -70,7 +70,7 @@ class TestOutputManifestOperations:
         expect_equal(loaded_manifest.target, manifest.target)
         expect_equal(loaded_manifest.repo, manifest.repo)
         expect_equal(loaded_manifest.commit, manifest.commit)
-        expect_equal(loaded_manifest.plugin, manifest.plugin)
+        expect_equal(loaded_manifest.impl_kind, manifest.impl_kind)
         expect_equal(loaded_manifest.duration_ms, manifest.duration_ms)
         expect_equal(loaded_manifest.input_hash, manifest.input_hash)
         expect_equal(loaded_manifest.output_hash, manifest.output_hash)
@@ -90,7 +90,7 @@ class TestOutputManifestOperations:
             target="test_target",
             repo="test-org/test-repo",
             commit="abc123",
-            plugin="test_plugin",
+            impl_kind="test_plugin",
             computed_at=datetime.now(tz=UTC),
             duration_ms=1000.0,
             input_hash="input1",
@@ -101,7 +101,7 @@ class TestOutputManifestOperations:
             target="test_target",
             repo="test-org/test-repo",
             commit="abc123",
-            plugin="test_plugin",
+            impl_kind="test_plugin",
             computed_at=datetime.now(tz=UTC),
             duration_ms=2000.0,
             input_hash="input2",
@@ -122,7 +122,7 @@ class TestOutputManifestOperations:
                 target=f"target_{i}",
                 repo="test-org/test-repo",
                 commit="abc123",
-                plugin=f"plugin_{i}",
+                impl_kind=f"plugin_{i}",
                 computed_at=now,
                 duration_ms=float(i * 100),
                 input_hash=f"hash_{i}",
@@ -144,7 +144,7 @@ class TestOutputManifestOperations:
                 target=f"target_{i}",
                 repo="test-org/test-repo",
                 commit="abc123",
-                plugin=f"plugin_{i}",
+                impl_kind=f"plugin_{i}",
                 computed_at=now,
                 duration_ms=100.0,
                 input_hash=f"hash_{i}",

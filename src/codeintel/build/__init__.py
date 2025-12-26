@@ -59,7 +59,6 @@ __all__ = [
     "ArtifactSpec",
     "BuildError",
     "BuildErrorCollection",
-    "BuildRunConfig",
     "BuildRunRecord",
     "ExecutionPolicy",
     "OutputContract",
@@ -88,7 +87,6 @@ if TYPE_CHECKING:
         TargetExecution,
         TargetResources,
     )
-    from codeintel.build.run_config import BuildRunConfig
     from codeintel.build.target_metadata import TargetMetadataService, get_target_metadata_service
     from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
     from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
@@ -102,7 +100,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BuildError": ("codeintel.build.errors", "BuildError"),
     "BuildErrorCollection": ("codeintel.build.errors", "BuildErrorCollection"),
     "ExecutionPolicy": ("codeintel.build.execution_policy", "ExecutionPolicy"),
-    "BuildRunConfig": ("codeintel.build.run_config", "BuildRunConfig"),
     "BuildRunRecord": ("codeintel.core.build_manifest", "BuildRunRecord"),
     "OutputContract": ("codeintel.build.contracts", "OutputContract"),
     "OutputManifest": ("codeintel.core.build_manifest", "OutputManifest"),

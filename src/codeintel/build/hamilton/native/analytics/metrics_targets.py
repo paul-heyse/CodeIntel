@@ -736,7 +736,7 @@ def t__subsystem_graph_metrics(
         options_hash = options_hash_for_target(env, SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
         return TargetRunRecord(
             target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-            plugin_name=f"native:{SUBSYSTEM_GRAPH_METRICS_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
@@ -944,7 +944,7 @@ def t__symbol_graph_metrics(
         options_hash = options_hash_for_target(env, SYMBOL_GRAPH_METRICS_TARGET_NAME)
         return TargetRunRecord(
             target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-            plugin_name=f"native:{SYMBOL_GRAPH_METRICS_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
@@ -1083,7 +1083,7 @@ def t__subsystem_agreement(
         options_hash = options_hash_for_target(env, SUBSYSTEM_AGREEMENT_TARGET_NAME)
         return TargetRunRecord(
             target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-            plugin_name=f"native:{SUBSYSTEM_AGREEMENT_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

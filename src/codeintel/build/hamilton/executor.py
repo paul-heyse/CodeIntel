@@ -270,7 +270,7 @@ def _failure_record(
     except KeyError:
         return TargetRunRecord(
             target=target_name,
-            plugin_name="native:missing",
+            impl_kind="native",
             status="failed",
             input_hash=None,
             error=str(exc),

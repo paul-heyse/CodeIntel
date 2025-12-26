@@ -462,7 +462,7 @@ def t__test_profile(
         options_hash = options_hash_for_target(env, TEST_PROFILE_TARGET_NAME)
         return TargetRunRecord(
             target=TEST_PROFILE_TARGET_NAME,
-            plugin_name=f"native:{TEST_PROFILE_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
