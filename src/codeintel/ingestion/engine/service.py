@@ -124,7 +124,7 @@ class ToolService:
         Parameters
         ----------
         name
-            Plugin registry name (for example, "pyright", "coverage", "scip").
+            Plugin registry name (for example, "pyright", "coverage", "scip-python").
         repo_root
             Repository root passed to the plugin.
         **kwargs
@@ -472,7 +472,7 @@ class ToolService:
             Raised when plugin results are missing required metadata.
         """
         plugin_result = await self.run_plugin(
-            "scip",
+            "scip-python",
             repo_root=request.repo_root,
             output_scip=request.output_scip,
             target_dir=request.target_dir,

@@ -13,27 +13,34 @@ import contextlib
 import json
 import logging
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
 import ibis.expr.types as ir
 import libcst as cst
-from hamilton.function_modifiers.dependencies import source, value
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
-from codeintel.build.hamilton.materialization_helpers import executor_materialize
-from codeintel.build.hamilton.materialize_options import materialize_options
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import CallGraphOptions
+from codeintel.build.hamilton.native.patterns import (
+    IngestStep,
+    SaverContext,
+    TableSaveSpec,
+    ToolFinalizeContext,
+    ToolRunContext,
+    finalize_target_from_materializations,
+    run_tool_step,
+    save_rows,
+)
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import load_function_index
 from codeintel.core.ibis_typing import and_predicates, filter_by, isin_values
@@ -41,6 +48,7 @@ from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphNodesRow as CallGraphNodeRow,
 )
+from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.graphs.compute.callgraph import (
     EdgeResolutionContext,
     collect_aliases,
@@ -48,11 +56,10 @@ from codeintel.graphs.compute.callgraph import (
     collect_edges_cst,
 )
 from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
-from codeintel.storage.gateway import DuckDBError, StorageGateway
-from codeintel.storage.warehouse import MaterializationResult, MaterializeOptions
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Sequence
 
     from codeintel.core.catalog import FunctionSpanIndex
     from codeintel.core.schemas.generated_rows.graph import (
@@ -70,59 +77,55 @@ CALL_GRAPH_TABLE_KEYS = (
     CALL_GRAPH_EDGES_TABLE_KEY,
 )
 
+CALL_GRAPH_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=CALL_GRAPH_TARGET_NAME,
+    hash_options_node="call_graph__hash_options",
+)
+
+
+@dataclass(frozen=True)
+class CallGraphToolOutput(ToolStepOutput):
+    """Tool step output for call graph extraction."""
+
+    node_rows: tuple[tuple[object, ...], ...] = ()
+    edge_rows: tuple[tuple[object, ...], ...] = ()
+
 
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
-def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for call graph nodes.
-
-    Returns
-    -------
-    StorageGateway
-        Storage gateway for the current build environment.
-    """
-    return env.gateway
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(CALL_GRAPH_NODES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(CALL_GRAPH_TARGET_NAME),
-    table_key=value(CALL_GRAPH_NODES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(CALL_GRAPH_NODES_TABLE_KEY)),
-)
-@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME, target_="call_graph__nodes_marker")
-def call_graph__nodes_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare call graph nodes output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+def call_graph__hash_options(
+    env: BuildEnv,
+    goids__hash_options: InputHashOptions,
+) -> InputHashOptions:
+    """Build hash options for call graph materialization."""
+    options_hash = options_hash_for_target(env, CALL_GRAPH_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=goids__hash_options.file_state_hash,
+    )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(CALL_GRAPH_EDGES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(CALL_GRAPH_TARGET_NAME),
-    table_key=value(CALL_GRAPH_EDGES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(CALL_GRAPH_EDGES_TABLE_KEY)),
-)
-@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME, target_="call_graph__edges_marker")
-def call_graph__edges_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare call graph edges output for inventory checks.
+@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def call_graph__source_root(env: BuildEnv) -> Path | None:
+    """Resolve repository root for call graph extraction."""
+    repo_root = env.snapshot.repo_root
+    if repo_root is not None:
+        return repo_root
+    try:
+        return get_source_root(env.gateway, env.snapshot.repo, env.snapshot.commit)
+    except (OSError, RuntimeError, ValueError):
+        return None
 
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+
+@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def call_graph__function_index(env: BuildEnv) -> FunctionSpanIndex | None:
+    """Load the function index for call graph resolution."""
+    try:
+        return load_function_index(env.gateway, repo=env.snapshot.repo, commit=env.snapshot.commit)
+    except (OSError, RuntimeError, ValueError) as exc:
+        log.warning("call_graph: Failed to load function index: %s", exc)
+        return None
 
 
 @dataclass(frozen=True)
@@ -484,14 +487,6 @@ def _collect_all_edges(
     return all_edges
 
 
-def _materialize_options(env: BuildEnv) -> MaterializeOptions:
-    return materialize_options(env, owner_target=CALL_GRAPH_TARGET_NAME)
-
-
-def _rows_written(result: MaterializationResult) -> int:
-    return int(result.rows_written or 0)
-
-
 def _serialize_edge_row(edge: CallGraphEdgeRow) -> CallGraphEdgeRow:
     evidence = edge["evidence_json"]
     if isinstance(evidence, dict):
@@ -503,81 +498,82 @@ def _serialize_call_graph_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraph
     return [_serialize_edge_row(edge) for edge in dedupe_edge_rows(edges)]
 
 
+def _coerce_call_graph_output(output: ToolStepOutput) -> CallGraphToolOutput:
+    if isinstance(output, CallGraphToolOutput):
+        return output
+    return CallGraphToolOutput(result=output.result)
+
+
 @tag_tool(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
-def t__call_graph__extract(
+def t__call_graph__run(
     env: BuildEnv,
-    gateway: StorageGateway,
+    graph: TargetGraph,
     q__core__modules: ir.Table,
     q__core__goids: ir.Table,
     t__goids: TargetRunRecord,
-) -> ExecutionResult:
-    """Execute call graph extraction on repository modules.
+    call_graph__source_root: Path | None,
+    call_graph__function_index: FunctionSpanIndex | None,
+    call_graph__hash_options: InputHashOptions,
+) -> CallGraphToolOutput:
+    """Execute call graph extraction on repository modules."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=CALL_GRAPH_TARGET_NAME,
+        hash_options=call_graph__hash_options,
+        skip_reason="call_graph skipped",
+    )
 
-    This is the compute node for the call_graph target. It loads function
-    metadata, parses source files to collect call edges using LibCST or AST,
-    and builds the call graph.
+    def _execute() -> CallGraphToolOutput:
+        if t__goids.status != "succeeded":
+            return CallGraphToolOutput(
+                result=ExecutionResult.failed(
+                    f"Upstream goids target failed: {t__goids.error}"
+                )
+            )
 
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    gateway
-        Storage gateway for graph data access.
-    q__core__modules
-        Ibis table expression for core.modules.
-    q__core__goids
-        Ibis table expression for core.goids.
-    t__goids
-        Upstream GOIDs target result (for dependency).
+        function_index = call_graph__function_index
+        if function_index is None:
+            return CallGraphToolOutput(
+                result=ExecutionResult.failed("call_graph function index is unavailable")
+            )
 
-    Returns
-    -------
-    ExecutionResult
-        Execution status and table row counts.
+        source_root = call_graph__source_root
+        if source_root is None:
+            return CallGraphToolOutput(
+                result=ExecutionResult.failed("call_graph source root could not be resolved")
+            )
 
-    Notes
-    -----
-    Produces:
-    - graph.call_graph_nodes: Call graph nodes
-    - graph.call_graph_edges: Call graph edges
-    """
-    if t__goids.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
-
-    try:
-        snapshot = env.snapshot
         opts = load_target_options(
             env,
             target_name=CALL_GRAPH_TARGET_NAME,
             options_type=CallGraphOptions,
         )
 
-        _log_repo_state(q__core__modules, q__core__goids, snapshot.repo, snapshot.commit)
+        _log_repo_state(q__core__modules, q__core__goids, env.snapshot.repo, env.snapshot.commit)
 
-        function_index = load_function_index(gateway, repo=snapshot.repo, commit=snapshot.commit)
         paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
-
         if not paths:
-            log.info("call_graph: No functions found, skipping")
-            return ExecutionResult.ok(
-                table_counts={
-                    CALL_GRAPH_NODES_TABLE_KEY: 0,
-                    CALL_GRAPH_EDGES_TABLE_KEY: 0,
-                }
+            return CallGraphToolOutput(
+                result=ExecutionResult.ok(
+                    table_counts={
+                        CALL_GRAPH_NODES_TABLE_KEY: 0,
+                        CALL_GRAPH_EDGES_TABLE_KEY: 0,
+                    }
+                )
             )
 
         collection_ctx = _EdgeCollectionState(
             function_index=function_index,
             global_callees=_build_global_callee_lookup(
-                q__core__goids, snapshot.repo, snapshot.commit
+                q__core__goids, env.snapshot.repo, env.snapshot.commit
             ),
             def_goids_by_path=_build_def_goids_by_path(
-                q__core__goids, snapshot.repo, snapshot.commit
+                q__core__goids, env.snapshot.repo, env.snapshot.commit
             ),
-            source_root=snapshot.repo_root
-            or get_source_root(gateway, snapshot.repo, snapshot.commit),
-            repo=snapshot.repo,
-            commit=snapshot.commit,
+            source_root=source_root,
+            repo=env.snapshot.repo,
+            commit=env.snapshot.commit,
             use_libcst=opts.use_libcst,
             resolve_imports=opts.resolve_imports,
             max_edges_per_file=opts.max_edges_per_file,
@@ -585,65 +581,159 @@ def t__call_graph__extract(
         edges = _collect_all_edges(paths, collection_ctx)
         log.info("call_graph: Collected %d edges from %d files", len(edges), len(paths))
 
-        options = _materialize_options(env)
-        node_count = _rows_written(
-            env.warehouse.materialize_mappings(
-                CALL_GRAPH_NODES_TABLE_KEY,
-                _build_nodes_from_goids(q__core__goids, snapshot.repo, snapshot.commit),
-                options=options,
+        node_rows = tuple(
+            row_to_tuple(CALL_GRAPH_NODES_TABLE_KEY, row)
+            for row in _build_nodes_from_goids(
+                q__core__goids,
+                env.snapshot.repo,
+                env.snapshot.commit,
             )
         )
-        edge_count = _rows_written(
-            env.warehouse.materialize_mappings(
-                CALL_GRAPH_EDGES_TABLE_KEY,
-                _serialize_call_graph_edges(edges),
-                options=options,
+        edge_rows = tuple(
+            row_to_tuple(CALL_GRAPH_EDGES_TABLE_KEY, row)
+            for row in _serialize_call_graph_edges(edges)
+        )
+
+        log.info("call_graph: Built %d nodes, %d edges", len(node_rows), len(edge_rows))
+
+        return CallGraphToolOutput(
+            result=ExecutionResult.ok(
+                table_counts={
+                    CALL_GRAPH_NODES_TABLE_KEY: len(node_rows),
+                    CALL_GRAPH_EDGES_TABLE_KEY: len(edge_rows),
+                }
+            ),
+            node_rows=node_rows,
+            edge_rows=edge_rows,
+        )
+
+    return _coerce_call_graph_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def t__call_graph__ingest(
+    t__call_graph__run: CallGraphToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package call graph rows for table materialization."""
+    result = t__call_graph__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "call_graph skipped",
+                warnings=result.warnings,
             )
         )
-
-        log.info("call_graph: Persisted %d nodes, %d edges", node_count, edge_count)
-
-        return ExecutionResult.ok(
-            table_counts={
-                CALL_GRAPH_NODES_TABLE_KEY: node_count,
-                CALL_GRAPH_EDGES_TABLE_KEY: edge_count,
-            }
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "call_graph failed",
+                warnings=result.warnings,
+            )
         )
+    payload = {
+        CALL_GRAPH_NODES_TABLE_KEY: t__call_graph__run.node_rows,
+        CALL_GRAPH_EDGES_TABLE_KEY: t__call_graph__run.edge_rows,
+    }
+    table_counts = {
+        CALL_GRAPH_NODES_TABLE_KEY: len(t__call_graph__run.node_rows),
+        CALL_GRAPH_EDGES_TABLE_KEY: len(t__call_graph__run.edge_rows),
+    }
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
 
-    except Exception as exc:
-        log.exception("Call graph extraction failed")
-        return ExecutionResult.failed(str(exc))
+
+@save_rows(
+    context=CALL_GRAPH_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=CALL_GRAPH_NODES_TABLE_KEY),
+)
+@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME, target_="call_graph__nodes_rows")
+def call_graph__nodes_rows(
+    t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.call_graph_nodes."""
+    if t__call_graph__ingest.result.skipped or not t__call_graph__ingest.result.success:
+        return None
+    payload = t__call_graph__ingest.payload
+    if payload is None:
+        msg = "Missing call_graph ingest payload"
+        raise ValueError(msg)
+    rows = payload.get(CALL_GRAPH_NODES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {CALL_GRAPH_NODES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@save_rows(
+    context=CALL_GRAPH_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=CALL_GRAPH_EDGES_TABLE_KEY),
+)
+@tag_compute(domain="graphs", target=CALL_GRAPH_TARGET_NAME, target_="call_graph__edges_rows")
+def call_graph__edges_rows(
+    t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.call_graph_edges."""
+    if t__call_graph__ingest.result.skipped or not t__call_graph__ingest.result.success:
+        return None
+    payload = t__call_graph__ingest.payload
+    if payload is None:
+        msg = "Missing call_graph ingest payload"
+        raise ValueError(msg)
+    rows = payload.get(CALL_GRAPH_EDGES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {CALL_GRAPH_EDGES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def call_graph__table_materializations(
+    m__graph__call_graph_nodes: MaterializationMetadata,
+    m__graph__call_graph_edges: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect materialization metadata for call graph tables."""
+    return {
+        CALL_GRAPH_NODES_TABLE_KEY: m__graph__call_graph_nodes,
+        CALL_GRAPH_EDGES_TABLE_KEY: m__graph__call_graph_edges,
+    }
+
+
+@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def call_graph__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    call_graph__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for call graph."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=CALL_GRAPH_TARGET_NAME,
+        hash_options=call_graph__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__call_graph__extract: ExecutionResult,
+    call_graph__finalize_context: ToolFinalizeContext,
+    t__call_graph__run: CallGraphToolOutput,
+    t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    call_graph__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct a function call graph.
-
-    This is the entry point for the call_graph target. It orchestrates
-    call graph extraction and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    t__call_graph__extract
-        Execution result produced by the extract node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    return executor_materialize(env, graph, CALL_GRAPH_TARGET_NAME, t__call_graph__extract)
+    """Construct a function call graph."""
+    return finalize_target_from_materializations(
+        context=call_graph__finalize_context,
+        tool_step=t__call_graph__run,
+        ingest_step=t__call_graph__ingest,
+        artifact_materializations=None,
+        table_materializations=call_graph__table_materializations,
+    )
 
 
 __all__ = [
     "t__call_graph",
-    "t__call_graph__extract",
+    "t__call_graph__ingest",
+    "t__call_graph__run",
 ]

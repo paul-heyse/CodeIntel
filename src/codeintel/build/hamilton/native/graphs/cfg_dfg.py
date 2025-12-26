@@ -15,35 +15,40 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers.dependencies import source, value
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
-from codeintel.build.hamilton.materialization_helpers import executor_materialize
-from codeintel.build.hamilton.materialize_options import materialize_options
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import CfgDfgOptions
+from codeintel.build.hamilton.native.patterns import (
+    IngestStep,
+    SaverContext,
+    TableSaveSpec,
+    ToolFinalizeContext,
+    ToolRunContext,
+    finalize_target_from_materializations,
+    run_tool_step,
+    save_rows,
+)
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
 from codeintel.graphs.compute import dfg as dfg_compute
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 log = logging.getLogger(__name__)
 

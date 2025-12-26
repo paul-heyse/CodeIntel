@@ -1,11 +1,11 @@
 """Native analytics modules.
 
 This package contains pure Hamilton implementations of analytics targets,
-replacing plugin wrappers with explicit compute + materialize node pipelines.
+replacing legacy wrappers with explicit compute + materialize node pipelines.
 
 Phase 4 Migration
 -----------------
-The following modules have been migrated from plugins to native Hamilton:
+The following modules have been migrated from legacy wrappers to native Hamilton:
 
 Already Native (Phase 1.5):
 - risk_factors

@@ -2,7 +2,7 @@
 
 This module provides infrastructure for extracting, aggregating, and querying
 constraints that define a dataset's structure. Constraints are collected from
-multiple sources including Pandera schemas, DuckDB DDL, and plugin metadata.
+multiple sources including Pandera schemas, DuckDB DDL, and target metadata.
 
 This module is owned by the Hamilton build layer.
 
@@ -234,7 +234,7 @@ def extract_constraints_from_pandera(
     -----
     This is the primary mechanism for converting Pandera validation rules
     into the constraint aggregation layer. Additional constraint sources
-    (DDL, plugin metadata) can be added to the returned ConstraintSet.
+    (DDL, target metadata) can be added to the returned ConstraintSet.
 
     Architecture Reference: Section 3.2 - ConstraintSet Model
     """

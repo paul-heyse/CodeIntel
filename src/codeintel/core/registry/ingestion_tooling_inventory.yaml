@@ -6,7 +6,7 @@ tools:
     kind: "binary"
     cli: "scip"
     aliases:
-      - "scip-python"
+      - "scip"
     config_key: "scip_python_bin"
     required_by:
       - "ingestion.scip"

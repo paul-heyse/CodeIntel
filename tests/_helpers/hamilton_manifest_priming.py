@@ -36,7 +36,7 @@ class ManifestPriming:
         input_hash: str
         options_hash: str | None
         duration_ms: float = 0.0
-        plugin: str | None = None
+        impl_kind: str | None = None
         row_count: int | None = None
         change_delta: dict[str, object] | None = None
         computed_at: datetime | None = None
@@ -60,7 +60,7 @@ class ManifestPriming:
             target=spec.target,
             repo=env.repo,
             commit=env.commit,
-            impl_kind=spec.plugin or f"native:{spec.target}",
+            impl_kind=spec.impl_kind or "native",
             computed_at=when,
             duration_ms=spec.duration_ms,
             input_hash=spec.input_hash,

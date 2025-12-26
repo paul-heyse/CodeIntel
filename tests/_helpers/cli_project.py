@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
+from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.storage import gateway as gateway_pkg
 from tests.cli._harness import CliTestHarness
 

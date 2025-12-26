@@ -102,7 +102,7 @@ class ScipPlugin(ToolPlugin):
     tools_config: ToolsConfig
     metadata: ToolPluginMetadata = field(
         default_factory=lambda: ToolPluginMetadata(
-            name="scip",
+            name="scip-python",
             produces_artifacts=("index_scip",),
             consumes_configs=("scip_python_bin",),
             datasets=("core.scip_symbols", "core.goid_crosswalk"),
@@ -142,19 +142,19 @@ class ScipPlugin(ToolPlugin):
         timeout_obj = kwargs.get("timeout_s")
 
         if not isinstance(output_scip_obj, Path):
-            message = "scip plugin requires output_scip of type Path"
+            message = "scip-python plugin requires output_scip of type Path"
             raise TypeError(message)
         if target_dir_obj is not None and not isinstance(target_dir_obj, Path):
-            message = "scip plugin requires target_dir to be Path or None"
+            message = "scip-python plugin requires target_dir to be Path or None"
             raise TypeError(message)
         if rel_paths_obj is not None and not isinstance(rel_paths_obj, Sequence):
-            message = "scip plugin requires rel_paths to be a sequence of strings"
+            message = "scip-python plugin requires rel_paths to be a sequence of strings"
             raise TypeError(message)
         if not isinstance(proto_module_obj, Path):
-            message = "scip plugin requires proto_module_path of type Path"
+            message = "scip-python plugin requires proto_module_path of type Path"
             raise TypeError(message)
         if timeout_obj is not None and not isinstance(timeout_obj, Real):
-            message = "scip plugin requires timeout_s to be a number or None"
+            message = "scip-python plugin requires timeout_s to be a number or None"
             raise TypeError(message)
 
         rel_paths = tuple(rel_paths_obj) if rel_paths_obj is not None else None

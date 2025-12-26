@@ -43,8 +43,8 @@ __all__ = [
     "DependencyUnavailableError",
     "ExecutionError",
     "GatewayNotAvailableError",
+    "ImplementationExecutionError",
     "MissingDependencyError",
-    "PluginExecutionError",
     "RegistryValidationError",
     "ResourceError",
     "SchemaNotFoundError",
@@ -62,7 +62,7 @@ class BuildError(Exception):
     Build errors provide rich context for both humans and machines:
     - user_message: Human-readable description for CLI output
     - actionable_hint: Suggestion for how to fix the error
-    - Full context (target, table, plugin names)
+    - Full context (target, table, implementation kind)
 
     All subclasses must implement user_message property.
     """
@@ -305,7 +305,7 @@ class ColumnCountMismatchError(ContractError):
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
         return (
-            f"Check the plugin for target '{self.target}' - "
+            f"Check the implementation for target '{self.target}' - "
             f"ensure it writes all {self.expected} columns defined in the schema"
         )
 
@@ -470,7 +470,7 @@ class RegistryValidationError(ContractError):
     """Target registration failed validation.
 
     This error is raised when a target is registered without
-    any implementation (neither plugin nor native module).
+    any implementation (native module required).
 
     Attributes
     ----------
@@ -494,7 +494,7 @@ class RegistryValidationError(ContractError):
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
         return (
-            f"Register a plugin or native module for target '{self.target}' "
+            f"Register a native implementation for target '{self.target}' "
             "in the registrations module"
         )
 
@@ -636,29 +636,29 @@ class SessionNotInitializedError(ResourceError):
 class ExecutionError(BuildError):
     """Base class for execution-time errors.
 
-    These errors occur during actual plugin execution, not
+    These errors occur during implementation execution, not
     during planning or validation.
     """
 
 
-class PluginExecutionError(ExecutionError):
-    """Plugin failed during execution.
+class ImplementationExecutionError(ExecutionError):
+    """Implementation failed during execution.
 
     Attributes
     ----------
     target
         Target name that failed.
-    plugin
-        Plugin name that raised the error.
+    impl_kind
+        Implementation kind that raised the error.
     cause
         The underlying exception.
     """
 
-    def __init__(self, target: str, plugin: str, cause: Exception) -> None:
+    def __init__(self, target: str, impl_kind: str, cause: Exception) -> None:
         self.target = target
-        self.plugin = plugin
+        self.impl_kind = impl_kind
         self.cause = cause
-        super().__init__(f"Plugin '{plugin}' failed for target '{target}': {cause}")
+        super().__init__(f"Implementation '{impl_kind}' failed for target '{target}': {cause}")
 
     @property
     def user_message(self) -> str:
@@ -704,7 +704,8 @@ class TargetTimeoutError(ExecutionError):
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
         return (
-            f"Increase execution.max_runtime_ms for target '{self.target}' or optimize the plugin"
+            f"Increase execution.max_runtime_ms for target '{self.target}' or optimize the "
+            "implementation"
         )
 
 

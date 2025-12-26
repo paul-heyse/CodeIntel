@@ -163,7 +163,7 @@ class ManifestParams:
 
     repo: str = DEFAULT_VARIANT.repo
     commit: str = DEFAULT_VARIANT.commit
-    plugin: str = "test_plugin"
+    impl_kind: str = "native"
     input_hash: str = "input-hash"
     computed_at: datetime | None = None
     duration_ms: float = 1.0
@@ -192,7 +192,7 @@ def sample_manifest(target: str, params: ManifestParams | None = None) -> Output
         target=target,
         repo=cfg.repo,
         commit=cfg.commit,
-        impl_kind=cfg.plugin,
+        impl_kind=cfg.impl_kind,
         computed_at=cfg.computed_at or datetime.now(tz=UTC),
         duration_ms=cfg.duration_ms,
         input_hash=cfg.input_hash,

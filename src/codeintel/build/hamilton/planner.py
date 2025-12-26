@@ -41,7 +41,7 @@ PlanReason = Literal[
     "hash_changed",
     "up_to_date",
     "upstream_missing",
-    "no_plugin",
+    "no_impl",
 ]
 
 
@@ -70,7 +70,7 @@ class PlanEntry:
         - "hash_changed": Input hash differs from manifest, must recompute
         - "up_to_date": Input hash matches manifest, can skip
         - "upstream_missing": An upstream dependency is missing
-        - "no_plugin": No plugin registered for this target
+        - "no_impl": No implementation registered for this target
     input_hash
         Current computed input hash for the target.
     options_hash
@@ -615,7 +615,7 @@ def compute_plan(
                 node=target_node(target_name),
                 module="unknown",
                 status="missing",
-                reason="no_plugin",
+                reason="no_impl",
                 input_hash=None,
                 options_hash=None,
                 prior_input_hash=None,

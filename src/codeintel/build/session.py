@@ -87,7 +87,7 @@ class BuildSession:
         target
             The target to compute hash for.
         options_hash
-            Optional hash of plugin configuration options.
+            Optional hash of configuration options.
 
         Returns
         -------

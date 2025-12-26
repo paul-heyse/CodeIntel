@@ -2036,10 +2036,7 @@ def _replace_dataclass_value(
     field_name: str,
     value: object,
 ) -> object:
-    values = {
-        name: getattr(obj, name)
-        for name in obj.__dataclass_fields__
-    }
+    values = {name: getattr(obj, name) for name in obj.__dataclass_fields__}
     values[field_name] = value
     constructor = cast("Callable[..., object]", obj.__class__)
     return constructor(**values)

@@ -45,7 +45,7 @@ class TableVersionInput:
     upstream_versions
         Version hashes of upstream dependencies.
     options_hash
-        Hash of plugin options, or None if no options.
+        Hash of configuration options, or None if no options.
     """
 
     table_key: str
@@ -70,7 +70,7 @@ class ArtifactVersionInput:
     upstream_versions
         Version hashes of upstream dependencies.
     options_hash
-        Hash of plugin options, or None if no options.
+        Hash of configuration options, or None if no options.
     """
 
     artifact_name: str
