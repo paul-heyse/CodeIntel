@@ -14,11 +14,11 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import source
 
 from codeintel.analytics.hotspots import ChurnSummary, compute_hotspot_rows, parse_git_log_lines
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -33,7 +33,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.nodes.module_attach import tagged_attach_node
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
@@ -191,6 +190,17 @@ class HotspotsOptions:
 
 
 @dataclass(frozen=True)
+class HotspotsInputs:
+    """Inputs required to compute hotspots."""
+
+    ast_metrics_table: ir.Table
+    modules_table: ir.Table
+    options: HotspotsOptions
+    repo_root: Path
+    tool_runner: ToolRunner | None
+
+
+@dataclass(frozen=True)
 class HotspotsResult:
     """Result from hotspots computation."""
 
@@ -302,13 +312,33 @@ def _rows_to_tuples(
     return tuple(row_to_tuple(HOTSPOTS_TABLE_KEY, row) for row in rows)
 
 
-@tag_compute(domain="analytics", target=HOTSPOTS_TARGET_NAME)
-def t__hotspots__compute(
+@tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
+def hotspots__inputs(
     hotspots__ast_metrics_table: ir.Table,
     hotspots__modules_table: ir.Table,
     hotspots__options: HotspotsOptions,
     hotspots__repo_root: Path,
     hotspots__tool_runner: ToolRunner | None,
+) -> HotspotsInputs:
+    """Bundle hotspots compute inputs.
+
+    Returns
+    -------
+    HotspotsInputs
+        Grouped inputs for hotspots computation.
+    """
+    return HotspotsInputs(
+        ast_metrics_table=hotspots__ast_metrics_table,
+        modules_table=hotspots__modules_table,
+        options=hotspots__options,
+        repo_root=hotspots__repo_root,
+        tool_runner=hotspots__tool_runner,
+    )
+
+
+@tag_compute(domain="analytics", target=HOTSPOTS_TARGET_NAME)
+def t__hotspots__compute(
+    hotspots__inputs: HotspotsInputs,
     *,
     hotspots__skip: bool,
 ) -> HotspotsResult:
@@ -316,10 +346,10 @@ def t__hotspots__compute(
 
     Parameters
     ----------
-    hotspots__ast_metrics_table
-        Loader node for core.ast_metrics.
-    hotspots__modules_table
-        Loader node for core.modules.
+    hotspots__inputs
+        Bundled inputs for hotspots computation.
+    hotspots__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -329,18 +359,18 @@ def t__hotspots__compute(
     if hotspots__skip:
         return HotspotsResult(rows=None)
 
-    module_paths = _load_module_paths(hotspots__modules_table)
+    module_paths = _load_module_paths(hotspots__inputs.modules_table)
     if not module_paths:
         return HotspotsResult(rows=None)
 
-    ast_metrics = _load_ast_metrics(hotspots__ast_metrics_table, module_paths)
+    ast_metrics = _load_ast_metrics(hotspots__inputs.ast_metrics_table, module_paths)
     if not ast_metrics:
         return HotspotsResult(rows=None)
 
     churn_stats = collect_git_file_stats(
-        hotspots__repo_root,
-        max_commits=hotspots__options.max_commits,
-        runner=hotspots__tool_runner,
+        hotspots__inputs.repo_root,
+        max_commits=hotspots__inputs.options.max_commits,
+        runner=hotspots__inputs.tool_runner,
     )
 
     try:
@@ -412,6 +442,7 @@ def t__hotspots(
 __all__ = [
     "hotspots__ast_metrics_table",
     "hotspots__hash_options",
+    "hotspots__inputs",
     "hotspots__modules_table",
     "hotspots__options",
     "hotspots__repo_root",

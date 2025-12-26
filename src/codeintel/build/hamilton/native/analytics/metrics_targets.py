@@ -14,7 +14,7 @@ Graph Metrics Targets (Rows):
 Multi-Table Target (Pattern C):
 - ``test_graph_metrics``: Metrics from test-function bipartite graph
 
-Graph metrics targets use DAG-visible row materialization via DuckDBRowsSaver.
+Graph metrics targets use DAG-visible row materialization via ``save_rows``.
 """
 
 from __future__ import annotations
@@ -22,8 +22,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.functions.function_history import build_function_history_rows
 from codeintel.analytics.graphs.subsystem_agreement import (
@@ -44,22 +42,26 @@ from codeintel.analytics.testing.compute import (
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
 from codeintel.storage.gateway import StorageGateway
@@ -100,6 +102,36 @@ TEST_GRAPH_METRICS_TABLE_KEYS = (
     TEST_GRAPH_METRICS_TESTS_TABLE_KEY,
     TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
 )
+FUNCTION_HISTORY_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=FUNCTION_HISTORY_TARGET_NAME,
+    hash_options_node="function_history__hash_options",
+)
+HISTORY_TIMESERIES_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=HISTORY_TIMESERIES_TARGET_NAME,
+    hash_options_node="history_timeseries__hash_options",
+)
+SUBSYSTEM_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+    hash_options_node="subsystem_graph_metrics__hash_options",
+)
+SYMBOL_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+    hash_options_node="symbol_graph_metrics__hash_options",
+)
+SUBSYSTEM_AGREEMENT_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+    hash_options_node="subsystem_agreement__hash_options",
+)
+TEST_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=TEST_GRAPH_METRICS_TARGET_NAME,
+    hash_options_node="test_graph_metrics__hash_options",
+)
 
 
 # -----------------------------------------------------------------------------
@@ -117,6 +149,228 @@ def gateway(env: BuildEnv) -> StorageGateway:
         Storage gateway for the current build environment.
     """
     return env.gateway
+
+
+@tag_helper(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
+def function_history__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for function_history execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, FUNCTION_HISTORY_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
+def function_history__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    function_history__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when function_history should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        FUNCTION_HISTORY_TARGET_NAME,
+        hash_options=function_history__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
+def history_timeseries__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for history_timeseries execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, HISTORY_TIMESERIES_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
+def history_timeseries__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    history_timeseries__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when history_timeseries should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        HISTORY_TIMESERIES_TARGET_NAME,
+        hash_options=history_timeseries__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
+def subsystem_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for subsystem_graph_metrics execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, SUBSYSTEM_GRAPH_METRICS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
+def subsystem_graph_metrics__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    subsystem_graph_metrics__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when subsystem_graph_metrics should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+        hash_options=subsystem_graph_metrics__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
+def symbol_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for symbol_graph_metrics execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, SYMBOL_GRAPH_METRICS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
+def symbol_graph_metrics__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    symbol_graph_metrics__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when symbol_graph_metrics should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SYMBOL_GRAPH_METRICS_TARGET_NAME,
+        hash_options=symbol_graph_metrics__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
+def subsystem_agreement__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for subsystem_agreement execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, SUBSYSTEM_AGREEMENT_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
+def subsystem_agreement__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    subsystem_agreement__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when subsystem_agreement should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SUBSYSTEM_AGREEMENT_TARGET_NAME,
+        hash_options=subsystem_agreement__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
+def test_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for test_graph_metrics execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, TEST_GRAPH_METRICS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
+def test_graph_metrics__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    test_graph_metrics__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when test_graph_metrics should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        TEST_GRAPH_METRICS_TARGET_NAME,
+        hash_options=test_graph_metrics__hash_options,
+    )
+    return executor.should_skip()
 
 
 def _get_graph_runtime(
@@ -154,14 +408,9 @@ def _get_graph_runtime(
 # -----------------------------------------------------------------------------
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_HISTORY_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_HISTORY_TARGET_NAME),
-    table_key=value(FUNCTION_HISTORY_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_HISTORY_TABLE_KEY)),
+@save_rows(
+    context=FUNCTION_HISTORY_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_HISTORY_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -170,8 +419,9 @@ def _get_graph_runtime(
 )
 def t__function_history__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
+    *,
+    function_history__skip: bool,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute function history metrics for all functions.
 
@@ -182,10 +432,10 @@ def t__function_history__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for manifest-driven skip checks.
     gateway
         Storage gateway for analytics queries.
+    function_history__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -200,31 +450,22 @@ def t__function_history__compute(
     - Lines added and deleted (churn)
     - Stability bucket classification
     """
-    target = graph.get(FUNCTION_HISTORY_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, FUNCTION_HISTORY_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
-    return build_function_history_rows(
+    if function_history__skip:
+        return None
+
+    rows = build_function_history_rows(
         gateway,
         env.snapshot,
         runner=env.providers.tool_runner,
     )
+    return tuple(rows)
 
 
 @codeintel_target(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
 def t__function_history(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__function_history: MaterializationMetadata,
+    function_history__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize function git history and churn metrics.
 
@@ -234,7 +475,7 @@ def t__function_history(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__function_history
+    function_history__table_materializations
         Materialization metadata for analytics.function_history.
 
     Returns
@@ -242,13 +483,22 @@ def t__function_history(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=FUNCTION_HISTORY_TARGET_NAME,
-        expected_table_key=FUNCTION_HISTORY_TABLE_KEY,
-        materialization=m__analytics__function_history,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=FUNCTION_HISTORY_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=function_history__table_materializations,
     )
+
+
+function_history__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=FUNCTION_HISTORY_TARGET_NAME,
+    table_keys=(FUNCTION_HISTORY_TABLE_KEY,),
+)
 
 
 # -----------------------------------------------------------------------------
@@ -256,33 +506,37 @@ def t__function_history(
 # -----------------------------------------------------------------------------
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(HISTORY_TIMESERIES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(HISTORY_TIMESERIES_TARGET_NAME),
-    table_key=value(HISTORY_TIMESERIES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)),
+@save_rows(
+    context=HISTORY_TIMESERIES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=HISTORY_TIMESERIES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
     target=HISTORY_TIMESERIES_TARGET_NAME,
     target_="t__history_timeseries__compute",
 )
-def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
+def t__history_timeseries__compute(
+    env: BuildEnv,
+    *,
+    history_timeseries__skip: bool,
+) -> tuple[tuple[object, ...], ...] | None:
     """Compute history timeseries metrics across commits.
 
     Parameters
     ----------
     env
         Build environment with gateway and snapshot info.
+    history_timeseries__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Row tuples matching the history_timeseries schema.
+    tuple[tuple[object, ...], ...] | None
+        Row tuples matching the history_timeseries schema, or None when skipped.
     """
+    if history_timeseries__skip:
+        return None
+
     options = env.history_options
     gateway_resolver = env.history_db_resolver
     if options is None or gateway_resolver is None:
@@ -291,19 +545,20 @@ def t__history_timeseries__compute(env: BuildEnv) -> tuple[tuple[object, ...], .
             "returning empty result set."
         )
         return ()
-    return build_history_timeseries_rows(
+    rows = build_history_timeseries_rows(
         env.snapshot,
         gateway_resolver,
         options=options,
         runner=env.providers.tool_runner,
     )
+    return tuple(rows)
 
 
 @codeintel_target(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
 def t__history_timeseries(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__history_timeseries: MaterializationMetadata,
+    history_timeseries__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize historical metrics timeseries for trending.
 
@@ -313,7 +568,7 @@ def t__history_timeseries(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__history_timeseries
+    history_timeseries__table_materializations
         Materialization metadata for analytics.history_timeseries.
 
     Returns
@@ -321,13 +576,22 @@ def t__history_timeseries(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=HISTORY_TIMESERIES_TARGET_NAME,
-        expected_table_key=HISTORY_TIMESERIES_TABLE_KEY,
-        materialization=m__analytics__history_timeseries,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=HISTORY_TIMESERIES_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=history_timeseries__table_materializations,
     )
+
+
+history_timeseries__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=HISTORY_TIMESERIES_TARGET_NAME,
+    table_keys=(HISTORY_TIMESERIES_TABLE_KEY,),
+)
 
 
 # -----------------------------------------------------------------------------
@@ -365,6 +629,8 @@ def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
+    *,
+    subsystem_graph_metrics__skip: bool,
 ) -> SubsystemGraphMetricsComputeResult:
     """Compute graph metrics for subsystems.
 
@@ -376,6 +642,8 @@ def t__subsystem_graph_metrics__compute(
         Storage gateway for analytics queries.
     t__subsystems
         Upstream subsystems target result (for dependency).
+    subsystem_graph_metrics__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -387,6 +655,9 @@ def t__subsystem_graph_metrics__compute(
             rows=None,
             error=f"Upstream subsystems target failed: {t__subsystems.error}",
         )
+
+    if subsystem_graph_metrics__skip:
+        return SubsystemGraphMetricsComputeResult(rows=None)
 
     try:
         graph_runtime = _get_graph_runtime(
@@ -412,14 +683,9 @@ def t__subsystem_graph_metrics__compute(
         return SubsystemGraphMetricsComputeResult(rows=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SUBSYSTEM_GRAPH_METRICS_TARGET_NAME),
-    table_key=value(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY)),
+@save_rows(
+    context=SUBSYSTEM_GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -446,7 +712,7 @@ def t__subsystem_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     t__subsystem_graph_metrics__compute: SubsystemGraphMetricsComputeResult,
-    m__analytics__subsystem_graph_metrics: MaterializationMetadata,
+    subsystem_graph_metrics__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize graph metrics for subsystems.
 
@@ -458,7 +724,7 @@ def t__subsystem_graph_metrics(
         Target graph for metadata lookup.
     t__subsystem_graph_metrics__compute
         Computed subsystem graph metrics result.
-    m__analytics__subsystem_graph_metrics
+    subsystem_graph_metrics__table_materializations
         Materialization metadata for analytics.subsystem_graph_metrics.
 
     Returns
@@ -481,13 +747,22 @@ def t__subsystem_graph_metrics(
             artifacts=(),
         )
 
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-        expected_table_key=SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,
-        materialization=m__analytics__subsystem_graph_metrics,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=subsystem_graph_metrics__table_materializations,
     )
+
+
+subsystem_graph_metrics__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
+    table_keys=(SUBSYSTEM_GRAPH_METRICS_TABLE_KEY,),
+)
 
 
 # -----------------------------------------------------------------------------
@@ -500,6 +775,8 @@ def t__symbol_graph_metrics__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__symbol_uses: TargetRunRecord,
+    *,
+    symbol_graph_metrics__skip: bool,
 ) -> SymbolGraphMetricsComputeResult:
     """Compute graph metrics from symbol usage patterns.
 
@@ -511,6 +788,8 @@ def t__symbol_graph_metrics__compute(
         Storage gateway for analytics queries.
     t__symbol_uses
         Upstream symbol_uses target result (for dependency).
+    symbol_graph_metrics__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -523,6 +802,9 @@ def t__symbol_graph_metrics__compute(
             function_rows=None,
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
+
+    if symbol_graph_metrics__skip:
+        return SymbolGraphMetricsComputeResult(module_rows=None, function_rows=None)
 
     module_rows: list[tuple[object, ...]] | None = None
     function_rows: list[tuple[object, ...]] | None = None
@@ -581,14 +863,9 @@ def t__symbol_graph_metrics__compute(
         )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SYMBOL_GRAPH_METRICS_TARGET_NAME),
-    table_key=value(SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY)),
+@save_rows(
+    context=SYMBOL_GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -612,14 +889,9 @@ def symbol_graph_metrics__modules_rows(
     return tuple(t__symbol_graph_metrics__compute.module_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SYMBOL_GRAPH_METRICS_TARGET_NAME),
-    table_key=value(SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
+@save_rows(
+    context=SYMBOL_GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -648,8 +920,7 @@ def t__symbol_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
     t__symbol_graph_metrics__compute: SymbolGraphMetricsComputeResult,
-    m__analytics__symbol_graph_metrics_modules: MaterializationMetadata,
-    m__analytics__symbol_graph_metrics_functions: MaterializationMetadata,
+    symbol_graph_metrics__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize graph metrics from symbol usage patterns.
 
@@ -661,10 +932,8 @@ def t__symbol_graph_metrics(
         Target graph for metadata lookup.
     t__symbol_graph_metrics__compute
         Computed symbol graph metrics result.
-    m__analytics__symbol_graph_metrics_modules
-        Materialization metadata for analytics.symbol_graph_metrics_modules.
-    m__analytics__symbol_graph_metrics_functions
-        Materialization metadata for analytics.symbol_graph_metrics_functions.
+    symbol_graph_metrics__table_materializations
+        Materialization metadata for analytics.symbol_graph_metrics tables.
 
     Returns
     -------
@@ -686,15 +955,22 @@ def t__symbol_graph_metrics(
             artifacts=(),
         )
 
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-        materializations={
-            SYMBOL_GRAPH_METRICS_MODULES_TABLE_KEY: m__analytics__symbol_graph_metrics_modules,
-            SYMBOL_GRAPH_METRICS_FUNCTIONS_TABLE_KEY: m__analytics__symbol_graph_metrics_functions,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=symbol_graph_metrics__table_materializations,
     )
+
+
+symbol_graph_metrics__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
+    table_keys=SYMBOL_GRAPH_METRICS_TABLE_KEYS,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -707,6 +983,8 @@ def t__subsystem_agreement__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
+    *,
+    subsystem_agreement__skip: bool,
 ) -> SubsystemAgreementComputeResult:
     """Compare subsystem assignments with import community labels.
 
@@ -718,6 +996,8 @@ def t__subsystem_agreement__compute(
         Storage gateway for analytics queries.
     t__subsystems
         Upstream subsystems target result (for dependency).
+    subsystem_agreement__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -729,6 +1009,9 @@ def t__subsystem_agreement__compute(
             rows=None,
             error=f"Upstream subsystems target failed: {t__subsystems.error}",
         )
+
+    if subsystem_agreement__skip:
+        return SubsystemAgreementComputeResult(rows=None)
 
     try:
         log.info(
@@ -747,14 +1030,9 @@ def t__subsystem_agreement__compute(
         return SubsystemAgreementComputeResult(rows=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SUBSYSTEM_AGREEMENT_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SUBSYSTEM_AGREEMENT_TARGET_NAME),
-    table_key=value(SUBSYSTEM_AGREEMENT_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SUBSYSTEM_AGREEMENT_TABLE_KEY)),
+@save_rows(
+    context=SUBSYSTEM_AGREEMENT_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -781,7 +1059,7 @@ def t__subsystem_agreement(
     env: BuildEnv,
     graph: TargetGraph,
     t__subsystem_agreement__compute: SubsystemAgreementComputeResult,
-    m__analytics__subsystem_agreement: MaterializationMetadata,
+    subsystem_agreement__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Compute subsystem vs import community agreement.
 
@@ -793,7 +1071,7 @@ def t__subsystem_agreement(
         Target graph for metadata lookup.
     t__subsystem_agreement__compute
         Computed subsystem agreement result.
-    m__analytics__subsystem_agreement
+    subsystem_agreement__table_materializations
         Materialization metadata for analytics.subsystem_agreement.
 
     Returns
@@ -816,13 +1094,22 @@ def t__subsystem_agreement(
             artifacts=(),
         )
 
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-        expected_table_key=SUBSYSTEM_AGREEMENT_TABLE_KEY,
-        materialization=m__analytics__subsystem_agreement,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=subsystem_agreement__table_materializations,
     )
+
+
+subsystem_agreement__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
+    table_keys=(SUBSYSTEM_AGREEMENT_TABLE_KEY,),
+)
 
 
 # -----------------------------------------------------------------------------
@@ -833,8 +1120,9 @@ def t__subsystem_agreement(
 @tag_tool(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
 def t__test_graph_metrics__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
+    *,
+    test_graph_metrics__skip: bool,
 ) -> TestGraphMetricsResult | None:
     """Compute test graph metrics for all tests and functions.
 
@@ -842,29 +1130,18 @@ def t__test_graph_metrics__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for skip check.
     gateway
         Storage gateway for analytics queries.
+    test_graph_metrics__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
     TestGraphMetricsResult | None
         Container with rows for test and function metrics tables, or None if skipped.
     """
-    target = graph.get(TEST_GRAPH_METRICS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, TEST_GRAPH_METRICS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if test_graph_metrics__skip:
+        return None
 
     runtime = _get_graph_runtime(
         env,
@@ -876,14 +1153,9 @@ def t__test_graph_metrics__compute(
     return compute_test_graph_metrics_pure(gateway, env.snapshot, runtime)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
-    table_key=value(TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(TEST_GRAPH_METRICS_TESTS_TABLE_KEY)),
+@save_rows(
+    context=TEST_GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=TEST_GRAPH_METRICS_TESTS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -910,14 +1182,9 @@ def test_graph_metrics__tests_rows(
     return tuple(t__test_graph_metrics__compute.test_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(TEST_GRAPH_METRICS_TARGET_NAME),
-    table_key=value(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY)),
+@save_rows(
+    context=TEST_GRAPH_METRICS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -948,8 +1215,7 @@ def test_graph_metrics__functions_rows(
 def t__test_graph_metrics(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__test_graph_metrics_tests: MaterializationMetadata,
-    m__analytics__test_graph_metrics_functions: MaterializationMetadata,
+    test_graph_metrics__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Materialize graph metrics from test-function bipartite graph.
 
@@ -959,35 +1225,55 @@ def t__test_graph_metrics(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__test_graph_metrics_tests
-        Materialization metadata for tests table.
-    m__analytics__test_graph_metrics_functions
-        Materialization metadata for functions table.
+    test_graph_metrics__table_materializations
+        Materialization metadata for test graph metrics tables.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=TEST_GRAPH_METRICS_TARGET_NAME,
-        materializations={
-            TEST_GRAPH_METRICS_TESTS_TABLE_KEY: m__analytics__test_graph_metrics_tests,
-            TEST_GRAPH_METRICS_FUNCTIONS_TABLE_KEY: m__analytics__test_graph_metrics_functions,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=TEST_GRAPH_METRICS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=test_graph_metrics__table_materializations,
     )
+
+
+test_graph_metrics__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=TEST_GRAPH_METRICS_TARGET_NAME,
+    table_keys=TEST_GRAPH_METRICS_TABLE_KEYS,
+)
 
 
 __all__ = [
     "SubsystemAgreementComputeResult",
     "SubsystemGraphMetricsComputeResult",
     "SymbolGraphMetricsComputeResult",
+    "function_history__hash_options",
+    "function_history__skip",
+    "function_history__table_materializations",
+    "history_timeseries__hash_options",
+    "history_timeseries__skip",
+    "history_timeseries__table_materializations",
+    "subsystem_agreement__hash_options",
     "subsystem_agreement__rows",
+    "subsystem_agreement__skip",
+    "subsystem_agreement__table_materializations",
+    "subsystem_graph_metrics__hash_options",
     "subsystem_graph_metrics__rows",
+    "subsystem_graph_metrics__skip",
+    "subsystem_graph_metrics__table_materializations",
     "symbol_graph_metrics__functions_rows",
+    "symbol_graph_metrics__hash_options",
     "symbol_graph_metrics__modules_rows",
+    "symbol_graph_metrics__skip",
+    "symbol_graph_metrics__table_materializations",
     "t__function_history",
     "t__function_history__compute",
     "t__history_timeseries",
@@ -1001,5 +1287,8 @@ __all__ = [
     "t__test_graph_metrics",
     "t__test_graph_metrics__compute",
     "test_graph_metrics__functions_rows",
+    "test_graph_metrics__hash_options",
+    "test_graph_metrics__skip",
+    "test_graph_metrics__table_materializations",
     "test_graph_metrics__tests_rows",
 ]

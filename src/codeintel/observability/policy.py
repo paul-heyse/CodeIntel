@@ -34,6 +34,17 @@ class RedactionPolicy:
 
 
 @dataclass(frozen=True, slots=True)
+class AttributeBudget:
+    """Cardinality budget for attribute values."""
+
+    max_list_len: int | None = None
+    max_str_len: int | None = None
+    cli_arg_names_max: int = 25
+    http_route_max_len: int = 120
+    mcp_tool_name_max_len: int = 80
+
+
+@dataclass(frozen=True, slots=True)
 class ObservabilityPolicy:
     """Policy controls for observability attribute shaping."""
 
@@ -42,9 +53,7 @@ class ObservabilityPolicy:
         default_factory=lambda: MappingProxyType({})
     )
     db_attribute_prefixes: tuple[str, ...] = DB_ATTRIBUTE_PREFIXES
-    cli_arg_names_max: int = 25
-    http_route_max_len: int = 120
-    mcp_tool_name_max_len: int = 80
+    budget: AttributeBudget = field(default_factory=AttributeBudget)
     redaction: RedactionPolicy = field(default_factory=RedactionPolicy)
 
     def operation_allowlist_for(self, component: str, operation: str) -> frozenset[str]:
@@ -76,12 +85,12 @@ def policy_from_settings(settings: ObservabilitySettings) -> ObservabilityPolicy
         Policy with settings-derived overrides.
     """
     overrides = _normalize_overrides(settings.operation_attribute_allowlist_overrides)
-    return ObservabilityPolicy(
-        operation_attribute_overrides=overrides,
+    budget = AttributeBudget(
         cli_arg_names_max=settings.cli_arg_names_max,
         http_route_max_len=settings.http_route_max_len,
         mcp_tool_name_max_len=settings.mcp_tool_name_max_len,
     )
+    return ObservabilityPolicy(operation_attribute_overrides=overrides, budget=budget)
 
 
 def _normalize_overrides(
@@ -100,6 +109,7 @@ def _normalize_overrides(
 __all__ = [
     "DB_ATTRIBUTE_PREFIXES",
     "OPERATION_ATTRIBUTE_ALLOWLIST",
+    "AttributeBudget",
     "ObservabilityPolicy",
     "RedactionPolicy",
     "policy_from_settings",

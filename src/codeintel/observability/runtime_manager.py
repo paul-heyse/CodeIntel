@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from codeintel.observability.otel import (
-    ObservabilityRuntimeManager,
-    get_runtime_manager,
-)
+from codeintel.observability.runtime import ObservabilityRuntimeManager, get_runtime_manager
 
 __all__ = ["ObservabilityRuntimeManager", "get_runtime_manager"]

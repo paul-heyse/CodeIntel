@@ -8,8 +8,12 @@ import pytest
 
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
+    LogConfig,
+    MetricConfig,
     ObservabilityConfig,
+    ResourceConfig,
+    TraceConfig,
     bootstrap_observability,
     observability_config_from_settings,
     shutdown_observability,
@@ -23,7 +27,7 @@ def test_observability_config_from_settings_uses_default_service_name() -> None:
     """Ensure the default service name is applied."""
     settings = ObservabilitySettings(enabled=True)
     config = observability_config_from_settings(settings, default_service_name="default")
-    assert config.service_name == "default"
+    assert config.resources.service_name == "default"
 
 
 def test_runtime_settings_parses_sampler_and_otlp() -> None:
@@ -76,10 +80,10 @@ def test_config_file_bootstrap_attaches_log_handler(tmp_path: Path) -> None:
     runtime = bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_traces=False,
-            export_metrics=False,
-            export_logs=False,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            traces=TraceConfig(enabled=False),
+            metrics=MetricConfig(enabled=False),
+            logs=LogConfig(enabled=False),
             config_file=config_path,
         )
     )

@@ -53,7 +53,7 @@ LOG = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class _FallbackSelection:
-    source: Literal['git', 'src']
+    source: Literal["git", "src"]
     repo_root: Path
 
 
@@ -212,9 +212,7 @@ def _apply_default_scip_project_name(
 
 
 _MSG_NO_PROJECT_NO_FALLBACK = "No codeintel.yaml found and fallback disabled"
-_MSG_NO_PROJECT_NO_SOURCE = (
-    "No codeintel.yaml found and no git repo or src/ directory detected."
-)
+_MSG_NO_PROJECT_NO_SOURCE = "No codeintel.yaml found and no git repo or src/ directory detected."
 _MSG_MISSING_PARAMS = (
     "No codeintel.yaml found. Provide --repo explicitly or set project.repo/project.name."
 )
@@ -298,9 +296,7 @@ def resolve_from_params(
 def _should_allow_fallback(params: Mapping[str, object] | Mapping[str, str]) -> bool:
     if params.get("repo") or params.get("commit") or params.get("db_path"):
         return True
-    base = _to_path_or_none(params.get("project_root")) or _to_path_or_none(
-        params.get("repo_root")
-    )
+    base = _to_path_or_none(params.get("project_root")) or _to_path_or_none(params.get("repo_root"))
     base = base or Path.cwd()
     return _select_fallback_repo_root(base) is not None
 

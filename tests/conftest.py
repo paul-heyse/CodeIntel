@@ -16,7 +16,7 @@ import pytest
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
-from codeintel.observability.otel import shutdown_observability
+from codeintel.observability.runtime import shutdown_observability
 from tests._helpers import GatewayOptions, ProvisioningConfig, TestScenario, provisioned_gateway
 from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT

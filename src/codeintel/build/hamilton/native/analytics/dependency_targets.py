@@ -21,7 +21,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, value
 from codeintel.analytics.dependencies.compute import (
     DependencyCallsResult,
     compute_dependency_calls_pure,
@@ -288,6 +287,8 @@ def t__external_deps__compute_calls(
         Storage gateway for analytics queries.
     external_deps_inputs
         Pre-built AST and module inputs for dependency analysis.
+    external_deps__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -428,15 +429,6 @@ external_deps__table_materializations = make_table_materializations_collector(
     target=EXTERNAL_DEPS_TARGET_NAME,
     table_keys=EXTERNAL_DEPS_TABLE_KEYS,
 )
-
-
-# Export node names for Hamilton discovery
-__all__ = [
-    "t__entrypoints",
-    "t__entrypoints__compute",
-    "t__external_deps",
-    "t__external_deps__compute_calls",
-]
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +591,7 @@ def entrypoints__upstream_error(
     return None
 
 
-entrypoints__materializations = make_table_materializations_collector(
+entrypoints__table_materializations = make_table_materializations_collector(
     domain="analytics",
     target=ENTRYPOINTS_TARGET_NAME,
     table_keys=ENTRYPOINTS_TABLE_KEYS,
@@ -611,7 +603,7 @@ def t__entrypoints(
     env: BuildEnv,
     graph: TargetGraph,
     entrypoints__upstream_error: str | None,
-    entrypoints__materializations: dict[str, MaterializationMetadata],
+    entrypoints__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """External entrypoint detection (HTTP, CLI, etc.).
 
@@ -631,5 +623,28 @@ def t__entrypoints(
             target_name=ENTRYPOINTS_TARGET_NAME,
         ),
         artifact_materializations=None,
-        table_materializations=entrypoints__materializations,
+        table_materializations=entrypoints__table_materializations,
     )
+
+
+__all__ = [
+    "DependencyCallsResult",
+    "EntrypointsResult",
+    "entrypoints__entrypoint_rows",
+    "entrypoints__hash_options",
+    "entrypoints__skip",
+    "entrypoints__table_materializations",
+    "entrypoints__test_rows",
+    "entrypoints__upstream_error",
+    "entrypoints_inputs",
+    "external_deps__calls_rows",
+    "external_deps__dependencies_rows",
+    "external_deps__hash_options",
+    "external_deps__skip",
+    "external_deps__table_materializations",
+    "external_deps_inputs",
+    "t__entrypoints",
+    "t__entrypoints__compute",
+    "t__external_deps",
+    "t__external_deps__compute_calls",
+]

@@ -49,7 +49,7 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.run_writer import BuildRunWriter
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.context import run_context
+from codeintel.observability.telemetry_context import telemetry_context
 from codeintel.storage.gateway import StorageError
 
 if TYPE_CHECKING:
@@ -766,7 +766,7 @@ class HamiltonBuildExecutor:
                     gateway=cast("StorageGateway", wrapped_gateway),
                 )
 
-            with run_context(
+            with telemetry_context(
                 run_id=context.run_id,
                 domain=context.domain,
                 repo=context.env.repo,

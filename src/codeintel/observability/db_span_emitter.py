@@ -12,21 +12,16 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind as _SpanKind
 from opentelemetry.trace.status import Status, StatusCode
 
-from codeintel.observability.attributes import coerce_attribute_value, shape_attributes
-from codeintel.observability.context import (
-    get_commit,
-    get_correlation_id,
-    get_domain,
-    get_repo,
-    get_run_id,
-)
-from codeintel.observability.db_span_attributes import DbSpanAttributeBuilder
+from codeintel.observability.attribute_sanitizer import coerce_attribute_value, shape_attributes
+from codeintel.observability.db_tracing import DbSpanAttributeBuilder
 from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.telemetry_context import current_telemetry_context
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
 
 _SPAN_KIND_CLIENT: SpanKind | None = _SpanKind.CLIENT
+
 
 @dataclass(frozen=True, slots=True)
 class DbSpanEmitterConfig:
@@ -76,24 +71,11 @@ class DbSpanEmitter:
 
         with _start_span(self._config.tracer, spec.name) as span:
             _set_span_attributes(span, spec.attributes)
-            correlation_id = get_correlation_id()
-            if correlation_id:
-                span.set_attribute("codeintel.correlation_id", correlation_id)
-            run_id = get_run_id()
-            if run_id:
-                span.set_attribute("codeintel.run_id", run_id)
-            domain = get_domain()
-            if domain:
-                span.set_attribute("codeintel.domain", domain)
-            repo = get_repo()
-            if repo:
-                span.set_attribute("codeintel.repo", repo)
-            commit = get_commit()
-            if commit:
-                span.set_attribute("codeintel.commit", commit)
+            _set_span_attributes(span, current_telemetry_context().span_attributes())
             extra_attrs = shape_attributes(
                 self._config.attributes,
                 allowed_prefixes=self._config.policy.db_attribute_prefixes,
+                budget=self._config.policy.budget,
             )
             _set_span_attributes(span, extra_attrs)
             try:

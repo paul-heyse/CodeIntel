@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from codeintel.observability.context import (
-    CorrelationBundle,
-    correlation_context,
-    current_correlation_bundle,
-    run_context,
+from codeintel.observability.telemetry_context import (
+    TelemetryContext,
+    current_telemetry_context,
+    telemetry_context,
 )
 
 
 def test_correlation_bundle_empty() -> None:
     """Empty context should yield empty bundles."""
-    bundle = current_correlation_bundle()
-    assert bundle == CorrelationBundle(
+    bundle = current_telemetry_context()
+    assert bundle == TelemetryContext(
         correlation_id=None,
         run_id=None,
         domain=None,
@@ -26,13 +25,16 @@ def test_correlation_bundle_empty() -> None:
 
 def test_correlation_bundle_populated() -> None:
     """Context managers should populate bundle attributes."""
-    with correlation_context("corr-1"), run_context(
-        run_id="run-1",
-        domain="tests",
-        repo="org/repo",
-        commit="abc123",
+    with (
+        telemetry_context(
+            correlation_id="corr-1",
+            run_id="run-1",
+            domain="tests",
+            repo="org/repo",
+            commit="abc123",
+        )
     ):
-        bundle = current_correlation_bundle()
+        bundle = current_telemetry_context()
         span_attrs = bundle.span_attributes()
         metric_attrs = bundle.metric_attributes()
 

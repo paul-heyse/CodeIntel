@@ -17,8 +17,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import build_data_model_usage_rows
 from codeintel.analytics.data_models.compute import (
@@ -54,23 +52,24 @@ from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
 from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
-from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.run_records import (
-    TargetRunRecord,
-    options_hash_for_target,
-    should_skip_native_target,
-)
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
 from codeintel.core.schemas.row_serialization import row_to_tuple
@@ -101,6 +100,26 @@ PROFILES_TABLE_KEYS = (
     FILE_PROFILE_TABLE_KEY,
     MODULE_PROFILE_TABLE_KEY,
 )
+DATA_MODELS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=DATA_MODELS_TARGET_NAME,
+    hash_options_node="data_models__hash_options",
+)
+DATA_MODEL_USAGE_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=DATA_MODEL_USAGE_TARGET_NAME,
+    hash_options_node="data_model_usage__hash_options",
+)
+FUNCTION_AST_FEATURES_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=FUNCTION_AST_FEATURES_TARGET_NAME,
+    hash_options_node="function_ast_features__hash_options",
+)
+PROFILES_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=PROFILES_TARGET_NAME,
+    hash_options_node="profiles__hash_options",
+)
 
 LOG = logging.getLogger(__name__)
 log = LOG
@@ -122,8 +141,161 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics")
-def function_ast_features_registry(env: BuildEnv, gateway: StorageGateway) -> ResourceRegistry:
+@tag_helper(domain="analytics", target=DATA_MODELS_TARGET_NAME)
+def data_models__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for data_models execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, DATA_MODELS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=DATA_MODELS_TARGET_NAME)
+def data_models__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    data_models__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when data_models should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        DATA_MODELS_TARGET_NAME,
+        hash_options=data_models__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
+def data_model_usage__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for data_model_usage execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, DATA_MODEL_USAGE_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
+def data_model_usage__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    data_model_usage__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when data_model_usage should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        DATA_MODEL_USAGE_TARGET_NAME,
+        hash_options=data_model_usage__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
+def function_ast_features__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for function_ast_features execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, FUNCTION_AST_FEATURES_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
+def function_ast_features__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    function_ast_features__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when function_ast_features should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        FUNCTION_AST_FEATURES_TARGET_NAME,
+        hash_options=function_ast_features__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=PROFILES_TARGET_NAME)
+def profiles__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for profiles execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, PROFILES_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=PROFILES_TARGET_NAME)
+def profiles__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    profiles__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when profiles should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        PROFILES_TARGET_NAME,
+        hash_options=profiles__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
+def function_ast_features_registry(
+    env: BuildEnv,
+    gateway: StorageGateway,
+    *,
+    function_ast_features__skip: bool,
+) -> ResourceRegistry | None:
     """Build the resource registry for AST feature computation.
 
     Returns
@@ -131,6 +303,9 @@ def function_ast_features_registry(env: BuildEnv, gateway: StorageGateway) -> Re
     ResourceRegistry
         Registry configured with feature providers.
     """
+    if function_ast_features__skip:
+        return None
+
     return build_registry(
         gateway=gateway,
         snapshot=env.snapshot,
@@ -149,11 +324,12 @@ class DataModelsComputeContext:
     skip: bool
 
 
-@tag_helper(domain="analytics")
+@tag_helper(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 def data_models_compute_context(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
+    *,
+    data_models__skip: bool,
 ) -> DataModelsComputeContext:
     """Prepare data model inputs and skip decisions.
 
@@ -162,19 +338,8 @@ def data_models_compute_context(
     DataModelsComputeContext
         Inputs plus skip metadata for the compute node.
     """
-    target = graph.get(DATA_MODELS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, DATA_MODELS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return DataModelsComputeContext(inputs=None, skip=True)
+    if data_models__skip:
+        return DataModelsComputeContext(inputs=None, skip=True)
 
     inputs = load_data_models_inputs(gateway, env.snapshot)
     return DataModelsComputeContext(inputs=inputs, skip=False)
@@ -231,14 +396,9 @@ def t__data_models__compute(
     return compute_data_models_from_inputs(data_models_compute_context.inputs, env.snapshot)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(DATA_MODELS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(DATA_MODELS_TARGET_NAME),
-    table_key=value(DATA_MODELS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(DATA_MODELS_TABLE_KEY)),
+@save_rows(
+    context=DATA_MODELS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=DATA_MODELS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -260,14 +420,9 @@ def data_models__model_rows(
     return tuple(t__data_models__compute.model_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(DATA_MODEL_FIELDS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(DATA_MODELS_TARGET_NAME),
-    table_key=value(DATA_MODEL_FIELDS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(DATA_MODEL_FIELDS_TABLE_KEY)),
+@save_rows(
+    context=DATA_MODELS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=DATA_MODEL_FIELDS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -289,14 +444,9 @@ def data_models__field_rows(
     return tuple(t__data_models__compute.field_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(DATA_MODELS_TARGET_NAME),
-    table_key=value(DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(DATA_MODEL_RELATIONSHIPS_TABLE_KEY)),
+@save_rows(
+    context=DATA_MODELS_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=DATA_MODEL_RELATIONSHIPS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -322,9 +472,7 @@ def data_models__relationship_rows(
 def t__data_models(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__data_models: MaterializationMetadata,
-    m__analytics__data_model_fields: MaterializationMetadata,
-    m__analytics__data_model_relationships: MaterializationMetadata,
+    data_models__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Extract data models (dataclasses, Pydantic, etc.).
 
@@ -337,12 +485,8 @@ def t__data_models(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__data_models
-        Materialization metadata for analytics.data_models.
-    m__analytics__data_model_fields
-        Materialization metadata for analytics.data_model_fields.
-    m__analytics__data_model_relationships
-        Materialization metadata for analytics.data_model_relationships.
+    data_models__table_materializations
+        Materialization metadata for data model tables.
 
     Returns
     -------
@@ -356,26 +500,27 @@ def t__data_models(
     - analytics.data_model_fields
     - analytics.data_model_relationships
     """
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=DATA_MODELS_TARGET_NAME,
-        materializations={
-            DATA_MODELS_TABLE_KEY: m__analytics__data_models,
-            DATA_MODEL_FIELDS_TABLE_KEY: m__analytics__data_model_fields,
-            DATA_MODEL_RELATIONSHIPS_TABLE_KEY: m__analytics__data_model_relationships,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=DATA_MODELS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=data_models__table_materializations,
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(DATA_MODEL_USAGE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(DATA_MODEL_USAGE_TARGET_NAME),
-    table_key=value(DATA_MODEL_USAGE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(DATA_MODEL_USAGE_TABLE_KEY)),
+data_models__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=DATA_MODELS_TARGET_NAME,
+    table_keys=DATA_MODELS_TABLE_KEYS,
+)
+
+
+@save_rows(
+    context=DATA_MODEL_USAGE_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=DATA_MODEL_USAGE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -384,8 +529,9 @@ def t__data_models(
 )
 def t__data_model_usage__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
+    *,
+    data_model_usage__skip: bool,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.data_model_usage.
 
@@ -393,10 +539,10 @@ def t__data_model_usage__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for manifest-driven skip checks.
     gateway
         Storage gateway for analytics queries.
+    data_model_usage__skip
+        Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
@@ -404,19 +550,8 @@ def t__data_model_usage__compute(
         Row tuples for analytics.data_model_usage in schema order.
         Returns None when manifest-skip indicates the target is current.
     """
-    target = graph.get(DATA_MODEL_USAGE_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, DATA_MODEL_USAGE_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if data_model_usage__skip:
+        return None
 
     registry = build_registry(
         gateway=gateway,
@@ -443,7 +578,7 @@ def t__data_model_usage__compute(
 def t__data_model_usage(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__data_model_usage: MaterializationMetadata,
+    data_model_usage__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Track function-level data model usage.
 
@@ -453,7 +588,7 @@ def t__data_model_usage(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__data_model_usage
+    data_model_usage__table_materializations
         Materialization metadata for analytics.data_model_usage.
 
     Returns
@@ -461,13 +596,22 @@ def t__data_model_usage(
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=DATA_MODEL_USAGE_TARGET_NAME,
-        expected_table_key=DATA_MODEL_USAGE_TABLE_KEY,
-        materialization=m__analytics__data_model_usage,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=DATA_MODEL_USAGE_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=data_model_usage__table_materializations,
     )
+
+
+data_model_usage__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=DATA_MODEL_USAGE_TARGET_NAME,
+    table_keys=(DATA_MODEL_USAGE_TABLE_KEY,),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -486,15 +630,18 @@ class AstFeaturesResult:
 
 @tag_compute(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def t__function_ast_features__compute(
-    function_ast_features_registry: ResourceRegistry,
-) -> AstFeaturesResult:
+    function_ast_features_registry: ResourceRegistry | None,
+) -> AstFeaturesResult | None:
     """Compute AST-derived semantic features for functions.
 
     Returns
     -------
-    AstFeaturesResult
-        Feature map and optional error message.
+    AstFeaturesResult | None
+        Feature map and optional error message, or None when skipped.
     """
+    if function_ast_features_registry is None:
+        return None
+
     try:
         _ = function_ast_features_registry.require(CatalogProvider).get()
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
@@ -514,8 +661,8 @@ def t__function_ast_features__compute(
 def t__function_ast_features(
     env: BuildEnv,
     graph: TargetGraph,
-    t__function_ast_features__compute: AstFeaturesResult,
-    m__analytics__function_ast_features: MaterializationMetadata,
+    t__function_ast_features__compute: AstFeaturesResult | None,
+    function_ast_features__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """AST-derived semantic features for functions.
 
@@ -524,7 +671,10 @@ def t__function_ast_features(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    if not t__function_ast_features__compute.success:
+    if (
+        t__function_ast_features__compute is not None
+        and not t__function_ast_features__compute.success
+    ):
         options_hash = options_hash_for_target(env, FUNCTION_AST_FEATURES_TARGET_NAME)
         return TargetRunRecord(
             target=FUNCTION_AST_FEATURES_TARGET_NAME,
@@ -539,23 +689,20 @@ def t__function_ast_features(
             artifacts=(),
         )
 
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
-        expected_table_key=FUNCTION_AST_FEATURES_TABLE_KEY,
-        materialization=m__analytics__function_ast_features,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=function_ast_features__table_materializations,
     )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_AST_FEATURES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(FUNCTION_AST_FEATURES_TARGET_NAME),
-    table_key=value(FUNCTION_AST_FEATURES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_AST_FEATURES_TABLE_KEY)),
+@save_rows(
+    context=FUNCTION_AST_FEATURES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_AST_FEATURES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -564,7 +711,7 @@ def t__function_ast_features(
 )
 def function_ast_features__rows(
     env: BuildEnv,
-    t__function_ast_features__compute: AstFeaturesResult,
+    t__function_ast_features__compute: AstFeaturesResult | None,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Extract rows for analytics.function_ast_features table.
 
@@ -573,6 +720,9 @@ def function_ast_features__rows(
     tuple[tuple[object, ...], ...] | None
         Row tuples ready for materialization, or ``None`` when unavailable.
     """
+    if t__function_ast_features__compute is None:
+        return None
+
     if not t__function_ast_features__compute.success:
         return None
 
@@ -596,6 +746,13 @@ def function_ast_features__rows(
     return tuple(row_to_tuple(FUNCTION_AST_FEATURES_TABLE_KEY, row) for row in rows)
 
 
+function_ast_features__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=FUNCTION_AST_FEATURES_TARGET_NAME,
+    table_keys=(FUNCTION_AST_FEATURES_TABLE_KEY,),
+)
+
+
 # ---------------------------------------------------------------------------
 # profiles target
 # ---------------------------------------------------------------------------
@@ -607,15 +764,6 @@ class ProfilesComputeResult:
 
     module_table: str | None
     error: str | None = None
-
-
-@dataclass(frozen=True)
-class ProfilesMaterializations:
-    """Materialization metadata bundle for profile tables."""
-
-    function_profile: MaterializationMetadata
-    file_profile: MaterializationMetadata
-    module_profile: MaterializationMetadata
 
 
 def _build_function_profile_views(
@@ -638,10 +786,11 @@ def _build_function_profile_views(
 @tag_compute(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
     t__symbol_uses: TargetRunRecord,
+    *,
+    profiles__skip: bool,
 ) -> ProfilesComputeResult | None:
     """Build aggregated profiles for functions, files, and modules.
 
@@ -662,19 +811,8 @@ def t__profiles__compute(
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
 
-    target = graph.get(PROFILES_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, PROFILES_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if profiles__skip:
+        return None
 
     registry = build_registry(
         gateway=gateway,
@@ -704,14 +842,9 @@ def t__profiles__compute(
         return ProfilesComputeResult(module_table=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FUNCTION_PROFILE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(PROFILES_TARGET_NAME),
-    table_key=value(FUNCTION_PROFILE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FUNCTION_PROFILE_TABLE_KEY)),
+@save_rows(
+    context=PROFILES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FUNCTION_PROFILE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -740,14 +873,9 @@ def function_profile__rows(
     return tuple(row_to_tuple(FUNCTION_PROFILE_TABLE_KEY, row) for row in rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(FILE_PROFILE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(PROFILES_TARGET_NAME),
-    table_key=value(FILE_PROFILE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(FILE_PROFILE_TABLE_KEY)),
+@save_rows(
+    context=PROFILES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=FILE_PROFILE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -785,14 +913,9 @@ def file_profile__rows(
     return tuple(row_to_tuple(FILE_PROFILE_TABLE_KEY, row) for row in rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(MODULE_PROFILE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(PROFILES_TARGET_NAME),
-    table_key=value(MODULE_PROFILE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(MODULE_PROFILE_TABLE_KEY)),
+@save_rows(
+    context=PROFILES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=MODULE_PROFILE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -835,7 +958,7 @@ def t__profiles(
     env: BuildEnv,
     graph: TargetGraph,
     t__profiles__compute: ProfilesComputeResult | None,
-    profiles__materializations: ProfilesMaterializations,
+    profiles__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Denormalized profile tables for querying.
 
@@ -859,41 +982,48 @@ def t__profiles(
             artifacts=(),
         )
 
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=PROFILES_TARGET_NAME,
-        materializations={
-            FUNCTION_PROFILE_TABLE_KEY: profiles__materializations.function_profile,
-            FILE_PROFILE_TABLE_KEY: profiles__materializations.file_profile,
-            MODULE_PROFILE_TABLE_KEY: profiles__materializations.module_profile,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=PROFILES_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=profiles__table_materializations,
     )
 
 
-@tag_compute(domain="analytics", target=PROFILES_TARGET_NAME, target_="profiles__materializations")
-def profiles__materializations(
-    m__analytics__function_profile: MaterializationMetadata,
-    m__analytics__file_profile: MaterializationMetadata,
-    m__analytics__module_profile: MaterializationMetadata,
-) -> ProfilesMaterializations:
-    """Bundle profile materialization metadata for the profiles target.
-
-    Returns
-    -------
-    ProfilesMaterializations
-        Grouped metadata for profile table materializations.
-    """
-    return ProfilesMaterializations(
-        function_profile=m__analytics__function_profile,
-        file_profile=m__analytics__file_profile,
-        module_profile=m__analytics__module_profile,
-    )
+profiles__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=PROFILES_TARGET_NAME,
+    table_keys=PROFILES_TABLE_KEYS,
+)
 
 
 __all__ = [
     "AstFeaturesResult",
+    "DataModelsComputeContext",
     "ProfilesComputeResult",
+    "data_model_usage__hash_options",
+    "data_model_usage__skip",
+    "data_model_usage__table_materializations",
+    "data_models__field_rows",
+    "data_models__hash_options",
+    "data_models__model_rows",
+    "data_models__relationship_rows",
+    "data_models__skip",
+    "data_models__table_materializations",
+    "data_models_compute_context",
+    "file_profile__rows",
+    "function_ast_features__hash_options",
+    "function_ast_features__rows",
+    "function_ast_features__skip",
+    "function_ast_features__table_materializations",
+    "function_profile__rows",
+    "module_profile__rows",
+    "profiles__hash_options",
+    "profiles__skip",
+    "profiles__table_materializations",
     "t__data_model_usage",
     "t__data_model_usage__compute",
     "t__data_models",

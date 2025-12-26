@@ -1,4 +1,4 @@
-"""OpenTelemetry bootstrap and shared runtime access."""
+"""OpenTelemetry runtime bootstrap and shared access."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from functools import partial
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -84,8 +83,8 @@ from codeintel.core.config.settings import (
     SpanLimitSettings,
 )
 from codeintel.core.singleton import SingletonHolder
-from codeintel.observability.attributes import shape_attributes
-from codeintel.observability.config_validation import validate_otel_config_file
+from codeintel.observability.attribute_sanitizer import shape_attributes
+from codeintel.observability.config_loader import apply_otel_config_file, load_otel_config_file
 from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
 from codeintel.observability.instrumentation_registry import (
     InstrumentationRegistry,
@@ -119,62 +118,125 @@ class _LoggerProvider(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class ObservabilityConfig:
-    """Runtime configuration for OpenTelemetry bootstrap."""
+class ResourceConfig:
+    """Resource metadata for OpenTelemetry spans and metrics."""
 
-    enabled: bool = True
     service_name: str = "codeintel"
     service_version: str | None = None
     deployment_environment: str | None = None
     resource_attributes: tuple[tuple[str, str], ...] = ()
     propagators: tuple[str, ...] = ()
-    traces_sampler: str | None = None
-    traces_sampler_arg: float | None = None
-    config_file: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExporterConfig:
+    """Exporter settings for OpenTelemetry signals."""
+
     otlp: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
     otlp_traces: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
     otlp_metrics: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
     otlp_logs: OtlpExporterSettings = field(default_factory=OtlpExporterSettings)
-    export_traces: bool = True
-    export_metrics: bool = True
-    export_logs: bool = False
-    console_export: bool = False
-    prometheus_enabled: bool = False
-    logs_auto_instrument: bool = False
-    log_correlation: bool = False
-    logs_trace_filter: bool = False
-    traces_batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
-    logs_batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
-    metrics_export: MetricExportSettings = field(default_factory=MetricExportSettings)
+
+
+@dataclass(frozen=True, slots=True)
+class TraceConfig:
+    """Tracing configuration for OpenTelemetry."""
+
+    enabled: bool = True
+    sampler: str | None = None
+    sampler_arg: float | None = None
+    batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
     span_limits: SpanLimitSettings = field(default_factory=SpanLimitSettings)
-    log_limits: LogLimitSettings = field(default_factory=LogLimitSettings)
-    metrics_exemplar_filter: str | None = None
-    metric_views: MetricViewSettings = field(default_factory=MetricViewSettings)
+    console_export: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MetricConfig:
+    """Metric configuration for OpenTelemetry."""
+
+    enabled: bool = True
+    export: MetricExportSettings = field(default_factory=MetricExportSettings)
+    exemplar_filter: str | None = None
+    views: MetricViewSettings = field(default_factory=MetricViewSettings)
+    prometheus_enabled: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LogConfig:
+    """Log configuration for OpenTelemetry."""
+
+    enabled: bool = False
+    auto_instrument: bool = False
+    correlation: bool = False
+    trace_filter: bool = False
+    batch: BatchProcessorSettings = field(default_factory=BatchProcessorSettings)
+    limits: LogLimitSettings = field(default_factory=LogLimitSettings)
+
+
+@dataclass(frozen=True, slots=True)
+class CliTelemetryConfig:
+    """CLI telemetry configuration."""
+
+    enabled: bool = True
+    args_allowlist: tuple[str, ...] = ()
+    args_capture_mode: str = "names-only"
+
+
+@dataclass(frozen=True, slots=True)
+class TeardownConfig:
+    """Shutdown telemetry configuration."""
+
+    enabled: bool = True
+    task_sample_limit: int = 5
+    thread_sample_limit: int = 5
+    subprocess_sample_limit: int = 5
+
+
+@dataclass(frozen=True, slots=True)
+class DbTracingConfig:
+    """Database tracing configuration for DuckDB."""
+
+    enabled: bool = True
+    require_parent_span: bool = True
+    statement_mode: str = "hash"
+    statement_hash_len: int = 16
+    query_summary_max_len: int = 255
+    query_summary_max_targets: int = 6
+    query_summary_emit_ellipsis: bool = True
+    query_summary_hash_suspicious_targets: bool = True
+    query_summary_hash_len: int = 12
+    query_summary_hash_min_len: int = 64
+    query_summary_include_subquery_operations: bool = True
+    query_summary_include_multi_statement: bool = True
+    query_summary_span_name_hook: bool = False
+    emit_legacy_db_attributes: bool = False
+    query_text_policy: str = "never"
+    query_text_max_len: int = 4096
+    query_text_strip_comments: bool = True
+    query_text_collapse_in_lists: bool = True
+    query_parameter_enabled: bool = False
+    query_parameter_keys: tuple[str, ...] = ()
+    query_parameter_hash_keys: tuple[str, ...] = ()
+    query_parameter_require_in_sql: bool = True
+    query_parameter_max_str_len: int = 80
+
+
+@dataclass(frozen=True, slots=True)
+class ObservabilityConfig:
+    """Runtime configuration for OpenTelemetry bootstrap."""
+
+    enabled: bool = True
+    resources: ResourceConfig = field(default_factory=ResourceConfig)
+    exporters: ExporterConfig = field(default_factory=ExporterConfig)
+    traces: TraceConfig = field(default_factory=TraceConfig)
+    metrics: MetricConfig = field(default_factory=MetricConfig)
+    logs: LogConfig = field(default_factory=LogConfig)
+    cli: CliTelemetryConfig = field(default_factory=CliTelemetryConfig)
+    teardown: TeardownConfig = field(default_factory=TeardownConfig)
     grpc_observability: GrpcObservabilitySettings = field(default_factory=GrpcObservabilitySettings)
     hamilton_tracker: HamiltonTrackerSettings = field(default_factory=HamiltonTrackerSettings)
-    duckdb_tracing_enabled: bool = True
-    duckdb_require_parent_span: bool = True
-    duckdb_statement_mode: str = "hash"
-    duckdb_statement_hash_len: int = 16
-    duckdb_query_summary_max_len: int = 255
-    duckdb_query_summary_max_targets: int = 6
-    duckdb_query_summary_emit_ellipsis: bool = True
-    duckdb_query_summary_hash_suspicious_targets: bool = True
-    duckdb_query_summary_hash_len: int = 12
-    duckdb_query_summary_hash_min_len: int = 64
-    duckdb_query_summary_include_subquery_operations: bool = True
-    duckdb_query_summary_include_multi_statement: bool = True
-    db_query_summary_span_name_hook: bool = False
-    duckdb_emit_legacy_db_attributes: bool = False
-    duckdb_query_text_policy: str = "never"
-    duckdb_query_text_max_len: int = 4096
-    duckdb_query_text_strip_comments: bool = True
-    duckdb_query_text_collapse_in_lists: bool = True
-    duckdb_query_parameter_enabled: bool = False
-    duckdb_query_parameter_keys: tuple[str, ...] = ()
-    duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
-    duckdb_query_parameter_require_in_sql: bool = True
-    duckdb_query_parameter_max_str_len: int = 80
+    db_tracing: DbTracingConfig = field(default_factory=DbTracingConfig)
+    config_file: Path | None = None
     test_mode: TestTelemetryMode | None = None
     policy: ObservabilityPolicy = field(default_factory=ObservabilityPolicy)
 
@@ -200,29 +262,7 @@ class ObservabilityRuntime:
     policy: ObservabilityPolicy
     prometheus_enabled: bool = False
     grpc_observability: GrpcObservabilityHandle | None = None
-    duckdb_tracing_enabled: bool = True
-    duckdb_require_parent_span: bool = True
-    duckdb_statement_mode: str = "hash"
-    duckdb_statement_hash_len: int = 16
-    duckdb_query_summary_max_len: int = 255
-    duckdb_query_summary_max_targets: int = 6
-    duckdb_query_summary_emit_ellipsis: bool = True
-    duckdb_query_summary_hash_suspicious_targets: bool = True
-    duckdb_query_summary_hash_len: int = 12
-    duckdb_query_summary_hash_min_len: int = 64
-    duckdb_query_summary_include_subquery_operations: bool = True
-    duckdb_query_summary_include_multi_statement: bool = True
-    db_query_summary_span_name_hook: bool = False
-    duckdb_emit_legacy_db_attributes: bool = False
-    duckdb_query_text_policy: str = "never"
-    duckdb_query_text_max_len: int = 4096
-    duckdb_query_text_strip_comments: bool = True
-    duckdb_query_text_collapse_in_lists: bool = True
-    duckdb_query_parameter_enabled: bool = False
-    duckdb_query_parameter_keys: tuple[str, ...] = ()
-    duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
-    duckdb_query_parameter_require_in_sql: bool = True
-    duckdb_query_parameter_max_str_len: int = 80
+    db_tracing: DbTracingConfig = field(default_factory=DbTracingConfig)
     test_handles: TestTelemetryHandles | None = None
 
 
@@ -319,7 +359,9 @@ class ObservabilityRuntimeManager:
                 _force_flush_provider(tracer_provider, label="tracer", errors=errors) and flush_ok
             )
         if meter_provider is not None:
-            flush_ok = _force_flush_provider(meter_provider, label="meter", errors=errors) and flush_ok
+            flush_ok = (
+                _force_flush_provider(meter_provider, label="meter", errors=errors) and flush_ok
+            )
         if runtime.logger_provider is not None:
             flush_ok = (
                 _force_flush_provider(runtime.logger_provider, label="logger", errors=errors)
@@ -458,13 +500,13 @@ def _resolve_otlp(base: OtlpExporterSettings, override: OtlpExporterSettings) ->
 
 
 def _resolve_resource_attributes(config: ObservabilityConfig) -> dict[str, str]:
-    attrs = dict(config.resource_attributes)
-    attrs.setdefault("service.name", config.service_name)
-    service_version = config.service_version or _package_version()
+    attrs = dict(config.resources.resource_attributes)
+    attrs.setdefault("service.name", config.resources.service_name)
+    service_version = config.resources.service_version or _package_version()
     if service_version:
         attrs.setdefault("service.version", service_version)
-    if config.deployment_environment:
-        attrs.setdefault("deployment.environment.name", config.deployment_environment)
+    if config.resources.deployment_environment:
+        attrs.setdefault("deployment.environment.name", config.resources.deployment_environment)
     return attrs
 
 
@@ -497,11 +539,11 @@ def _build_span_limits(settings: SpanLimitSettings) -> SpanLimits | None:
 
 
 def _build_sampler(config: ObservabilityConfig) -> Sampler | None:
-    sampler = config.traces_sampler
+    sampler = config.traces.sampler
     if not sampler:
         return None
     normalized = sampler.strip().lower()
-    ratio = config.traces_sampler_arg if config.traces_sampler_arg is not None else 1.0
+    ratio = config.traces.sampler_arg if config.traces.sampler_arg is not None else 1.0
     mapping: dict[str, Sampler] = {
         "always_on": ALWAYS_ON,
         "always_off": ALWAYS_OFF,
@@ -520,9 +562,9 @@ def _build_sampler(config: ObservabilityConfig) -> Sampler | None:
 
 
 def _build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None:
-    if not config.metrics_exemplar_filter:
+    if not config.metrics.exemplar_filter:
         return None
-    normalized = config.metrics_exemplar_filter.strip().lower()
+    normalized = config.metrics.exemplar_filter.strip().lower()
     mapping: dict[str, ExemplarFilter] = {
         "always_on": AlwaysOnExemplarFilter(),
         "always_off": AlwaysOffExemplarFilter(),
@@ -532,7 +574,7 @@ def _build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None
     if result is None:
         LOG.warning(
             "Unsupported exemplar filter %s; using SDK default",
-            config.metrics_exemplar_filter,
+            config.metrics.exemplar_filter,
         )
     return result
 
@@ -540,42 +582,42 @@ def _build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None
 def _build_views(config: ObservabilityConfig) -> list[View]:
     views: list[View] = []
 
-    if config.metric_views.operation_duration_ms_buckets:
+    if config.metrics.views.operation_duration_ms_buckets:
         views.append(
             View(
                 instrument_name="codeintel.operation.duration_ms",
                 aggregation=ExplicitBucketHistogramAggregation(
-                    list(config.metric_views.operation_duration_ms_buckets)
+                    list(config.metrics.views.operation_duration_ms_buckets)
                 ),
             )
         )
 
-    if config.metric_views.query_duration_ms_buckets:
+    if config.metrics.views.query_duration_ms_buckets:
         views.append(
             View(
                 instrument_name="codeintel.query.duration_ms",
                 aggregation=ExplicitBucketHistogramAggregation(
-                    list(config.metric_views.query_duration_ms_buckets)
+                    list(config.metrics.views.query_duration_ms_buckets)
                 ),
             )
         )
 
-    if config.metric_views.http_duration_s_buckets:
+    if config.metrics.views.http_duration_s_buckets:
         views.append(
             View(
                 instrument_name="http.server.request.duration",
                 aggregation=ExplicitBucketHistogramAggregation(
-                    list(config.metric_views.http_duration_s_buckets)
+                    list(config.metrics.views.http_duration_s_buckets)
                 ),
             )
         )
 
-    if config.metric_views.grpc_duration_s_buckets:
+    if config.metrics.views.grpc_duration_s_buckets:
         views.append(
             View(
                 instrument_name="grpc.client.call.duration",
                 aggregation=ExplicitBucketHistogramAggregation(
-                    list(config.metric_views.grpc_duration_s_buckets)
+                    list(config.metrics.views.grpc_duration_s_buckets)
                 ),
             )
         )
@@ -583,7 +625,7 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
             View(
                 instrument_name="grpc.server.call.duration",
                 aggregation=ExplicitBucketHistogramAggregation(
-                    list(config.metric_views.grpc_duration_s_buckets)
+                    list(config.metrics.views.grpc_duration_s_buckets)
                 ),
             )
         )
@@ -740,11 +782,7 @@ def _filter_kwargs(
         params = inspect.signature(func).parameters
     except (TypeError, ValueError):
         return {key: value for key, value in candidates.items() if value is not None}
-    return {
-        key: value
-        for key, value in candidates.items()
-        if value is not None and key in params
-    }
+    return {key: value for key, value in candidates.items() if value is not None and key in params}
 
 
 def _build_otlp_trace_exporter(config: _ResolvedOtlp) -> object:
@@ -845,7 +883,7 @@ def _build_metric_reader_kwargs(settings: MetricExportSettings) -> dict[str, obj
 
 
 def _build_tracer_provider(config: ObservabilityConfig, resource: Resource) -> TracerProvider:
-    span_limits = _build_span_limits(config.span_limits)
+    span_limits = _build_span_limits(config.traces.span_limits)
     sampler = _build_sampler(config)
     tracer_provider = TracerProvider(
         sampler=sampler,
@@ -853,21 +891,21 @@ def _build_tracer_provider(config: ObservabilityConfig, resource: Resource) -> T
         span_limits=span_limits,
     )
 
-    if config.export_traces:
-        resolved = _resolve_otlp(config.otlp, config.otlp_traces)
+    if config.traces.enabled:
+        resolved = _resolve_otlp(config.exporters.otlp, config.exporters.otlp_traces)
         exporter = _build_otlp_trace_exporter(resolved)
         processor_kwargs = _filter_kwargs(
             cast("Callable[..., object]", BatchSpanProcessor),
-            _build_batch_kwargs(config.traces_batch),
+            _build_batch_kwargs(config.traces.batch),
         )
         processor_ctor = cast("Callable[..., object]", BatchSpanProcessor)
         processor = cast("SpanProcessor", processor_ctor(exporter, **processor_kwargs))
         tracer_provider.add_span_processor(processor)
 
-    if config.console_export:
+    if config.traces.console_export:
         tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
-    if config.db_query_summary_span_name_hook:
+    if config.db_tracing.query_summary_span_name_hook:
         processor = _db_query_summary_span_name_processor()
         if processor is not None:
             tracer_provider.add_span_processor(processor)
@@ -881,19 +919,19 @@ def _build_meter_provider(
 ) -> tuple[MeterProvider, bool]:
     metric_readers: list[MetricReader] = []
 
-    if config.export_metrics:
-        resolved = _resolve_otlp(config.otlp, config.otlp_metrics)
+    if config.metrics.enabled:
+        resolved = _resolve_otlp(config.exporters.otlp, config.exporters.otlp_metrics)
         exporter = _build_otlp_metric_exporter(resolved)
         reader_kwargs = _filter_kwargs(
             cast("Callable[..., object]", PeriodicExportingMetricReader),
-            _build_metric_reader_kwargs(config.metrics_export),
+            _build_metric_reader_kwargs(config.metrics.export),
         )
         reader_ctor = cast("Callable[..., object]", PeriodicExportingMetricReader)
         reader = cast("MetricReader", reader_ctor(exporter, **reader_kwargs))
         metric_readers.append(reader)
 
     prometheus_enabled = False
-    if config.prometheus_enabled:
+    if config.metrics.prometheus_enabled:
         metric_readers.append(PrometheusMetricReader())
         prometheus_enabled = True
 
@@ -925,10 +963,10 @@ def _build_logger_provider_with_handler(
     *,
     force_handler: bool,
 ) -> tuple[_LoggerProvider | None, logging.Handler | None]:
-    if not config.export_logs and not config.logs_auto_instrument and not force_handler:
+    if not config.logs.enabled and not config.logs.auto_instrument and not force_handler:
         return None, None
 
-    log_limits = _build_log_limits(config.log_limits)
+    log_limits = _build_log_limits(config.logs.limits)
     logger_kwargs: dict[str, object] = {"resource": resource}
     if log_limits is not None:
         logger_kwargs["log_record_limits"] = log_limits
@@ -941,13 +979,13 @@ def _build_logger_provider_with_handler(
     )
     logger_provider = logger_provider_ctor(**filtered_logger_kwargs)
 
-    if config.export_logs:
-        resolved = _resolve_otlp(config.otlp, config.otlp_logs)
+    if config.logs.enabled:
+        resolved = _resolve_otlp(config.exporters.otlp, config.exporters.otlp_logs)
         exporter = _build_otlp_log_exporter(resolved)
         batch_processor_cls = _get_batch_log_record_processor_cls()
         processor_kwargs = _filter_kwargs(
             cast("Callable[..., object]", batch_processor_cls),
-            _build_batch_kwargs(config.logs_batch),
+            _build_batch_kwargs(config.logs.batch),
         )
         batch_processor_ctor = cast("Callable[..., object]", batch_processor_cls)
         logger_provider.add_log_record_processor(batch_processor_ctor(exporter, **processor_kwargs))
@@ -957,14 +995,14 @@ def _build_logger_provider_with_handler(
     log_handler = handler_ctor(level=logging.NOTSET, logger_provider=logger_provider)
     root_logger = logging.getLogger()
     root_logger.addHandler(log_handler)
-    if config.logs_trace_filter:
+    if config.logs.trace_filter:
         log_handler.addFilter(_trace_sampled_log_filter())
 
     return logger_provider, log_handler
 
 
 def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRegistry) -> None:
-    if config.log_correlation or config.logs_auto_instrument:
+    if config.logs.correlation or config.logs.auto_instrument:
         root_logger = logging.getLogger()
         if not root_logger.handlers:
             logging.basicConfig(level=logging.INFO)
@@ -983,13 +1021,13 @@ def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRe
         else:
             registry.record_enabled(name)
 
-    if config.log_correlation or config.logs_auto_instrument:
+    if config.logs.correlation or config.logs.auto_instrument:
         logging_instrumentor = LoggingInstrumentor()
         instrument = getattr(logging_instrumentor, "instrument", None)
         if callable(instrument):
             logging_kwargs = _filter_kwargs(
                 instrument,
-                {"set_logging_format": config.logs_auto_instrument},
+                {"set_logging_format": config.logs.auto_instrument},
             )
         else:
             logging_kwargs = {}
@@ -1004,11 +1042,11 @@ def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRe
 
 
 def _configure_propagators(config: ObservabilityConfig) -> None:
-    if not config.propagators:
+    if not config.resources.propagators:
         return
 
     propagators: list[TextMapPropagator] = []
-    for name in config.propagators:
+    for name in config.resources.propagators:
         normalized = name.strip().lower()
         if not normalized:
             continue
@@ -1055,57 +1093,6 @@ def _load_propagator(module_name: str, symbol: str) -> TextMapPropagator | None:
     if isinstance(instance, TextMapPropagator):
         return instance
     return None
-
-
-def _apply_config_file(path: Path) -> bool:
-    otel_config = _load_module(
-        "opentelemetry.sdk._configuration",
-        label="OpenTelemetry SDK configuration",
-    )
-
-    candidates: list[Callable[..., object]] = []
-    for name in ("configure", "configure_otel", "initialize", "init", "load"):
-        value = getattr(otel_config, name, None)
-        if callable(value):
-            candidates.append(value)
-
-    configurator_cls = getattr(otel_config, "Configurator", None)
-    if configurator_cls is not None:
-        configurator = configurator_cls()
-        configure = getattr(configurator, "configure", None)
-        if callable(configure):
-            candidates.append(configure)
-
-    for candidate in candidates:
-        if _call_configurator(candidate, path):
-            return True
-
-    LOG.warning("No compatible OpenTelemetry configuration entrypoint found")
-    return False
-
-
-def _call_configurator(func: Callable[..., object], path: Path) -> bool:
-    config_value = str(path)
-    attempts: tuple[Callable[[], object], ...] = (
-        partial(func, config_file=config_value),
-        partial(func, config_file_path=config_value),
-        partial(func, path=config_value),
-        partial(func, config_value),
-        partial(func),
-    )
-
-    for attempt in attempts:
-        try:
-            attempt()
-        except TypeError:
-            continue
-        except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
-            LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
-            return False
-        else:
-            return True
-
-    return False
 
 
 def _trace_sampled_log_filter() -> logging.Filter:
@@ -1174,29 +1161,7 @@ def _disabled_runtime() -> ObservabilityRuntime:
         policy=ObservabilityPolicy(),
         prometheus_enabled=False,
         grpc_observability=None,
-        duckdb_tracing_enabled=False,
-        duckdb_require_parent_span=True,
-        duckdb_statement_mode="hash",
-        duckdb_statement_hash_len=16,
-        duckdb_query_summary_max_len=255,
-        duckdb_query_summary_max_targets=6,
-        duckdb_query_summary_emit_ellipsis=True,
-        duckdb_query_summary_hash_suspicious_targets=True,
-        duckdb_query_summary_hash_len=12,
-        duckdb_query_summary_hash_min_len=64,
-        duckdb_query_summary_include_subquery_operations=True,
-        duckdb_query_summary_include_multi_statement=True,
-        db_query_summary_span_name_hook=False,
-        duckdb_emit_legacy_db_attributes=False,
-        duckdb_query_text_policy="never",
-        duckdb_query_text_max_len=4096,
-        duckdb_query_text_strip_comments=True,
-        duckdb_query_text_collapse_in_lists=True,
-        duckdb_query_parameter_enabled=False,
-        duckdb_query_parameter_keys=(),
-        duckdb_query_parameter_hash_keys=(),
-        duckdb_query_parameter_require_in_sql=True,
-        duckdb_query_parameter_max_str_len=80,
+        db_tracing=DbTracingConfig(enabled=False),
     )
 
 
@@ -1241,8 +1206,8 @@ def _runtime_from_global(
 ) -> ObservabilityRuntime:
     tracer_provider = cast("TracerProvider", otel_trace.get_tracer_provider())
     meter_provider = cast("MeterProvider", otel_metrics.get_meter_provider())
-    tracer = otel_trace.get_tracer(config.service_name)
-    meter = otel_metrics.get_meter(config.service_name)
+    tracer = otel_trace.get_tracer(config.resources.service_name)
+    meter = otel_metrics.get_meter(config.resources.service_name)
     shutdown = _build_shutdown(
         tracer_provider,
         meter_provider,
@@ -1260,52 +1225,40 @@ def _runtime_from_global(
         policy=config.policy,
         prometheus_enabled=prometheus_enabled,
         grpc_observability=grpc_handle,
-        duckdb_tracing_enabled=config.duckdb_tracing_enabled,
-        duckdb_require_parent_span=config.duckdb_require_parent_span,
-        duckdb_statement_mode=config.duckdb_statement_mode,
-        duckdb_statement_hash_len=config.duckdb_statement_hash_len,
-        duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
-        duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
-        duckdb_query_summary_emit_ellipsis=config.duckdb_query_summary_emit_ellipsis,
-        duckdb_query_summary_hash_suspicious_targets=(
-            config.duckdb_query_summary_hash_suspicious_targets
-        ),
-        duckdb_query_summary_hash_len=config.duckdb_query_summary_hash_len,
-        duckdb_query_summary_hash_min_len=config.duckdb_query_summary_hash_min_len,
-        duckdb_query_summary_include_subquery_operations=(
-            config.duckdb_query_summary_include_subquery_operations
-        ),
-        duckdb_query_summary_include_multi_statement=(
-            config.duckdb_query_summary_include_multi_statement
-        ),
-        db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
-        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
-        duckdb_query_text_policy=config.duckdb_query_text_policy,
-        duckdb_query_text_max_len=config.duckdb_query_text_max_len,
-        duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
-        duckdb_query_text_collapse_in_lists=config.duckdb_query_text_collapse_in_lists,
-        duckdb_query_parameter_enabled=config.duckdb_query_parameter_enabled,
-        duckdb_query_parameter_keys=config.duckdb_query_parameter_keys,
-        duckdb_query_parameter_hash_keys=config.duckdb_query_parameter_hash_keys,
-        duckdb_query_parameter_require_in_sql=config.duckdb_query_parameter_require_in_sql,
-        duckdb_query_parameter_max_str_len=config.duckdb_query_parameter_max_str_len,
+        db_tracing=config.db_tracing,
     )
 
 
 def _apply_collector_local_config(config: ObservabilityConfig) -> ObservabilityConfig:
-    local_otlp = replace(config.otlp, endpoint="http://localhost:4317", protocol="grpc")
-    local_traces = replace(config.otlp_traces, endpoint="http://localhost:4317", protocol="grpc")
-    local_metrics = replace(config.otlp_metrics, endpoint="http://localhost:4317", protocol="grpc")
-    local_logs = replace(config.otlp_logs, endpoint="http://localhost:4317", protocol="grpc")
-    return replace(
-        config,
+    local_otlp = replace(config.exporters.otlp, endpoint="http://localhost:4317", protocol="grpc")
+    local_traces = replace(
+        config.exporters.otlp_traces,
+        endpoint="http://localhost:4317",
+        protocol="grpc",
+    )
+    local_metrics = replace(
+        config.exporters.otlp_metrics,
+        endpoint="http://localhost:4317",
+        protocol="grpc",
+    )
+    local_logs = replace(
+        config.exporters.otlp_logs,
+        endpoint="http://localhost:4317",
+        protocol="grpc",
+    )
+    exporters = replace(
+        config.exporters,
         otlp=local_otlp,
         otlp_traces=local_traces,
         otlp_metrics=local_metrics,
         otlp_logs=local_logs,
+    )
+    return replace(
+        config,
+        exporters=exporters,
         config_file=None,
-        console_export=False,
-        prometheus_enabled=False,
+        traces=replace(config.traces, console_export=False),
+        metrics=replace(config.metrics, prometheus_enabled=False),
     )
 
 
@@ -1322,7 +1275,7 @@ def _runtime_from_in_memory(
     registry: InstrumentationRegistry,
 ) -> ObservabilityRuntime:
     resource = _build_resource(config)
-    span_limits = _build_span_limits(config.span_limits)
+    span_limits = _build_span_limits(config.traces.span_limits)
     span_exporter = InMemorySpanExporter()
     tracer_provider = TracerProvider(
         sampler=ALWAYS_ON,
@@ -1331,7 +1284,7 @@ def _runtime_from_in_memory(
     )
     tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
     otel_trace.set_tracer_provider(tracer_provider)
-    tracer = otel_trace.get_tracer(config.service_name)
+    tracer = otel_trace.get_tracer(config.resources.service_name)
 
     metric_reader = InMemoryMetricReader()
     meter_provider = MeterProvider(
@@ -1341,7 +1294,7 @@ def _runtime_from_in_memory(
         views=_build_views(config),
     )
     otel_metrics.set_meter_provider(meter_provider)
-    meter = otel_metrics.get_meter(config.service_name)
+    meter = otel_metrics.get_meter(config.resources.service_name)
 
     _instrument_runtime(config, registry)
 
@@ -1366,35 +1319,7 @@ def _runtime_from_in_memory(
         policy=config.policy,
         prometheus_enabled=False,
         grpc_observability=None,
-        duckdb_tracing_enabled=config.duckdb_tracing_enabled,
-        duckdb_require_parent_span=config.duckdb_require_parent_span,
-        duckdb_statement_mode=config.duckdb_statement_mode,
-        duckdb_statement_hash_len=config.duckdb_statement_hash_len,
-        duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
-        duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
-        duckdb_query_summary_emit_ellipsis=config.duckdb_query_summary_emit_ellipsis,
-        duckdb_query_summary_hash_suspicious_targets=(
-            config.duckdb_query_summary_hash_suspicious_targets
-        ),
-        duckdb_query_summary_hash_len=config.duckdb_query_summary_hash_len,
-        duckdb_query_summary_hash_min_len=config.duckdb_query_summary_hash_min_len,
-        duckdb_query_summary_include_subquery_operations=(
-            config.duckdb_query_summary_include_subquery_operations
-        ),
-        duckdb_query_summary_include_multi_statement=(
-            config.duckdb_query_summary_include_multi_statement
-        ),
-        db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
-        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
-        duckdb_query_text_policy=config.duckdb_query_text_policy,
-        duckdb_query_text_max_len=config.duckdb_query_text_max_len,
-        duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
-        duckdb_query_text_collapse_in_lists=config.duckdb_query_text_collapse_in_lists,
-        duckdb_query_parameter_enabled=config.duckdb_query_parameter_enabled,
-        duckdb_query_parameter_keys=config.duckdb_query_parameter_keys,
-        duckdb_query_parameter_hash_keys=config.duckdb_query_parameter_hash_keys,
-        duckdb_query_parameter_require_in_sql=config.duckdb_query_parameter_require_in_sql,
-        duckdb_query_parameter_max_str_len=config.duckdb_query_parameter_max_str_len,
+        db_tracing=config.db_tracing,
         test_handles=TestTelemetryHandles(
             span_exporter=span_exporter,
             metric_reader=metric_reader,
@@ -1410,13 +1335,13 @@ def _runtime_from_config_file(
         return None
 
     try:
-        validate_otel_config_file(config.config_file)
+        load_otel_config_file(config.config_file)
     except (ValueError, FileNotFoundError) as exc:
         message = f"Invalid OpenTelemetry config file: {exc}"
         raise RuntimeError(message) from exc
 
     try:
-        configured = _apply_config_file(config.config_file)
+        configured = apply_otel_config_file(config.config_file)
     except RuntimeError as exc:
         LOG.warning("Failed to apply OTEL config file %s: %s", config.config_file, exc)
         return None
@@ -1429,9 +1354,7 @@ def _runtime_from_config_file(
 
     tracer_provider = otel_trace.get_tracer_provider()
     meter_provider = otel_metrics.get_meter_provider()
-    if not _is_sdk_tracer_provider(tracer_provider) or not _is_sdk_meter_provider(
-        meter_provider
-    ):
+    if not _is_sdk_tracer_provider(tracer_provider) or not _is_sdk_meter_provider(meter_provider):
         LOG.warning(
             "OTEL config file did not initialize SDK providers; falling back to manual config"
         )
@@ -1455,7 +1378,7 @@ def _runtime_from_config_file(
                 logger_provider=logger_provider,
             )
             logging.getLogger().addHandler(log_handler)
-            if config.logs_trace_filter:
+            if config.logs.trace_filter:
                 log_handler.addFilter(_trace_sampled_log_filter())
 
     grpc_handle = register_grpc_observability(
@@ -1464,13 +1387,13 @@ def _runtime_from_config_file(
         registry=registry,
     )
     registry.emit_summary(LOG)
-    registry.emit_metrics(otel_metrics.get_meter(config.service_name))
+    registry.emit_metrics(otel_metrics.get_meter(config.resources.service_name))
     return _runtime_from_global(
         config,
         log_handler=log_handler,
         logger_provider=logger_provider,
         grpc_handle=grpc_handle,
-        prometheus_enabled=config.prometheus_enabled,
+        prometheus_enabled=config.metrics.prometheus_enabled,
     )
 
 
@@ -1484,11 +1407,11 @@ def _runtime_from_manual_config(
 
     tracer_provider = _build_tracer_provider(config, resource)
     otel_trace.set_tracer_provider(tracer_provider)
-    tracer = otel_trace.get_tracer(config.service_name)
+    tracer = otel_trace.get_tracer(config.resources.service_name)
 
     meter_provider, prometheus_enabled = _build_meter_provider(config, resource)
     otel_metrics.set_meter_provider(meter_provider)
-    meter = otel_metrics.get_meter(config.service_name)
+    meter = otel_metrics.get_meter(config.resources.service_name)
 
     logger_provider, log_handler = _build_logger_provider_with_handler(
         config,
@@ -1530,35 +1453,7 @@ def _runtime_from_manual_config(
         policy=config.policy,
         prometheus_enabled=prometheus_enabled,
         grpc_observability=grpc_handle,
-        duckdb_tracing_enabled=config.duckdb_tracing_enabled,
-        duckdb_require_parent_span=config.duckdb_require_parent_span,
-        duckdb_statement_mode=config.duckdb_statement_mode,
-        duckdb_statement_hash_len=config.duckdb_statement_hash_len,
-        duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
-        duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
-        duckdb_query_summary_emit_ellipsis=config.duckdb_query_summary_emit_ellipsis,
-        duckdb_query_summary_hash_suspicious_targets=(
-            config.duckdb_query_summary_hash_suspicious_targets
-        ),
-        duckdb_query_summary_hash_len=config.duckdb_query_summary_hash_len,
-        duckdb_query_summary_hash_min_len=config.duckdb_query_summary_hash_min_len,
-        duckdb_query_summary_include_subquery_operations=(
-            config.duckdb_query_summary_include_subquery_operations
-        ),
-        duckdb_query_summary_include_multi_statement=(
-            config.duckdb_query_summary_include_multi_statement
-        ),
-        db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
-        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
-        duckdb_query_text_policy=config.duckdb_query_text_policy,
-        duckdb_query_text_max_len=config.duckdb_query_text_max_len,
-        duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
-        duckdb_query_text_collapse_in_lists=config.duckdb_query_text_collapse_in_lists,
-        duckdb_query_parameter_enabled=config.duckdb_query_parameter_enabled,
-        duckdb_query_parameter_keys=config.duckdb_query_parameter_keys,
-        duckdb_query_parameter_hash_keys=config.duckdb_query_parameter_hash_keys,
-        duckdb_query_parameter_require_in_sql=config.duckdb_query_parameter_require_in_sql,
-        duckdb_query_parameter_max_str_len=config.duckdb_query_parameter_max_str_len,
+        db_tracing=config.db_tracing,
     )
 
 
@@ -1741,78 +1636,115 @@ def observability_config_from_settings(
         Configuration derived from runtime settings.
     """
     service_name = settings.service_name or default_service_name
-    return ObservabilityConfig(
-        enabled=settings.enabled,
+    resources = ResourceConfig(
         service_name=service_name,
         service_version=settings.service_version,
         deployment_environment=settings.deployment_environment,
         resource_attributes=settings.resource_attributes,
         propagators=settings.propagators,
-        traces_sampler=settings.traces_sampler,
-        traces_sampler_arg=settings.traces_sampler_arg,
-        config_file=settings.config_file,
+    )
+    exporters = ExporterConfig(
         otlp=settings.otlp,
         otlp_traces=settings.otlp_traces,
         otlp_metrics=settings.otlp_metrics,
         otlp_logs=settings.otlp_logs,
-        export_traces=settings.export_traces,
-        export_metrics=settings.export_metrics,
-        export_logs=settings.export_logs,
-        console_export=settings.console_export,
-        prometheus_enabled=settings.prometheus_enabled,
-        logs_auto_instrument=settings.logs_auto_instrument,
-        log_correlation=settings.log_correlation,
-        logs_trace_filter=settings.logs_trace_filter,
-        traces_batch=settings.traces_batch,
-        logs_batch=settings.logs_batch,
-        metrics_export=settings.metrics_export,
+    )
+    traces = TraceConfig(
+        enabled=settings.export_traces,
+        sampler=settings.traces_sampler,
+        sampler_arg=settings.traces_sampler_arg,
+        batch=settings.traces_batch,
         span_limits=settings.span_limits,
-        log_limits=settings.log_limits,
-        metrics_exemplar_filter=settings.metrics_exemplar_filter,
-        metric_views=settings.metric_views,
-        grpc_observability=settings.grpc_observability,
-        hamilton_tracker=settings.hamilton_tracker,
-        duckdb_tracing_enabled=settings.duckdb_tracing_enabled,
-        duckdb_require_parent_span=settings.duckdb_require_parent_span,
-        duckdb_statement_mode=settings.duckdb_statement_mode,
-        duckdb_statement_hash_len=settings.duckdb_statement_hash_len,
-        duckdb_query_summary_max_len=settings.duckdb_query_summary_max_len,
-        duckdb_query_summary_max_targets=settings.duckdb_query_summary_max_targets,
-        duckdb_query_summary_emit_ellipsis=settings.duckdb_query_summary_emit_ellipsis,
-        duckdb_query_summary_hash_suspicious_targets=(
+        console_export=settings.console_export,
+    )
+    metrics = MetricConfig(
+        enabled=settings.export_metrics,
+        export=settings.metrics_export,
+        exemplar_filter=settings.metrics_exemplar_filter,
+        views=settings.metric_views,
+        prometheus_enabled=settings.prometheus_enabled,
+    )
+    logs = LogConfig(
+        enabled=settings.export_logs,
+        auto_instrument=settings.logs_auto_instrument,
+        correlation=settings.log_correlation,
+        trace_filter=settings.logs_trace_filter,
+        batch=settings.logs_batch,
+        limits=settings.log_limits,
+    )
+    cli = CliTelemetryConfig(
+        enabled=settings.cli_enabled,
+        args_allowlist=settings.cli_args_allowlist,
+        args_capture_mode=settings.cli_args_capture_mode,
+    )
+    teardown = TeardownConfig(
+        enabled=settings.teardown_enabled,
+        task_sample_limit=settings.teardown_task_sample_limit,
+        thread_sample_limit=settings.teardown_thread_sample_limit,
+        subprocess_sample_limit=settings.teardown_subprocess_sample_limit,
+    )
+    db_tracing = DbTracingConfig(
+        enabled=settings.duckdb_tracing_enabled,
+        require_parent_span=settings.duckdb_require_parent_span,
+        statement_mode=settings.duckdb_statement_mode,
+        statement_hash_len=settings.duckdb_statement_hash_len,
+        query_summary_max_len=settings.duckdb_query_summary_max_len,
+        query_summary_max_targets=settings.duckdb_query_summary_max_targets,
+        query_summary_emit_ellipsis=settings.duckdb_query_summary_emit_ellipsis,
+        query_summary_hash_suspicious_targets=(
             settings.duckdb_query_summary_hash_suspicious_targets
         ),
-        duckdb_query_summary_hash_len=settings.duckdb_query_summary_hash_len,
-        duckdb_query_summary_hash_min_len=settings.duckdb_query_summary_hash_min_len,
-        duckdb_query_summary_include_subquery_operations=(
+        query_summary_hash_len=settings.duckdb_query_summary_hash_len,
+        query_summary_hash_min_len=settings.duckdb_query_summary_hash_min_len,
+        query_summary_include_subquery_operations=(
             settings.duckdb_query_summary_include_subquery_operations
         ),
-        duckdb_query_summary_include_multi_statement=(
-            settings.duckdb_query_summary_include_multi_statement
-        ),
-        db_query_summary_span_name_hook=settings.db_query_summary_span_name_hook,
-        duckdb_emit_legacy_db_attributes=settings.duckdb_emit_legacy_db_attributes,
-        duckdb_query_text_policy=settings.duckdb_query_text_policy,
-        duckdb_query_text_max_len=settings.duckdb_query_text_max_len,
-        duckdb_query_text_strip_comments=settings.duckdb_query_text_strip_comments,
-        duckdb_query_text_collapse_in_lists=settings.duckdb_query_text_collapse_in_lists,
-        duckdb_query_parameter_enabled=settings.duckdb_query_parameter_enabled,
-        duckdb_query_parameter_keys=settings.duckdb_query_parameter_keys,
-        duckdb_query_parameter_hash_keys=settings.duckdb_query_parameter_hash_keys,
-        duckdb_query_parameter_require_in_sql=settings.duckdb_query_parameter_require_in_sql,
-        duckdb_query_parameter_max_str_len=settings.duckdb_query_parameter_max_str_len,
+        query_summary_include_multi_statement=settings.duckdb_query_summary_include_multi_statement,
+        query_summary_span_name_hook=settings.db_query_summary_span_name_hook,
+        emit_legacy_db_attributes=settings.duckdb_emit_legacy_db_attributes,
+        query_text_policy=settings.duckdb_query_text_policy,
+        query_text_max_len=settings.duckdb_query_text_max_len,
+        query_text_strip_comments=settings.duckdb_query_text_strip_comments,
+        query_text_collapse_in_lists=settings.duckdb_query_text_collapse_in_lists,
+        query_parameter_enabled=settings.duckdb_query_parameter_enabled,
+        query_parameter_keys=settings.duckdb_query_parameter_keys,
+        query_parameter_hash_keys=settings.duckdb_query_parameter_hash_keys,
+        query_parameter_require_in_sql=settings.duckdb_query_parameter_require_in_sql,
+        query_parameter_max_str_len=settings.duckdb_query_parameter_max_str_len,
+    )
+    return ObservabilityConfig(
+        enabled=settings.enabled,
+        resources=resources,
+        exporters=exporters,
+        traces=traces,
+        metrics=metrics,
+        logs=logs,
+        cli=cli,
+        teardown=teardown,
+        grpc_observability=settings.grpc_observability,
+        hamilton_tracker=settings.hamilton_tracker,
+        db_tracing=db_tracing,
+        config_file=settings.config_file,
         test_mode=resolve_test_telemetry_mode(),
         policy=policy_from_settings(settings),
     )
 
 
 __all__ = [
+    "CliTelemetryConfig",
+    "DbTracingConfig",
+    "ExporterConfig",
+    "LogConfig",
+    "MetricConfig",
     "ObservabilityConfig",
     "ObservabilityRuntime",
     "ObservabilityRuntimeManager",
     "ObservabilityShutdownResult",
     "PipelineHealthState",
+    "ResourceConfig",
     "TestTelemetryHandles",
+    "TeardownConfig",
+    "TraceConfig",
     "bootstrap_observability",
     "build_exemplar_filter",
     "build_metric_views",

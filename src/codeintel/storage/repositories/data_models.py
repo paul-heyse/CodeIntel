@@ -154,22 +154,19 @@ class DataModelsRepository(BaseRepository):
                 goids.commit == modules.commit,
             ],
         )
-        expr = (
-            joined.filter(
-                and_predicates(
-                    goids.repo == self.repo,
-                    goids.commit == self.commit,
-                    goids.kind == "class",
-                )
+        expr = joined.filter(
+            and_predicates(
+                goids.repo == self.repo,
+                goids.commit == self.commit,
+                goids.kind == "class",
             )
-            .select(
-                goids.goid_h128.name("goid_h128"),
-                goids.rel_path,
-                goids.qualname,
-                goids.start_line,
-                goids.end_line,
-                modules.module.name("module"),
-            )
+        ).select(
+            goids.goid_h128.name("goid_h128"),
+            goids.rel_path,
+            goids.qualname,
+            goids.start_line,
+            goids.end_line,
+            modules.module.name("module"),
         )
         return self._ibis_to_dicts(expr)
 
@@ -182,20 +179,17 @@ class DataModelsRepository(BaseRepository):
             Raw docstring rows keyed by path + qualname.
         """
         docstrings = self._ibis_table("core.docstrings")
-        expr = (
-            docstrings.filter(
-                and_predicates(
-                    docstrings.repo == self.repo,
-                    docstrings.commit == self.commit,
-                    docstrings.kind == "class",
-                )
+        expr = docstrings.filter(
+            and_predicates(
+                docstrings.repo == self.repo,
+                docstrings.commit == self.commit,
+                docstrings.kind == "class",
             )
-            .select(
-                docstrings.rel_path,
-                docstrings.qualname,
-                docstrings.short_desc,
-                docstrings.long_desc,
-            )
+        ).select(
+            docstrings.rel_path,
+            docstrings.qualname,
+            docstrings.short_desc,
+            docstrings.long_desc,
         )
         return self._ibis_to_dicts(expr)
 

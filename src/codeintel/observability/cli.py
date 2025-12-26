@@ -30,13 +30,20 @@ from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.base import CodeIntelError
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.attribute_taxonomy import limit_cli_arg_names
-from codeintel.observability.otel import (
+from codeintel.observability.attribute_sanitizer import limit_cli_arg_names
+from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.runtime import (
     ObservabilityRuntime,
     get_observability,
     shutdown_observability,
 )
-from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.semconv_keys import (
+    CLI_COMMAND,
+    CLI_ERROR_TYPE,
+    CLI_EXIT_CODE,
+    CLI_INVOCATION_ID,
+    CLI_IS_PARSE_ERROR,
+)
 from codeintel.observability.test_mode import should_shutdown_observability_per_command
 
 if TYPE_CHECKING:
@@ -272,10 +279,10 @@ def _set_span_context(
         return
     bounded_arg_names = limit_cli_arg_names(
         arg_names,
-        max_len=policy.cli_arg_names_max,
+        max_len=policy.budget.cli_arg_names_max,
     )
-    span.set_attribute("cli.invocation_id", invocation_id)
-    span.set_attribute("cli.command", ".".join(command_chain) if command_chain else "<unknown>")
+    span.set_attribute(CLI_INVOCATION_ID, invocation_id)
+    span.set_attribute(CLI_COMMAND, ".".join(command_chain) if command_chain else "<unknown>")
     span.set_attribute("cli.arg_count", len(arg_names))
     if bounded_arg_names:
         span.set_attribute("cli.arg_names", [*bounded_arg_names])
@@ -291,13 +298,13 @@ def _finalize_span(span: Span | None, *, state: _InvocationState, exit_code: int
     if span is None:
         return
     duration_ms = (time.perf_counter() - state.start_ts) * 1000
-    span.set_attribute("cli.exit_code", exit_code)
+    span.set_attribute(CLI_EXIT_CODE, exit_code)
     span.set_attribute("cli.duration_ms", duration_ms)
-    span.set_attribute("cli.is_parse_error", state.is_parse_error)
+    span.set_attribute(CLI_IS_PARSE_ERROR, state.is_parse_error)
     if state.parse_duration_ms is not None:
         span.set_attribute("cli.parse_duration_ms", state.parse_duration_ms)
     if state.error_type is not None:
-        span.set_attribute("cli.error_type", state.error_type)
+        span.set_attribute(CLI_ERROR_TYPE, state.error_type)
 
 
 def _get_cli_instruments(meter: Meter) -> _CliInstruments:
@@ -342,24 +349,24 @@ def _record_cli_metrics(
     instruments = _get_cli_instruments(obs.meter)
     command = _command_label(state.command_chain)
     attrs: dict[str, str | bool | int | float] = {
-        "cli.command": command,
-        "cli.exit_code": exit_code,
-        "cli.is_parse_error": state.is_parse_error,
+        CLI_COMMAND: command,
+        CLI_EXIT_CODE: exit_code,
+        CLI_IS_PARSE_ERROR: state.is_parse_error,
     }
     if state.error_type is not None:
-        attrs["cli.error_type"] = state.error_type
+        attrs[CLI_ERROR_TYPE] = state.error_type
     instruments.invocation_count.add(1, attributes=attrs)
     invocation_duration_ms = (time.perf_counter() - state.start_ts) * 1000
     instruments.invocation_duration_ms.record(invocation_duration_ms, attributes=attrs)
     if state.parse_duration_ms is not None:
         instruments.parse_duration_ms.record(
             state.parse_duration_ms,
-            attributes={"cli.command": command},
+            attributes={CLI_COMMAND: command},
         )
     if state.is_parse_error:
-        error_attrs: dict[str, str | bool | int | float] = {"cli.command": command}
+        error_attrs: dict[str, str | bool | int | float] = {CLI_COMMAND: command}
         if state.error_type is not None:
-            error_attrs["cli.error_type"] = state.error_type
+            error_attrs[CLI_ERROR_TYPE] = state.error_type
         instruments.parse_errors.add(1, attributes=error_attrs)
 
 

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from codeintel.cli.config import load_config as load_cli_config
 from codeintel.cli.observability._observability import configure_structured_logging
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
     ObservabilityConfig,
     bootstrap_observability,
     observability_config_from_settings,

@@ -1015,9 +1015,7 @@ def t__goids__extract(
     - core.goid_crosswalk: GOID crosswalk records
     """
     if t__modules.status != "succeeded":
-        return ExecutionResult.failed(
-            f"Upstream modules target failed: {t__modules.error}"
-        )
+        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
 
     try:
         repo = env.snapshot.repo
@@ -1174,9 +1172,7 @@ def t__symbol_uses__extract(
 
         if not occurrences:
             log.info("symbol_uses: No SCIP occurrences found, skipping")
-            return ExecutionResult.ok(
-                table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0}
-            )
+            return ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0})
 
         occurrences = _filter_symbol_occurrences(occurrences, options=opts)
 
@@ -1199,9 +1195,7 @@ def t__symbol_uses__extract(
             options=materialize_options(env, owner_target=SYMBOL_USES_TARGET_NAME),
         )
         row_count = int(row_result.rows_written or 0)
-        return ExecutionResult.ok(
-            table_counts={SYMBOL_USE_EDGES_TABLE_KEY: row_count}
-        )
+        return ExecutionResult.ok(table_counts={SYMBOL_USE_EDGES_TABLE_KEY: row_count})
     except (RuntimeError, ValueError, OSError, KeyError) as exc:
         log.exception("symbol_uses: extraction failed")
         return ExecutionResult.failed(str(exc))

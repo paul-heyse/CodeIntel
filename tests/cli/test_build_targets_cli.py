@@ -56,9 +56,7 @@ def test_build_targets_cli_pilot_only() -> None:
 def test_build_targets_cli_table_key_filter() -> None:
     """Table key filter should constrain outputs to matching table_keys."""
     table_key = "analytics.function_metrics"
-    result = run_cli(
-        ["build", "targets", "--table-key", table_key, "--output-format", "json"]
-    )
+    result = run_cli(["build", "targets", "--table-key", table_key, "--output-format", "json"])
     assert_success(result)
 
     data = _load_build_targets(result.stdout)

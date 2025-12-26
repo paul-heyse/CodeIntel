@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.observability.otel import (
+from codeintel.observability.runtime import (
+    LogConfig,
+    MetricConfig,
     ObservabilityConfig,
+    ResourceConfig,
+    TraceConfig,
     bootstrap_observability,
     flush_observability,
     get_observability,
@@ -30,12 +34,10 @@ def test_runtime_manager_records_pipeline_health() -> None:
     _ = bootstrap_observability(
         ObservabilityConfig(
             enabled=True,
-            service_name="codeintel-test",
-            export_traces=False,
-            export_metrics=False,
-            export_logs=False,
-            console_export=False,
-            prometheus_enabled=False,
+            resources=ResourceConfig(service_name="codeintel-test"),
+            traces=TraceConfig(enabled=False),
+            metrics=MetricConfig(enabled=False, prometheus_enabled=False),
+            logs=LogConfig(enabled=False),
             test_mode="in_memory",
         )
     )

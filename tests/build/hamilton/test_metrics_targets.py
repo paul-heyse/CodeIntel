@@ -143,7 +143,12 @@ def test_subsystem_graph_metrics_materialize_success(
     compute_result = SubsystemGraphMetricsComputeResult(rows=[])
     materialization = _make_materialization("analytics.subsystem_graph_metrics", 25)
 
-    record = t__subsystem_graph_metrics(env, graph, compute_result, materialization)
+    record = t__subsystem_graph_metrics(
+        env,
+        graph,
+        compute_result,
+        {"analytics.subsystem_graph_metrics": materialization},
+    )
 
     expected_count = 25
     assert_target_ok(record)
@@ -174,7 +179,12 @@ def test_subsystem_graph_metrics_materialize_failure(
         error="Upstream subsystems failed",
     )
 
-    record = t__subsystem_graph_metrics(env, graph, compute_result, materialization)
+    record = t__subsystem_graph_metrics(
+        env,
+        graph,
+        compute_result,
+        {"analytics.subsystem_graph_metrics": materialization},
+    )
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -200,7 +210,15 @@ def test_symbol_graph_metrics_materialize_success(
     modules_meta = _make_materialization("analytics.symbol_graph_metrics_modules", 10)
     functions_meta = _make_materialization("analytics.symbol_graph_metrics_functions", 50)
 
-    record = t__symbol_graph_metrics(env, graph, compute_result, modules_meta, functions_meta)
+    record = t__symbol_graph_metrics(
+        env,
+        graph,
+        compute_result,
+        {
+            "analytics.symbol_graph_metrics_modules": modules_meta,
+            "analytics.symbol_graph_metrics_functions": functions_meta,
+        },
+    )
 
     assert_target_ok(record)
 
@@ -236,7 +254,15 @@ def test_symbol_graph_metrics_materialize_failure(
         error="Upstream symbol_uses failed",
     )
 
-    record = t__symbol_graph_metrics(env, graph, compute_result, modules_meta, functions_meta)
+    record = t__symbol_graph_metrics(
+        env,
+        graph,
+        compute_result,
+        {
+            "analytics.symbol_graph_metrics_modules": modules_meta,
+            "analytics.symbol_graph_metrics_functions": functions_meta,
+        },
+    )
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -261,7 +287,12 @@ def test_subsystem_agreement_materialize_success(
     compute_result = SubsystemAgreementComputeResult(rows=[])
     materialization = _make_materialization("analytics.subsystem_agreement", 15)
 
-    record = t__subsystem_agreement(env, graph, compute_result, materialization)
+    record = t__subsystem_agreement(
+        env,
+        graph,
+        compute_result,
+        {"analytics.subsystem_agreement": materialization},
+    )
 
     expected_count = 15
     assert_target_ok(record)
@@ -292,7 +323,12 @@ def test_subsystem_agreement_materialize_failure(
         error="Upstream subsystems failed",
     )
 
-    record = t__subsystem_agreement(env, graph, compute_result, materialization)
+    record = t__subsystem_agreement(
+        env,
+        graph,
+        compute_result,
+        {"analytics.subsystem_agreement": materialization},
+    )
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
