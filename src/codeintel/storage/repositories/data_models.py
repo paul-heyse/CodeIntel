@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import SupportsInt, cast
 
-from codeintel.core.ibis_typing import isin_values
+from codeintel.core.ibis_typing import and_predicates, isin_values
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
 from codeintel.storage.repositories.base import BaseRepository
 
@@ -135,6 +135,69 @@ class NormalizedDataModel:
 @dataclass(frozen=True)
 class DataModelsRepository(BaseRepository):
     """Read-only access to data model metadata tables and normalized views."""
+
+    def list_class_metadata_rows(self) -> list[dict[str, object]]:
+        """List class metadata needed for data model extraction.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Raw metadata rows for class GOIDs and module mapping.
+        """
+        goids = self._ibis_table("core.goids")
+        modules = self._ibis_table("core.modules")
+        joined = goids.left_join(
+            modules,
+            [
+                goids.rel_path == modules.path,
+                goids.repo == modules.repo,
+                goids.commit == modules.commit,
+            ],
+        )
+        expr = (
+            joined.filter(
+                and_predicates(
+                    goids.repo == self.repo,
+                    goids.commit == self.commit,
+                    goids.kind == "class",
+                )
+            )
+            .select(
+                goids.goid_h128.name("goid_h128"),
+                goids.rel_path,
+                goids.qualname,
+                goids.start_line,
+                goids.end_line,
+                modules.module.name("module"),
+            )
+        )
+        return self._ibis_to_dicts(expr)
+
+    def list_class_docstrings_rows(self) -> list[dict[str, object]]:
+        """List docstrings needed for data model extraction.
+
+        Returns
+        -------
+        list[dict[str, object]]
+            Raw docstring rows keyed by path + qualname.
+        """
+        docstrings = self._ibis_table("core.docstrings")
+        expr = (
+            docstrings.filter(
+                and_predicates(
+                    docstrings.repo == self.repo,
+                    docstrings.commit == self.commit,
+                    docstrings.kind == "class",
+                )
+            )
+            .select(
+                docstrings.rel_path,
+                docstrings.qualname,
+                docstrings.short_desc,
+                docstrings.long_desc,
+            )
+        )
+        return self._ibis_to_dicts(expr)
 
     def list_models(self) -> list[DataModelRow]:
         """List data model rows for the bound snapshot.

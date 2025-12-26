@@ -9,8 +9,6 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.build.hamilton.tag_index import TagIndex
-from codeintel.build.output_inventory import OutputInventory
-from codeintel.build.target_inventory import resolve_output_inventory
 from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.declared import source_declared_schema_provider
 
@@ -180,10 +178,9 @@ def _load_target_system() -> TargetSystem:
 
 @dataclass(frozen=True, slots=True)
 class TargetMetadataService:
-    """Bundle of target system, outputs, and tag index."""
+    """Bundle of target system, tag index, and schema index."""
 
     system: TargetSystem
-    outputs: OutputInventory
     tag_index: TagIndex
     schema_index: SchemaIndex
 
@@ -317,11 +314,9 @@ def get_target_metadata_service() -> TargetMetadataService:
         ),
         inference_service=get_schema_inference_service(),
     )
-    inventory = resolve_output_inventory(runtime=system.runtime)
     tag_index = TagIndex.from_runtime(system.runtime)
     return TargetMetadataService(
         system=system,
-        outputs=inventory,
         tag_index=tag_index,
         schema_index=schema_index,
     )
@@ -370,7 +365,6 @@ def clear_target_metadata_cache() -> None:
 
 
 __all__ = [
-    "OutputInventory",
     "TargetMetadataProvider",
     "TargetMetadataService",
     "TargetSystem",

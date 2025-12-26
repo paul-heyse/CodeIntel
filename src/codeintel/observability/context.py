@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 from collections.abc import Iterator
+from dataclasses import dataclass
 
 from opentelemetry import baggage as _otel_baggage
 from opentelemetry.context import Context
@@ -23,6 +24,64 @@ _DOMAIN: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "codeintel_domain",
     default=None,
 )
+_REPO: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "codeintel_repo",
+    default=None,
+)
+_COMMIT: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "codeintel_commit",
+    default=None,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CorrelationBundle:
+    """Correlation identifiers for observability attributes."""
+
+    correlation_id: str | None
+    run_id: str | None
+    domain: str | None
+    repo: str | None
+    commit: str | None
+
+    def span_attributes(self) -> dict[str, str]:
+        """Return span attributes derived from the bundle."""
+        attrs: dict[str, str] = {}
+        if self.correlation_id:
+            attrs["codeintel.correlation_id"] = self.correlation_id
+        if self.run_id:
+            attrs["codeintel.run_id"] = self.run_id
+        if self.domain:
+            attrs["codeintel.domain"] = self.domain
+        if self.repo:
+            attrs["codeintel.repo"] = self.repo
+        if self.commit:
+            attrs["codeintel.commit"] = self.commit
+        return attrs
+
+    def metric_attributes(self) -> dict[str, str]:
+        """Return low-cardinality metric attributes derived from the bundle."""
+        attrs: dict[str, str] = {}
+        if self.run_id:
+            attrs["codeintel.run_id"] = self.run_id
+        if self.domain:
+            attrs["codeintel.domain"] = self.domain
+        if self.repo:
+            attrs["codeintel.repo"] = self.repo
+        if self.commit:
+            attrs["codeintel.commit"] = self.commit
+        return attrs
+
+
+def current_correlation_bundle() -> CorrelationBundle:
+    """Return the current correlation bundle from context."""
+    return CorrelationBundle(
+        correlation_id=_CORRELATION_ID.get(),
+        run_id=_RUN_ID.get(),
+        domain=_DOMAIN.get(),
+        repo=_REPO.get(),
+        commit=_COMMIT.get(),
+    )
 
 
 def get_correlation_id() -> str | None:
@@ -43,11 +102,6 @@ def set_correlation_id(value: str | None) -> None:
     ----------
     value
         Correlation identifier to set.
-
-    Returns
-    -------
-    None
-        None.
     """
     _CORRELATION_ID.set(value)
 
@@ -70,11 +124,6 @@ def set_run_id(value: str | None) -> None:
     ----------
     value
         Run identifier to set.
-
-    Returns
-    -------
-    None
-        None.
     """
     _RUN_ID.set(value)
 
@@ -97,13 +146,52 @@ def set_domain(value: str | None) -> None:
     ----------
     value
         Domain identifier to set.
+    """
+    _DOMAIN.set(value)
+
+
+def get_repo() -> str | None:
+    """Return the current repository identifier.
 
     Returns
     -------
-    None
-        None.
+    str | None
+        Repository identifier when set, otherwise ``None``.
     """
-    _DOMAIN.set(value)
+    return _REPO.get()
+
+
+def set_repo(value: str | None) -> None:
+    """Set the current repository identifier.
+
+    Parameters
+    ----------
+    value
+        Repository identifier to set.
+    """
+    _REPO.set(value)
+
+
+def get_commit() -> str | None:
+    """Return the current commit identifier.
+
+    Returns
+    -------
+    str | None
+        Commit identifier when set, otherwise ``None``.
+    """
+    return _COMMIT.get()
+
+
+def set_commit(value: str | None) -> None:
+    """Set the current commit identifier.
+
+    Parameters
+    ----------
+    value
+        Commit identifier to set.
+    """
+    _COMMIT.set(value)
 
 
 @contextlib.contextmanager
@@ -114,11 +202,6 @@ def correlation_context(correlation_id: str) -> Iterator[None]:
     ----------
     correlation_id
         Correlation identifier to attach in context.
-
-    Returns
-    -------
-    Iterator[None]
-        Context manager iterator.
     """
     token = _CORRELATION_ID.set(correlation_id)
     baggage_token: contextvars.Token[Context] | None = None
@@ -135,7 +218,13 @@ def correlation_context(correlation_id: str) -> Iterator[None]:
 
 
 @contextlib.contextmanager
-def run_context(*, run_id: str | None = None, domain: str | None = None) -> Iterator[None]:
+def run_context(
+    *,
+    run_id: str | None = None,
+    domain: str | None = None,
+    repo: str | None = None,
+    commit: str | None = None,
+) -> Iterator[None]:
     """Set run and domain identifiers within a context manager.
 
     Parameters
@@ -144,14 +233,15 @@ def run_context(*, run_id: str | None = None, domain: str | None = None) -> Iter
         Run identifier to attach.
     domain
         Domain identifier to attach.
-
-    Returns
-    -------
-    Iterator[None]
-        Context manager iterator.
+    repo
+        Repository identifier to attach.
+    commit
+        Commit identifier to attach.
     """
     run_token = _RUN_ID.set(run_id)
     domain_token = _DOMAIN.set(domain)
+    repo_token = _REPO.set(repo)
+    commit_token = _COMMIT.set(commit)
     baggage_token: contextvars.Token[Context] | None = None
 
     baggage = None
@@ -163,6 +253,18 @@ def run_context(*, run_id: str | None = None, domain: str | None = None) -> Iter
             domain,
             baggage,
         )
+    if repo:
+        baggage = _otel_baggage.set_baggage(
+            "codeintel.repo",
+            repo,
+            baggage,
+        )
+    if commit:
+        baggage = _otel_baggage.set_baggage(
+            "codeintel.commit",
+            commit,
+            baggage,
+        )
     if baggage is not None:
         baggage_token = _otel_attach(baggage)
 
@@ -171,17 +273,25 @@ def run_context(*, run_id: str | None = None, domain: str | None = None) -> Iter
     finally:
         _RUN_ID.reset(run_token)
         _DOMAIN.reset(domain_token)
+        _REPO.reset(repo_token)
+        _COMMIT.reset(commit_token)
         if baggage_token is not None:
             _otel_detach(baggage_token)
 
 
 __all__ = [
+    "CorrelationBundle",
     "correlation_context",
+    "get_commit",
     "get_correlation_id",
     "get_domain",
+    "get_repo",
     "get_run_id",
+    "current_correlation_bundle",
     "run_context",
+    "set_commit",
     "set_correlation_id",
     "set_domain",
+    "set_repo",
     "set_run_id",
 ]

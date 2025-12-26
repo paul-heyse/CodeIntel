@@ -16,6 +16,7 @@ import pytest
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
+from codeintel.observability.otel import shutdown_observability
 from tests._helpers import GatewayOptions, ProvisioningConfig, TestScenario, provisioned_gateway
 from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
@@ -69,6 +70,16 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "requires_tools(*names): mark tests that need external tool binaries",
     )
+
+
+def pytest_sessionfinish(
+    session: pytest.Session,
+    exitstatus: int,
+) -> None:
+    """Shutdown observability once per test session."""
+    _ = session
+    _ = exitstatus
+    shutdown_observability()
 
 
 @pytest.fixture

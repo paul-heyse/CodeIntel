@@ -17,7 +17,6 @@ from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.naming import compute_node
-from codeintel.build.output_inventory import OutputInventory
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
 from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
@@ -235,11 +234,6 @@ def _inference_env(*, gateway: StorageGateway, force_targets: frozenset[str]) ->
         execution_settings=HamiltonExecutionSettings(),
         execution_options=BuildExecutionOptions(profile="schema_inference"),
         force_targets=force_targets,
-        output_inventory=OutputInventory(
-            datasets_by_target={},
-            artifacts_by_target={},
-            artifact_templates_by_target={},
-        ),
     )
     return context.build_env(load_catalogs=False, load_schema_service=False)
 

@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from codeintel.build.catalogs.canonical import load_contract_catalog
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    iter_contracts,
+)
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetDiffResult,
@@ -64,8 +68,9 @@ def _contracts_by_table_key_provider(ctx: CommandContext) -> Mapping[str, Datase
     Mapping[str, DatasetContract]
         Mapping from table_key to contract.
     """
-    root = ctx.runtime.root if ctx.has_runtime else None
-    return load_contract_catalog(gateway=ctx.gateway, root=root)
+    _ = ctx
+    settings = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+    return {contract.table_key: contract for contract in iter_contracts(settings=settings)}
 
 
 DEFAULT_DATASET_DEPS = DatasetDependencies(

@@ -28,6 +28,10 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
+VALIDATION_GOID_ALPHA = 900_001
+VALIDATION_GOID_BETA = 900_002
+
+
 def test_resolve_function_goid_passthrough(fresh_gateway: StorageGateway) -> None:
     """Verify resolve_function_goid returns passthrough when goid_h128 provided."""
     repo = FunctionRepository(
@@ -93,7 +97,7 @@ def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> N
         FunctionValidationRow(
             repo=metrics_ctx.repo,
             commit=metrics_ctx.commit,
-            function_goid_h128=900_001,
+            function_goid_h128=VALIDATION_GOID_ALPHA,
             rel_path="src/alpha.py",
             qualname="alpha",
             issue="parse_failed",
@@ -103,7 +107,7 @@ def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> N
         FunctionValidationRow(
             repo=metrics_ctx.repo,
             commit=metrics_ctx.commit,
-            function_goid_h128=900_001,
+            function_goid_h128=VALIDATION_GOID_ALPHA,
             rel_path="src/alpha.py",
             qualname="alpha",
             issue="span_not_found",
@@ -113,7 +117,7 @@ def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> N
         FunctionValidationRow(
             repo=metrics_ctx.repo,
             commit=metrics_ctx.commit,
-            function_goid_h128=900_002,
+            function_goid_h128=VALIDATION_GOID_BETA,
             rel_path="src/beta.py",
             qualname="beta",
             issue="unknown_function",
@@ -129,12 +133,12 @@ def test_list_function_validation_filters_by_goid(metrics_ctx: TestContext) -> N
         commit=metrics_ctx.commit,
     )
 
-    results = repo.list_function_validation(goid_h128=900_001)
+    results = repo.list_function_validation(goid_h128=VALIDATION_GOID_ALPHA)
 
     expect_equal(len(results), 2)
     expect_equal(results[0]["detail"], "new")
     expect_true(
-        all(row["function_goid_h128"] == 900_001 for row in results),
+        all(row["function_goid_h128"] == VALIDATION_GOID_ALPHA for row in results),
         message="results should include only the requested GOID",
     )
 

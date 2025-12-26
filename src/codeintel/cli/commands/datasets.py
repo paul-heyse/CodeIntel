@@ -16,7 +16,11 @@ from typing import TYPE_CHECKING, Annotated, Literal
 
 from cyclopts import App
 
-from codeintel.build.catalogs.canonical import load_contract_catalog
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    iter_contracts,
+)
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
@@ -207,7 +211,10 @@ class ScaffoldDatasetCommand(Command[dict[str, object]]):
             Result with dataset name, status, and registry check behavior.
         """
         _ = ctx
-        contracts_by_table_key = load_contract_catalog()
+        settings = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+        contracts_by_table_key = {
+            contract.table_key: contract for contract in iter_contracts(settings=settings)
+        }
         known_names = set(contracts_by_table_key)
         known_names.update(key.split(".", 1)[-1] for key in contracts_by_table_key)
         if self.registry_check == "enabled" and self.name in known_names:

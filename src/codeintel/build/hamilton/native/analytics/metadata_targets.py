@@ -21,7 +21,12 @@ from hamilton.function_modifiers import source, value
 
 from codeintel.analytics.ast_features.persist import features_to_row
 from codeintel.analytics.compute.data_models import build_data_model_usage_rows
-from codeintel.analytics.data_models.compute import DataModelsResult, compute_data_models_pure
+from codeintel.analytics.data_models.compute import (
+    DataModelsInputs,
+    DataModelsResult,
+    compute_data_models_from_inputs,
+    load_data_models_inputs,
+)
 from codeintel.analytics.profiles.files import build_file_profile_rows, compute_file_profile_inputs
 from codeintel.analytics.profiles.functions import (
     FunctionProfileViews,
@@ -67,11 +72,9 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.build.schemas import deferred_columns_for_table_key
 from codeintel.build.targets import TargetGraph
-from codeintel.core.resources import ResourceNotFoundError
+from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
-
-_HAMILTON_TYPE_HINTS = (BuildEnv, DataModelsResult, TargetGraph, TargetRunRecord)
 
 DATA_MODELS_TARGET_NAME = "data_models"
 DATA_MODEL_USAGE_TARGET_NAME = "data_model_usage"
@@ -119,11 +122,79 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_compute(domain="analytics", target=DATA_MODELS_TARGET_NAME)
-def t__data_models__compute(
+@tag_helper(domain="analytics")
+def function_ast_features_registry(env: BuildEnv, gateway: StorageGateway) -> ResourceRegistry:
+    """Build the resource registry for AST feature computation.
+
+    Returns
+    -------
+    ResourceRegistry
+        Registry configured with feature providers.
+    """
+    return build_registry(
+        gateway=gateway,
+        snapshot=env.snapshot,
+        registry_options=ProviderRegistryOptions(
+            include_graphs=False,
+            include_features=True,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class DataModelsComputeContext:
+    """Inputs and skip status for data model computation."""
+
+    inputs: DataModelsInputs | None
+    skip: bool
+
+
+@tag_helper(domain="analytics")
+def data_models_compute_context(
     env: BuildEnv,
     graph: TargetGraph,
     gateway: StorageGateway,
+) -> DataModelsComputeContext:
+    """Prepare data model inputs and skip decisions.
+
+    Returns
+    -------
+    DataModelsComputeContext
+        Inputs plus skip metadata for the compute node.
+    """
+    target = graph.get(DATA_MODELS_TARGET_NAME)
+    if target is not None:
+        options_hash = options_hash_for_target(env, DATA_MODELS_TARGET_NAME)
+        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
+        input_hash = compute_input_hash(
+            target=target,
+            snapshot=env.snapshot,
+            gateway=gateway,
+            settings=env.settings,
+            options=hash_options,
+        )
+        if should_skip_native_target(env, target, input_hash):
+            return DataModelsComputeContext(inputs=None, skip=True)
+
+    inputs = load_data_models_inputs(gateway, env.snapshot)
+    return DataModelsComputeContext(inputs=inputs, skip=False)
+
+
+_HAMILTON_TYPE_HINTS = (
+    BuildEnv,
+    DataModelsComputeContext,
+    DataModelsInputs,
+    DataModelsResult,
+    ResourceRegistry,
+    TargetGraph,
+    TargetRunRecord,
+)
+
+
+@tag_compute(domain="analytics", target=DATA_MODELS_TARGET_NAME)
+def t__data_models__compute(
+    env: BuildEnv,
+    data_models_compute_context: DataModelsComputeContext,
 ) -> DataModelsResult | None:
     """Compute data models for all classes in the snapshot.
 
@@ -135,10 +206,8 @@ def t__data_models__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for manifest-driven skip checks.
-    gateway
-        Storage gateway for analytics queries.
+    data_models_compute_context
+        Preloaded inputs and skip metadata for data model computation.
 
     Returns
     -------
@@ -155,20 +224,11 @@ def t__data_models__compute(
     - Field types, constraints, and defaults
     - Relationships between models
     """
-    target = graph.get(DATA_MODELS_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, DATA_MODELS_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
-    return compute_data_models_pure(gateway, env.snapshot)
+    if data_models_compute_context.skip:
+        return None
+    if data_models_compute_context.inputs is None:
+        return None
+    return compute_data_models_from_inputs(data_models_compute_context.inputs, env.snapshot)
 
 
 @SaveToObjectMetadataDecorator(
@@ -426,8 +486,7 @@ class AstFeaturesResult:
 
 @tag_compute(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def t__function_ast_features__compute(
-    env: BuildEnv,
-    gateway: StorageGateway,
+    function_ast_features_registry: ResourceRegistry,
 ) -> AstFeaturesResult:
     """Compute AST-derived semantic features for functions.
 
@@ -436,23 +495,14 @@ def t__function_ast_features__compute(
     AstFeaturesResult
         Feature map and optional error message.
     """
-    registry = build_registry(
-        gateway=gateway,
-        snapshot=env.snapshot,
-        registry_options=ProviderRegistryOptions(
-            include_graphs=False,
-            include_features=True,
-        ),
-    )
-
     try:
-        _ = registry.require(CatalogProvider).get()
+        _ = function_ast_features_registry.require(CatalogProvider).get()
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return AstFeaturesResult(success=False, error=f"CatalogProvider is required: {exc}")
 
     try:
-        features_map = registry.require(FeaturesProvider).get()
+        features_map = function_ast_features_registry.require(FeaturesProvider).get()
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to compute function features: %s", exc)
         return AstFeaturesResult(success=True, features_map={})

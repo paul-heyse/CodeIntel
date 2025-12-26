@@ -76,6 +76,7 @@ from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
 from codeintel.observability.otel import flush_observability
 from codeintel.observability.teardown import (
@@ -152,6 +153,43 @@ class TargetScope(Enum):
 
 _VALID_MODULES: tuple[str, ...] = ("ingestion", "graphs", "analytics", "export")
 _CACHE_LOG_KEY_TUPLE_LEN: int = 2
+_PILOT_TARGET_TOKEN = "@pilot"
+
+
+def _load_pilot_targets() -> list[str]:
+    try:
+        inventory = RegistryService.load_dag_output_inventory()
+    except ValueError as exc:
+        message = "Failed to load DAG output inventory for pilot selection."
+        raise ValidationError(message) from exc
+
+    pilot_targets = [spec.target for spec in inventory.outputs if spec.pilot]
+    if not pilot_targets:
+        message = "No pilot targets are configured in the DAG output inventory."
+        raise ValidationError(message)
+    return pilot_targets
+
+
+def _expand_pilot_targets(targets: list[str]) -> list[str]:
+    if _PILOT_TARGET_TOKEN not in targets:
+        return list(targets)
+
+    expanded: list[str] = []
+    seen: set[str] = set()
+    pilot_targets = _load_pilot_targets()
+
+    for target in targets:
+        if target == _PILOT_TARGET_TOKEN:
+            for pilot_target in pilot_targets:
+                if pilot_target not in seen:
+                    expanded.append(pilot_target)
+                    seen.add(pilot_target)
+            continue
+        if target not in seen:
+            expanded.append(target)
+            seen.add(target)
+
+    return expanded
 
 
 def _build_execution_context(
@@ -273,13 +311,17 @@ def _resolve_goals(
         return [t.name for t in module_targets]
 
     if targets:
-        for target in targets:
+        expanded_targets = _expand_pilot_targets(targets)
+        for target in expanded_targets:
             try:
                 graph.get(target)
             except KeyError as exc:
-                msg = f"Unknown target: {target}"
+                msg = (
+                    f"Unknown target: {target}. "
+                    "Use @pilot or run `codeintel build targets` to list known targets."
+                )
                 raise ValidationError(msg) from exc
-        return list(targets)
+        return expanded_targets
 
     msg = "Specify targets, --module, or --all"
     raise ValidationError(msg)
@@ -1228,11 +1270,7 @@ def _resolve_decision_trace_artifact(
     if record is None:
         return None, None
     artifact = next(
-        (
-            item
-            for item in record.artifacts
-            if item.name == DECISION_TRACE_ARTIFACT_NAME
-        ),
+        (item for item in record.artifacts if item.name == DECISION_TRACE_ARTIFACT_NAME),
         None,
     )
     if artifact is None:

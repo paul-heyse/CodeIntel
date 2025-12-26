@@ -10,13 +10,23 @@ the handler pattern for now.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App
 
 from codeintel.cli.commands.build_schema import build_schema_app
 from codeintel.cli.commands.build_spec import build_spec_app
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
+from codeintel.cli.commands.registry import (
+    DagOutputInfo,
+    DagOutputListResult,
+    MaterializationKind,
+    RegistryDomain,
+)
+from codeintel.cli.core import CliResult
+from codeintel.cli.core.command import Command
+from codeintel.cli.errors.results import fail_invalid_value, fail_not_found
 from codeintel.cli.handlers.build import (
     build_assets_handler,
     build_decision_trace_handler,
@@ -96,9 +106,19 @@ from codeintel.cli.options.registry import (
     BUILD_RUN_VALIDATION_MODE,
     BUILD_STATUS_MODULE,
     BUILD_VALIDATE_FORMAT,
+    REGISTRY_INVENTORY_PATH,
+    REGISTRY_OUTPUTS_DOMAIN,
+    REGISTRY_OUTPUTS_MATERIALIZATION,
+    REGISTRY_OUTPUTS_PILOT_ONLY,
+    REGISTRY_OUTPUTS_TABLE_KEY,
+    REGISTRY_OUTPUTS_TARGETS,
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
+from codeintel.core.registry.service import DagOutputSpec, RegistryService
+
+if TYPE_CHECKING:
+    from codeintel.cli.context import CommandContext
 
 build_app = App(
     name="build",
@@ -126,6 +146,7 @@ BUILD_RESOLVE_PATH: CommandPath = ("build", "resolve")
 BUILD_DIFF_PATH: CommandPath = ("build", "diff")
 BUILD_IMPACT_PATH: CommandPath = ("build", "impact")
 BUILD_DECISION_TRACE_CMD_PATH: CommandPath = ("build", "decision-trace")
+BUILD_TARGETS_PATH: CommandPath = ("build", "targets")
 
 _BUILD_RUN_FLAGS_FIELD = shared_flags_field(BUILD_RUN_PATH)
 _BUILD_STATUS_FLAGS_FIELD = shared_flags_field(BUILD_STATUS_PATH)
@@ -141,6 +162,32 @@ _BUILD_RESOLVE_FLAGS_FIELD = shared_flags_field(BUILD_RESOLVE_PATH)
 _BUILD_DIFF_FLAGS_FIELD = shared_flags_field(BUILD_DIFF_PATH)
 _BUILD_IMPACT_FLAGS_FIELD = shared_flags_field(BUILD_IMPACT_PATH)
 _BUILD_DECISION_TRACE_FLAGS_FIELD = shared_flags_field(BUILD_DECISION_TRACE_CMD_PATH)
+_BUILD_TARGETS_FLAGS_FIELD = shared_flags_field(BUILD_TARGETS_PATH)
+
+
+@dataclass(frozen=True)
+class _BuildTargetsFilters:
+    domain: RegistryDomain | None
+    materialization: MaterializationKind | None
+    targets: set[str] | None
+    table_key: str | None
+    pilot_only: bool
+
+
+def _inventory_path_or_default(path: Path | None) -> Path:
+    return path or RegistryService.default_dag_output_inventory_path()
+
+
+def _spec_matches_filters(spec: DagOutputSpec, *, filters: _BuildTargetsFilters) -> bool:
+    if filters.domain is not None and spec.domain != filters.domain:
+        return False
+    if filters.materialization is not None and spec.materialization != filters.materialization:
+        return False
+    if filters.targets is not None and spec.target not in filters.targets:
+        return False
+    if filters.table_key is not None and filters.table_key not in spec.table_keys:
+        return False
+    return not (filters.pilot_only and not spec.pilot)
 
 
 @cli_command("build.run", handler=build_run_handler, config=_BUILD_CONFIG)
@@ -244,6 +291,105 @@ class BuildHistoryCommand:
         option_param(BUILD_HISTORY_LIMIT, command_path=BUILD_HISTORY_PATH),
     ] = 10
     flags: SharedFlagsProtocol = _BUILD_HISTORY_FLAGS_FIELD
+
+
+@cli_command("build.targets", require_storage=False)
+@build_app.command(name="targets")
+@dataclass(frozen=True)
+class BuildTargets(Command[DagOutputListResult]):
+    """List DAG output inventory entries for build selection."""
+
+    __operation_id__ = "build.targets"
+
+    inventory_path: Annotated[
+        Path | None,
+        option_param(REGISTRY_INVENTORY_PATH, command_path=BUILD_TARGETS_PATH),
+    ] = None
+    domain: Annotated[
+        RegistryDomain | None,
+        option_param(REGISTRY_OUTPUTS_DOMAIN, command_path=BUILD_TARGETS_PATH),
+    ] = None
+    materialization: Annotated[
+        MaterializationKind | None,
+        option_param(REGISTRY_OUTPUTS_MATERIALIZATION, command_path=BUILD_TARGETS_PATH),
+    ] = None
+    targets: Annotated[
+        list[str] | None,
+        option_param(REGISTRY_OUTPUTS_TARGETS, command_path=BUILD_TARGETS_PATH),
+    ] = None
+    table_key: Annotated[
+        str | None,
+        option_param(REGISTRY_OUTPUTS_TABLE_KEY, command_path=BUILD_TARGETS_PATH),
+    ] = None
+    pilot_only: Annotated[
+        bool,
+        option_param(REGISTRY_OUTPUTS_PILOT_ONLY, command_path=BUILD_TARGETS_PATH),
+    ] = False
+    flags: SharedFlagsProtocol = _BUILD_TARGETS_FLAGS_FIELD
+
+    def execute(self, ctx: CommandContext) -> CliResult[DagOutputListResult]:
+        """Execute build targets listing.
+
+        Parameters
+        ----------
+        ctx
+            CLI execution context.
+
+        Returns
+        -------
+        CliResult[DagOutputListResult]
+            Registry target listing result.
+        """
+        _ = ctx
+        _ = self.flags
+
+        inventory_path = _inventory_path_or_default(self.inventory_path)
+        if not inventory_path.exists():
+            return fail_not_found("inventory", str(inventory_path))
+        try:
+            inventory = RegistryService.load_dag_output_inventory(path=inventory_path)
+        except ValueError as exc:
+            return fail_invalid_value(
+                "inventory_path",
+                str(inventory_path),
+                str(exc),
+            )
+
+        filters = _BuildTargetsFilters(
+            domain=self.domain,
+            materialization=self.materialization,
+            targets=set(self.targets) if self.targets else None,
+            table_key=self.table_key,
+            pilot_only=self.pilot_only,
+        )
+        filtered = [
+            spec for spec in inventory.outputs if _spec_matches_filters(spec, filters=filters)
+        ]
+        filtered.sort(key=lambda spec: (spec.domain, spec.target))
+
+        outputs = [
+            DagOutputInfo(
+                target=spec.target,
+                domain=spec.domain,
+                anchor=spec.anchor,
+                materialization=spec.materialization,
+                table_keys=list(spec.table_keys),
+                contracts=list(spec.contracts),
+                upstream_targets=list(spec.upstream_targets),
+                downstream_consumers=list(spec.downstream_consumers),
+                pilot=spec.pilot,
+                notes=spec.notes,
+            )
+            for spec in filtered
+        ]
+
+        return CliResult.ok(
+            DagOutputListResult(
+                outputs=outputs,
+                count=len(outputs),
+                inventory_path=str(inventory_path),
+            )
+        )
 
 
 @cli_command("build.validate", handler=build_validate_handler, config=_VALIDATE_CONFIG)

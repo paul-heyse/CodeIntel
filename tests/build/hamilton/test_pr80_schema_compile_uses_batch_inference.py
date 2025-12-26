@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.schemas import declared_schema_provider
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
-from codeintel.build.schemas.provider_declared import declared_schema_provider
 from codeintel.build.target_metadata import get_target_metadata_service
 from tests._helpers.contracts import table_schema_for_key
 

@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import DuckDBConnection
+    from codeintel.storage.repositories.data_models import DataModelsRepository
 
 
 DATA_MODELS_COLS = [
@@ -666,53 +666,72 @@ def _build_field_specs(
     return fields, rel_hints
 
 
-def _load_class_metadata(con: DuckDBConnection, repo: str, commit: str) -> list[ClassMeta]:
-    rows = con.execute(
-        """
-        SELECT g.goid_h128, g.rel_path, g.qualname, g.start_line, g.end_line, m.module
-        FROM core.goids g
-        LEFT JOIN core.modules m
-          ON m.path = g.rel_path
-        WHERE g.repo = ? AND g.commit = ? AND g.kind = 'class'
-        """,
-        [repo, commit],
-    ).fetchall()
+def _coerce_int(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped and (stripped.isdigit() or (stripped[0] == "-" and stripped[1:].isdigit())):
+            return int(stripped)
+    return None
+
+
+def _load_class_metadata(repo: DataModelsRepository) -> list[ClassMeta]:
+    """Load class metadata from storage repositories.
+
+    Returns
+    -------
+    list[ClassMeta]
+        Class metadata rows with normalized paths and line numbers.
+    """
+    rows = repo.list_class_metadata_rows()
     metas: list[ClassMeta] = []
-    for goid_h128, rel_path, qualname, start_line, end_line, module in rows:
-        if rel_path is None or start_line is None:
+    for row in rows:
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        start_line = _coerce_int(row.get("start_line"))
+        if not isinstance(rel_path, str) or not isinstance(qualname, str) or start_line is None:
             continue
+        module = row.get("module")
+        end_line = _coerce_int(row.get("end_line")) or start_line
+        goid = _coerce_int(row.get("goid_h128"))
         metas.append(
             ClassMeta(
-                goid=int(goid_h128) if goid_h128 is not None else None,
+                goid=goid,
                 rel_path=normalize_path(rel_path),
-                qualname=str(qualname),
-                start_line=int(start_line),
-                end_line=int(end_line) if end_line is not None else int(start_line),
+                qualname=qualname,
+                start_line=start_line,
+                end_line=end_line,
                 module=str(module) if module is not None else path_to_module(rel_path),
             )
         )
     return metas
 
 
-def _doc_map(
-    con: DuckDBConnection,
-    *,
-    repo: str,
-    commit: str,
-) -> dict[tuple[str, str], tuple[str | None, str | None]]:
-    rows = con.execute(
-        """
-        SELECT rel_path, qualname, short_desc, long_desc
-        FROM core.docstrings
-        WHERE repo = ? AND commit = ? AND kind = 'class'
-        """,
-        [repo, commit],
-    ).fetchall()
+def _doc_map(repo: DataModelsRepository) -> dict[tuple[str, str], tuple[str | None, str | None]]:
+    """Return docstring summaries keyed by (path, qualname).
+
+    Returns
+    -------
+    dict[tuple[str, str], tuple[str | None, str | None]]
+        Mapping of (rel_path, qualname) to (short_desc, long_desc).
+    """
+    rows = repo.list_class_docstrings_rows()
     mapping: dict[tuple[str, str], tuple[str | None, str | None]] = {}
-    for rel_path, qualname, short_desc, long_desc in rows:
-        mapping[normalize_path(rel_path), str(qualname)] = (
-            short_desc,
-            long_desc,
+    for row in rows:
+        rel_path = row.get("rel_path")
+        qualname = row.get("qualname")
+        if not isinstance(rel_path, str) or not isinstance(qualname, str):
+            continue
+        short_desc = row.get("short_desc")
+        long_desc = row.get("long_desc")
+        mapping[normalize_path(rel_path), qualname] = (
+            str(short_desc) if short_desc is not None else None,
+            str(long_desc) if long_desc is not None else None,
         )
     return mapping
 

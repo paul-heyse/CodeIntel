@@ -12,8 +12,16 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind as _SpanKind
 from opentelemetry.trace.status import Status, StatusCode
 
-from codeintel.observability.context import get_correlation_id, get_domain, get_run_id
+from codeintel.observability.attributes import shape_attributes
+from codeintel.observability.context import (
+    get_commit,
+    get_correlation_id,
+    get_domain,
+    get_repo,
+    get_run_id,
+)
 from codeintel.observability.db_span_attributes import DbSpanAttributeBuilder
+from codeintel.observability.policy import ObservabilityPolicy
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
@@ -35,6 +43,7 @@ class DbSpanEmitterConfig:
     attributes: Mapping[str, object]
     span_builder: DbSpanAttributeBuilder
     require_parent_span: bool
+    policy: ObservabilityPolicy
 
 
 class DbSpanEmitter:
@@ -81,7 +90,17 @@ class DbSpanEmitter:
             domain = get_domain()
             if domain:
                 span.set_attribute("codeintel.domain", domain)
-            _set_span_attributes(span, self._config.attributes)
+            repo = get_repo()
+            if repo:
+                span.set_attribute("codeintel.repo", repo)
+            commit = get_commit()
+            if commit:
+                span.set_attribute("codeintel.commit", commit)
+            extra_attrs = shape_attributes(
+                self._config.attributes,
+                allowed_prefixes=self._config.policy.db_attribute_prefixes,
+            )
+            _set_span_attributes(span, extra_attrs)
             try:
                 return call()
             except Exception as exc:  # pragma: no cover

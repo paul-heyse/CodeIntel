@@ -12,7 +12,6 @@ This module defines the canonical implementation used across native targets.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Protocol, runtime_checkable
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,76 +123,4 @@ class ExecutionResult:
         return sum(self.table_counts.values())
 
 
-@runtime_checkable
-class ExecutionResultLike(Protocol):
-    """Protocol for objects convertible to ``ExecutionResult``."""
-
-    @property
-    def success(self) -> bool:
-        """Whether computation succeeded."""
-        ...
-
-    @property
-    def table_counts(self) -> dict[str, int]:
-        """Row counts for produced tables keyed by table key."""
-        ...
-
-    @property
-    def error(self) -> str | None:
-        """Error message when computation fails, if available."""
-        ...
-
-    @property
-    def skipped(self) -> bool:
-        """Whether computation was skipped."""
-        ...
-
-    @property
-    def skip_reason(self) -> str | None:
-        """Optional skip reason."""
-        ...
-
-
-def _extract_warnings(result: object) -> tuple[str, ...]:
-    warnings = getattr(result, "warnings", None)
-    if warnings is None:
-        return ()
-    if isinstance(warnings, tuple):
-        return tuple(str(item) for item in warnings)
-    if isinstance(warnings, list):
-        return tuple(str(item) for item in warnings)
-    return (str(warnings),)
-
-
-def to_execution_result(result: ExecutionResultLike, *, default_error: str) -> ExecutionResult:
-    """Convert a compatible compute result object into ``ExecutionResult``.
-
-    Parameters
-    ----------
-    result
-        Object providing ``success``, ``table_counts``, and ``error`` fields.
-    default_error
-        Fallback error message when ``result.error`` is None/empty.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical result object for executor-style materialization.
-    """
-    warnings = _extract_warnings(result)
-    if result.skipped:
-        return ExecutionResult.skip(
-            result.skip_reason,
-            table_counts=result.table_counts,
-            warnings=warnings,
-        )
-    if result.success:
-        return ExecutionResult.ok(table_counts=result.table_counts, warnings=warnings)
-    return ExecutionResult.failed(
-        result.error or default_error,
-        table_counts=result.table_counts,
-        warnings=warnings,
-    )
-
-
-__all__ = ["ExecutionResult", "ExecutionResultLike", "to_execution_result"]
+__all__ = ["ExecutionResult"]

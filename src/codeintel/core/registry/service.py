@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import yaml
 
-from codeintel.build.catalogs.canonical import load_contract_catalog, load_target_catalog
+from codeintel.build.target_metadata import get_target_system
 from codeintel.core.exports.formats import export_format_choices, resolve_export_format_spec
 from codeintel.core.imports.lazy import lazy_getattr
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
+    from codeintel.build.schemas.contract_service import ContractService
     from codeintel.build.targets import OutputTarget
     from codeintel.core.exports.formats import ExportFormat, ExportFormatSpec
     from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -35,16 +37,37 @@ class RegistryTypeError(TypeError):
 
     @classmethod
     def expected(cls, field: str, expected: str) -> RegistryTypeError:
+        """Build a type error for an unexpected field type.
+
+        Returns
+        -------
+        RegistryTypeError
+            Constructed type error instance.
+        """
         message = f"Expected '{field}' to be {expected}."
         return cls(message)
 
     @classmethod
     def expected_mapping_keys(cls, field: str) -> RegistryTypeError:
+        """Build a type error for unexpected mapping keys.
+
+        Returns
+        -------
+        RegistryTypeError
+            Constructed type error instance.
+        """
         message = f"Expected '{field}' keys to be strings."
         return cls(message)
 
     @classmethod
     def expected_list_items(cls, field: str) -> RegistryTypeError:
+        """Build a type error for unexpected list items.
+
+        Returns
+        -------
+        RegistryTypeError
+            Constructed type error instance.
+        """
         message = f"Expected '{field}' to contain only strings."
         return cls(message)
 
@@ -57,36 +80,85 @@ class RegistryValidationError(ValueError):
 
     @classmethod
     def unsupported_materialization(cls, materialization: str) -> RegistryValidationError:
+        """Build a validation error for unsupported materializations.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = f"Unsupported materialization '{materialization}'."
         return cls(message)
 
     @classmethod
     def missing_table_keys(cls, target: str) -> RegistryValidationError:
+        """Build a validation error for missing table keys.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = f"Output '{target}' must define table_keys."
         return cls(message)
 
     @classmethod
     def unexpected_table_keys(cls, target: str) -> RegistryValidationError:
+        """Build a validation error for unexpected table keys.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = f"Output '{target}' must not define table_keys for artifacts."
         return cls(message)
 
     @classmethod
     def load_failed(cls, path: Path) -> RegistryValidationError:
+        """Build a validation error for failed inventory loads.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = f"Failed to load DAG output inventory: {path}"
         return cls(message)
 
     @classmethod
     def inventory_empty(cls, path: Path) -> RegistryValidationError:
+        """Build a validation error for empty inventory files.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = f"DAG output inventory is empty: {path}"
         return cls(message)
 
     @classmethod
     def outputs_not_list(cls) -> RegistryValidationError:
+        """Build a validation error for invalid outputs payloads.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = "Expected 'outputs' to be a list of mappings."
         return cls(message)
 
     @classmethod
     def duplicate_output(cls, target: str) -> RegistryValidationError:
+        """Build a validation error for duplicate output targets.
+
+        Returns
+        -------
+        RegistryValidationError
+            Constructed validation error instance.
+        """
         message = f"Duplicate output target '{target}'."
         return cls(message)
 
@@ -99,21 +171,49 @@ class RegistryLookupError(KeyError):
 
     @classmethod
     def missing_output(cls, target: str) -> RegistryLookupError:
+        """Build a lookup error for missing output targets.
+
+        Returns
+        -------
+        RegistryLookupError
+            Constructed lookup error instance.
+        """
         message = f"Unknown DAG output target: {target}"
         return cls(message)
 
     @classmethod
     def missing_contract(cls, table_key: str) -> RegistryLookupError:
+        """Build a lookup error for missing dataset contracts.
+
+        Returns
+        -------
+        RegistryLookupError
+            Constructed lookup error instance.
+        """
         message = f"Unknown dataset contract: {table_key}"
         return cls(message)
 
     @classmethod
     def missing_target(cls, name: str) -> RegistryLookupError:
+        """Build a lookup error for missing output targets.
+
+        Returns
+        -------
+        RegistryLookupError
+            Constructed lookup error instance.
+        """
         message = f"Unknown output target: {name}"
         return cls(message)
 
     @classmethod
     def semantic_registry_unavailable(cls) -> RegistryLookupError:
+        """Build a lookup error for missing semantic registries.
+
+        Returns
+        -------
+        RegistryLookupError
+            Constructed lookup error instance.
+        """
         message = "Semantic registry is not available"
         return cls(message)
 
@@ -199,10 +299,12 @@ class DagOutputSpec:
 
         Raises
         ------
-        RegistryTypeError
-            If the mapping has fields with unexpected types.
-        RegistryValidationError
-            If the mapping is missing required fields or uses invalid values.
+        RegistryValidationError.unsupported_materialization
+            If the materialization value is not supported.
+        RegistryValidationError.missing_table_keys
+            If table materializations omit table keys.
+        RegistryValidationError.unexpected_table_keys
+            If artifact materializations define table keys.
         """
         target = _require_str(raw.get("target"), field="target")
         domain = _require_str(raw.get("domain"), field="domain")
@@ -270,10 +372,14 @@ class DagOutputInventory:
 
         Raises
         ------
-        RegistryTypeError
-            If the payload has unexpected types.
-        RegistryValidationError
-            If the file is missing, malformed, or fails validation.
+        RegistryValidationError.load_failed
+            If the inventory file cannot be loaded.
+        RegistryValidationError.inventory_empty
+            If the inventory file is empty.
+        RegistryValidationError.outputs_not_list
+            If the outputs payload is not a list.
+        RegistryValidationError.duplicate_output
+            If output targets are duplicated.
         """
         try:
             raw = yaml.safe_load(path.read_text(encoding="utf8"))
@@ -318,7 +424,7 @@ class DagOutputInventory:
 
         Raises
         ------
-        RegistryLookupError
+        RegistryLookupError.missing_output
             If the target is not present in the inventory.
         """
         for spec in self.outputs:
@@ -363,15 +469,27 @@ class RegistryService:
         gateway: StorageGateway | None = None,
         root: Path | None = None,
     ) -> RegistryService:
-        """Load dataset and target catalogs from canonical storage.
+        """Load dataset and target catalogs from the build graph.
 
         Returns
         -------
         RegistryService
             Registry service populated with dataset and target catalogs.
         """
-        contracts = load_contract_catalog(gateway=gateway, root=root)
-        targets = load_target_catalog(gateway=gateway, root=root)
+        _ = gateway
+        _ = root
+        contract_service_factory = cast(
+            "Callable[[], ContractService]",
+            lazy_getattr(
+                "codeintel.build.schemas.contract_service",
+                "get_enriched_contract_service",
+            ),
+        )
+        contracts = {
+            contract.table_key: contract
+            for contract in contract_service_factory().iter_contracts()
+        }
+        targets = {target.name: target for target in get_target_system().graph.all_targets}
         return cls(contract_catalog=contracts, target_catalog=targets, semantic_registry=None)
 
     @classmethod
@@ -439,7 +557,7 @@ class RegistryService:
 
         Raises
         ------
-        RegistryLookupError
+        RegistryLookupError.missing_contract
             If the table key is not present in the contract catalog.
         """
         contract = self.contract_catalog.get(table_key)
@@ -467,7 +585,7 @@ class RegistryService:
 
         Raises
         ------
-        RegistryLookupError
+        RegistryLookupError.missing_target
             If the target name is not present in the catalog.
         """
         target = self.target_catalog.get(name)
@@ -495,7 +613,7 @@ class RegistryService:
 
         Raises
         ------
-        RegistryLookupError
+        RegistryLookupError.semantic_registry_unavailable
             If the semantic registry is unavailable or the view is missing.
         """
         if self.semantic_registry is None:

@@ -6,24 +6,111 @@ ArtifactRef objects based on the DAG-derived output inventory.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from functools import lru_cache
+from typing import TYPE_CHECKING, cast
 
+from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.materializers.path_templates import format_path_template
-from codeintel.build.target_inventory import get_output_inventory
+from codeintel.core.imports.lazy import lazy_getattr
 
 if TYPE_CHECKING:
-    from codeintel.build.output_inventory import OutputInventory
+    from codeintel.build.hamilton.introspect import DerivedTargetOutputs
+    from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
+
+
+@lru_cache(maxsize=1)
+def _derived_outputs() -> DerivedTargetOutputs:
+    build_driver = cast(
+        "Callable[..., HamiltonRuntime]",
+        lazy_getattr("codeintel.build.hamilton.driver_factory", "build_driver"),
+    )
+    runtime = build_driver()
+    return derive_target_outputs_from_savers(runtime)
+
+
+def _resolve_outputs(outputs: DerivedTargetOutputs | None) -> DerivedTargetOutputs:
+    return outputs or _derived_outputs()
+
+
+def expected_table_keys_for_target(
+    target_name: str,
+    *,
+    outputs: DerivedTargetOutputs | None = None,
+) -> tuple[str, ...]:
+    """Return expected table keys for a target from DAG saver tags.
+
+    Parameters
+    ----------
+    target_name
+        Target name to resolve.
+    outputs
+        Optional DAG-derived outputs mapping.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Table keys expected to be written by the target.
+    """
+    resolved_outputs = _resolve_outputs(outputs)
+    return tuple(resolved_outputs.datasets_by_target.get(target_name, ()))
+
+
+def expected_artifact_names_for_target(
+    target_name: str,
+    *,
+    outputs: DerivedTargetOutputs | None = None,
+) -> tuple[str, ...]:
+    """Return expected artifact names for a target from DAG saver tags.
+
+    Parameters
+    ----------
+    target_name
+        Target name to resolve.
+    outputs
+        Optional DAG-derived outputs mapping.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Artifact names expected to be written by the target.
+    """
+    resolved_outputs = _resolve_outputs(outputs)
+    return tuple(resolved_outputs.artifacts_by_target.get(target_name, ()))
+
+
+def artifact_templates_for_target(
+    target_name: str,
+    *,
+    outputs: DerivedTargetOutputs | None = None,
+) -> dict[str, str]:
+    """Return artifact path templates for a target from DAG saver tags.
+
+    Parameters
+    ----------
+    target_name
+        Target name to resolve.
+    outputs
+        Optional DAG-derived outputs mapping.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of artifact name to path template.
+    """
+    resolved_outputs = _resolve_outputs(outputs)
+    return dict(resolved_outputs.artifact_templates_by_target.get(target_name, {}))
 
 
 def expected_datasets(
     target: OutputTarget,
     snapshot: SnapshotRef,
     *,
-    output_inventory: OutputInventory | None = None,
+    outputs: DerivedTargetOutputs | None = None,
 ) -> tuple[DatasetRef, ...]:
     """Generate expected DatasetRef objects for a target's output tables.
 
@@ -33,8 +120,8 @@ def expected_datasets(
         Output target with contract defining table_keys.
     snapshot
         Snapshot identity (repo + commit) for lineage.
-    output_inventory
-        Optional output inventory providing canonical table keys per target.
+    outputs
+        Optional DAG-derived outputs mapping.
 
     Returns
     -------
@@ -44,17 +131,17 @@ def expected_datasets(
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
-    >>> from codeintel.build.target_catalog import load_target_specs
-    >>> target = next(t for t in load_target_specs() if t.name == "function_metrics")
+    >>> from codeintel.build.target_metadata import get_target_metadata_service
+    >>> graph = get_target_metadata_service().system.graph
+    >>> target = graph.get("function_metrics")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_datasets(target, snapshot)
-    >>> len(refs)
-    2
+    >>> len(refs) > 0
+    True
     >>> refs[0].table_key
     'analytics.function_metrics'
     """
-    resolved_inventory = output_inventory or get_output_inventory()
-    table_keys = resolved_inventory.datasets_for(target.name)
+    table_keys = expected_table_keys_for_target(target.name, outputs=outputs)
     if not table_keys:
         return ()
 
@@ -73,7 +160,7 @@ def expected_artifacts(
     target: OutputTarget,
     snapshot: SnapshotRef,
     *,
-    output_inventory: OutputInventory | None = None,
+    outputs: DerivedTargetOutputs | None = None,
     path_formatter: dict[str, str] | None = None,
 ) -> tuple[ArtifactRef, ...]:
     """Generate expected ArtifactRef objects for a target's output artifacts.
@@ -84,8 +171,8 @@ def expected_artifacts(
         Output target used for identity only (artifacts are DAG-derived).
     snapshot
         Snapshot identity (repo + commit) for lineage.
-    output_inventory
-        Optional output inventory providing canonical artifact names per target.
+    outputs
+        Optional DAG-derived outputs mapping.
     path_formatter
         Optional dict for formatting path templates (e.g., {"build_dir": "/tmp/build"}).
 
@@ -102,18 +189,18 @@ def expected_artifacts(
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
-    >>> from codeintel.build.target_catalog import load_target_specs
-    >>> target = next(t for t in load_target_specs() if t.name == "scip")
+    >>> from codeintel.build.target_metadata import get_target_metadata_service
+    >>> graph = get_target_metadata_service().system.graph
+    >>> target = graph.get("scip")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_artifacts(target, snapshot)
     >>> len(refs) > 0
     True
     """
-    resolved_inventory = output_inventory or get_output_inventory()
-    allowed = set(resolved_inventory.artifacts_for(target.name))
+    allowed = set(expected_artifact_names_for_target(target.name, outputs=outputs))
     if not allowed:
         return ()
-    templates = resolved_inventory.artifact_templates_for(target.name)
+    templates = artifact_templates_for_target(target.name, outputs=outputs)
     if not templates:
         msg = f"Missing artifact templates for target: {target.name}"
         raise ValueError(msg)
@@ -145,6 +232,9 @@ def expected_artifacts(
 
 
 __all__ = [
+    "artifact_templates_for_target",
+    "expected_artifact_names_for_target",
     "expected_artifacts",
     "expected_datasets",
+    "expected_table_keys_for_target",
 ]

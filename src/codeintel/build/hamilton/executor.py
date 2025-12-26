@@ -19,7 +19,7 @@ import logging
 import time
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import hamilton.base as h_base
 from opentelemetry import trace as otel_trace
@@ -27,6 +27,10 @@ from opentelemetry import trace as otel_trace
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
+from codeintel.build.hamilton.decision_trace import (
+    DECISION_TRACE_ARTIFACT_NAME,
+    DECISION_TRACE_PATH_TEMPLATE,
+)
 from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import (
@@ -71,6 +75,12 @@ class _RunState:
         return (time.perf_counter() - self.start_time) * 1000
 
 
+class _TrackingConstants(Protocol):
+    CAPTURE_DATA_STATISTICS: bool
+    MAX_LIST_LENGTH_CAPTURE: int
+    MAX_DICT_LENGTH_CAPTURE: int
+
+
 def _generate_run_id() -> str:
     """Generate a unique run ID for build tracking.
 
@@ -104,12 +114,13 @@ def _apply_tracker_constants(settings: HamiltonTrackerSettings) -> None:
     except ModuleNotFoundError as exc:
         log.warning("Hamilton tracker constants unavailable: %s", exc)
         return
+    constants = cast("_TrackingConstants", tracking_constants)
     if settings.capture_data_statistics is not None:
-        tracking_constants.CAPTURE_DATA_STATISTICS = bool(settings.capture_data_statistics)
+        constants.CAPTURE_DATA_STATISTICS = bool(settings.capture_data_statistics)
     if settings.max_list_length is not None:
-        tracking_constants.MAX_LIST_LENGTH_CAPTURE = settings.max_list_length
+        constants.MAX_LIST_LENGTH_CAPTURE = settings.max_list_length
     if settings.max_dict_length is not None:
-        tracking_constants.MAX_DICT_LENGTH_CAPTURE = settings.max_dict_length
+        constants.MAX_DICT_LENGTH_CAPTURE = settings.max_dict_length
 
 
 def _build_tracker_tags(
@@ -128,6 +139,11 @@ def _build_tracker_tags(
     tags.setdefault("run_id", run_id)
     if domain and "domain" not in tags:
         tags["domain"] = domain
+    tags.setdefault("build.decision_trace_artifact", DECISION_TRACE_ARTIFACT_NAME)
+    tags.setdefault(
+        "build.decision_trace_path",
+        DECISION_TRACE_PATH_TEMPLATE.format(build_dir=env.paths.build_dir.name),
+    )
     return tags
 
 
@@ -652,7 +668,12 @@ class HamiltonBuildExecutor:
                     gateway=cast("StorageGateway", wrapped_gateway),
                 )
 
-            with run_context(run_id=context.run_id, domain=context.domain):
+            with run_context(
+                run_id=context.run_id,
+                domain=context.domain,
+                repo=context.env.repo,
+                commit=context.env.commit,
+            ):
                 outputs = context.runtime.dr.execute(
                     list(final_vars),
                     inputs={"env": execution_env, "graph": context.runtime.graph},

@@ -30,11 +30,14 @@ from codeintel.cli.execution.bootstrap import bootstrap_cli
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.base import CodeIntelError
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.observability.attribute_taxonomy import limit_cli_arg_names
 from codeintel.observability.otel import (
     ObservabilityRuntime,
     get_observability,
     shutdown_observability,
 )
+from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.test_mode import should_shutdown_observability_per_command
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -136,7 +139,7 @@ def run_cli_with_telemetry(
         output_format=output_format,
         cli_enabled=settings.cli_enabled,
         arg_capture_mode=_normalize_capture_mode(settings.cli_args_capture_mode),
-        arg_allowlist=_normalize_allowlist(settings.cli_args_allowlist),
+        arg_allowlist=normalize_allowlist(settings.cli_args_allowlist),
     )
     obs = resolved_deps.get_observability()
     span_cm = _span_context(obs) if options.cli_enabled else nullcontext(None)
@@ -161,6 +164,7 @@ def run_cli_with_telemetry(
                 invocation_id=state.invocation_id,
                 command_chain=state.command_chain,
                 arg_names=state.arg_names,
+                policy=obs.policy,
             )
     finally:
         _finalize_span(span, state=state, exit_code=exit_code)
@@ -171,7 +175,8 @@ def run_cli_with_telemetry(
             enabled=options.cli_enabled,
         )
         _emit_cli_log(state, exit_code=exit_code, enabled=options.cli_enabled)
-        resolved_deps.shutdown()
+        if should_shutdown_observability_per_command():
+            resolved_deps.shutdown()
     raise SystemExit(exit_code)
 
 
@@ -255,14 +260,19 @@ def _set_span_context(
     invocation_id: str,
     command_chain: tuple[str, ...],
     arg_names: tuple[str, ...],
+    policy: ObservabilityPolicy,
 ) -> None:
     if span is None:
         return
+    bounded_arg_names = limit_cli_arg_names(
+        arg_names,
+        max_len=policy.cli_arg_names_max,
+    )
     span.set_attribute("cli.invocation_id", invocation_id)
     span.set_attribute("cli.command", ".".join(command_chain) if command_chain else "<unknown>")
     span.set_attribute("cli.arg_count", len(arg_names))
-    if arg_names:
-        span.set_attribute("cli.arg_names", [*arg_names])
+    if bounded_arg_names:
+        span.set_attribute("cli.arg_names", [*bounded_arg_names])
 
 
 def _command_label(command_chain: tuple[str, ...]) -> str:
@@ -380,7 +390,21 @@ def _resolve_verbosity(bound: BoundArguments) -> int:
     return 0
 
 
-def _flatten_arg_names(arguments: Mapping[str, object], ignored_names: set[str]) -> list[str]:
+def flatten_arg_names(arguments: Mapping[str, object], ignored_names: set[str]) -> list[str]:
+    """Flatten bound arguments into a list of parameter names.
+
+    Parameters
+    ----------
+    arguments
+        Bound arguments mapping.
+    ignored_names
+        Argument names to ignore.
+
+    Returns
+    -------
+    list[str]
+        Flattened argument names.
+    """
     names: list[str] = []
     for name, value in arguments.items():
         if name in ignored_names:
@@ -407,7 +431,7 @@ def _safe_arg_names(
         return ()
     arguments = getattr(bound, "arguments", {})
     ignored_names = set(ignored or {})
-    names = _flatten_arg_names(arguments, ignored_names)
+    names = flatten_arg_names(arguments, ignored_names)
     if capture_mode == _CLI_CAPTURE_MODE_ALLOWLIST:
         return tuple(name for name in names if name in allowlist)
     return tuple(names)
@@ -498,7 +522,19 @@ def _normalize_capture_mode(value: str) -> str:
     return _CLI_CAPTURE_MODE_NAMES_ONLY
 
 
-def _normalize_allowlist(values: tuple[str, ...]) -> set[str]:
+def normalize_allowlist(values: tuple[str, ...]) -> set[str]:
+    """Normalize allowlist entries by expanding shared flag prefixes.
+
+    Parameters
+    ----------
+    values
+        Raw allowlist values from settings.
+
+    Returns
+    -------
+    set[str]
+        Normalized allowlist entries.
+    """
     normalized = {value.strip() for value in values if value.strip()}
     expanded: set[str] = set()
     for value in normalized:
@@ -508,4 +544,9 @@ def _normalize_allowlist(values: tuple[str, ...]) -> set[str]:
     return expanded
 
 
-__all__ = ["RunContext", "run_cli_with_telemetry"]
+__all__ = [
+    "RunContext",
+    "flatten_arg_names",
+    "normalize_allowlist",
+    "run_cli_with_telemetry",
+]

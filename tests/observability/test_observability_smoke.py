@@ -15,6 +15,7 @@ from starlette.requests import Request
 
 from codeintel.cli.config.model import CliConfig, TelemetryConfig
 from codeintel.cli.execution.bootstrap import bootstrap_cli, reset_bootstrap
+from codeintel.observability.context import run_context
 from codeintel.observability.operations import observe_operation, record_query_metrics
 from codeintel.observability.otel import (
     ObservabilityConfig,
@@ -105,8 +106,32 @@ def test_record_query_metrics_smoke() -> None:
     )
 
 
-def test_cli_bootstrap_emits_span() -> None:
+def test_observe_operation_includes_repo_and_commit() -> None:
+    """Ensure run context repo/commit attributes land on spans."""
+    shutdown_observability()
+    exporter = _configure_tracing()
+
+    with run_context(
+        run_id="run-1",
+        domain="tests",
+        repo="org/repo",
+        commit="abc123",
+    ), observe_operation(
+        component="cli",
+        operation="health",
+    ):
+        pass
+
+    spans = exporter.get_finished_spans()
+    expect_true(bool(spans), message="Expected spans to be recorded")
+    attrs = _span_attributes(spans[-1])
+    expect_equal(attrs.get("codeintel.repo"), "org/repo")
+    expect_equal(attrs.get("codeintel.commit"), "abc123")
+
+
+def test_cli_bootstrap_emits_span(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure CLI bootstrap initializes tracing."""
+    monkeypatch.setenv("CODEINTEL_TEST_TELEMETRY_MODE", "inherit")
     shutdown_observability()
     reset_bootstrap()
 

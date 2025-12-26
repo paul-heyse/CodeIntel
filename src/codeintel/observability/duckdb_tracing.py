@@ -198,6 +198,7 @@ def maybe_instrument_duckdb_connection(
         attributes=attributes,
         span_builder=_build_span_builder(obs),
         require_parent_span=obs.duckdb_require_parent_span,
+        policy=obs.policy,
     )
     tracing_config = _TracingConfig(emitter=DbSpanEmitter(emitter_config))
     wrapped = _RedactingConnectionProxy(con, tracing_config)

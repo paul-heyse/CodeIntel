@@ -23,9 +23,6 @@ class BuildSettings:
 
     engine_version: str
     export_audit: ExportAuditSettings = field(default_factory=ExportAuditSettings)
-    output_inventory_source: str = "declared"
-    output_inventory_strict: bool = False
-    support_nodes_source: str = "contracts"
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +168,10 @@ class ObservabilitySettings:
     cli_enabled: bool = True
     cli_args_allowlist: tuple[str, ...] = ()
     cli_args_capture_mode: str = "names-only"
+    cli_arg_names_max: int = 25
+    http_route_max_len: int = 120
+    mcp_tool_name_max_len: int = 80
+    operation_attribute_allowlist_overrides: tuple[tuple[str, tuple[str, ...]], ...] = ()
     grpc_observability: GrpcObservabilitySettings = field(default_factory=GrpcObservabilitySettings)
     hamilton_tracker: HamiltonTrackerSettings = field(default_factory=HamiltonTrackerSettings)
     duckdb_tracing_enabled: bool = True

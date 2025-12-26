@@ -38,9 +38,6 @@ _RUNTIME_BUILD_SETTINGS = load_runtime_settings().build
 TEST_BUILD_SETTINGS = BuildSettings(
     engine_version="test",
     export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
-    output_inventory_source=_RUNTIME_BUILD_SETTINGS.output_inventory_source,
-    output_inventory_strict=_RUNTIME_BUILD_SETTINGS.output_inventory_strict,
-    support_nodes_source=_RUNTIME_BUILD_SETTINGS.support_nodes_source,
 )
 
 
@@ -60,9 +57,6 @@ def make_build_settings(engine_version: str = "test") -> BuildSettings:
     return BuildSettings(
         engine_version=engine_version,
         export_audit=_RUNTIME_BUILD_SETTINGS.export_audit or ExportAuditSettings(),
-        output_inventory_source=_RUNTIME_BUILD_SETTINGS.output_inventory_source,
-        output_inventory_strict=_RUNTIME_BUILD_SETTINGS.output_inventory_strict,
-        support_nodes_source=_RUNTIME_BUILD_SETTINGS.support_nodes_source,
     )
 
 

@@ -121,6 +121,7 @@ dependencies = [
     "grpcio-observability>=1.76.0",
     "opentelemetry-api>=1.39.1",
     "opentelemetry-sdk>=1.39.1",
+    "grpc-stubs>=1.53.0.6",
 ]
 
 [project.scripts]

@@ -11,14 +11,13 @@ from __future__ import annotations
 
 import ast
 import logging
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
 from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root
 from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
@@ -107,53 +106,6 @@ def import_graph__edges_marker() -> tuple[tuple[object, ...], ...] | None:
         Always ``None`` so the saver node is used only for metadata.
     """
     return None
-
-
-@dataclass(frozen=True)
-class ImportGraphExtractResult:
-    """Result from import graph extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    module_count
-        Number of modules processed.
-    edge_count
-        Number of import edges extracted.
-    table_counts
-        Row counts per produced table.
-    skipped
-        Whether extraction was skipped.
-    skip_reason
-        Optional reason for skipping extraction.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    module_count: int = 0
-    edge_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    skip_reason: str | None = None
-    error: str | None = None
-
-
-@tag_helper(domain="graphs")
-def import_graph__execution_result(
-    t__import_graph__extract: ImportGraphExtractResult,
-) -> ExecutionResult:
-    """Convert import_graph extract result to the executor boundary type.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical execution result.
-    """
-    return to_execution_result(
-        t__import_graph__extract, default_error="Import graph extraction failed"
-    )
 
 
 @tag_helper(domain="graphs")
@@ -287,7 +239,7 @@ def t__import_graph__extract(
     gateway: StorageGateway,
     q__core__modules: ir.Table,
     t__modules: TargetRunRecord,
-) -> ImportGraphExtractResult:
+) -> ExecutionResult:
     """Execute import graph extraction on repository modules.
 
     This is the compute node for the import_graph target. It parses Python
@@ -307,8 +259,8 @@ def t__import_graph__extract(
 
     Returns
     -------
-    ImportGraphExtractResult
-        Result containing module and edge counts.
+    ExecutionResult
+        Execution status and table row counts.
 
     Notes
     -----
@@ -317,9 +269,8 @@ def t__import_graph__extract(
     - graph.import_graph_edges: Import relationships
     """
     if t__modules.status != "succeeded":
-        return ImportGraphExtractResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
+        return ExecutionResult.failed(
+            f"Upstream modules target failed: {t__modules.error}"
         )
 
     try:
@@ -342,14 +293,11 @@ def t__import_graph__extract(
 
         if not module_by_path:
             log.info("import_graph: No modules found, skipping")
-            return ImportGraphExtractResult(
-                success=True,
-                module_count=0,
-                edge_count=0,
+            return ExecutionResult.ok(
                 table_counts={
                     IMPORT_MODULES_TABLE_KEY: 0,
                     IMPORT_GRAPH_EDGES_TABLE_KEY: 0,
-                },
+                }
             )
 
         edges = _collect_import_edges(source_root=source_root, module_by_path=module_by_path)
@@ -368,29 +316,23 @@ def t__import_graph__extract(
 
         log.info("import_graph: Persisted %d modules, %d edges", module_count, edge_count)
 
-        return ImportGraphExtractResult(
-            success=True,
-            module_count=module_count,
-            edge_count=edge_count,
+        return ExecutionResult.ok(
             table_counts={
                 IMPORT_MODULES_TABLE_KEY: module_count,
                 IMPORT_GRAPH_EDGES_TABLE_KEY: edge_count,
-            },
+            }
         )
 
     except Exception as exc:
         log.exception("Import graph extraction failed")
-        return ImportGraphExtractResult(
-            success=False,
-            error=str(exc),
-        )
+        return ExecutionResult.failed(str(exc))
 
 
 @codeintel_target(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph(
     env: BuildEnv,
     graph: TargetGraph,
-    import_graph__execution_result: ExecutionResult,
+    t__import_graph__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Construct a module import graph.
 
@@ -403,21 +345,18 @@ def t__import_graph(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    import_graph__execution_result
-        Execution result derived from upstream extract node.
+    t__import_graph__extract
+        Execution result produced by the extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(
-        env, graph, IMPORT_GRAPH_TARGET_NAME, import_graph__execution_result
-    )
+    return executor_materialize(env, graph, IMPORT_GRAPH_TARGET_NAME, t__import_graph__extract)
 
 
 __all__ = [
-    "ImportGraphExtractResult",
     "t__import_graph",
     "t__import_graph__extract",
 ]

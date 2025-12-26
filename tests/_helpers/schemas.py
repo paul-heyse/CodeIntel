@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.catalogs.canonical import load_contract_catalog
+from codeintel.build.schemas import (
+    ContractResolutionMode,
+    ContractResolutionSettings,
+    iter_contracts,
+)
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.contracts.catalog_state import get_contract_catalog
@@ -24,7 +28,10 @@ def ensure_storage_contract_catalog() -> None:
     """Ensure the storage contract catalog is loaded for schema access."""
     if get_contract_catalog() is not None:
         return
-    contracts = load_contract_catalog()
+    settings = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
+    contracts = {
+        contract.table_key: contract for contract in iter_contracts(settings=settings)
+    }
     set_contract_catalog(contracts)
     clear_schema_provider_cache()
 

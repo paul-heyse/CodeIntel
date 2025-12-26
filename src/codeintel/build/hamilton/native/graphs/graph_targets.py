@@ -50,7 +50,7 @@ from codeintel.analytics.graphs.module_graph_metrics_ext import (
 )
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.helpers import (
     filter_paths,
@@ -237,7 +237,7 @@ def graph_validation__rows_marker() -> tuple[tuple[object, ...], ...] | None:
 
 
 # ---------------------------------------------------------------------------
-# Result dataclasses for goids target
+# Input dataclasses for goids target
 # ---------------------------------------------------------------------------
 
 
@@ -267,98 +267,6 @@ class GoidExtractionInputs:
     options: GoidBuilderOptions
     module_name: str
     normalized_path: str
-
-
-@dataclass(frozen=True)
-class GoidExtractResult:
-    """Result from GOID extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    goid_count
-        Number of GOIDs extracted.
-    crosswalk_count
-        Number of crosswalk entries extracted.
-    table_counts
-        Row counts per produced table.
-    skipped
-        Whether extraction was skipped.
-    skip_reason
-        Optional reason for skipping extraction.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    goid_count: int = 0
-    crosswalk_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    skip_reason: str | None = None
-    error: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Result dataclasses for symbol_uses target
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class SymbolUsesExtractResult:
-    """Result from symbol uses extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    edge_count
-        Number of symbol use edges extracted.
-    table_counts
-        Row counts per produced table.
-    skipped
-        Whether extraction was skipped.
-    skip_reason
-        Optional reason for skipping extraction.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    edge_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    skip_reason: str | None = None
-    error: str | None = None
-
-
-@tag_helper(domain="graphs")
-def goids__execution_result(t__goids__extract: GoidExtractResult) -> ExecutionResult:
-    """Convert goids extract result to the executor boundary type.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical execution result.
-    """
-    return to_execution_result(t__goids__extract, default_error="GOID extraction failed")
-
-
-@tag_helper(domain="graphs")
-def symbol_uses__execution_result(
-    t__symbol_uses__extract: SymbolUsesExtractResult,
-) -> ExecutionResult:
-    """Convert symbol_uses extract result to the executor boundary type.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical execution result.
-    """
-    return to_execution_result(
-        t__symbol_uses__extract, default_error="Symbol uses extraction failed"
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1077,7 +985,7 @@ def t__goids__extract(
     gateway: StorageGateway,
     q__core__modules: ir.Table,
     t__modules: TargetRunRecord,
-) -> GoidExtractResult:
+) -> ExecutionResult:
     """Execute GOID extraction on repository modules.
 
     This is the compute node for the goids target. It parses Python source
@@ -1097,8 +1005,8 @@ def t__goids__extract(
 
     Returns
     -------
-    GoidExtractResult
-        Result containing GOID and crosswalk row counts.
+    ExecutionResult
+        Execution status and table row counts.
 
     Notes
     -----
@@ -1107,9 +1015,8 @@ def t__goids__extract(
     - core.goid_crosswalk: GOID crosswalk records
     """
     if t__modules.status != "succeeded":
-        return GoidExtractResult(
-            success=False,
-            error=f"Upstream modules target failed: {t__modules.error}",
+        return ExecutionResult.failed(
+            f"Upstream modules target failed: {t__modules.error}"
         )
 
     try:
@@ -1131,14 +1038,11 @@ def t__goids__extract(
 
         if not tracked_files:
             log.info("goids: No tracked files found, skipping")
-            return GoidExtractResult(
-                success=True,
-                goid_count=0,
-                crosswalk_count=0,
+            return ExecutionResult.ok(
                 table_counts={
                     GOIDS_GOIDS_TABLE_KEY: 0,
                     GOIDS_CROSSWALK_TABLE_KEY: 0,
-                },
+                }
             )
 
         now = datetime.now(UTC)
@@ -1189,29 +1093,23 @@ def t__goids__extract(
             crosswalk_count,
         )
 
-        return GoidExtractResult(
-            success=True,
-            goid_count=goid_count,
-            crosswalk_count=crosswalk_count,
+        return ExecutionResult.ok(
             table_counts={
                 GOIDS_GOIDS_TABLE_KEY: goid_count,
                 GOIDS_CROSSWALK_TABLE_KEY: crosswalk_count,
-            },
+            }
         )
 
     except Exception as exc:
         log.exception("GOID extraction failed")
-        return GoidExtractResult(
-            success=False,
-            error=str(exc),
-        )
+        return ExecutionResult.failed(str(exc))
 
 
 @codeintel_target(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids(
     env: BuildEnv,
     graph: TargetGraph,
-    goids__execution_result: ExecutionResult,
+    t__goids__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Resolve GOIDs and build crosswalks.
 
@@ -1224,15 +1122,15 @@ def t__goids(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    goids__execution_result
-        Execution result derived from upstream extract node.
+    t__goids__extract
+        Execution result produced by the extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, GOIDS_TARGET_NAME, goids__execution_result)
+    return executor_materialize(env, graph, GOIDS_TARGET_NAME, t__goids__extract)
 
 
 # ---------------------------------------------------------------------------
@@ -1247,20 +1145,17 @@ def t__symbol_uses__extract(
     t__scip: TargetRunRecord,
     t__modules: TargetRunRecord,
     t__goids: TargetRunRecord,
-) -> SymbolUsesExtractResult:
+) -> ExecutionResult:
     """Execute symbol use extraction from SCIP data.
 
     Returns
     -------
-    SymbolUsesExtractResult
-        Status and per-table row counts for extracted edges.
+    ExecutionResult
+        Execution status and per-table row counts.
     """
     for name, record in [("scip", t__scip), ("modules", t__modules), ("goids", t__goids)]:
         if record.status != "succeeded":
-            return SymbolUsesExtractResult(
-                success=False,
-                error=f"Upstream {name} target failed: {record.error}",
-            )
+            return ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
 
     try:
         repo = env.snapshot.repo
@@ -1279,10 +1174,8 @@ def t__symbol_uses__extract(
 
         if not occurrences:
             log.info("symbol_uses: No SCIP occurrences found, skipping")
-            return SymbolUsesExtractResult(
-                success=True,
-                edge_count=0,
-                table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0},
+            return ExecutionResult.ok(
+                table_counts={SYMBOL_USE_EDGES_TABLE_KEY: 0}
             )
 
         occurrences = _filter_symbol_occurrences(occurrences, options=opts)
@@ -1306,21 +1199,19 @@ def t__symbol_uses__extract(
             options=materialize_options(env, owner_target=SYMBOL_USES_TARGET_NAME),
         )
         row_count = int(row_result.rows_written or 0)
-        return SymbolUsesExtractResult(
-            success=True,
-            edge_count=row_count,
-            table_counts={SYMBOL_USE_EDGES_TABLE_KEY: row_count},
+        return ExecutionResult.ok(
+            table_counts={SYMBOL_USE_EDGES_TABLE_KEY: row_count}
         )
     except (RuntimeError, ValueError, OSError, KeyError) as exc:
         log.exception("symbol_uses: extraction failed")
-        return SymbolUsesExtractResult(success=False, error=str(exc))
+        return ExecutionResult.failed(str(exc))
 
 
 @codeintel_target(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses(
     env: BuildEnv,
     graph: TargetGraph,
-    symbol_uses__execution_result: ExecutionResult,
+    t__symbol_uses__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Extract symbol definition-to-use edges.
 
@@ -1329,7 +1220,7 @@ def t__symbol_uses(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return executor_materialize(env, graph, SYMBOL_USES_TARGET_NAME, symbol_uses__execution_result)
+    return executor_materialize(env, graph, SYMBOL_USES_TARGET_NAME, t__symbol_uses__extract)
 
 
 # ---------------------------------------------------------------------------
@@ -2175,11 +2066,9 @@ def t__graph_validation(
 
 
 __all__ = [
-    "GoidExtractResult",
     "GoidExtractionInputs",
     "GraphMetricsComputeResult",
     "GraphValidationResult",
-    "SymbolUsesExtractResult",
     "call_graph_depth_stats",
     "call_graph_function_call_counts",
     "graph_metrics__functions_ext_rows",

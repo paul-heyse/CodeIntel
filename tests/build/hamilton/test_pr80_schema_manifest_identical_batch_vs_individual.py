@@ -6,8 +6,8 @@ import json
 
 import pytest
 
+from codeintel.build.schemas import declared_schema_provider
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
-from codeintel.build.schemas.provider_declared import declared_schema_provider
 
 
 def test_pr80_schema_manifest_identical_batch_vs_individual() -> None:

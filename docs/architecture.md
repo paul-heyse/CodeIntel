@@ -40,14 +40,12 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
   * `OutputTarget` specs are compiled from DAG tags + docstrings + saver-derived outputs.
     `src/codeintel/build/hamilton/target_spec_compiler.py :: compile_output_targets_from_driver(...)`
 
-* **Output inventory can be “declared vs DAG-derived”**:
+* **Output inventory is DAG-derived**:
 
-  * Inventory modes `declared|compare|dag` are resolved via settings; DAG derivation comes from **DataSaver tags** (contract-only `output_role="contract"`).
-    `src/codeintel/build/target_inventory.py :: resolve_output_inventory(...)`
+  * Output identity and artifact templates are derived from **DataSaver tags** (contract-only `output_role="contract"`).
     `src/codeintel/build/hamilton/introspect.py :: derive_target_outputs_from_savers(...)`
-    `src/codeintel/core/config/settings.py :: BuildSettings.output_inventory_source`
 
-* **Support nodes (dataset/loader/artifact nodes) can be generated from contracts or from DAG-derived saver outputs** based on `BuildSettings.support_nodes_source`.
+* **Support nodes (dataset/loader/artifact nodes) are generated from DAG-derived saver outputs**.
   `src/codeintel/build/hamilton/driver_factory.py :: _build_support_graph_and_module(...)`
   `src/codeintel/build/hamilton/nodes/support_factory.py :: build_support_module(...)`
 
@@ -130,13 +128,15 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
 
 * **New/centralized metadata & inventory services**:
 
-  * Target catalog (cached canonical target specs):
-    `src/codeintel/build/target_catalog.py :: load_target_specs(...)` / `target_graph_from_catalog(...)`
   * Target metadata service (runtime + indexes + tag index + schema index):
     `src/codeintel/build/target_metadata.py :: get_target_metadata_service(...)` / `TargetSystem` / `TargetMetadataService`
-  * Output inventory types: `src/codeintel/build/output_inventory.py :: OutputInventory`
-  * Output inventory resolution modes:
-    `src/codeintel/build/target_inventory.py :: resolve_output_inventory(...)` / `OutputInventoryResolver`
+  * Target graph (DAG-derived, canonical):
+    `src/codeintel/build/target_metadata.py :: get_target_system(...)` / `TargetSystem.graph`
+  * DAG output inventory (checked-in artifact):
+    `src/codeintel/core/registry/service.py :: DagOutputInventory` /
+    `src/codeintel/core/registry/dag_output_inventory.yaml`
+  * DAG-derived outputs for runtime checks:
+    `src/codeintel/build/hamilton/introspect.py :: derive_target_outputs_from_savers(...)`
 
 * Runtime settings façade:
 
@@ -168,13 +168,10 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
 
   * `src/codeintel/build/serving/publisher.py :: publish_serving_snapshot(...)`
 
-## 2.3 `src/codeintel/build/catalogs/` (canonical catalogs)
+## 2.3 Catalog cache (removed)
 
-* Canonical catalogs build/load + metadata cache:
-
-  * `src/codeintel/build/catalogs/canonical.py :: load_target_catalog(...)` / `load_contract_catalog(...)`
-  * Target catalog is built from a freshly constructed Hamilton runtime graph:
-    `src/codeintel/build/catalogs/canonical.py :: _build_target_catalog()`
+Canonical build catalogs have been removed. Registry consumers now derive contracts from the
+schema service and targets from the Hamilton DAG via `TargetMetadataService`.
 
 ## 2.4 `src/codeintel/build/hamilton/` (Phase4 expanded)
 
@@ -298,13 +295,9 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
 
 * Generates a support module containing dataset/loader/artifact nodes:
 
-  * Support module build:
+  * Support module build (always uses saver-derived outputs):
     `src/codeintel/build/hamilton/driver_factory.py :: _build_support_graph_and_module(...)` →
     `src/codeintel/build/hamilton/nodes/support_factory.py :: build_support_module(...)`
-
-  * Support outputs source can switch to saver-derived outputs:
-    `src/codeintel/core/config/settings.py :: BuildSettings.support_nodes_source`
-    `src/codeintel/build/hamilton/driver_factory.py :: _build_support_graph_and_module(...)`
 
 * Hamilton cache integration:
 
@@ -432,7 +425,6 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
   * `src/codeintel/build/hamilton/env.py :: BuildEnv`
   * Additional env fields impacting behavior:
 
-    * `src/codeintel/build/hamilton/env.py :: BuildEnv.output_inventory`
     * `src/codeintel/build/hamilton/env.py :: BuildEnv.execution_settings`
     * `src/codeintel/build/hamilton/env.py :: BuildEnv.storage`
     * `src/codeintel/build/hamilton/env.py :: BuildEnv.history_options`
@@ -456,20 +448,17 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
   * `src/codeintel/core/config/settings.py :: BuildSettings(...)`
   * `src/codeintel/core/config/settings.py :: HamiltonExecutionSettings(...)`
 
-## 4.4 Output inventory and target metadata service
+## 4.4 DAG outputs and target metadata service
 
-* Inventory data model:
+* DAG output inventory artifact:
 
-  * `src/codeintel/build/output_inventory.py :: OutputInventory(...)`
+  * `src/codeintel/core/registry/dag_output_inventory.yaml`
+  * `src/codeintel/core/registry/service.py :: DagOutputInventory`
 
-* Inventory resolver:
+* DAG-derived outputs (saver tag introspection):
 
-  * `src/codeintel/build/target_inventory.py :: resolve_output_inventory(...)`
-  * Mode literal: `src/codeintel/build/target_inventory.py :: OutputInventoryMode`
-
-* Target graph/spec catalog:
-
-  * `src/codeintel/build/target_catalog.py :: load_target_specs(...)` / `target_graph_from_catalog(...)`
+  * `src/codeintel/build/hamilton/introspect.py :: derive_target_outputs_from_savers(...)`
+  * Expected output helpers: `src/codeintel/build/hamilton/native/outputs.py`
 
 * Target metadata service:
 
@@ -923,15 +912,12 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
   * Exactly one of `{table_key, artifact}`: `src/codeintel/build/hamilton/introspect.py :: _resolve_output_identity(...)`
   * Contract artifact savers require `artifact_path_template`: `src/codeintel/build/hamilton/introspect.py :: _iter_contract_saver_tags(...)`
 
-## 9.5 Output inventory drift handling (declared vs DAG)
+## 9.5 DAG output drift handling
 
-* Inventory mismatch compares table sets, artifact sets, and artifact templates per target:
+* Contract vs DAG outputs are compared directly from saver tags:
 
-  * `src/codeintel/build/target_inventory.py :: _diff_inventories(...)`
-
-* Settings control strictness and source:
-
-  * `src/codeintel/core/config/settings.py :: BuildSettings.output_inventory_source` / `output_inventory_strict`
+  * `src/codeintel/build/hamilton/contracts/check_target_contracts.py :: main(...)`
+  * `src/codeintel/build/hamilton/introspect.py :: derive_target_outputs_from_savers(...)`
 
 ---
 
@@ -950,9 +936,12 @@ I have **only removed/changed** content where it was **confirmed incorrect** (no
 * **output_role**: saver tag classifying outputs as `"contract"` vs `"internal"`.
   `src/codeintel/build/hamilton/save_to.py :: _resolve_output_role(...)`
 
-* **OutputInventory**: per-target datasets/artifacts/templates; derived from declared contracts or saver tags.
-  `src/codeintel/build/output_inventory.py :: OutputInventory`
-  `src/codeintel/build/target_inventory.py :: resolve_output_inventory(...)`
+* **DAG output inventory**: inventory artifact for target outputs and contracts.
+  `src/codeintel/core/registry/dag_output_inventory.yaml`
+  `src/codeintel/core/registry/service.py :: DagOutputInventory`
+
+* **DerivedTargetOutputs**: saver-tag-derived datasets/artifacts/templates per target.
+  `src/codeintel/build/hamilton/introspect.py :: DerivedTargetOutputs`
 
 * **Support nodes**: generated `d__*`, `q__*`, `df__*`, `a__*` nodes for data/artifact access.
   `src/codeintel/build/hamilton/nodes/support_factory.py :: build_support_module(...)`

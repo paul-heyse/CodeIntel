@@ -10,6 +10,7 @@ from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
+from codeintel.build.hamilton.native.outputs import artifact_templates_for_target
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -22,18 +23,18 @@ def resolve_artifact_output_path(
     artifact: str,
     fallback_template: str | None = None,
 ) -> Path:
-    """Resolve an artifact output path using inventory templates or fallback.
+    """Resolve an artifact output path using DAG templates or a fallback.
 
     Parameters
     ----------
     env
-        Build environment containing output inventory and build paths.
+        Build environment containing build paths.
     target
         Target name owning the artifact.
     artifact
         Artifact name to resolve.
     fallback_template
-        Optional template string used when inventory templates are unavailable.
+        Optional template string used when DAG templates are unavailable.
 
     Returns
     -------
@@ -46,9 +47,9 @@ def resolve_artifact_output_path(
         If no template is available for the requested artifact.
     """
     template: str | None = None
-    inventory = env.output_inventory
-    if inventory is not None:
-        template = inventory.artifact_templates_for(target).get(artifact)
+    templates = artifact_templates_for_target(target)
+    if templates:
+        template = templates.get(artifact)
     if template is None:
         template = fallback_template
     if template is None:

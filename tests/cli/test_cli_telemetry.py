@@ -21,8 +21,11 @@ from codeintel.core.runtime import RuntimeSettings
 from codeintel.observability import cli as cli_observability
 
 
-def test_run_cli_with_telemetry_calls_shutdown_on_parse_error() -> None:
+def test_run_cli_with_telemetry_calls_shutdown_on_parse_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Ensure shutdown is invoked when CLI parsing fails."""
+    monkeypatch.setenv("CODEINTEL_TEST_TELEMETRY_MODE", "inherit")
     app = App(name="demo")
 
     @app.command
@@ -72,7 +75,7 @@ class _DummyFlags:
 def test_flatten_arg_names_includes_shared_flags() -> None:
     """Ensure shared flags are flattened into argument names."""
     arguments = {"flags": _DummyFlags(), "target": "modules"}
-    names = cli_observability._flatten_arg_names(arguments, ignored_names=set())
+    names = cli_observability.flatten_arg_names(arguments, ignored_names=set())
     assert "flags.verbose" in names
     assert "flags.json" in names
     assert "flags.run_context" not in names
@@ -81,6 +84,6 @@ def test_flatten_arg_names_includes_shared_flags() -> None:
 
 def test_normalize_allowlist_expands_flags_prefix() -> None:
     """Ensure allowlist expansion includes shared flag prefixes."""
-    allowlist = cli_observability._normalize_allowlist(("verbose", "target"))
+    allowlist = cli_observability.normalize_allowlist(("verbose", "target"))
     assert "flags.verbose" in allowlist
     assert "verbose" in allowlist

@@ -13,8 +13,10 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
-from codeintel.build.output_inventory import OutputInventory
+from codeintel.build.hamilton.introspect import (
+    DerivedTargetOutputs,
+    derive_target_outputs_from_savers,
+)
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
 
@@ -97,7 +99,7 @@ def _check_catalog_completeness(runtime: HamiltonRuntime) -> list[str]:
     return issues
 
 
-def _check_contract_outputs(graph: TargetGraph, outputs: OutputInventory) -> list[str]:
+def _check_contract_outputs(graph: TargetGraph, outputs: DerivedTargetOutputs) -> list[str]:
     issues: list[str] = []
     all_targets = graph.all_targets
     datasets_by_target = outputs.datasets_by_target
@@ -154,12 +156,7 @@ def main() -> int:
     issues: list[str] = []
     issues.extend(_check_catalog_completeness(runtime))
     derived = derive_target_outputs_from_savers(service.system.runtime)
-    observed = OutputInventory(
-        datasets_by_target=derived.datasets_by_target,
-        artifacts_by_target=derived.artifacts_by_target,
-        artifact_templates_by_target=derived.artifact_templates_by_target,
-    )
-    issues.extend(_check_contract_outputs(graph, observed))
+    issues.extend(_check_contract_outputs(graph, derived))
 
     if issues:
         err = TargetContractsError(issues=issues)

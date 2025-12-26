@@ -26,6 +26,7 @@ from codeintel.cli.commands import app as cli_app
 from codeintel.cli.config import load_config
 from codeintel.cli.context import CommandContextBuilder
 from codeintel.cli.core import CliResult
+from codeintel.cli.execution.bootstrap import reset_bootstrap
 from codeintel.cli.introspection import get_registry
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.core.errors.schema import SchemaError as StorageSchemaError
@@ -280,6 +281,7 @@ class CliTestHarness:
             exit_code = 0
             exception = None
             try:
+                reset_bootstrap()
                 cli_app()
             except SystemExit as e:
                 exit_code = e.code if isinstance(e.code, int) else 1

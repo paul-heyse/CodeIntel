@@ -19,13 +19,9 @@ from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.graphs.graph_targets import (
-    GoidExtractResult,
     GraphMetricsComputeResult,
     GraphMetricsMaterializations,
     GraphValidationResult,
-    SymbolUsesExtractResult,
-    goids__execution_result,
-    symbol_uses__execution_result,
     t__goids,
     t__graph_metrics,
     t__graph_validation,
@@ -149,69 +145,6 @@ def _make_graph_metrics_materializations(
 
 
 # ---------------------------------------------------------------------------
-# GoidExtractResult Tests
-# ---------------------------------------------------------------------------
-
-
-def test_goid_extract_result_success() -> None:
-    """Verify GoidExtractResult dataclass for success case."""
-    result = GoidExtractResult(
-        success=True,
-        goid_count=MAX_GOID_COUNT,
-        crosswalk_count=MAX_GOID_COUNT,
-        table_counts={
-            "core.goids": MAX_GOID_COUNT,
-            "core.goid_crosswalk": MAX_GOID_COUNT,
-        },
-    )
-    expect_true(result.success, message="Result should be successful")
-    expect_equal(result.goid_count, MAX_GOID_COUNT)
-    expect_equal(result.crosswalk_count, MAX_GOID_COUNT)
-    expect_equal(result.table_counts["core.goids"], MAX_GOID_COUNT)
-    expect_equal(result.error, None)
-
-
-def test_goid_extract_result_failure() -> None:
-    """Verify GoidExtractResult dataclass for failure case."""
-    result = GoidExtractResult(
-        success=False,
-        table_counts={},
-        error="Upstream modules failed",
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error, "Upstream modules failed")
-
-
-# ---------------------------------------------------------------------------
-# SymbolUsesExtractResult Tests
-# ---------------------------------------------------------------------------
-
-
-def test_symbol_uses_result_success() -> None:
-    """Verify SymbolUsesExtractResult dataclass for success case."""
-    result = SymbolUsesExtractResult(
-        success=True,
-        edge_count=MAX_SYMBOL_USES_COUNT,
-        table_counts={"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT},
-    )
-    expect_true(result.success, message="Result should be successful")
-    expect_equal(result.edge_count, MAX_SYMBOL_USES_COUNT)
-    expect_equal(result.table_counts["graph.symbol_use_edges"], MAX_SYMBOL_USES_COUNT)
-    expect_equal(result.error, None)
-
-
-def test_symbol_uses_result_failure() -> None:
-    """Verify SymbolUsesExtractResult dataclass for failure case."""
-    result = SymbolUsesExtractResult(
-        success=False,
-        table_counts={},
-        error="Upstream scip failed",
-    )
-    expect_true(not result.success, message="Result should indicate failure")
-    expect_equal(result.error, "Upstream scip failed")
-
-
-# ---------------------------------------------------------------------------
 # ExecutionResult Tests
 # ---------------------------------------------------------------------------
 
@@ -304,17 +237,14 @@ def test_goids_materialize_success(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = GoidExtractResult(
-        success=True,
-        goid_count=MAX_GOID_COUNT,
-        crosswalk_count=MAX_GOID_COUNT,
+    compute_result = ExecutionResult.ok(
         table_counts={
             "core.goids": MAX_GOID_COUNT,
             "core.goid_crosswalk": MAX_GOID_COUNT,
-        },
+        }
     )
 
-    record = t__goids(env, graph, goids__execution_result(compute_result))
+    record = t__goids(env, graph, compute_result)
 
     assert_target_ok(record)
     assert_record_row_counts(record, {"core.goids": MAX_GOID_COUNT})
@@ -333,13 +263,9 @@ def test_goids_materialize_failure(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = GoidExtractResult(
-        success=False,
-        table_counts={},
-        error="Upstream modules failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream modules failed")
 
-    record = t__goids(env, graph, goids__execution_result(compute_result))
+    record = t__goids(env, graph, compute_result)
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
@@ -366,13 +292,11 @@ def test_symbol_uses_materialize_success(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = SymbolUsesExtractResult(
-        success=True,
-        edge_count=MAX_SYMBOL_USES_COUNT,
-        table_counts={"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT},
+    compute_result = ExecutionResult.ok(
+        table_counts={"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT}
     )
 
-    record = t__symbol_uses(env, graph, symbol_uses__execution_result(compute_result))
+    record = t__symbol_uses(env, graph, compute_result)
 
     assert_target_ok(record)
     assert_record_row_counts(record, {"graph.symbol_use_edges": MAX_SYMBOL_USES_COUNT})
@@ -391,13 +315,9 @@ def test_symbol_uses_materialize_failure(
     env = _make_env(graph_target_harness)
     graph = _make_graph()
 
-    compute_result = SymbolUsesExtractResult(
-        success=False,
-        table_counts={},
-        error="Upstream scip failed",
-    )
+    compute_result = ExecutionResult.failed("Upstream scip failed")
 
-    record = t__symbol_uses(env, graph, symbol_uses__execution_result(compute_result))
+    record = t__symbol_uses(env, graph, compute_result)
 
     assert_target_ok(record, expected_status="failed")
     expect_true(
