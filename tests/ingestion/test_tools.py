@@ -24,6 +24,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolNotFoundError,
     ToolRunner,
     ToolRunOptions,
+    ToolSpecError,
 )
 from codeintel.ingestion.engine.pyright import PyrightPlugin
 from codeintel.ingestion.engine.pytest import PytestPlugin
@@ -141,6 +142,14 @@ def test_tool_runner_unknown_tool_raises_value_error(tmp_path: Path) -> None:
     runner = ToolRunner(cache_dir=tmp_path)
     with pytest.raises(ValueError, match="Unknown tool"):
         runner.run("unknown-tool", ["--version"])
+
+
+def test_tool_service_validates_required_kwargs(tmp_path: Path) -> None:
+    """ToolService should validate required tool arguments before execution."""
+    runner = PresetRunner(make_tool_run_result(ToolName.COVERAGE))
+    service = ToolService(runner, tools_config=ToolsConfig.default())
+    with pytest.raises(ToolSpecError, match="coverage"):
+        asyncio.run(service.run_plugin("coverage", repo_root=tmp_path))
 
 
 def _write_sleep_script(path: Path, *, sleep_s: float) -> None:

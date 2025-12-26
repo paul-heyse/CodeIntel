@@ -17,7 +17,6 @@ class ToolBinaries:
     """Immutable configuration for external tool executables and timeouts."""
 
     scip_python_bin: str = "scip-python"
-    scip_bin: str = "scip"
     protoc_bin: str = "python"
     pyright_bin: str = "pyright"
     pyrefly_bin: str = "pyrefly"
@@ -43,7 +42,6 @@ class ToolBinaries:
         tool_name = tool.value if isinstance(tool, ToolName) else str(tool)
         mapping = {
             "scip-python": self.scip_python_bin,
-            "scip": self.scip_bin,
             "protoc": self.protoc_bin,
             "pyright": self.pyright_bin,
             "pyrefly": self.pyrefly_bin,

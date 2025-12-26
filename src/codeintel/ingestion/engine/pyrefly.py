@@ -17,6 +17,7 @@ from codeintel.ingestion.engine.infrastructure import (
     ToolName,
     ToolNotFoundError,
     ToolRunOptions,
+    ToolSpec,
 )
 from codeintel.ingestion.engine.plugins import (
     DiagnosticToolPlugin,
@@ -96,6 +97,7 @@ class PyreflyPlugin(DiagnosticToolPlugin):
             produces_artifacts=("pyrefly_json",),
             consumes_configs=("pyrefly_bin",),
             datasets=("analytics.static_diagnostics", "analytics.typedness"),
+            spec=ToolSpec(required_kwargs=("output_path",)),
         )
     )
 

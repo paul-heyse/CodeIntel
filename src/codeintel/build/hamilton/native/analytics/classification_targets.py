@@ -14,30 +14,32 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, value
-
 from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.semantic_roles.core import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
-    record_from_duckdb_materializations,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    SaverContext,
+    TableSaveSpec,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
     options_hash_for_target,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
@@ -56,8 +58,60 @@ TEST_PROFILE_TARGET_NAME = "test_profile"
 
 SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY = "analytics.semantic_roles_functions"
 SEMANTIC_ROLES_MODULES_TABLE_KEY = "analytics.semantic_roles_modules"
+SEMANTIC_ROLES_TABLE_KEYS = (
+    SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY,
+    SEMANTIC_ROLES_MODULES_TABLE_KEY,
+)
 
 TEST_PROFILE_TABLE_KEY = "analytics.test_profile"
+TEST_PROFILE_TABLE_KEYS = (TEST_PROFILE_TABLE_KEY,)
+SEMANTIC_ROLES_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=SEMANTIC_ROLES_TARGET_NAME,
+    hash_options_node="semantic_roles__hash_options",
+)
+TEST_PROFILE_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=TEST_PROFILE_TARGET_NAME,
+    hash_options_node="test_profile__hash_options",
+)
+
+
+@tag_helper(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
+def semantic_roles__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for semantic_roles execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, SEMANTIC_ROLES_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
+def semantic_roles__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    semantic_roles__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when semantic_roles should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        SEMANTIC_ROLES_TARGET_NAME,
+        hash_options=semantic_roles__hash_options,
+    )
+    return executor.should_skip()
 
 
 @tag_helper(domain="analytics")
@@ -75,10 +129,11 @@ def gateway(env: BuildEnv) -> StorageGateway:
 @tag_compute(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def t__semantic_roles__compute(
     env: BuildEnv,
-    graph: TargetGraph,
     gateway: StorageGateway,
     t__modules: TargetRunRecord,
     t__function_ast_features: TargetRunRecord,
+    *,
+    semantic_roles__skip: bool,
 ) -> SemanticRolesResult | None:
     """Compute semantic roles for functions and modules.
 
@@ -89,8 +144,6 @@ def t__semantic_roles__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for skip detection.
     gateway
         Storage gateway for analytics queries.
     t__modules
@@ -120,19 +173,8 @@ def t__semantic_roles__compute(
         )
         return None
 
-    target = graph.get(SEMANTIC_ROLES_TARGET_NAME)
-    if target is not None:
-        options_hash = options_hash_for_target(env, SEMANTIC_ROLES_TARGET_NAME)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
+    if semantic_roles__skip:
+        return None
 
     registry = build_registry(
         gateway=gateway,
@@ -166,14 +208,9 @@ def t__semantic_roles__compute(
         return None
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SEMANTIC_ROLES_TARGET_NAME),
-    table_key=value(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY)),
+@save_rows(
+    context=SEMANTIC_ROLES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -201,14 +238,9 @@ def semantic_roles__functions_rows(
     return tuple(t__semantic_roles__compute.function_rows)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(SEMANTIC_ROLES_MODULES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SEMANTIC_ROLES_TARGET_NAME),
-    table_key=value(SEMANTIC_ROLES_MODULES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SEMANTIC_ROLES_MODULES_TABLE_KEY)),
+@save_rows(
+    context=SEMANTIC_ROLES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=SEMANTIC_ROLES_MODULES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -240,8 +272,7 @@ def semantic_roles__modules_rows(
 def t__semantic_roles(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__semantic_roles_functions: MaterializationMetadata,
-    m__analytics__semantic_roles_modules: MaterializationMetadata,
+    semantic_roles__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Classify semantic roles (handler, utility, etc.).
 
@@ -254,37 +285,48 @@ def t__semantic_roles(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__semantic_roles_functions
-        Materialization metadata for semantic_roles_functions table.
-    m__analytics__semantic_roles_modules
-        Materialization metadata for semantic_roles_modules table.
+    semantic_roles__table_materializations
+        Materialization metadata for semantic_roles tables.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return record_from_duckdb_materializations(
-        env=env,
-        graph=graph,
-        target_name=SEMANTIC_ROLES_TARGET_NAME,
-        materializations={
-            SEMANTIC_ROLES_FUNCTIONS_TABLE_KEY: m__analytics__semantic_roles_functions,
-            SEMANTIC_ROLES_MODULES_TABLE_KEY: m__analytics__semantic_roles_modules,
-        },
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=SEMANTIC_ROLES_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=semantic_roles__table_materializations,
     )
+
+
+semantic_roles__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=SEMANTIC_ROLES_TARGET_NAME,
+    table_keys=SEMANTIC_ROLES_TABLE_KEYS,
+)
 
 
 __all__ = [
     "SemanticRolesResult",
     "TestProfileComputeResult",
+    "semantic_roles__hash_options",
     "semantic_roles__functions_rows",
     "semantic_roles__modules_rows",
+    "semantic_roles__skip",
+    "semantic_roles__table_materializations",
     "t__semantic_roles",
     "t__semantic_roles__compute",
+    "test_profile__hash_options",
     "t__test_profile",
     "t__test_profile__compute",
     "test_profile__rows",
+    "test_profile__skip",
+    "test_profile__table_materializations",
 ]
 
 
@@ -301,11 +343,50 @@ class TestProfileComputeResult:
     error: str | None = None
 
 
+@tag_helper(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
+def test_profile__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for test_profile execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, TEST_PROFILE_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
+def test_profile__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    test_profile__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when test_profile should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        TEST_PROFILE_TARGET_NAME,
+        hash_options=test_profile__hash_options,
+    )
+    return executor.should_skip()
+
+
 @tag_compute(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def t__test_profile__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__coverage_test_edges: TargetRunRecord,
+    *,
+    test_profile__skip: bool,
 ) -> TestProfileComputeResult:
     """Build per-test profiles with coverage and subsystem context.
 
@@ -320,6 +401,9 @@ def t__test_profile__compute(
             error=(f"Upstream coverage_test_edges target failed: {t__coverage_test_edges.error}"),
         )
 
+    if test_profile__skip:
+        return TestProfileComputeResult(result=None)
+
     try:
         build_result = build_test_profile_result(gateway, env.snapshot)
         return TestProfileComputeResult(result=build_result)
@@ -328,14 +412,9 @@ def t__test_profile__compute(
         return TestProfileComputeResult(result=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(TEST_PROFILE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(TEST_PROFILE_TARGET_NAME),
-    table_key=value(TEST_PROFILE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(TEST_PROFILE_TABLE_KEY)),
+@save_rows(
+    context=TEST_PROFILE_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=TEST_PROFILE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -366,7 +445,7 @@ def t__test_profile(
     env: BuildEnv,
     graph: TargetGraph,
     t__test_profile__compute: TestProfileComputeResult,
-    m__analytics__test_profile: MaterializationMetadata,
+    test_profile__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Build per-test profiles with coverage and characteristics.
 
@@ -390,10 +469,19 @@ def t__test_profile(
             artifacts=(),
         )
 
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=TEST_PROFILE_TARGET_NAME,
-        expected_table_key=TEST_PROFILE_TABLE_KEY,
-        materialization=m__analytics__test_profile,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=TEST_PROFILE_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=test_profile__table_materializations,
     )
+
+
+test_profile__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=TEST_PROFILE_TARGET_NAME,
+    table_keys=TEST_PROFILE_TABLE_KEYS,
+)

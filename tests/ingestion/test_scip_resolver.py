@@ -63,7 +63,6 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
             build_dir=build_dir,
             document_output_dir=doc_dir,
             scip_python_bin=None,
-            scip_bin=None,
             modules=[],
         )
 
@@ -73,7 +72,6 @@ def test_resolved_scip_config_create_minimal(tmp_path: Path) -> None:
         expect_equal(config.build_dir, build_dir)
         expect_equal(config.document_output_dir, doc_dir)
         expect_is_none(config.scip_python_bin)
-        expect_is_none(config.scip_bin)
         expect_equal(config.modules, [])
 
 
@@ -89,14 +87,12 @@ def test_resolved_scip_config_create_with_modules(tmp_path: Path) -> None:
             build_dir=context.build_dir,
             document_output_dir=context.build_dir / "docs",
             scip_python_bin="/usr/bin/scip-python",
-            scip_bin="/usr/bin/scip",
             modules=[module],
         )
 
         expect_equal(len(config.modules), 1)
         expect_equal(config.modules[0].module_name, "pkg.mod")
         expect_equal(config.scip_python_bin, "/usr/bin/scip-python")
-        expect_equal(config.scip_bin, "/usr/bin/scip")
 
 
 def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
@@ -108,7 +104,6 @@ def test_resolved_scip_config_frozen_dataclass(tmp_path: Path) -> None:
         build_dir=tmp_path / "build",
         document_output_dir=tmp_path / "docs",
         scip_python_bin=None,
-        scip_bin=None,
         modules=[],
     )
 
@@ -125,7 +120,6 @@ def test_scip_resolver_input_create_empty() -> None:
     expect_is_none(inputs.build_dir)
     expect_is_none(inputs.document_output_dir)
     expect_is_none(inputs.scip_python_bin)
-    expect_is_none(inputs.scip_bin)
     expect_is_none(inputs.modules)
 
 
@@ -143,7 +137,6 @@ def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None
             build_dir=build_dir,
             document_output_dir=doc_dir,
             scip_python_bin="/usr/bin/scip-python",
-            scip_bin="/usr/bin/scip",
         )
 
         expect_equal(inputs.repo, "test-org/test-repo")
@@ -152,7 +145,6 @@ def test_scip_resolver_input_create_with_explicit_params(tmp_path: Path) -> None
         expect_equal(inputs.build_dir, build_dir)
         expect_equal(inputs.document_output_dir, doc_dir)
         expect_equal(inputs.scip_python_bin, "/usr/bin/scip-python")
-        expect_equal(inputs.scip_bin, "/usr/bin/scip")
 
 
 def test_scip_resolver_input_create_with_modules(tmp_path: Path) -> None:
@@ -226,7 +218,6 @@ def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
             build_dir=build_dir,
             document_output_dir=doc_dir,
             scip_python_bin="/usr/bin/scip-python",
-            scip_bin="/usr/bin/scip",
         )
 
         result = resolve_scip_inputs([], inputs)
@@ -234,7 +225,6 @@ def test_resolve_scip_inputs_with_scip_resolver_input(tmp_path: Path) -> None:
         expect_equal(result.repo, "test-org/test-repo")
         expect_equal(result.commit, "def456")
         expect_equal(result.scip_python_bin, "/usr/bin/scip-python")
-        expect_equal(result.scip_bin, "/usr/bin/scip")
 
 
 def test_resolve_scip_inputs_with_modules_sequence(tmp_path: Path) -> None:

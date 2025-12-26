@@ -29,6 +29,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
 )
+from tests._helpers.env import temporary_env
 
 trace_api = pytest.importorskip("opentelemetry.trace")
 sdk_export = pytest.importorskip("opentelemetry.sdk.trace.export")
@@ -129,34 +130,34 @@ def test_observe_operation_includes_repo_and_commit() -> None:
     expect_equal(attrs.get("codeintel.commit"), "abc123")
 
 
-def test_cli_bootstrap_emits_span(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_bootstrap_emits_span() -> None:
     """Ensure CLI bootstrap initializes tracing."""
-    monkeypatch.setenv("CODEINTEL_TEST_TELEMETRY_MODE", "inherit")
-    shutdown_observability()
-    reset_bootstrap()
+    with temporary_env(CODEINTEL_TEST_TELEMETRY_MODE="inherit"):
+        shutdown_observability()
+        reset_bootstrap()
 
-    config = CliConfig(
-        log_level="WARNING",
-        telemetry=TelemetryConfig(
-            enabled=True,
-            service_name="codeintel-cli-test",
-            endpoint=None,
-        ),
-    )
+        config = CliConfig(
+            log_level="WARNING",
+            telemetry=TelemetryConfig(
+                enabled=True,
+                service_name="codeintel-cli-test",
+                endpoint=None,
+            ),
+        )
 
-    bootstrap_cli(config=config)
+        bootstrap_cli(config=config)
 
-    exporter = in_memory.InMemorySpanExporter()
-    provider = trace_api.get_tracer_provider()
-    provider.add_span_processor(sdk_export.SimpleSpanProcessor(exporter))
+        exporter = in_memory.InMemorySpanExporter()
+        provider = trace_api.get_tracer_provider()
+        provider.add_span_processor(sdk_export.SimpleSpanProcessor(exporter))
 
-    with observe_operation(component="cli", operation="bootstrap"):
-        pass
+        with observe_operation(component="cli", operation="bootstrap"):
+            pass
 
-    spans = exporter.get_finished_spans()
-    expect_true(bool(spans), message="Expected spans to be recorded")
-    expect_equal(spans[-1].name, "cli.bootstrap")
-    reset_bootstrap()
+        spans = exporter.get_finished_spans()
+        expect_true(bool(spans), message="Expected spans to be recorded")
+        expect_equal(spans[-1].name, "cli.bootstrap")
+        reset_bootstrap()
 
 
 @pytest.mark.asyncio

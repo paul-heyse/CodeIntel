@@ -19,13 +19,11 @@ from codeintel.core.config.settings import (
 )
 from codeintel.core.runtime import RuntimeSettings
 from codeintel.observability import cli as cli_observability
+from tests._helpers.env import temporary_env
 
 
-def test_run_cli_with_telemetry_calls_shutdown_on_parse_error(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_run_cli_with_telemetry_calls_shutdown_on_parse_error() -> None:
     """Ensure shutdown is invoked when CLI parsing fails."""
-    monkeypatch.setenv("CODEINTEL_TEST_TELEMETRY_MODE", "inherit")
     app = App(name="demo")
 
     @app.command
@@ -54,7 +52,7 @@ def test_run_cli_with_telemetry_calls_shutdown_on_parse_error(
         get_observability=cli_observability.get_observability,
     )
 
-    with pytest.raises(SystemExit):
+    with temporary_env(CODEINTEL_TEST_TELEMETRY_MODE="inherit"), pytest.raises(SystemExit):
         cli_observability.run_cli_with_telemetry(
             app,
             output_format=OutputFormat.TEXT,

@@ -1355,9 +1355,54 @@ class DuckDBPolicyBackend:
         column_type_by_name: dict[str, str] = (
             {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
         )
-
         try:
-            tuple_rows = [
+            tuple_rows = self._coerce_mapping_rows(
+                table_key=table_key,
+                row_list=row_list,
+                resolved_columns=tuple(resolved_columns),
+                column_type_by_name=column_type_by_name,
+                table_schema=table_schema,
+            )
+        except ValueError as exc:
+            message = f"Invalid row data for {table_key}: {exc}"
+            raise ValueError(message) from exc
+
+        return self.bulk_insert(table_key, tuple_rows, columns=resolved_columns)
+
+    def _coerce_mapping_rows(
+        self,
+        *,
+        table_key: str,
+        row_list: list[Mapping[str, object]],
+        resolved_columns: tuple[str, ...],
+        column_type_by_name: Mapping[str, str],
+        table_schema: TableSchema | None,
+    ) -> list[tuple[object, ...]]:
+        if table_schema is None:
+            return self._coerce_mapping_rows_strict(
+                table_key=table_key,
+                row_list=row_list,
+                resolved_columns=resolved_columns,
+                column_type_by_name=column_type_by_name,
+            )
+        return self._coerce_mapping_rows_nullable(
+            table_key=table_key,
+            row_list=row_list,
+            resolved_columns=resolved_columns,
+            column_type_by_name=column_type_by_name,
+            table_schema=table_schema,
+        )
+
+    def _coerce_mapping_rows_strict(
+        self,
+        *,
+        table_key: str,
+        row_list: list[Mapping[str, object]],
+        resolved_columns: tuple[str, ...],
+        column_type_by_name: Mapping[str, str],
+    ) -> list[tuple[object, ...]]:
+        try:
+            return [
                 tuple(
                     self._coerce_insert_value(col, row[col], column_type_by_name)
                     for col in resolved_columns
@@ -1368,7 +1413,31 @@ class DuckDBPolicyBackend:
             message = f"Missing column {exc.args[0]} for {table_key}"
             raise ValueError(message) from exc
 
-        return self.bulk_insert(table_key, tuple_rows, columns=resolved_columns)
+    def _coerce_mapping_rows_nullable(
+        self,
+        *,
+        table_key: str,
+        row_list: list[Mapping[str, object]],
+        resolved_columns: tuple[str, ...],
+        column_type_by_name: Mapping[str, str],
+        table_schema: TableSchema,
+    ) -> list[tuple[object, ...]]:
+        nullable_by_name = {col.name: col.nullable for col in table_schema.columns}
+        tuple_rows: list[tuple[object, ...]] = []
+        for row in row_list:
+            values: list[object] = []
+            for col in resolved_columns:
+                if col in row:
+                    value = row[col]
+                else:
+                    nullable = nullable_by_name.get(col, False)
+                    if not nullable:
+                        message = f"Missing column {col} for {table_key}"
+                        raise ValueError(message)
+                    value = None
+                values.append(self._coerce_insert_value(col, value, column_type_by_name))
+            tuple_rows.append(tuple(values))
+        return tuple_rows
 
     def upsert(
         self,

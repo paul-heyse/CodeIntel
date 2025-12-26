@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.observability.attributes import (
+    SpanAttributeValue,
     coerce_attribute_value,
     redact_command_value,
     redact_path_value,
@@ -23,8 +24,6 @@ if TYPE_CHECKING:
     from opentelemetry.trace import Span
 
 log = logging.getLogger(__name__)
-
-SpanAttributeValue = str | bool | int | float | list[str] | list[bool] | list[int] | list[float]
 
 ShutdownStatus = Literal["unknown", "failed", "partial", "succeeded"]
 ScipTeardownStatus = Literal["unknown", "failed", "skipped", "succeeded"]
@@ -530,7 +529,7 @@ def emit_shutdown_error_event(
 
 def _set_span_attributes(span: Span, attributes: Mapping[str, SpanAttributeValue]) -> None:
     for key, value in attributes.items():
-        attr_value = _coerce_span_value(value)
+        attr_value = coerce_attribute_value(value)
         if attr_value is not None:
             span.set_attribute(key, attr_value)
 
@@ -542,37 +541,20 @@ def _add_span_event(
 ) -> None:
     event_attrs: dict[str, SpanAttributeValue] = {}
     for key, value in attributes.items():
-        attr_value = _coerce_span_value(value)
+        attr_value = coerce_attribute_value(value)
         if attr_value is not None:
             event_attrs[key] = attr_value
     if event_attrs:
         span.add_event(name, attributes=event_attrs)
 
-
-def _coerce_span_value(value: object) -> SpanAttributeValue | None:
-    if value is None:
-        return None
-    if isinstance(value, (str, bool, int, float)):
-        return value
-    if isinstance(value, (list, tuple)):
-        if all(isinstance(item, (str, bool, int, float)) for item in value):
-            return list(value)
-        return [str(item) for item in value]
-    return str(value)
-
-
 def _redact_command_value(value: str | None) -> str | None:
-    if value is None:
-        return None
-    path = Path(value)
-    return path.name or value
+    policy = get_observability().policy
+    return redact_command_value(value, keep_segments=policy.redaction.command_keep_segments)
 
 
 def _redact_path_value(value: str | None) -> str | None:
-    if value is None:
-        return None
-    path = Path(value)
-    return path.name or value
+    policy = get_observability().policy
+    return redact_path_value(value, keep_segments=policy.redaction.path_keep_segments)
 
 
 def _prune_none(values: Mapping[str, SpanAttributeValue | None]) -> dict[str, SpanAttributeValue]:

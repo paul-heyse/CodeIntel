@@ -17,13 +17,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers import (
-    check_output_custom,
-    pipe_input,
-    source,
-    step,
-    value,
-)
+from hamilton.function_modifiers import check_output_custom, pipe_input, source, step
 
 from codeintel.analytics.compute.coverage.compute import (
     aggregate_coverage_lines,
@@ -38,17 +32,26 @@ from codeintel.analytics.testing.behavioral.tags import build_behavior_rows
 from codeintel.analytics.testing.coverage.edges import build_test_coverage_edges_rows
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
-    record_from_duckdb_materialization,
+    MaterializationRecordContext,
+    record_from_materializations,
+)
+from codeintel.build.hamilton.native.patterns.materialization_collectors import (
+    make_table_materializations_collector,
+)
+from codeintel.build.hamilton.native.patterns.savers import (
+    IbisTableSaveSpec,
+    SaverContext,
+    TableSaveSpec,
+    save_ibis_table,
+    save_rows,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hamilton.validators import build_table_contract
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
@@ -70,6 +73,24 @@ BEHAVIORAL_COVERAGE_TARGET_NAME = "behavioral_coverage"
 COVERAGE_FUNCTIONS_TABLE_KEY = "analytics.coverage_functions"
 TEST_COVERAGE_EDGES_TABLE_KEY = "analytics.test_coverage_edges"
 BEHAVIORAL_COVERAGE_TABLE_KEY = "analytics.behavioral_coverage"
+COVERAGE_FUNCTIONS_TABLE_KEYS = (COVERAGE_FUNCTIONS_TABLE_KEY,)
+TEST_COVERAGE_EDGES_TABLE_KEYS = (TEST_COVERAGE_EDGES_TABLE_KEY,)
+BEHAVIORAL_COVERAGE_TABLE_KEYS = (BEHAVIORAL_COVERAGE_TABLE_KEY,)
+COVERAGE_FUNCTIONS_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=COVERAGE_FUNCTIONS_TARGET_NAME,
+    hash_options_node="coverage_functions__hash_options",
+)
+COVERAGE_TEST_EDGES_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=COVERAGE_TEST_EDGES_TARGET_NAME,
+    hash_options_node="coverage_test_edges__hash_options",
+)
+BEHAVIORAL_COVERAGE_SAVE_CONTEXT = SaverContext(
+    domain="analytics",
+    target=BEHAVIORAL_COVERAGE_TARGET_NAME,
+    hash_options_node="behavioral_coverage__hash_options",
+)
 
 
 @tag_helper(domain="analytics")
@@ -82,6 +103,95 @@ def gateway(env: BuildEnv) -> StorageGateway:
         Storage gateway for the current build environment.
     """
     return env.gateway
+
+
+@tag_helper(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME)
+def coverage_functions__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for coverage_functions execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, COVERAGE_FUNCTIONS_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
+def coverage_test_edges__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for coverage_test_edges execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, COVERAGE_TEST_EDGES_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
+def coverage_test_edges__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    coverage_test_edges__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when coverage_test_edges should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        COVERAGE_TEST_EDGES_TARGET_NAME,
+        hash_options=coverage_test_edges__hash_options,
+    )
+    return executor.should_skip()
+
+
+@tag_helper(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
+def behavioral_coverage__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build hash inputs for behavioral_coverage execution.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs for manifest-based skip evaluation.
+    """
+    return InputHashOptions(
+        options_hash=options_hash_for_target(env, BEHAVIORAL_COVERAGE_TARGET_NAME),
+        manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
+def behavioral_coverage__skip(
+    env: BuildEnv,
+    graph: TargetGraph,
+    behavioral_coverage__hash_options: InputHashOptions,
+) -> bool:
+    """Return True when behavioral_coverage should be skipped.
+
+    Returns
+    -------
+    bool
+        True when the target should be skipped.
+    """
+    executor = NativeTargetExecutor.for_target(
+        env,
+        graph,
+        BEHAVIORAL_COVERAGE_TARGET_NAME,
+        hash_options=behavioral_coverage__hash_options,
+    )
+    return executor.should_skip()
 
 
 # -----------------------------------------------------------------------------
@@ -182,13 +292,9 @@ def _coverage_functions_enrich(aggregated: ir.Table) -> ir.Table:
     return enrich_coverage_results(aggregated)
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBIbisTableSaver],
-    output_name_=materialize_node(COVERAGE_FUNCTIONS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(COVERAGE_FUNCTIONS_TARGET_NAME),
-    table_key=value(COVERAGE_FUNCTIONS_TABLE_KEY),
+@save_ibis_table(
+    context=COVERAGE_FUNCTIONS_SAVE_CONTEXT,
+    spec=IbisTableSaveSpec(table_key=COVERAGE_FUNCTIONS_TABLE_KEY),
 )
 @pipe_input(
     step(_coverage_functions_filter_goids, env=source("env")),
@@ -250,7 +356,7 @@ def t__coverage_functions__compute(
 def t__coverage_functions(
     env: BuildEnv,
     graph: TargetGraph,
-    m__analytics__coverage_functions: MaterializationMetadata,
+    coverage_functions__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Aggregate per-function coverage.
 
@@ -260,7 +366,7 @@ def t__coverage_functions(
         Build environment with gateway and snapshot info.
     graph
         Target graph for metadata lookup.
-    m__analytics__coverage_functions
+    coverage_functions__table_materializations
         Materialization metadata for analytics.coverage_functions.
 
     Returns
@@ -268,13 +374,22 @@ def t__coverage_functions(
     TargetRunRecord
         Record describing the materialization outcome.
     """
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=COVERAGE_FUNCTIONS_TARGET_NAME,
-        expected_table_key=COVERAGE_FUNCTIONS_TABLE_KEY,
-        materialization=m__analytics__coverage_functions,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=COVERAGE_FUNCTIONS_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=coverage_functions__table_materializations,
     )
+
+
+coverage_functions__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=COVERAGE_FUNCTIONS_TARGET_NAME,
+    table_keys=COVERAGE_FUNCTIONS_TABLE_KEYS,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -295,6 +410,8 @@ def t__coverage_test_edges__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__goids: TargetRunRecord,
+    *,
+    coverage_test_edges__skip: bool,
 ) -> CoverageTestEdgesComputeResult:
     """Compute test-to-function coverage edges.
 
@@ -317,6 +434,8 @@ def t__coverage_test_edges__compute(
             rows=None,
             error=f"Upstream goids target failed: {t__goids.error}",
         )
+    if coverage_test_edges__skip:
+        return CoverageTestEdgesComputeResult(rows=None)
 
     registry = build_registry(
         gateway=gateway,
@@ -344,14 +463,9 @@ def t__coverage_test_edges__compute(
         return CoverageTestEdgesComputeResult(rows=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(TEST_COVERAGE_EDGES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(COVERAGE_TEST_EDGES_TARGET_NAME),
-    table_key=value(TEST_COVERAGE_EDGES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(TEST_COVERAGE_EDGES_TABLE_KEY)),
+@save_rows(
+    context=COVERAGE_TEST_EDGES_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=TEST_COVERAGE_EDGES_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -381,7 +495,7 @@ def t__coverage_test_edges(
     env: BuildEnv,
     graph: TargetGraph,
     t__coverage_test_edges__compute: CoverageTestEdgesComputeResult,
-    m__analytics__test_coverage_edges: MaterializationMetadata,
+    coverage_test_edges__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Compute test-to-function coverage edges.
 
@@ -393,7 +507,7 @@ def t__coverage_test_edges(
         Target graph for metadata lookup.
     t__coverage_test_edges__compute
         Computed coverage edges result.
-    m__analytics__test_coverage_edges
+    coverage_test_edges__table_materializations
         Materialization metadata for analytics.test_coverage_edges.
 
     Returns
@@ -416,13 +530,22 @@ def t__coverage_test_edges(
             artifacts=(),
         )
 
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=COVERAGE_TEST_EDGES_TARGET_NAME,
-        expected_table_key=TEST_COVERAGE_EDGES_TABLE_KEY,
-        materialization=m__analytics__test_coverage_edges,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=COVERAGE_TEST_EDGES_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=coverage_test_edges__table_materializations,
     )
+
+
+coverage_test_edges__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=COVERAGE_TEST_EDGES_TARGET_NAME,
+    table_keys=TEST_COVERAGE_EDGES_TABLE_KEYS,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -443,6 +566,8 @@ def t__behavioral_coverage__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__test_profile: TargetRunRecord,
+    *,
+    behavioral_coverage__skip: bool,
 ) -> BehavioralCoverageComputeResult:
     """Assign heuristic behavior tags to tests.
 
@@ -465,6 +590,8 @@ def t__behavioral_coverage__compute(
             rows=None,
             error=f"Upstream test_profile target failed: {t__test_profile.error}",
         )
+    if behavioral_coverage__skip:
+        return BehavioralCoverageComputeResult(rows=None)
 
     try:
         rows = build_behavior_rows(
@@ -479,14 +606,9 @@ def t__behavioral_coverage__compute(
         return BehavioralCoverageComputeResult(rows=None, error=str(exc))
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(BEHAVIORAL_COVERAGE_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(BEHAVIORAL_COVERAGE_TARGET_NAME),
-    table_key=value(BEHAVIORAL_COVERAGE_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(BEHAVIORAL_COVERAGE_TABLE_KEY)),
+@save_rows(
+    context=BEHAVIORAL_COVERAGE_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=BEHAVIORAL_COVERAGE_TABLE_KEY),
 )
 @tag_compute(
     domain="analytics",
@@ -513,7 +635,7 @@ def t__behavioral_coverage(
     env: BuildEnv,
     graph: TargetGraph,
     t__behavioral_coverage__compute: BehavioralCoverageComputeResult,
-    m__analytics__behavioral_coverage: MaterializationMetadata,
+    behavioral_coverage__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Tag behavioral coverage from test patterns.
 
@@ -525,7 +647,7 @@ def t__behavioral_coverage(
         Target graph for metadata lookup.
     t__behavioral_coverage__compute
         Computed behavioral coverage result.
-    m__analytics__behavioral_coverage
+    behavioral_coverage__table_materializations
         Materialization metadata for analytics.behavioral_coverage.
 
     Returns
@@ -548,20 +670,37 @@ def t__behavioral_coverage(
             artifacts=(),
         )
 
-    return record_from_duckdb_materialization(
-        env=env,
-        graph=graph,
-        target_name=BEHAVIORAL_COVERAGE_TARGET_NAME,
-        expected_table_key=BEHAVIORAL_COVERAGE_TABLE_KEY,
-        materialization=m__analytics__behavioral_coverage,
+    return record_from_materializations(
+        context=MaterializationRecordContext(
+            env=env,
+            graph=graph,
+            target_name=BEHAVIORAL_COVERAGE_TARGET_NAME,
+        ),
+        artifact_materializations=None,
+        table_materializations=behavioral_coverage__table_materializations,
     )
+
+
+behavioral_coverage__table_materializations = make_table_materializations_collector(
+    domain="analytics",
+    target=BEHAVIORAL_COVERAGE_TARGET_NAME,
+    table_keys=BEHAVIORAL_COVERAGE_TABLE_KEYS,
+)
 
 
 __all__ = [
     "BehavioralCoverageComputeResult",
     "CoverageTestEdgesComputeResult",
+    "behavioral_coverage__hash_options",
     "behavioral_coverage__rows",
+    "behavioral_coverage__skip",
+    "behavioral_coverage__table_materializations",
+    "coverage_functions__hash_options",
+    "coverage_functions__table_materializations",
+    "coverage_test_edges__hash_options",
     "coverage_test_edges__rows",
+    "coverage_test_edges__skip",
+    "coverage_test_edges__table_materializations",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",
     "t__coverage_functions",

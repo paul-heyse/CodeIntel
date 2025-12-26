@@ -70,6 +70,33 @@ class ToolRunOptions:
 
 
 @dataclass(frozen=True)
+class ToolSpec:
+    """Declarative contract for tool keyword arguments."""
+
+    required_kwargs: tuple[str, ...] = ()
+    optional_kwargs: tuple[str, ...] = ()
+    allow_extra_kwargs: bool = False
+
+    def validate_kwargs(
+        self,
+        kwargs: Mapping[str, object],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return missing and unexpected kwargs for this spec.
+
+        Returns
+        -------
+        tuple[tuple[str, ...], tuple[str, ...]]
+            Missing required kwargs and unexpected kwargs, respectively.
+        """
+        missing = tuple(name for name in self.required_kwargs if name not in kwargs)
+        if self.allow_extra_kwargs:
+            return missing, ()
+        allowed = set(self.required_kwargs) | set(self.optional_kwargs)
+        extra = tuple(sorted(name for name in kwargs if name not in allowed))
+        return missing, extra
+
+
+@dataclass(frozen=True)
 class ToolCallRecord:
     """Captured context for a tool invocation."""
 
@@ -89,6 +116,29 @@ class ToolNotFoundError(RuntimeError):
         super().__init__(message)
         self.tool = tool
         self.configured_path = configured_path
+
+
+class ToolSpecError(ValueError):
+    """Raised when tool invocation arguments violate a ToolSpec."""
+
+    def __init__(
+        self,
+        tool_name: str,
+        *,
+        missing: tuple[str, ...],
+        extra: tuple[str, ...],
+    ) -> None:
+        details: list[str] = []
+        if missing:
+            details.append(f"missing={sorted(missing)}")
+        if extra:
+            details.append(f"unexpected={sorted(extra)}")
+        detail_text = ", ".join(details) if details else "invalid arguments"
+        message = f"Tool {tool_name} invocation invalid: {detail_text}"
+        super().__init__(message)
+        self.tool_name = tool_name
+        self.missing = missing
+        self.extra = extra
 
 
 class ToolExecutionError(RuntimeError):

@@ -74,6 +74,12 @@ class SingletonHolder[T]:
     _instance: ClassVar[object | None] = None
     _lock: ClassVar[Lock] = Lock()
 
+    def __init_subclass__(cls) -> None:
+        """Initialize per-subclass singleton storage."""
+        super().__init_subclass__()
+        cls._instance = None
+        cls._lock = Lock()
+
     @classmethod
     def get(cls, factory: Callable[[], T]) -> T:
         """Return the singleton instance, creating it if necessary.

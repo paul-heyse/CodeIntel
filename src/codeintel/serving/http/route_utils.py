@@ -9,6 +9,8 @@ from fastapi import BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 
 from codeintel.observability import observe_operation
+from codeintel.observability.otel import get_observability
+from codeintel.observability.semconv import http_span_attributes
 from codeintel.serving.http.middleware import get_correlation_id
 from codeintel.serving.metrics import QueryMetrics, log_query_metrics
 
@@ -69,15 +71,26 @@ async def run_in_threadpool_with_metrics(
         The return value of `fn`.
     """
     correlation_id = get_correlation_id(request)
-    operation = _route_label(request)
+    route_label = _route_label(request)
+    policy = get_observability().policy
+    http_attrs = http_span_attributes(
+        method=request.method,
+        route=route_label,
+        policy=policy,
+    )
+    normalized_route = http_attrs.get("http.route")
+    operation = (
+        normalized_route
+        if isinstance(normalized_route, str) and normalized_route
+        else route_label
+    )
     start = time.perf_counter()
     try:
         with observe_operation(
             component="http",
             operation=operation,
             attributes={
-                "http.method": request.method,
-                "http.route": operation,
+                **http_attrs,
                 "codeintel.correlation_id": correlation_id,
             },
         ):

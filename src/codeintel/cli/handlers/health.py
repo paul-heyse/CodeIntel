@@ -22,7 +22,11 @@ from codeintel.cli.introspection import get_registry
 from codeintel.cli.observability import TelemetryConfig
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.otel import flush_observability, get_observability
+from codeintel.observability.otel import (
+    flush_observability,
+    get_observability,
+    get_pipeline_health_state,
+)
 from codeintel.storage.gateway import open_memory_gateway
 
 if TYPE_CHECKING:
@@ -328,6 +332,12 @@ def _check_telemetry_pipeline() -> CheckResult:
         )
 
     flush_result = flush_observability()
+    pipeline_state = get_pipeline_health_state()
+    details: dict[str, Any] = {
+        "last_flush_ok": pipeline_state.last_flush_ok,
+        "last_flush_ms": pipeline_state.last_flush_ms,
+        "last_flush_errors": list(pipeline_state.last_flush_errors),
+    }
     if obs.meter is not None:
         counter = obs.meter.create_counter(
             "codeintel.telemetry.pipeline.checks",
@@ -342,20 +352,27 @@ def _check_telemetry_pipeline() -> CheckResult:
             name="telemetry_pipeline",
             status=CheckStatus.WARN,
             message="Telemetry flush unavailable",
+            details=details,
         )
     if not flush_result.flush_ok:
         return CheckResult(
             name="telemetry_pipeline",
             status=CheckStatus.FAIL,
             message="Telemetry flush reported errors",
-            details={"errors": list(flush_result.errors)},
+            details={
+                **details,
+                "errors": list(flush_result.errors),
+            },
         )
 
     return CheckResult(
         name="telemetry_pipeline",
         status=CheckStatus.OK,
         message="Telemetry pipeline flushed",
-        details={"flush_ms": flush_result.flush_ms},
+        details={
+            **details,
+            "flush_ms": flush_result.flush_ms,
+        },
     )
 
 

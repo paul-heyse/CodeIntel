@@ -18,15 +18,23 @@ def shape_attributes(
     max_list_len: int | None = None,
     max_str_len: int | None = None,
 ) -> dict[str, SpanAttributeValue]:
-    """Filter and coerce attributes with basic cardinality controls."""
+    """Filter and coerce attributes with basic cardinality controls.
+
+    Returns
+    -------
+    dict[str, SpanAttributeValue]
+        Filtered and coerced attributes.
+    """
     if not attributes:
         return {}
     allowed = allowed_keys or frozenset()
     prefixes = tuple(allowed_prefixes or ())
     shaped: dict[str, SpanAttributeValue] = {}
     for key, value in attributes.items():
-        if allowed and key not in allowed:
-            if not prefixes or not any(key.startswith(prefix) for prefix in prefixes):
+        if allowed or prefixes:
+            allowlist_match = bool(allowed) and key in allowed
+            prefix_match = bool(prefixes) and any(key.startswith(prefix) for prefix in prefixes)
+            if not (allowlist_match or prefix_match):
                 continue
         attr_value = coerce_attribute_value(
             value,
@@ -44,7 +52,13 @@ def coerce_attribute_value(
     max_list_len: int | None = None,
     max_str_len: int | None = None,
 ) -> SpanAttributeValue | None:
-    """Coerce a value into an OpenTelemetry-safe attribute type."""
+    """Coerce a value into an OpenTelemetry-safe attribute type.
+
+    Returns
+    -------
+    SpanAttributeValue | None
+        Coerced attribute value or None when the value is invalid.
+    """
     if value is None:
         return None
     if isinstance(value, (bool, int, float)):
@@ -57,12 +71,24 @@ def coerce_attribute_value(
 
 
 def redact_command_value(value: str | None, *, keep_segments: int) -> str | None:
-    """Redact a command value by keeping the trailing segments."""
+    """Redact a command value by keeping the trailing segments.
+
+    Returns
+    -------
+    str | None
+        Redacted command value or None.
+    """
     return _redact_path_like(value, keep_segments=keep_segments)
 
 
 def redact_path_value(value: str | None, *, keep_segments: int) -> str | None:
-    """Redact a path value by keeping the trailing segments."""
+    """Redact a path value by keeping the trailing segments.
+
+    Returns
+    -------
+    str | None
+        Redacted path value or None.
+    """
     return _redact_path_like(value, keep_segments=keep_segments)
 
 
@@ -73,10 +99,16 @@ def _coerce_sequence(
     max_str_len: int | None,
 ) -> Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]:
     truncated = _truncate_sequence(values, max_list_len)
+    if all(isinstance(item, str) for item in truncated):
+        return [_truncate_str(str(item), max_str_len) for item in truncated]
+    if all(type(item) is bool for item in truncated):
+        return [item for item in truncated if isinstance(item, bool)]
+    if all(type(item) is int for item in truncated):
+        return [item for item in truncated if isinstance(item, int)]
+    if all(type(item) is float for item in truncated):
+        return [item for item in truncated if isinstance(item, float)]
     if all(isinstance(item, (str, bool, int, float)) for item in truncated):
-        if all(isinstance(item, str) for item in truncated):
-            return [_truncate_str(item, max_str_len) for item in truncated]
-        return list(truncated)  # type: ignore[return-value]
+        return [_truncate_str(str(item), max_str_len) for item in truncated]
     return [_truncate_str(str(item), max_str_len) for item in truncated]
 
 

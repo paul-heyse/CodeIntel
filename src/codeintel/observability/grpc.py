@@ -42,39 +42,33 @@ class _GrpcObservabilityPlugin(Protocol):
         ...
 
 
-def register_grpc_observability(
-    settings: GrpcObservabilitySettings,
+def _load_grpc_observability_module(
     *,
-    meter_provider: MeterProvider,
     registry: InstrumentationRegistry,
-) -> GrpcObservabilityHandle | None:
-    """Register grpcio-observability when enabled and supported.
-
-    Returns
-    -------
-    GrpcObservabilityHandle | None
-        Handle for the registered plugin, or ``None`` when unavailable.
-    """
-    if not settings.enabled:
-        registry.record_suppressed("grpcio-observability")
-        return None
-
-    if sys.platform != "linux":
-        registry.record_unavailable(
-            "grpcio-observability",
-            detail="grpcio-observability is only supported on Linux",
-        )
-        return None
-
-    module: ModuleType | None = None
+    module_loader: Callable[[str], ModuleType] | None = None,
+) -> ModuleType | None:
+    loader = module_loader or importlib.import_module
     try:
-        module = importlib.import_module("grpc_observability")
+        module = loader("grpc_observability")
     except ModuleNotFoundError as exc:
         registry.record_unavailable("grpcio-observability", detail=str(exc))
         return None
+    if module is None:
+        registry.record_unavailable(
+            "grpcio-observability",
+            detail="grpcio-observability module is unavailable",
+        )
+        return None
+    return module
 
-    grpc_module = cast("ModuleType", module)
 
+def _build_grpc_observability_plugin(
+    *,
+    module: ModuleType,
+    settings: GrpcObservabilitySettings,
+    meter_provider: MeterProvider,
+    registry: InstrumentationRegistry,
+) -> _GrpcObservabilityPlugin | None:
     if settings.other_method_label != "other":
         LOG.warning(
             "grpcio-observability uses a fixed other label; got %s",
@@ -89,7 +83,7 @@ def register_grpc_observability(
     method_filter = _build_allowlist_filter(settings.method_allowlist)
     target_filter = _build_allowlist_filter(settings.target_allowlist)
 
-    plugin_cls = getattr(grpc_module, "OpenTelemetryPlugin", None)
+    plugin_cls = getattr(module, "OpenTelemetryPlugin", None)
     if not isinstance(plugin_cls, type):
         registry.record_unavailable(
             "grpcio-observability",
@@ -98,11 +92,69 @@ def register_grpc_observability(
         return None
 
     plugin_type = cast("Callable[..., _GrpcObservabilityPlugin]", plugin_cls)
-    plugin = plugin_type(
+    return plugin_type(
         meter_provider=meter_provider,
         generic_method_attribute_filter=method_filter,
         target_attribute_filter=target_filter,
     )
+
+
+def register_grpc_observability(
+    settings: GrpcObservabilitySettings,
+    *,
+    meter_provider: MeterProvider,
+    registry: InstrumentationRegistry,
+    platform_override: str | None = None,
+    module_loader: Callable[[str], ModuleType] | None = None,
+) -> GrpcObservabilityHandle | None:
+    """Register grpcio-observability when enabled and supported.
+
+    Parameters
+    ----------
+    settings
+        gRPC observability settings.
+    meter_provider
+        Meter provider used to emit grpcio-observability metrics.
+    registry
+        Instrumentation registry for reporting status.
+    platform_override
+        Optional platform string override for testing.
+    module_loader
+        Optional module loader override for testing.
+
+    Returns
+    -------
+    GrpcObservabilityHandle | None
+        Handle for the registered plugin, or ``None`` when unavailable.
+    """
+    if not settings.enabled:
+        registry.record_suppressed("grpcio-observability")
+        return None
+
+    active_platform = platform_override or sys.platform
+    if active_platform != "linux":
+        registry.record_unavailable(
+            "grpcio-observability",
+            detail="grpcio-observability is only supported on Linux",
+        )
+        return None
+
+    module = _load_grpc_observability_module(
+        registry=registry,
+        module_loader=module_loader,
+    )
+    if module is None:
+        return None
+
+    plugin = _build_grpc_observability_plugin(
+        module=module,
+        settings=settings,
+        meter_provider=meter_provider,
+        registry=registry,
+    )
+    if plugin is None:
+        return None
+
     try:
         plugin.register_global()
     except RuntimeError as exc:

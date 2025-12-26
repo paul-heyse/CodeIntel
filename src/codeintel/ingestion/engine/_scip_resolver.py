@@ -22,7 +22,6 @@ class ResolvedScipConfig:
     build_dir: Path
     document_output_dir: Path
     scip_python_bin: str | None
-    scip_bin: str | None
     modules: list[ModuleRecord]
 
 
@@ -42,15 +41,12 @@ class ScipPathConfig:
         Document output directory.
     scip_python_bin
         Path to scip-python binary.
-    scip_bin
-        Path to scip binary.
     """
 
     repo_root: Path | None = None
     build_dir: Path | None = None
     document_output_dir: Path | None = None
     scip_python_bin: str | None = None
-    scip_bin: str | None = None
 
     @classmethod
     def from_strings(
@@ -60,7 +56,6 @@ class ScipPathConfig:
         build_dir: Path | str | None = None,
         document_output_dir: Path | str | None = None,
         scip_python_bin: str | None = None,
-        scip_bin: str | None = None,
     ) -> ScipPathConfig:
         """Create from string paths with automatic coercion.
 
@@ -74,8 +69,6 @@ class ScipPathConfig:
             Document output directory (coerced to Path).
         scip_python_bin
             Path to scip-python binary.
-        scip_bin
-            Path to scip binary.
 
         Returns
         -------
@@ -87,7 +80,6 @@ class ScipPathConfig:
             build_dir=Path(build_dir) if build_dir else None,
             document_output_dir=Path(document_output_dir) if document_output_dir else None,
             scip_python_bin=scip_python_bin,
-            scip_bin=scip_bin,
         )
 
 
@@ -116,8 +108,6 @@ class ScipResolverInput:
         Document output directory.
     scip_python_bin
         Path to scip-python binary.
-    scip_bin
-        Path to scip binary.
     modules
         Pre-computed module records.
     """
@@ -128,7 +118,6 @@ class ScipResolverInput:
     build_dir: Path | None = None
     document_output_dir: Path | None = None
     scip_python_bin: str | None = None
-    scip_bin: str | None = None
     modules: Sequence[ModuleRecord] | None = None
 
     @classmethod
@@ -167,7 +156,6 @@ class ScipResolverInput:
             build_dir=paths.build_dir if paths else None,
             document_output_dir=paths.document_output_dir if paths else None,
             scip_python_bin=paths.scip_python_bin if paths else None,
-            scip_bin=paths.scip_bin if paths else None,
             modules=modules,
         )
 
@@ -206,7 +194,6 @@ def resolve_scip_inputs(
     build_dir = inputs.build_dir
     document_output_dir = inputs.document_output_dir
     scip_python_bin = inputs.scip_python_bin
-    scip_bin = inputs.scip_bin
 
     module_list = list(modules) if modules is not None else []
     if not module_list and inputs.modules is not None:
@@ -229,7 +216,6 @@ def resolve_scip_inputs(
         build_dir=build_dir,
         document_output_dir=document_output_dir,
         scip_python_bin=scip_python_bin,
-        scip_bin=scip_bin,
         modules=module_list,
     )
 

@@ -37,6 +37,10 @@ github.com
 
 In summary, scip-python provides an offline index of your Python code’s symbol graph, which can be used with Sourcegraph or other developer tools to enable advanced code navigation and analysis.
 
+Repository note: In this codebase, "scip" is shorthand for the scip-python CLI.
+We do not require a separate scip binary, and any mentions of "scip" commands in
+this guide should be read as "scip-python" in our environment.
+
 Installation and Prerequisites
 
 Using scip-python requires a few specific tools and environment setup. We assume a Linux environment for the examples below (the commands are similarly applicable to macOS). The prerequisites are:
@@ -1794,5 +1798,4 @@ If you snapshot Python, set `--comment-syntax="#"` or you’ll generate invalid-
 [4]: https://github.com/sourcegraph/scip/issues/178?utm_source=chatgpt.com "Using index.scip locally? · Issue #178 · sourcegraph/scip"
 [5]: https://github.com/sourcegraph/scip-ruby/issues/87 "No meaningful occurrences for rubocop repository · Issue #87 · sourcegraph/scip-ruby · GitHub"
 [6]: https://github.com/sourcegraph/scip/blob/main/docs/CLI.md?utm_source=chatgpt.com "scip/docs/CLI.md at main · sourcegraph/scip"
-
 
