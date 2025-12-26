@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.cli.project import (
     PROJECT_FILE,
     ProjectConfig,
@@ -17,7 +18,6 @@ from codeintel.cli.project import (
     find_project_root,
     load_project_config,
 )
-from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers.assertions import (
     expect_equal,
     expect_in,

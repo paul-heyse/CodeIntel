@@ -452,6 +452,201 @@ Replication checklist for each ingestion target:
 - TargetRunRecord includes tool metadata and table counts when relevant.
 - Harness test exists and validates contract compliance.
 
+## Graphs replication pattern and implementation plan
+Graph targets should be fully DAG-first, fed only by upstream ingestion outputs and
+graph-specific helpers. The goal is to standardize materialization patterns and
+eliminate direct gateway or filesystem access inside compute nodes.
+
+### Graphs scope inventory (current targets)
+- goids: core.goids, core.goid_crosswalk (foundation for all graph outputs).
+- import_graph: graph.import_modules, graph.import_graph_edges.
+- call_graph: graph.call_graph_nodes, graph.call_graph_edges.
+- call_graph_views: graph.v_function_call_counts, graph.v_call_depth_stats.
+- graph_metrics: analytics.graph_metrics_functions, analytics.graph_metrics_functions_ext,
+  analytics.graph_metrics_modules, analytics.graph_metrics_modules_ext, analytics.graph_stats.
+- cfg: graph.cfg_blocks, graph.cfg_edges.
+- dfg: graph.dfg_edges.
+- graph_validation: analytics.graph_validation.
+- symbol_uses: graph.symbol_use_edges.
+
+### Standard graph target template (DAG-first)
+1) Inputs: module inventory, goid map, or SCIP occurrences via explicit helper nodes.
+2) Compute: pure graph construction/transforms that return row payloads or domain objects.
+3) Ingest: wrap outputs as IngestStep payloads with ExecutionResult warnings/errors.
+4) Materialization: save_rows with TableSaveSpec for each table key.
+5) Anchor: finalize_target_from_materializations with record_from_materializations.
+
+Notes:
+- Avoid direct env.gateway usage in compute nodes; read inputs via helper nodes.
+- Prefer shared graph helpers for node/edge normalization and row serialization.
+- Validation nodes (graph_validation) should consume only materialized graph outputs.
+
+### Recommended migration order (simple to complex)
+1) Foundation: goids (core.goids, core.goid_crosswalk).
+2) Simple pilot: import_graph (single module-level graph, low fan-out).
+3) Complex pilot: call_graph + call_graph_views + graph_metrics (multi-table, views).
+4) Dataflow: cfg then dfg then graph_validation (dependent chain).
+5) External tool dependency: symbol_uses (depends on SCIP occurrences).
+
+### Phase I: Graph metadata and dependencies
+Tasks:
+- Confirm output inventory entries for graph targets are complete and correct.
+- Confirm dataset contracts and schemas exist for all graph tables.
+- Document upstream target dependencies for each graph output (modules, goids, scip).
+
+Deliverables:
+- Inventory entries for all graph targets with table keys and anchors.
+- Contract coverage for graph tables with consistent column sets.
+
+Acceptance criteria:
+- Inventory validation passes for graph targets.
+- No graph target references a missing contract/schema.
+
+File-level breakdown (Phase I):
+- `src/codeintel/core/registry/dag_output_inventory.yaml`: verify graph targets, table_keys,
+  upstream_targets, and downstream_consumers.
+- `src/codeintel/core/schemas/generated_rows/graph.py`: confirm row models align with contract
+  columns for all graph.* tables and views.
+- `src/codeintel/build/hamilton/contracts/schemas/pandera_schemas.py`: verify graph table
+  schemas, view schemas, and descriptions are complete.
+- `src/codeintel/build/hamilton/native/options/graphs.py`: ensure graph option models cover
+  scope filters and defaults used by new DAG-first nodes.
+
+### Phase II: Core graph helpers aligned to shared patterns
+Tasks:
+- Centralize graph input helpers (module inventory, goid map, scip occurrences).
+- Ensure compute nodes are pure and return row payloads or domain objects only.
+- Standardize materialization with save_rows and TableSaveSpec per table key.
+
+Deliverables:
+- Shared helper nodes reused across graph targets.
+- Graph targets emit TargetRunRecord via finalize_target_from_materializations.
+
+Acceptance criteria:
+- No direct gateway access in graph compute nodes.
+- Table materializations use shared saver helpers only.
+
+File-level breakdown (Phase II):
+- `src/codeintel/build/hamilton/native/patterns/tool_target.py`: confirm shared helpers are
+  sufficient (IngestStep, ToolRunContext, save_rows, TableSaveSpec).
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: remove `gateway` helper,
+  replace SaveToObjectMetadataDecorator with save_rows + TableSaveSpec for goids, symbol_uses,
+  call_graph_views, graph_metrics, graph_validation; add hash/finalize helpers.
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: add shared helper nodes for
+  module inventory and goid maps (or move into a new helpers module).
+- `src/codeintel/build/hamilton/native/graphs/__init__.py`: update exports to include new
+  run/ingest nodes and helper nodes.
+
+### Phase III: Simple pilot migration (import_graph)
+Tasks:
+- Migrate import_graph to the standard template end-to-end.
+- Add a focused harness test validating materialization and contract compliance.
+- Ensure CLI graph commands read from the materialized output.
+
+Deliverables:
+- import_graph anchor uses shared patterns and records materializations.
+- Test coverage for import_graph target output.
+
+Acceptance criteria:
+- import_graph runs via build harness with deterministic output.
+- CLI graph listing or export for import graph remains stable.
+
+File-level breakdown (Phase III):
+- `src/codeintel/build/hamilton/native/graphs/import_graph.py`: split run/ingest/finalize nodes,
+  replace _materialize_import_graph with save_rows, and remove direct gateway access.
+- `src/codeintel/build/hamilton/native/graphs/import_graph.py`: use module inventory helpers
+  instead of querying core.modules via Ibis.
+- `tests/graphs/test_compute_imports_extended.py`: add/adjust assertions for row output shape.
+- `tests/build/hamilton/test_pr14_graph_exports.py`: refresh expectations if export metadata
+  changes for import_graph.
+
+### Phase IV: Complex graph migration (call_graph, views, metrics)
+Tasks:
+- Migrate call_graph to standard template with normalized edge/node rows.
+- Align call_graph_views to consume call_graph materializations only.
+- Migrate graph_metrics to consume call_graph materializations only.
+
+Deliverables:
+- call_graph, call_graph_views, graph_metrics fully DAG-first.
+- Consistent row counts and materialization metadata.
+
+Acceptance criteria:
+- Graph metrics tests pass and match goldens.
+- Graph views query through storage boundaries only.
+
+File-level breakdown (Phase IV):
+- `src/codeintel/build/hamilton/native/graphs/call_graph.py`: convert to run/ingest/finalize,
+  remove SaveToObjectMetadataDecorator and direct gateway usage, and persist via save_rows.
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: migrate call_graph_views to
+  tool_target pattern using save_rows for view tables.
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: migrate graph_metrics to
+  tool_target pattern with table-specific save_rows and table materialization collectors.
+- `tests/graphs/test_callgraph_builder.py`: validate node/edge semantics after migration.
+- `tests/graphs/test_engine_nx.py`: ensure graph targets still map to expected outputs.
+- `tests/graphs/test_compute_metrics.py`: validate graph_metrics outputs and counts.
+
+### Phase V: Dataflow graphs and validation
+Tasks:
+- Migrate cfg and dfg to standard template (cfg -> dfg chain).
+- Migrate graph_validation to consume cfg/dfg outputs only.
+- Ensure validation results surface via ExecutionResult warnings.
+
+Deliverables:
+- cfg, dfg, graph_validation targets fully aligned.
+- Validation outputs materialized via shared save_rows.
+
+Acceptance criteria:
+- CFG/DFG tests pass in isolation.
+- Validation table exists and is queryable through storage.
+
+File-level breakdown (Phase V):
+- `src/codeintel/build/hamilton/native/graphs/cfg_dfg.py`: convert cfg/dfg to run/ingest/finalize,
+  replace SaveToObjectMetadataDecorator with save_rows, and remove direct gateway access.
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: migrate graph_validation to
+  tool_target pattern, consuming cfg/dfg tables only.
+- `tests/graphs/test_compute_metrics_cfg.py`: validate cfg outputs.
+- `tests/graphs/test_compute_metrics_dfg.py`: validate dfg outputs.
+- `tests/graphs/test_validation.py`: verify validation output and warnings.
+
+### Phase VI: Symbol uses (SCIP-dependent)
+Tasks:
+- Migrate symbol_uses to standard template with SCIP occurrences input.
+- Ensure scip availability errors are explicit and consistent with tool registry.
+
+Deliverables:
+- symbol_uses target aligned with scip ingestion outputs.
+
+Acceptance criteria:
+- symbol_uses runs end-to-end when SCIP tooling is available.
+- Clear failure behavior when SCIP is missing.
+
+File-level breakdown (Phase VI):
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: migrate symbol_uses to
+  run/ingest/finalize pattern and use save_rows for graph.symbol_use_edges.
+- `src/codeintel/build/hamilton/native/graphs/graph_targets.py`: ensure symbol_uses inputs read
+  from core.scip_occurrences and core.goids without direct gateway access.
+- `tests/graphs/test_compute_symbols_extended.py`: validate symbol_uses rows and counts.
+- `tests/graphs/test_span_consistency_integration.py`: verify cross-component alignment.
+
+### Phase VII: Integration and replication checklist
+Tasks:
+- Add a small end-to-end test: modules -> goids -> import_graph.
+- Validate CLI graph commands operate with materialized graph outputs only.
+- Refresh goldens if graph schema or output changes.
+
+Replication checklist for each graph target:
+- Anchor t__* uses shared materialization patterns.
+- Inputs derive from upstream materialized outputs (no direct scans).
+- Row serialization uses contract-driven schemas.
+- TargetRunRecord includes table counts and warnings.
+- Harness test validates contract compliance.
+
+File-level breakdown (Phase VII):
+- `tests/build/hamilton/test_graphs_end_to_end.py`: new end-to-end harness test for modules ->
+  goids -> import_graph (or add to existing build harness test file if preferred).
+- `tests/graphs/test_resources.py`: ensure storage boundary usage remains localized.
+- `tests/cli/test_graph_cli.py`: verify CLI graph commands still resolve outputs via DAG metadata.
+
 ## Work completed so far (implementation status)
 - Added canonical inventory artifact: `src/codeintel/core/registry/dag_output_inventory.yaml`.
 - Added inventory loader and validation types: `src/codeintel/core/registry/service.py`.

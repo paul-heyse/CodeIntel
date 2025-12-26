@@ -7,7 +7,7 @@ produces. The OutputContract is the single source of truth for:
 
 By making contracts authoritative, we can:
 - Derive TABLE_SCHEMAS from target definitions
-- Validate plugin outputs at write time
+- Validate target outputs at write time
 - Track artifacts as first-class outputs
 
 Example

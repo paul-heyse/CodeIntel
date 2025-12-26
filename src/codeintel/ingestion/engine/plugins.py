@@ -6,7 +6,7 @@ tool-related types including ``ToolStatus``.
 
 Architecture Note
 -----------------
-Tool plugins wrap external CLI tools (pyright, ruff, coverage, scip, pytest)
+Tool plugins wrap external CLI tools (pyright, ruff, coverage, scip-python, pytest)
 and return ``ToolPluginResult`` objects. These results contain a ``parsed``
 field holding a rich domain object (DiagnosticReport, CoverageReport, etc.)
 from ``tools/results.py``.

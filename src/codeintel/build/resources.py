@@ -2,7 +2,7 @@
 
 This module defines types that specify what resources a target needs
 and how it should be executed. These replace the scattered ClassVars
-previously defined on plugin classes.
+previously defined on legacy plugin wrappers.
 
 Example
 -------
@@ -45,7 +45,7 @@ class TargetResources:
     """Resources required by a target for execution.
 
     This replaces the scattered `requires`, `tool_dependencies`, and
-    `tracker_required` ClassVars previously defined on plugins.
+    `tracker_required` ClassVars previously defined on legacy plugin wrappers.
 
     Parameters
     ----------
@@ -89,7 +89,7 @@ class TargetExecution:
     """Execution hints and constraints for a target.
 
     This replaces `resource_hints`, `isolation_kind`, and
-    `supports_incremental` ClassVars previously defined on plugins.
+    `supports_incremental` ClassVars previously defined on legacy plugin wrappers.
 
     Parameters
     ----------

@@ -16,7 +16,7 @@ Supported Tools
 - pyrefly: Additional type checking
 - ruff: Linting and formatting
 - coverage: Code coverage analysis
-- scip: Symbol indexing
+- scip-python: Symbol indexing
 - pytest: Test execution
 
 Subpackages

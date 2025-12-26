@@ -70,7 +70,7 @@ def make_manifest(
         target=target,
         repo=repo,
         commit=commit,
-        impl_kind=f"{target}_plugin",
+        impl_kind=f"{target}_impl",
         computed_at=datetime.now(tz=UTC),
         duration_ms=100.0,
         input_hash=input_hash,

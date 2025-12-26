@@ -16,9 +16,9 @@ import pytest
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.providers import create_default_providers
+from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths
-from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
 from tests._helpers.context import TestContext
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT, SnapshotVariant
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness, HarnessConfig

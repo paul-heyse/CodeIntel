@@ -11,33 +11,41 @@ from __future__ import annotations
 
 import ast
 import logging
+from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
-from hamilton.function_modifiers.dependencies import source, value
 
+from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root
-from codeintel.build.hamilton.materialization_helpers import executor_materialize
-from codeintel.build.hamilton.materialize_options import materialize_options
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver
-from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.options.graphs import ImportGraphOptions
+from codeintel.build.hamilton.native.patterns import (
+    IngestStep,
+    SaverContext,
+    TableSaveSpec,
+    ToolFinalizeContext,
+    ToolRunContext,
+    finalize_target_from_materializations,
+    run_tool_step,
+    save_rows,
+)
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
+from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
+from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.schemas import deferred_columns_for_table_key
+from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
-from codeintel.storage.gateway import DuckDBError, StorageGateway
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Sequence
 
 log = logging.getLogger(__name__)
 
@@ -51,61 +59,61 @@ IMPORT_GRAPH_TABLE_KEYS = (
     IMPORT_GRAPH_EDGES_TABLE_KEY,
 )
 
+IMPORT_GRAPH_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=IMPORT_GRAPH_TARGET_NAME,
+    hash_options_node="import_graph__hash_options",
+)
+
+
+@dataclass(frozen=True)
+class ImportGraphToolOutput(ToolStepOutput):
+    """Tool step output for import graph extraction."""
+
+    module_rows: tuple[tuple[object, ...], ...] = ()
+    edge_rows: tuple[tuple[object, ...], ...] = ()
+
 
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
-def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for import graph nodes.
-
-    Returns
-    -------
-    StorageGateway
-        Storage gateway for the current build environment.
-    """
-    return env.gateway
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(IMPORT_MODULES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(IMPORT_GRAPH_TARGET_NAME),
-    table_key=value(IMPORT_MODULES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(IMPORT_MODULES_TABLE_KEY)),
-)
-@tag_compute(
-    domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__modules_marker"
-)
-def import_graph__modules_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare import graph modules output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+def import_graph__hash_options(
+    env: BuildEnv,
+    modules__hash_options: InputHashOptions,
+) -> InputHashOptions:
+    """Build hash options for import graph materialization."""
+    options_hash = options_hash_for_target(env, IMPORT_GRAPH_TARGET_NAME)
+    file_state_hash = modules__hash_options.file_state_hash
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=file_state_hash,
+    )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(IMPORT_GRAPH_EDGES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(IMPORT_GRAPH_TARGET_NAME),
-    table_key=value(IMPORT_GRAPH_EDGES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(IMPORT_GRAPH_EDGES_TABLE_KEY)),
-)
-@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__edges_marker")
-def import_graph__edges_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare import graph edges output for inventory checks.
+@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def import_graph__source_root(env: BuildEnv) -> Path | None:
+    """Resolve the repository source root for import graph extraction."""
+    repo_root = env.snapshot.repo_root
+    if repo_root is not None:
+        return repo_root
+    try:
+        return get_source_root(env.gateway, env.snapshot.repo, env.snapshot.commit)
+    except (OSError, RuntimeError, ValueError):
+        return None
 
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+
+@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def import_graph__module_map(
+    env: BuildEnv,
+    q__core__modules: ir.Table,
+) -> dict[str, str]:
+    """Build a mapping of module path to module name for import graph extraction."""
+    module_by_path = _load_modules(q__core__modules, env.snapshot.repo, env.snapshot.commit)
+    opts = load_target_options(
+        env,
+        target_name=IMPORT_GRAPH_TARGET_NAME,
+        options_type=ImportGraphOptions,
+    )
+    return filter_mapping(module_by_path, scope_paths=opts.scope_paths)
 
 
 @tag_helper(domain="graphs")
@@ -198,163 +206,228 @@ def _collect_import_edges(
     return edges
 
 
-def _materialize_import_graph(
-    env: BuildEnv,
-    *,
-    repo: str,
-    commit: str,
-    analysis: imports_compute.ImportAnalysisResult,
-) -> tuple[int, int]:
-    options = materialize_options(env, owner_target=IMPORT_GRAPH_TARGET_NAME)
-    module_count = int(
-        env.warehouse.materialize_rows(
-            IMPORT_MODULES_TABLE_KEY,
-            [
-                row.to_tuple()
-                for row in imports_compute.build_import_module_rows(repo, commit, analysis)
-            ],
-            columns=None,
-            options=options,
-        ).rows_written
-        or 0
-    )
-    edge_count = int(
-        env.warehouse.materialize_rows(
-            IMPORT_GRAPH_EDGES_TABLE_KEY,
-            [
-                row.to_tuple()
-                for row in imports_compute.build_import_edge_rows(repo, commit, analysis)
-            ],
-            columns=None,
-            options=options,
-        ).rows_written
-        or 0
-    )
-    return module_count, edge_count
+def _coerce_import_graph_output(output: ToolStepOutput) -> ImportGraphToolOutput:
+    if isinstance(output, ImportGraphToolOutput):
+        return output
+    return ImportGraphToolOutput(result=output.result)
 
 
 @tag_tool(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
-def t__import_graph__extract(
+def t__import_graph__run(
     env: BuildEnv,
-    gateway: StorageGateway,
-    q__core__modules: ir.Table,
+    graph: TargetGraph,
     t__modules: TargetRunRecord,
-) -> ExecutionResult:
+    import_graph__source_root: Path | None,
+    import_graph__module_map: dict[str, str],
+    import_graph__hash_options: InputHashOptions,
+) -> ImportGraphToolOutput:
     """Execute import graph extraction on repository modules.
-
-    This is the compute node for the import_graph target. It parses Python
-    source files to extract import statements and builds a module-level
-    import graph with SCC and layer analysis.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    gateway
-        Storage gateway for graph data access.
-    q__core__modules
-        Ibis table expression for core.modules.
-    t__modules
-        Upstream modules target result (for dependency).
 
     Returns
     -------
-    ExecutionResult
-        Execution status and table row counts.
-
-    Notes
-    -----
-    Produces:
-    - graph.import_modules: Module metadata with SCC and layer info
-    - graph.import_graph_edges: Import relationships
+    ImportGraphToolOutput
+        Tool output with row tuples for import graph tables.
     """
-    if t__modules.status != "succeeded":
-        return ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=IMPORT_GRAPH_TARGET_NAME,
+        hash_options=import_graph__hash_options,
+        skip_reason="import_graph skipped",
+    )
 
-    try:
-        snapshot = env.snapshot
-        opts = load_target_options(
-            env,
-            target_name=IMPORT_GRAPH_TARGET_NAME,
-            options_type=ImportGraphOptions,
-        )
-
-        source_root = snapshot.repo_root or get_source_root(
-            gateway,
-            snapshot.repo,
-            snapshot.commit,
-        )
-        module_by_path = filter_mapping(
-            _load_modules(q__core__modules, snapshot.repo, snapshot.commit),
-            scope_paths=opts.scope_paths,
-        )
-
-        if not module_by_path:
-            log.info("import_graph: No modules found, skipping")
-            return ExecutionResult.ok(
-                table_counts={
-                    IMPORT_MODULES_TABLE_KEY: 0,
-                    IMPORT_GRAPH_EDGES_TABLE_KEY: 0,
-                }
+    def _execute() -> ImportGraphToolOutput:
+        if t__modules.status != "succeeded":
+            return ImportGraphToolOutput(
+                result=ExecutionResult.failed(
+                    f"Upstream modules target failed: {t__modules.error}"
+                )
             )
 
-        edges = _collect_import_edges(source_root=source_root, module_by_path=module_by_path)
+        if import_graph__source_root is None:
+            return ImportGraphToolOutput(
+                result=ExecutionResult.failed("Import graph source root could not be resolved")
+            )
+
+        module_by_path = import_graph__module_map
+        if not module_by_path:
+            return ImportGraphToolOutput(
+                result=ExecutionResult.ok(
+                    table_counts={
+                        IMPORT_MODULES_TABLE_KEY: 0,
+                        IMPORT_GRAPH_EDGES_TABLE_KEY: 0,
+                    }
+                )
+            )
+
+        edges = _collect_import_edges(
+            source_root=import_graph__source_root,
+            module_by_path=module_by_path,
+        )
         analysis = imports_compute.analyze_imports(edges, set(module_by_path.values()))
         log.info(
             "import_graph: %d edges, %d SCCs",
             len(edges),
             len(set(analysis.scc_map.values())),
         )
-        module_count, edge_count = _materialize_import_graph(
-            env,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            analysis=analysis,
+
+        module_rows = tuple(
+            row.to_tuple()
+            for row in imports_compute.build_import_module_rows(
+                env.snapshot.repo,
+                env.snapshot.commit,
+                analysis,
+            )
+        )
+        edge_rows = tuple(
+            row.to_tuple()
+            for row in imports_compute.build_import_edge_rows(
+                env.snapshot.repo,
+                env.snapshot.commit,
+                analysis,
+            )
         )
 
-        log.info("import_graph: Persisted %d modules, %d edges", module_count, edge_count)
-
-        return ExecutionResult.ok(
-            table_counts={
-                IMPORT_MODULES_TABLE_KEY: module_count,
-                IMPORT_GRAPH_EDGES_TABLE_KEY: edge_count,
-            }
+        return ImportGraphToolOutput(
+            result=ExecutionResult.ok(
+                table_counts={
+                    IMPORT_MODULES_TABLE_KEY: len(module_rows),
+                    IMPORT_GRAPH_EDGES_TABLE_KEY: len(edge_rows),
+                }
+            ),
+            module_rows=module_rows,
+            edge_rows=edge_rows,
         )
 
-    except Exception as exc:
-        log.exception("Import graph extraction failed")
-        return ExecutionResult.failed(str(exc))
+    return _coerce_import_graph_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def t__import_graph__ingest(
+    t__import_graph__run: ImportGraphToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package import graph rows for table materialization."""
+    result = t__import_graph__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "Import graph skipped",
+                warnings=result.warnings,
+            )
+        )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "Import graph failed",
+                warnings=result.warnings,
+            )
+        )
+
+    payload = {
+        IMPORT_MODULES_TABLE_KEY: t__import_graph__run.module_rows,
+        IMPORT_GRAPH_EDGES_TABLE_KEY: t__import_graph__run.edge_rows,
+    }
+    table_counts = {
+        IMPORT_MODULES_TABLE_KEY: len(t__import_graph__run.module_rows),
+        IMPORT_GRAPH_EDGES_TABLE_KEY: len(t__import_graph__run.edge_rows),
+    }
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
+@save_rows(
+    context=IMPORT_GRAPH_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=IMPORT_MODULES_TABLE_KEY),
+)
+@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__modules_rows")
+def import_graph__modules_rows(
+    t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.import_modules."""
+    if t__import_graph__ingest.result.skipped or not t__import_graph__ingest.result.success:
+        return None
+    payload = t__import_graph__ingest.payload
+    if payload is None:
+        msg = "Missing import graph payload"
+        raise ValueError(msg)
+    rows = payload.get(IMPORT_MODULES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {IMPORT_MODULES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@save_rows(
+    context=IMPORT_GRAPH_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=IMPORT_GRAPH_EDGES_TABLE_KEY),
+)
+@tag_compute(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME, target_="import_graph__edges_rows")
+def import_graph__edges_rows(
+    t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.import_graph_edges."""
+    if t__import_graph__ingest.result.skipped or not t__import_graph__ingest.result.success:
+        return None
+    payload = t__import_graph__ingest.payload
+    if payload is None:
+        msg = "Missing import graph payload"
+        raise ValueError(msg)
+    rows = payload.get(IMPORT_GRAPH_EDGES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {IMPORT_GRAPH_EDGES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def import_graph__table_materializations(
+    m__graph__import_modules: MaterializationMetadata,
+    m__graph__import_graph_edges: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect materialization metadata for import graph tables."""
+    return {
+        IMPORT_MODULES_TABLE_KEY: m__graph__import_modules,
+        IMPORT_GRAPH_EDGES_TABLE_KEY: m__graph__import_graph_edges,
+    }
+
+
+@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def import_graph__finalize_context(
+    env: BuildEnv,
+    t__modules: TargetRunRecord,
+    graph: TargetGraph,
+    import_graph__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for import graph."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=IMPORT_GRAPH_TARGET_NAME,
+        hash_options=import_graph__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph(
-    env: BuildEnv,
-    graph: TargetGraph,
-    t__import_graph__extract: ExecutionResult,
+    import_graph__finalize_context: ToolFinalizeContext,
+    t__import_graph__run: ImportGraphToolOutput,
+    t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    import_graph__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct a module import graph.
-
-    This is the entry point for the import_graph target. It orchestrates
-    import graph extraction and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    t__import_graph__extract
-        Execution result produced by the extract node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    return executor_materialize(env, graph, IMPORT_GRAPH_TARGET_NAME, t__import_graph__extract)
+    """Construct a module import graph."""
+    return finalize_target_from_materializations(
+        context=import_graph__finalize_context,
+        tool_step=t__import_graph__run,
+        ingest_step=t__import_graph__ingest,
+        artifact_materializations=None,
+        table_materializations=import_graph__table_materializations,
+    )
 
 
 __all__ = [
     "t__import_graph",
-    "t__import_graph__extract",
+    "t__import_graph__ingest",
+    "t__import_graph__run",
 ]

@@ -171,6 +171,37 @@ class BuildTracking:
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
+        if not gateway.config.read_only:
+            self._migrate_impl_kind_columns()
+
+    def _migrate_impl_kind_columns(self) -> None:
+        """Rename legacy plugin columns to impl_kind when present."""
+        self._rename_column_if_needed("build", "output_manifests", "plugin", "impl_kind")
+        self._rename_column_if_needed("build", "run_targets", "plugin", "impl_kind")
+
+    def _rename_column_if_needed(
+        self,
+        schema: str,
+        table: str,
+        old_name: str,
+        new_name: str,
+    ) -> None:
+        columns = self._table_columns(schema=schema, table=table)
+        if old_name not in columns or new_name in columns:
+            return
+        qualified = f'"{schema}"."{table}"'
+        self._con.execute(f'ALTER TABLE {qualified} RENAME COLUMN "{old_name}" TO "{new_name}"')
+
+    def _table_columns(self, *, schema: str, table: str) -> set[str]:
+        rows = self._con.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = ? AND table_name = ?
+            """,
+            [schema, table],
+        ).fetchall()
+        return {str(row[0]) for row in rows}
 
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save or update an output manifest.

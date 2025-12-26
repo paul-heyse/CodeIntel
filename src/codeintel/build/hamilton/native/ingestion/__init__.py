@@ -1,7 +1,8 @@
 """Native ingestion targets with tool execution subgraphs.
 
-Phase 2: All ingestion domain plugins migrated to native Hamilton modules
-with @check_output_custom validators and @schema.output documentation.
+Phase 2: All ingestion domain targets migrated from legacy wrappers to native
+Hamilton modules with @check_output_custom validators and @schema.output
+documentation.
 """
 
 from __future__ import annotations

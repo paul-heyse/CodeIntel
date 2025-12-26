@@ -3,7 +3,7 @@
 This module defines the BuildEnv dataclass, which is the single frozen input
 passed to Hamilton nodes. By consolidating all execution dependencies into
 one immutable object, the orchestration interface remains "pure" from
-Hamilton's perspective while plugins can access everything they need.
+Hamilton's perspective while targets can access everything they need.
 
 Design Principles
 -----------------

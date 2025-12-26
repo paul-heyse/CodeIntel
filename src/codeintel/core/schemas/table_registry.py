@@ -172,7 +172,11 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             ),
             Column("output_hash", "VARCHAR", description="Hash of output data for integrity"),
             Column("row_count", "INTEGER", description="Number of rows written"),
-            Column("options_hash", "VARCHAR", description="Hash of plugin configuration options"),
+            Column(
+                "options_hash",
+                "VARCHAR",
+                description="Hash of implementation configuration options",
+            ),
             Column(
                 "change_delta",
                 "JSON",
@@ -245,7 +249,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
                 description="Target status: succeeded/failed/skipped",
             ),
             Column("input_hash", "VARCHAR", description="Input hash for cache validation"),
-            Column("options_hash", "VARCHAR", description="Plugin options hash"),
+            Column("options_hash", "VARCHAR", description="Target options hash"),
             Column(
                 "duration_ms",
                 "DOUBLE",
@@ -347,7 +351,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
                 "version_hash", "VARCHAR", nullable=False, description="Resolved asset version hash"
             ),
             Column("target", "VARCHAR", description="Target that produced the asset"),
-            Column("impl_kind", "VARCHAR", description="native"),
+            Column("impl_kind", "VARCHAR", description="Implementation kind"),
             Column("status", "VARCHAR", nullable=False, description="materialized|reused|failed"),
             Column("location", "VARCHAR", description="Table name/view name/path/URI"),
             Column("input_hash", "VARCHAR", description="Target input hash at event time"),

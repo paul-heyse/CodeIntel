@@ -11,8 +11,8 @@ from codeintel.build.errors import (
     BuildErrorCollection,
     ColumnCountMismatchError,
     DependencyUnavailableError,
+    ImplementationExecutionError,
     MissingDependencyError,
-    PluginExecutionError,
     SchemaNotFoundError,
     TargetNotFoundError,
     TargetTimeoutError,
@@ -51,7 +51,7 @@ def test_dependency_unavailable_hint() -> None:
 
 def test_tool_not_available_hint_fallback() -> None:
     """ToolNotAvailableError returns install hint or fallback string."""
-    error = ToolNotAvailableError("scip", "nonexistent-tool")
+    error = ToolNotAvailableError("scip-python", "nonexistent-tool")
 
     expect_in("nonexistent-tool", error.actionable_hint or "")
     expect_in("not found", error.user_message)
@@ -84,12 +84,12 @@ def test_target_timeout_hint() -> None:
     expect_in("Increase execution.max_runtime_ms", error.actionable_hint)
 
 
-def test_plugin_execution_error_chains_actionable_hint() -> None:
-    """PluginExecutionError surfaces actionable hint from inner BuildError."""
+def test_implementation_execution_error_chains_actionable_hint() -> None:
+    """ImplementationExecutionError surfaces actionable hint from inner BuildError."""
     inner = ArtifactNotFoundError("metrics", "graph.json", path=Path("graph.json"))
-    error = PluginExecutionError("metrics", "function_metrics", inner)
+    error = ImplementationExecutionError("metrics", "native", inner)
 
-    expect_in("function_metrics", str(error))
+    expect_in("native", str(error))
     expect_equal(error.actionable_hint, inner.actionable_hint)
     expect_in("metrics", error.user_message)
 

@@ -180,15 +180,15 @@ def compute_input_hash_with_deps(
 
 
 def compute_options_hash(options: object | None) -> str | None:
-    """Compute hash of plugin configuration options.
+    """Compute hash of implementation configuration options.
 
     Serializes the options to JSON and hashes the result. This allows
-    detecting when plugin configuration has changed.
+    detecting when implementation configuration has changed.
 
     Parameters
     ----------
     options
-        Plugin options object (must be JSON-serializable).
+        Options object (must be JSON-serializable).
         Returns None if options is None.
 
     Returns

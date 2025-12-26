@@ -240,7 +240,7 @@ def test_default_registry_contains_expected_plugins() -> None:
     registry = build_default_registry(runner, runner.tools_config)
     names = registry.names()
 
-    expected_plugins = ("pyright", "pyrefly", "ruff", "coverage", "pytest", "scip")
+    expected_plugins = ("pyright", "pyrefly", "ruff", "coverage", "pytest", "scip-python")
     for plugin_name in expected_plugins:
         expect_true(
             plugin_name in names,

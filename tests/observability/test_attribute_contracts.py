@@ -95,9 +95,7 @@ def test_db_span_attributes_registered(telemetry_contract: _TelemetryContract) -
 
     spans = exporter.get_finished_spans()
     assert spans
-    db_spans = [
-        span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"
-    ]
+    db_spans = [span for span in spans if _span_attributes(span).get("db.system.name") == "duckdb"]
     assert db_spans
     telemetry_contract.assert_valid_attributes(_span_attributes(db_spans[-1]))
     shutdown_observability()

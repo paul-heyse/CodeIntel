@@ -251,7 +251,10 @@ class ToolsConfig(BaseModel):
         "CodeIntel",
         description="Project name passed to scip-python for stable SCIP identity",
     )
-    scip_python_bin: str = Field("scip-python", description="Path to scip-python binary")
+    scip_python_bin: str = Field(
+        "scip",
+        description="Path to scip-python CLI (binary name is scip)",
+    )
     protoc_bin: str = Field(
         "python",
         description="Python executable for grpc_tools.protoc",
