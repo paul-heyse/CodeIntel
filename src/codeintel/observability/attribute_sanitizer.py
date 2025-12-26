@@ -4,55 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from codeintel.observability.policy import AttributeBudget
 
 SpanAttributeValue = (
     str | bool | int | float | Sequence[str] | Sequence[bool] | Sequence[int] | Sequence[float]
 )
-
-
-def shape_attributes(
-    attributes: Mapping[str, object],
-    *,
-    allowed_keys: frozenset[str] | None = None,
-    allowed_prefixes: Sequence[str] | None = None,
-    budget: AttributeBudget | None = None,
-    max_list_len: int | None = None,
-    max_str_len: int | None = None,
-) -> dict[str, SpanAttributeValue]:
-    """Filter and coerce attributes with allowlists and budgets.
-
-    Returns
-    -------
-    dict[str, SpanAttributeValue]
-        Filtered attributes.
-    """
-    if not attributes:
-        return {}
-
-    allowed = allowed_keys or frozenset()
-    prefixes = tuple(allowed_prefixes or ())
-    list_limit = _resolve_budget_value(budget, "max_list_len", max_list_len)
-    str_limit = _resolve_budget_value(budget, "max_str_len", max_str_len)
-
-    shaped: dict[str, SpanAttributeValue] = {}
-    for key, value in attributes.items():
-        if allowed or prefixes:
-            allowlist_match = bool(allowed) and key in allowed
-            prefix_match = bool(prefixes) and any(key.startswith(prefix) for prefix in prefixes)
-            if not (allowlist_match or prefix_match):
-                continue
-        attr_value = coerce_attribute_value(
-            value,
-            max_list_len=list_limit,
-            max_str_len=str_limit,
-        )
-        if attr_value is not None:
-            shaped[key] = attr_value
-    return shaped
 
 
 def coerce_attribute_value(
@@ -190,18 +145,6 @@ def _redact_path_like(value: str | None, *, keep_segments: int) -> str | None:
     return str(Path(*keep))
 
 
-def _resolve_budget_value(
-    budget: AttributeBudget | None,
-    attr_name: str,
-    override: int | None,
-) -> int | None:
-    if override is not None:
-        return override
-    if budget is None:
-        return None
-    return getattr(budget, attr_name, None)
-
-
 __all__ = [
     "SpanAttributeValue",
     "coerce_attribute_value",
@@ -209,7 +152,6 @@ __all__ = [
     "prune_none",
     "redact_command_value",
     "redact_path_value",
-    "shape_attributes",
     "truncate_sequence",
     "truncate_str",
 ]

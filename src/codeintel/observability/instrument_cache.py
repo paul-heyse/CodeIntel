@@ -5,15 +5,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from threading import Lock
-from typing import Generic, TypeVar
 from weakref import WeakKeyDictionary
-
-K = TypeVar("K")
-V = TypeVar("V")
 
 
 @dataclass(slots=True)
-class InstrumentCache(Generic[K, V]):
+class InstrumentCache[K, V]:
     """Cache metric instruments keyed by a weakly-referenced object."""
 
     _cache: WeakKeyDictionary[K, V]

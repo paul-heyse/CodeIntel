@@ -40,17 +40,6 @@ BUILD_TARGETS_TABLE = TableSpec(
 )
 
 
-PLUGINS_TABLE = TableSpec(
-    columns=(
-        ColumnSpec("name", "Plugin", style="cyan"),
-        ColumnSpec("version", "Version"),
-        ColumnSpec("status", "Status"),
-        ColumnSpec("capabilities", "Capabilities", style="dim"),
-    ),
-    title="Installed Plugins",
-)
-
-
 JOBS_TABLE = TableSpec(
     columns=(
         ColumnSpec("job_id", "Job ID", style="cyan"),
@@ -90,6 +79,5 @@ __all__ = [
     "HEALTH_TABLE",
     "JOBS_TABLE",
     "OPERATIONS_TABLE",
-    "PLUGINS_TABLE",
     "SUBSYSTEMS_TABLE",
 ]

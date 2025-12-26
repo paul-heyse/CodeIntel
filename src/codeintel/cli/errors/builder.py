@@ -429,7 +429,7 @@ class ProblemBuilder:
         Parameters
         ----------
         domain
-            Domain identifier (e.g., "build", "plugins").
+            Domain identifier (e.g., "build", "datasets").
         code
             Error code within the domain.
         title

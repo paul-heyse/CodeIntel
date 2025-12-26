@@ -33,6 +33,7 @@ from codeintel.cli.options.shared_flags import SharedFlagsProtocol
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.observability import observe_operation, shutdown_observability
+from codeintel.observability.semconv_keys import CODEINTEL_OUTPUT_FORMAT
 from codeintel.observability.test_mode import should_shutdown_observability_per_command
 
 if TYPE_CHECKING:
@@ -492,7 +493,7 @@ def _execute_new_command[T](
             with observe_operation(
                 component="cli",
                 operation=getattr(command, "__operation_id__", "unknown"),
-                attributes={"codeintel.output_format": str(infra.output_format)},
+                attributes={CODEINTEL_OUTPUT_FORMAT: str(infra.output_format)},
             ):
                 result = command.execute(ctx)
         except Exception:
@@ -556,7 +557,7 @@ def _execute_handler_command[R](
             with observe_operation(
                 component="cli",
                 operation=operation_id,
-                attributes={"codeintel.output_format": str(infra.output_format)},
+                attributes={CODEINTEL_OUTPUT_FORMAT: str(infra.output_format)},
             ):
                 result = handler(ctx)
         except Exception:

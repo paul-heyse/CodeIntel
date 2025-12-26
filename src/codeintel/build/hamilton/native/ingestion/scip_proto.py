@@ -9,16 +9,17 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hamilton.function_modifiers import source, value
-
 from codeintel.build.hamilton.boundary_types import MaterializationMetadata
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.materializers import FileArtifactSaver
-from codeintel.build.hamilton.naming import materialize_node
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-from codeintel.build.hamilton.native.materialization_records import (
-    record_from_file_artifact_materializations,
+from codeintel.build.hamilton.native.patterns import (
+    ArtifactSaveSpec,
+    SaverContext,
+    ToolFinalizeContext,
+    ToolRunContext,
+    finalize_target_from_materializations,
+    run_tool_step,
+    save_artifact,
 )
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
@@ -26,8 +27,7 @@ from codeintel.build.hamilton.native.target_decorators import (
 )
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import tag_compute, tag_tool
+from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.targets import TargetGraph
@@ -48,6 +48,12 @@ SCIP_PROTO_TARGET = "scip_proto"
 SCIP_PROTO_ARTIFACT = "scip_pb2"
 
 ScipProtoRunResult = ToolStepOutput
+
+SCIP_PROTO_SAVE_CONTEXT = SaverContext(
+    domain="ingestion",
+    target=SCIP_PROTO_TARGET,
+    hash_options_node="scip_proto__hash_options",
+)
 
 
 def _proto_path(repo_root: Path) -> Path:
@@ -73,6 +79,22 @@ def _options_hash(env: BuildEnv) -> str | None:
         "python_version": sys.version,
     }
     return compute_options_hash(options)
+
+
+@tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
+def scip_proto__hash_options(env: BuildEnv) -> InputHashOptions:
+    """Build input hash options for SCIP proto codegen.
+
+    Returns
+    -------
+    InputHashOptions
+        Hash inputs used to gate SCIP proto execution.
+    """
+    proto_path = _proto_path(env.snapshot.repo_root)
+    return InputHashOptions(
+        file_state_hash=file_hash(proto_path),
+        options_hash=_options_hash(env),
+    )
 
 
 def _run_codegen(
@@ -104,7 +126,11 @@ def _run_codegen(
 
 
 @tag_tool(domain="ingestion", target=SCIP_PROTO_TARGET)
-def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
+def t__scip_proto__run(
+    env: BuildEnv,
+    graph: TargetGraph,
+    scip_proto__hash_options: InputHashOptions,
+) -> ScipProtoRunResult:
     """Generate scip_pb2.py using grpc_tools.protoc.
 
     Returns
@@ -115,47 +141,41 @@ def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
     proto_path = _proto_path(env.snapshot.repo_root)
     out_dir = _proto_out_dir(env)
     output_path = out_dir / "scip_pb2.py"
-    hash_options = InputHashOptions(
-        file_state_hash=file_hash(proto_path),
-        options_hash=_options_hash(env),
+
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=SCIP_PROTO_TARGET,
+        hash_options=scip_proto__hash_options,
+        skip_reason="SCIP proto target skipped",
     )
-    executor = NativeTargetExecutor.for_target(
-        env,
-        graph,
-        SCIP_PROTO_TARGET,
-        hash_options=hash_options,
-    )
-    if executor.should_skip():
+
+    def _execute() -> ScipProtoRunResult:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            result = _run_codegen(env, proto_path, out_dir, output_path)
+        except (ToolExecutionError, ToolNotFoundError, OSError, RuntimeError, ValueError) as exc:
+            log.exception("SCIP protobuf codegen failed")
+            return ScipProtoRunResult(result=ExecutionResult.failed(str(exc)))
+
+        if not result.ok:
+            message = result.stderr.strip() or "SCIP protobuf codegen failed"
+            return ScipProtoRunResult(result=ExecutionResult.failed(message))
+
         return ScipProtoRunResult(
-            result=ExecutionResult.skip("SCIP proto target skipped"),
+            result=ExecutionResult.ok(),
             outputs={SCIP_PROTO_ARTIFACT: output_path},
         )
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        result = _run_codegen(env, proto_path, out_dir, output_path)
-    except (ToolExecutionError, ToolNotFoundError, OSError, RuntimeError, ValueError) as exc:
-        log.exception("SCIP protobuf codegen failed")
-        return ScipProtoRunResult(result=ExecutionResult.failed(str(exc)))
-
-    if not result.ok:
-        message = result.stderr.strip() or "SCIP protobuf codegen failed"
-        return ScipProtoRunResult(result=ExecutionResult.failed(message))
-
-    return ScipProtoRunResult(
-        result=ExecutionResult.ok(),
-        outputs={SCIP_PROTO_ARTIFACT: output_path},
-    )
+    return run_tool_step(context=context, run=_execute)
 
 
-@SaveToObjectMetadataDecorator(
-    [FileArtifactSaver],
-    output_name_=materialize_node("artifact.scip_pb2"),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(SCIP_PROTO_TARGET),
-    artifact_name=value(SCIP_PROTO_ARTIFACT),
-    path_template=value("{scip_dir}/proto/scip_pb2.py"),
+@save_artifact(
+    context=SCIP_PROTO_SAVE_CONTEXT,
+    spec=ArtifactSaveSpec(
+        artifact_name=SCIP_PROTO_ARTIFACT,
+        path_template="{scip_dir}/proto/scip_pb2.py",
+    ),
 )
 @tag_compute(domain="ingestion", target=SCIP_PROTO_TARGET, target_="scip__proto_artifact")
 def scip__proto_artifact(t__scip_proto__run: ScipProtoRunResult) -> Path | None:
@@ -189,8 +209,8 @@ def scip__proto_module_path(
     return t__scip_proto__run.path_for(SCIP_PROTO_ARTIFACT)
 
 
-@tag_compute(domain="ingestion", target=SCIP_PROTO_TARGET)
-def scip__proto_materializations(
+@tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
+def scip_proto__materializations(
     m__artifact__scip_pb2: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
     """Collect scip proto artifact materializations.
@@ -201,6 +221,27 @@ def scip__proto_materializations(
         Mapping of artifact names to materialization metadata.
     """
     return {SCIP_PROTO_ARTIFACT: m__artifact__scip_pb2}
+
+
+@tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
+def scip_proto__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    scip_proto__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for SCIP proto codegen.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Finalization context for SCIP proto.
+    """
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=SCIP_PROTO_TARGET,
+        hash_options=scip_proto__hash_options,
+    )
 
 
 @codeintel_target(
@@ -215,10 +256,9 @@ def scip__proto_materializations(
     ),
 )
 def t__scip_proto(
-    env: BuildEnv,
-    graph: TargetGraph,
+    scip_proto__finalize_context: ToolFinalizeContext,
     t__scip_proto__run: ScipProtoRunResult,
-    scip__proto_materializations: dict[str, MaterializationMetadata],
+    scip_proto__materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     """Emit target run record for protobuf codegen.
 
@@ -227,14 +267,12 @@ def t__scip_proto(
     TargetRunRecord
         Record describing the codegen materialization outcome.
     """
-    executor = NativeTargetExecutor.for_target(env, graph, SCIP_PROTO_TARGET)
-    if not t__scip_proto__run.result.success:
-        return executor.fail(RuntimeError(t__scip_proto__run.result.error or "SCIP proto failed"))
-    return record_from_file_artifact_materializations(
-        env=env,
-        graph=graph,
-        target_name=SCIP_PROTO_TARGET,
-        materializations=scip__proto_materializations,
+    return finalize_target_from_materializations(
+        context=scip_proto__finalize_context,
+        tool_step=t__scip_proto__run,
+        ingest_step=None,
+        artifact_materializations=scip_proto__materializations,
+        table_materializations=None,
     )
 
 

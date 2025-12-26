@@ -20,6 +20,13 @@ def _load_registry_outputs(stdout: str) -> dict[str, object]:
     return cast("dict[str, object]", data)
 
 
+def _load_registry_tools(stdout: str) -> dict[str, object]:
+    payload = json.loads(stdout)
+    data = payload.get("data")
+    expect_is_instance(data, dict)
+    return cast("dict[str, object]", data)
+
+
 def test_registry_outputs_cli_json() -> None:
     """Registry outputs command returns JSON payload."""
     result = run_cli(["registry", "outputs", "--output-format", "json"])
@@ -58,3 +65,18 @@ def test_registry_validate_cli_json() -> None:
     expect_is_instance(data, dict)
     output_count = cast("dict[str, object]", data).get("output_count")
     expect_is_instance(output_count, int)
+
+
+def test_registry_tools_cli_json() -> None:
+    """Registry tools command returns JSON payload."""
+    result = run_cli(["registry", "tools", "--output-format", "json"])
+    assert_success(result)
+
+    data = _load_registry_tools(result.stdout)
+    tools = data.get("tools")
+    expect_is_instance(tools, list)
+    count = data.get("count")
+    expect_is_instance(count, int)
+    missing_count = data.get("missing_count")
+    expect_is_instance(missing_count, int)
+    expect_equal(len(cast("list[object]", tools)), cast("int", count))

@@ -9,7 +9,8 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, is_dataclass, replace
+from enum import StrEnum
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
@@ -83,7 +84,7 @@ from codeintel.core.config.settings import (
     SpanLimitSettings,
 )
 from codeintel.core.singleton import SingletonHolder
-from codeintel.observability.attribute_sanitizer import shape_attributes
+from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.config_loader import apply_otel_config_file, load_otel_config_file
 from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
 from codeintel.observability.instrumentation_registry import (
@@ -91,6 +92,12 @@ from codeintel.observability.instrumentation_registry import (
     get_instrumentation_registry,
 )
 from codeintel.observability.policy import ObservabilityPolicy, policy_from_settings
+from codeintel.observability.semconv_keys import (
+    DB_QUERY_SUMMARY,
+    TELEMETRY_ACTION,
+    TELEMETRY_FLUSH_MS,
+    TELEMETRY_FLUSH_OK,
+)
 from codeintel.observability.test_mode import TestTelemetryMode, resolve_test_telemetry_mode
 
 if TYPE_CHECKING:
@@ -174,6 +181,42 @@ class LogConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class LoggingPipelineState:
+    """Resolved logger provider and handler for the logging pipeline."""
+
+    logger_provider: _LoggerProvider | None
+    log_handler: logging.Handler | None
+
+
+@dataclass(slots=True)
+class LoggingPipeline:
+    """Own the structured logging pipeline for observability."""
+
+    config: ObservabilityConfig
+    resource: Resource
+    registry: InstrumentationRegistry
+
+    def install(self, *, force_handler: bool = False) -> LoggingPipelineState:
+        """Initialize logging providers/handlers and instrumentation.
+
+        Returns
+        -------
+        LoggingPipelineState
+            Installed logging pipeline state.
+        """
+        logger_provider, log_handler = _build_logger_provider_with_handler(
+            self.config,
+            self.resource,
+            force_handler=force_handler,
+        )
+        _instrument_logging(self.config, self.registry)
+        return LoggingPipelineState(
+            logger_provider=logger_provider,
+            log_handler=log_handler,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CliTelemetryConfig:
     """CLI telemetry configuration."""
 
@@ -241,6 +284,100 @@ class ObservabilityConfig:
     policy: ObservabilityPolicy = field(default_factory=ObservabilityPolicy)
 
 
+class ConfigSource(StrEnum):
+    """Source of a resolved configuration value."""
+
+    DEFAULT = "default"
+    SETTINGS = "settings"
+    OVERRIDE = "override"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigProvenance:
+    """Provenance mapping for resolved configuration fields."""
+
+    sources: Mapping[str, ConfigSource]
+
+    def to_payload(self) -> dict[str, str]:
+        """Return a JSON-serializable provenance payload.
+
+        Returns
+        -------
+        dict[str, str]
+            Mapping of config field path to provenance source.
+        """
+        return {key: source.value for key, source in self.sources.items()}
+
+    @classmethod
+    def unknown_for(cls, config: ObservabilityConfig) -> ConfigProvenance:
+        """Return provenance with unknown sources for every field.
+
+        Returns
+        -------
+        ConfigProvenance
+            Provenance with unknown sources for every field.
+        """
+        flattened = _flatten_config(config)
+        return cls(dict.fromkeys(flattened, ConfigSource.UNKNOWN))
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedObservabilityConfig:
+    """Resolved observability configuration with provenance metadata."""
+
+    config: ObservabilityConfig
+    provenance: ConfigProvenance
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-serializable snapshot of config + provenance.
+
+        Returns
+        -------
+        dict[str, object]
+            Serialized config and provenance payload.
+        """
+        return {
+            "config": _serialize_config(self.config),
+            "provenance": self.provenance.to_payload(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigResolver:
+    """Resolve observability configuration with provenance tracking."""
+
+    default_service_name: str
+
+    def resolve(
+        self,
+        settings: ObservabilitySettings,
+        *,
+        overrides: Mapping[str, object] | None = None,
+    ) -> ResolvedObservabilityConfig:
+        """Resolve an observability config from settings and overrides.
+
+        Returns
+        -------
+        ResolvedObservabilityConfig
+            Resolved config with provenance metadata.
+        """
+        config = _observability_config_from_settings(
+            settings,
+            default_service_name=self.default_service_name,
+        )
+        sources = dict.fromkeys(_flatten_config(config), ConfigSource.SETTINGS)
+        if not settings.service_name:
+            sources["resources.service_name"] = ConfigSource.DEFAULT
+        if overrides:
+            config = _apply_overrides(config, overrides)
+            for key in overrides:
+                sources[key] = ConfigSource.OVERRIDE
+        return ResolvedObservabilityConfig(
+            config=config,
+            provenance=ConfigProvenance(sources),
+        )
+
 @dataclass(frozen=True, slots=True)
 class TestTelemetryHandles:
     """In-memory telemetry handles for test assertions."""
@@ -264,6 +401,8 @@ class ObservabilityRuntime:
     grpc_observability: GrpcObservabilityHandle | None = None
     db_tracing: DbTracingConfig = field(default_factory=DbTracingConfig)
     test_handles: TestTelemetryHandles | None = None
+    config: ObservabilityConfig = field(default_factory=ObservabilityConfig)
+    config_provenance: ConfigProvenance | None = None
 
 
 class _ObservabilityHolder(SingletonHolder[ObservabilityRuntime]):
@@ -283,7 +422,9 @@ class ObservabilityRuntimeManager:
     """Lifecycle manager for observability runtime state."""
 
     @staticmethod
-    def bootstrap(config: ObservabilityConfig) -> ObservabilityRuntime:
+    def bootstrap(
+        config: ObservabilityConfig | ResolvedObservabilityConfig,
+    ) -> ObservabilityRuntime:
         """Initialize and return the observability runtime.
 
         Returns
@@ -291,7 +432,8 @@ class ObservabilityRuntimeManager:
         ObservabilityRuntime
             Initialized observability runtime.
         """
-        return _ObservabilityHolder.get(lambda: _init_observability(config))
+        resolved = _coerce_resolved_config(config)
+        return _ObservabilityHolder.get(lambda: _init_observability(resolved))
 
     @staticmethod
     def get() -> ObservabilityRuntime:
@@ -406,8 +548,8 @@ class ObservabilityShutdownResult:
         """
         return {
             "event": "telemetry.flush",
-            "telemetry.flush.ok": self.flush_ok,
-            "telemetry.flush.duration_ms": self.flush_ms,
+            TELEMETRY_FLUSH_OK: self.flush_ok,
+            TELEMETRY_FLUSH_MS: self.flush_ms,
             "errors": list(self.errors),
         }
 
@@ -426,7 +568,7 @@ class _ResolvedOtlp:
 
 
 class _DbQuerySummarySpanNameProcessor(SpanProcessor):
-    _SUMMARY_KEY = "db.query.summary"
+    _SUMMARY_KEY = DB_QUERY_SUMMARY
     _enabled = True
 
     def on_start(self, span: Span, parent_context: Context | None = None) -> None:
@@ -1001,7 +1143,7 @@ def _build_logger_provider_with_handler(
     return logger_provider, log_handler
 
 
-def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRegistry) -> None:
+def _instrument_logging(config: ObservabilityConfig, registry: InstrumentationRegistry) -> None:
     if config.logs.correlation or config.logs.auto_instrument:
         root_logger = logging.getLogger()
         if not root_logger.handlers:
@@ -1034,6 +1176,20 @@ def _instrument_runtime(config: ObservabilityConfig, registry: InstrumentationRe
         _instrument("logging", logging_instrumentor, **logging_kwargs)
     else:
         registry.record_suppressed("logging")
+
+
+def _instrument_runtime(registry: InstrumentationRegistry) -> None:
+    def _instrument(name: str, instrumentor: object, **kwargs: object) -> None:
+        instrument = getattr(instrumentor, "instrument", None)
+        if not callable(instrument):
+            registry.record_unavailable(name, detail="Instrumentor missing instrument()")
+            return
+        try:
+            instrument(**kwargs)
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            registry.record_error(name, str(exc))
+        else:
+            registry.record_enabled(name)
 
     _instrument("threading", ThreadingInstrumentor())
     _instrument("asyncio", AsyncioInstrumentor())
@@ -1151,6 +1307,7 @@ def _shutdown_component(
 
 
 def _disabled_runtime() -> ObservabilityRuntime:
+    config = ObservabilityConfig(enabled=False)
     return ObservabilityRuntime(
         enabled=False,
         tracer=None,
@@ -1162,6 +1319,8 @@ def _disabled_runtime() -> ObservabilityRuntime:
         prometheus_enabled=False,
         grpc_observability=None,
         db_tracing=DbTracingConfig(enabled=False),
+        config=config,
+        config_provenance=ConfigProvenance.unknown_for(config),
     )
 
 
@@ -1196,13 +1355,21 @@ def _build_shutdown(
     return _shutdown
 
 
+@dataclass(frozen=True, slots=True)
+class RuntimeGlobalHandles:
+    """Dependencies required to build a runtime from global providers."""
+
+    log_handler: logging.Handler | None
+    logger_provider: _LoggerProvider | None
+    grpc_handle: GrpcObservabilityHandle | None
+    prometheus_enabled: bool
+    provenance: ConfigProvenance | None = None
+
+
 def _runtime_from_global(
     config: ObservabilityConfig,
     *,
-    log_handler: logging.Handler | None,
-    logger_provider: _LoggerProvider | None,
-    grpc_handle: GrpcObservabilityHandle | None,
-    prometheus_enabled: bool,
+    handles: RuntimeGlobalHandles,
 ) -> ObservabilityRuntime:
     tracer_provider = cast("TracerProvider", otel_trace.get_tracer_provider())
     meter_provider = cast("MeterProvider", otel_metrics.get_meter_provider())
@@ -1211,21 +1378,23 @@ def _runtime_from_global(
     shutdown = _build_shutdown(
         tracer_provider,
         meter_provider,
-        logger_provider,
-        log_handler=log_handler,
-        grpc_handle=grpc_handle,
+        handles.logger_provider,
+        log_handler=handles.log_handler,
+        grpc_handle=handles.grpc_handle,
     )
     return ObservabilityRuntime(
         enabled=True,
         tracer=tracer,
         meter=meter,
-        logger_provider=logger_provider,
-        log_handler=log_handler,
+        logger_provider=handles.logger_provider,
+        log_handler=handles.log_handler,
         shutdown=shutdown,
         policy=config.policy,
-        prometheus_enabled=prometheus_enabled,
-        grpc_observability=grpc_handle,
+        prometheus_enabled=handles.prometheus_enabled,
+        grpc_observability=handles.grpc_handle,
         db_tracing=config.db_tracing,
+        config=config,
+        config_provenance=handles.provenance,
     )
 
 
@@ -1273,6 +1442,8 @@ def _is_sdk_meter_provider(provider: object) -> bool:
 def _runtime_from_in_memory(
     config: ObservabilityConfig,
     registry: InstrumentationRegistry,
+    *,
+    provenance: ConfigProvenance | None = None,
 ) -> ObservabilityRuntime:
     resource = _build_resource(config)
     span_limits = _build_span_limits(config.traces.span_limits)
@@ -1296,16 +1467,26 @@ def _runtime_from_in_memory(
     otel_metrics.set_meter_provider(meter_provider)
     meter = otel_metrics.get_meter(config.resources.service_name)
 
-    _instrument_runtime(config, registry)
+    logging_pipeline = LoggingPipeline(config=config, resource=resource, registry=registry)
+    logging_state = logging_pipeline.install(force_handler=False)
+    logger_provider = logging_state.logger_provider
+    log_handler = logging_state.log_handler
+    if logger_provider is not None:
+        logs_api = _load_otel_logs_api()
+        set_logger_provider = getattr(logs_api, "set_logger_provider", None)
+        if callable(set_logger_provider):
+            set_logger_provider(logger_provider)
+
+    _instrument_runtime(registry)
 
     registry.emit_summary(LOG)
-    registry.emit_metrics(meter)
+    registry.emit_metrics(meter, policy=config.policy)
 
     shutdown = _build_shutdown(
         tracer_provider,
         meter_provider,
-        logger_provider=None,
-        log_handler=None,
+        logger_provider=logger_provider,
+        log_handler=log_handler,
         grpc_handle=None,
     )
 
@@ -1313,8 +1494,8 @@ def _runtime_from_in_memory(
         enabled=True,
         tracer=tracer,
         meter=meter,
-        logger_provider=None,
-        log_handler=None,
+        logger_provider=logger_provider,
+        log_handler=log_handler,
         shutdown=shutdown,
         policy=config.policy,
         prometheus_enabled=False,
@@ -1324,12 +1505,16 @@ def _runtime_from_in_memory(
             span_exporter=span_exporter,
             metric_reader=metric_reader,
         ),
+        config=config,
+        config_provenance=provenance,
     )
 
 
 def _runtime_from_config_file(
     config: ObservabilityConfig,
     registry: InstrumentationRegistry,
+    *,
+    provenance: ConfigProvenance | None = None,
 ) -> ObservabilityRuntime | None:
     if not config.config_file:
         return None
@@ -1360,7 +1545,8 @@ def _runtime_from_config_file(
         )
         return None
 
-    _instrument_runtime(config, registry)
+    _instrument_logging(config, registry)
+    _instrument_runtime(registry)
     logger_provider: _LoggerProvider | None = None
     log_handler: logging.Handler | None = None
     try:
@@ -1387,13 +1573,19 @@ def _runtime_from_config_file(
         registry=registry,
     )
     registry.emit_summary(LOG)
-    registry.emit_metrics(otel_metrics.get_meter(config.resources.service_name))
+    registry.emit_metrics(
+        otel_metrics.get_meter(config.resources.service_name),
+        policy=config.policy,
+    )
     return _runtime_from_global(
         config,
-        log_handler=log_handler,
-        logger_provider=logger_provider,
-        grpc_handle=grpc_handle,
-        prometheus_enabled=config.metrics.prometheus_enabled,
+        handles=RuntimeGlobalHandles(
+            log_handler=log_handler,
+            logger_provider=logger_provider,
+            grpc_handle=grpc_handle,
+            prometheus_enabled=config.metrics.prometheus_enabled,
+            provenance=provenance,
+        ),
     )
 
 
@@ -1402,6 +1594,7 @@ def _runtime_from_manual_config(
     registry: InstrumentationRegistry,
     *,
     force_log_handler: bool = False,
+    provenance: ConfigProvenance | None = None,
 ) -> ObservabilityRuntime:
     resource = _build_resource(config)
 
@@ -1413,18 +1606,17 @@ def _runtime_from_manual_config(
     otel_metrics.set_meter_provider(meter_provider)
     meter = otel_metrics.get_meter(config.resources.service_name)
 
-    logger_provider, log_handler = _build_logger_provider_with_handler(
-        config,
-        resource,
-        force_handler=force_log_handler,
-    )
+    logging_pipeline = LoggingPipeline(config=config, resource=resource, registry=registry)
+    logging_state = logging_pipeline.install(force_handler=force_log_handler)
+    logger_provider = logging_state.logger_provider
+    log_handler = logging_state.log_handler
     if logger_provider is not None:
         logs_api = _load_otel_logs_api()
         set_logger_provider = getattr(logs_api, "set_logger_provider", None)
         if callable(set_logger_provider):
             set_logger_provider(logger_provider)
 
-    _instrument_runtime(config, registry)
+    _instrument_runtime(registry)
 
     grpc_handle = register_grpc_observability(
         config.grpc_observability,
@@ -1433,7 +1625,7 @@ def _runtime_from_manual_config(
     )
 
     registry.emit_summary(LOG)
-    registry.emit_metrics(meter)
+    registry.emit_metrics(meter, policy=config.policy)
 
     shutdown = _build_shutdown(
         tracer_provider,
@@ -1454,10 +1646,14 @@ def _runtime_from_manual_config(
         prometheus_enabled=prometheus_enabled,
         grpc_observability=grpc_handle,
         db_tracing=config.db_tracing,
+        config=config,
+        config_provenance=provenance,
     )
 
 
-def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
+def _init_observability(resolved: ResolvedObservabilityConfig) -> ObservabilityRuntime:
+    config = resolved.config
+    provenance = resolved.provenance
     test_mode = config.test_mode
     if test_mode == "disabled":
         return _disabled_runtime()
@@ -1467,7 +1663,7 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
 
     registry = get_instrumentation_registry()
     if test_mode == "in_memory":
-        return _runtime_from_in_memory(config, registry)
+        return _runtime_from_in_memory(config, registry, provenance=provenance)
 
     if test_mode == "collector_local":
         config = _apply_collector_local_config(config)
@@ -1475,17 +1671,20 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
     if not config.enabled:
         return _disabled_runtime()
 
-    runtime = _runtime_from_config_file(config, registry)
+    runtime = _runtime_from_config_file(config, registry, provenance=provenance)
     if runtime is not None:
         return runtime
     return _runtime_from_manual_config(
         config,
         registry,
         force_log_handler=config.config_file is not None,
+        provenance=provenance,
     )
 
 
-def bootstrap_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
+def bootstrap_observability(
+    config: ObservabilityConfig | ResolvedObservabilityConfig,
+) -> ObservabilityRuntime:
     """Initialize OpenTelemetry providers (idempotent).
 
     Returns
@@ -1592,9 +1791,10 @@ def _record_pipeline_metrics(
     if runtime is None or runtime.meter is None:
         return
     instruments = _get_pipeline_instruments(runtime.meter)
-    attrs = shape_attributes(
-        {"action": action},
-        allowed_keys=frozenset({"action"}),
+    normalizer = build_attribute_normalizer(runtime.policy)
+    attrs = normalizer.normalize(
+        {TELEMETRY_ACTION: action},
+        allowed_keys=frozenset({TELEMETRY_ACTION}),
     )
     instruments.flush_attempts.add(1, attributes=attrs)
     if not result.flush_ok:
@@ -1623,7 +1823,7 @@ def get_pipeline_health_state() -> PipelineHealthState:
     )
 
 
-def observability_config_from_settings(
+def _observability_config_from_settings(
     settings: ObservabilitySettings,
     *,
     default_service_name: str,
@@ -1730,20 +1930,139 @@ def observability_config_from_settings(
     )
 
 
+def observability_config_from_settings(
+    settings: ObservabilitySettings,
+    *,
+    default_service_name: str,
+    overrides: Mapping[str, object] | None = None,
+) -> ObservabilityConfig:
+    """Build observability configuration from settings.
+
+    Returns
+    -------
+    ObservabilityConfig
+        Resolved observability configuration.
+    """
+    resolved = resolve_observability_config(
+        settings,
+        default_service_name=default_service_name,
+        overrides=overrides,
+    )
+    return resolved.config
+
+
+def resolve_observability_config(
+    settings: ObservabilitySettings,
+    *,
+    default_service_name: str,
+    overrides: Mapping[str, object] | None = None,
+) -> ResolvedObservabilityConfig:
+    """Resolve an observability config and provenance snapshot.
+
+    Returns
+    -------
+    ResolvedObservabilityConfig
+        Resolved config with provenance metadata.
+    """
+    resolver = ConfigResolver(default_service_name=default_service_name)
+    return resolver.resolve(settings, overrides=overrides)
+
+
+def _coerce_resolved_config(
+    config: ObservabilityConfig | ResolvedObservabilityConfig,
+) -> ResolvedObservabilityConfig:
+    if isinstance(config, ResolvedObservabilityConfig):
+        return config
+    return ResolvedObservabilityConfig(
+        config=config,
+        provenance=ConfigProvenance.unknown_for(config),
+    )
+
+
+def _apply_overrides(
+    config: ObservabilityConfig,
+    overrides: Mapping[str, object],
+) -> ObservabilityConfig:
+    updated = config
+    for path, value in overrides.items():
+        updated = cast("ObservabilityConfig", _replace_path(updated, path.split("."), value))
+    return updated
+
+
+def _replace_path(obj: object, parts: list[str], value: object) -> object:
+    if not parts:
+        return obj
+    if not is_dataclass(obj):
+        message = f"Cannot apply override to non-dataclass at {'.'.join(parts)}"
+        raise TypeError(message)
+    field_name = parts[0]
+    if not hasattr(obj, field_name):
+        message = f"Unknown config field: {field_name}"
+        raise AttributeError(message)
+    if len(parts) == 1:
+        return replace(obj, **{field_name: value})
+    nested = getattr(obj, field_name)
+    replaced = _replace_path(nested, parts[1:], value)
+    return replace(obj, **{field_name: replaced})
+
+
+def _flatten_config(config: ObservabilityConfig) -> dict[str, object]:
+    flattened: dict[str, object] = {}
+
+    def _walk(value: object, prefix: str) -> None:
+        if is_dataclass(value):
+            for field_def in value.__dataclass_fields__.values():
+                field_value = getattr(value, field_def.name)
+                key = f"{prefix}.{field_def.name}" if prefix else field_def.name
+                _walk(field_value, key)
+        else:
+            flattened[prefix] = value
+
+    _walk(config, "")
+    return flattened
+
+
+def _serialize_config(config: ObservabilityConfig) -> dict[str, object]:
+    def _serialize(value: object) -> object:
+        if isinstance(value, Path):
+            return str(value)
+        if is_dataclass(value):
+            return {
+                field_name: _serialize(getattr(value, field_name))
+                for field_name in value.__dataclass_fields__
+            }
+        if isinstance(value, Mapping):
+            return {str(key): _serialize(val) for key, val in value.items()}
+        if isinstance(value, tuple):
+            return [_serialize(item) for item in value]
+        if isinstance(value, (set, frozenset)):
+            serialized = [_serialize(item) for item in value]
+            return sorted(serialized, key=str)
+        return value
+
+    return cast("dict[str, object]", _serialize(config))
+
+
 __all__ = [
     "CliTelemetryConfig",
+    "ConfigProvenance",
+    "ConfigResolver",
+    "ConfigSource",
     "DbTracingConfig",
     "ExporterConfig",
     "LogConfig",
+    "LoggingPipeline",
+    "LoggingPipelineState",
     "MetricConfig",
     "ObservabilityConfig",
     "ObservabilityRuntime",
     "ObservabilityRuntimeManager",
     "ObservabilityShutdownResult",
     "PipelineHealthState",
+    "ResolvedObservabilityConfig",
     "ResourceConfig",
-    "TestTelemetryHandles",
     "TeardownConfig",
+    "TestTelemetryHandles",
     "TraceConfig",
     "bootstrap_observability",
     "build_exemplar_filter",
@@ -1753,5 +2072,6 @@ __all__ = [
     "get_pipeline_health_state",
     "get_runtime_manager",
     "observability_config_from_settings",
+    "resolve_observability_config",
     "shutdown_observability",
 ]

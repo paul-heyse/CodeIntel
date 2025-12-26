@@ -24,7 +24,10 @@ from codeintel.observability.runtime import (
     bootstrap_observability,
     shutdown_observability,
 )
-from codeintel.observability.telemetry_context import telemetry_context
+from codeintel.observability.telemetry_context import (
+    RepoCommitContext,
+    telemetry_context,
+)
 from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
 from codeintel.serving.mcp.middleware_stack import McpOpenTelemetryMiddleware
 from codeintel.serving.metrics import QueryMetrics
@@ -117,8 +120,10 @@ def test_observe_operation_includes_repo_and_commit() -> None:
         telemetry_context(
             run_id="run-1",
             domain="tests",
-            repo="org/repo",
-            commit="abc123",
+            repo_commit=RepoCommitContext(
+                repo="org/repo",
+                commit="abc123",
+            ),
         ),
         observe_operation(
             component="cli",

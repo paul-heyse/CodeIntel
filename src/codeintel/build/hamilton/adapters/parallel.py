@@ -39,7 +39,8 @@ from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcin
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.storage.gateway import open_gateway
+from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.gateway.accessors import DuckDBGateway
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from hamilton.lifecycle import ResultBuilder
     from hamilton.node import Node
 
+    from codeintel.storage.datasets import DatasetRegistry
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -303,19 +305,21 @@ class ThreadPoolAdapter(
         if threading.get_ident() == self._primary_thread_id:
             return resolved
 
-        thread_gateway = self._get_thread_gateway(env, read_only=read_only)
+        thread_gateway = self._get_thread_gateway(env, _read_only=read_only)
         resolved["env"] = replace(env, gateway=thread_gateway)
         return resolved
 
-    def _get_thread_gateway(self, env: BuildEnv, *, read_only: bool) -> StorageGateway:
-        key = (threading.get_ident(), read_only)
+    def _get_thread_gateway(self, env: BuildEnv, *, _read_only: bool) -> StorageGateway:
+        # DuckDB disallows mixing read-only and read-write connections per database file.
+        effective_read_only = env.gateway.config.read_only
+        key = (threading.get_ident(), effective_read_only)
         with self._gateway_lock:
             existing = self._gateways.get(key)
             if existing is not None:
                 return existing
 
-            cfg = _thread_storage_config(env.gateway.config, read_only=read_only)
-            gw = open_gateway(cfg)
+            cfg = _thread_storage_config(env.gateway.config, read_only=effective_read_only)
+            gw = _open_thread_gateway(cfg, datasets=env.gateway.datasets)
             if env.strict_contracts:
                 gw = cast("StorageGateway", ContractEnforcingStorageGateway(gw))
 
@@ -508,3 +512,13 @@ def _thread_storage_config(config: StorageConfig, *, read_only: bool) -> Storage
         ensure_views=False,
         validate_schema=False,
     )
+
+
+def _open_thread_gateway(
+    config: StorageConfig,
+    *,
+    datasets: DatasetRegistry,
+) -> StorageGateway:
+    session = DuckDBSession(config)
+    con = session.open_reader() if config.read_only else session.open()
+    return DuckDBGateway(config=config, datasets=datasets, con=con)

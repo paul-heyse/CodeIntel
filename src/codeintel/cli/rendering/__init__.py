@@ -31,7 +31,6 @@ from codeintel.cli.rendering.specs import (
     HEALTH_TABLE,
     JOBS_TABLE,
     OPERATIONS_TABLE,
-    PLUGINS_TABLE,
     SUBSYSTEMS_TABLE,
 )
 from codeintel.cli.rendering.table import ColumnSpec, TableSpec
@@ -44,7 +43,6 @@ __all__ = [
     "HEALTH_TABLE",
     "JOBS_TABLE",
     "OPERATIONS_TABLE",
-    "PLUGINS_TABLE",
     "SUBSYSTEMS_TABLE",
     "ColumnSpec",
     "JustifyMethod",

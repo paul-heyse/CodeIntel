@@ -18,9 +18,9 @@ def test_policy_from_settings_applies_budget_limits() -> None:
         mcp_tool_name_max_len=MCP_TOOL_NAME_MAX_LEN,
     )
     policy = policy_from_settings(settings)
-    assert policy.cli_arg_names_max == CLI_ARG_NAMES_MAX
-    assert policy.http_route_max_len == HTTP_ROUTE_MAX_LEN
-    assert policy.mcp_tool_name_max_len == MCP_TOOL_NAME_MAX_LEN
+    assert policy.budget.cli_arg_names_max == CLI_ARG_NAMES_MAX
+    assert policy.budget.http_route_max_len == HTTP_ROUTE_MAX_LEN
+    assert policy.budget.mcp_tool_name_max_len == MCP_TOOL_NAME_MAX_LEN
 
 
 def test_operation_allowlist_override_precedence() -> None:

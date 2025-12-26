@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from codeintel.observability.attribute_sanitizer import (
-    SpanAttributeValue,
-    shape_attributes,
-    truncate_str,
-)
+from codeintel.observability.attribute_sanitizer import SpanAttributeValue, truncate_str
+from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.policy import ObservabilityPolicy
 from codeintel.observability.semconv_keys import (
     HTTP_METHOD,
@@ -34,7 +31,11 @@ def http_span_attributes(
         HTTP_METHOD: method,
         HTTP_ROUTE: normalized_route,
     }
-    return shape_attributes(attrs, allowed_keys=frozenset(attrs.keys()))
+    normalizer = build_attribute_normalizer(policy)
+    return normalizer.normalize(
+        attrs,
+        allowed_keys=frozenset(attrs.keys()),
+    )
 
 
 def mcp_span_attributes(
@@ -57,7 +58,11 @@ def mcp_span_attributes(
         MCP_METHOD: method,
         MCP_TOOL_NAME: normalized_tool or "",
     }
-    return shape_attributes(attrs, allowed_keys=frozenset(attrs.keys()))
+    normalizer = build_attribute_normalizer(policy)
+    return normalizer.normalize(
+        attrs,
+        allowed_keys=frozenset(attrs.keys()),
+    )
 
 
 __all__ = ["http_span_attributes", "mcp_span_attributes"]

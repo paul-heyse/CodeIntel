@@ -214,6 +214,43 @@ class DbSpanAttributeConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SqlRedactionPolicy:
+    """Policy defining SQL redaction and parameter handling."""
+
+    statement_mode: SQLStatementMode = "hash"
+    statement_hash_len: int = 16
+    query_text: DbQueryTextConfig = field(default_factory=DbQueryTextConfig)
+    query_parameters: DbQueryParameterConfig = field(default_factory=DbQueryParameterConfig)
+
+    def to_span_attribute_config(self, *, summary: DbQuerySummaryConfig) -> DbSpanAttributeConfig:
+        """Return a span attribute config derived from this policy.
+
+        Returns
+        -------
+        DbSpanAttributeConfig
+            Span attribute configuration with query summary settings.
+        """
+        return DbSpanAttributeConfig(
+            statement_mode=self.statement_mode,
+            statement_hash_len=self.statement_hash_len,
+            query_summary=summary,
+            query_text=self.query_text,
+            query_parameters=self.query_parameters,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class DbTracingPolicy:
+    """Top-level DB tracing policy for instrumentation."""
+
+    enabled: bool = True
+    require_parent_span: bool = True
+    query_summary: DbQuerySummaryConfig = field(default_factory=DbQuerySummaryConfig)
+    redaction: SqlRedactionPolicy = field(default_factory=SqlRedactionPolicy)
+    emit_legacy_db_attributes: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class DbSpanSpec:
     """Span name and attributes for a DB operation."""
 
@@ -459,8 +496,10 @@ __all__ = [
     "DbSpanAttributeBuilder",
     "DbSpanAttributeConfig",
     "DbSpanSpec",
+    "DbTracingPolicy",
     "RedactedSQL",
     "SQLStatementMode",
+    "SqlRedactionPolicy",
     "emit_db_query_parameters",
     "looks_parameterized",
     "redact_sql",

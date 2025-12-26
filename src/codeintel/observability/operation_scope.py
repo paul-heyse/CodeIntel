@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Protocol
 
 from opentelemetry import trace as otel_trace
 
-from codeintel.observability.attribute_sanitizer import shape_attributes
-from codeintel.observability.instrument_cache import InstrumentCache
+from codeintel.observability.attribute_schema import build_attribute_normalizer
+from codeintel.observability.instrument_registry import get_instrument_registry
 from codeintel.observability.policy import ObservabilityPolicy
 from codeintel.observability.runtime import get_observability
 from codeintel.observability.semconv_keys import (
@@ -68,7 +68,25 @@ class _Instruments:
     query_truncated: Counter
 
 
-_INSTRUMENT_CACHE: InstrumentCache[Meter, _Instruments] = InstrumentCache()
+_INSTRUMENT_REGISTRY = get_instrument_registry()
+
+
+@dataclass(frozen=True, slots=True)
+class OperationDescriptor:
+    """Descriptor for a CodeIntel operation span and metrics."""
+
+    component: str
+    operation: str
+
+    def span_name(self) -> str:
+        """Return the canonical span name for the operation.
+
+        Returns
+        -------
+        str
+            Canonical span name.
+        """
+        return f"{self.component}.{self.operation}"
 
 
 def _normalize_endpoint(endpoint: str) -> str:
@@ -88,41 +106,41 @@ def _infer_component(endpoint: str) -> str:
 
 
 def _get_instruments(meter: Meter) -> _Instruments:
-    def _builder() -> _Instruments:
+    def _builder(inner_meter: Meter) -> _Instruments:
         return _Instruments(
-            op_calls=meter.create_counter(
+            op_calls=inner_meter.create_counter(
                 "codeintel.operation.calls",
                 unit="1",
                 description="Count of CodeIntel operations across transports",
             ),
-            op_duration_ms=meter.create_histogram(
+            op_duration_ms=inner_meter.create_histogram(
                 "codeintel.operation.duration_ms",
                 unit="ms",
                 description="Duration of CodeIntel operations (ms)",
             ),
-            query_calls=meter.create_counter(
+            query_calls=inner_meter.create_counter(
                 "codeintel.query.calls",
                 unit="1",
                 description="Count of semantic queries and exports",
             ),
-            query_duration_ms=meter.create_histogram(
+            query_duration_ms=inner_meter.create_histogram(
                 "codeintel.query.duration_ms",
                 unit="ms",
                 description="Query duration (ms)",
             ),
-            query_row_count=meter.create_histogram(
+            query_row_count=inner_meter.create_histogram(
                 "codeintel.query.row_count",
                 unit="1",
                 description="Row counts for query/export results",
             ),
-            query_truncated=meter.create_counter(
+            query_truncated=inner_meter.create_counter(
                 "codeintel.query.truncated",
                 unit="1",
                 description="Count of truncated query/export responses",
             ),
         )
 
-    return _INSTRUMENT_CACHE.get_or_create(meter, _builder)
+    return _INSTRUMENT_REGISTRY.get_group(meter, "operation_scope", _builder)
 
 
 @dataclass(frozen=True)
@@ -139,6 +157,7 @@ def _apply_span_attributes(
     context: _SpanContext,
     policy: ObservabilityPolicy,
 ) -> None:
+    normalizer = build_attribute_normalizer(policy)
     for key, value in context.bundle.items():
         span.set_attribute(key, value)
     span.set_attribute(CODEINTEL_COMPONENT, context.component)
@@ -146,10 +165,9 @@ def _apply_span_attributes(
     if not context.attributes:
         return
     allowlist = policy.operation_allowlist_for(context.component, context.operation)
-    filtered = shape_attributes(
+    filtered = normalizer.normalize(
         context.attributes,
         allowed_keys=allowlist,
-        budget=policy.budget,
     )
     for key, value in filtered.items():
         span.set_attribute(key, value)
@@ -157,8 +175,9 @@ def _apply_span_attributes(
 
 def record_operation_metrics(
     *,
-    component: str,
-    operation: str,
+    component: str | None = None,
+    operation: str | None = None,
+    descriptor: OperationDescriptor | None = None,
     duration_ms: float,
     success: bool,
 ) -> None:
@@ -166,12 +185,12 @@ def record_operation_metrics(
     obs = get_observability()
     if not obs.enabled or obs.meter is None:
         return
-
+    resolved = _resolve_descriptor(descriptor, component=component, operation=operation)
     instruments = _get_instruments(obs.meter)
     bundle = current_telemetry_context().metric_attributes()
     attrs = {
-        CODEINTEL_COMPONENT: component,
-        CODEINTEL_OPERATION: operation,
+        CODEINTEL_COMPONENT: resolved.component,
+        CODEINTEL_OPERATION: resolved.operation,
         CODEINTEL_SUCCESS: bool(success),
     }
     attrs.update(bundle)
@@ -182,8 +201,9 @@ def record_operation_metrics(
 @contextmanager
 def observe_operation(
     *,
-    component: str,
-    operation: str,
+    component: str | None = None,
+    operation: str | None = None,
+    descriptor: OperationDescriptor | None = None,
     attributes: dict[str, object] | None = None,
 ) -> Iterator[Span | None]:
     """Create a span and record duration metrics for an operation.
@@ -196,9 +216,10 @@ def observe_operation(
     obs = get_observability()
     policy = obs.policy
     bundle = current_telemetry_context().span_attributes()
+    resolved = _resolve_descriptor(descriptor, component=component, operation=operation)
 
     if obs.enabled and obs.tracer is not None:
-        span_cm = obs.tracer.start_as_current_span(f"{component}.{operation}")
+        span_cm = obs.tracer.start_as_current_span(resolved.span_name())
     else:
         span_cm = nullcontext(None)
 
@@ -211,8 +232,8 @@ def observe_operation(
             if span is not None:
                 span_context = _SpanContext(
                     bundle=bundle,
-                    component=component,
-                    operation=operation,
+                    component=resolved.component,
+                    operation=resolved.operation,
                     attributes=attributes,
                 )
                 _apply_span_attributes(span, context=span_context, policy=policy)
@@ -225,8 +246,7 @@ def observe_operation(
     finally:
         duration_ms = (time.perf_counter() - start) * 1000
         record_operation_metrics(
-            component=component,
-            operation=operation,
+            descriptor=resolved,
             duration_ms=duration_ms,
             success=success,
         )
@@ -236,6 +256,7 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
     """Record query metrics via OpenTelemetry and attach span attributes."""
     obs = get_observability()
     bundle = current_telemetry_context().metric_attributes()
+    normalizer = build_attribute_normalizer(obs.policy)
 
     normalized_endpoint = _normalize_endpoint(metrics.endpoint)
     component = _infer_component(metrics.endpoint)
@@ -260,15 +281,38 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
     if span is None:
         return
 
-    span.set_attribute(CODEINTEL_QUERY_ENDPOINT, normalized_endpoint)
-    span.set_attribute(CODEINTEL_QUERY_ROW_COUNT, metrics.row_count)
-    span.set_attribute(CODEINTEL_QUERY_TRUNCATED, bool(metrics.truncated))
+    span_attrs: dict[str, object] = {
+        CODEINTEL_QUERY_ENDPOINT: normalized_endpoint,
+        CODEINTEL_QUERY_ROW_COUNT: metrics.row_count,
+        CODEINTEL_QUERY_TRUNCATED: bool(metrics.truncated),
+    }
     if metrics.view_id:
-        span.set_attribute(CODEINTEL_QUERY_VIEW_ID, metrics.view_id)
+        span_attrs[CODEINTEL_QUERY_VIEW_ID] = metrics.view_id
     if metrics.query_hash:
-        span.set_attribute(CODEINTEL_QUERY_HASH, metrics.query_hash)
+        span_attrs[CODEINTEL_QUERY_HASH] = metrics.query_hash
     if metrics.schema_hash:
-        span.set_attribute(CODEINTEL_QUERY_SCHEMA_HASH, metrics.schema_hash)
+        span_attrs[CODEINTEL_QUERY_SCHEMA_HASH] = metrics.schema_hash
+    for key, value in normalizer.normalize(span_attrs).items():
+        span.set_attribute(key, value)
 
 
-__all__ = ["observe_operation", "record_operation_metrics", "record_query_metrics"]
+def _resolve_descriptor(
+    descriptor: OperationDescriptor | None,
+    *,
+    component: str | None,
+    operation: str | None,
+) -> OperationDescriptor:
+    if descriptor is not None:
+        return descriptor
+    if not component or not operation:
+        message = "OperationDescriptor requires component and operation"
+        raise ValueError(message)
+    return OperationDescriptor(component=component, operation=operation)
+
+
+__all__ = [
+    "OperationDescriptor",
+    "observe_operation",
+    "record_operation_metrics",
+    "record_query_metrics",
+]

@@ -2,37 +2,47 @@
 
 from __future__ import annotations
 
-from codeintel.observability.attribute_sanitizer import limit_cli_arg_names, shape_attributes
+from codeintel.observability.attribute_sanitizer import limit_cli_arg_names
+from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.policy import ObservabilityPolicy
+from codeintel.observability.semconv_keys import (
+    CODEINTEL_OUTPUT_FORMAT,
+    CODEINTEL_REPO,
+    DB_SYSTEM_NAME,
+    HTTP_METHOD,
+    HTTP_ROUTE,
+)
 
 
 def test_filter_operation_attributes_drops_unknown_keys() -> None:
     """Unknown attribute keys should be filtered out."""
     attrs = {
-        "http.method": "GET",
-        "http.route": "/v1/semantic/query",
-        "codeintel.output_format": "json",
+        HTTP_METHOD: "GET",
+        HTTP_ROUTE: "/v1/semantic/query",
+        CODEINTEL_OUTPUT_FORMAT: "json",
         "unknown.key": "nope",
     }
     policy = ObservabilityPolicy()
-    filtered = shape_attributes(attrs, allowed_keys=policy.operation_attribute_allowlist)
-    assert "http.method" in filtered
-    assert "http.route" in filtered
-    assert "codeintel.output_format" in filtered
+    normalizer = build_attribute_normalizer(policy)
+    filtered = normalizer.normalize(attrs, allowed_keys=policy.operation_attribute_allowlist)
+    assert HTTP_METHOD in filtered
+    assert HTTP_ROUTE in filtered
+    assert CODEINTEL_OUTPUT_FORMAT in filtered
     assert "unknown.key" not in filtered
 
 
 def test_filter_db_attributes_allows_db_and_codeintel_prefixes() -> None:
     """DB span attributes should allow db.* and codeintel.* prefixes."""
     attrs = {
-        "db.system.name": "duckdb",
-        "codeintel.repo": "demo/repo",
+        DB_SYSTEM_NAME: "duckdb",
+        CODEINTEL_REPO: "demo/repo",
         "cli.command": "build",
     }
     policy = ObservabilityPolicy()
-    filtered = shape_attributes(attrs, allowed_prefixes=policy.db_attribute_prefixes)
-    assert "db.system.name" in filtered
-    assert "codeintel.repo" in filtered
+    normalizer = build_attribute_normalizer(policy)
+    filtered = normalizer.normalize(attrs, allowed_prefixes=policy.db_attribute_prefixes)
+    assert DB_SYSTEM_NAME in filtered
+    assert CODEINTEL_REPO in filtered
     assert "cli.command" not in filtered
 
 

@@ -12,7 +12,8 @@ from codeintel.build.hamilton.native.ingestion.extraction_targets import (
     t__cst,
     t__cst__extract,
     t__docstrings,
-    t__docstrings__extract,
+    t__docstrings__ingest,
+    t__docstrings__run,
 )
 from codeintel.build.hamilton.native.ingestion.ingest_targets import (
     ConfigIngestResult,
@@ -68,7 +69,8 @@ __all__: list[str] = [
     "t__cst",
     "t__cst__extract",
     "t__docstrings",
-    "t__docstrings__extract",
+    "t__docstrings__ingest",
+    "t__docstrings__run",
     "t__modules",
     "t__modules__scan",
     "t__scip",

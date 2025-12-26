@@ -12,7 +12,8 @@ from opentelemetry.trace import SpanKind
 from opentelemetry.trace import SpanKind as _SpanKind
 from opentelemetry.trace.status import Status, StatusCode
 
-from codeintel.observability.attribute_sanitizer import coerce_attribute_value, shape_attributes
+from codeintel.observability.attribute_sanitizer import coerce_attribute_value
+from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.db_tracing import DbSpanAttributeBuilder
 from codeintel.observability.policy import ObservabilityPolicy
 from codeintel.observability.telemetry_context import current_telemetry_context
@@ -70,12 +71,15 @@ class DbSpanEmitter:
         )
 
         with _start_span(self._config.tracer, spec.name) as span:
-            _set_span_attributes(span, spec.attributes)
-            _set_span_attributes(span, current_telemetry_context().span_attributes())
-            extra_attrs = shape_attributes(
+            normalizer = build_attribute_normalizer(self._config.policy)
+            _set_span_attributes(span, normalizer.normalize(spec.attributes))
+            _set_span_attributes(
+                span,
+                normalizer.normalize(current_telemetry_context().span_attributes()),
+            )
+            extra_attrs = normalizer.normalize(
                 self._config.attributes,
                 allowed_prefixes=self._config.policy.db_attribute_prefixes,
-                budget=self._config.policy.budget,
             )
             _set_span_attributes(span, extra_attrs)
             try:

@@ -79,6 +79,7 @@ from codeintel.core.hamilton import tags as ht
 from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
 from codeintel.observability.runtime import flush_observability
+from codeintel.observability.semconv_keys import BUILD_COMMIT, BUILD_REPO, BUILD_RUN_ID
 from codeintel.observability.teardown import (
     ArtifactSummary,
     ShutdownStatus,
@@ -1156,9 +1157,9 @@ def _emit_build_teardown(
             attributes={
                 key: value
                 for key, value in {
-                    "build.run_id": inputs.run_id,
-                    "build.repo": repo,
-                    "build.commit": commit,
+                    BUILD_RUN_ID: inputs.run_id,
+                    BUILD_REPO: repo,
+                    BUILD_COMMIT: commit,
                 }.items()
                 if value is not None
             },

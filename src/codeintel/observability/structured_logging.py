@@ -1,50 +1,43 @@
-"""Observability integration for CLI operations.
-
-Provide structured logging configuration for CLI operations.
-"""
+"""Structured logging helpers for observability."""
 
 from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from opentelemetry import trace as otel_trace
 
-LOG = logging.getLogger(__name__)
-
 
 @runtime_checkable
 class TraceAdapter(Protocol):
-    """Adapter interface for tracing backends."""
+    """Adapter interface for trace context extraction."""
 
     def get_trace_context(self) -> dict[str, str] | None:
-        """Return current trace context identifiers if available.
+        """Return trace identifiers for the active span, if any.
 
         Returns
         -------
         dict[str, str] | None
-            Mapping with trace/span IDs or None if unavailable.
+            Trace identifiers for the active span, if available.
         """
         ...
 
 
 class OTELTraceAdapter:
-    """Adapter that extracts trace context from OpenTelemetry."""
+    """Trace adapter backed by OpenTelemetry's tracer provider."""
 
     def __init__(self) -> None:
         self._trace = otel_trace
 
     def get_trace_context(self) -> dict[str, str] | None:
-        """Return trace_id/span_id from the current span.
+        """Return trace_id/span_id from the current OpenTelemetry span.
 
         Returns
         -------
         dict[str, str] | None
-            Trace identifiers if an active span exists.
+            Trace identifiers for the current span, if available.
         """
-        _ = self
         span = self._trace.get_current_span()
         if span is None:
             return None
@@ -57,41 +50,8 @@ class OTELTraceAdapter:
         }
 
 
-@dataclass
-class ObservabilityConfig:
-    """Configuration for observability features.
-
-    Parameters
-    ----------
-    tracing_enabled
-        Enable trace spans.
-    metrics_enabled
-        Enable metrics collection.
-    structured_logging
-        Enable structured log format.
-    log_params
-        Log operation parameters (privacy consideration).
-    log_results
-        Log operation results (performance consideration).
-    """
-
-    tracing_enabled: bool = True
-    metrics_enabled: bool = True
-    structured_logging: bool = True
-    log_params: bool = False
-    log_results: bool = False
-
-
 class StructuredLogFormatter(logging.Formatter):
-    """Log formatter that outputs structured JSON.
-
-    Parameters
-    ----------
-    include_trace
-        Include trace context in logs.
-    trace_adapter
-        Adapter for extracting trace identifiers.
-    """
+    """Format log records as JSON with optional trace context."""
 
     def __init__(
         self,
@@ -99,23 +59,17 @@ class StructuredLogFormatter(logging.Formatter):
         include_trace: bool = True,
         trace_adapter: TraceAdapter | None = None,
     ) -> None:
-        """Initialize formatter."""
         super().__init__()
         self._include_trace = include_trace
         self._trace_adapter = trace_adapter or get_trace_adapter()
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record as JSON.
-
-        Parameters
-        ----------
-        record
-            Log record.
+        """Format the log record as structured JSON.
 
         Returns
         -------
         str
-            JSON formatted log.
+            Structured JSON representation of the log record.
         """
         log_data: dict[str, Any] = {
             "timestamp": self.formatTime(record),
@@ -140,12 +94,12 @@ class StructuredLogFormatter(logging.Formatter):
 
 
 def get_trace_adapter() -> TraceAdapter:
-    """Return an active TraceAdapter.
+    """Return the default trace adapter implementation.
 
     Returns
     -------
     TraceAdapter
-        Adapter backed by OpenTelemetry.
+        Trace adapter backed by OpenTelemetry.
     """
     return OTELTraceAdapter()
 
@@ -156,17 +110,7 @@ def configure_structured_logging(
     include_trace: bool = True,
     trace_adapter: TraceAdapter | None = None,
 ) -> None:
-    """Configure structured logging for CLI.
-
-    Parameters
-    ----------
-    level
-        Log level.
-    include_trace
-        Include trace context.
-    trace_adapter
-        Optional trace adapter override.
-    """
+    """Configure structured JSON logging for CLI output."""
     handler = logging.StreamHandler()
     handler.setFormatter(
         StructuredLogFormatter(
@@ -181,7 +125,9 @@ def configure_structured_logging(
 
 
 __all__ = [
-    "ObservabilityConfig",
+    "OTELTraceAdapter",
     "StructuredLogFormatter",
+    "TraceAdapter",
     "configure_structured_logging",
+    "get_trace_adapter",
 ]

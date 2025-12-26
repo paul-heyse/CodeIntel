@@ -16,22 +16,19 @@ import logging
 import signal
 import sys
 import threading
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.cli.config import load_config as load_cli_config
-from codeintel.cli.observability._observability import configure_structured_logging
 from codeintel.core.runtime.loader import load_runtime_settings
-from codeintel.observability.runtime import (
-    ObservabilityConfig,
-    bootstrap_observability,
-    observability_config_from_settings,
-)
+from codeintel.observability.lifecycle import ObservabilityLifecycle
+from codeintel.observability.structured_logging import configure_structured_logging
 
 if TYPE_CHECKING:
     from types import FrameType
 
     from codeintel.cli.config.model import CliConfig
+    from codeintel.core.config.settings import ObservabilitySettings
 
 LOG = logging.getLogger(__name__)
 
@@ -116,7 +113,12 @@ def bootstrap_cli(
         use_structured = structured_logging or active_config.telemetry.enabled
         _configure_logging(verbosity, active_config, structured=use_structured)
 
-        bootstrap_observability(_build_cli_observability_config(active_config))
+        settings = load_runtime_settings().observability
+        overrides = _build_cli_observability_overrides(active_config, settings)
+        ObservabilityLifecycle(default_service_name="codeintel-cli").bootstrap(
+            settings,
+            overrides=overrides,
+        )
 
         _register_signal_handlers()
 
@@ -197,26 +199,28 @@ def _register_signal_handlers() -> None:
         LOG.debug("Could not register signal handlers")
 
 
-def _build_cli_observability_config(config: CliConfig) -> ObservabilityConfig:
-    runtime_settings = load_runtime_settings().observability
-    base = observability_config_from_settings(
-        runtime_settings,
-        default_service_name="codeintel-cli",
-    )
-    enabled = base.enabled and config.telemetry.enabled
-    service_name = config.telemetry.service_name or base.service_name
-    otlp_override = (
-        replace(base.otlp, endpoint=config.telemetry.endpoint)
-        if config.telemetry.endpoint
-        else base.otlp
-    )
-    return replace(
-        base,
-        enabled=enabled,
-        service_name=service_name,
-        otlp=otlp_override,
-        prometheus_enabled=False,
-    )
+def _build_cli_observability_overrides(
+    config: CliConfig,
+    settings: ObservabilitySettings,
+) -> dict[str, object]:
+    enabled = settings.enabled and config.telemetry.enabled
+    service_name = config.telemetry.service_name or "codeintel-cli"
+    overrides: dict[str, object] = {
+        "enabled": enabled,
+        "resources.service_name": service_name,
+        "metrics.prometheus_enabled": False,
+    }
+    if config.telemetry.endpoint:
+        endpoint = config.telemetry.endpoint
+        overrides.update(
+            {
+                "exporters.otlp.endpoint": endpoint,
+                "exporters.otlp_traces.endpoint": endpoint,
+                "exporters.otlp_metrics.endpoint": endpoint,
+                "exporters.otlp_logs.endpoint": endpoint,
+            }
+        )
+    return overrides
 
 
 def reset_bootstrap() -> None:

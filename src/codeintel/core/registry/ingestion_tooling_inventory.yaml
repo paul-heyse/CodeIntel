@@ -1,0 +1,27 @@
+version: 1
+generated_at: "2025-12-25"
+tools:
+  - tool_name: "scip-python"
+    display_name: "scip-python"
+    kind: "binary"
+    cli: "scip"
+    aliases:
+      - "scip-python"
+    config_key: "scip_python_bin"
+    required_by:
+      - "ingestion.scip"
+    packages:
+      - "scip-python"
+    version_probe: "scip --version"
+    notes: "CLI entrypoint provided by scip-python; scip is an alias."
+  - tool_name: "protoc"
+    display_name: "grpc_tools.protoc"
+    kind: "python_module"
+    cli: "python -m grpc_tools.protoc"
+    config_key: "protoc_bin"
+    required_by:
+      - "ingestion.scip_proto"
+    packages:
+      - "grpcio-tools"
+    version_probe: "python -m grpc_tools.protoc --version"
+    notes: "Used to generate scip_pb2.py for SCIP parsing."

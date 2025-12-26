@@ -6,7 +6,7 @@ All handlers use CommandContext (from codeintel.cli.context) for unified
 access to runtime, storage, gateway, params, and service layers.
 
 Command[T] Pattern (for commands with parameters):
-    Commands like jobs, health, plugins, graphs use `Command[T]` base class
+    Commands like jobs, health, graphs use `Command[T]` base class
     with an `execute(ctx: CommandContext)` method.
 
 Handler Function Pattern (for complex operations):
@@ -98,22 +98,6 @@ from codeintel.cli.handlers.ops import (
     serve_http_handler,
     serve_mcp_handler,
 )
-from codeintel.cli.handlers.plugins import (
-    PluginInfoResult,
-    PluginNewResult,
-    PluginPathsResult,
-    PluginsDiscoverResult,
-    PluginsListResult,
-    PluginTestResult,
-    PluginValidateResult,
-    plugins_discover_handler,
-    plugins_info_handler,
-    plugins_list_handler,
-    plugins_new_handler,
-    plugins_paths_handler,
-    plugins_test_handler,
-    plugins_validate_handler,
-)
 from codeintel.cli.handlers.storage import (
     ProfileStorageResult,
     StorageDatabaseExportResult,
@@ -150,13 +134,6 @@ __all__ = [
     "JobStatusResult",
     "JobsCleanupResult",
     "JobsListResult",
-    "PluginInfoResult",
-    "PluginNewResult",
-    "PluginPathsResult",
-    "PluginTestResult",
-    "PluginValidateResult",
-    "PluginsDiscoverResult",
-    "PluginsListResult",
     "ProfileStorageResult",
     "ServeStartResult",
     "StorageDatabaseExportResult",
@@ -189,13 +166,6 @@ __all__ = [
     "jobs_output_handler",
     "jobs_status_handler",
     "open_handler_gateway",
-    "plugins_discover_handler",
-    "plugins_info_handler",
-    "plugins_list_handler",
-    "plugins_new_handler",
-    "plugins_paths_handler",
-    "plugins_test_handler",
-    "plugins_validate_handler",
     "profile_storage_handler",
     "serve_http_handler",
     "serve_mcp_handler",

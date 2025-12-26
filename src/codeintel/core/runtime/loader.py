@@ -44,6 +44,7 @@ from codeintel.core.env import (
 from codeintel.core.execution.context import ExecutionContext, RunContext
 from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
 from codeintel.core.tools import ToolBinaries
+from codeintel.observability.semconv_keys import CODEINTEL_COMMIT, CODEINTEL_REPO
 from codeintel.observability.test_mode import apply_test_telemetry_settings
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
@@ -495,11 +496,11 @@ def _obs_resource_attributes() -> tuple[tuple[str, str], ...]:
     """
     resource_attributes = dict(_obs_parse_kv_pairs(_obs_opt_str("OTEL_RESOURCE_ATTRIBUTES")))
     repo = _obs_opt_str("CODEINTEL_REPO")
-    if repo and "codeintel.repo" not in resource_attributes:
-        resource_attributes["codeintel.repo"] = repo
+    if repo and CODEINTEL_REPO not in resource_attributes:
+        resource_attributes[CODEINTEL_REPO] = repo
     commit = _obs_opt_str("CODEINTEL_COMMIT")
-    if commit and "codeintel.commit" not in resource_attributes:
-        resource_attributes["codeintel.commit"] = commit
+    if commit and CODEINTEL_COMMIT not in resource_attributes:
+        resource_attributes[CODEINTEL_COMMIT] = commit
     return tuple(resource_attributes.items())
 
 
