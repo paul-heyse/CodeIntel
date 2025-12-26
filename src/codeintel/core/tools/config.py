@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class ToolBinaries:
     """Immutable configuration for external tool executables and timeouts."""
 
-    scip_python_bin: str = "scip"
+    scip_python_bin: str = "scip-python"
     protoc_bin: str = "python"
     pyright_bin: str = "pyright"
     pyrefly_bin: str = "pyrefly"

@@ -50,7 +50,7 @@ def resolve_test_telemetry_mode() -> TestTelemetryMode | None:
         LOG.warning("Unsupported %s value %s; ignoring", _TEST_MODE_ENV, raw)
 
     if os.environ.get(_PYTEST_ENV):
-        return "disabled"
+        return "in_memory"
     return None
 
 

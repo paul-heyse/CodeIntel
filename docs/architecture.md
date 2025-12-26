@@ -77,7 +77,7 @@
 * Options loading (plan/execution alignment): `src/codeintel/build/hamilton/options_loading.py :: load_target_options(...)`
 * Graph runtime options loader: `src/codeintel/build/hamilton/graph_runtime_options.py :: load_graph_runtime_options(...)`
 * Impl-kind detection: `src/codeintel/build/hamilton/impl_kind.py :: target_impl_kind(...)`
-* Materialization helper: `src/codeintel/build/hamilton/materialization_helpers.py :: executor_materialize(...)`
+* Materialization records: `src/codeintel/build/hamilton/native/executor.py :: NativeTargetExecutor`
 * Decision trace: `src/codeintel/build/hamilton/decision_trace.py :: build_decision_trace(...)` / `read_decision_trace(...)`
 * Observability exports: `src/codeintel/build/hamilton/observability.py :: export_dag_json(...)` / `export_dag_mermaid(...)` / `export_dag_dot(...)`
 * Support nodes: `src/codeintel/build/hamilton/nodes/support_factory.py :: build_support_module(...)`
@@ -228,7 +228,6 @@
 * Native target execution helper:
 
   * `src/codeintel/build/hamilton/native/executor.py :: NativeTargetExecutor` (hash/skip/records)
-  * “Executor materialize” wrapper for compute-result targets: `src/codeintel/build/hamilton/materialization_helpers.py :: executor_materialize(...)`
 * Build graph export:
 
   * `src/codeintel/cli/handlers/build.py :: build_graph_handler(...)` calls `src/codeintel/build/hamilton/observability.py :: export_dag_*`
@@ -271,7 +270,7 @@
 * Output materialization:
 
   * Use `SaveToObjectMetadataDecorator` to attach DataSavers and emit saver tags. `src/codeintel/build/hamilton/save_to.py :: SaveToObjectMetadataDecorator`
-  * Executor-style targets can be materialized via `executor_materialize(...)`. `src/codeintel/build/hamilton/materialization_helpers.py :: executor_materialize(...)`
+  * Executor-style targets materialize via `NativeTargetExecutor` inside `t__<target>` nodes. `src/codeintel/build/hamilton/native/executor.py :: NativeTargetExecutor`
 * Tagging:
 
   * Preferred tagging path uses typed TagSpec helpers: `src/codeintel/build/hamilton/tag_spec.py :: TagSpec.for_*`, applied via `src/codeintel/build/hamilton/tagging.py :: tag_*`

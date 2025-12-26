@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.core.schemas.primitives import TableSchema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -35,6 +36,15 @@ class DatasetRegistryLike(Protocol):
 
 
 TableColumnsLookup = Callable[[str], Sequence[str] | None]
+TableSchemaLookup = Callable[[str], TableSchema | None]
+
+
+@dataclass(frozen=True)
+class ContractValidationLookups:
+    """Optional lookups for validating contract alignment."""
+
+    table_columns: TableColumnsLookup | None = None
+    table_schema: TableSchemaLookup | None = None
 
 
 def build_contract_registry(contracts: Iterable[DatasetContract]) -> ContractRegistry:
@@ -200,13 +210,37 @@ def _validate_missing_json_schemas(
     return [f"Datasets with configured schemas missing from registry: {missing_list}"]
 
 
+def _validate_schema_service_alignment(
+    contracts_by_table_key: Mapping[str, DatasetContract],
+    table_schema_lookup: TableSchemaLookup | None,
+) -> list[str]:
+    if table_schema_lookup is None:
+        return []
+    issues: list[str] = []
+    for table_key, contract in contracts_by_table_key.items():
+        if table_key.startswith("tmp_") or contract.is_view:
+            continue
+        if contract.schema is None:
+            continue
+        canonical_schema = table_schema_lookup(table_key)
+        if canonical_schema is None:
+            issues.append(f"SchemaService missing schema for table {table_key}")
+            continue
+        if canonical_schema != contract.schema:
+            issues.append(
+                f"SchemaService schema mismatch for table {table_key}: "
+                "contract catalog schema differs from SchemaService"
+            )
+    return issues
+
+
 def collect_contract_issues(
     registry: DatasetRegistryLike,
     *,
     contracts_by_table_key: Mapping[str, DatasetContract],
     contracts_by_name: Mapping[str, DatasetContract],
     include_views: bool = True,
-    table_columns_lookup: TableColumnsLookup | None = None,
+    lookups: ContractValidationLookups | None = None,
 ) -> list[str]:
     """Collect contract inconsistencies for the provided registry.
 
@@ -220,8 +254,8 @@ def collect_contract_issues(
         Mapping of dataset name to DatasetContract.
     include_views
         Whether to include views in validation checks.
-    table_columns_lookup
-        Optional callable returning actual column order for a table key.
+    lookups
+        Optional lookups for resolving table columns and canonical table schemas.
 
     Returns
     -------
@@ -238,7 +272,11 @@ def collect_contract_issues(
         )
     )
     issues.extend(_validate_schemas_match_contracts(contracts_by_table_key))
+    table_columns_lookup = lookups.table_columns if lookups is not None else None
+    table_schema_lookup = lookups.table_schema if lookups is not None else None
+
     issues.extend(_validate_table_columns(registry, table_columns_lookup))
+    issues.extend(_validate_schema_service_alignment(contracts_by_table_key, table_schema_lookup))
     issues.extend(
         _validate_dependencies(
             registry,
@@ -262,7 +300,7 @@ def validate_contract_or_raise(
     contracts_by_table_key: Mapping[str, DatasetContract],
     contracts_by_name: Mapping[str, DatasetContract],
     include_views: bool = True,
-    table_columns_lookup: TableColumnsLookup | None = None,
+    lookups: ContractValidationLookups | None = None,
 ) -> None:
     """Validate dataset contract and raise on any issues.
 
@@ -276,8 +314,8 @@ def validate_contract_or_raise(
         Mapping of dataset name to DatasetContract.
     include_views
         Whether to include views in validation checks.
-    table_columns_lookup
-        Optional callable returning actual column order for a table key.
+    lookups
+        Optional lookups for resolving table columns and canonical table schemas.
 
     Raises
     ------
@@ -289,7 +327,7 @@ def validate_contract_or_raise(
         contracts_by_table_key=contracts_by_table_key,
         contracts_by_name=contracts_by_name,
         include_views=include_views,
-        table_columns_lookup=table_columns_lookup,
+        lookups=lookups,
     )
     if issues:
         message = "Dataset contract validation failed:\n" + "\n".join(f"- {i}" for i in issues)
@@ -298,7 +336,9 @@ def validate_contract_or_raise(
 
 __all__ = [
     "ContractRegistry",
+    "ContractValidationLookups",
     "DatasetRegistryLike",
+    "TableSchemaLookup",
     "build_contract_registry",
     "collect_contract_issues",
     "validate_contract_or_raise",

@@ -71,12 +71,28 @@ class ImportGraphToolOutput(ToolStepOutput):
     edge_rows: tuple[tuple[object, ...], ...] = ()
 
 
+@dataclass(frozen=True)
+class ImportGraphRunInputs:
+    """Inputs required for import graph execution."""
+
+    modules_record: TargetRunRecord
+    source_root: Path | None
+    module_map: dict[str, str]
+
+
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def import_graph__hash_options(
     env: BuildEnv,
     modules__hash_options: InputHashOptions,
 ) -> InputHashOptions:
-    """Build hash options for import graph materialization."""
+    """Build hash options for import graph materialization.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, IMPORT_GRAPH_TARGET_NAME)
     file_state_hash = modules__hash_options.file_state_hash
     return InputHashOptions(
@@ -88,7 +104,14 @@ def import_graph__hash_options(
 
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def import_graph__source_root(env: BuildEnv) -> Path | None:
-    """Resolve the repository source root for import graph extraction."""
+    """Resolve the repository source root for import graph extraction.
+
+    Returns
+    -------
+    Path | None
+        Return value.
+
+    """
     repo_root = env.snapshot.repo_root
     if repo_root is not None:
         return repo_root
@@ -103,7 +126,14 @@ def import_graph__module_map(
     env: BuildEnv,
     q__core__modules: ir.Table,
 ) -> dict[str, str]:
-    """Build a mapping of module path to module name for import graph extraction."""
+    """Build a mapping of module path to module name for import graph extraction.
+
+    Returns
+    -------
+    dict[str, str]
+        Return value.
+
+    """
     module_by_path = _load_modules(q__core__modules, env.snapshot.repo, env.snapshot.commit)
     opts = load_target_options(
         env,
@@ -209,14 +239,33 @@ def _coerce_import_graph_output(output: ToolStepOutput) -> ImportGraphToolOutput
     return ImportGraphToolOutput(result=output.result)
 
 
+@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
+def import_graph__run_inputs(
+    t__modules: TargetRunRecord,
+    import_graph__source_root: Path | None,
+    import_graph__module_map: dict[str, str],
+) -> ImportGraphRunInputs:
+    """Bundle inputs for import graph execution.
+
+    Returns
+    -------
+    ImportGraphRunInputs
+        Return value.
+
+    """
+    return ImportGraphRunInputs(
+        modules_record=t__modules,
+        source_root=import_graph__source_root,
+        module_map=import_graph__module_map,
+    )
+
+
 @tag_tool(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph__run(
     env: BuildEnv,
     graph: TargetGraph,
-    t__modules: TargetRunRecord,
-    import_graph__source_root: Path | None,
-    import_graph__module_map: dict[str, str],
     import_graph__hash_options: InputHashOptions,
+    import_graph__run_inputs: ImportGraphRunInputs,
 ) -> ImportGraphToolOutput:
     """Execute import graph extraction on repository modules.
 
@@ -234,17 +283,20 @@ def t__import_graph__run(
     )
 
     def _execute() -> ImportGraphToolOutput:
-        if t__modules.status != "succeeded":
+        if import_graph__run_inputs.modules_record.status != "succeeded":
             return ImportGraphToolOutput(
-                result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+                result=ExecutionResult.failed(
+                    f"Upstream modules target failed: "
+                    f"{import_graph__run_inputs.modules_record.error}"
+                )
             )
 
-        if import_graph__source_root is None:
+        if import_graph__run_inputs.source_root is None:
             return ImportGraphToolOutput(
                 result=ExecutionResult.failed("Import graph source root could not be resolved")
             )
 
-        module_by_path = import_graph__module_map
+        module_by_path = import_graph__run_inputs.module_map
         if not module_by_path:
             return ImportGraphToolOutput(
                 result=ExecutionResult.ok(
@@ -256,7 +308,7 @@ def t__import_graph__run(
             )
 
         edges = _collect_import_edges(
-            source_root=import_graph__source_root,
+            source_root=import_graph__run_inputs.source_root,
             module_by_path=module_by_path,
         )
         analysis = imports_compute.analyze_imports(edges, set(module_by_path.values()))
@@ -301,7 +353,14 @@ def t__import_graph__run(
 def t__import_graph__ingest(
     t__import_graph__run: ImportGraphToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package import graph rows for table materialization."""
+    """Package import graph rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__import_graph__run.result
     if result.skipped:
         return IngestStep(
@@ -340,7 +399,19 @@ def t__import_graph__ingest(
 def import_graph__modules_rows(
     t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.import_modules."""
+    """Extract rows for graph.import_modules.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__import_graph__ingest.result.skipped or not t__import_graph__ingest.result.success:
         return None
     payload = t__import_graph__ingest.payload
@@ -362,7 +433,19 @@ def import_graph__modules_rows(
 def import_graph__edges_rows(
     t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.import_graph_edges."""
+    """Extract rows for graph.import_graph_edges.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__import_graph__ingest.result.skipped or not t__import_graph__ingest.result.success:
         return None
     payload = t__import_graph__ingest.payload
@@ -381,7 +464,14 @@ def import_graph__table_materializations(
     m__graph__import_modules: MaterializationMetadata,
     m__graph__import_graph_edges: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for import graph tables."""
+    """Collect materialization metadata for import graph tables.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Return value.
+
+    """
     return {
         IMPORT_MODULES_TABLE_KEY: m__graph__import_modules,
         IMPORT_GRAPH_EDGES_TABLE_KEY: m__graph__import_graph_edges,
@@ -391,11 +481,17 @@ def import_graph__table_materializations(
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def import_graph__finalize_context(
     env: BuildEnv,
-    t__modules: TargetRunRecord,
     graph: TargetGraph,
     import_graph__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for import graph."""
+    """Build finalization context for import graph.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -411,7 +507,14 @@ def t__import_graph(
     t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     import_graph__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct a module import graph."""
+    """Construct a module import graph.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=import_graph__finalize_context,
         tool_step=t__import_graph__run,

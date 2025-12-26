@@ -2,7 +2,7 @@
 
 This module validates that the consolidated metrics targets in
 ``codeintel.build.hamilton.native.analytics.metrics_targets`` work correctly
-with the executor_materialize helper for Pattern D targets.
+with executor-style materialization for Pattern D targets.
 """
 
 from __future__ import annotations

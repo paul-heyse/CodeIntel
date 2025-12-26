@@ -43,7 +43,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_f
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.targets import TargetGraph
-from codeintel.core.catalog import load_function_index
+from codeintel.core.catalog import FunctionSpanIndex, load_function_index
 from codeintel.core.ibis_typing import and_predicates, filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.generated_rows.graph import (
@@ -60,8 +60,6 @@ from codeintel.graphs.compute.callgraph.persistence import dedupe_edge_rows
 from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-
-    from codeintel.core.catalog import FunctionSpanIndex
     from codeintel.core.schemas.generated_rows.graph import (
         GraphCallGraphEdgesRow as CallGraphEdgeRow,
     )
@@ -92,12 +90,30 @@ class CallGraphToolOutput(ToolStepOutput):
     edge_rows: tuple[tuple[object, ...], ...] = ()
 
 
+@dataclass(frozen=True)
+class CallGraphRunInputs:
+    """Inputs required for call graph execution."""
+
+    modules: ir.Table
+    goids: ir.Table
+    goids_record: TargetRunRecord
+    source_root: Path | None
+    function_index: FunctionSpanIndex | None
+
+
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def call_graph__hash_options(
     env: BuildEnv,
     goids__hash_options: InputHashOptions,
 ) -> InputHashOptions:
-    """Build hash options for call graph materialization."""
+    """Build hash options for call graph materialization.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, CALL_GRAPH_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
@@ -108,7 +124,14 @@ def call_graph__hash_options(
 
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def call_graph__source_root(env: BuildEnv) -> Path | None:
-    """Resolve repository root for call graph extraction."""
+    """Resolve repository root for call graph extraction.
+
+    Returns
+    -------
+    Path | None
+        Return value.
+
+    """
     repo_root = env.snapshot.repo_root
     if repo_root is not None:
         return repo_root
@@ -120,12 +143,44 @@ def call_graph__source_root(env: BuildEnv) -> Path | None:
 
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def call_graph__function_index(env: BuildEnv) -> FunctionSpanIndex | None:
-    """Load the function index for call graph resolution."""
+    """Load the function index for call graph resolution.
+
+    Returns
+    -------
+    FunctionSpanIndex | None
+        Return value.
+
+    """
     try:
         return load_function_index(env.gateway, repo=env.snapshot.repo, commit=env.snapshot.commit)
     except (OSError, RuntimeError, ValueError) as exc:
         log.warning("call_graph: Failed to load function index: %s", exc)
         return None
+
+
+@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
+def call_graph__run_inputs(
+    q__core__modules: ir.Table,
+    q__core__goids: ir.Table,
+    t__goids: TargetRunRecord,
+    call_graph__source_root: Path | None,
+    call_graph__function_index: FunctionSpanIndex | None,
+) -> CallGraphRunInputs:
+    """Bundle inputs for call graph execution.
+
+    Returns
+    -------
+    CallGraphRunInputs
+        Return value.
+
+    """
+    return CallGraphRunInputs(
+        modules=q__core__modules,
+        goids=q__core__goids,
+        goids_record=t__goids,
+        source_root=call_graph__source_root,
+        function_index=call_graph__function_index,
+    )
 
 
 @dataclass(frozen=True)
@@ -508,14 +563,17 @@ def _coerce_call_graph_output(output: ToolStepOutput) -> CallGraphToolOutput:
 def t__call_graph__run(
     env: BuildEnv,
     graph: TargetGraph,
-    q__core__modules: ir.Table,
-    q__core__goids: ir.Table,
-    t__goids: TargetRunRecord,
-    call_graph__source_root: Path | None,
-    call_graph__function_index: FunctionSpanIndex | None,
     call_graph__hash_options: InputHashOptions,
+    call_graph__run_inputs: CallGraphRunInputs,
 ) -> CallGraphToolOutput:
-    """Execute call graph extraction on repository modules."""
+    """Execute call graph extraction on repository modules.
+
+    Returns
+    -------
+    CallGraphToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -525,18 +583,20 @@ def t__call_graph__run(
     )
 
     def _execute() -> CallGraphToolOutput:
-        if t__goids.status != "succeeded":
+        if call_graph__run_inputs.goids_record.status != "succeeded":
             return CallGraphToolOutput(
-                result=ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
+                result=ExecutionResult.failed(
+                    f"Upstream goids target failed: {call_graph__run_inputs.goids_record.error}"
+                )
             )
 
-        function_index = call_graph__function_index
+        function_index = call_graph__run_inputs.function_index
         if function_index is None:
             return CallGraphToolOutput(
                 result=ExecutionResult.failed("call_graph function index is unavailable")
             )
 
-        source_root = call_graph__source_root
+        source_root = call_graph__run_inputs.source_root
         if source_root is None:
             return CallGraphToolOutput(
                 result=ExecutionResult.failed("call_graph source root could not be resolved")
@@ -548,7 +608,12 @@ def t__call_graph__run(
             options_type=CallGraphOptions,
         )
 
-        _log_repo_state(q__core__modules, q__core__goids, env.snapshot.repo, env.snapshot.commit)
+        _log_repo_state(
+            call_graph__run_inputs.modules,
+            call_graph__run_inputs.goids,
+            env.snapshot.repo,
+            env.snapshot.commit,
+        )
 
         paths = filter_paths(function_index.paths(), scope_paths=opts.scope_paths)
         if not paths:
@@ -564,10 +629,14 @@ def t__call_graph__run(
         collection_ctx = _EdgeCollectionState(
             function_index=function_index,
             global_callees=_build_global_callee_lookup(
-                q__core__goids, env.snapshot.repo, env.snapshot.commit
+                call_graph__run_inputs.goids,
+                env.snapshot.repo,
+                env.snapshot.commit,
             ),
             def_goids_by_path=_build_def_goids_by_path(
-                q__core__goids, env.snapshot.repo, env.snapshot.commit
+                call_graph__run_inputs.goids,
+                env.snapshot.repo,
+                env.snapshot.commit,
             ),
             source_root=source_root,
             repo=env.snapshot.repo,
@@ -582,7 +651,7 @@ def t__call_graph__run(
         node_rows = tuple(
             row_to_tuple(CALL_GRAPH_NODES_TABLE_KEY, row)
             for row in _build_nodes_from_goids(
-                q__core__goids,
+                call_graph__run_inputs.goids,
                 env.snapshot.repo,
                 env.snapshot.commit,
             )
@@ -612,7 +681,14 @@ def t__call_graph__run(
 def t__call_graph__ingest(
     t__call_graph__run: CallGraphToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package call graph rows for table materialization."""
+    """Package call graph rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__call_graph__run.result
     if result.skipped:
         return IngestStep(
@@ -650,7 +726,19 @@ def t__call_graph__ingest(
 def call_graph__nodes_rows(
     t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.call_graph_nodes."""
+    """Extract rows for graph.call_graph_nodes.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__call_graph__ingest.result.skipped or not t__call_graph__ingest.result.success:
         return None
     payload = t__call_graph__ingest.payload
@@ -672,7 +760,19 @@ def call_graph__nodes_rows(
 def call_graph__edges_rows(
     t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.call_graph_edges."""
+    """Extract rows for graph.call_graph_edges.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__call_graph__ingest.result.skipped or not t__call_graph__ingest.result.success:
         return None
     payload = t__call_graph__ingest.payload
@@ -691,7 +791,14 @@ def call_graph__table_materializations(
     m__graph__call_graph_nodes: MaterializationMetadata,
     m__graph__call_graph_edges: MaterializationMetadata,
 ) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for call graph tables."""
+    """Collect materialization metadata for call graph tables.
+
+    Returns
+    -------
+    dict[str, MaterializationMetadata]
+        Return value.
+
+    """
     return {
         CALL_GRAPH_NODES_TABLE_KEY: m__graph__call_graph_nodes,
         CALL_GRAPH_EDGES_TABLE_KEY: m__graph__call_graph_edges,
@@ -704,7 +811,14 @@ def call_graph__finalize_context(
     graph: TargetGraph,
     call_graph__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for call graph."""
+    """Build finalization context for call graph.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -720,7 +834,14 @@ def t__call_graph(
     t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     call_graph__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct a function call graph."""
+    """Construct a function call graph.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=call_graph__finalize_context,
         tool_step=t__call_graph__run,

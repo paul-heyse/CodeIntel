@@ -1,6 +1,6 @@
 """Standard execution result for executor-style native targets.
 
-The `executor_materialize` helper expects a simple "compute result" object with:
+Executor-style targets return a simple "compute result" object with:
 
 - `success: bool`
 - `table_counts: dict[str, int]`

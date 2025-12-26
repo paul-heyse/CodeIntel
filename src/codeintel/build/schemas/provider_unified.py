@@ -8,22 +8,13 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.core.registry.service import RegistryService
 from codeintel.core.schemas.declared import source_declared_schema_provider
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.core.registry.service import DagOutputInventory
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
-
-
-def _dag_output_table_keys(inventory: DagOutputInventory) -> frozenset[str]:
-    table_keys: set[str] = set()
-    for spec in inventory.outputs:
-        table_keys.update(spec.table_keys)
-    return frozenset(table_keys)
 
 
 @lru_cache(maxsize=1)
@@ -35,8 +26,8 @@ def declared_schema_provider() -> SchemaProvider:
     SchemaProvider
         Provider exposing only source table schemas (excluding DAG outputs).
     """
-    inventory = RegistryService.load_dag_output_inventory()
-    exclude_table_keys = _dag_output_table_keys(inventory)
+    service = get_target_metadata_service()
+    exclude_table_keys = service.system.all_table_keys
     return source_declared_schema_provider(exclude_table_keys=exclude_table_keys)
 
 

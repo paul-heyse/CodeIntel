@@ -21,6 +21,7 @@ from codeintel.storage.contracts.catalog_state import (
     get_contract_catalog,
 )
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
+from codeintel.storage.contracts.schema_provider import clear_schema_provider_cache
 from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
@@ -30,6 +31,7 @@ from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.validation import (
     ContractValidationMode,
+    clear_contract_validation_cache,
     collect_contract_issues_lenient,
     validate_contract_or_raise,
 )
@@ -59,16 +61,51 @@ def _maybe_set_schema_service_from_catalog() -> None:
             set_schema_service(service)
 
 
+def _schema_service_mismatches() -> list[str]:
+    try:
+        schema_service = get_schema_service()
+    except RuntimeError:
+        return []
+    catalog = get_contract_catalog()
+    if catalog is None:
+        return []
+    mismatches: list[str] = []
+    for table_key, contract in catalog.items():
+        if contract.is_view or table_key.startswith("tmp_") or contract.schema is None:
+            continue
+        schema = schema_service.get_table_schema(table_key)
+        if schema is None or schema != contract.schema:
+            mismatches.append(table_key)
+    return mismatches
+
+
 def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageConfig) -> None:
     load_contract_catalog_from_connection(con)
-    if get_contract_catalog() is not None:
-        if not config.read_only and config.apply_schema:
+    clear_contract_validation_cache()
+    catalog = get_contract_catalog()
+    if catalog is not None:
+        mismatches = _schema_service_mismatches()
+        should_refresh = not config.read_only and (config.apply_schema or bool(mismatches))
+        if should_refresh:
+            if mismatches:
+                LOG.warning(
+                    "Contract catalog schema mismatch for %d tables; rebuilding catalog",
+                    len(mismatches),
+                )
             bootstrap_contract_catalog(con, config=config)
+            clear_schema_provider_cache()
+            clear_contract_validation_cache()
+        elif mismatches:
+            LOG.warning(
+                "Contract catalog mismatch detected but gateway is read-only; using existing catalog"
+            )
         return
     if config.read_only:
         msg = "Contract catalog missing for read-only gateway"
         raise RuntimeError(msg)
     bootstrap_contract_catalog(con, config=config)
+    clear_schema_provider_cache()
+    clear_contract_validation_cache()
     if get_contract_catalog() is None:
         msg = "Contract catalog missing after bootstrap"
         raise RuntimeError(msg)

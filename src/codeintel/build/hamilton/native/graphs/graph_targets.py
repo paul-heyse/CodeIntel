@@ -225,6 +225,35 @@ class GraphValidationToolOutput(ToolStepOutput):
     rows: tuple[tuple[object, ...], ...] = ()
 
 
+@dataclass(frozen=True)
+class GoidsRunInputs:
+    """Inputs required for GOID extraction."""
+
+    modules: ir.Table
+    modules_record: TargetRunRecord
+    source_root: Path | None
+
+
+@dataclass(frozen=True)
+class SymbolUsesRunInputs:
+    """Inputs required for symbol use extraction."""
+
+    inputs: SymbolUsesInputs
+    scip_record: TargetRunRecord
+    modules_record: TargetRunRecord
+    goids_record: TargetRunRecord
+
+
+@dataclass(frozen=True)
+class GraphValidationRunInputs:
+    """Inputs required for graph validation checks."""
+
+    inputs: GraphValidationInputs
+    call_graph_record: TargetRunRecord
+    import_graph_record: TargetRunRecord
+    cfg_record: TargetRunRecord
+
+
 # ---------------------------------------------------------------------------
 # Input dataclasses for goids target
 # ---------------------------------------------------------------------------
@@ -381,7 +410,14 @@ def goids__hash_options(
     env: BuildEnv,
     modules__hash_options: InputHashOptions,
 ) -> InputHashOptions:
-    """Build input hash options for GOID materialization."""
+    """Build input hash options for GOID materialization.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, GOIDS_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
@@ -391,8 +427,36 @@ def goids__hash_options(
 
 
 @tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
+def goids__run_inputs(
+    q__core__modules: ir.Table,
+    t__modules: TargetRunRecord,
+    goids__source_root: Path | None,
+) -> GoidsRunInputs:
+    """Bundle inputs for GOID extraction.
+
+    Returns
+    -------
+    GoidsRunInputs
+        Return value.
+
+    """
+    return GoidsRunInputs(
+        modules=q__core__modules,
+        modules_record=t__modules,
+        source_root=goids__source_root,
+    )
+
+
+@tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
 def goids__source_root(env: BuildEnv) -> Path | None:
-    """Resolve repository root for GOID extraction."""
+    """Resolve repository root for GOID extraction.
+
+    Returns
+    -------
+    Path | None
+        Return value.
+
+    """
     repo_root = env.snapshot.repo_root
     if repo_root is not None:
         return repo_root
@@ -655,12 +719,42 @@ def symbol_uses__hash_options(
     env: BuildEnv,
     goids__hash_options: InputHashOptions,
 ) -> InputHashOptions:
-    """Build input hash options for symbol use materialization."""
+    """Build input hash options for symbol use materialization.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, SYMBOL_USES_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
         manifests=env.manifest_index,
         file_state_hash=goids__hash_options.file_state_hash,
+    )
+
+
+@tag_helper(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
+def symbol_uses__run_inputs(
+    symbol_uses__inputs: SymbolUsesInputs,
+    t__scip: TargetRunRecord,
+    t__modules: TargetRunRecord,
+    t__goids: TargetRunRecord,
+) -> SymbolUsesRunInputs:
+    """Bundle inputs for symbol use extraction.
+
+    Returns
+    -------
+    SymbolUsesRunInputs
+        Return value.
+
+    """
+    return SymbolUsesRunInputs(
+        inputs=symbol_uses__inputs,
+        scip_record=t__scip,
+        modules_record=t__modules,
+        goids_record=t__goids,
     )
 
 
@@ -988,12 +1082,17 @@ def _coerce_goids_output(output: ToolStepOutput) -> GoidsToolOutput:
 def t__goids__run(
     env: BuildEnv,
     graph: TargetGraph,
-    q__core__modules: ir.Table,
-    t__modules: TargetRunRecord,
-    goids__source_root: Path | None,
     goids__hash_options: InputHashOptions,
+    goids__run_inputs: GoidsRunInputs,
 ) -> GoidsToolOutput:
-    """Execute GOID extraction on repository modules."""
+    """Execute GOID extraction on repository modules.
+
+    Returns
+    -------
+    GoidsToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -1003,12 +1102,15 @@ def t__goids__run(
     )
 
     def _execute() -> GoidsToolOutput:
-        if t__modules.status != "succeeded":
+        if goids__run_inputs.modules_record.status != "succeeded":
             return GoidsToolOutput(
-                result=ExecutionResult.failed(f"Upstream modules target failed: {t__modules.error}")
+                result=ExecutionResult.failed(
+                    f"Upstream modules target failed: "
+                    f"{goids__run_inputs.modules_record.error}"
+                )
             )
 
-        source_root = goids__source_root
+        source_root = goids__run_inputs.source_root
         if source_root is None:
             return GoidsToolOutput(result=ExecutionResult.failed("GOID source root not resolved"))
 
@@ -1021,7 +1123,7 @@ def t__goids__run(
         )
 
         tracked_files = filter_paths(
-            _get_tracked_files(q__core__modules, repo, commit),
+            _get_tracked_files(goids__run_inputs.modules, repo, commit),
             scope_paths=opts.scope_paths,
             include_tests=opts.include_tests,
         )
@@ -1083,7 +1185,14 @@ def t__goids__run(
 def t__goids__ingest(
     t__goids__run: GoidsToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package GOID rows for table materialization."""
+    """Package GOID rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__goids__run.result
     if result.skipped:
         return IngestStep(
@@ -1119,7 +1228,19 @@ def t__goids__ingest(
 def goids__goids_rows(
     t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for core.goids."""
+    """Extract rows for core.goids.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__goids__ingest.result.skipped or not t__goids__ingest.result.success:
         return None
     payload = t__goids__ingest.payload
@@ -1138,7 +1259,19 @@ def goids__goids_rows(
 def goids__crosswalk_rows(
     t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for core.goid_crosswalk."""
+    """Extract rows for core.goid_crosswalk.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__goids__ingest.result.skipped or not t__goids__ingest.result.success:
         return None
     payload = t__goids__ingest.payload
@@ -1165,7 +1298,14 @@ def goids__finalize_context(
     graph: TargetGraph,
     goids__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for GOIDs."""
+    """Build finalization context for GOIDs.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -1181,7 +1321,14 @@ def t__goids(
     t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     goids__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Resolve GOIDs and build crosswalks."""
+    """Resolve GOIDs and build crosswalks.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=goids__finalize_context,
         tool_step=t__goids__run,
@@ -1206,13 +1353,17 @@ def _coerce_symbol_uses_output(output: ToolStepOutput) -> SymbolUsesToolOutput:
 def t__symbol_uses__run(
     env: BuildEnv,
     graph: TargetGraph,
-    symbol_uses__inputs: SymbolUsesInputs,
-    t__scip: TargetRunRecord,
-    t__modules: TargetRunRecord,
-    t__goids: TargetRunRecord,
     symbol_uses__hash_options: InputHashOptions,
+    symbol_uses__run_inputs: SymbolUsesRunInputs,
 ) -> SymbolUsesToolOutput:
-    """Execute symbol use extraction from SCIP data."""
+    """Execute symbol use extraction from SCIP data.
+
+    Returns
+    -------
+    SymbolUsesToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -1222,7 +1373,11 @@ def t__symbol_uses__run(
     )
 
     def _execute() -> SymbolUsesToolOutput:
-        for name, record in [("scip", t__scip), ("modules", t__modules), ("goids", t__goids)]:
+        for name, record in [
+            ("scip", symbol_uses__run_inputs.scip_record),
+            ("modules", symbol_uses__run_inputs.modules_record),
+            ("goids", symbol_uses__run_inputs.goids_record),
+        ]:
             if record.status != "succeeded":
                 return SymbolUsesToolOutput(
                     result=ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
@@ -1237,7 +1392,7 @@ def t__symbol_uses__run(
         )
 
         occurrences = _load_symbol_occurrences(
-            symbol_uses__inputs.scip_occurrences,
+            symbol_uses__run_inputs.inputs.scip_occurrences,
             repo,
             commit,
         )
@@ -1250,8 +1405,8 @@ def t__symbol_uses__run(
 
         occurrences = _filter_symbol_occurrences(occurrences, options=opts)
 
-        module_map = _load_module_map(symbol_uses__inputs.modules, repo, commit)
-        path_to_goid = _load_path_to_goid_map(symbol_uses__inputs.goids, repo, commit)
+        module_map = _load_module_map(symbol_uses__run_inputs.inputs.modules, repo, commit)
+        path_to_goid = _load_path_to_goid_map(symbol_uses__run_inputs.inputs.goids, repo, commit)
 
         def_map = symbols_compute.build_def_map(occurrences)
         edges = symbols_compute.build_use_edges(
@@ -1275,7 +1430,14 @@ def t__symbol_uses__run(
 def t__symbol_uses__ingest(
     t__symbol_uses__run: SymbolUsesToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package symbol use rows for table materialization."""
+    """Package symbol use rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__symbol_uses__run.result
     if result.skipped:
         return IngestStep(
@@ -1308,7 +1470,19 @@ def t__symbol_uses__ingest(
 def symbol_uses__rows(
     t__symbol_uses__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for graph.symbol_use_edges."""
+    """Extract rows for graph.symbol_use_edges.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__symbol_uses__ingest.result.skipped or not t__symbol_uses__ingest.result.success:
         return None
     payload = t__symbol_uses__ingest.payload
@@ -1335,7 +1509,14 @@ def symbol_uses__finalize_context(
     graph: TargetGraph,
     symbol_uses__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for symbol uses."""
+    """Build finalization context for symbol uses.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -1351,7 +1532,14 @@ def t__symbol_uses(
     t__symbol_uses__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     symbol_uses__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Extract symbol definition-to-use edges."""
+    """Extract symbol definition-to-use edges.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=symbol_uses__finalize_context,
         tool_step=t__symbol_uses__run,
@@ -1400,7 +1588,14 @@ class CallGraphDepthTables:
 
 @tag_helper(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
 def call_graph_views__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for call graph views."""
+    """Build input hash options for call graph views.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, CALL_GRAPH_VIEWS_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
@@ -1698,7 +1893,14 @@ def t__call_graph_views(
     graph: TargetGraph,
     call_graph_views__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Materialize derived views over the call graph for analytics."""
+    """Materialize derived views over the call graph for analytics.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     LOG.info("Materializing call_graph_views to DuckDB")
     return record_from_materializations(
         context=MaterializationRecordContext(
@@ -1718,7 +1920,14 @@ def t__call_graph_views(
 
 @tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for graph metrics."""
+    """Build input hash options for graph metrics.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
@@ -1739,7 +1948,14 @@ def t__graph_metrics__run(
     t__call_graph: TargetRunRecord,
     graph_metrics__hash_options: InputHashOptions,
 ) -> GraphMetricsToolOutput:
-    """Compute graph metrics rows from call graph data."""
+    """Compute graph metrics rows from call graph data.
+
+    Returns
+    -------
+    GraphMetricsToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -1859,7 +2075,14 @@ def t__graph_metrics__run(
 def t__graph_metrics__ingest(
     t__graph_metrics__run: GraphMetricsToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package graph metrics rows for table materialization."""
+    """Package graph metrics rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__graph_metrics__run.result
     if result.skipped:
         return IngestStep(
@@ -1925,7 +2148,14 @@ def _graph_metrics_rows_payload(
 def graph_metrics__functions_rows(
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract function graph metrics rows for materialization."""
+    """Extract function graph metrics rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    """
     return _graph_metrics_rows_payload(
         t__graph_metrics__ingest,
         GRAPH_METRICS_FUNCTIONS_TABLE_KEY,
@@ -1944,7 +2174,14 @@ def graph_metrics__functions_rows(
 def graph_metrics__modules_rows(
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract module graph metrics rows for materialization."""
+    """Extract module graph metrics rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    """
     return _graph_metrics_rows_payload(
         t__graph_metrics__ingest,
         GRAPH_METRICS_MODULES_TABLE_KEY,
@@ -1963,7 +2200,14 @@ def graph_metrics__modules_rows(
 def graph_metrics__functions_ext_rows(
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract function extended graph metric rows for materialization."""
+    """Extract function extended graph metric rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    """
     return _graph_metrics_rows_payload(
         t__graph_metrics__ingest,
         GRAPH_METRICS_FUNCTIONS_EXT_TABLE_KEY,
@@ -1982,7 +2226,14 @@ def graph_metrics__functions_ext_rows(
 def graph_metrics__modules_ext_rows(
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract module extended graph metric rows for materialization."""
+    """Extract module extended graph metric rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    """
     return _graph_metrics_rows_payload(
         t__graph_metrics__ingest,
         GRAPH_METRICS_MODULES_EXT_TABLE_KEY,
@@ -2001,7 +2252,14 @@ def graph_metrics__modules_ext_rows(
 def graph_metrics__stats_rows(
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract graph stats rows for materialization."""
+    """Extract graph stats rows for materialization.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    """
     return _graph_metrics_rows_payload(
         t__graph_metrics__ingest,
         GRAPH_STATS_TABLE_KEY,
@@ -2021,7 +2279,14 @@ def graph_metrics__finalize_context(
     graph: TargetGraph,
     graph_metrics__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for graph metrics."""
+    """Build finalization context for graph metrics.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -2037,7 +2302,14 @@ def t__graph_metrics(
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     graph_metrics__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Compute graph topology metrics for functions and modules."""
+    """Compute graph topology metrics for functions and modules.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=graph_metrics__finalize_context,
         tool_step=t__graph_metrics__run,
@@ -2054,11 +2326,41 @@ def t__graph_metrics(
 
 @tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def graph_validation__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for graph validation."""
+    """Build input hash options for graph validation.
+
+    Returns
+    -------
+    InputHashOptions
+        Return value.
+
+    """
     options_hash = options_hash_for_target(env, GRAPH_VALIDATION_TARGET_NAME)
     return InputHashOptions(
         options_hash=options_hash,
         manifests=env.manifest_index,
+    )
+
+
+@tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
+def graph_validation__run_inputs(
+    graph_validation__inputs: GraphValidationInputs,
+    t__call_graph: TargetRunRecord,
+    t__import_graph: TargetRunRecord,
+    t__cfg: TargetRunRecord,
+) -> GraphValidationRunInputs:
+    """Bundle inputs for graph validation.
+
+    Returns
+    -------
+    GraphValidationRunInputs
+        Return value.
+
+    """
+    return GraphValidationRunInputs(
+        inputs=graph_validation__inputs,
+        call_graph_record=t__call_graph,
+        import_graph_record=t__import_graph,
+        cfg_record=t__cfg,
     )
 
 
@@ -2072,13 +2374,17 @@ def _coerce_graph_validation_output(output: ToolStepOutput) -> GraphValidationTo
 def t__graph_validation__run(
     env: BuildEnv,
     graph: TargetGraph,
-    graph_validation__inputs: GraphValidationInputs,
-    t__call_graph: TargetRunRecord,
-    t__import_graph: TargetRunRecord,
-    t__cfg: TargetRunRecord,
     graph_validation__hash_options: InputHashOptions,
+    graph_validation__run_inputs: GraphValidationRunInputs,
 ) -> GraphValidationToolOutput:
-    """Run validation checks on all graph data."""
+    """Run validation checks on all graph data.
+
+    Returns
+    -------
+    GraphValidationToolOutput
+        Return value.
+
+    """
     context = ToolRunContext(
         env=env,
         graph=graph,
@@ -2088,7 +2394,11 @@ def t__graph_validation__run(
     )
 
     def _execute() -> GraphValidationToolOutput:
-        deps = [("call_graph", t__call_graph), ("import_graph", t__import_graph), ("cfg", t__cfg)]
+        deps = [
+            ("call_graph", graph_validation__run_inputs.call_graph_record),
+            ("import_graph", graph_validation__run_inputs.import_graph_record),
+            ("cfg", graph_validation__run_inputs.cfg_record),
+        ]
         for name, record in deps:
             if record.status != "succeeded":
                 return GraphValidationToolOutput(
@@ -2101,28 +2411,31 @@ def t__graph_validation__run(
         issues: list[GraphValidationIssue] = []
         issues.extend(
             _validate_call_graph_integrity(
-                graph_validation__inputs.call_graph_edges,
-                graph_validation__inputs.call_graph_nodes,
+                graph_validation__run_inputs.inputs.call_graph_edges,
+                graph_validation__run_inputs.inputs.call_graph_nodes,
                 repo,
                 commit,
             )
         )
         issues.extend(
             _validate_import_graph_integrity(
-                graph_validation__inputs.import_graph_edges,
-                graph_validation__inputs.import_modules,
+                graph_validation__run_inputs.inputs.import_graph_edges,
+                graph_validation__run_inputs.inputs.import_modules,
                 repo,
                 commit,
             )
         )
         issues.extend(
             _validate_cfg_integrity(
-                graph_validation__inputs.cfg_edges,
-                graph_validation__inputs.cfg_blocks,
+                graph_validation__run_inputs.inputs.cfg_edges,
+                graph_validation__run_inputs.inputs.cfg_blocks,
                 repo,
                 commit,
             )
         )
+
+        for issue in issues:
+            log.warning("graph_validation: %s", issue.detail)
 
         reporter = GraphValidationReporter(repo=repo, commit=commit)
         for issue in issues:
@@ -2168,7 +2481,14 @@ def t__graph_validation__run(
 def t__graph_validation__ingest(
     t__graph_validation__run: GraphValidationToolOutput,
 ) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
-    """Package graph validation rows for table materialization."""
+    """Package graph validation rows for table materialization.
+
+    Returns
+    -------
+    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
+        Return value.
+
+    """
     result = t__graph_validation__run.result
     if result.skipped:
         return IngestStep(
@@ -2205,7 +2525,19 @@ def t__graph_validation__ingest(
 def graph_validation__rows(
     t__graph_validation__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.graph_validation."""
+    """Extract rows for analytics.graph_validation.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Return value.
+
+    Raises
+    ------
+    ValueError
+        If the ingest payload or rows are missing.
+
+    """
     if t__graph_validation__ingest.result.skipped or not t__graph_validation__ingest.result.success:
         return None
     payload = t__graph_validation__ingest.payload
@@ -2232,7 +2564,14 @@ def graph_validation__finalize_context(
     graph: TargetGraph,
     graph_validation__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
-    """Build finalization context for graph validation."""
+    """Build finalization context for graph validation.
+
+    Returns
+    -------
+    ToolFinalizeContext
+        Return value.
+
+    """
     return ToolFinalizeContext(
         env=env,
         graph=graph,
@@ -2248,7 +2587,14 @@ def t__graph_validation(
     t__graph_validation__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
     graph_validation__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Run graph integrity validation checks."""
+    """Run graph integrity validation checks and persist findings.
+
+    Returns
+    -------
+    TargetRunRecord
+        Return value.
+
+    """
     return finalize_target_from_materializations(
         context=graph_validation__finalize_context,
         tool_step=t__graph_validation__run,

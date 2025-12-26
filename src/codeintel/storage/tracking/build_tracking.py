@@ -22,6 +22,7 @@ from codeintel.storage.helpers.json import (
     encode_json_compact,
     serialize_str_sequence,
 )
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -171,28 +172,13 @@ class BuildTracking:
         self._gateway = gateway
         self._con = gateway.con
         self._backend = gateway.policy
-        if not gateway.config.read_only:
-            self._migrate_impl_kind_columns()
+        self._impl_kind_columns: dict[str, str] = {}
 
-    def _migrate_impl_kind_columns(self) -> None:
-        """Rename legacy plugin columns to impl_kind when present."""
-        self._rename_column_if_needed("build", "output_manifests", "plugin", "impl_kind")
-        self._rename_column_if_needed("build", "run_targets", "plugin", "impl_kind")
-
-    def _rename_column_if_needed(
-        self,
-        schema: str,
-        table: str,
-        old_name: str,
-        new_name: str,
-    ) -> None:
-        columns = self._table_columns(schema=schema, table=table)
-        if old_name not in columns or new_name in columns:
-            return
-        qualified = f'"{schema}"."{table}"'
-        self._con.execute(f'ALTER TABLE {qualified} RENAME COLUMN "{old_name}" TO "{new_name}"')
-
-    def _table_columns(self, *, schema: str, table: str) -> set[str]:
+    def _impl_kind_column(self, table_key: str) -> str:
+        cached = self._impl_kind_columns.get(table_key)
+        if cached is not None:
+            return cached
+        schema, table = split_table_key(table_key)
         rows = self._con.execute(
             """
             SELECT column_name
@@ -201,7 +187,15 @@ class BuildTracking:
             """,
             [schema, table],
         ).fetchall()
-        return {str(row[0]) for row in rows}
+        columns = {str(row[0]) for row in rows}
+        if "impl_kind" in columns:
+            column = "impl_kind"
+        elif "plugin" in columns:
+            column = "plugin"
+        else:
+            column = "impl_kind"
+        self._impl_kind_columns[table_key] = column
+        return column
 
     def save_manifest(self, manifest: OutputManifest) -> None:
         """Save or update an output manifest.
@@ -218,6 +212,7 @@ class BuildTracking:
             if manifest.change_delta is not None
             else None
         )
+        impl_column = self._impl_kind_column("build.output_manifests")
         self._backend.upsert(
             "build.output_manifests",
             [
@@ -239,7 +234,7 @@ class BuildTracking:
                 "target",
                 "repo",
                 "commit",
-                "impl_kind",
+                impl_column,
                 "computed_at",
                 "duration_ms",
                 "input_hash",
@@ -251,7 +246,7 @@ class BuildTracking:
             upsert=UpsertSpec(
                 conflict_columns=("target", "repo", "commit"),
                 update_columns=(
-                    "impl_kind",
+                    impl_column,
                     "computed_at",
                     "duration_ms",
                     "input_hash",
@@ -280,9 +275,11 @@ class BuildTracking:
         OutputManifest | None
             The manifest if found, None otherwise.
         """
+        impl_column = self._impl_kind_column("build.output_manifests")
+        select_impl = f'"{impl_column}"'
         result = self._con.execute(
-            """
-            SELECT target, repo, commit, impl_kind, computed_at, duration_ms,
+            f"""
+            SELECT target, repo, commit, {select_impl} AS impl_kind, computed_at, duration_ms,
                    input_hash, output_hash, row_count, options_hash
                    , change_delta
             FROM build.output_manifests
@@ -311,9 +308,11 @@ class BuildTracking:
         tuple[OutputManifest, ...]
             All manifests for the given repo/commit.
         """
+        impl_column = self._impl_kind_column("build.output_manifests")
+        select_impl = f'"{impl_column}"'
         results = self._con.execute(
-            """
-            SELECT target, repo, commit, impl_kind, computed_at, duration_ms,
+            f"""
+            SELECT target, repo, commit, {select_impl} AS impl_kind, computed_at, duration_ms,
                    input_hash, output_hash, row_count, options_hash
                    , change_delta
             FROM build.output_manifests
@@ -534,6 +533,7 @@ class BuildTracking:
             return 0
 
         recorded_at = utc_now()
+        impl_column = self._impl_kind_column("build.run_targets")
         rows: list[tuple[object, ...]] = []
 
         for rec in records:
@@ -563,7 +563,7 @@ class BuildTracking:
                 "repo",
                 "commit",
                 "target",
-                "impl_kind",
+                impl_column,
                 "status",
                 "input_hash",
                 "options_hash",
@@ -587,9 +587,11 @@ class BuildTracking:
         list[dict[str, Any]]
             List of target record dictionaries.
         """
+        impl_column = self._impl_kind_column("build.run_targets")
+        select_impl = f'"{impl_column}"'
         results = self._con.execute(
-            """
-            SELECT target, impl_kind, status, input_hash, options_hash,
+            f"""
+            SELECT target, {select_impl} AS impl_kind, status, input_hash, options_hash,
                    duration_ms, row_counts, error, recorded_at
             FROM build.run_targets
             WHERE run_id = ?
