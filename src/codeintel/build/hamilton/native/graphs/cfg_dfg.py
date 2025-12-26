@@ -2,10 +2,10 @@
 
 This module implements CFG (Control Flow Graph) and DFG (Data Flow Graph)
 construction as native Hamilton pipelines with:
-- t__cfg__extract: Parse functions and build CFG blocks and edges
-- t__cfg: Materialize CFG target
-- t__dfg__extract: Build DFG edges from CFG results
-- t__dfg: Materialize DFG target
+- t__cfg__run: Parse functions and build CFG blocks/edges
+- t__cfg: Materialize CFG target via shared saver helpers
+- t__dfg__run: Build DFG edges from CFG results
+- t__dfg: Materialize DFG target via shared saver helpers
 
 Phase 3: Graphs domain migration with Hamilton-native validation.
 """
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import ast
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -61,80 +61,72 @@ CFG_BLOCKS_TABLE_KEY = "graph.cfg_blocks"
 CFG_EDGES_TABLE_KEY = "graph.cfg_edges"
 DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 
+CFG_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=CFG_TARGET_NAME,
+    hash_options_node="cfg__hash_options",
+)
+DFG_SAVE_CONTEXT = SaverContext(
+    domain="graphs",
+    target=DFG_TARGET_NAME,
+    hash_options_node="dfg__hash_options",
+)
+
+
+@dataclass(frozen=True)
+class CfgToolOutput(ToolStepOutput):
+    """Tool step output for CFG extraction."""
+
+    cfg_results: tuple[cfg_compute.CFGResult, ...] = ()
+    block_rows: tuple[CFGBlockRow, ...] = ()
+    edge_rows: tuple[CFGEdgeRow, ...] = ()
+
+
+@dataclass(frozen=True)
+class DfgToolOutput(ToolStepOutput):
+    """Tool step output for DFG extraction."""
+
+    edge_rows: tuple[DFGEdgeRow, ...] = ()
+
 
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
-def gateway(env: BuildEnv) -> StorageGateway:
-    """Expose the storage gateway for CFG/DFG nodes.
-
-    Returns
-    -------
-    StorageGateway
-        Storage gateway for the current build environment.
-    """
-    return env.gateway
-
-
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(CFG_BLOCKS_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(CFG_TARGET_NAME),
-    table_key=value(CFG_BLOCKS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(CFG_BLOCKS_TABLE_KEY)),
-)
-@tag_compute(domain="graphs", target=CFG_TARGET_NAME, target_="cfg__blocks_marker")
-def cfg__blocks_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare CFG blocks output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+def cfg__hash_options(
+    env: BuildEnv,
+    goids__hash_options: InputHashOptions,
+) -> InputHashOptions:
+    """Build hash options for CFG materialization."""
+    options_hash = options_hash_for_target(env, CFG_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=goids__hash_options.file_state_hash,
+    )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(CFG_EDGES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(CFG_TARGET_NAME),
-    table_key=value(CFG_EDGES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(CFG_EDGES_TABLE_KEY)),
-)
-@tag_compute(domain="graphs", target=CFG_TARGET_NAME, target_="cfg__edges_marker")
-def cfg__edges_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare CFG edges output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+@tag_helper(domain="graphs", target=DFG_TARGET_NAME)
+def dfg__hash_options(
+    env: BuildEnv,
+    cfg__hash_options: InputHashOptions,
+) -> InputHashOptions:
+    """Build hash options for DFG materialization."""
+    options_hash = options_hash_for_target(env, DFG_TARGET_NAME)
+    return InputHashOptions(
+        options_hash=options_hash,
+        manifests=env.manifest_index,
+        file_state_hash=cfg__hash_options.file_state_hash,
+    )
 
 
-@SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
-    output_name_=materialize_node(DFG_EDGES_TABLE_KEY),
-    env=source("env"),
-    graph=source("graph"),
-    target_name=value(DFG_TARGET_NAME),
-    table_key=value(DFG_EDGES_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(DFG_EDGES_TABLE_KEY)),
-)
-@tag_compute(domain="graphs", target=DFG_TARGET_NAME, target_="dfg__edges_marker")
-def dfg__edges_marker() -> tuple[tuple[object, ...], ...] | None:
-    """Declare DFG edges output for inventory checks.
-
-    Returns
-    -------
-    tuple[tuple[object, ...], ...] | None
-        Always ``None`` so the saver node is used only for metadata.
-    """
-    return None
+@tag_helper(domain="graphs", target=CFG_TARGET_NAME)
+def cfg__source_root(env: BuildEnv) -> Path | None:
+    """Resolve repository root for CFG extraction."""
+    repo_root = env.snapshot.repo_root
+    if repo_root is not None:
+        return repo_root
+    try:
+        return get_source_root(env.gateway, env.snapshot.repo, env.snapshot.commit)
+    except (OSError, RuntimeError, ValueError):
+        return None
 
 
 @dataclass(frozen=True)
@@ -160,112 +152,6 @@ class FunctionInfo:
     rel_path: str
     start_line: int
     end_line: int
-
-
-@dataclass(frozen=True)
-class CFGExtractResult:
-    """Result from CFG extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    block_count
-        Number of CFG blocks extracted.
-    edge_count
-        Number of CFG edges extracted.
-    cfg_results
-        List of CFG results for DFG construction.
-    table_counts
-        Row counts per produced table.
-    skipped
-        Whether extraction was skipped.
-    skip_reason
-        Optional reason for skipping extraction.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    block_count: int = 0
-    edge_count: int = 0
-    cfg_results: list[cfg_compute.CFGResult] = field(default_factory=list)
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    skip_reason: str | None = None
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class DFGExtractResult:
-    """Result from DFG extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    edge_count
-        Number of DFG edges extracted.
-    table_counts
-        Row counts per produced table.
-    skipped
-        Whether extraction was skipped.
-    skip_reason
-        Optional reason for skipping extraction.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    edge_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    skip_reason: str | None = None
-    error: str | None = None
-
-
-@tag_helper(domain="graphs")
-def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
-    """Convert cfg extract result to the executor boundary type.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical execution result.
-    """
-    if t__cfg__extract.skipped:
-        return ExecutionResult.skip(
-            t__cfg__extract.skip_reason,
-            table_counts=t__cfg__extract.table_counts,
-        )
-    if t__cfg__extract.success:
-        return ExecutionResult.ok(table_counts=t__cfg__extract.table_counts)
-    return ExecutionResult.failed(
-        t__cfg__extract.error or "CFG extraction failed",
-        table_counts=t__cfg__extract.table_counts,
-    )
-
-
-@tag_helper(domain="graphs")
-def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
-    """Convert dfg extract result to the executor boundary type.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical execution result.
-    """
-    if t__dfg__extract.skipped:
-        return ExecutionResult.skip(
-            t__dfg__extract.skip_reason,
-            table_counts=t__dfg__extract.table_counts,
-        )
-    if t__dfg__extract.success:
-        return ExecutionResult.ok(table_counts=t__dfg__extract.table_counts)
-    return ExecutionResult.failed(
-        t__dfg__extract.error or "DFG extraction failed",
-        table_counts=t__dfg__extract.table_counts,
-    )
 
 
 @tag_helper(domain="graphs")
@@ -469,278 +355,363 @@ def _filter_functions_for_scope(
     return [function for function in functions if function.rel_path in filtered_paths]
 
 
-def _materialize_cfg_outputs(
-    env: BuildEnv,
-    *,
-    block_rows: list[CFGBlockRow],
-    edge_rows: list[CFGEdgeRow],
-) -> tuple[int, int]:
-    options = materialize_options(env, owner_target=CFG_TARGET_NAME)
-    block_count = int(
-        env.warehouse.materialize_rows(
-            CFG_BLOCKS_TABLE_KEY,
-            [row.to_tuple() for row in block_rows],
-            columns=None,
-            options=options,
-        ).rows_written
-        or 0
-    )
-    edge_count = int(
-        env.warehouse.materialize_rows(
-            CFG_EDGES_TABLE_KEY,
-            [row.to_tuple() for row in edge_rows],
-            columns=None,
-            options=options,
-        ).rows_written
-        or 0
-    )
-    return block_count, edge_count
+def _coerce_cfg_output(output: ToolStepOutput) -> CfgToolOutput:
+    if isinstance(output, CfgToolOutput):
+        return output
+    return CfgToolOutput(result=output.result)
+
+
+def _coerce_dfg_output(output: ToolStepOutput) -> DfgToolOutput:
+    if isinstance(output, DfgToolOutput):
+        return output
+    return DfgToolOutput(result=output.result)
 
 
 @tag_tool(domain="graphs", target=CFG_TARGET_NAME)
-def t__cfg__extract(
+def t__cfg__run(
     env: BuildEnv,
-    gateway: StorageGateway,
+    graph: TargetGraph,
     q__core__goids: ir.Table,
     t__goids: TargetRunRecord,
-) -> CFGExtractResult:
-    """Execute CFG extraction for all functions.
+    cfg__source_root: Path | None,
+    cfg__hash_options: InputHashOptions,
+) -> CfgToolOutput:
+    """Execute CFG extraction for all functions."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=CFG_TARGET_NAME,
+        hash_options=cfg__hash_options,
+        skip_reason="cfg skipped",
+    )
 
-    This is the compute node for the cfg target. It loads function metadata,
-    parses source files, and builds control-flow graphs.
+    def _execute() -> CfgToolOutput:
+        if t__goids.status != "succeeded":
+            return CfgToolOutput(
+                result=ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
+            )
 
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    gateway
-        Storage gateway for graph data access.
-    q__core__goids
-        Ibis table expression for core.goids.
-    t__goids
-        Upstream GOIDs target result (for dependency).
+        source_root = cfg__source_root
+        if source_root is None:
+            return CfgToolOutput(
+                result=ExecutionResult.failed("CFG source root could not be resolved")
+            )
 
-    Returns
-    -------
-    CFGExtractResult
-        Result containing block and edge counts plus CFG results.
-
-    Notes
-    -----
-    Produces:
-    - graph.cfg_blocks: CFG basic blocks
-    - graph.cfg_edges: CFG edges
-    """
-    if t__goids.status != "succeeded":
-        return CFGExtractResult(
-            success=False,
-            error=f"Upstream goids target failed: {t__goids.error}",
-        )
-
-    try:
-        snapshot = env.snapshot
         opts = load_target_options(env, target_name=CFG_TARGET_NAME, options_type=CfgDfgOptions)
-
         functions = _filter_functions_for_scope(
-            _load_functions(q__core__goids, snapshot.repo, snapshot.commit),
+            _load_functions(q__core__goids, env.snapshot.repo, env.snapshot.commit),
             scope_paths=opts.scope_paths,
         )
 
         if not functions:
-            log.info("cfg: No functions found, skipping")
-            return CFGExtractResult(
-                success=True,
-                block_count=0,
-                edge_count=0,
-                cfg_results=[],
-                table_counts={
-                    CFG_BLOCKS_TABLE_KEY: 0,
-                    CFG_EDGES_TABLE_KEY: 0,
-                },
+            return CfgToolOutput(
+                result=ExecutionResult.ok(
+                    table_counts={
+                        CFG_BLOCKS_TABLE_KEY: 0,
+                        CFG_EDGES_TABLE_KEY: 0,
+                    }
+                ),
+                cfg_results=(),
+                block_rows=(),
+                edge_rows=(),
             )
 
-        source_root = snapshot.repo_root or get_source_root(
-            gateway,
-            snapshot.repo,
-            snapshot.commit,
-        )
         cfg_results, block_rows, edge_rows = _process_all_files(functions, source_root)
-
         log.info(
             "cfg: Built %d blocks and %d edges for %d functions",
             len(block_rows),
             len(edge_rows),
             len(functions),
         )
-
-        block_count, edge_count = _materialize_cfg_outputs(
-            env,
-            block_rows=block_rows,
-            edge_rows=edge_rows,
+        return CfgToolOutput(
+            result=ExecutionResult.ok(
+                table_counts={
+                    CFG_BLOCKS_TABLE_KEY: len(block_rows),
+                    CFG_EDGES_TABLE_KEY: len(edge_rows),
+                }
+            ),
+            cfg_results=tuple(cfg_results),
+            block_rows=tuple(block_rows),
+            edge_rows=tuple(edge_rows),
         )
 
-        log.info("cfg: Persisted %d blocks and %d edges", block_count, edge_count)
+    return _coerce_cfg_output(run_tool_step(context=context, run=_execute))
 
-        return CFGExtractResult(
-            success=True,
-            block_count=block_count,
-            edge_count=edge_count,
-            cfg_results=cfg_results,
-            table_counts={
-                CFG_BLOCKS_TABLE_KEY: block_count,
-                CFG_EDGES_TABLE_KEY: edge_count,
-            },
+
+@tag_compute(domain="graphs", target=CFG_TARGET_NAME)
+def t__cfg__ingest(
+    t__cfg__run: CfgToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package CFG rows for table materialization."""
+    result = t__cfg__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "cfg skipped",
+                warnings=result.warnings,
+            )
+        )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "cfg failed",
+                warnings=result.warnings,
+            )
         )
 
-    except Exception as exc:
-        log.exception("CFG extraction failed")
-        return CFGExtractResult(
-            success=False,
-            error=str(exc),
-        )
+    block_rows = tuple(row.to_tuple() for row in t__cfg__run.block_rows)
+    edge_rows = tuple(row.to_tuple() for row in t__cfg__run.edge_rows)
+    payload = {
+        CFG_BLOCKS_TABLE_KEY: block_rows,
+        CFG_EDGES_TABLE_KEY: edge_rows,
+    }
+    table_counts = {
+        CFG_BLOCKS_TABLE_KEY: len(block_rows),
+        CFG_EDGES_TABLE_KEY: len(edge_rows),
+    }
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
+@save_rows(context=CFG_SAVE_CONTEXT, spec=TableSaveSpec(table_key=CFG_BLOCKS_TABLE_KEY))
+@tag_compute(domain="graphs", target=CFG_TARGET_NAME, target_="cfg__blocks_rows")
+def cfg__blocks_rows(
+    t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.cfg_blocks."""
+    if t__cfg__ingest.result.skipped or not t__cfg__ingest.result.success:
+        return None
+    payload = t__cfg__ingest.payload
+    if payload is None:
+        msg = "Missing cfg ingest payload"
+        raise ValueError(msg)
+    rows = payload.get(CFG_BLOCKS_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {CFG_BLOCKS_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@save_rows(context=CFG_SAVE_CONTEXT, spec=TableSaveSpec(table_key=CFG_EDGES_TABLE_KEY))
+@tag_compute(domain="graphs", target=CFG_TARGET_NAME, target_="cfg__edges_rows")
+def cfg__edges_rows(
+    t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.cfg_edges."""
+    if t__cfg__ingest.result.skipped or not t__cfg__ingest.result.success:
+        return None
+    payload = t__cfg__ingest.payload
+    if payload is None:
+        msg = "Missing cfg ingest payload"
+        raise ValueError(msg)
+    rows = payload.get(CFG_EDGES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {CFG_EDGES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@tag_helper(domain="graphs", target=CFG_TARGET_NAME)
+def cfg__table_materializations(
+    m__graph__cfg_blocks: MaterializationMetadata,
+    m__graph__cfg_edges: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect materialization metadata for CFG tables."""
+    return {
+        CFG_BLOCKS_TABLE_KEY: m__graph__cfg_blocks,
+        CFG_EDGES_TABLE_KEY: m__graph__cfg_edges,
+    }
+
+
+@tag_helper(domain="graphs", target=CFG_TARGET_NAME)
+def cfg__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    cfg__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for CFG."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=CFG_TARGET_NAME,
+        hash_options=cfg__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=CFG_TARGET_NAME)
 def t__cfg(
-    env: BuildEnv,
-    graph: TargetGraph,
-    cfg__execution_result: ExecutionResult,
+    cfg__finalize_context: ToolFinalizeContext,
+    t__cfg__run: CfgToolOutput,
+    t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    cfg__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct control flow graphs per function.
-
-    This is the entry point for the cfg target. It orchestrates
-    CFG extraction and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    cfg__execution_result
-        Execution result derived from upstream extract node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    return executor_materialize(env, graph, CFG_TARGET_NAME, cfg__execution_result)
+    """Construct control flow graphs per function."""
+    return finalize_target_from_materializations(
+        context=cfg__finalize_context,
+        tool_step=t__cfg__run,
+        ingest_step=t__cfg__ingest,
+        artifact_materializations=None,
+        table_materializations=cfg__table_materializations,
+    )
 
 
 @tag_tool(domain="graphs", target=DFG_TARGET_NAME)
-def t__dfg__extract(
+def t__dfg__run(
     env: BuildEnv,
-    t__cfg__extract: CFGExtractResult,
-) -> DFGExtractResult:
-    """Execute DFG extraction from CFG results.
+    graph: TargetGraph,
+    t__cfg__run: CfgToolOutput,
+    dfg__hash_options: InputHashOptions,
+) -> DfgToolOutput:
+    """Execute DFG extraction from CFG results."""
+    context = ToolRunContext(
+        env=env,
+        graph=graph,
+        target_name=DFG_TARGET_NAME,
+        hash_options=dfg__hash_options,
+        skip_reason="dfg skipped",
+    )
 
-    This is the compute node for the dfg target. It takes CFG results
-    and builds data-flow graphs using reaching definitions analysis.
+    def _execute() -> DfgToolOutput:
+        cfg_result = t__cfg__run.result
+        if cfg_result.skipped:
+            return DfgToolOutput(
+                result=ExecutionResult.skip(
+                    cfg_result.skip_reason or "cfg skipped",
+                    warnings=cfg_result.warnings,
+                )
+            )
+        if not cfg_result.success:
+            return DfgToolOutput(
+                result=ExecutionResult.failed(
+                    cfg_result.error or "cfg failed",
+                    warnings=cfg_result.warnings,
+                )
+            )
 
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    t__cfg__extract
-        CFG extraction result (for CFG blocks and edges).
-
-    Returns
-    -------
-    DFGExtractResult
-        Result containing edge count.
-
-    Notes
-    -----
-    Produces:
-    - graph.dfg_edges: Data-flow edges
-    """
-    if not t__cfg__extract.success:
-        return DFGExtractResult(
-            success=False,
-            error=f"Upstream cfg extraction failed: {t__cfg__extract.error}",
-        )
-
-    try:
-        cfg_results = t__cfg__extract.cfg_results
-
+        cfg_results = t__cfg__run.cfg_results
         if not cfg_results:
-            log.info("dfg: No CFG results, skipping")
-            return DFGExtractResult(
-                success=True,
-                edge_count=0,
-                table_counts={DFG_EDGES_TABLE_KEY: 0},
+            return DfgToolOutput(
+                result=ExecutionResult.ok(table_counts={DFG_EDGES_TABLE_KEY: 0}),
+                edge_rows=(),
             )
 
         all_dfg_rows: list[DFGEdgeRow] = []
-        for cfg_result in cfg_results:
+        for cfg_result_item in cfg_results:
             dfg_result = dfg_compute.build_dfg(
-                cfg_result.function_goid,
-                cfg_result.blocks,
-                cfg_result.edges,
+                cfg_result_item.function_goid,
+                cfg_result_item.blocks,
+                cfg_result_item.edges,
             )
             all_dfg_rows.extend(dfg_compute.dfg_to_rows(dfg_result))
 
         log.info("dfg: Built %d edges from %d CFGs", len(all_dfg_rows), len(cfg_results))
-
-        edge_result = env.warehouse.materialize_rows(
-            DFG_EDGES_TABLE_KEY,
-            [row.to_tuple() for row in all_dfg_rows],
-            columns=None,
-            options=materialize_options(env, owner_target=DFG_TARGET_NAME),
-        )
-        edge_count = int(edge_result.rows_written or 0)
-
-        log.info("dfg: Persisted %d edges", edge_count)
-
-        return DFGExtractResult(
-            success=True,
-            edge_count=edge_count,
-            table_counts={DFG_EDGES_TABLE_KEY: edge_count},
+        return DfgToolOutput(
+            result=ExecutionResult.ok(table_counts={DFG_EDGES_TABLE_KEY: len(all_dfg_rows)}),
+            edge_rows=tuple(all_dfg_rows),
         )
 
-    except Exception as exc:
-        log.exception("DFG extraction failed")
-        return DFGExtractResult(
-            success=False,
-            error=str(exc),
+    return _coerce_dfg_output(run_tool_step(context=context, run=_execute))
+
+
+@tag_compute(domain="graphs", target=DFG_TARGET_NAME)
+def t__dfg__ingest(
+    t__dfg__run: DfgToolOutput,
+) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+    """Package DFG rows for table materialization."""
+    result = t__dfg__run.result
+    if result.skipped:
+        return IngestStep(
+            result=ExecutionResult.skip(
+                result.skip_reason or "dfg skipped",
+                warnings=result.warnings,
+            )
         )
+    if not result.success:
+        return IngestStep(
+            result=ExecutionResult.failed(
+                result.error or "dfg failed",
+                warnings=result.warnings,
+            )
+        )
+
+    edge_rows = tuple(row.to_tuple() for row in t__dfg__run.edge_rows)
+    payload = {DFG_EDGES_TABLE_KEY: edge_rows}
+    table_counts = {DFG_EDGES_TABLE_KEY: len(edge_rows)}
+    return IngestStep(
+        result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
+        payload=payload,
+    )
+
+
+@save_rows(context=DFG_SAVE_CONTEXT, spec=TableSaveSpec(table_key=DFG_EDGES_TABLE_KEY))
+@tag_compute(domain="graphs", target=DFG_TARGET_NAME, target_="dfg__edges_rows")
+def dfg__edges_rows(
+    t__dfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+) -> tuple[tuple[object, ...], ...] | None:
+    """Extract rows for graph.dfg_edges."""
+    if t__dfg__ingest.result.skipped or not t__dfg__ingest.result.success:
+        return None
+    payload = t__dfg__ingest.payload
+    if payload is None:
+        msg = "Missing dfg ingest payload"
+        raise ValueError(msg)
+    rows = payload.get(DFG_EDGES_TABLE_KEY)
+    if rows is None:
+        msg = f"Missing rows for {DFG_EDGES_TABLE_KEY}"
+        raise ValueError(msg)
+    return rows
+
+
+@tag_helper(domain="graphs", target=DFG_TARGET_NAME)
+def dfg__table_materializations(
+    m__graph__dfg_edges: MaterializationMetadata,
+) -> dict[str, MaterializationMetadata]:
+    """Collect materialization metadata for DFG tables."""
+    return {DFG_EDGES_TABLE_KEY: m__graph__dfg_edges}
+
+
+@tag_helper(domain="graphs", target=DFG_TARGET_NAME)
+def dfg__finalize_context(
+    env: BuildEnv,
+    graph: TargetGraph,
+    dfg__hash_options: InputHashOptions,
+) -> ToolFinalizeContext:
+    """Build finalization context for DFG."""
+    return ToolFinalizeContext(
+        env=env,
+        graph=graph,
+        target_name=DFG_TARGET_NAME,
+        hash_options=dfg__hash_options,
+    )
 
 
 @codeintel_target(domain="graphs", target=DFG_TARGET_NAME)
 def t__dfg(
-    env: BuildEnv,
-    graph: TargetGraph,
-    dfg__execution_result: ExecutionResult,
+    dfg__finalize_context: ToolFinalizeContext,
+    t__dfg__run: DfgToolOutput,
+    t__dfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    dfg__table_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
-    """Construct data flow graphs per function.
-
-    This is the entry point for the dfg target. It orchestrates
-    DFG extraction and returns a TargetRunRecord.
-
-    Parameters
-    ----------
-    env
-        Build environment with gateway and snapshot.
-    graph
-        Target graph for metadata lookup.
-    dfg__execution_result
-        Execution result derived from upstream extract node.
-
-    Returns
-    -------
-    TargetRunRecord
-        Record with status, datasets, and execution metadata.
-    """
-    return executor_materialize(env, graph, DFG_TARGET_NAME, dfg__execution_result)
+    """Construct data flow graphs per function."""
+    return finalize_target_from_materializations(
+        context=dfg__finalize_context,
+        tool_step=t__dfg__run,
+        ingest_step=t__dfg__ingest,
+        artifact_materializations=None,
+        table_materializations=dfg__table_materializations,
+    )
 
 
 __all__ = [
-    "CFGExtractResult",
-    "DFGExtractResult",
+    "CfgToolOutput",
+    "DfgToolOutput",
     "FunctionInfo",
     "t__cfg",
-    "t__cfg__extract",
+    "t__cfg__ingest",
+    "t__cfg__run",
     "t__dfg",
-    "t__dfg__extract",
+    "t__dfg__ingest",
+    "t__dfg__run",
 ]

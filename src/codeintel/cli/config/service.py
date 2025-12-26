@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from cyclopts import config as cyclopts_config
 
 from codeintel.cli.config.env_vars import CodeIntelEnv
-from codeintel.cli.config.loader import apply_overrides, load_config
+from codeintel.cli.config.loader import TOML_CONFIG_PATHS, apply_overrides, load_config
 from codeintel.config.models import CliConfigOptions, CodeIntelConfig, RepoConfig
 from codeintel.config.primitives import GraphBackendConfig, GraphFeatureFlags
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -36,12 +36,6 @@ LOG = logging.getLogger(__name__)
 
 
 CONFIG_PATH_ENV_VAR = "CODEINTEL_CONFIG_PATH"
-
-
-TOML_CONFIG_PATHS = [
-    Path("codeintel.toml"),
-    Path.home() / ".codeintel" / "config.toml",
-]
 
 
 def _resolve_toml_config_path() -> Path | None:
@@ -124,7 +118,7 @@ class ConfigService:
     Precedence (highest to lowest):
 
     1. CLI flags (explicit overrides)
-    2. Config file (codeintel.toml or ~/.codeintel/config.yaml)
+    2. Config file (codeintel.toml or ~/.codeintel/config.toml)
     3. Built-in defaults from CliConfig
 
     Parameters

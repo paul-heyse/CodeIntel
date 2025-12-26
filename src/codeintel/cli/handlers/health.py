@@ -15,7 +15,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codeintel.cli.config import DEFAULT_CONFIG_PATHS
+from codeintel.cli.config import TOML_CONFIG_PATHS
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
@@ -164,7 +164,7 @@ def _check_config_file() -> CheckResult:
     CheckResult
         Check result.
     """
-    for path in DEFAULT_CONFIG_PATHS:
+    for path in TOML_CONFIG_PATHS:
         if path.exists():
             return CheckResult(
                 name="config_file",
@@ -177,7 +177,7 @@ def _check_config_file() -> CheckResult:
         name="config_file",
         status=CheckStatus.WARN,
         message="No config file found (using defaults)",
-        details={"searched": [str(p) for p in DEFAULT_CONFIG_PATHS]},
+        details={"searched": [str(p) for p in TOML_CONFIG_PATHS]},
     )
 
 

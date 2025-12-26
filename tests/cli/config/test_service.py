@@ -78,8 +78,8 @@ def test_config_service_get_toml_config_path_returns_path_or_none() -> None:
 
 def test_config_service_load_from_explicit_path(tmp_path: Path) -> None:
     """Verify load() uses explicit config path."""
-    config_file = tmp_path / "test-config.yaml"
-    config_file.write_text("color: false\nlog_level: DEBUG\n")
+    config_file = tmp_path / "test-config.toml"
+    config_file.write_text('color = false\nlog_level = "DEBUG"\n')
 
     service = ConfigService.load(config_path=config_file, validate=False)
 
