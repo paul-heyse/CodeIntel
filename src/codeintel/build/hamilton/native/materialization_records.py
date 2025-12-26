@@ -17,6 +17,10 @@ from codeintel.build.hamilton.materializers.metadata import (
     FileArtifactMaterializationMetadata,
     MaterializationStatus,
 )
+from codeintel.build.hamilton.native.outputs import (
+    expected_artifact_names_for_target,
+    expected_table_keys_for_target,
+)
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
@@ -256,7 +260,7 @@ def record_from_file_artifact_materialization(
         )
 
     contract_artifact_names = tuple(target.contract.artifact_names)
-    expected_names = _expected_artifact_names(env, target.name, contract_artifact_names)
+    expected_names = _expected_artifact_names(target.name, contract_artifact_names)
     if expected_names != (expected_artifact_name,):
         if expected_artifact_name not in expected_names:
             msg = (
@@ -385,7 +389,6 @@ def record_from_duckdb_materializations(
         )
 
     expected_table_keys = _expected_table_keys(
-        env,
         target.name,
         tuple(target.contract.table_keys),
     )
@@ -502,7 +505,7 @@ def record_from_file_artifact_materializations(
         )
 
     expected_names = _expected_artifact_names(
-        env, target.name, tuple(target.contract.artifact_names)
+        target.name, tuple(target.contract.artifact_names)
     )
     extra_artifacts = set(materializations) - set(expected_names)
     if extra_artifacts:
@@ -606,12 +609,10 @@ def record_from_materializations(
         options_hash=options_hash,
     )
     expected_table_keys = _expected_table_keys(
-        context.env,
         target.name,
         tuple(target.contract.table_keys),
     )
     expected_artifact_names = _expected_artifact_names(
-        context.env,
         target.name,
         tuple(target.contract.artifact_names),
     )
@@ -858,25 +859,19 @@ def _parse_expected_artifact_materializations(
 
 
 def _expected_artifact_names(
-    env: BuildEnv,
     target_name: str,
     fallback: tuple[str, ...],
 ) -> tuple[str, ...]:
-    inventory = env.output_inventory
-    if inventory is None:
-        return fallback
-    return tuple(inventory.artifacts_for(target_name))
+    derived = expected_artifact_names_for_target(target_name)
+    return derived if derived else fallback
 
 
 def _expected_table_keys(
-    env: BuildEnv,
     target_name: str,
     fallback: tuple[str, ...],
 ) -> tuple[str, ...]:
-    inventory = env.output_inventory
-    if inventory is None:
-        return fallback
-    return tuple(inventory.datasets_for(target_name))
+    derived = expected_table_keys_for_target(target_name)
+    return derived if derived else fallback
 
 
 def _parse_expected_table_materializations(

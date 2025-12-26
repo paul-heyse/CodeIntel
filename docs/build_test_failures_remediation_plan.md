@@ -128,7 +128,7 @@ Acceptance:
 ### Phase 3: Schema provenance and inference stability
 **Scope:** `src/codeintel/build/schemas/compile.py`,
 `src/codeintel/build/schemas/schema_index.py`,
-`src/codeintel/build/schemas/provider_declared.py`
+`src/codeintel/build/schemas/provider_unified.py`
 
 1) Adjust provenance collection so artifact provenance is always a dict in
    v2 manifests, even when empty.
@@ -150,7 +150,7 @@ Acceptance:
 ### Phase 4: Registry normalization (artifact-only targets and static deps)
 **Scope:** `src/codeintel/build/targets.py`,
 `src/codeintel/build/target_spec_compiler.py`,
-`src/codeintel/build/target_catalog.py`
+`src/codeintel/build/target_metadata.py`
 
 1) Treat artifact-only targets as valid outputs:
    - Allow empty table lists when artifacts exist.

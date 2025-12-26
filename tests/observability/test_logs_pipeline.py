@@ -17,10 +17,12 @@ pytest.importorskip("opentelemetry.sdk._logs")
 
 class _CaptureHandler(logging.Handler):
     def __init__(self) -> None:
+        """Initialize a capture handler for log records."""
         super().__init__()
         self.records: list[logging.LogRecord] = []
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Capture an emitted log record."""
         self.records.append(record)
 
 

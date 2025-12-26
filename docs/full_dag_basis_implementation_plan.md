@@ -15,7 +15,7 @@ For `scip`, the “end state” should satisfy these invariants:
 4. **The anchor node is “boring”** — it should only: (a) validate upstream target health, (b) call a shared “record builder” that consumes materialization metadata, and (c) return `TargetRunRecord`. No bespoke artifact/table enumeration or custom summarizers per target.
 5. **Adding a new output requires minimal edits** — ideally only “add a new saver-decorated node” (or add an item to a small spec list) and the rest is automatically reflected in: output inventory, IO registry, materialization collection, and record assembly.
 6. **Single-target truth for mixed outputs** — tool run, artifact materialization, ingest, and table writes remain within one target DAG for a single calculation scope/context. Do not split tool/ingest into separate targets. Avoid consuming `a__*` / `ArtifactRef` inside the same target (it depends on the target record and creates a cycle); use tool outputs or saver metadata nodes instead.
-7. **Output inventory is DAG-derived in steady state** — `output_inventory_source="dag"` is the target and the source of truth. Transitional modes (`declared`/`compare`) are allowed during migration but must not become a parallel authority; utilities that read templates must fall back to explicit templates when DAG-derived inventory is unavailable.
+7. **Output inventory is DAG-derived in steady state** — DAG saver tags are the sole source of truth; transitional modes are removed. Utilities that read templates must fall back to explicit templates when DAG-derived inventory is unavailable.
 8. **Protobuf is canonical for SCIP** — `index.scip` + `scip_proto` codegen are the source of truth; JSON artifacts are not part of the pipeline. SCIP project identity is stable (`--project-name CodeIntel`).
 
 Everything below is designed to make those invariants true for `scip`, using the system you already have (SaveTo tags → output derivation; compile_write_registry; support nodes; etc.). 
@@ -36,7 +36,7 @@ To avoid regressions and reduce rework, implement in this order:
 
 After each target migration (starting with `scip`), add explicit **settings + validation gates**:
 
-* Transition settings to DAG-derived surfaces: set `BuildSettings.output_inventory_source` to `compare` (then `dag` once stable), and set `BuildSettings.support_nodes_source` to `derived` for the migrated target set.
+* DAG-derived outputs and support nodes are now the only mode; no per-run toggles remain.
 * Run `build validate` with `validate_graph(..., enforce_compute_io_purity=True)` to ensure no manual IO remains and DAG purity is preserved as you scale the pattern.
 * Treat any drift reported by `build validate` as a blocking defect before moving to the next target.
 
@@ -670,7 +670,7 @@ After implementing the 10 consolidations, you should be able to demonstrate:
 5. **Module-state is authoritative** → `core.scip_module_state` rows are populated and used to regenerate shard manifests when missing.
 6. `t__scip` anchor becomes small and generic: no bespoke lists, no bespoke parsing of metadata.
 7. Peak memory improves (if you do streaming/chunking), but even without it, the code path is now set up for it cleanly.
-8. `output_inventory_source="dag"` is viable for scip: artifact templates resolve from saver tags, and no declared inventory is needed for correctness.
+8. DAG saver templates are viable for scip: artifact templates resolve from saver tags, and no declared inventory is needed for correctness.
 
 ---
 
@@ -696,7 +696,7 @@ I’m going to name **exact modules/utilities to add** (and the exact existing m
 - Reuse existing run-result primitives: `ExecutionResult`, `ToolStepOutput`, `MaterializationMetadata`, and `NativeTargetExecutor`.
 - Keep manifest semantics unchanged: `save_manifest(...)` remains the single authority; no new manifest schema.
 - Enforce DAG-derivable saver tags: `target_name`, `table_key` or `artifact_name`, `path_template`, and `output_role` must be static via `value(...)`.
-- Preserve output inventory modes: use `BuildEnv.output_inventory` when present; use DAG templates when `output_inventory_source` is `dag`/`compare`.
+- Preserve output inventory behavior: use DAG templates and fall back to explicit templates when needed.
 - Keep shared modules outside native discovery: `native/patterns` must not register as targets.
 - Make generated nodes deterministic and tag collectors with `tag_helper` to keep IO surfaces clean.
 
@@ -965,7 +965,7 @@ This is the point where **adding a new tool target can become “define spec + i
 
 * `resolve_artifact_output_path(env: BuildEnv, *, target: str, artifact: str, fallback_template: str | None = None) -> Path`
 
-* uses `env.output_inventory.artifact_templates_for(target)` when `output_inventory_source="dag"` (or `compare` with DAG available and `output_inventory_strict` satisfied)
+* uses saver-derived outputs (via `derive_target_outputs_from_savers`) to resolve templates when available
 * otherwise uses provided fallback_template to avoid a second source of truth
   * formats with `format_path_template(...)` and `default_formatter(build_dir, scip_dir, export_dir, repo_root)`
 
@@ -1054,7 +1054,7 @@ Add explicit tests and checks for the shared libraries before migrating addition
 
 * saver helper tags remain DAG-derivable (static `target_name`, `table_key`/`artifact_name`, `path_template`, `output_role`)
 * `record_from_materializations` handles mixed outputs, missing metadata, and input_hash mismatch correctly
-* path resolution uses `OutputInventory` templates when available and respects fallback templates otherwise
+* path resolution uses DAG saver templates when available and respects fallback templates otherwise
 * tool-target helpers do not bypass manifest-based skip checks
 * `build validate` with `enforce_compute_io_purity=True` passes for each migrated target set
 
@@ -1126,7 +1126,7 @@ After implementing this shared library and migrating representative targets:
 
 * `native/patterns` is importable and does not register as a target module.
 * Mixed-output targets build `TargetRunRecord` solely from saver metadata via `record_from_materializations`.
-* Tool nodes resolve output paths from DAG templates when `output_inventory_source` is `dag`/`compare`.
+* Tool nodes resolve output paths from saver-derived templates (with explicit fallback only when tags are missing).
 * Tool tag metadata can derive `TargetResources.tools` when explicit tools are not set.
 * Support modules can emit `p__*` path nodes when enabled without introducing target cycles.
 
@@ -1467,7 +1467,7 @@ If you want, I can also generate a **“template adoption checklist”** for eac
 
 Below is a **module-by-module “template adoption checklist”** for each canonical spec (AO/TO/TT/TA/MX). It’s written as a **mechanical migration rubric**: you can apply it in the same order every time, with minimal judgment calls, and end up with a target that is **maximally DAG-derived** (contract + IO surface + orchestration + support-node exposure all come from the Hamilton graph).
 
-I’m grounding this in your architecture conventions: stable node naming via `naming.py` (`t__`, `m__`, `d__`, `q__`, `df__`, `a__`), **target anchors** as `t__<target>` materialize nodes, and **contract outputs derived from DataSaver tags** (`output_role`, `table_key`/`artifact`, `artifact_path_template`). I also assume you’re leaning into **saver-derived outputs** for support surfaces (`BuildSettings.support_nodes_source`) as the steady-state.
+I’m grounding this in your architecture conventions: stable node naming via `naming.py` (`t__`, `m__`, `d__`, `q__`, `df__`, `a__`), **target anchors** as `t__<target>` materialize nodes, and **contract outputs derived from DataSaver tags** (`output_role`, `table_key`/`artifact`, `artifact_path_template`). I also assume you’re leaning into **saver-derived outputs** for support surfaces (via `DerivedTargetOutputs`) as the steady-state.
 
 ---
 
@@ -1511,8 +1511,8 @@ These are “do this or you’re not actually DAG-native”.
 
 6. **Output inventory is DAG-derived in steady state**
 
-* `output_inventory_source="dag"` is the desired default. `declared`/`compare` are transitional and should not become a second source of truth.
-* Helpers that read inventory data should accept a fallback template/value for non-dag modes to avoid drift.
+* Inventory and templates are derived from saver tags, not a parallel declared source of truth.
+* Helpers that read inventory data should accept a fallback template/value only for targets that are not yet fully tagged.
 
 7. **Execution model assumptions**
 
@@ -1909,7 +1909,7 @@ Run these after each conversion, regardless of template:
 
 3. **Support surface**
 
-* With `support_nodes_source = DerivedTargetOutputs`, support nodes appear for the outputs you expect, and are usable by downstream targets (`d__/q__/df__/a__`).
+* Support nodes appear for the outputs you expect via saver-derived outputs, and are usable by downstream targets (`d__/q__/df__/a__`).
 
 4. **IO surface introspection**
 
@@ -1925,7 +1925,7 @@ Run these after each conversion, regardless of template:
 
 Use this block verbatim in PRs that migrate a target to DAG-derived IO:
 
-* **Settings**: `output_inventory_source` moved to `compare` (then `dag` once stable) and `support_nodes_source=derived` for migrated targets.
+* **Settings**: no compatibility toggles; outputs/support nodes are derived from saver tags.
 * **Validation**: `build validate` includes `validate_graph(..., enforce_compute_io_purity=True)`; no drift or IO-purity violations.
 * **Inventory**: DAG-derived inventory contains all new outputs/templates without relying on declared inventory.
 * **Hashing**: shared `*_hash_options` node is used by tool execution, savers, and record builders (no duplicated hash logic).

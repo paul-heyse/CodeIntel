@@ -210,6 +210,14 @@ Recent updates:
   inventory and filtering via shared output formatting.
 - Registered the command group in the root CLI app so it is available in the standard entrypoint.
 - Added options for registry filters (domain, materialization, targets, table_key, pilot_only).
+- Build decommission cleanup complete:
+  - Output inventory and target catalog caches removed; DAG-derived outputs and target graph are
+    the only sources of truth.
+  - Contract resolution now defaults to the enriched, DAG-backed service; declared-only mode is
+    removed.
+  - Support nodes are always derived from DAG saver tags (no runtime toggle).
+  - ExecutionResult compatibility shim removed; graph targets now emit ExecutionResult directly or
+    use explicit conversions where intermediate results are required.
 
 ## Phase 4: End-to-end tests and artifacts
 Tasks:
@@ -235,6 +243,42 @@ Create a short checklist that can be applied to the next output:
 
 Deliverable:
 - A reusable migration checklist with concrete "done" criteria.
+
+### Phase 5A: Simple follow-on target (function_ast_features)
+Target:
+- `analytics.function_ast_features` (`t__function_ast_features`)
+
+Checklist:
+- Inventory metadata is complete and accurate (table key, contract, upstream targets).
+- DAG nodes use shared materialization helpers; no direct gateway access in compute nodes.
+- Contract/schema registry includes `analytics.function_ast_features` with consistent names.
+- Storage read path uses shared storage services (no direct DuckDB use outside storage).
+- CLI selection includes the target via metadata-driven paths (`build targets`, `build plan`).
+- Add a focused harness test validating row count + schema (single table).
+
+Acceptance criteria:
+- `t__function_ast_features` runs from the harness and materializes the table.
+- Schema validation passes for `analytics.function_ast_features`.
+- CLI output listing includes the target and honors filters.
+
+### Phase 5B: Complex follow-on target (profiles or data_models)
+Candidates:
+- `analytics.profiles` (`t__profiles`)
+- `analytics.data_models` (`t__data_models`)
+
+Checklist:
+- Inventory metadata includes all table keys, contracts, and downstream consumers.
+- Contract/schema coverage is complete for all output tables in the target.
+- DAG nodes separate pure compute from I/O; materialization uses shared patterns.
+- Storage repositories (if any) use shared services and validate contracts.
+- Serving dependencies are explicitly listed; no build-internal access from serving.
+- CLI output flags and error handling align with validation mode rules.
+- Add an integration test validating multi-table writes and downstream usage.
+
+Acceptance criteria:
+- Target runs end-to-end with all tables materialized and recorded.
+- Downstream consumers (serving or CLI) operate with only materialized outputs.
+- Contract validation behavior is stable in lenient and strict modes.
 
 ## Work completed so far (implementation status)
 - Added canonical inventory artifact: `src/codeintel/core/registry/dag_output_inventory.yaml`.

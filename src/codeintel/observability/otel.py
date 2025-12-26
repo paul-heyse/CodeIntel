@@ -6,28 +6,31 @@ import importlib
 import inspect
 import json
 import logging
+import threading
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field, replace
+from functools import partial
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
 
 import grpc
 from opentelemetry import metrics as otel_metrics
 from opentelemetry import trace as otel_trace
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 from opentelemetry.context import Context
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-    OTLPSpanExporter as OTLPSpanExporterGrpc,
-)
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import (
     OTLPMetricExporter as OTLPMetricExporterGrpc,
 )
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-    OTLPSpanExporter as OTLPSpanExporterHttp,
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter as OTLPSpanExporterGrpc,
 )
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter as OTLPMetricExporterHttp,
+)
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+    OTLPSpanExporter as OTLPSpanExporterHttp,
 )
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.instrumentation.asyncio import AsyncioInstrumentor
@@ -44,12 +47,27 @@ from opentelemetry.sdk.metrics import (
     MeterProvider,
     TraceBasedExemplarFilter,
 )
-from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.export import (
+    InMemoryMetricReader,
+    MetricReader,
+    PeriodicExportingMetricReader,
+)
 from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanLimits, SpanProcessor, TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, ALWAYS_ON, ParentBased, TraceIdRatioBased
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    ConsoleSpanExporter,
+    SimpleSpanProcessor,
+)
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.sampling import (
+    ALWAYS_OFF,
+    ALWAYS_ON,
+    ParentBased,
+    Sampler,
+    TraceIdRatioBased,
+)
 from opentelemetry.trace import Tracer
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
@@ -65,24 +83,22 @@ from codeintel.core.config.settings import (
     SpanLimitSettings,
 )
 from codeintel.core.singleton import SingletonHolder
+from codeintel.observability.attributes import shape_attributes
+from codeintel.observability.config_validation import validate_otel_config_file
+from codeintel.observability.policy import ObservabilityPolicy, policy_from_settings
 from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
 from codeintel.observability.instrumentation_registry import (
     InstrumentationRegistry,
     get_instrumentation_registry,
 )
+from codeintel.observability.test_mode import TestTelemetryMode, resolve_test_telemetry_mode
 
 if TYPE_CHECKING:
-    from opentelemetry.metrics import Meter
+    from opentelemetry.metrics import Counter, Histogram, Meter
     from opentelemetry.sdk.metrics import ExemplarFilter
 
 LOG = logging.getLogger(__name__)
-
-
-class _Instrumentor(Protocol):
-    """Protocol for OpenTelemetry instrumentors."""
-
-    def instrument(self, **kwargs: object) -> None:
-        """Enable instrumentation."""
+DEFAULT_SHUTDOWN_TIMEOUT_S = 5.0
 
 
 class _LoggerProvider(Protocol):
@@ -90,12 +106,15 @@ class _LoggerProvider(Protocol):
 
     def add_log_record_processor(self, processor: object) -> None:
         """Register a log record processor."""
+        ...
 
     def shutdown(self) -> None:
         """Shutdown the provider."""
+        ...
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force flush pending log records."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +174,16 @@ class ObservabilityConfig:
     duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
     duckdb_query_parameter_require_in_sql: bool = True
     duckdb_query_parameter_max_str_len: int = 80
+    test_mode: TestTelemetryMode | None = None
+    policy: ObservabilityPolicy = field(default_factory=ObservabilityPolicy)
+
+
+@dataclass(frozen=True, slots=True)
+class TestTelemetryHandles:
+    """In-memory telemetry handles for test assertions."""
+
+    span_exporter: InMemorySpanExporter | None
+    metric_reader: InMemoryMetricReader | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +196,7 @@ class ObservabilityRuntime:
     logger_provider: _LoggerProvider | None
     log_handler: logging.Handler | None
     shutdown: Callable[[], ObservabilityShutdownResult] | None
+    policy: ObservabilityPolicy
     prometheus_enabled: bool = False
     grpc_observability: GrpcObservabilityHandle | None = None
     duckdb_tracing_enabled: bool = True
@@ -192,12 +222,98 @@ class ObservabilityRuntime:
     duckdb_query_parameter_hash_keys: tuple[str, ...] = ()
     duckdb_query_parameter_require_in_sql: bool = True
     duckdb_query_parameter_max_str_len: int = 80
+    test_handles: TestTelemetryHandles | None = None
 
 
 class _ObservabilityHolder(SingletonHolder[ObservabilityRuntime]):
     pass
 
 
+@dataclass(slots=True)
+class PipelineHealthState:
+    """Snapshot of last telemetry pipeline flush attempt."""
+
+    last_flush_ok: bool | None = None
+    last_flush_ms: float | None = None
+    last_flush_errors: tuple[str, ...] = ()
+
+
+class ObservabilityRuntimeManager:
+    """Lifecycle manager for observability runtime state."""
+
+    def bootstrap(self, config: ObservabilityConfig) -> ObservabilityRuntime:
+        """Initialize and return the observability runtime."""
+        return _ObservabilityHolder.get(lambda: _init_observability(config))
+
+    def get(self) -> ObservabilityRuntime:
+        """Return the current runtime, or a disabled runtime."""
+        runtime = _ObservabilityHolder.get_or_none()
+        if runtime is not None:
+            return runtime
+        return _disabled_runtime()
+
+    def shutdown(self) -> ObservabilityShutdownResult | None:
+        """Shut down the runtime and reset state."""
+        runtime = _ObservabilityHolder.get_or_none()
+        if runtime is None or runtime.shutdown is None:
+            return None
+        result: ObservabilityShutdownResult | None = None
+        try:
+            result = runtime.shutdown()
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            result = ObservabilityShutdownResult(
+                flush_ok=False,
+                flush_ms=0.0,
+                errors=(str(exc),),
+            )
+        if result is not None:
+            _log_shutdown_result(result)
+            _record_pipeline_health(result)
+            _record_pipeline_metrics(result, action="shutdown")
+        _ObservabilityHolder.reset()
+        return result
+
+    def flush(self) -> ObservabilityShutdownResult | None:
+        """Force-flush the runtime without shutdown."""
+        runtime = _ObservabilityHolder.get_or_none()
+        if runtime is None or not runtime.enabled:
+            return None
+        start = time.perf_counter()
+        errors: list[str] = []
+        flush_ok = True
+
+        tracer_provider = otel_trace.get_tracer_provider()
+        meter_provider = otel_metrics.get_meter_provider()
+
+        if tracer_provider is not None:
+            flush_ok = (
+                _force_flush_provider(tracer_provider, label="tracer", errors=errors) and flush_ok
+            )
+        if meter_provider is not None:
+            flush_ok = _force_flush_provider(meter_provider, label="meter", errors=errors) and flush_ok
+        if runtime.logger_provider is not None:
+            flush_ok = (
+                _force_flush_provider(runtime.logger_provider, label="logger", errors=errors)
+                and flush_ok
+            )
+
+        duration_ms = (time.perf_counter() - start) * 1000
+        result = ObservabilityShutdownResult(
+            flush_ok=flush_ok,
+            flush_ms=duration_ms,
+            errors=tuple(errors),
+        )
+        _record_pipeline_health(result)
+        _record_pipeline_metrics(result, action="flush")
+        return result
+
+    def reset(self) -> None:
+        """Clear any cached runtime state."""
+        _ObservabilityHolder.reset()
+
+
+_RUNTIME_MANAGER = ObservabilityRuntimeManager()
+_PIPELINE_HEALTH_STATE = PipelineHealthState()
 @dataclass(frozen=True, slots=True)
 class ObservabilityShutdownResult:
     """Shutdown flush summary for observability runtime."""
@@ -348,20 +464,20 @@ def _build_span_limits(settings: SpanLimitSettings) -> SpanLimits | None:
     )
 
 
-def _build_sampler(config: ObservabilityConfig) -> object | None:
+def _build_sampler(config: ObservabilityConfig) -> Sampler | None:
     sampler = config.traces_sampler
     if not sampler:
         return None
     normalized = sampler.strip().lower()
     ratio = config.traces_sampler_arg if config.traces_sampler_arg is not None else 1.0
-    mapping: dict[str, object] = {
+    mapping: dict[str, Sampler] = {
         "always_on": ALWAYS_ON,
         "always_off": ALWAYS_OFF,
         "parentbased_always_on": ParentBased(ALWAYS_ON),
         "parentbased_always_off": ParentBased(ALWAYS_OFF),
     }
     if normalized == "traceidratio":
-        result: object | None = TraceIdRatioBased(ratio)
+        result: Sampler | None = TraceIdRatioBased(ratio)
     elif normalized == "parentbased_traceidratio":
         result = ParentBased(TraceIdRatioBased(ratio))
     else:
@@ -443,6 +559,28 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
     return views
 
 
+def build_metric_views(config: ObservabilityConfig) -> list[View]:
+    """Build metric views for the supplied observability config.
+
+    Returns
+    -------
+    list[View]
+        Metric view definitions derived from the config.
+    """
+    return _build_views(config)
+
+
+def build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None:
+    """Build an exemplar filter for the supplied observability config.
+
+    Returns
+    -------
+    ExemplarFilter | None
+        Exemplar filter derived from the config, if configured.
+    """
+    return _build_exemplar_filter(config)
+
+
 def _load_module(name: str, *, label: str) -> object:
     try:
         return importlib.import_module(name)
@@ -468,8 +606,8 @@ def _get_logger_provider_cls() -> type[_LoggerProvider]:
     provider_cls = getattr(module, "LoggerProvider", None)
     if not isinstance(provider_cls, type):
         message = "LoggerProvider class is unavailable in OpenTelemetry SDK logs"
-        raise RuntimeError(message)
-    return cast(type[_LoggerProvider], provider_cls)
+        raise TypeError(message)
+    return cast("type[_LoggerProvider]", provider_cls)
 
 
 def _get_logging_handler_cls() -> type[logging.Handler]:
@@ -477,8 +615,8 @@ def _get_logging_handler_cls() -> type[logging.Handler]:
     handler_cls = getattr(module, "LoggingHandler", None)
     if not isinstance(handler_cls, type):
         message = "LoggingHandler class is unavailable in OpenTelemetry SDK logs"
-        raise RuntimeError(message)
-    return cast(type[logging.Handler], handler_cls)
+        raise TypeError(message)
+    return cast("type[logging.Handler]", handler_cls)
 
 
 def _get_log_limits_cls() -> type[object]:
@@ -486,7 +624,7 @@ def _get_log_limits_cls() -> type[object]:
     limits_cls = getattr(module, "LogLimits", None)
     if not isinstance(limits_cls, type):
         message = "LogLimits class is unavailable in OpenTelemetry SDK logs"
-        raise RuntimeError(message)
+        raise TypeError(message)
     return limits_cls
 
 
@@ -495,7 +633,7 @@ def _get_batch_log_record_processor_cls() -> type[object]:
     processor_cls = getattr(module, "BatchLogRecordProcessor", None)
     if not isinstance(processor_cls, type):
         message = "BatchLogRecordProcessor class is unavailable in OpenTelemetry SDK logs export"
-        raise RuntimeError(message)
+        raise TypeError(message)
     return processor_cls
 
 
@@ -509,15 +647,15 @@ def _get_otlp_log_exporter_cls(protocol: str) -> type[object]:
     exporter_cls = getattr(module, "OTLPLogExporter", None)
     if not isinstance(exporter_cls, type):
         message = "OTLPLogExporter class is unavailable in OpenTelemetry exporters"
-        raise RuntimeError(message)
+        raise TypeError(message)
     return exporter_cls
 
 
 def _build_log_limits(settings: LogLimitSettings) -> object | None:
     if settings.attribute_count_limit is None and settings.attribute_value_length_limit is None:
         return None
-    log_limits_cls = _get_log_limits_cls()
-    return log_limits_cls(
+    log_limits_ctor = cast("Callable[..., object]", _get_log_limits_cls())
+    return log_limits_ctor(
         max_attributes=settings.attribute_count_limit,
         max_attribute_length=settings.attribute_value_length_limit,
     )
@@ -562,7 +700,10 @@ def _build_grpc_credentials(config: _ResolvedOtlp) -> grpc.ChannelCredentials | 
     )
 
 
-def _filter_kwargs(func: Callable[..., object], candidates: dict[str, object]) -> dict[str, object]:
+def _filter_kwargs(
+    func: Callable[..., object],
+    candidates: Mapping[str, object],
+) -> dict[str, object]:
     try:
         params = inspect.signature(func).parameters
     except (TypeError, ValueError):
@@ -581,7 +722,7 @@ def _build_otlp_trace_exporter(config: _ResolvedOtlp) -> object:
         exporter_cls = OTLPSpanExporterGrpc
 
     headers = _headers_to_dict(config.headers)
-    kwargs = {
+    kwargs: dict[str, object] = {
         "endpoint": config.endpoint,
         "headers": headers,
         "timeout": config.timeout_s,
@@ -597,8 +738,8 @@ def _build_otlp_trace_exporter(config: _ResolvedOtlp) -> object:
         kwargs["client_certificate_file"] = config.client_certificate
         kwargs["client_key_file"] = config.client_key
 
-    filtered = _filter_kwargs(cast(Callable[..., object], exporter_cls), kwargs)
-    exporter_ctor = cast(Callable[..., object], exporter_cls)
+    filtered = _filter_kwargs(cast("Callable[..., object]", exporter_cls), kwargs)
+    exporter_ctor = cast("Callable[..., object]", exporter_cls)
     return exporter_ctor(**filtered)
 
 
@@ -609,7 +750,7 @@ def _build_otlp_metric_exporter(config: _ResolvedOtlp) -> object:
         exporter_cls = OTLPMetricExporterGrpc
 
     headers = _headers_to_dict(config.headers)
-    kwargs = {
+    kwargs: dict[str, object] = {
         "endpoint": config.endpoint,
         "headers": headers,
         "timeout": config.timeout_s,
@@ -625,8 +766,8 @@ def _build_otlp_metric_exporter(config: _ResolvedOtlp) -> object:
         kwargs["client_certificate_file"] = config.client_certificate
         kwargs["client_key_file"] = config.client_key
 
-    filtered = _filter_kwargs(cast(Callable[..., object], exporter_cls), kwargs)
-    exporter_ctor = cast(Callable[..., object], exporter_cls)
+    filtered = _filter_kwargs(cast("Callable[..., object]", exporter_cls), kwargs)
+    exporter_ctor = cast("Callable[..., object]", exporter_cls)
     return exporter_ctor(**filtered)
 
 
@@ -634,7 +775,7 @@ def _build_otlp_log_exporter(config: _ResolvedOtlp) -> object:
     exporter_cls = _get_otlp_log_exporter_cls(config.protocol)
 
     headers = _headers_to_dict(config.headers)
-    kwargs = {
+    kwargs: dict[str, object] = {
         "endpoint": config.endpoint,
         "headers": headers,
         "timeout": config.timeout_s,
@@ -650,8 +791,8 @@ def _build_otlp_log_exporter(config: _ResolvedOtlp) -> object:
         kwargs["client_certificate_file"] = config.client_certificate
         kwargs["client_key_file"] = config.client_key
 
-    filtered = _filter_kwargs(cast(Callable[..., object], exporter_cls), kwargs)
-    exporter_ctor = cast(Callable[..., object], exporter_cls)
+    filtered = _filter_kwargs(cast("Callable[..., object]", exporter_cls), kwargs)
+    exporter_ctor = cast("Callable[..., object]", exporter_cls)
     return exporter_ctor(**filtered)
 
 
@@ -684,11 +825,12 @@ def _build_tracer_provider(config: ObservabilityConfig, resource: Resource) -> T
         resolved = _resolve_otlp(config.otlp, config.otlp_traces)
         exporter = _build_otlp_trace_exporter(resolved)
         processor_kwargs = _filter_kwargs(
-            cast(Callable[..., object], BatchSpanProcessor),
+            cast("Callable[..., object]", BatchSpanProcessor),
             _build_batch_kwargs(config.traces_batch),
         )
-        processor_ctor = cast(Callable[..., object], BatchSpanProcessor)
-        tracer_provider.add_span_processor(processor_ctor(exporter, **processor_kwargs))
+        processor_ctor = cast("Callable[..., object]", BatchSpanProcessor)
+        processor = cast("SpanProcessor", processor_ctor(exporter, **processor_kwargs))
+        tracer_provider.add_span_processor(processor)
 
     if config.console_export:
         tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
@@ -711,11 +853,12 @@ def _build_meter_provider(
         resolved = _resolve_otlp(config.otlp, config.otlp_metrics)
         exporter = _build_otlp_metric_exporter(resolved)
         reader_kwargs = _filter_kwargs(
-            cast(Callable[..., object], PeriodicExportingMetricReader),
+            cast("Callable[..., object]", PeriodicExportingMetricReader),
             _build_metric_reader_kwargs(config.metrics_export),
         )
-        reader_ctor = cast(Callable[..., object], PeriodicExportingMetricReader)
-        metric_readers.append(reader_ctor(exporter, **reader_kwargs))
+        reader_ctor = cast("Callable[..., object]", PeriodicExportingMetricReader)
+        reader = cast("MetricReader", reader_ctor(exporter, **reader_kwargs))
+        metric_readers.append(reader)
 
     prometheus_enabled = False
     if config.prometheus_enabled:
@@ -746,9 +889,9 @@ def _build_logger_provider(
         logger_kwargs["log_record_limits"] = log_limits
 
     logger_provider_cls = _get_logger_provider_cls()
-    logger_provider_ctor = cast(Callable[..., _LoggerProvider], logger_provider_cls)
+    logger_provider_ctor = cast("Callable[..., _LoggerProvider]", logger_provider_cls)
     filtered_logger_kwargs = _filter_kwargs(
-        cast(Callable[..., object], logger_provider_cls),
+        cast("Callable[..., object]", logger_provider_cls),
         logger_kwargs,
     )
     logger_provider = logger_provider_ctor(**filtered_logger_kwargs)
@@ -758,16 +901,15 @@ def _build_logger_provider(
         exporter = _build_otlp_log_exporter(resolved)
         batch_processor_cls = _get_batch_log_record_processor_cls()
         processor_kwargs = _filter_kwargs(
-            cast(Callable[..., object], batch_processor_cls),
+            cast("Callable[..., object]", batch_processor_cls),
             _build_batch_kwargs(config.logs_batch),
         )
-        batch_processor_ctor = cast(Callable[..., object], batch_processor_cls)
-        logger_provider.add_log_record_processor(
-            batch_processor_ctor(exporter, **processor_kwargs)
-        )
+        batch_processor_ctor = cast("Callable[..., object]", batch_processor_cls)
+        logger_provider.add_log_record_processor(batch_processor_ctor(exporter, **processor_kwargs))
 
     handler_cls = _get_logging_handler_cls()
-    log_handler = handler_cls(level=logging.NOTSET, logger_provider=logger_provider)
+    handler_ctor = cast("Callable[..., logging.Handler]", handler_cls)
+    log_handler = handler_ctor(level=logging.NOTSET, logger_provider=logger_provider)
     root_logger = logging.getLogger()
     root_logger.addHandler(log_handler)
     if config.logs_trace_filter:
@@ -836,9 +978,7 @@ def _load_optional_propagator(name: str) -> TextMapPropagator | None:
     if name == "jaeger":
         return _load_propagator("opentelemetry.propagators.jaeger", "JaegerPropagator")
     if name == "ottrace":
-        return _load_propagator(
-            "opentelemetry.propagators.ot_trace", "OTTracePropagator"
-        )
+        return _load_propagator("opentelemetry.propagators.ot_trace", "OTTracePropagator")
     return None
 
 
@@ -885,13 +1025,17 @@ def _apply_config_file(path: Path) -> bool:
 
 def _call_configurator(func: Callable[..., object], path: Path) -> bool:
     config_value = str(path)
-    for kwargs in (
-        {"config_file": config_value},
-        {"config_file_path": config_value},
-        {"path": config_value},
-    ):
+    attempts: tuple[Callable[[], object], ...] = (
+        partial(func, config_file=config_value),
+        partial(func, config_file_path=config_value),
+        partial(func, path=config_value),
+        partial(func, config_value),
+        partial(func),
+    )
+
+    for attempt in attempts:
         try:
-            func(**kwargs)
+            attempt()
         except TypeError:
             continue
         except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
@@ -900,30 +1044,14 @@ def _call_configurator(func: Callable[..., object], path: Path) -> bool:
         else:
             return True
 
-    try:
-        func(config_value)
-    except TypeError:
-        pass
-    except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
-        LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
-        return False
-    else:
-        return True
-
-    try:
-        func()
-    except TypeError:
-        return False
-    except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
-        LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
-        return False
-    return True
+    return False
 
 
 def _trace_sampled_log_filter() -> logging.Filter:
     class _Filter(logging.Filter):
         @staticmethod
-        def filter(_record: logging.LogRecord) -> bool:
+        def filter(record: logging.LogRecord) -> bool:
+            _ = record
             span = otel_trace.get_current_span()
             if span is None:
                 return True
@@ -935,16 +1063,41 @@ def _trace_sampled_log_filter() -> logging.Filter:
     return _Filter()
 
 
-def _shutdown_component(component: object | None, *, label: str, errors: list[str]) -> bool:
+def _shutdown_component(
+    component: object | None,
+    *,
+    label: str,
+    errors: list[str],
+    timeout_s: float = DEFAULT_SHUTDOWN_TIMEOUT_S,
+) -> bool:
     if component is None:
         return True
     shutdown = getattr(component, "shutdown", None)
     if not callable(shutdown):
         return True
-    try:
-        shutdown()
-    except (RuntimeError, ValueError, TypeError, OSError) as exc:
-        errors.append(f"{label}:{exc}")
+    shutdown_func = cast("Callable[[], object]", shutdown)
+    done = threading.Event()
+    thread_errors: list[str] = []
+
+    def _run() -> None:
+        try:
+            shutdown_func()
+        except (RuntimeError, ValueError, TypeError, OSError) as exc:
+            thread_errors.append(f"{label}:{exc}")
+        finally:
+            done.set()
+
+    thread = threading.Thread(
+        target=_run,
+        name=f"otel-shutdown-{label}",
+        daemon=True,
+    )
+    thread.start()
+    if not done.wait(timeout_s):
+        errors.append(f"{label}:shutdown-timeout")
+        return False
+    if thread_errors:
+        errors.extend(thread_errors)
         return False
     return True
 
@@ -957,6 +1110,7 @@ def _disabled_runtime() -> ObservabilityRuntime:
         logger_provider=None,
         log_handler=None,
         shutdown=None,
+        policy=ObservabilityPolicy(),
         prometheus_enabled=False,
         grpc_observability=None,
         duckdb_tracing_enabled=False,
@@ -1002,9 +1156,7 @@ def _build_shutdown(
             root_logger = logging.getLogger()
             root_logger.removeHandler(log_handler)
 
-        flush_ok = (
-            _shutdown_component(tracer_provider, label="tracer", errors=errors) and flush_ok
-        )
+        flush_ok = _shutdown_component(tracer_provider, label="tracer", errors=errors) and flush_ok
         flush_ok = _shutdown_component(meter_provider, label="meter", errors=errors) and flush_ok
         flush_ok = _shutdown_component(logger_provider, label="logger", errors=errors) and flush_ok
 
@@ -1026,8 +1178,8 @@ def _runtime_from_global(
     grpc_handle: GrpcObservabilityHandle | None,
     prometheus_enabled: bool,
 ) -> ObservabilityRuntime:
-    tracer_provider = cast(TracerProvider, otel_trace.get_tracer_provider())
-    meter_provider = cast(MeterProvider, otel_metrics.get_meter_provider())
+    tracer_provider = cast("TracerProvider", otel_trace.get_tracer_provider())
+    meter_provider = cast("MeterProvider", otel_metrics.get_meter_provider())
     tracer = otel_trace.get_tracer(config.service_name)
     meter = otel_metrics.get_meter(config.service_name)
     shutdown = _build_shutdown(
@@ -1044,6 +1196,7 @@ def _runtime_from_global(
         logger_provider=logger_provider,
         log_handler=log_handler,
         shutdown=shutdown,
+        policy=config.policy,
         prometheus_enabled=prometheus_enabled,
         grpc_observability=grpc_handle,
         duckdb_tracing_enabled=config.duckdb_tracing_enabled,
@@ -1078,50 +1231,170 @@ def _runtime_from_global(
     )
 
 
-def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
-    if not config.enabled:
-        return _disabled_runtime()
+def _apply_collector_local_config(config: ObservabilityConfig) -> ObservabilityConfig:
+    local_otlp = replace(config.otlp, endpoint="http://localhost:4317", protocol="grpc")
+    local_traces = replace(config.otlp_traces, endpoint="http://localhost:4317", protocol="grpc")
+    local_metrics = replace(config.otlp_metrics, endpoint="http://localhost:4317", protocol="grpc")
+    local_logs = replace(config.otlp_logs, endpoint="http://localhost:4317", protocol="grpc")
+    return replace(
+        config,
+        otlp=local_otlp,
+        otlp_traces=local_traces,
+        otlp_metrics=local_metrics,
+        otlp_logs=local_logs,
+        config_file=None,
+        console_export=False,
+        prometheus_enabled=False,
+    )
 
-    _configure_propagators(config)
 
-    registry = get_instrumentation_registry()
+def _runtime_from_in_memory(
+    config: ObservabilityConfig,
+    registry: InstrumentationRegistry,
+) -> ObservabilityRuntime:
+    resource = _build_resource(config)
+    span_limits = _build_span_limits(config.span_limits)
+    span_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider(
+        sampler=ALWAYS_ON,
+        resource=resource,
+        span_limits=span_limits,
+    )
+    tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    otel_trace.set_tracer_provider(tracer_provider)
+    tracer = otel_trace.get_tracer(config.service_name)
 
-    if config.config_file:
-        configured = _apply_config_file(config.config_file)
-        if not configured:
-            LOG.warning("Failed to apply OTEL config file %s; using manual config", config.config_file)
-        else:
-            _instrument_runtime(config, registry)
-            logger_provider: _LoggerProvider | None = None
-            log_handler: logging.Handler | None = None
-            if config.export_logs or config.logs_auto_instrument:
-                logs_api = _load_otel_logs_api()
-                get_logger_provider = getattr(logs_api, "get_logger_provider", None)
-                if callable(get_logger_provider):
-                    logger_provider = cast(_LoggerProvider, get_logger_provider())
-                    handler_cls = _get_logging_handler_cls()
-                    log_handler = handler_cls(
-                        level=logging.NOTSET,
-                        logger_provider=logger_provider,
-                    )
-                    logging.getLogger().addHandler(log_handler)
-                    if config.logs_trace_filter:
-                        log_handler.addFilter(_trace_sampled_log_filter())
-            grpc_handle = register_grpc_observability(
-                config.grpc_observability,
-                meter_provider=otel_metrics.get_meter_provider(),
-                registry=registry,
-            )
-            registry.emit_summary(LOG)
-            registry.emit_metrics(otel_metrics.get_meter(config.service_name))
-            return _runtime_from_global(
-                config,
-                log_handler=log_handler,
+    metric_reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(
+        metric_readers=[metric_reader],
+        resource=resource,
+        exemplar_filter=_build_exemplar_filter(config),
+        views=_build_views(config),
+    )
+    otel_metrics.set_meter_provider(meter_provider)
+    meter = otel_metrics.get_meter(config.service_name)
+
+    _instrument_runtime(config, registry)
+
+    registry.emit_summary(LOG)
+    registry.emit_metrics(meter)
+
+    shutdown = _build_shutdown(
+        tracer_provider,
+        meter_provider,
+        logger_provider=None,
+        log_handler=None,
+        grpc_handle=None,
+    )
+
+    return ObservabilityRuntime(
+        enabled=True,
+        tracer=tracer,
+        meter=meter,
+        logger_provider=None,
+        log_handler=None,
+        shutdown=shutdown,
+        policy=config.policy,
+        prometheus_enabled=False,
+        grpc_observability=None,
+        duckdb_tracing_enabled=config.duckdb_tracing_enabled,
+        duckdb_require_parent_span=config.duckdb_require_parent_span,
+        duckdb_statement_mode=config.duckdb_statement_mode,
+        duckdb_statement_hash_len=config.duckdb_statement_hash_len,
+        duckdb_query_summary_max_len=config.duckdb_query_summary_max_len,
+        duckdb_query_summary_max_targets=config.duckdb_query_summary_max_targets,
+        duckdb_query_summary_emit_ellipsis=config.duckdb_query_summary_emit_ellipsis,
+        duckdb_query_summary_hash_suspicious_targets=(
+            config.duckdb_query_summary_hash_suspicious_targets
+        ),
+        duckdb_query_summary_hash_len=config.duckdb_query_summary_hash_len,
+        duckdb_query_summary_hash_min_len=config.duckdb_query_summary_hash_min_len,
+        duckdb_query_summary_include_subquery_operations=(
+            config.duckdb_query_summary_include_subquery_operations
+        ),
+        duckdb_query_summary_include_multi_statement=(
+            config.duckdb_query_summary_include_multi_statement
+        ),
+        db_query_summary_span_name_hook=config.db_query_summary_span_name_hook,
+        duckdb_emit_legacy_db_attributes=config.duckdb_emit_legacy_db_attributes,
+        duckdb_query_text_policy=config.duckdb_query_text_policy,
+        duckdb_query_text_max_len=config.duckdb_query_text_max_len,
+        duckdb_query_text_strip_comments=config.duckdb_query_text_strip_comments,
+        duckdb_query_text_collapse_in_lists=config.duckdb_query_text_collapse_in_lists,
+        duckdb_query_parameter_enabled=config.duckdb_query_parameter_enabled,
+        duckdb_query_parameter_keys=config.duckdb_query_parameter_keys,
+        duckdb_query_parameter_hash_keys=config.duckdb_query_parameter_hash_keys,
+        duckdb_query_parameter_require_in_sql=config.duckdb_query_parameter_require_in_sql,
+        duckdb_query_parameter_max_str_len=config.duckdb_query_parameter_max_str_len,
+        test_handles=TestTelemetryHandles(
+            span_exporter=span_exporter,
+            metric_reader=metric_reader,
+        ),
+    )
+
+
+def _runtime_from_config_file(
+    config: ObservabilityConfig,
+    registry: InstrumentationRegistry,
+) -> ObservabilityRuntime | None:
+    if not config.config_file:
+        return None
+
+    try:
+        validate_otel_config_file(config.config_file)
+    except (ValueError, FileNotFoundError) as exc:
+        message = f"Invalid OpenTelemetry config file: {exc}"
+        raise RuntimeError(message) from exc
+
+    configured = _apply_config_file(config.config_file)
+    if not configured:
+        LOG.warning(
+            "Failed to apply OTEL config file %s; using manual config",
+            config.config_file,
+        )
+        return None
+
+    _instrument_runtime(config, registry)
+    logger_provider: _LoggerProvider | None = None
+    log_handler: logging.Handler | None = None
+    try:
+        logs_api = _load_otel_logs_api()
+    except RuntimeError:
+        logs_api = None
+    if logs_api is not None:
+        get_logger_provider = getattr(logs_api, "get_logger_provider", None)
+        if callable(get_logger_provider):
+            logger_provider = cast("_LoggerProvider", get_logger_provider())
+            handler_cls = _get_logging_handler_cls()
+            handler_ctor = cast("Callable[..., logging.Handler]", handler_cls)
+            log_handler = handler_ctor(
+                level=logging.NOTSET,
                 logger_provider=logger_provider,
-                grpc_handle=grpc_handle,
-                prometheus_enabled=config.prometheus_enabled,
             )
+            logging.getLogger().addHandler(log_handler)
+            if config.logs_trace_filter:
+                log_handler.addFilter(_trace_sampled_log_filter())
 
+    grpc_handle = register_grpc_observability(
+        config.grpc_observability,
+        meter_provider=otel_metrics.get_meter_provider(),
+        registry=registry,
+    )
+    registry.emit_summary(LOG)
+    registry.emit_metrics(otel_metrics.get_meter(config.service_name))
+    return _runtime_from_global(
+        config,
+        log_handler=log_handler,
+        logger_provider=logger_provider,
+        grpc_handle=grpc_handle,
+        prometheus_enabled=config.prometheus_enabled,
+    )
+
+
+def _runtime_from_manual_config(
+    config: ObservabilityConfig,
+    registry: InstrumentationRegistry,
+) -> ObservabilityRuntime:
     resource = _build_resource(config)
 
     tracer_provider = _build_tracer_provider(config, resource)
@@ -1165,6 +1438,7 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
         logger_provider=logger_provider,
         log_handler=log_handler,
         shutdown=shutdown,
+        policy=config.policy,
         prometheus_enabled=prometheus_enabled,
         grpc_observability=grpc_handle,
         duckdb_tracing_enabled=config.duckdb_tracing_enabled,
@@ -1199,6 +1473,30 @@ def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
     )
 
 
+def _init_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
+    test_mode = config.test_mode
+    if test_mode == "disabled":
+        return _disabled_runtime()
+
+    if config.config_file is None:
+        _configure_propagators(config)
+
+    registry = get_instrumentation_registry()
+    if test_mode == "in_memory":
+        return _runtime_from_in_memory(config, registry)
+
+    if test_mode == "collector_local":
+        config = _apply_collector_local_config(config)
+
+    if not config.enabled:
+        return _disabled_runtime()
+
+    runtime = _runtime_from_config_file(config, registry)
+    if runtime is not None:
+        return runtime
+    return _runtime_from_manual_config(config, registry)
+
+
 def bootstrap_observability(config: ObservabilityConfig) -> ObservabilityRuntime:
     """Initialize OpenTelemetry providers (idempotent).
 
@@ -1207,7 +1505,7 @@ def bootstrap_observability(config: ObservabilityConfig) -> ObservabilityRuntime
     ObservabilityRuntime
         Initialized observability runtime handles.
     """
-    return _ObservabilityHolder.get(lambda: _init_observability(config))
+    return _RUNTIME_MANAGER.bootstrap(config)
 
 
 def get_observability() -> ObservabilityRuntime:
@@ -1218,10 +1516,7 @@ def get_observability() -> ObservabilityRuntime:
     ObservabilityRuntime
         Active runtime handles or a disabled runtime when uninitialized.
     """
-    runtime = _ObservabilityHolder.get_or_none()
-    if runtime is not None:
-        return runtime
-    return _disabled_runtime()
+    return _RUNTIME_MANAGER.get()
 
 
 def shutdown_observability() -> ObservabilityShutdownResult | None:
@@ -1232,22 +1527,7 @@ def shutdown_observability() -> ObservabilityShutdownResult | None:
     ObservabilityShutdownResult | None
         Structured flush results, or None if observability is inactive.
     """
-    runtime = _ObservabilityHolder.get_or_none()
-    if runtime is None or runtime.shutdown is None:
-        return None
-    result: ObservabilityShutdownResult | None = None
-    try:
-        result = runtime.shutdown()
-    except (RuntimeError, ValueError, TypeError, OSError) as exc:
-        result = ObservabilityShutdownResult(
-            flush_ok=False,
-            flush_ms=0.0,
-            errors=(str(exc),),
-        )
-    if result is not None:
-        _log_shutdown_result(result)
-    _ObservabilityHolder.reset()
-    return result
+    return _RUNTIME_MANAGER.shutdown()
 
 
 def flush_observability() -> ObservabilityShutdownResult | None:
@@ -1258,36 +1538,12 @@ def flush_observability() -> ObservabilityShutdownResult | None:
     ObservabilityShutdownResult | None
         Structured flush results, or None if observability is inactive.
     """
-    runtime = _ObservabilityHolder.get_or_none()
-    if runtime is None or not runtime.enabled:
-        return None
-    start = time.perf_counter()
-    errors: list[str] = []
-    flush_ok = True
+    return _RUNTIME_MANAGER.flush()
 
-    tracer_provider = otel_trace.get_tracer_provider()
-    meter_provider = otel_metrics.get_meter_provider()
 
-    if tracer_provider is not None:
-        flush_ok = (
-            _force_flush_provider(tracer_provider, label="tracer", errors=errors) and flush_ok
-        )
-    if meter_provider is not None:
-        flush_ok = (
-            _force_flush_provider(meter_provider, label="meter", errors=errors) and flush_ok
-        )
-    if runtime.logger_provider is not None:
-        flush_ok = (
-            _force_flush_provider(runtime.logger_provider, label="logger", errors=errors)
-            and flush_ok
-        )
-
-    duration_ms = (time.perf_counter() - start) * 1000
-    return ObservabilityShutdownResult(
-        flush_ok=flush_ok,
-        flush_ms=duration_ms,
-        errors=tuple(errors),
-    )
+def get_runtime_manager() -> ObservabilityRuntimeManager:
+    """Return the global observability runtime manager."""
+    return _RUNTIME_MANAGER
 
 
 def _log_shutdown_result(result: ObservabilityShutdownResult) -> None:
@@ -1296,6 +1552,75 @@ def _log_shutdown_result(result: ObservabilityShutdownResult) -> None:
         LOG.info("telemetry.flush %s", payload)
     else:
         LOG.warning("telemetry.flush %s", payload)
+
+
+@dataclass(slots=True)
+class _PipelineInstruments:
+    flush_attempts: Counter
+    flush_failures: Counter
+    flush_duration_ms: Histogram
+
+
+_PIPELINE_INSTRUMENTS: WeakKeyDictionary[Meter, _PipelineInstruments] = WeakKeyDictionary()
+
+
+def _get_pipeline_instruments(meter: Meter) -> _PipelineInstruments:
+    instruments = _PIPELINE_INSTRUMENTS.get(meter)
+    if instruments is not None:
+        return instruments
+    instruments = _PipelineInstruments(
+        flush_attempts=meter.create_counter(
+            "codeintel.telemetry.flush.attempts",
+            unit="1",
+            description="Count of telemetry flush attempts",
+        ),
+        flush_failures=meter.create_counter(
+            "codeintel.telemetry.flush.failures",
+            unit="1",
+            description="Count of telemetry flush failures",
+        ),
+        flush_duration_ms=meter.create_histogram(
+            "codeintel.telemetry.flush.duration_ms",
+            unit="ms",
+            description="Duration of telemetry flush operations (ms)",
+        ),
+    )
+    _PIPELINE_INSTRUMENTS[meter] = instruments
+    return instruments
+
+
+def _record_pipeline_metrics(
+    result: ObservabilityShutdownResult,
+    *,
+    action: str,
+) -> None:
+    runtime = _ObservabilityHolder.get_or_none()
+    if runtime is None or runtime.meter is None:
+        return
+    instruments = _get_pipeline_instruments(runtime.meter)
+    attrs = shape_attributes(
+        {"action": action},
+        allowed_keys=frozenset({"action"}),
+    )
+    instruments.flush_attempts.add(1, attributes=attrs)
+    if not result.flush_ok:
+        instruments.flush_failures.add(1, attributes=attrs)
+    instruments.flush_duration_ms.record(result.flush_ms, attributes=attrs)
+
+
+def _record_pipeline_health(result: ObservabilityShutdownResult) -> None:
+    _PIPELINE_HEALTH_STATE.last_flush_ok = result.flush_ok
+    _PIPELINE_HEALTH_STATE.last_flush_ms = result.flush_ms
+    _PIPELINE_HEALTH_STATE.last_flush_errors = result.errors
+
+
+def get_pipeline_health_state() -> PipelineHealthState:
+    """Return the last telemetry pipeline flush summary."""
+    return PipelineHealthState(
+        last_flush_ok=_PIPELINE_HEALTH_STATE.last_flush_ok,
+        last_flush_ms=_PIPELINE_HEALTH_STATE.last_flush_ms,
+        last_flush_errors=_PIPELINE_HEALTH_STATE.last_flush_errors,
+    )
 
 
 def observability_config_from_settings(
@@ -1371,6 +1696,8 @@ def observability_config_from_settings(
         duckdb_query_parameter_hash_keys=settings.duckdb_query_parameter_hash_keys,
         duckdb_query_parameter_require_in_sql=settings.duckdb_query_parameter_require_in_sql,
         duckdb_query_parameter_max_str_len=settings.duckdb_query_parameter_max_str_len,
+        test_mode=resolve_test_telemetry_mode(),
+        policy=policy_from_settings(settings),
     )
 
 
@@ -1378,9 +1705,16 @@ __all__ = [
     "ObservabilityConfig",
     "ObservabilityRuntime",
     "ObservabilityShutdownResult",
+    "ObservabilityRuntimeManager",
+    "PipelineHealthState",
+    "TestTelemetryHandles",
     "bootstrap_observability",
+    "build_exemplar_filter",
+    "build_metric_views",
     "flush_observability",
+    "get_pipeline_health_state",
     "get_observability",
+    "get_runtime_manager",
     "observability_config_from_settings",
     "shutdown_observability",
 ]

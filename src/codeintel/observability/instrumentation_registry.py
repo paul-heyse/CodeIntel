@@ -52,11 +52,6 @@ class InstrumentationRegistry:
         ----------
         name
             Instrumentation name to record.
-
-        Returns
-        -------
-        None
-            None.
         """
         self._record(name, status="enabled")
 
@@ -69,11 +64,6 @@ class InstrumentationRegistry:
             Instrumentation name to record.
         detail
             Optional detail describing why it is unavailable.
-
-        Returns
-        -------
-        None
-            None.
         """
         self._record(name, status="unavailable", detail=detail)
 
@@ -86,11 +76,6 @@ class InstrumentationRegistry:
             Instrumentation name to record.
         detail
             Optional detail describing why it is suppressed.
-
-        Returns
-        -------
-        None
-            None.
         """
         self._record(name, status="suppressed", detail=detail)
 
@@ -103,11 +88,6 @@ class InstrumentationRegistry:
             Instrumentation name to record.
         detail
             Optional detail describing the error.
-
-        Returns
-        -------
-        None
-            None.
         """
         self._record(name, status="error", detail=detail)
 
@@ -149,11 +129,6 @@ class InstrumentationRegistry:
         ----------
         logger
             Optional logger override.
-
-        Returns
-        -------
-        None
-            None.
         """
         log_target = logger or LOG
         payload = {
@@ -177,11 +152,6 @@ class InstrumentationRegistry:
         ----------
         meter
             OpenTelemetry meter to emit metrics with.
-
-        Returns
-        -------
-        None
-            None.
         """
         with self._lock:
             if meter in self._emitted_metrics:
@@ -199,13 +169,7 @@ class InstrumentationRegistry:
             )
 
     def clear(self) -> None:
-        """Clear all tracked instrumentation records and emission state.
-
-        Returns
-        -------
-        None
-            None.
-        """
+        """Clear all tracked instrumentation records and emission state."""
         with self._lock:
             self._records.clear()
             self._emitted_metrics.clear()

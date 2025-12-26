@@ -11,9 +11,10 @@ from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
 from codeintel.build.hamilton.graph_validation import validate_graph
+from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import Providers, create_default_providers
-from codeintel.build.target_inventory import resolve_output_inventory
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from tests._helpers.build import TEST_BUILD_SETTINGS
@@ -416,11 +417,41 @@ class HamiltonBuildHarness:
         AssertionError
             If the resolved output inventory diverges from declared contracts.
         """
-        try:
-            resolve_output_inventory(mode="compare", strict=True)
-        except (RuntimeError, TypeError) as exc:
-            message = f"Output inventory mismatch: {exc}"
-            raise AssertionError(message) from exc
+        service = get_target_metadata_service()
+        graph = service.system.graph
+        derived = derive_target_outputs_from_savers(service.system.runtime)
+        issues: list[str] = []
+
+        for target in graph.all_targets:
+            expected_tables = tuple(sorted(target.contract.table_keys))
+            expected_artifacts = tuple(sorted(target.contract.artifact_names))
+            expected_templates = {
+                artifact.name: artifact.path_template for artifact in target.contract.artifacts
+            }
+
+            observed_tables = tuple(sorted(derived.datasets_by_target.get(target.name, ())))
+            observed_artifacts = tuple(sorted(derived.artifacts_by_target.get(target.name, ())))
+            observed_templates = derived.artifact_templates_by_target.get(target.name, {})
+
+            if expected_tables != observed_tables:
+                issues.append(
+                    "Target contract table_keys differ from DAG outputs "
+                    f"for {target.name}: expected={expected_tables} observed={observed_tables}"
+                )
+            if expected_artifacts != observed_artifacts:
+                issues.append(
+                    "Target contract artifact_names differ from DAG outputs "
+                    f"for {target.name}: expected={expected_artifacts} observed={observed_artifacts}"
+                )
+            if expected_templates != observed_templates:
+                issues.append(
+                    "Target contract artifact templates differ from DAG outputs "
+                    f"for {target.name}: expected={expected_templates} observed={observed_templates}"
+                )
+
+        if issues:
+            message = "Output inventory mismatch:\n" + "\n".join(f"- {issue}" for issue in issues)
+            raise AssertionError(message)
 
     def assert_incremental_behavior(
         self,

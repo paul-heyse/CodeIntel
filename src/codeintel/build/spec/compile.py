@@ -1,8 +1,7 @@
 """BuildSpec compiler.
 
-Compiles a deterministic BuildSpec from the canonical target catalog.
-The BuildSpec is the DAG-first compiled contract used for CI gating and (later)
-serving metadata.
+Compiles a deterministic BuildSpec from the Hamilton DAG-derived target graph.
+The BuildSpec is the DAG-first compiled contract used for CI gating and serving metadata.
 """
 
 from __future__ import annotations
@@ -10,12 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.output_inventory import OutputInventory
+from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.introspect import (
+    DerivedTargetOutputs,
+    derive_target_outputs_from_savers,
+)
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
-from codeintel.build.target_catalog import target_graph_from_catalog
-from codeintel.build.target_inventory import get_output_inventory
 from codeintel.core.schemas.hashing import schema_hash
 
 if TYPE_CHECKING:
@@ -36,7 +37,7 @@ class BuildSpecCompileOptions:
 
 def _artifact_specs_for_target(
     target: OutputTarget,
-    derived_outputs: OutputInventory,
+    derived_outputs: DerivedTargetOutputs,
     *,
     artifact_names: Iterable[str],
 ) -> tuple[ArtifactOutSpec, ...]:
@@ -57,7 +58,7 @@ def _artifact_specs_for_target(
         Artifact output specifications for the target.
     """
     specs: list[ArtifactOutSpec] = []
-    templates = derived_outputs.artifact_templates_for(target.name)
+    templates = derived_outputs.artifact_templates_by_target.get(target.name, {})
     for artifact_name in artifact_names:
         artifact = target.contract.get_artifact(artifact_name)
         template = templates.get(artifact_name)
@@ -75,7 +76,7 @@ def _artifact_specs_for_target(
 def _compile_target_specs(
     *,
     graph: TargetGraph,
-    derived_outputs: OutputInventory,
+    derived_outputs: DerivedTargetOutputs,
 ) -> tuple[tuple[TargetSpec, ...], frozenset[str]]:
     """Compile TargetSpec collection and table_key inventory.
 
@@ -98,8 +99,8 @@ def _compile_target_specs(
         target = graph.get(target_name)
         impl_kind = "native"
 
-        outputs = derived_outputs.datasets_for(target_name)
-        artifacts = derived_outputs.artifacts_for(target_name)
+        outputs = derived_outputs.datasets_by_target.get(target_name, ())
+        artifacts = derived_outputs.artifacts_by_target.get(target_name, ())
 
         all_table_keys.update(outputs)
 
@@ -158,7 +159,7 @@ def _compile_dataset_specs(
 
 
 def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> BuildSpec:
-    """Compile a BuildSpec from the canonical target catalog.
+    """Compile a BuildSpec from the Hamilton DAG.
 
     Parameters
     ----------
@@ -172,8 +173,9 @@ def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> Buil
     """
     opts = options or BuildSpecCompileOptions()
 
-    graph = target_graph_from_catalog()
-    derived_outputs = get_output_inventory()
+    runtime = build_driver()
+    graph = runtime.graph
+    derived_outputs = derive_target_outputs_from_savers(runtime)
 
     provider = get_schema_provider()
     target_specs, all_table_keys = _compile_target_specs(

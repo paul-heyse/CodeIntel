@@ -39,7 +39,6 @@ from codeintel.build.schemas.contract_service import (
     ContractProvider,
     ContractResolutionMode,
     ContractResolutionSettings,
-    SchemaContractService,
     clear_contract_cache,
     get_contract_provider,
 )
@@ -66,7 +65,7 @@ from codeintel.build.schemas.manifest import (
     ExportArtifactKind,
     SchemaManifest,
 )
-from codeintel.build.schemas.provider_declared import declared_schema_provider
+from codeintel.build.schemas.provider_unified import declared_schema_provider
 from codeintel.build.schemas.registry import (
     clear_schema_provider_cache,
     get_schema_provider,
@@ -146,7 +145,6 @@ __all__ = [
     "ExportArtifact",
     "ExportArtifactKind",
     "ManifestDiffResult",
-    "SchemaContractService",
     "SchemaDiff",
     "SchemaManifest",
     "UnifiedSchemaProvider",

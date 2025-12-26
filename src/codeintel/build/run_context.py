@@ -11,10 +11,8 @@ from codeintel.build.config import BuildConfig, BuildConfigStack
 from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.output_inventory import OutputInventory
 from codeintel.build.run_config import BuildRunConfig
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.target_inventory import get_output_inventory
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
 from codeintel.core.registry import RegistryService
@@ -42,7 +40,6 @@ class BuildRunContextOverrides:
     validate_outputs: bool = False
     strict_contracts: bool = False
     manifest_index: MappingABC[str, OutputManifest] | None = None
-    output_inventory: OutputInventory | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
     history_db_resolver: Callable[[str], StorageGateway] | None = None
@@ -65,7 +62,6 @@ class BuildRunContext:
     validate_outputs: bool = False
     strict_contracts: bool = False
     manifest_index: MappingABC[str, OutputManifest] | None = None
-    output_inventory: OutputInventory | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
     history_db_resolver: Callable[[str], StorageGateway] | None = None
@@ -118,9 +114,6 @@ class BuildRunContext:
         elif self.run_config is not None:
             profile = self.run_config.profile_name
         fingerprint_policy = self.fingerprint_policy or DEFAULT_FINGERPRINT_POLICY
-        output_inventory = self.output_inventory
-        if output_inventory is None:
-            output_inventory = get_output_inventory()
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
         registry_service = None
         if load_catalogs:
@@ -143,7 +136,6 @@ class BuildRunContext:
             profile=profile,
             force_targets=self.force_targets,
             manifest_index=self.manifest_index,
-            output_inventory=output_inventory,
             validate_outputs=self.validate_outputs,
             strict_contracts=self.strict_contracts,
             history_options=self.history_options,
@@ -234,7 +226,6 @@ class BuildRunContext:
             validate_outputs=resolved.validate_outputs,
             strict_contracts=resolved.strict_contracts,
             manifest_index=resolved.manifest_index,
-            output_inventory=resolved.output_inventory,
             fingerprint_policy=resolved.fingerprint_policy,
             history_options=resolved.history_options,
             history_db_resolver=resolved.history_db_resolver,

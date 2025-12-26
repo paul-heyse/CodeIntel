@@ -32,7 +32,6 @@ if TYPE_CHECKING:
     )
     from codeintel.build.config import BuildConfig
     from codeintel.build.hamilton.run_record_utils import BuildManifestService
-    from codeintel.build.output_inventory import OutputInventory
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
@@ -78,9 +77,6 @@ class BuildEnv:
         Pre-loaded mapping of target names to their manifests for this
         repo/commit. Used to avoid per-target DB round trips during
         skip checks and hash computation.
-    output_inventory
-        Optional output inventory derived from the target system. When present,
-        this provides canonical dataset/artifact lists for run records.
     validate_outputs
         When True, validate produced datasets against their Pandera schemas
         after write. Validation failures will mark the target as failed and
@@ -124,7 +120,6 @@ class BuildEnv:
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None
-    output_inventory: OutputInventory | None = None
     validate_outputs: bool = False
     strict_contracts: bool = False
     history_options: HistoryTimeseriesOptions | None = None

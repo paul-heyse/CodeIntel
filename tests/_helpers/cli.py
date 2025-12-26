@@ -23,6 +23,7 @@ from cyclopts.exceptions import (
 
 from codeintel.cli import app
 from codeintel.cli.errors import handle_cli_error
+from codeintel.cli.execution.bootstrap import reset_bootstrap
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.errors.schema import SchemaError as StorageSchemaError
 from codeintel.core.errors.storage import (
@@ -131,6 +132,7 @@ def run_cli(
     original_cwd = Path.cwd()
     original_argv = sys.argv
     try:
+        reset_bootstrap()
         os.environ.clear()
         os.environ.update(merged_env)
         if cwd is not None:

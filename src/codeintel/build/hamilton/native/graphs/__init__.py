@@ -9,7 +9,6 @@ Phase 3: Graphs domain consolidation with Hamilton-native validation.
 from __future__ import annotations
 
 from codeintel.build.hamilton.native.graphs.call_graph import (
-    CallGraphExtractResult,
     t__call_graph,
     t__call_graph__extract,
 )
@@ -24,9 +23,7 @@ from codeintel.build.hamilton.native.graphs.cfg_dfg import (
 )
 from codeintel.build.hamilton.native.graphs.graph_targets import (
     GoidExtractionInputs,
-    GoidExtractResult,
     GraphValidationResult,
-    SymbolUsesExtractResult,
     call_graph_depth_stats,
     call_graph_function_call_counts,
     t__call_graph_views,
@@ -40,21 +37,16 @@ from codeintel.build.hamilton.native.graphs.graph_targets import (
     t__symbol_uses__extract,
 )
 from codeintel.build.hamilton.native.graphs.import_graph import (
-    ImportGraphExtractResult,
     t__import_graph,
     t__import_graph__extract,
 )
 
 __all__ = [
     "CFGExtractResult",
-    "CallGraphExtractResult",
     "DFGExtractResult",
     "FunctionInfo",
-    "GoidExtractResult",
     "GoidExtractionInputs",
     "GraphValidationResult",
-    "ImportGraphExtractResult",
-    "SymbolUsesExtractResult",
     "call_graph_depth_stats",
     "call_graph_function_call_counts",
     "t__call_graph",

@@ -31,7 +31,6 @@ from codeintel.build.hamilton.nodes.support_factory import (
 )
 from codeintel.build.hamilton.runtime import HamiltonRuntime
 from codeintel.build.hamilton.target_spec_compiler import compile_output_targets_from_driver
-from codeintel.build.settings import get_build_settings
 from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
@@ -82,10 +81,7 @@ def _build_support_graph_and_module(
         derived_deps=native_deps,
         strict=True,
     )
-    settings = get_build_settings()
-    derived_outputs = None
-    if settings.support_nodes_source == "dag":
-        derived_outputs = derive_target_outputs_from_savers(native_runtime)
+    derived_outputs = derive_target_outputs_from_savers(native_runtime)
     support_module = build_support_module(
         options=SupportGenerationOptions(
             include_dataset_nodes=True,

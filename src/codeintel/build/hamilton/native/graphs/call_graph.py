@@ -12,7 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, SupportsInt, cast
 
 import ibis
@@ -21,7 +21,7 @@ import libcst as cst
 from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
@@ -123,49 +123,6 @@ def call_graph__edges_marker() -> tuple[tuple[object, ...], ...] | None:
         Always ``None`` so the saver node is used only for metadata.
     """
     return None
-
-
-@dataclass(frozen=True)
-class CallGraphExtractResult:
-    """Result from call graph extraction.
-
-    Attributes
-    ----------
-    success
-        Whether extraction completed successfully.
-    node_count
-        Number of call graph nodes extracted.
-    edge_count
-        Number of call graph edges extracted.
-    table_counts
-        Row counts per produced table.
-    skipped
-        Whether extraction was skipped.
-    skip_reason
-        Optional reason for skipping extraction.
-    error
-        Fatal error message if extraction failed.
-    """
-
-    success: bool
-    node_count: int = 0
-    edge_count: int = 0
-    table_counts: dict[str, int] = field(default_factory=dict)
-    skipped: bool = False
-    skip_reason: str | None = None
-    error: str | None = None
-
-
-@tag_helper(domain="graphs")
-def call_graph__execution_result(t__call_graph__extract: CallGraphExtractResult) -> ExecutionResult:
-    """Convert call_graph extract result to the executor boundary type.
-
-    Returns
-    -------
-    ExecutionResult
-        Canonical execution result.
-    """
-    return to_execution_result(t__call_graph__extract, default_error="Call graph extraction failed")
 
 
 @dataclass(frozen=True)
@@ -553,7 +510,7 @@ def t__call_graph__extract(
     q__core__modules: ir.Table,
     q__core__goids: ir.Table,
     t__goids: TargetRunRecord,
-) -> CallGraphExtractResult:
+) -> ExecutionResult:
     """Execute call graph extraction on repository modules.
 
     This is the compute node for the call_graph target. It loads function
@@ -575,8 +532,8 @@ def t__call_graph__extract(
 
     Returns
     -------
-    CallGraphExtractResult
-        Result containing node and edge counts.
+    ExecutionResult
+        Execution status and table row counts.
 
     Notes
     -----
@@ -585,10 +542,7 @@ def t__call_graph__extract(
     - graph.call_graph_edges: Call graph edges
     """
     if t__goids.status != "succeeded":
-        return CallGraphExtractResult(
-            success=False,
-            error=f"Upstream goids target failed: {t__goids.error}",
-        )
+        return ExecutionResult.failed(f"Upstream goids target failed: {t__goids.error}")
 
     try:
         snapshot = env.snapshot
@@ -605,14 +559,11 @@ def t__call_graph__extract(
 
         if not paths:
             log.info("call_graph: No functions found, skipping")
-            return CallGraphExtractResult(
-                success=True,
-                node_count=0,
-                edge_count=0,
+            return ExecutionResult.ok(
                 table_counts={
                     CALL_GRAPH_NODES_TABLE_KEY: 0,
                     CALL_GRAPH_EDGES_TABLE_KEY: 0,
-                },
+                }
             )
 
         collection_ctx = _EdgeCollectionState(
@@ -652,29 +603,23 @@ def t__call_graph__extract(
 
         log.info("call_graph: Persisted %d nodes, %d edges", node_count, edge_count)
 
-        return CallGraphExtractResult(
-            success=True,
-            node_count=node_count,
-            edge_count=edge_count,
+        return ExecutionResult.ok(
             table_counts={
                 CALL_GRAPH_NODES_TABLE_KEY: node_count,
                 CALL_GRAPH_EDGES_TABLE_KEY: edge_count,
-            },
+            }
         )
 
     except Exception as exc:
         log.exception("Call graph extraction failed")
-        return CallGraphExtractResult(
-            success=False,
-            error=str(exc),
-        )
+        return ExecutionResult.failed(str(exc))
 
 
 @codeintel_target(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph(
     env: BuildEnv,
     graph: TargetGraph,
-    call_graph__execution_result: ExecutionResult,
+    t__call_graph__extract: ExecutionResult,
 ) -> TargetRunRecord:
     """Construct a function call graph.
 
@@ -687,19 +632,18 @@ def t__call_graph(
         Build environment with gateway and snapshot.
     graph
         Target graph for metadata lookup.
-    call_graph__execution_result
-        Execution result derived from upstream extract node.
+    t__call_graph__extract
+        Execution result produced by the extract node.
 
     Returns
     -------
     TargetRunRecord
         Record with status, datasets, and execution metadata.
     """
-    return executor_materialize(env, graph, CALL_GRAPH_TARGET_NAME, call_graph__execution_result)
+    return executor_materialize(env, graph, CALL_GRAPH_TARGET_NAME, t__call_graph__extract)
 
 
 __all__ = [
-    "CallGraphExtractResult",
     "t__call_graph",
     "t__call_graph__extract",
 ]

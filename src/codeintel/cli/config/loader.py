@@ -48,6 +48,9 @@ _ENV_OVERRIDE_KEYS: dict[str, str] = {
     "CODEINTEL_COLOR": "color",
     "CODEINTEL_LOG_LEVEL": "log_level",
     "CODEINTEL_OUTPUT_FORMAT": "output_format",
+    "CODEINTEL_TELEMETRY_ENABLED": "telemetry.enabled",
+    "CODEINTEL_TELEMETRY_ENDPOINT": "telemetry.endpoint",
+    "CODEINTEL_TELEMETRY_SERVICE_NAME": "telemetry.service_name",
 }
 
 
@@ -353,8 +356,29 @@ def _load_env_overrides() -> dict[str, object]:
         stripped = value.strip()
         if not stripped:
             continue
-        overrides[config_key] = stripped
+        _set_nested_override(overrides, config_key, stripped)
     return overrides
+
+
+def _set_nested_override(
+    overrides: dict[str, object],
+    key: str,
+    value: object,
+) -> None:
+    if "." not in key:
+        overrides[key] = value
+        return
+    parts = key.split(".")
+    cursor = overrides
+    for part in parts[:-1]:
+        existing = cursor.get(part)
+        if isinstance(existing, dict):
+            cursor = existing
+            continue
+        next_node: dict[str, object] = {}
+        cursor[part] = next_node
+        cursor = next_node
+    cursor[parts[-1]] = value
 
 
 def _get_bool(data: dict[str, object], key: str, *, default: bool) -> bool:

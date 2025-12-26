@@ -7,7 +7,8 @@ import logging
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from types import ModuleType
+from typing import TYPE_CHECKING, Protocol, cast
 
 from codeintel.core.config.settings import GrpcObservabilitySettings
 from codeintel.observability.instrumentation_registry import InstrumentationRegistry
@@ -22,19 +23,23 @@ LOG = logging.getLogger(__name__)
 class GrpcObservabilityHandle:
     """Handle for an active grpcio-observability plugin."""
 
-    plugin: object
+    plugin: _GrpcObservabilityPlugin
 
     def shutdown(self) -> None:
-        """Deregister the global grpcio-observability plugin.
-
-        Returns
-        -------
-        None
-            None.
-        """
+        """Deregister the global grpcio-observability plugin."""
         deregister = getattr(self.plugin, "deregister_global", None)
         if callable(deregister):
             deregister()
+
+
+class _GrpcObservabilityPlugin(Protocol):
+    def register_global(self) -> None:
+        """Register the global grpcio-observability plugin."""
+        ...
+
+    def deregister_global(self) -> None:
+        """Deregister the global grpcio-observability plugin."""
+        ...
 
 
 def register_grpc_observability(
@@ -61,11 +66,14 @@ def register_grpc_observability(
         )
         return None
 
+    module: ModuleType | None = None
     try:
-        grpc_observability = importlib.import_module("grpc_observability")
+        module = importlib.import_module("grpc_observability")
     except ModuleNotFoundError as exc:
         registry.record_unavailable("grpcio-observability", detail=str(exc))
         return None
+
+    grpc_module = cast("ModuleType", module)
 
     if settings.other_method_label != "other":
         LOG.warning(
@@ -81,7 +89,16 @@ def register_grpc_observability(
     method_filter = _build_allowlist_filter(settings.method_allowlist)
     target_filter = _build_allowlist_filter(settings.target_allowlist)
 
-    plugin = grpc_observability.OpenTelemetryPlugin(
+    plugin_cls = getattr(grpc_module, "OpenTelemetryPlugin", None)
+    if not isinstance(plugin_cls, type):
+        registry.record_unavailable(
+            "grpcio-observability",
+            detail="grpcio-observability plugin is unavailable",
+        )
+        return None
+
+    plugin_type = cast("Callable[..., _GrpcObservabilityPlugin]", plugin_cls)
+    plugin = plugin_type(
         meter_provider=meter_provider,
         generic_method_attribute_filter=method_filter,
         target_attribute_filter=target_filter,

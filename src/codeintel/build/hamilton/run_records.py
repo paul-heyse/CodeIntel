@@ -341,11 +341,10 @@ def create_run_record(
     if env.strict_contracts and status == "succeeded":
         _validate_strict_row_counts(target=target, row_counts=run.row_counts)
 
-    datasets = expected_datasets(target, env.snapshot, output_inventory=env.output_inventory)
+    datasets = expected_datasets(target, env.snapshot)
     artifacts = expected_artifacts(
         target,
         env.snapshot,
-        output_inventory=env.output_inventory,
         path_formatter={
             "build_dir": str(env.paths.build_dir),
             "scip_dir": str(env.paths.scip_dir),

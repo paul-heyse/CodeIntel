@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -43,6 +44,7 @@ from codeintel.core.env import (
 from codeintel.core.execution.context import ExecutionContext, RunContext
 from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
 from codeintel.core.tools import ToolBinaries
+from codeintel.observability.test_mode import apply_test_telemetry_settings
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 LOG = logging.getLogger(__name__)
@@ -81,24 +83,6 @@ def _resolve_export_audit_table_enabled() -> bool:
     return os.environ.get("CODEINTEL_EXPORT_AUDIT_TABLE") is not None
 
 
-def _resolve_output_inventory_source() -> str:
-    value = os.environ.get("CODEINTEL_OUTPUT_INVENTORY_SOURCE", "declared").strip().lower()
-    if value not in {"declared", "compare", "dag"}:
-        return "declared"
-    return value
-
-
-def _resolve_output_inventory_strict() -> bool:
-    return os.environ.get("CODEINTEL_OUTPUT_INVENTORY_STRICT") is not None
-
-
-def _resolve_support_nodes_source() -> str:
-    value = os.environ.get("CODEINTEL_SUPPORT_NODES_FROM", "contracts").strip().lower()
-    if value not in {"contracts", "dag"}:
-        return "contracts"
-    return value
-
-
 def _load_build_settings() -> BuildSettings:
     return BuildSettings(
         engine_version=_resolve_engine_version(),
@@ -106,9 +90,6 @@ def _load_build_settings() -> BuildSettings:
             log_path=_resolve_export_audit_log_path(),
             table_enabled=_resolve_export_audit_table_enabled(),
         ),
-        output_inventory_source=_resolve_output_inventory_source(),
-        output_inventory_strict=_resolve_output_inventory_strict(),
-        support_nodes_source=_resolve_support_nodes_source(),
     )
 
 
@@ -410,9 +391,7 @@ def _obs_statement_mode() -> str:
 
 def _obs_query_text_policy() -> str:
     query_text_policy = get_str("CODEINTEL_OTEL_DB_QUERY_TEXT_POLICY", default="never")
-    query_text_policy_value = (
-        query_text_policy.strip().lower() if query_text_policy else "never"
-    )
+    query_text_policy_value = query_text_policy.strip().lower() if query_text_policy else "never"
     if query_text_policy_value not in {
         "never",
         "parameterized",
@@ -442,6 +421,36 @@ def _obs_resolve_export_logs() -> bool:
     return bool(_obs_safe_get_bool("CODEINTEL_EXPORT_LOGS", default=False))
 
 
+def _obs_parse_operation_allowlist_overrides() -> tuple[tuple[str, tuple[str, ...]], ...]:
+    raw = _obs_opt_str("CODEINTEL_OBSERVABILITY_OPERATION_ALLOWLIST_OVERRIDES")
+    if not raw:
+        return ()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        LOG.warning("Invalid operation allowlist overrides JSON: %s", exc)
+        return ()
+    if not isinstance(payload, dict):
+        LOG.warning("Operation allowlist overrides must be a JSON object")
+        return ()
+    overrides: list[tuple[str, tuple[str, ...]]] = []
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            continue
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            overrides.append((key, tuple(value)))
+    if not overrides:
+        return ()
+    return tuple(overrides)
+
+
+def _obs_positive_int(name: str, default: int) -> int:
+    value = _obs_safe_get_int(name, default=default, min_value=0)
+    if value is None:
+        return default
+    return int(value)
+
+
 def _obs_resolve_hamilton_tracker() -> tuple[
     bool,
     str | None,
@@ -457,24 +466,106 @@ def _obs_resolve_hamilton_tracker() -> tuple[
     return tracker_enabled, project_id, username, _obs_parse_kv_pairs(tags_raw)
 
 
+def _is_prod_environment(value: str | None) -> bool:
+    """Return True when the deployment environment is production.
+
+    Parameters
+    ----------
+    value
+        Deployment environment string to evaluate.
+
+    Returns
+    -------
+    bool
+        True when the environment denotes production.
+    """
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    return normalized in {"prod", "production"}
+
+
+def _obs_resource_attributes() -> tuple[tuple[str, str], ...]:
+    """Return resource attributes with CodeIntel-specific defaults applied.
+
+    Returns
+    -------
+    tuple[tuple[str, str], ...]
+        Resource attribute key/value pairs.
+    """
+    resource_attributes = dict(
+        _obs_parse_kv_pairs(_obs_opt_str("OTEL_RESOURCE_ATTRIBUTES"))
+    )
+    repo = _obs_opt_str("CODEINTEL_REPO")
+    if repo and "codeintel.repo" not in resource_attributes:
+        resource_attributes["codeintel.repo"] = repo
+    commit = _obs_opt_str("CODEINTEL_COMMIT")
+    if commit and "codeintel.commit" not in resource_attributes:
+        resource_attributes["codeintel.commit"] = commit
+    return tuple(resource_attributes.items())
+
+
+def _obs_tracker_capture_policy(
+    deployment_environment: str | None,
+) -> tuple[bool | None, int | None, int | None]:
+    """Resolve Hamilton tracker capture defaults based on environment.
+
+    Parameters
+    ----------
+    deployment_environment
+        Deployment environment name for safe defaults.
+
+    Returns
+    -------
+    tuple[bool | None, int | None, int | None]
+        capture_data_statistics, max_list_length, max_dict_length.
+    """
+    capture_data_statistics = _obs_safe_get_bool(
+        "HAMILTON_CAPTURE_DATA_STATISTICS",
+        default=None,
+    )
+    max_list_length = _obs_safe_get_int(
+        "HAMILTON_MAX_LIST_LENGTH_CAPTURE",
+        default=None,
+        min_value=0,
+    )
+    max_dict_length = _obs_safe_get_int(
+        "HAMILTON_MAX_DICT_LENGTH_CAPTURE",
+        default=None,
+        min_value=0,
+    )
+    if _is_prod_environment(deployment_environment):
+        if capture_data_statistics is None:
+            capture_data_statistics = False
+        if max_list_length is None:
+            max_list_length = 20
+        if max_dict_length is None:
+            max_dict_length = 50
+    return capture_data_statistics, max_list_length, max_dict_length
+
+
 def _load_observability_settings() -> ObservabilitySettings:
+    config_file = get_path("OTEL_EXPERIMENTAL_CONFIG_FILE", default=None)
     sdk_disabled = _obs_safe_get_bool("OTEL_SDK_DISABLED", default=False)
-    enabled = not bool(sdk_disabled)
+    enabled = True if config_file is not None else not bool(sdk_disabled)
 
     statement_mode_value = _obs_statement_mode()
     query_text_policy_value = _obs_query_text_policy()
-    cli_args_capture_mode_value = _obs_cli_args_capture_mode()
     export_logs = _obs_resolve_export_logs()
+    deployment_environment = _obs_opt_str("CODEINTEL_DEPLOYMENT_ENVIRONMENT")
     tracker_enabled, hamilton_project_id, hamilton_username, hamilton_tags = (
         _obs_resolve_hamilton_tracker()
     )
+    capture_data_statistics, max_list_length, max_dict_length = _obs_tracker_capture_policy(
+        deployment_environment
+    )
 
-    return ObservabilitySettings(
+    settings = ObservabilitySettings(
         enabled=enabled,
         service_name=_obs_opt_str("OTEL_SERVICE_NAME"),
         service_version=_obs_opt_str("CODEINTEL_SERVICE_VERSION"),
-        deployment_environment=_obs_opt_str("CODEINTEL_DEPLOYMENT_ENVIRONMENT"),
-        resource_attributes=_obs_parse_kv_pairs(_obs_opt_str("OTEL_RESOURCE_ATTRIBUTES")),
+        deployment_environment=deployment_environment,
+        resource_attributes=_obs_resource_attributes(),
         propagators=split_csv(_obs_opt_str("OTEL_PROPAGATORS")),
         traces_sampler=_obs_opt_str("OTEL_TRACES_SAMPLER"),
         traces_sampler_arg=_obs_safe_get_float(
@@ -482,7 +573,7 @@ def _load_observability_settings() -> ObservabilitySettings:
             default=None,
             min_value=0.0,
         ),
-        config_file=get_path("OTEL_EXPERIMENTAL_CONFIG_FILE", default=None),
+        config_file=config_file,
         otlp=_obs_parse_otlp_settings("OTEL_EXPORTER_OTLP"),
         otlp_traces=_obs_parse_otlp_settings("OTEL_EXPORTER_OTLP_TRACES"),
         otlp_metrics=_obs_parse_otlp_settings("OTEL_EXPORTER_OTLP_METRICS"),
@@ -633,7 +724,20 @@ def _load_observability_settings() -> ObservabilitySettings:
         cli_args_allowlist=_obs_parse_csv(
             get_str("CODEINTEL_OBSERVABILITY_CLI_ARGS_ALLOWLIST", default=None)
         ),
-        cli_args_capture_mode=cli_args_capture_mode_value,
+        cli_args_capture_mode=_obs_cli_args_capture_mode(),
+        cli_arg_names_max=_obs_positive_int(
+            "CODEINTEL_OBSERVABILITY_CLI_ARG_NAMES_MAX",
+            default=25,
+        ),
+        http_route_max_len=_obs_positive_int(
+            "CODEINTEL_OBSERVABILITY_HTTP_ROUTE_MAX_LEN",
+            default=120,
+        ),
+        mcp_tool_name_max_len=_obs_positive_int(
+            "CODEINTEL_OBSERVABILITY_MCP_TOOL_NAME_MAX_LEN",
+            default=80,
+        ),
+        operation_attribute_allowlist_overrides=_obs_parse_operation_allowlist_overrides(),
         grpc_observability=GrpcObservabilitySettings(
             enabled=bool(_obs_safe_get_bool("CODEINTEL_GRPC_OBSERVABILITY_ENABLED", default=False)),
             method_allowlist=_obs_parse_csv(_obs_opt_str("CODEINTEL_GRPC_METHOD_ALLOWLIST")),
@@ -649,20 +753,9 @@ def _load_observability_settings() -> ObservabilitySettings:
             tags=hamilton_tags,
             api_url=_obs_opt_str("HAMILTON_API_URL"),
             ui_url=_obs_opt_str("HAMILTON_UI_URL"),
-            capture_data_statistics=_obs_safe_get_bool(
-                "HAMILTON_CAPTURE_DATA_STATISTICS",
-                default=None,
-            ),
-            max_list_length=_obs_safe_get_int(
-                "HAMILTON_MAX_LIST_LENGTH_CAPTURE",
-                default=None,
-                min_value=0,
-            ),
-            max_dict_length=_obs_safe_get_int(
-                "HAMILTON_MAX_DICT_LENGTH_CAPTURE",
-                default=None,
-                min_value=0,
-            ),
+            capture_data_statistics=capture_data_statistics,
+            max_list_length=max_list_length,
+            max_dict_length=max_dict_length,
         ),
         duckdb_tracing_enabled=bool(
             _obs_safe_get_bool("CODEINTEL_OTEL_DUCKDB_TRACING", default=True)
@@ -744,6 +837,8 @@ def _load_observability_settings() -> ObservabilitySettings:
             or 80
         ),
     )
+    return apply_test_telemetry_settings(settings)
+
 
 def load_runtime_settings() -> RuntimeSettings:
     """Load runtime settings from environment variables.

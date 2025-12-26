@@ -31,8 +31,8 @@ In `tests/_helpers/harnesses/hamilton_build.py`:
   * `parallel_backend="threadpool"` and `max_workers` to something small-but-real (e.g. 4)
   * `enable_hamilton_cache=True` with a per-test cache dir
   * `validate_outputs=True` and `strict_contracts=True`
-  * mirror production `BuildSettings` toggles that affect DAG realism
-    (e.g., `output_inventory_source`, `output_inventory_strict`, `support_nodes_source`)
+  * mirror production `BuildSettings` values that affect DAG realism
+    (e.g., contract validation strategy and saver-derived support surfaces)
 
 * If a parity override *must* exist, it should be **rare** and **explicit**, and only for tests
   that never touch the build/runtime pipeline (pure algorithmic unit tests). All tests that
@@ -185,8 +185,8 @@ Given the DAG-first architecture, tests should not pass if DAG invariants or out
 
 * Add `HamiltonBuildHarness.validate_graph()` that calls `validate_graph()` and fails on any invariant
   issues (including compute I/O purity checks).
-* Add `HamiltonBuildHarness.assert_output_inventory_consistent()` that resolves declared vs DAG
-  inventories and fails on mismatches (respecting `BuildSettings.output_inventory_source/strict`).
+* Add `HamiltonBuildHarness.assert_output_inventory_consistent()` that compares saver-derived
+  outputs to registry/contract inventories and fails on mismatches (with explicit strictness).
 
 This makes DAG correctness a *default* preflight for tests that exercise build surfaces.
 

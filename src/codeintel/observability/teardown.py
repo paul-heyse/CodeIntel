@@ -7,9 +7,13 @@ import json
 import logging
 import threading
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.observability.attributes import (
+    coerce_attribute_value,
+    redact_command_value,
+    redact_path_value,
+)
 from codeintel.observability.otel import get_observability
 from codeintel.observability.runtime_registry import count_subprocesses, snapshot_subprocesses
 
@@ -33,15 +37,17 @@ class SubprocessSample:
     pid: int
     command: str
 
-    def to_payload(self) -> dict[str, object]:
+    def to_payload(self) -> dict[str, SpanAttributeValue]:
         """Return a JSON-ready payload for the subprocess sample.
 
         Returns
         -------
-        dict[str, object]
+        dict[str, SpanAttributeValue]
             JSON-serializable subprocess payload.
         """
-        return {"pid": self.pid, "command": _redact_command_value(self.command)}
+        return _prune_none(
+            {"pid": self.pid, "command": _redact_command_value(self.command)}
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,12 +59,12 @@ class ArtifactSummary:
     path: str | None
     size_bytes: int | None = None
 
-    def to_payload(self) -> dict[str, object]:
+    def to_payload(self) -> dict[str, SpanAttributeValue]:
         """Return a JSON-ready payload for the artifact summary.
 
         Returns
         -------
-        dict[str, object]
+        dict[str, SpanAttributeValue]
             JSON-serializable artifact payload.
         """
         return _prune_none(
@@ -220,7 +226,7 @@ class TeardownTelemetry:
             return None
         return self.decision_trace_artifact.name
 
-    def _decision_trace_payload(self) -> dict[str, object] | None:
+    def _decision_trace_payload(self) -> Mapping[str, SpanAttributeValue] | None:
         if self.decision_trace_artifact is None:
             return None
         return self.decision_trace_artifact.to_payload()
@@ -421,7 +427,17 @@ def emit_teardown_telemetry(
     span_name: str = "build.shutdown",
     logger: logging.Logger | None = None,
 ) -> None:
-    """Emit teardown telemetry via OpenTelemetry spans and structured logs."""
+    """Emit teardown telemetry via OpenTelemetry spans and structured logs.
+
+    Parameters
+    ----------
+    telemetry
+        Teardown telemetry payload to emit.
+    span_name
+        Span name to use for teardown span.
+    logger
+        Optional logger override.
+    """
     obs = get_observability()
     span: Span | None = None
     if obs.enabled and obs.tracer is not None:
@@ -446,7 +462,17 @@ def emit_scip_teardown_telemetry(
     span_name: str = "scip.teardown",
     logger: logging.Logger | None = None,
 ) -> None:
-    """Emit SCIP teardown telemetry via OpenTelemetry spans and structured logs."""
+    """Emit SCIP teardown telemetry via OpenTelemetry spans and structured logs.
+
+    Parameters
+    ----------
+    telemetry
+        SCIP teardown telemetry payload to emit.
+    span_name
+        Span name to use for teardown span.
+    logger
+        Optional logger override.
+    """
     obs = get_observability()
     span: Span | None = None
     if obs.enabled and obs.tracer is not None:
@@ -471,7 +497,19 @@ def emit_shutdown_error_event(
     logger: logging.Logger | None = None,
     attributes: Mapping[str, SpanAttributeValue] | None = None,
 ) -> None:
-    """Emit a shutdown.error span event and structured log entry."""
+    """Emit a shutdown.error span event and structured log entry.
+
+    Parameters
+    ----------
+    span_name
+        Span name to use for the shutdown error span.
+    error
+        Exception to record.
+    logger
+        Optional logger override.
+    attributes
+        Additional span attributes to attach.
+    """
     obs = get_observability()
     event_attrs = dict(attributes or {})
     event_attrs["shutdown.error_type"] = type(error).__name__

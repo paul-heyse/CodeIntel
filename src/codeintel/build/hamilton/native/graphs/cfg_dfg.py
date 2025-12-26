@@ -21,7 +21,7 @@ import ibis.expr.types as ir
 from hamilton.function_modifiers.dependencies import source, value
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.execution_result import ExecutionResult, to_execution_result
+from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
 from codeintel.build.hamilton.materialization_helpers import executor_materialize
 from codeintel.build.hamilton.materialize_options import materialize_options
@@ -228,7 +228,17 @@ def cfg__execution_result(t__cfg__extract: CFGExtractResult) -> ExecutionResult:
     ExecutionResult
         Canonical execution result.
     """
-    return to_execution_result(t__cfg__extract, default_error="CFG extraction failed")
+    if t__cfg__extract.skipped:
+        return ExecutionResult.skip(
+            t__cfg__extract.skip_reason,
+            table_counts=t__cfg__extract.table_counts,
+        )
+    if t__cfg__extract.success:
+        return ExecutionResult.ok(table_counts=t__cfg__extract.table_counts)
+    return ExecutionResult.failed(
+        t__cfg__extract.error or "CFG extraction failed",
+        table_counts=t__cfg__extract.table_counts,
+    )
 
 
 @tag_helper(domain="graphs")
@@ -240,7 +250,17 @@ def dfg__execution_result(t__dfg__extract: DFGExtractResult) -> ExecutionResult:
     ExecutionResult
         Canonical execution result.
     """
-    return to_execution_result(t__dfg__extract, default_error="DFG extraction failed")
+    if t__dfg__extract.skipped:
+        return ExecutionResult.skip(
+            t__dfg__extract.skip_reason,
+            table_counts=t__dfg__extract.table_counts,
+        )
+    if t__dfg__extract.success:
+        return ExecutionResult.ok(table_counts=t__dfg__extract.table_counts)
+    return ExecutionResult.failed(
+        t__dfg__extract.error or "DFG extraction failed",
+        table_counts=t__dfg__extract.table_counts,
+    )
 
 
 @tag_helper(domain="graphs")

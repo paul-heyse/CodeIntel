@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from codeintel.observability.teardown import (
+    TeardownSnapshotOptions,
     TeardownTelemetry,
+    collect_teardown_snapshot,
     snapshot_active_threads,
     snapshot_pending_tasks,
 )
@@ -37,3 +39,19 @@ def test_teardown_telemetry_payload_includes_flush() -> None:
     attrs = telemetry.span_attributes()
     assert attrs["telemetry.flush.ok"] is True
     assert attrs["telemetry.flush.ms"] == _FLUSH_MS
+
+
+def test_collect_teardown_snapshot_includes_flush() -> None:
+    """Snapshot should include flush values passed via options."""
+    snapshot = collect_teardown_snapshot(
+        TeardownSnapshotOptions(
+            task_sample_limit=0,
+            thread_sample_limit=0,
+            subprocess_sample_limit=0,
+            allowlisted_daemon_names=set(),
+            telemetry_flush_ok=True,
+            telemetry_flush_ms=_FLUSH_MS,
+        )
+    )
+    assert snapshot.telemetry_flush_ok is True
+    assert snapshot.telemetry_flush_ms == _FLUSH_MS

@@ -33,6 +33,7 @@ from codeintel.cli.options.shared_flags import SharedFlagsProtocol
 from codeintel.cli.rendering.service import get_renderer
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.observability import observe_operation, shutdown_observability
+from codeintel.observability.test_mode import should_shutdown_observability_per_command
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -501,7 +502,8 @@ def _execute_new_command[T](
             )
             raise
         finally:
-            shutdown_observability()
+            if should_shutdown_observability_per_command():
+                shutdown_observability()
 
     renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)
@@ -561,7 +563,8 @@ def _execute_handler_command[R](
             LOG.exception("Handler %s raised exception", operation_id)
             raise
         finally:
-            shutdown_observability()
+            if should_shutdown_observability_per_command():
+                shutdown_observability()
 
     renderer = get_renderer(infra.output_format)
     exit_code = renderer.render_result(result)
