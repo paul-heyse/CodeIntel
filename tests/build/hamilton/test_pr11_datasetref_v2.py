@@ -166,7 +166,7 @@ class TestTargetRunRecordArtifacts:
         """Verify TargetRunRecord has artifacts field."""
         record = TargetRunRecord(
             target="scip",
-            plugin_name="ingestion.scip",
+            impl_kind="native",
             status="succeeded",
             input_hash="hash123",
         )
@@ -186,7 +186,7 @@ class TestTargetRunRecordArtifacts:
         )
         record = TargetRunRecord(
             target="scip",
-            plugin_name="ingestion.scip",
+            impl_kind="native",
             status="succeeded",
             input_hash="hash123",
             artifacts=(artifact,),
@@ -204,7 +204,7 @@ class TestSkippedTargetsDatasetRef:
         """Verify TargetRunRecord for skipped targets has datasets."""
         record = TargetRunRecord(
             target="function_metrics",
-            plugin_name="analytics.function_metrics",
+            impl_kind="native",
             status="skipped",
             input_hash="hash123",
             datasets=(
@@ -224,7 +224,7 @@ class TestSkippedTargetsDatasetRef:
         """Verify skipped target DatasetRef has repo/commit for lineage."""
         record = TargetRunRecord(
             target="function_metrics",
-            plugin_name="analytics.function_metrics",
+            impl_kind="native",
             status="skipped",
             input_hash="hash123",
             datasets=(

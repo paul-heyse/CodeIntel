@@ -54,7 +54,7 @@ class TargetRunRecord:
     """Record of a Hamilton node execution for a target."""
 
     target: str
-    plugin_name: str
+    impl_kind: str
     status: str
     input_hash: str | None
     options_hash: str | None = None

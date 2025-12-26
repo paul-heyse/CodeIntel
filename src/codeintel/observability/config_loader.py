@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable, Mapping
-from functools import partial
+from collections.abc import Mapping
 from pathlib import Path
 
 import yaml
@@ -57,32 +56,31 @@ def apply_otel_config_file(path: Path) -> bool:
     Returns
     -------
     bool
-        True when a compatible configurator was applied.
+        True when the SDK configurator was applied.
+
+    Raises
+    ------
+    TypeError
+        If the SDK configurator entrypoint is unavailable or incompatible.
     """
     otel_config = _load_module(
         "opentelemetry.sdk._configuration",
         label="OpenTelemetry SDK configuration",
     )
 
-    candidates: list[Callable[..., object]] = []
-    for name in ("configure", "configure_otel", "initialize", "init", "load"):
-        value = getattr(otel_config, name, None)
-        if callable(value):
-            candidates.append(value)
-
-    configurator_cls = getattr(otel_config, "Configurator", None)
-    if configurator_cls is not None:
-        configurator = configurator_cls()
-        configure = getattr(configurator, "configure", None)
-        if callable(configure):
-            candidates.append(configure)
-
-    for candidate in candidates:
-        if _call_configurator(candidate, path):
-            return True
-
-    LOG.warning("No compatible OpenTelemetry configuration entrypoint found")
-    return False
+    configure = getattr(otel_config, "configure", None)
+    if not callable(configure):
+        message = "OpenTelemetry SDK configurator entrypoint is unavailable"
+        raise TypeError(message)
+    try:
+        configure(config_file=str(path))
+    except TypeError as exc:
+        message = "OpenTelemetry SDK configurator does not accept config_file"
+        raise TypeError(message) from exc
+    except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
+        LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
+        return False
+    return True
 
 
 def _parse_config_payload(path: Path, text: str) -> Mapping[str, object]:
@@ -133,30 +131,6 @@ def _load_module(module_name: str, *, label: str) -> object:
         message = f"{label} module is unavailable: {exc}"
         raise RuntimeError(message) from exc
     return module
-
-
-def _call_configurator(func: Callable[..., object], path: Path) -> bool:
-    config_value = str(path)
-    attempts: tuple[Callable[[], object], ...] = (
-        partial(func, config_file=config_value),
-        partial(func, config_file_path=config_value),
-        partial(func, path=config_value),
-        partial(func, config_value),
-        partial(func),
-    )
-
-    for attempt in attempts:
-        try:
-            attempt()
-        except TypeError:
-            continue
-        except (RuntimeError, ValueError, OSError) as exc:  # pragma: no cover
-            LOG.warning("Failed to apply OpenTelemetry config: %s", exc)
-            return False
-        else:
-            return True
-
-    return False
 
 
 __all__ = ["apply_otel_config_file", "load_otel_config_file"]

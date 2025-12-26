@@ -318,12 +318,12 @@ def create_run_record(
     env = resolved_inputs.env
     run = resolved_inputs.run
     error = resolved_inputs.error
-    plugin_name = f"native:{target.name}"
+    impl_kind = "native"
 
     if status == "failed":
         return TargetRunRecord(
             target=target.name,
-            plugin_name=plugin_name,
+            impl_kind=impl_kind,
             status="failed",
             input_hash=input_hash,
             options_hash=run.options_hash if run else None,
@@ -369,7 +369,7 @@ def create_run_record(
 
     return TargetRunRecord(
         target=target.name,
-        plugin_name=plugin_name,
+        impl_kind=impl_kind,
         status=status,
         input_hash=input_hash,
         options_hash=run.options_hash,
@@ -402,7 +402,7 @@ def save_manifest(
         target=record.target,
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
-        plugin=record.plugin_name,
+        impl_kind=record.impl_kind,
         computed_at=datetime.now(tz=UTC),
         duration_ms=record.duration_ms,
         input_hash=record.input_hash or "",

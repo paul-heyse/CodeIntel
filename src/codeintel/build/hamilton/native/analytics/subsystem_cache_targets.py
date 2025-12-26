@@ -307,7 +307,7 @@ def t__subsystem_caches(
         options_hash = options_hash_for_target(env, SUBSYSTEM_CACHES_TARGET_NAME)
         return TargetRunRecord(
             target=SUBSYSTEM_CACHES_TARGET_NAME,
-            plugin_name=f"native:{SUBSYSTEM_CACHES_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

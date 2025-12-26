@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from codeintel.build.assets.fingerprinting import DEFAULT_FINGERPRINT_POLICY
-from codeintel.build.config import BuildConfig, BuildConfigStack
+from codeintel.build.config import BuildConfig, BuildConfigOverrides, BuildConfigStack
 from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.run_config import BuildRunConfig
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
@@ -34,8 +33,8 @@ if TYPE_CHECKING:
 class BuildRunContextOverrides:
     """Optional overrides when building a BuildRunContext from an ExecutionContext."""
 
-    run_config: BuildRunConfig | None = None
     execution_options: BuildExecutionOptions | None = None
+    config_overrides: BuildConfigOverrides | None = None
     force_targets: frozenset[str] | None = None
     validate_outputs: bool = False
     strict_contracts: bool = False
@@ -54,9 +53,9 @@ class BuildRunContext:
     paths: BuildPaths
     providers: Providers
     config: BuildConfig
+    config_overrides: BuildConfigOverrides | None = None
     settings: BuildSettings
     execution_settings: HamiltonExecutionSettings | None = None
-    run_config: BuildRunConfig | None = None
     execution_options: BuildExecutionOptions | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
@@ -70,7 +69,7 @@ class BuildRunContext:
     @staticmethod
     def build_config_stack(
         config: BuildConfig,
-        run_config: BuildRunConfig | None,
+        overrides: BuildConfigOverrides | None,
     ) -> BuildConfig:
         """Return the effective config stack for this run.
 
@@ -78,21 +77,17 @@ class BuildRunContext:
         ----------
         config
             Base build configuration.
-        run_config
-            Optional run configuration with per-target overrides.
+        overrides
+            Optional per-target configuration overrides.
 
         Returns
         -------
         BuildConfig
-            Effective configuration stack with run overrides applied.
+            Effective configuration stack with overrides applied.
         """
-        overrides = None
-        if run_config is not None:
-            overrides = run_config.config_overrides_for_target
-        run_overrides: Mapping[str, Mapping[str, object]] | None = None
-        if overrides is not None:
-            run_overrides = _RunOverridesView(overrides)
-        return BuildConfigStack.from_base(config, run_overrides=run_overrides)
+        if overrides is None or overrides.is_empty():
+            return config
+        return BuildConfigStack.from_base(config, overrides=overrides)
 
     def build_env(
         self,
@@ -107,12 +102,10 @@ class BuildRunContext:
         BuildEnv
             Build environment derived from the run context.
         """
-        stacked = self.build_config_stack(self.config, self.run_config)
+        stacked = self.build_config_stack(self.config, self.config_overrides)
         profile = None
         if self.execution_options and self.execution_options.profile:
             profile = self.execution_options.profile
-        elif self.run_config is not None:
-            profile = self.run_config.profile_name
         fingerprint_policy = self.fingerprint_policy or DEFAULT_FINGERPRINT_POLICY
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
         registry_service = None
@@ -155,10 +148,9 @@ class BuildRunContext:
         """
         if self.execution_options is not None:
             return self.execution_options
-        profile = self.run_config.profile_name if self.run_config is not None else None
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
         return BuildExecutionOptions(
-            profile=profile,
+            profile=None,
             parallel_backend=execution_settings.parallel_backend,
             max_workers=execution_settings.max_workers,
         )
@@ -218,9 +210,9 @@ class BuildRunContext:
             paths=execution_context.paths,
             providers=providers,
             config=config,
+            config_overrides=resolved.config_overrides,
             settings=execution_context.build_settings,
             execution_settings=execution_context.execution_settings,
-            run_config=resolved.run_config,
             execution_options=resolved.execution_options,
             force_targets=resolved.force_targets or frozenset(),
             validate_outputs=resolved.validate_outputs,
@@ -231,53 +223,6 @@ class BuildRunContext:
             history_db_resolver=resolved.history_db_resolver,
             execution_context=execution_context,
         )
-
-
-class _RunOverridesView(Mapping[str, Mapping[str, object]]):
-    """Lazy view over BuildRunConfig overrides."""
-
-    def __init__(self, overrides_fn: Callable[[str], Mapping[str, Any]]) -> None:
-        self._overrides_fn = overrides_fn
-        self._cache: dict[str, Mapping[str, object]] = {}
-
-    def __getitem__(self, key: str) -> Mapping[str, object]:
-        """Return overrides for the requested target name.
-
-        Parameters
-        ----------
-        key
-            Target name.
-
-        Returns
-        -------
-        Mapping[str, object]
-            Override mapping for the target.
-        """
-        if key in self._cache:
-            return self._cache[key]
-        value = self._overrides_fn(key)
-        self._cache[key] = value
-        return value
-
-    def __iter__(self) -> Iterator[str]:
-        """Iterate cached override keys.
-
-        Returns
-        -------
-        Iterator[str]
-            Iterator over cached override keys.
-        """
-        return iter(self._cache)
-
-    def __len__(self) -> int:
-        """Return count of cached override entries.
-
-        Returns
-        -------
-        int
-            Number of cached override entries.
-        """
-        return len(self._cache)
 
 
 __all__ = ["BuildRunContext", "BuildRunContextOverrides"]

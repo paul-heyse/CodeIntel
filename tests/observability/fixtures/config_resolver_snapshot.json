@@ -7,7 +7,6 @@
     },
     "config_file": "otel.yaml",
     "db_tracing": {
-      "emit_legacy_db_attributes": false,
       "enabled": true,
       "query_parameter_enabled": false,
       "query_parameter_hash_keys": [],
@@ -201,7 +200,6 @@
     "cli.args_capture_mode": "settings",
     "cli.enabled": "settings",
     "config_file": "settings",
-    "db_tracing.emit_legacy_db_attributes": "settings",
     "db_tracing.enabled": "settings",
     "db_tracing.query_parameter_enabled": "settings",
     "db_tracing.query_parameter_hash_keys": "settings",

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.hooks import HookOptions
-from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
+from codeintel.build.settings import DEFAULT_PROFILE_NAME
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv

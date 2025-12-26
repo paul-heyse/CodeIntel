@@ -523,7 +523,7 @@ def t__coverage_test_edges(
         options_hash = options_hash_for_target(env, COVERAGE_TEST_EDGES_TARGET_NAME)
         return TargetRunRecord(
             target=COVERAGE_TEST_EDGES_TARGET_NAME,
-            plugin_name=f"native:{COVERAGE_TEST_EDGES_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
@@ -665,7 +665,7 @@ def t__behavioral_coverage(
         options_hash = options_hash_for_target(env, BEHAVIORAL_COVERAGE_TARGET_NAME)
         return TargetRunRecord(
             target=BEHAVIORAL_COVERAGE_TARGET_NAME,
-            plugin_name=f"native:{BEHAVIORAL_COVERAGE_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

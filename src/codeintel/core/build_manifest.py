@@ -24,7 +24,7 @@ class OutputManifest:
     target: str
     repo: str
     commit: str
-    plugin: str
+    impl_kind: str
     computed_at: datetime
     duration_ms: float
     input_hash: str

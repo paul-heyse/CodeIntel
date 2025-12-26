@@ -56,7 +56,7 @@ def test_compute_input_hash_differentiates_dependency_hashes(tmp_path: Path) -> 
         target="dep",
         repo="demo",
         commit="c1",
-        plugin="p",
+        impl_kind="native",
         computed_at=datetime.now(tz=UTC),
         duration_ms=1.0,
         input_hash="in",

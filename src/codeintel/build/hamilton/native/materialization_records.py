@@ -116,7 +116,7 @@ def record_from_duckdb_materialization(
         msg = f"Target not found: {target_name}"
         return TargetRunRecord(
             target=target_name,
-            plugin_name=f"native:{target_name}",
+            impl_kind="native",
             status="failed",
             input_hash=parsed.input_hash,
             options_hash=options_hash,
@@ -248,7 +248,7 @@ def record_from_file_artifact_materialization(
         msg = f"Target not found: {target_name}"
         return TargetRunRecord(
             target=target_name,
-            plugin_name=f"native:{target_name}",
+            impl_kind="native",
             status="failed",
             input_hash=parsed.input_hash,
             options_hash=options_hash,
@@ -377,7 +377,7 @@ def record_from_duckdb_materializations(
         msg = f"Target not found: {target_name}"
         return TargetRunRecord(
             target=target_name,
-            plugin_name=f"native:{target_name}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
@@ -493,7 +493,7 @@ def record_from_file_artifact_materializations(
         msg = f"Target not found: {target_name}"
         return TargetRunRecord(
             target=target_name,
-            plugin_name=f"native:{target_name}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
@@ -658,7 +658,7 @@ def _missing_target_record(*, target_name: str, options_hash: str | None) -> Tar
     msg = f"Target not found: {target_name}"
     return TargetRunRecord(
         target=target_name,
-        plugin_name=f"native:{target_name}",
+        impl_kind="native",
         status="failed",
         input_hash="",
         options_hash=options_hash,
@@ -975,7 +975,7 @@ def _apply_file_artifact_results(
 
     return TargetRunRecord(
         target=record.target,
-        plugin_name=record.plugin_name,
+        impl_kind=record.impl_kind,
         status=record.status,
         input_hash=record.input_hash,
         options_hash=record.options_hash,

@@ -74,7 +74,7 @@ class TestRunTargetsPersistence:
         """Verify TargetRunRecord has expected fields."""
         record = TargetRunRecord(
             target="modules",
-            plugin_name="ingestion.modules",
+            impl_kind="native",
             status="succeeded",
             input_hash="hash123",
             options_hash="opts",

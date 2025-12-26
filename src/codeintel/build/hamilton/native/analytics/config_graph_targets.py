@@ -490,7 +490,7 @@ def t__config_data_flow(
         options_hash = options_hash_for_target(env, CONFIG_DATA_FLOW_TARGET_NAME)
         return TargetRunRecord(
             target=CONFIG_DATA_FLOW_TARGET_NAME,
-            plugin_name=f"native:{CONFIG_DATA_FLOW_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

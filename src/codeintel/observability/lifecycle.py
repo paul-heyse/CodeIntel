@@ -53,7 +53,9 @@ class ObservabilityLifecycle:
         self.runtime = bootstrap_observability(resolved)
         return self.runtime
 
-    def install_logging(self, runtime: ObservabilityRuntime | None = None) -> logging.Handler | None:
+    def install_logging(
+        self, runtime: ObservabilityRuntime | None = None
+    ) -> logging.Handler | None:
         """Return the log handler attached to the runtime, if any.
 
         Returns

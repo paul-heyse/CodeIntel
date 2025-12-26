@@ -1891,7 +1891,7 @@ def t__graph_metrics(
         options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
         return TargetRunRecord(
             target=GRAPH_METRICS_TARGET_NAME,
-            plugin_name=f"native:{GRAPH_METRICS_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

@@ -81,7 +81,7 @@ def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
     ----------
     row
         DuckDB row tuple from output_manifests table.
-        Expected column order: target, repo, commit, plugin, computed_at,
+        Expected column order: target, repo, commit, impl_kind, computed_at,
         duration_ms, input_hash, output_hash, row_count, options_hash,
         change_delta
 
@@ -94,7 +94,7 @@ def _parse_manifest_row(row: tuple[Any, ...]) -> OutputManifest:
         target=str(row[0]),
         repo=str(row[1]),
         commit=str(row[2]),
-        plugin=str(row[3]),
+        impl_kind=str(row[3]),
         computed_at=cast("datetime", row[4]),
         duration_ms=float(row[5]),
         input_hash=str(row[6]),
@@ -194,7 +194,7 @@ class BuildTracking:
                     manifest.target,
                     manifest.repo,
                     manifest.commit,
-                    manifest.plugin,
+                    manifest.impl_kind,
                     manifest.computed_at,
                     manifest.duration_ms,
                     manifest.input_hash,
@@ -208,7 +208,7 @@ class BuildTracking:
                 "target",
                 "repo",
                 "commit",
-                "plugin",
+                "impl_kind",
                 "computed_at",
                 "duration_ms",
                 "input_hash",
@@ -220,7 +220,7 @@ class BuildTracking:
             upsert=UpsertSpec(
                 conflict_columns=("target", "repo", "commit"),
                 update_columns=(
-                    "plugin",
+                    "impl_kind",
                     "computed_at",
                     "duration_ms",
                     "input_hash",
@@ -251,7 +251,7 @@ class BuildTracking:
         """
         result = self._con.execute(
             """
-            SELECT target, repo, commit, plugin, computed_at, duration_ms,
+            SELECT target, repo, commit, impl_kind, computed_at, duration_ms,
                    input_hash, output_hash, row_count, options_hash
                    , change_delta
             FROM build.output_manifests
@@ -282,7 +282,7 @@ class BuildTracking:
         """
         results = self._con.execute(
             """
-            SELECT target, repo, commit, plugin, computed_at, duration_ms,
+            SELECT target, repo, commit, impl_kind, computed_at, duration_ms,
                    input_hash, output_hash, row_count, options_hash
                    , change_delta
             FROM build.output_manifests
@@ -513,7 +513,7 @@ class BuildTracking:
                     repo,
                     commit,
                     rec.target,
-                    rec.plugin_name,
+                    rec.impl_kind,
                     rec.status,
                     rec.input_hash,
                     rec.options_hash,
@@ -532,7 +532,7 @@ class BuildTracking:
                 "repo",
                 "commit",
                 "target",
-                "plugin",
+                "impl_kind",
                 "status",
                 "input_hash",
                 "options_hash",
@@ -558,7 +558,7 @@ class BuildTracking:
         """
         results = self._con.execute(
             """
-            SELECT target, plugin, status, input_hash, options_hash,
+            SELECT target, impl_kind, status, input_hash, options_hash,
                    duration_ms, row_counts, error, recorded_at
             FROM build.run_targets
             WHERE run_id = ?
@@ -570,7 +570,7 @@ class BuildTracking:
         return [
             {
                 "target": row[0],
-                "plugin": row[1],
+                "impl_kind": row[1],
                 "status": row[2],
                 "input_hash": row[3],
                 "options_hash": row[4],

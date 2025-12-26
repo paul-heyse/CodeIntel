@@ -192,7 +192,7 @@ def sample_manifest(target: str, params: ManifestParams | None = None) -> Output
         target=target,
         repo=cfg.repo,
         commit=cfg.commit,
-        plugin=cfg.plugin,
+        impl_kind=cfg.plugin,
         computed_at=cfg.computed_at or datetime.now(tz=UTC),
         duration_ms=cfg.duration_ms,
         input_hash=cfg.input_hash,

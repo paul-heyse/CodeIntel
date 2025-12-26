@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleScanResult
+from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
 from codeintel.build.hamilton.native.ingestion.scip import scip__hash_options
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.providers import Providers
@@ -17,7 +18,7 @@ from tests._helpers.fakes.tools import FakeToolRunner, FakeToolRunnerConfig
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
 
-def _build_env(tmp_path: Path, *, scip_stdout: str) -> tuple[ModuleScanResult, BuildEnv]:
+def _build_env(tmp_path: Path, *, scip_stdout: str) -> tuple[ModuleToolOutput, BuildEnv]:
     ctx = create_test_context(tmp_path)
     runner = FakeToolRunner(
         cache_dir=tmp_path,
@@ -35,7 +36,10 @@ def _build_env(tmp_path: Path, *, scip_stdout: str) -> tuple[ModuleScanResult, B
             providers=providers,
         )
     )
-    scan = ModuleScanResult(success=True, file_state_hash="state-hash")
+    scan = ModuleToolOutput(
+        result=ExecutionResult.ok(),
+        file_state_hash="state-hash",
+    )
     return scan, env
 
 

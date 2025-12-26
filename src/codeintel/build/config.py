@@ -51,6 +51,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "BuildConfig",
+    "BuildConfigOverrides",
     "BuildConfigStack",
     "ConfigSection",
     "load_build_config",
@@ -329,18 +330,33 @@ class BuildConfig:
         return TargetParameters(result_values)
 
 
+@dataclass(frozen=True)
+class BuildConfigOverrides:
+    """Explicit per-target parameter overrides for a build run."""
+
+    per_target: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+
+    def for_target(self, target_name: str) -> Mapping[str, object]:
+        """Return overrides for a target name."""
+        return self.per_target.get(target_name, {})
+
+    def is_empty(self) -> bool:
+        """Return True when no overrides are configured."""
+        return not self.per_target
+
+
 @dataclass
 class BuildConfigStack(BuildConfig):
-    """BuildConfig wrapper that overlays BuildRunConfig-derived overrides."""
+    """BuildConfig wrapper that overlays explicit per-target overrides."""
 
-    run_overrides: Mapping[str, Mapping[str, Any]] | None = None
+    overrides: BuildConfigOverrides | None = None
 
     @classmethod
     def from_base(
         cls,
         base: BuildConfig,
         *,
-        run_overrides: Mapping[str, Mapping[str, Any]] | None = None,
+        overrides: BuildConfigOverrides | None = None,
     ) -> BuildConfigStack:
         """Create a BuildConfigStack from an existing BuildConfig.
 
@@ -348,7 +364,7 @@ class BuildConfigStack(BuildConfig):
         ----------
         base
             Base BuildConfig instance to copy.
-        run_overrides
+        overrides
             Optional per-target override mappings.
 
         Returns
@@ -360,7 +376,7 @@ class BuildConfigStack(BuildConfig):
             config_path=base.config_path,
             sections=dict(base.sections),
             _raw=base.raw_data(),
-            run_overrides=run_overrides,
+            overrides=overrides,
         )
 
     def parameters_for(self, target_name: str) -> TargetParameters:
@@ -374,12 +390,12 @@ class BuildConfigStack(BuildConfig):
         Returns
         -------
         TargetParameters
-            Parameters merged with run overrides.
+            Parameters merged with explicit overrides.
         """
         base = super().parameters_for(target_name)
-        if not self.run_overrides:
+        if not self.overrides or self.overrides.is_empty():
             return base
-        overrides = self.run_overrides.get(target_name)
+        overrides = self.overrides.for_target(target_name)
         if not overrides:
             return base
         return base.merge(TargetParameters(dict(overrides)))

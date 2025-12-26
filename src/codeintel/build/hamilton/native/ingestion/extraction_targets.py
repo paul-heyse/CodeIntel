@@ -94,6 +94,7 @@ class DocstringsToolOutput(ToolStepOutput):
 
     rows: tuple[tuple[object, ...], ...] = ()
 
+
 @dataclass(frozen=True)
 class AstToolOutput(ToolStepOutput):
     """Tool step output for AST extraction."""
@@ -121,9 +122,7 @@ def _module_inventory_precheck(
             f"Upstream modules target {t__modules.status}: {message}",
         )
         return failure, ()
-    warnings = (
-        f"Upstream modules target {t__modules.status}; using stored module inventory.",
-    )
+    warnings = (f"Upstream modules target {t__modules.status}; using stored module inventory.",)
     return None, warnings
 
 

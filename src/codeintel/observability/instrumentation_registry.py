@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from threading import Lock
@@ -11,6 +10,7 @@ from weakref import WeakKeyDictionary
 
 from codeintel.core.singleton import SingletonHolder
 from codeintel.observability.attribute_schema import build_attribute_normalizer
+from codeintel.observability.events import TelemetryEvent, emit_event
 from codeintel.observability.semconv_keys import (
     TELEMETRY_INSTRUMENTATION_NAME,
     TELEMETRY_INSTRUMENTATION_STATUS,
@@ -129,17 +129,22 @@ class InstrumentationRegistry:
             counts[record.status] += 1
         return counts
 
-    def emit_summary(self, logger: logging.Logger | None = None) -> None:
-        """Emit a structured log summary of instrumentation status.
+    def emit_summary(
+        self,
+        *,
+        policy: ObservabilityPolicy,
+        logger: logging.Logger | None = None,
+    ) -> None:
+        """Emit a structured telemetry summary of instrumentation status.
 
         Parameters
         ----------
+        policy
+            Attribute policy used to normalize emitted telemetry attributes.
         logger
             Optional logger override.
         """
-        log_target = logger or LOG
         payload = {
-            "event": "telemetry.instrumentation",
             "summary": self.summary(),
             "records": [
                 {
@@ -150,7 +155,17 @@ class InstrumentationRegistry:
                 for record in self.snapshot()
             ],
         }
-        log_target.info("telemetry.instrumentation %s", json.dumps(payload, sort_keys=True))
+        event = TelemetryEvent(
+            name="telemetry.instrumentation",
+            log_payload=payload,
+            log_level=logging.INFO,
+        )
+        emit_event(
+            event=event,
+            span=None,
+            normalizer=build_attribute_normalizer(policy),
+            logger=logger or LOG,
+        )
 
     def emit_metrics(self, meter: Meter, *, policy: ObservabilityPolicy) -> None:
         """Emit instrumentation status metrics using the supplied meter.

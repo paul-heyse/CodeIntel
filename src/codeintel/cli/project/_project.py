@@ -33,7 +33,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field
 
-from codeintel.core.plugins.execution.profiles import DEFAULT_PROFILE_NAME
+from codeintel.build.settings import DEFAULT_PROFILE_NAME
 
 LOG = logging.getLogger(__name__)
 

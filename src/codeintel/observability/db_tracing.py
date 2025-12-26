@@ -247,7 +247,6 @@ class DbTracingPolicy:
     require_parent_span: bool = True
     query_summary: DbQuerySummaryConfig = field(default_factory=DbQuerySummaryConfig)
     redaction: SqlRedactionPolicy = field(default_factory=SqlRedactionPolicy)
-    emit_legacy_db_attributes: bool = False
 
 
 @dataclass(frozen=True, slots=True)

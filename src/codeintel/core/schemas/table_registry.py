@@ -152,7 +152,10 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("repo", "VARCHAR", nullable=False, description="Repository slug"),
             Column("commit", "VARCHAR", nullable=False, description="Commit SHA"),
             Column(
-                "plugin", "VARCHAR", nullable=False, description="Plugin that produced this target"
+                "impl_kind",
+                "VARCHAR",
+                nullable=False,
+                description="Implementation kind that produced this target",
             ),
             Column(
                 "computed_at",
@@ -234,7 +237,7 @@ TABLE_SCHEMAS: dict[str, TableSchema] = {
             Column("repo", "VARCHAR", nullable=False, description="Repository slug"),
             Column("commit", "VARCHAR", nullable=False, description="Commit SHA"),
             Column("target", "VARCHAR", nullable=False, description="Target name"),
-            Column("plugin", "VARCHAR", nullable=False, description="Plugin name"),
+            Column("impl_kind", "VARCHAR", nullable=False, description="Implementation kind"),
             Column(
                 "status",
                 "VARCHAR",

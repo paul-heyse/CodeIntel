@@ -59,10 +59,6 @@ class _VersionState:
     policy: FingerprintPolicy
 
 
-def _impl_kind(_plugin_name: str) -> str:
-    return "native"
-
-
 def _resolve_schema_provider(env: BuildEnv) -> SchemaProvider:
     provider = env.gateway.policy.schema_provider
     if provider is not None:
@@ -156,7 +152,7 @@ def _dataset_version_record(
         version_hash=version_hash,
         status=status,
         target=record.target,
-        impl_kind=_impl_kind(record.plugin_name),
+        impl_kind=record.impl_kind,
         location=dataset.table_key,
         input_hash=record.input_hash,
         options_hash=record.options_hash,
@@ -222,7 +218,7 @@ def _artifact_version_record(
         version_hash=version_hash,
         status=status,
         target=record.target,
-        impl_kind=_impl_kind(record.plugin_name),
+        impl_kind=record.impl_kind,
         location=artifact.path,
         input_hash=record.input_hash,
         options_hash=record.options_hash,

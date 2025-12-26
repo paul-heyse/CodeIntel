@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import inspect
-import json
 import logging
 import threading
 import time
@@ -86,6 +85,7 @@ from codeintel.core.config.settings import (
 from codeintel.core.singleton import SingletonHolder
 from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.config_loader import apply_otel_config_file, load_otel_config_file
+from codeintel.observability.events import TelemetryEvent, emit_event
 from codeintel.observability.grpc import GrpcObservabilityHandle, register_grpc_observability
 from codeintel.observability.instrumentation_registry import (
     InstrumentationRegistry,
@@ -122,6 +122,12 @@ class _LoggerProvider(Protocol):
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         """Force flush pending log records."""
         ...
+
+
+class _DataclassFields(Protocol):
+    """Protocol for dataclass instances exposing field metadata."""
+
+    __dataclass_fields__: Mapping[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,7 +258,6 @@ class DbTracingConfig:
     query_summary_include_subquery_operations: bool = True
     query_summary_include_multi_statement: bool = True
     query_summary_span_name_hook: bool = False
-    emit_legacy_db_attributes: bool = False
     query_text_policy: str = "never"
     query_text_max_len: int = 4096
     query_text_strip_comments: bool = True
@@ -378,6 +383,7 @@ class ConfigResolver:
             provenance=ConfigProvenance(sources),
         )
 
+
 @dataclass(frozen=True, slots=True)
 class TestTelemetryHandles:
     """In-memory telemetry handles for test assertions."""
@@ -471,7 +477,7 @@ class ObservabilityRuntimeManager:
                 errors=(str(exc),),
             )
         if result is not None:
-            _log_shutdown_result(result)
+            _log_shutdown_result(result, policy=runtime.policy)
             _record_pipeline_health(result)
             _record_pipeline_metrics(result, action="shutdown")
         _ObservabilityHolder.reset()
@@ -1479,7 +1485,7 @@ def _runtime_from_in_memory(
 
     _instrument_runtime(registry)
 
-    registry.emit_summary(LOG)
+    registry.emit_summary(policy=config.policy, logger=LOG)
     registry.emit_metrics(meter, policy=config.policy)
 
     shutdown = _build_shutdown(
@@ -1572,7 +1578,7 @@ def _runtime_from_config_file(
         meter_provider=otel_metrics.get_meter_provider(),
         registry=registry,
     )
-    registry.emit_summary(LOG)
+    registry.emit_summary(policy=config.policy, logger=LOG)
     registry.emit_metrics(
         otel_metrics.get_meter(config.resources.service_name),
         policy=config.policy,
@@ -1624,7 +1630,7 @@ def _runtime_from_manual_config(
         registry=registry,
     )
 
-    registry.emit_summary(LOG)
+    registry.emit_summary(policy=config.policy, logger=LOG)
     registry.emit_metrics(meter, policy=config.policy)
 
     shutdown = _build_shutdown(
@@ -1739,12 +1745,31 @@ def get_runtime_manager() -> ObservabilityRuntimeManager:
     return _RUNTIME_MANAGER
 
 
-def _log_shutdown_result(result: ObservabilityShutdownResult) -> None:
-    payload = json.dumps(result.to_log_payload(), sort_keys=True)
-    if result.flush_ok:
-        LOG.info("telemetry.flush %s", payload)
-    else:
-        LOG.warning("telemetry.flush %s", payload)
+def _log_shutdown_result(
+    result: ObservabilityShutdownResult,
+    *,
+    policy: ObservabilityPolicy,
+) -> None:
+    payload = {
+        TELEMETRY_FLUSH_OK: result.flush_ok,
+        TELEMETRY_FLUSH_MS: result.flush_ms,
+        "errors": list(result.errors),
+    }
+    event = TelemetryEvent(
+        name="telemetry.flush",
+        span_attributes={
+            TELEMETRY_FLUSH_OK: result.flush_ok,
+            TELEMETRY_FLUSH_MS: result.flush_ms,
+        },
+        log_payload=payload,
+        log_level=logging.INFO if result.flush_ok else logging.WARNING,
+    )
+    emit_event(
+        event=event,
+        span=None,
+        normalizer=build_attribute_normalizer(policy),
+        logger=LOG,
+    )
 
 
 @dataclass(slots=True)
@@ -1901,7 +1926,6 @@ def _observability_config_from_settings(
         ),
         query_summary_include_multi_statement=settings.duckdb_query_summary_include_multi_statement,
         query_summary_span_name_hook=settings.db_query_summary_span_name_hook,
-        emit_legacy_db_attributes=settings.duckdb_emit_legacy_db_attributes,
         query_text_policy=settings.duckdb_query_text_policy,
         query_text_max_len=settings.duckdb_query_text_max_len,
         query_text_strip_comments=settings.duckdb_query_text_strip_comments,
@@ -1995,15 +2019,30 @@ def _replace_path(obj: object, parts: list[str], value: object) -> object:
     if not is_dataclass(obj):
         message = f"Cannot apply override to non-dataclass at {'.'.join(parts)}"
         raise TypeError(message)
+    dataclass_obj = cast("_DataclassFields", obj)
     field_name = parts[0]
-    if not hasattr(obj, field_name):
+    if field_name not in dataclass_obj.__dataclass_fields__:
         message = f"Unknown config field: {field_name}"
         raise AttributeError(message)
     if len(parts) == 1:
-        return replace(obj, **{field_name: value})
-    nested = getattr(obj, field_name)
+        return _replace_dataclass_value(dataclass_obj, field_name, value)
+    nested = getattr(dataclass_obj, field_name)
     replaced = _replace_path(nested, parts[1:], value)
-    return replace(obj, **{field_name: replaced})
+    return _replace_dataclass_value(dataclass_obj, field_name, replaced)
+
+
+def _replace_dataclass_value(
+    obj: _DataclassFields,
+    field_name: str,
+    value: object,
+) -> object:
+    values = {
+        name: getattr(obj, name)
+        for name in obj.__dataclass_fields__
+    }
+    values[field_name] = value
+    constructor = cast("Callable[..., object]", obj.__class__)
+    return constructor(**values)
 
 
 def _flatten_config(config: ObservabilityConfig) -> dict[str, object]:

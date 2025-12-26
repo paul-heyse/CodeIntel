@@ -678,7 +678,7 @@ def t__function_ast_features(
         options_hash = options_hash_for_target(env, FUNCTION_AST_FEATURES_TARGET_NAME)
         return TargetRunRecord(
             target=FUNCTION_AST_FEATURES_TARGET_NAME,
-            plugin_name=f"native:{FUNCTION_AST_FEATURES_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,
@@ -971,7 +971,7 @@ def t__profiles(
         options_hash = options_hash_for_target(env, PROFILES_TARGET_NAME)
         return TargetRunRecord(
             target=PROFILES_TARGET_NAME,
-            plugin_name=f"native:{PROFILES_TARGET_NAME}",
+            impl_kind="native",
             status="failed",
             input_hash="",
             options_hash=options_hash,

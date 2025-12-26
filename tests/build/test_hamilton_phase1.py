@@ -167,7 +167,7 @@ class TestUpstreamFailureGating:
         """Verify upstream_failed error message format."""
         record = TargetRunRecord(
             target="call_graph",
-            plugin_name="graphs.call_graph",
+            impl_kind="native",
             status="skipped",
             input_hash=None,
             error="upstream_failed:goids,scip",
@@ -316,7 +316,7 @@ class TestTargetRunRecordDatasets:
         """Verify TargetRunRecord has datasets field."""
         record = TargetRunRecord(
             target="test",
-            plugin_name="test.plugin",
+            impl_kind="native",
             status="succeeded",
             input_hash="abc123",
         )
@@ -331,7 +331,7 @@ class TestTargetRunRecordDatasets:
         ref = DatasetRef(table_key="test.table")
         record = TargetRunRecord(
             target="test",
-            plugin_name="test.plugin",
+            impl_kind="native",
             status="succeeded",
             input_hash="abc123",
             datasets=(ref,),

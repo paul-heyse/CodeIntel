@@ -21,8 +21,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig, load_build_config
-from codeintel.build.run_config import BuildRunConfig
-from codeintel.build.run_context import BuildRunContext
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
@@ -42,7 +40,6 @@ class StateValidationOptions:
 
     settings: BuildSettings
     config: BuildConfig | None = None
-    run_config: BuildRunConfig | None = None
 
 
 class StateValidator:
@@ -69,7 +66,7 @@ class StateValidator:
     snapshot
         Repository snapshot reference (repo, commit, repo_root).
     options
-        State validation options (build settings + config overrides).
+        State validation options (build settings + config).
 
     Examples
     --------
@@ -99,7 +96,7 @@ class StateValidator:
         snapshot
             Repository snapshot reference.
         options
-            State validation options (build settings + config overrides).
+            State validation options (build settings + config).
 
         Raises
         ------
@@ -124,11 +121,10 @@ class StateValidator:
             settings=options.settings,
         )
         base_config = options.config or load_build_config(snapshot.repo_root)
-        effective_config = BuildRunContext.build_config_stack(base_config, options.run_config)
         self._computer = StateComputer(
             graph=graph,
             session=self._session,
-            config=effective_config,
+            config=base_config,
         )
 
     def validate(self) -> BuildState:
