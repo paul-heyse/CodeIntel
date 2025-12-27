@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import (
@@ -49,7 +50,6 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.targets import TargetGraph
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -74,8 +74,8 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
-    MaterializationMetadata,
-    TargetGraph,
+    MaterializationResult,
+    DagCatalog,
     TargetRunRecord,
     ModuleRecord,
 )
@@ -543,15 +543,15 @@ def _is_preferred_row(
 
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
 def modules__table_materializations(
-    m__core__modules: MaterializationMetadata,
-    m__core__file_state: MaterializationMetadata,
-    m__core__repo_map: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for modules target tables.
+    m__core__modules: MaterializationResult,
+    m__core__file_state: MaterializationResult,
+    m__core__repo_map: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect materialization results for modules target tables.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Mapping from table key to saver metadata.
     """
     return {
@@ -564,7 +564,7 @@ def modules__table_materializations(
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
 def modules__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules__run: ModuleToolOutput,
     modules__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
@@ -594,7 +594,7 @@ def modules__finalize_context(
         )
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=MODULES_TARGET_NAME,
         hash_options=modules__hash_options,
         change_delta=change_delta,
@@ -606,7 +606,7 @@ def t__modules(
     modules__finalize_context: ToolFinalizeContext,
     t__modules__run: ModuleToolOutput,
     t__modules__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    modules__table_materializations: dict[str, MaterializationMetadata],
+    modules__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Scan repository modules and file index.
 
@@ -750,7 +750,7 @@ def config_ingest__hash_options(
 @tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__config_ingest__scan: ConfigScanResult,
     config_ingest__hash_options: InputHashOptions,
 ) -> ConfigToolOutput:
@@ -768,7 +768,7 @@ def t__config_ingest__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CONFIG_INGEST_TARGET_NAME,
         hash_options=config_ingest__hash_options,
         skip_reason="Config ingest skipped",
@@ -864,14 +864,14 @@ def config_ingest__rows(
 
 @tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def config_ingest__table_materializations(
-    m__analytics__config_values: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__analytics__config_values: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect config ingest table materializations.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {CONFIG_VALUES_TABLE_KEY: m__analytics__config_values}
 
@@ -879,7 +879,7 @@ def config_ingest__table_materializations(
 @tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def config_ingest__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     config_ingest__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for config ingest.
@@ -891,7 +891,7 @@ def config_ingest__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CONFIG_INGEST_TARGET_NAME,
         hash_options=config_ingest__hash_options,
     )
@@ -902,7 +902,7 @@ def t__config_ingest(
     config_ingest__finalize_context: ToolFinalizeContext,
     t__config_ingest__run: ConfigToolOutput,
     t__config_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    config_ingest__table_materializations: dict[str, MaterializationMetadata],
+    config_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Parse configuration files and track references.
 
@@ -994,7 +994,7 @@ def _coerce_coverage_output(
 @tag_tool(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def t__coverage_ingest__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
     coverage_ingest__hash_options: InputHashOptions,
@@ -1012,7 +1012,7 @@ def t__coverage_ingest__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=COVERAGE_INGEST_TARGET_NAME,
         hash_options=coverage_ingest__hash_options,
         skip_reason="Coverage ingest skipped",
@@ -1116,14 +1116,14 @@ def coverage__rows(
 
 @tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def coverage_ingest__table_materializations(
-    m__analytics__coverage_lines: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__analytics__coverage_lines: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect coverage ingest table materializations.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {COVERAGE_LINES_TABLE_KEY: m__analytics__coverage_lines}
 
@@ -1131,7 +1131,7 @@ def coverage_ingest__table_materializations(
 @tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def coverage_ingest__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     coverage_ingest__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for coverage ingest.
@@ -1143,7 +1143,7 @@ def coverage_ingest__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=COVERAGE_INGEST_TARGET_NAME,
         hash_options=coverage_ingest__hash_options,
     )
@@ -1154,7 +1154,7 @@ def t__coverage_ingest(
     coverage_ingest__finalize_context: ToolFinalizeContext,
     t__coverage_ingest__run: CoverageToolOutput,
     t__coverage_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    coverage_ingest__table_materializations: dict[str, MaterializationMetadata],
+    coverage_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Ingest line-level test coverage.
 
@@ -1251,7 +1251,7 @@ def _coerce_tests_output(
 @tag_tool(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
     tests_ingest__hash_options: InputHashOptions,
@@ -1269,7 +1269,7 @@ def t__tests_ingest__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=TESTS_INGEST_TARGET_NAME,
         hash_options=tests_ingest__hash_options,
         skip_reason="Tests ingest skipped",
@@ -1369,14 +1369,14 @@ def tests__rows(
 
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def tests_ingest__table_materializations(
-    m__analytics__test_catalog: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__analytics__test_catalog: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect tests ingest table materializations.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {TEST_CATALOG_TABLE_KEY: m__analytics__test_catalog}
 
@@ -1384,7 +1384,7 @@ def tests_ingest__table_materializations(
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def tests_ingest__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     tests_ingest__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for tests ingest.
@@ -1396,7 +1396,7 @@ def tests_ingest__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=TESTS_INGEST_TARGET_NAME,
         hash_options=tests_ingest__hash_options,
     )
@@ -1407,7 +1407,7 @@ def t__tests_ingest(
     tests_ingest__finalize_context: ToolFinalizeContext,
     t__tests_ingest__run: TestsToolOutput,
     t__tests_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    tests_ingest__table_materializations: dict[str, MaterializationMetadata],
+    tests_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Ingest test catalog from pytest.
 
@@ -1462,7 +1462,7 @@ def _coerce_typing_output(
 @tag_tool(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
     typing__hash_options: InputHashOptions,
@@ -1480,7 +1480,7 @@ def t__typing__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=TYPING_TARGET_NAME,
         hash_options=typing__hash_options,
         skip_reason="Typing ingest skipped",
@@ -1624,15 +1624,15 @@ def typing__diagnostic_rows(
 
 @tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
 def typing__table_materializations(
-    m__analytics__typedness: MaterializationMetadata,
-    m__analytics__static_diagnostics: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__analytics__typedness: MaterializationResult,
+    m__analytics__static_diagnostics: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect typing table materializations.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {
         TYPEDNESS_TABLE_KEY: m__analytics__typedness,
@@ -1643,7 +1643,7 @@ def typing__table_materializations(
 @tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
 def typing__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     typing__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for typing ingest.
@@ -1655,7 +1655,7 @@ def typing__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=TYPING_TARGET_NAME,
         hash_options=typing__hash_options,
     )
@@ -1681,7 +1681,7 @@ def t__typing(
     typing__finalize_context: ToolFinalizeContext,
     t__typing__run: TypingToolOutput,
     t__typing__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    typing__table_materializations: dict[str, MaterializationMetadata],
+    typing__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Analyze type annotations and static diagnostics.
 

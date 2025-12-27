@@ -8,28 +8,29 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import Column, OutputContract, TableSchema
+from codeintel.build.contracts import OutputContract, TableOutputDescriptor
 from codeintel.build.schemas.inference_service import (
     SchemaInferenceService,
     get_schema_inference_service,
 )
 from codeintel.build.schemas.schema_index import SchemaDerivation, SchemaIndex, build_schema_index
 from codeintel.build.target_metadata import TargetSystem, get_target_metadata_service
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.targets import TargetDescriptor
+from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.provider import SchemaProvider
 
 
-def _build_target_system(targets: tuple[OutputTarget, ...]) -> TargetSystem:
-    graph = TargetGraph()
-    by_name: dict[str, OutputTarget] = {}
-    by_table_key: dict[str, OutputTarget] = {}
-    by_artifact_name: dict[str, OutputTarget] = {}
+def _build_target_system(targets: tuple[TargetDescriptor, ...]) -> TargetSystem:
+    catalog = build_catalog(targets=targets)
+    by_name: dict[str, TargetDescriptor] = {}
+    by_table_key: dict[str, TargetDescriptor] = {}
+    by_artifact_name: dict[str, TargetDescriptor] = {}
 
     for target in targets:
-        graph.register(target)
         by_name[target.name] = target
         for table_key in target.contract.table_keys:
             by_table_key[table_key] = target
@@ -39,7 +40,7 @@ def _build_target_system(targets: tuple[OutputTarget, ...]) -> TargetSystem:
     runtime = get_target_metadata_service().system.runtime
     return TargetSystem(
         runtime=runtime,
-        graph=graph,
+        catalog=catalog,
         by_name=MappingProxyType(by_name),
         by_table_key=MappingProxyType(by_table_key),
         by_artifact_name=MappingProxyType(by_artifact_name),
@@ -54,16 +55,17 @@ def test_schema_index_accepts_explicit_override_for_non_inferable_outputs() -> N
         name="override_ok",
         columns=[Column("id", "INTEGER", nullable=False)],
     )
-    target = OutputTarget(
+    target = make_target_descriptor(
         name="override_ok_target",
         module="analytics",
-        contract=OutputContract(tables=(override_schema,)),
+        contract=OutputContract(tables=(TableOutputDescriptor(table_key=table_key),)),
         description="Test target with explicit override.",
     )
+    declared_provider = MappingSchemaProvider({table_key: override_schema})
     system = _build_target_system((target,))
     schema_index = build_schema_index(
         system=system,
-        declared_provider=MappingSchemaProvider({}),
+        declared_provider=declared_provider,
         inference_service=get_schema_inference_service(),
     )
 

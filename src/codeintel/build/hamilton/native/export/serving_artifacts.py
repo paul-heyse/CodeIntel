@@ -21,12 +21,15 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+import hamilton.driver as h_driver
 import ibis
 import pyarrow as pa
 import sqlglot
 from hamilton.function_modifiers import source, value
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -37,20 +40,20 @@ from codeintel.build.hamilton.native.materialization_records import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tag_index import TagIndex
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
+from codeintel.build.meta.contract_catalog import persist_contract_catalog
 from codeintel.build.schemas import deferred_columns_for_table_key, get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestRequest,
     compile_schema_manifest,
 )
 from codeintel.build.serving.semantic_compile import (
-    compile_semantic_registry_from_tag_index,
+    compile_semantic_registry_from_catalog,
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.build.targets import TargetGraph
+from codeintel.core.execution.ids import new_run_id
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.metadata.sync import (
@@ -65,7 +68,7 @@ from codeintel.storage.views.discovery import discover_view_builders
 
 LOG = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 SERVING_ARTIFACTS_TARGET_NAME = "serving_artifacts"
 
@@ -87,10 +90,11 @@ def _package_version(name: str) -> str:
 
 def _semantic_registry_json() -> str:
     schema_provider = get_schema_provider()
-    tag_index = TagIndex.from_modules(modules=(_ibis_views,))
-    compiled = compile_semantic_registry_from_tag_index(
+    driver = h_driver.Builder().with_modules(_ibis_views).allow_module_overrides().build()
+    catalog = compile_dag_catalog(driver, strict=False)
+    compiled = compile_semantic_registry_from_catalog(
         schema_provider=schema_provider,
-        tag_index=tag_index,
+        catalog=catalog,
         version="v1",
     )
     return compiled.to_json() + "\n"
@@ -106,8 +110,23 @@ def _schema_manifest_json(env: BuildEnv) -> str:
             version="v2",
             include_views=True,
             include_artifacts=True,
+            include_provenance=True,
         ),
         con=env.gateway.con,
+    )
+    run_id = env.run_context.run_id if env.run_context is not None else new_run_id("schema")
+    env.gateway.schemas.persist_schema_manifest(
+        manifest,
+        run_id=run_id,
+        repo=env.repo,
+        commit=env.commit,
+        catalog_inputs={"source": "serving_artifacts"},
+        include_views=True,
+        strict_provenance=True,
+    )
+    persist_contract_catalog(
+        env.gateway,
+        inputs={"source": "serving_artifacts"},
     )
     return manifest.to_json() + "\n"
 
@@ -267,7 +286,7 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_SEMANTIC_REGISTRY}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_SEMANTIC_REGISTRY),
     path_template=value("{build_dir}/serving/artifacts/semantic_registry.json"),
@@ -298,7 +317,7 @@ def serving_artifacts__semantic_registry(env: BuildEnv) -> str:
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_SCHEMA_MANIFEST}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_SCHEMA_MANIFEST),
     path_template=value("{build_dir}/serving/artifacts/schema_manifest.json"),
@@ -328,7 +347,7 @@ def serving_artifacts__schema_manifest(env: BuildEnv) -> str:
     [DuckDBRowsSaver],
     output_name_=materialize_node(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     table_key=value(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
     columns=value(deferred_columns_for_table_key(SCHEMA_INFERENCE_ERRORS_TABLE_KEY)),
@@ -370,7 +389,7 @@ def serving_artifacts__schema_inference_errors_rows(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_BUILDSPEC}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_BUILDSPEC),
     path_template=value("{build_dir}/serving/artifacts/buildspec.json"),
@@ -401,7 +420,7 @@ def serving_artifacts__buildspec(env: BuildEnv) -> str:
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_ENVIRONMENT}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_ENVIRONMENT),
     path_template=value("{build_dir}/serving/artifacts/environment.json"),
@@ -431,7 +450,7 @@ def serving_artifacts__environment(env: BuildEnv) -> str:
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL),
     path_template=value("{build_dir}/serving/artifacts/views_sql.json"),
@@ -461,7 +480,7 @@ def serving_artifacts__views_sql(env: BuildEnv) -> str:
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{SERVING_ARTIFACT_VIEWS_SQL_DIFF}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     artifact_name=value(SERVING_ARTIFACT_VIEWS_SQL_DIFF),
     path_template=value("{build_dir}/serving/artifacts/views_sql_diff.json"),
@@ -491,10 +510,10 @@ def serving_artifacts__views_sql_diff(env: BuildEnv, serving_artifacts__views_sq
 
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations_base(
-    m__artifact__semantic_registry: MaterializationMetadata,
-    m__artifact__schema_manifest: MaterializationMetadata,
-    m__artifact__buildspec: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__artifact__semantic_registry: MaterializationResult,
+    m__artifact__schema_manifest: MaterializationResult,
+    m__artifact__buildspec: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect saver metadata for the base serving artifacts.
 
     Parameters
@@ -508,7 +527,7 @@ def serving_artifacts__materializations_base(
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Mapping of artifact name to saver metadata.
     """
     return {
@@ -520,15 +539,15 @@ def serving_artifacts__materializations_base(
 
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations_views(
-    m__artifact__environment: MaterializationMetadata,
-    m__artifact__views_sql: MaterializationMetadata,
-    m__artifact__views_sql_diff: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__artifact__environment: MaterializationResult,
+    m__artifact__views_sql: MaterializationResult,
+    m__artifact__views_sql_diff: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect saver metadata for the view/metadata artifacts.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Mapping of artifact name to saver metadata.
     """
     return {
@@ -540,13 +559,13 @@ def serving_artifacts__materializations_views(
 
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__table_materializations(
-    m__core__schema_inference_errors: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__core__schema_inference_errors: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect saver metadata for schema inference error rows.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Mapping of table key to saver metadata.
     """
     return {SCHEMA_INFERENCE_ERRORS_TABLE_KEY: m__core__schema_inference_errors}
@@ -554,14 +573,14 @@ def serving_artifacts__table_materializations(
 
 @tag_helper(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def serving_artifacts__materializations(
-    serving_artifacts__materializations_base: dict[str, MaterializationMetadata],
-    serving_artifacts__materializations_views: dict[str, MaterializationMetadata],
-) -> dict[str, MaterializationMetadata]:
+    serving_artifacts__materializations_base: dict[str, MaterializationResult],
+    serving_artifacts__materializations_views: dict[str, MaterializationResult],
+) -> dict[str, MaterializationResult]:
     """Merge all serving artifact materializations.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Mapping of artifact name to saver metadata.
     """
     merged = dict(serving_artifacts__materializations_base)
@@ -572,9 +591,9 @@ def serving_artifacts__materializations(
 @codeintel_target(domain="export", target=SERVING_ARTIFACTS_TARGET_NAME)
 def t__serving_artifacts(
     env: BuildEnv,
-    graph: TargetGraph,
-    serving_artifacts__materializations: dict[str, MaterializationMetadata],
-    serving_artifacts__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    serving_artifacts__materializations: dict[str, MaterializationResult],
+    serving_artifacts__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Compile deterministic serving artifacts (semantic registry, schema manifest, buildspec).
 
@@ -582,8 +601,8 @@ def t__serving_artifacts(
     ----------
     env
         Build environment for manifest persistence.
-    graph
-        Target graph containing the serving_artifacts contract.
+    catalog
+        DAG catalog containing the serving_artifacts contract.
     serving_artifacts__materializations
         Saver metadata mapping keyed by artifact name.
     serving_artifacts__table_materializations
@@ -597,7 +616,7 @@ def t__serving_artifacts(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SERVING_ARTIFACTS_TARGET_NAME,
         ),
         artifact_materializations=serving_artifacts__materializations,

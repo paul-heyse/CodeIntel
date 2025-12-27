@@ -341,11 +341,11 @@ def test_unified_provider_has_dataclass_fields() -> None:
 
 def test_target_contract_schemas_accessible() -> None:
     """Verify schemas from target contracts are accessible."""
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
     provider = unified_schema_provider().with_inference(allow_inference=False)
 
     # Find a target with declared output schemas
-    for target in graph.all_targets:
+    for target in catalog.all_targets:
         if target.contract.tables:
             for table_schema in target.contract.tables:
                 resolved = provider.get_table_schema(table_schema.table_key)

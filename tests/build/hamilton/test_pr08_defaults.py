@@ -22,11 +22,11 @@ class TestHamiltonDriverDefaults:
         """Verify build_driver constructs a runtime with registered targets."""
         runtime = build_driver()
 
-        if not runtime.target_to_node:
-            pytest.fail("Expected target_to_node mapping to be non-empty")
+        if not runtime.catalog.target_nodes:
+            pytest.fail("Expected catalog target_nodes to be non-empty")
 
-        if "modules" not in runtime.target_to_node:
-            pytest.fail("Expected 'modules' to be present in target_to_node mapping")
+        if "modules" not in runtime.catalog.target_nodes:
+            pytest.fail("Expected 'modules' to be present in catalog target_nodes")
 
     @staticmethod
     def test_list_available_nodes_includes_target_and_support_nodes() -> None:

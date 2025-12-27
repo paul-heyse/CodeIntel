@@ -10,13 +10,13 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import OutputContract
+from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.planner import (
     HamiltonBuildPlan,
     PlanEntry,
     compute_plan,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.build import (
     TEST_BUILD_SETTINGS,
@@ -24,7 +24,8 @@ from tests._helpers.build import (
     make_build_paths,
     make_snapshot,
 )
-from tests._helpers.contracts import table_schema_for_key
+from tests._helpers.catalog import build_catalog, make_target_descriptor
+from tests._helpers.contracts import table_output_for_key
 from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
@@ -209,7 +210,7 @@ class TestPlanStatusMatrix:
     @staticmethod
     def test_plan_status_no_manifest_returns_compute(
         fake_gateway: FakeGateway,
-        minimal_target_graph: TargetGraph,
+        minimal_target_graph: DagCatalog,
         tmp_path: Path,
     ) -> None:
         """Verify target with no manifest gets status=compute, reason=no_manifest."""
@@ -217,7 +218,7 @@ class TestPlanStatusMatrix:
 
         plan = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("a",),
         )
 
@@ -232,7 +233,7 @@ class TestPlanStatusMatrix:
     @staticmethod
     def test_plan_status_forced_returns_compute(
         fake_gateway: FakeGateway,
-        minimal_target_graph: TargetGraph,
+        minimal_target_graph: DagCatalog,
         tmp_path: Path,
     ) -> None:
         """Verify forced target gets status=compute, reason=forced."""
@@ -257,7 +258,7 @@ class TestPlanStatusMatrix:
 
         plan = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("a",),
         )
 
@@ -279,13 +280,15 @@ class TestPlanStatusMatrix:
         The planner may either raise KeyError for missing targets
         or mark them as blocked. Both are acceptable behaviors.
         """
-        graph = TargetGraph()
-        graph.register(
-            OutputTarget(
-                name="downstream",
-                module="analytics",
-                dependencies=("nonexistent",),
-                description="Has missing dep",
+        graph = build_catalog(
+            targets=(
+                make_target_descriptor(
+                    name="downstream",
+                    module="analytics",
+                    contract=EMPTY_CONTRACT,
+                    dependencies=("nonexistent",),
+                    description="Has missing dep",
+                ),
             )
         )
 
@@ -294,7 +297,7 @@ class TestPlanStatusMatrix:
         try:
             plan = compute_plan(
                 env=env,
-                graph=graph,
+                catalog=graph,
                 requested=("downstream",),
             )
 
@@ -313,7 +316,7 @@ class TestPlanClosure:
     @staticmethod
     def test_plan_closure_matches_topological_order(
         fake_gateway: FakeGateway,
-        minimal_target_graph: TargetGraph,
+        minimal_target_graph: DagCatalog,
         tmp_path: Path,
     ) -> None:
         """Verify plan closure is in topological order."""
@@ -321,7 +324,7 @@ class TestPlanClosure:
 
         plan = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("c",),
         )
 
@@ -343,14 +346,15 @@ class TestPlanClosure:
         tmp_path: Path,
     ) -> None:
         """Verify plan entries include table_keys from target contract."""
-        graph = TargetGraph()
-        graph.register(
-            OutputTarget(
-                name="with_tables",
-                module="analytics",
-                description="Has contract",
-                contract=OutputContract(
-                    tables=(table_schema_for_key("analytics.output_table"),),
+        graph = build_catalog(
+            targets=(
+                make_target_descriptor(
+                    name="with_tables",
+                    module="analytics",
+                    description="Has contract",
+                    contract=OutputContract(
+                        tables=(table_output_for_key("analytics.output_table"),),
+                    ),
                 ),
             )
         )
@@ -359,7 +363,7 @@ class TestPlanClosure:
 
         plan = compute_plan(
             env=env,
-            graph=graph,
+            catalog=graph,
             requested=("with_tables",),
         )
 
@@ -376,7 +380,7 @@ class TestDryRunParity:
     @staticmethod
     def test_plan_to_dict_produces_consistent_output(
         fake_gateway: FakeGateway,
-        minimal_target_graph: TargetGraph,
+        minimal_target_graph: DagCatalog,
         tmp_path: Path,
     ) -> None:
         """Verify plan.to_dict() produces consistent serializable output.
@@ -388,7 +392,7 @@ class TestDryRunParity:
 
         plan = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("c",),
         )
 
@@ -408,7 +412,7 @@ class TestDryRunParity:
     @staticmethod
     def test_plan_entries_match_closure_order(
         fake_gateway: FakeGateway,
-        minimal_target_graph: TargetGraph,
+        minimal_target_graph: DagCatalog,
         tmp_path: Path,
     ) -> None:
         """Verify plan entries are in the same order as closure.
@@ -419,7 +423,7 @@ class TestDryRunParity:
 
         plan = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("c",),
         )
 
@@ -432,7 +436,7 @@ class TestDryRunParity:
     @staticmethod
     def test_multiple_plan_calls_produce_same_result(
         fake_gateway: FakeGateway,
-        minimal_target_graph: TargetGraph,
+        minimal_target_graph: DagCatalog,
         tmp_path: Path,
     ) -> None:
         """Verify compute_plan is deterministic across calls.
@@ -444,13 +448,13 @@ class TestDryRunParity:
 
         plan1 = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("c",),
         )
 
         plan2 = compute_plan(
             env=env,
-            graph=minimal_target_graph,
+            catalog=minimal_target_graph,
             requested=("c",),
         )
 

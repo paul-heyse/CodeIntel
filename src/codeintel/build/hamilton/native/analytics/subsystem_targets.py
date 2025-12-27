@@ -14,7 +14,8 @@ import logging
 from dataclasses import dataclass
 
 from codeintel.analytics.subsystems.materialize import SubsystemRows, build_subsystem_rows
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -36,12 +37,11 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, SubsystemRows)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, SubsystemRows)
 
 SUBSYSTEMS_TARGET_NAME = "subsystems"
 
@@ -88,7 +88,7 @@ def subsystems__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
 def subsystems__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     subsystems__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when subsystems should be skipped.
@@ -100,7 +100,7 @@ def subsystems__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SUBSYSTEMS_TARGET_NAME,
         hash_options=subsystems__hash_options,
     )
@@ -232,9 +232,9 @@ def subsystem_modules__rows(
 @codeintel_target(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
 def t__subsystems(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__subsystems__compute: SubsystemsComputeResult | None,
-    subsystems__table_materializations: dict[str, MaterializationMetadata],
+    subsystems__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Infer architectural subsystems.
 
@@ -242,12 +242,12 @@ def t__subsystems(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup and skip detection.
+    catalog
+        DAG catalog for metadata lookup and skip detection.
     t__subsystems__compute
         Computed subsystem rows and optional error.
     subsystems__table_materializations
-        Materialization metadata for subsystem tables.
+        Materialization results for subsystem tables.
 
     Returns
     -------
@@ -272,7 +272,7 @@ def t__subsystems(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SUBSYSTEMS_TARGET_NAME,
         ),
         artifact_materializations=None,

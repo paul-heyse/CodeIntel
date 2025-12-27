@@ -34,9 +34,9 @@ from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
@@ -57,7 +57,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.storage.gateway import StorageGateway
@@ -69,7 +68,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
-    TargetGraph,
+    DagCatalog,
     TargetRunRecord,
     DependencyCallsResult,
     EntrypointsResult,
@@ -130,7 +129,7 @@ def external_deps__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def external_deps__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     external_deps__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when external_deps should be skipped.
@@ -142,7 +141,7 @@ def external_deps__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         EXTERNAL_DEPS_TARGET_NAME,
         hash_options=external_deps__hash_options,
     )
@@ -167,7 +166,7 @@ def entrypoints__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def entrypoints__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     entrypoints__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when entrypoints should be skipped.
@@ -179,7 +178,7 @@ def entrypoints__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         ENTRYPOINTS_TARGET_NAME,
         hash_options=entrypoints__hash_options,
     )
@@ -219,16 +218,16 @@ def _build_inputs(
     )
 
     try:
-        catalog = registry.require(CatalogProvider).get()
+        catalog = registry.require(CatalogProvider)
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return None
 
-    module_map = dict(registry.require(ModuleMapProvider).module_map)
+    module_map = dict(registry.require(ModuleMapProvider))
     features_map: dict[int, FunctionAstFeatures] = {}
 
     try:
-        ast_data = registry.require(AstProvider).get()
+        ast_data = registry.require(AstProvider)
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to load function ASTs: %s", exc)
         return None
@@ -350,7 +349,7 @@ def external_deps__calls_rows(
 def external_deps__dependencies_rows(
     env: BuildEnv,
     gateway: StorageGateway,
-    m__analytics__external_dependency_calls: MaterializationMetadata,
+    m__analytics__external_dependency_calls: MaterializationResult,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.external_dependencies after calls are written.
 
@@ -359,11 +358,7 @@ def external_deps__dependencies_rows(
     tuple[tuple[object, ...], ...] | None
         Row tuples to materialize, or None when the calls write failed.
     """
-    meta = DuckDBMaterializationMetadata.from_mapping(
-        m__analytics__external_dependency_calls,
-        default_table_key=EXTERNAL_DEPENDENCY_CALLS_TABLE_KEY,
-    )
-    if meta.status != "succeeded":
+    if m__analytics__external_dependency_calls.status != "succeeded":
         return None
 
     result = compute_external_dependencies_pure(gateway, env.snapshot)
@@ -373,9 +368,9 @@ def external_deps__dependencies_rows(
 @codeintel_target(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
 def t__external_deps(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__call_graph: TargetRunRecord,
-    external_deps__table_materializations: dict[str, MaterializationMetadata],
+    external_deps__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """External library dependency analysis.
 
@@ -387,12 +382,12 @@ def t__external_deps(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__call_graph
         Upstream call graph record (must succeed for correct attribution).
     external_deps__table_materializations
-        Materialization metadata for external dependency tables.
+        Materialization results for external dependency tables.
 
     Returns
     -------
@@ -409,14 +404,14 @@ def t__external_deps(
     external_dependency_calls table.
     """
     if t__call_graph.status != "succeeded":
-        executor = NativeTargetExecutor.for_target(env, graph, EXTERNAL_DEPS_TARGET_NAME)
+        executor = NativeTargetExecutor.for_target(env, catalog, EXTERNAL_DEPS_TARGET_NAME)
         return executor.fail(
             RuntimeError(f"Upstream call_graph target failed: {t__call_graph.error}")
         )
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=EXTERNAL_DEPS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -459,15 +454,15 @@ def _build_entrypoint_inputs(
     )
 
     try:
-        catalog = registry.require(CatalogProvider).get()
+        catalog = registry.require(CatalogProvider)
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return None
 
-    module_map = registry.require(ModuleMapProvider).module_map
+    module_map = registry.require(ModuleMapProvider)
 
     try:
-        features_map = registry.require(FeaturesProvider).get()
+        features_map = registry.require(FeaturesProvider)
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to compute function features: %s", exc)
         features_map = {}
@@ -601,9 +596,9 @@ entrypoints__table_materializations = make_table_materializations_collector(
 @codeintel_target(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
 def t__entrypoints(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     entrypoints__upstream_error: str | None,
-    entrypoints__table_materializations: dict[str, MaterializationMetadata],
+    entrypoints__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """External entrypoint detection (HTTP, CLI, etc.).
 
@@ -613,13 +608,13 @@ def t__entrypoints(
         Record describing the materialization outcome.
     """
     if entrypoints__upstream_error is not None:
-        executor = NativeTargetExecutor.for_target(env, graph, ENTRYPOINTS_TARGET_NAME)
+        executor = NativeTargetExecutor.for_target(env, catalog, ENTRYPOINTS_TARGET_NAME)
         return executor.fail(RuntimeError(entrypoints__upstream_error))
 
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=ENTRYPOINTS_TARGET_NAME,
         ),
         artifact_materializations=None,

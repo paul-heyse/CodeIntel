@@ -9,7 +9,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -37,7 +38,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
@@ -60,7 +60,7 @@ class ToolRunContext:
     """Execution context for tool step helpers."""
 
     env: BuildEnv
-    graph: TargetGraph
+    catalog: DagCatalog
     target_name: str
     hash_options: InputHashOptions | None = None
     skip_reason: str | None = None
@@ -71,7 +71,7 @@ class ToolFinalizeContext:
     """Context for target finalization helpers."""
 
     env: BuildEnv
-    graph: TargetGraph
+    catalog: DagCatalog
     target_name: str
     hash_options: InputHashOptions | None = None
     change_delta: Mapping[str, object] | None = None
@@ -124,7 +124,7 @@ def run_tool_step(
     """
     executor = NativeTargetExecutor.for_target(
         context.env,
-        context.graph,
+        context.catalog,
         context.target_name,
         hash_options=context.hash_options,
     )
@@ -190,8 +190,8 @@ def finalize_target_from_materializations(
     context: ToolFinalizeContext,
     tool_step: HasExecutionResult | None,
     ingest_step: HasExecutionResult | None,
-    artifact_materializations: Mapping[str, MaterializationMetadata] | None,
-    table_materializations: Mapping[str, MaterializationMetadata] | None,
+    artifact_materializations: Mapping[str, MaterializationResult] | None,
+    table_materializations: Mapping[str, MaterializationResult] | None,
 ) -> TargetRunRecord:
     """Finalize a target from saver metadata with standard failure gating.
 
@@ -204,9 +204,9 @@ def finalize_target_from_materializations(
     ingest_step
         Ingest step output used to gate finalization.
     artifact_materializations
-        Materialization metadata for artifact outputs.
+        Materialization results for artifact outputs.
     table_materializations
-        Materialization metadata for table outputs.
+        Materialization results for table outputs.
 
     Returns
     -------
@@ -215,7 +215,7 @@ def finalize_target_from_materializations(
     """
     executor = NativeTargetExecutor.for_target(
         context.env,
-        context.graph,
+        context.catalog,
         context.target_name,
         hash_options=context.hash_options,
     )
@@ -232,7 +232,7 @@ def finalize_target_from_materializations(
 
     record_context = MaterializationRecordContext(
         env=context.env,
-        graph=context.graph,
+        catalog=context.catalog,
         target_name=context.target_name,
         change_delta=context.change_delta,
     )
@@ -464,21 +464,21 @@ def _attach_table_rows_node(
 def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
     def anchor_fn(**kwargs: object) -> TargetRunRecord:
         env = kwargs.get("env")
-        graph = kwargs.get("graph")
+        catalog = kwargs.get("catalog")
         if not isinstance(env, BuildEnv):
             msg = "Missing BuildEnv for target anchor"
             raise TypeError(msg)
-        if not isinstance(graph, TargetGraph):
-            msg = "Missing TargetGraph for target anchor"
+        if not isinstance(catalog, DagCatalog):
+            msg = "Missing DagCatalog for target anchor"
             raise TypeError(msg)
         tool_step = kwargs.get(inputs.run_node)
         ingest_step = kwargs.get(inputs.ingest_node) if inputs.ingest_node is not None else None
         artifact_materializations = cast(
-            "Mapping[str, MaterializationMetadata]",
+            "Mapping[str, MaterializationResult]",
             kwargs.get(inputs.artifact_collector_node),
         )
         table_materializations = cast(
-            "Mapping[str, MaterializationMetadata]",
+            "Mapping[str, MaterializationResult]",
             kwargs.get(inputs.table_collector_node),
         )
         hash_options = None
@@ -487,7 +487,7 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
         return finalize_target_from_materializations(
             context=ToolFinalizeContext(
                 env=env,
-                graph=graph,
+                catalog=catalog,
                 target_name=inputs.spec.target_name,
                 hash_options=hash_options,
             ),
@@ -504,9 +504,9 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
             annotation=BuildEnv,
         ),
         inspect.Parameter(
-            "graph",
+            "catalog",
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=TargetGraph,
+            annotation=DagCatalog,
         ),
         inspect.Parameter(
             inputs.run_node,
@@ -526,14 +526,14 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
         inspect.Parameter(
             inputs.artifact_collector_node,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=dict[str, MaterializationMetadata],
+            annotation=dict[str, MaterializationResult],
         )
     )
     params.append(
         inspect.Parameter(
             inputs.table_collector_node,
             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-            annotation=dict[str, MaterializationMetadata],
+            annotation=dict[str, MaterializationResult],
         )
     )
     if inputs.hash_options_node is not None:

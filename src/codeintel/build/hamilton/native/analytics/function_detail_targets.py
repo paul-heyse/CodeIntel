@@ -10,7 +10,7 @@ Each target follows the same pattern:
 
 1. A pure compute node returning row dicts (no persistence)
 2. A SaveToDecorator node that materializes rows to DuckDB
-3. A materialize node that converts materialization metadata to TargetRunRecord
+3. A materialize node that converts materialization results to TargetRunRecord
 
 Phase 4: Analytics domain migration with Hamilton-native DAG-visible I/O.
 """
@@ -29,7 +29,8 @@ from codeintel.analytics.functions.function_effects import (
 from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -53,14 +54,13 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.graphs.runtime import resolve_graph_runtime
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 FUNCTION_CONTRACTS_TARGET_NAME = "function_contracts"
 FUNCTION_EFFECTS_TARGET_NAME = "function_effects"
@@ -99,7 +99,7 @@ def function_contracts__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
 def function_contracts__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     function_contracts__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when function_contracts should be skipped.
@@ -111,7 +111,7 @@ def function_contracts__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         FUNCTION_CONTRACTS_TARGET_NAME,
         hash_options=function_contracts__hash_options,
     )
@@ -214,7 +214,7 @@ def t__function_contracts__compute(
 
         # Load catalog
         try:
-            catalog = registry.require(CatalogProvider).get()
+            catalog = registry.require(CatalogProvider)
         except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             return FunctionContractsResult(
@@ -224,7 +224,7 @@ def t__function_contracts__compute(
 
         # Load function ASTs
         try:
-            ast_data = registry.require(AstProvider).get()
+            ast_data = registry.require(AstProvider)
             function_ast_map = ast_data.function_ast_map
         except (RuntimeError, ValueError, OSError) as exc:
             log.warning("Failed to load function ASTs: %s", exc)
@@ -284,22 +284,22 @@ def function_contracts__rows(
 @codeintel_target(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
 def t__function_contracts(
     env: BuildEnv,
-    graph: TargetGraph,
-    function_contracts__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    function_contracts__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Infer function pre/postconditions.
 
-    Converts materialization metadata into a TargetRunRecord for the
+    Converts materialization results into a TargetRunRecord for the
     function_contracts target.
 
     Parameters
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     function_contracts__table_materializations
-        Materialization metadata keyed by table name.
+        Materialization results keyed by table name.
 
     Returns
     -------
@@ -309,7 +309,7 @@ def t__function_contracts(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=FUNCTION_CONTRACTS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -375,7 +375,7 @@ def t__function_effects__compute(
 
     try:
         try:
-            catalog = registry.require(CatalogProvider).get()
+            catalog = registry.require(CatalogProvider)
         except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             catalog = None
@@ -444,8 +444,8 @@ def function_effects__rows(
 @codeintel_target(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
 def t__function_effects(
     env: BuildEnv,
-    graph: TargetGraph,
-    function_effects__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    function_effects__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Analyze function purity and side effects.
 
@@ -457,7 +457,7 @@ def t__function_effects(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=FUNCTION_EFFECTS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -518,7 +518,7 @@ def function_effects__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
 def function_effects__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     function_effects__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when function_effects should be skipped.
@@ -530,7 +530,7 @@ def function_effects__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         FUNCTION_EFFECTS_TARGET_NAME,
         hash_options=function_effects__hash_options,
     )

@@ -1,6 +1,6 @@
 """Helpers for build-system unit tests.
 
-Use ``OutputContract`` / ``OutputTarget`` directly for defining targets in tests.
+Use ``OutputContract`` / ``TargetDescriptor`` directly for defining targets in tests.
 The contract is the source of truth for outputs.
 """
 
@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from codeintel.build.config import CONFIG_FILE_NAME, BuildConfig
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.targets import TargetDescriptor
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from codeintel.core.runtime.loader import load_runtime_settings
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
@@ -142,19 +144,16 @@ def write_build_config(project_root: Path, sections: Mapping[str, Mapping[str, A
 
 
 def sample_target_graph(
-    targets: Sequence[OutputTarget] | None = None,
-) -> TargetGraph:
-    """Build a small target graph for tests.
+    targets: Sequence[TargetDescriptor] | None = None,
+) -> DagCatalog:
+    """Build a small DAG catalog for tests.
 
     Returns
     -------
-    TargetGraph
-        Graph populated with default targets unless provided.
+    DagCatalog
+        Catalog populated with default targets unless provided.
     """
-    graph = TargetGraph()
-    for target in targets or _default_targets():
-        graph.register(target)
-    return graph
+    return build_catalog(targets=targets or _default_targets())
 
 
 @dataclass(frozen=True)
@@ -244,28 +243,28 @@ def _format_toml_value(value: object) -> str:
     raise TypeError(message)
 
 
-def _default_targets() -> tuple[OutputTarget, ...]:
-    ingestion_modules = OutputTarget(
+def _default_targets() -> tuple[TargetDescriptor, ...]:
+    ingestion_modules = make_target_descriptor(
         name="modules",
         module="ingestion",
         contract=contract_for_keys(("core.modules",)),
         description="Repository module index",
     )
-    ast_target = OutputTarget(
+    ast_target = make_target_descriptor(
         name="ast",
         module="ingestion",
         contract=contract_for_keys(("core.ast_nodes",)),
         dependencies=("modules",),
         description="AST extraction",
     )
-    goids_target = OutputTarget(
+    goids_target = make_target_descriptor(
         name="goids",
         module="graphs",
         contract=contract_for_keys(("core.goids",)),
         dependencies=("ast",),
         description="GOID construction",
     )
-    metrics_target = OutputTarget(
+    metrics_target = make_target_descriptor(
         name="function_metrics",
         module="analytics",
         contract=contract_for_keys(("analytics.function_metrics",)),

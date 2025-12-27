@@ -10,12 +10,9 @@ import importlib.util
 
 import pytest
 
+from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import dataframe_node, query_node
-from codeintel.build.hamilton.nodes.support_factory import (
-    SupportGenerationOptions,
-    build_support_module,
-)
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
 from tests._helpers.assertions import assert_target_ok
@@ -52,51 +49,38 @@ class TestLoaderNodeNaming:
             pytest.fail("query_node and dataframe_node should produce different names")
 
 
-class TestGeneratedModuleLoaderNodes:
-    """Tests for loader nodes in generated module."""
+class TestDriverLoaderNodes:
+    """Tests for loader nodes in the driver graph."""
 
     @staticmethod
     def test_generated_module_has_query_nodes() -> None:
-        """Verify generated module includes q__* nodes."""
-        module = build_support_module(
-            options=SupportGenerationOptions(include_loader_nodes=True),
-        )
-
-        if not hasattr(module, "QUERY_TO_NODE"):
-            pytest.fail("Module missing QUERY_TO_NODE mapping")
-
-        query_map = getattr(module, "QUERY_TO_NODE", {})
-        if not query_map:
-            pytest.fail("QUERY_TO_NODE should contain mappings")
+        """Verify driver graph includes q__* nodes."""
+        runtime = build_driver()
+        node_names = set(runtime.dr.graph.nodes)
+        expected = query_node("analytics.function_metrics")
+        if expected not in node_names:
+            pytest.fail(f"Missing query node {expected}")
 
     @staticmethod
     def test_generated_module_has_dataframe_nodes() -> None:
-        """Verify generated module includes df__* nodes."""
-        module = build_support_module(
-            options=SupportGenerationOptions(include_loader_nodes=True),
-        )
-
-        if not hasattr(module, "DATAFRAME_TO_NODE"):
-            pytest.fail("Module missing DATAFRAME_TO_NODE mapping")
-
-        df_map = getattr(module, "DATAFRAME_TO_NODE", {})
-        if not df_map:
-            pytest.fail("DATAFRAME_TO_NODE should contain mappings")
+        """Verify driver graph includes df__* nodes."""
+        runtime = build_driver()
+        node_names = set(runtime.dr.graph.nodes)
+        expected = dataframe_node("analytics.function_metrics")
+        if expected not in node_names:
+            pytest.fail(f"Missing dataframe node {expected}")
 
     @staticmethod
-    def test_loader_nodes_disabled_by_default() -> None:
+    def test_loader_nodes_disabled_by_config() -> None:
         """Verify loader nodes are not generated when flag is False."""
-        module = build_support_module(
-            options=SupportGenerationOptions(include_loader_nodes=False),
-        )
-
-        query_map = getattr(module, "QUERY_TO_NODE", {})
-        df_map = getattr(module, "DATAFRAME_TO_NODE", {})
-
-        if query_map:
-            pytest.fail("QUERY_TO_NODE should be empty when include_loader_nodes=False")
-        if df_map:
-            pytest.fail("DATAFRAME_TO_NODE should be empty when include_loader_nodes=False")
+        runtime = build_driver(config={"ci_support_include_loader_nodes": False})
+        node_names = set(runtime.dr.graph.nodes)
+        query_name = query_node("analytics.function_metrics")
+        dataframe_name = dataframe_node("analytics.function_metrics")
+        if query_name in node_names:
+            pytest.fail("Query nodes should be disabled when include_loader_nodes=False")
+        if dataframe_name in node_names:
+            pytest.fail("Dataframe nodes should be disabled when include_loader_nodes=False")
 
 
 class TestBuildEnvValidateOutputsFlag:

@@ -21,7 +21,6 @@ def validate_graph() -> GraphValidationResult:
     runtime = build_driver()
     return validate_nodes(
         runtime.dr.graph.nodes,
-        base_graph=runtime.graph,
         enforce_compute_io_purity=True,
     )
 

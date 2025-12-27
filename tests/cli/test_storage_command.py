@@ -34,9 +34,9 @@ def test_storage_validate_macros_failure(cli_project_harness: CLIProjectHarness)
     db_path = cli_project_harness.ctx.db_path
     gateway = cli_project_harness.ctx.gateway
     con = expect_is_not_none(gateway, message="Expected gateway to be provisioned").con
-    con.execute("DELETE FROM metadata.dataset_schema_registry")
-    row = con.execute("SELECT COUNT(*) FROM metadata.dataset_schema_registry").fetchone()
-    row = expect_is_not_none(row, message="Expected dataset_schema_registry count row")
+    con.execute("DELETE FROM metadata.table_schema_registry")
+    row = con.execute("SELECT COUNT(*) FROM metadata.table_schema_registry").fetchone()
+    row = expect_is_not_none(row, message="Expected table_schema_registry count row")
     expect_equal(row[0], 0)
 
     result = cli_project_harness.invoke(["storage", "validate-macros", "--db-path", str(db_path)])

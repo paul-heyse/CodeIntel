@@ -18,7 +18,8 @@ from codeintel.analytics.resources import ProviderRegistryOptions, build_registr
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.semantic_roles.core import SemanticRolesResult, build_semantic_roles_rows
 from codeintel.analytics.testing.profiles.builder import build_test_profile_result
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -40,7 +41,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.testing.profiles.builder import TestProfileBuildResult
 
 log = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, SemanticRolesResult)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, SemanticRolesResult)
 
 SEMANTIC_ROLES_TARGET_NAME = "semantic_roles"
 TEST_PROFILE_TARGET_NAME = "test_profile"
@@ -95,7 +95,7 @@ def semantic_roles__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def semantic_roles__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     semantic_roles__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when semantic_roles should be skipped.
@@ -107,7 +107,7 @@ def semantic_roles__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SEMANTIC_ROLES_TARGET_NAME,
         hash_options=semantic_roles__hash_options,
     )
@@ -188,7 +188,7 @@ def t__semantic_roles__compute(
 
     try:
         try:
-            catalog = registry.require(CatalogProvider).get()
+            catalog = registry.require(CatalogProvider)
             module_by_path = dict(catalog.catalog().module_by_path)
         except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
@@ -275,22 +275,22 @@ def semantic_roles__modules_rows(
 @codeintel_target(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
 def t__semantic_roles(
     env: BuildEnv,
-    graph: TargetGraph,
-    semantic_roles__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    semantic_roles__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Classify semantic roles (handler, utility, etc.).
 
-    Combines materialization metadata from both table writes into a
+    Combines materialization results from both table writes into a
     single TargetRunRecord for the semantic_roles target.
 
     Parameters
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     semantic_roles__table_materializations
-        Materialization metadata for semantic_roles tables.
+        Materialization results for semantic_roles tables.
 
     Returns
     -------
@@ -300,7 +300,7 @@ def t__semantic_roles(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SEMANTIC_ROLES_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -365,7 +365,7 @@ def test_profile__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def test_profile__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     test_profile__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when test_profile should be skipped.
@@ -377,7 +377,7 @@ def test_profile__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         TEST_PROFILE_TARGET_NAME,
         hash_options=test_profile__hash_options,
     )
@@ -447,9 +447,9 @@ def test_profile__rows(
 @codeintel_target(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
 def t__test_profile(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__test_profile__compute: TestProfileComputeResult,
-    test_profile__table_materializations: dict[str, MaterializationMetadata],
+    test_profile__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Build per-test profiles with coverage and characteristics.
 
@@ -476,7 +476,7 @@ def t__test_profile(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=TEST_PROFILE_TARGET_NAME,
         ),
         artifact_materializations=None,

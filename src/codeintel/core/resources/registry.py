@@ -12,17 +12,27 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, TypeGuard, TypeVar, cast, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+    TypeGuard,
+    TypeVar,
+    overload,
+    runtime_checkable,
+)
 
 from codeintel.core.resources.protocol import ResourceError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from codeintel.core.resources.protocol import LazyResource
 log = logging.getLogger(__name__)
 
 T = TypeVar("T")
 K = TypeVar("K")
+R = TypeVar("R")
 
 
 @runtime_checkable
@@ -448,7 +458,13 @@ class ResourceRegistry:
             raise KeyError(message)
         return provider
 
-    def require(self, resource_type: type[T]) -> T:
+    @overload
+    def require(self, resource_type: type[LazyResource[R]]) -> R: ...
+
+    @overload
+    def require(self, resource_type: type[T]) -> T: ...
+
+    def require(self, resource_type: type[object]) -> object:
         """Get the resource value, loading if necessary.
 
         Calls `.get()` on the provider to retrieve the actual resource value.
@@ -478,10 +494,16 @@ class ResourceRegistry:
         provider = entry.provider
 
         if _is_gettable(provider):
-            return cast("T", provider.get())
-        return cast("T", provider)
+            return provider.get()
+        return provider
 
-    def require_or_none(self, resource_type: type[T]) -> T | None:
+    @overload
+    def require_or_none(self, resource_type: type[LazyResource[R]]) -> R | None: ...
+
+    @overload
+    def require_or_none(self, resource_type: type[T]) -> T | None: ...
+
+    def require_or_none(self, resource_type: type[object]) -> object | None:
         """Get the resource value or None if unavailable.
 
         This method never raises for resource-related errors. If the resource
@@ -508,10 +530,10 @@ class ResourceRegistry:
 
         if _is_gettable(provider):
             try:
-                return cast("T", provider.get())
+                return provider.get()
             except ResourceError:
                 return None
-        return cast("T | None", provider)
+        return provider
 
     def require_by_name(self, name: str) -> object:
         """Get the resource value by name, loading if necessary.

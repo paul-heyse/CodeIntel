@@ -98,8 +98,8 @@ class TestDriverFactory:
         runtime = build_driver(config={"profile": "test"})
         if runtime.dr is None:
             pytest.fail("Driver runtime missing dr")
-        if runtime.graph is None:
-            pytest.fail("Driver runtime missing graph")
+        if runtime.catalog is None:
+            pytest.fail("Driver runtime missing catalog")
 
     @staticmethod
     def test_driver_has_expected_nodes() -> None:

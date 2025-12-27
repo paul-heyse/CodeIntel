@@ -17,7 +17,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.patterns import (
@@ -40,7 +41,6 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.targets import TargetGraph
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
 from codeintel.ingestion.compute.ast_extract import AstExtractStep
 from codeintel.ingestion.compute.cst_extract import CstExtractStep
@@ -51,8 +51,8 @@ log = logging.getLogger(__name__)
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
-    MaterializationMetadata,
-    TargetGraph,
+    MaterializationResult,
+    DagCatalog,
     TargetRunRecord,
     ModuleRecord,
 )
@@ -254,7 +254,7 @@ def ast__hash_options(
 @tag_tool(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
     ast__hash_options: InputHashOptions,
@@ -272,7 +272,7 @@ def t__ast__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=AST_TARGET_NAME,
         hash_options=ast__hash_options,
         skip_reason="AST extraction skipped",
@@ -408,15 +408,15 @@ def ast__metric_rows(
 
 @tag_helper(domain="ingestion", target=AST_TARGET_NAME)
 def ast__table_materializations(
-    m__core__ast_nodes: MaterializationMetadata,
-    m__core__ast_metrics: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect AST materialization metadata.
+    m__core__ast_nodes: MaterializationResult,
+    m__core__ast_metrics: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect AST materialization results.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {
         AST_NODES_TABLE_KEY: m__core__ast_nodes,
@@ -427,7 +427,7 @@ def ast__table_materializations(
 @tag_helper(domain="ingestion", target=AST_TARGET_NAME)
 def ast__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     ast__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the AST target.
@@ -439,7 +439,7 @@ def ast__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=AST_TARGET_NAME,
         hash_options=ast__hash_options,
     )
@@ -457,7 +457,7 @@ def t__ast(
     ast__finalize_context: ToolFinalizeContext,
     t__ast__run: AstToolOutput,
     t__ast__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    ast__table_materializations: dict[str, MaterializationMetadata],
+    ast__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Python AST extraction and metrics.
 
@@ -501,7 +501,7 @@ def cst__hash_options(
 @tag_tool(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
     cst__hash_options: InputHashOptions,
@@ -519,7 +519,7 @@ def t__cst__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CST_TARGET_NAME,
         hash_options=cst__hash_options,
         skip_reason="CST extraction skipped",
@@ -611,14 +611,14 @@ def cst__node_rows(
 
 @tag_helper(domain="ingestion", target=CST_TARGET_NAME)
 def cst__table_materializations(
-    m__core__cst_nodes: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect CST materialization metadata.
+    m__core__cst_nodes: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect CST materialization results.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {CST_NODES_TABLE_KEY: m__core__cst_nodes}
 
@@ -626,7 +626,7 @@ def cst__table_materializations(
 @tag_helper(domain="ingestion", target=CST_TARGET_NAME)
 def cst__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     cst__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the CST target.
@@ -638,7 +638,7 @@ def cst__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CST_TARGET_NAME,
         hash_options=cst__hash_options,
     )
@@ -649,7 +649,7 @@ def t__cst(
     cst__finalize_context: ToolFinalizeContext,
     t__cst__run: CstToolOutput,
     t__cst__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    cst__table_materializations: dict[str, MaterializationMetadata],
+    cst__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Concrete syntax tree extraction.
 
@@ -693,7 +693,7 @@ def docstrings__hash_options(
 @tag_tool(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
     docstrings__hash_options: InputHashOptions,
@@ -711,7 +711,7 @@ def t__docstrings__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=DOCSTRINGS_TARGET_NAME,
         hash_options=docstrings__hash_options,
         skip_reason="Docstrings skipped",
@@ -803,14 +803,14 @@ def docstrings__rows(
 
 @tag_helper(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def docstrings__table_materializations(
-    m__core__docstrings: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect docstrings materialization metadata.
+    m__core__docstrings: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect docstrings materialization results.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of table keys to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of table keys to materialization results.
     """
     return {DOCSTRINGS_TABLE_KEY: m__core__docstrings}
 
@@ -818,7 +818,7 @@ def docstrings__table_materializations(
 @tag_helper(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def docstrings__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     docstrings__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the docstrings target.
@@ -830,7 +830,7 @@ def docstrings__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=DOCSTRINGS_TARGET_NAME,
         hash_options=docstrings__hash_options,
     )
@@ -841,7 +841,7 @@ def t__docstrings(
     docstrings__finalize_context: ToolFinalizeContext,
     t__docstrings__run: DocstringsToolOutput,
     t__docstrings__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    docstrings__table_materializations: dict[str, MaterializationMetadata],
+    docstrings__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Docstring extraction and parsing.
 

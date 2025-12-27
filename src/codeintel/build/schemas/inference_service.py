@@ -36,10 +36,10 @@ from codeintel.storage.gateway import open_inference_gateway
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
-    from codeintel.build.targets import TargetGraph
     from codeintel.storage.gateway import StorageGateway
     from codeintel.storage.gateway.protocol import DuckDBConnection
 
@@ -61,7 +61,7 @@ class _ComputeInferenceJob:
     table_key: str
     qparams: frozenset[str]
     requires_env: bool
-    requires_graph: bool
+    requires_catalog: bool
 
 
 def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
@@ -97,11 +97,10 @@ def _schema_inference_providers() -> Providers:
     return create_default_providers(ToolsConfig.default())
 
 
-def _producers_by_table_key(graph: TargetGraph) -> dict[str, list[str]]:
+def _producers_by_table_key(catalog: DagCatalog) -> dict[str, list[str]]:
     mapping: dict[str, list[str]] = {}
-    for target in graph.all_targets:
-        for table_key in target.contract.table_keys:
-            mapping.setdefault(table_key, []).append(target.name)
+    for table_key, output in catalog.table_outputs.items():
+        mapping.setdefault(table_key, []).append(output.producer_target)
     return mapping
 
 
@@ -157,7 +156,7 @@ def _inference_requirements(
 
     qparams: set[str] = set()
     requires_env = False
-    requires_graph = False
+    requires_catalog = False
     visited: set[str] = set()
     stack = list(node.dependencies)
 
@@ -171,8 +170,8 @@ def _inference_requirements(
             requires_env = True
             continue
 
-        if dep.name == "graph":
-            requires_graph = True
+        if dep.name == "catalog":
+            requires_catalog = True
             continue
 
         if dep.name.startswith("q__"):
@@ -182,7 +181,7 @@ def _inference_requirements(
         if dep.user_defined:
             msg = (
                 f"Compute node {compute_name} depends on unsupported input {dep.name}; "
-                "schema inference supports only env, graph, and q__ inputs."
+                "schema inference supports only env, catalog, and q__ inputs."
             )
             raise ValueError(msg)
 
@@ -203,7 +202,7 @@ def _inference_requirements(
 
         stack.extend(dep.dependencies)
 
-    return qparams, requires_env, requires_graph
+    return qparams, requires_env, requires_catalog
 
 
 def _default_build_settings() -> BuildSettings:
@@ -248,11 +247,13 @@ def _infer_table_schema_for_compute(
         harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
         overrides: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         inputs: dict[str, object] = {}
-        inputs["env"] = _inference_env(
-            gateway=gateway,
-            force_targets=frozenset({job.target_name}),
-        )
-        inputs["graph"] = runtime.graph
+        if job.requires_env:
+            inputs["env"] = _inference_env(
+                gateway=gateway,
+                force_targets=frozenset({job.target_name}),
+            )
+        if job.requires_catalog:
+            inputs["catalog"] = runtime.catalog
 
         out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
         expr_obj = out[job.exec_name]
@@ -292,9 +293,8 @@ def infer_schema_for_table_key(
         If the table_key is not inferable from any native compute node.
     """
     runtime = _runtime_auto()
-    graph = runtime.graph
 
-    producers = _producers_by_table_key(graph).get(table_key)
+    producers = _producers_by_table_key(runtime.catalog).get(table_key)
     if not producers:
         msg = f"Unknown table_key (no producing target): {table_key}"
         raise KeyError(msg)
@@ -306,7 +306,7 @@ def infer_schema_for_table_key(
         exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
 
         _ = compute_fn
-        qparams, requires_env, requires_graph = _inference_requirements(
+        qparams, requires_env, requires_catalog = _inference_requirements(
             runtime=runtime,
             compute_name=compute_name,
         )
@@ -317,7 +317,7 @@ def infer_schema_for_table_key(
             table_key=table_key,
             qparams=frozenset(qparams),
             requires_env=requires_env,
-            requires_graph=requires_graph,
+            requires_catalog=requires_catalog,
         )
         return _infer_table_schema_for_compute(
             runtime=runtime,
@@ -421,13 +421,13 @@ class HamiltonSchemaProvider(SchemaProvider):
         self._cache.update(schemas)
 
 
-def inferable_native_table_keys(*, graph: TargetGraph) -> frozenset[str]:
+def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
     """Return output table keys that appear inferable from native compute nodes.
 
     Parameters
     ----------
-    graph
-        Target graph defining outputs for each build target.
+    catalog
+        DAG catalog defining outputs for each build target.
 
     Returns
     -------
@@ -436,7 +436,7 @@ def inferable_native_table_keys(*, graph: TargetGraph) -> frozenset[str]:
     """
     runtime = _runtime_auto()
     inferable: set[str] = set()
-    for target in graph.all_targets:
+    for target in catalog.all_targets:
         compute_name = compute_node(target.name)
         node = runtime.dr.graph.nodes.get(compute_name)
         if node is None or not node.originating_functions:
@@ -448,7 +448,9 @@ def inferable_native_table_keys(*, graph: TargetGraph) -> frozenset[str]:
             _inference_requirements(runtime=runtime, compute_name=compute_name)
         except ValueError:
             continue
-        inferable.update(target.contract.table_keys)
+        inferable.update(
+            output.key for output in catalog.table_outputs_by_target.get(target.name, ())
+        )
     return frozenset(inferable)
 
 
@@ -457,8 +459,7 @@ def _build_inference_jobs(
     runtime: HamiltonRuntime,
     table_keys: list[str],
 ) -> list[_ComputeInferenceJob]:
-    graph = runtime.graph
-    producers_by_key = _producers_by_table_key(graph)
+    producers_by_key = _producers_by_table_key(runtime.catalog)
     jobs: list[_ComputeInferenceJob] = []
     for table_key in table_keys:
         producers = producers_by_key.get(table_key)
@@ -475,7 +476,7 @@ def _build_inference_jobs(
         compute_name = compute_node(target_name)
         _ = compute_fn
         exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
-        qparams, requires_env, requires_graph = _inference_requirements(
+        qparams, requires_env, requires_catalog = _inference_requirements(
             runtime=runtime,
             compute_name=compute_name,
         )
@@ -487,7 +488,7 @@ def _build_inference_jobs(
                 table_key=table_key,
                 qparams=frozenset(qparams),
                 requires_env=requires_env,
-                requires_graph=requires_graph,
+                requires_catalog=requires_catalog,
             )
         )
     return jobs
@@ -509,8 +510,8 @@ def _infer_job_schema(
     overrides = dict(base_overrides)
     if job.requires_env:
         inputs["env"] = env
-    if job.requires_graph:
-        inputs["graph"] = runtime.graph
+    if job.requires_catalog:
+        inputs["catalog"] = runtime.catalog
 
     out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
     expr_obj = out[job.exec_name]
@@ -618,20 +619,20 @@ class SchemaInferenceService:
         return infer_table_schemas(table_keys, declared_provider=declared_provider)
 
     @staticmethod
-    def inferable_table_keys(*, graph: TargetGraph) -> frozenset[str]:
-        """Return inferable table keys for a target graph.
+    def inferable_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
+        """Return inferable table keys for a DAG catalog.
 
         Parameters
         ----------
-        graph
-            Target graph defining outputs for each build target.
+        catalog
+            DAG catalog defining outputs for each build target.
 
         Returns
         -------
         frozenset[str]
             Output table keys inferred from native compute nodes.
         """
-        return inferable_native_table_keys(graph=graph)
+        return inferable_native_table_keys(catalog=catalog)
 
 
 class _SchemaInferenceServiceHolder(SingletonHolder["SchemaInferenceService"]):

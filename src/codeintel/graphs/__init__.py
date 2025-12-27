@@ -29,8 +29,8 @@ from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.graphs.compute.metrics import centrality
 
 
-graph = get_target_metadata_service().system.graph
-graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
+catalog = get_target_metadata_service().system.catalog
+graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
 
 pagerank = centrality.compute_pagerank(call_graph)

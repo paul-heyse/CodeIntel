@@ -57,10 +57,10 @@ def _get_graph_targets() -> list[tuple[str, str, tuple[str, ...]]]:
     list[tuple[str, str, tuple[str, ...]]]
         List of (name, description, dependencies) for each graph target.
     """
-    graph = get_target_system().graph
+    catalog = get_target_system().catalog
     return [
         (t.name, t.description or f"Graph target: {t.name}", t.dependencies)
-        for t in graph.all_targets
+        for t in catalog.all_targets
         if t.module == "graphs"
     ]
 
@@ -185,8 +185,8 @@ class GraphTargetsList(Command[GraphTargetsResult]):
 
         LOG.info("Listing graph targets (names=%s)", names_set)
 
-        graph = get_target_system().graph
-        targets = [t for t in graph.all_targets if t.module == "graphs"]
+        catalog = get_target_system().catalog
+        targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         if names_set:
             targets = [t for t in targets if t.name in names_set]
@@ -240,15 +240,15 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
 
         LOG.info("Planning graph targets (names=%s)", self.names)
 
-        graph = get_target_system().graph
-        graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
+        catalog = get_target_system().catalog
+        graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         if self.names:
             names_set = set(self.names)
             graph_targets = [t for t in graph_targets if t.name in names_set]
 
         target_names = [t.name for t in graph_targets]
-        ordered = graph.topological_order(target_names) if target_names else ()
+        ordered = catalog.closure(tuple(target_names)) if target_names else ()
 
         stages = [
             GraphPlanStage(
@@ -312,8 +312,8 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
         _ = ctx
         names_set = set(self.names) if self.names else None
 
-        graph = get_target_system().graph
-        graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
+        catalog = get_target_system().catalog
+        graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         available_names = {t.name for t in graph_targets}
 
@@ -326,7 +326,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
 
         if self.plan:
             target_names = [t.name for t in graph_targets]
-            ordered = graph.topological_order(target_names) if target_names else ()
+            ordered = catalog.closure(tuple(target_names)) if target_names else ()
 
             if self.dependency_policy == DependencyPolicy.LENIENT:
                 ordered = tuple(name for name in ordered if name in available_names)
@@ -395,15 +395,15 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
         _ = ctx
         names_set = set(self.names) if self.names else None
 
-        graph = get_target_system().graph
-        graph_targets = [t for t in graph.all_targets if t.module == "graphs"]
+        catalog = get_target_system().catalog
+        graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         if names_set:
             graph_targets = [t for t in graph_targets if t.name in names_set]
 
         if self.plan:
             target_names = [t.name for t in graph_targets]
-            ordered = graph.topological_order(target_names) if target_names else ()
+            ordered = catalog.closure(tuple(target_names)) if target_names else ()
             stages = [
                 GraphPlanStage(
                     stage=1,

@@ -153,7 +153,10 @@ def resolve_tools(
 def _coerce_tool(tool: ToolName | str) -> ToolName:
     if isinstance(tool, ToolName):
         return tool
-    return ToolName(str(tool))
+    raw = str(tool)
+    if raw == "scip":
+        raw = ToolName.SCIP_PYTHON.value
+    return ToolName(raw)
 
 
 def _env_path(env_var: str) -> Path | None:

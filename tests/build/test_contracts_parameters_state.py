@@ -9,12 +9,11 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import ArtifactSpec, OutputContract, TableSchema
+from codeintel.build.contracts import ArtifactSpec, OutputContract, TableOutputDescriptor
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.parameters import ParameterError, TargetParameters
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator, TargetState
-from codeintel.build.targets import OutputTarget, TargetGraph
-from codeintel.config.datasets.primitives import Column
+from codeintel.build.targets import TargetDescriptor
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from tests._helpers.assertions import (
@@ -25,6 +24,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.build import ManifestParams, sample_manifest
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 
 if TYPE_CHECKING:
@@ -79,15 +79,15 @@ def _make_gateway(manifests: Mapping[str, object]) -> StorageGateway:
     return cast("StorageGateway", SimpleNamespace(build=FakeBuildStore(manifests)))
 
 
-def _make_target(name: str, dependencies: tuple[str, ...] = ()) -> OutputTarget:
-    """Create a minimal OutputTarget for tests.
+def _make_target(name: str, dependencies: tuple[str, ...] = ()) -> TargetDescriptor:
+    """Create a minimal TargetDescriptor for tests.
 
     Returns
     -------
-    OutputTarget
+    TargetDescriptor
         Target with provided dependencies.
     """
-    return OutputTarget(
+    return make_target_descriptor(
         name=name,
         module="analytics",
         contract=contract_for_keys((f"core.{name}",)),
@@ -110,7 +110,7 @@ def _snapshot() -> SnapshotRef:
 
 def test_output_contract_accessors_and_validation() -> None:
     """OutputContract exposes keys, lookups, and detects duplicates."""
-    table = TableSchema(schema="core", name="items", columns=[Column("id", "INTEGER")])
+    table = TableOutputDescriptor(table_key="core.items")
     artifact = ArtifactSpec(name="index", path_template="{build_dir}/index.scip")
     contract = OutputContract(tables=(table,), artifacts=(artifact,))
 
@@ -130,9 +130,9 @@ def test_output_contract_accessors_and_validation() -> None:
     expect_true("Duplicate table key" in errors[0])
     expect_true(any("Duplicate artifact name" in err for err in errors))
 
-    empty_columns = OutputContract(tables=(TableSchema(schema="core", name="empty", columns=[]),))
-    empty_errors = empty_columns.validate()
-    expect_true(any("has no columns" in err for err in empty_errors))
+    invalid_keys = OutputContract(tables=(TableOutputDescriptor(table_key="coreitems"),))
+    invalid_errors = invalid_keys.validate()
+    expect_true(any("invalid key" in err for err in invalid_errors))
 
 
 def test_target_parameters_access_and_merge() -> None:
@@ -181,10 +181,9 @@ def test_state_validator_missing_and_current() -> None:
         params=ManifestParams(input_hash=current_hash),
     )
     gateway = _make_gateway({"single": manifest})
-    graph = TargetGraph()
-    graph.register(target)
+    catalog = build_catalog(targets=(target,))
     validator = StateValidator(
-        graph,
+        catalog,
         gateway,
         snapshot,
         options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
@@ -197,7 +196,7 @@ def test_state_validator_missing_and_current() -> None:
     expect_is_none(state.blocking_reason)
 
     missing_validator = StateValidator(
-        graph,
+        catalog,
         _make_gateway({}),
         snapshot,
         options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
@@ -215,11 +214,9 @@ def test_state_validator_stale_and_blocked_propagation() -> None:
 
     root_manifest = replace(sample_manifest(target="root"), input_hash="old")
     manifests = {"root": root_manifest, "leaf": sample_manifest("leaf")}
-    graph = TargetGraph()
-    graph.register(root)
-    graph.register(leaf)
+    catalog = build_catalog(targets=(root, leaf))
     validator = StateValidator(
-        graph,
+        catalog,
         _make_gateway(manifests),
         snapshot,
         options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),

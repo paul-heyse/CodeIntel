@@ -11,7 +11,6 @@ from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
 from codeintel.build.hamilton.graph_validation import validate_graph
-from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import Providers, create_default_providers
 from codeintel.build.target_metadata import get_target_metadata_service
@@ -418,20 +417,24 @@ class HamiltonBuildHarness:
             If the resolved output inventory diverges from declared contracts.
         """
         service = get_target_metadata_service()
-        graph = service.system.graph
-        derived = derive_target_outputs_from_savers(service.system.runtime)
+        catalog = service.system.catalog
         issues: list[str] = []
 
-        for target in graph.all_targets:
+        for target in catalog.all_targets:
             expected_tables = tuple(sorted(target.contract.table_keys))
             expected_artifacts = tuple(sorted(target.contract.artifact_names))
             expected_templates = {
                 artifact.name: artifact.path_template for artifact in target.contract.artifacts
             }
 
-            observed_tables = tuple(sorted(derived.datasets_by_target.get(target.name, ())))
-            observed_artifacts = tuple(sorted(derived.artifacts_by_target.get(target.name, ())))
-            observed_templates = derived.artifact_templates_by_target.get(target.name, {})
+            table_outputs = catalog.table_outputs_by_target.get(target.name, ())
+            artifact_outputs = catalog.artifact_outputs_by_target.get(target.name, ())
+
+            observed_tables = tuple(sorted(output.key for output in table_outputs))
+            observed_artifacts = tuple(sorted(output.key for output in artifact_outputs))
+            observed_templates = {
+                output.key: output.artifact_path_template for output in artifact_outputs
+            }
 
             if expected_tables != observed_tables:
                 issues.append(

@@ -190,9 +190,9 @@
 
   * Warehouse façade resolution: `src/codeintel/build/hamilton/env.py :: BuildEnv.warehouse` (uses `storage.warehouse` when `storage` present, else wraps gateway)
   * Manifest service shortcut: `src/codeintel/build/hamilton/env.py :: BuildEnv.manifest_service`
-* Materialization metadata boundary (saver metadata nodes):
+* Materialization result boundary (saver metadata nodes):
 
-  * `src/codeintel/build/hamilton/boundary_types.py :: MaterializationMetadata`
+  * `src/codeintel/build/hamilton/boundary_types.py :: MaterializationResult`
   * Saver tags built in: `src/codeintel/build/hamilton/save_to.py :: _build_saver_tags(...)`
 * DuckDB writes:
 

@@ -11,7 +11,7 @@ Hooks are composable via Hamilton's Builder.with_adapters() pattern.
 Example
 -------
 >>> from codeintel.build.hamilton.hooks import build_hooks
->>> hooks = build_hooks(run_id, writer, graph)
+>>> hooks = build_hooks(run_id, writer, catalog)
 >>> driver = Builder().with_modules(modules).with_adapters(*hooks).build()
 >>> # After execution, get validation summary
 >>> contract_hook = next(h for h in hooks if isinstance(h, ContractEnforcementHook))
@@ -63,8 +63,8 @@ from codeintel.build.hamilton.run_records import (
 )
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.run_writer import BuildRunWriter
-    from codeintel.build.targets import TargetGraph
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +82,7 @@ class HookOptions:
 def build_hooks(
     run_id: str,
     writer: BuildRunWriter,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     *,
     options: HookOptions | None = None,
 ) -> list[object]:
@@ -97,8 +97,8 @@ def build_hooks(
         Build run identifier for telemetry grouping.
     writer
         Build run writer used for persistence operations.
-    graph
-        Target graph for contract enforcement lookups.
+    catalog
+        DAG catalog for contract enforcement lookups.
     options
         Hook options. When omitted, uses the defaults from `HookOptions`.
 
@@ -115,15 +115,15 @@ def build_hooks(
 
     Examples
     --------
-    >>> hooks = build_hooks("run-123", writer, graph)
+    >>> hooks = build_hooks("run-123", writer, catalog)
     >>> len(hooks)
     2  # telemetry + validation
 
-    >>> hooks = build_hooks("run-123", writer, graph, options=HookOptions(strict_contracts=True))
+    >>> hooks = build_hooks("run-123", writer, catalog, options=HookOptions(strict_contracts=True))
     >>> len(hooks)
     2  # telemetry + strict validation
 
-    >>> hooks = build_hooks("run-123", writer, graph, options=HookOptions(enable_progress=True))
+    >>> hooks = build_hooks("run-123", writer, catalog, options=HookOptions(enable_progress=True))
     >>> len(hooks)
     3  # telemetry + validation + progress
     """
@@ -137,7 +137,7 @@ def build_hooks(
     # Enable validation by default (captures @check_output_custom results)
     # Use strict mode if strict_contracts is True
     if options.enable_validation or options.strict_contracts:
-        hooks.append(ContractEnforcementHook(graph, strict=options.strict_contracts))
+        hooks.append(ContractEnforcementHook(catalog, strict=options.strict_contracts))
 
     if options.enable_progress:
         hooks.append(create_progress_hook(options.progress_desc))

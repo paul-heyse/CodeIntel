@@ -22,7 +22,11 @@ from typing import TYPE_CHECKING, Literal, Self
 
 from codeintel.build.hamilton import run_record_utils as run_utils
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
+from codeintel.build.hamilton.native.outputs import (
+    expected_artifacts,
+    expected_datasets,
+    expected_table_keys_for_target,
+)
 from codeintel.build.hashing import (
     InputHashOptions,
     compute_input_hash,
@@ -36,8 +40,8 @@ from codeintel.core.hamilton.records import TargetRunRecord
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -51,10 +55,11 @@ should_skip_native_target = run_utils.should_skip_native_target
 
 def _validate_strict_row_counts(
     *,
-    target: OutputTarget,
+    target: TargetDescriptor,
     row_counts: dict[str, int] | None,
 ) -> None:
-    if not target.table_keys:
+    expected_table_keys = expected_table_keys_for_target(target.name)
+    if not expected_table_keys:
         if row_counts:
             msg = (
                 "Strict contracts require empty row_counts for artifact-only targets: "
@@ -66,17 +71,17 @@ def _validate_strict_row_counts(
     if row_counts is None:
         msg = (
             "Strict contracts require row_counts for table-producing targets: "
-            f"target={target.name} table_keys={target.table_keys}"
+            f"target={target.name} table_keys={expected_table_keys}"
         )
         raise ValueError(msg)
 
-    expected_keys = set(target.table_keys)
+    expected_keys = set(expected_table_keys)
     actual_keys = set(row_counts)
     if expected_keys != actual_keys:
         missing = sorted(expected_keys - actual_keys)
         extra = sorted(actual_keys - expected_keys)
         msg = (
-            "Strict contracts require row_counts keys to exactly match contract table_keys: "
+            "Strict contracts require row_counts keys to exactly match expected table keys: "
             f"target={target.name} missing={missing} extra={extra}"
         )
         raise ValueError(msg)
@@ -92,7 +97,7 @@ def _validate_strict_row_counts(
 
 def compute_target_input_hash(
     *,
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     settings: BuildSettings,
@@ -123,7 +128,7 @@ def compute_target_input_hash(
 
 def compute_target_input_hash_with_deps(
     *,
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     settings: BuildSettings,
@@ -182,7 +187,7 @@ class RunRecordInputs:
 class RunRecordBuilder:
     """Builder for TargetRunRecord instances."""
 
-    target: OutputTarget
+    target: TargetDescriptor
     status: Literal["succeeded", "skipped", "failed"]
     input_hash: str
     _env: BuildEnv | None = None
@@ -190,7 +195,7 @@ class RunRecordBuilder:
     _error: Exception | None = None
 
     @classmethod
-    def for_success(cls, target: OutputTarget, input_hash: str) -> Self:
+    def for_success(cls, target: TargetDescriptor, input_hash: str) -> Self:
         """Create a builder for a successful run.
 
         Returns
@@ -201,7 +206,7 @@ class RunRecordBuilder:
         return cls(target=target, status="succeeded", input_hash=input_hash)
 
     @classmethod
-    def for_skipped(cls, target: OutputTarget, input_hash: str) -> Self:
+    def for_skipped(cls, target: TargetDescriptor, input_hash: str) -> Self:
         """Create a builder for a skipped run.
 
         Returns
@@ -212,7 +217,7 @@ class RunRecordBuilder:
         return cls(target=target, status="skipped", input_hash=input_hash)
 
     @classmethod
-    def for_failure(cls, target: OutputTarget, input_hash: str) -> Self:
+    def for_failure(cls, target: TargetDescriptor, input_hash: str) -> Self:
         """Create a builder for a failed run.
 
         Returns
@@ -285,7 +290,7 @@ class RunRecordBuilder:
 
 
 def create_run_record(
-    target: OutputTarget,
+    target: TargetDescriptor,
     status: Literal["succeeded", "skipped", "failed"],
     input_hash: str,
     *,

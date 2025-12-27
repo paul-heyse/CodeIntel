@@ -1,130 +1,66 @@
-"""Tests for PR-17: Assets module generation (no target nodes).
+"""Tests for PR-17: Support nodes compiled into the driver graph.
 
-This module verifies that the generated support module:
-1. Contains dataset nodes (d__*)
-2. Contains loader nodes (q__*, df__*)
-3. Contains artifact nodes (a__*)
-4. Does NOT contain target nodes (t__*)
+This module verifies that the driver graph includes support nodes:
+1. Dataset nodes (d__*)
+2. Loader nodes (q__*, df__*)
+3. Artifact nodes (a__*)
 """
 
 from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.nodes.support_factory import (
-    SupportGenerationOptions,
-    build_support_module,
-)
+from codeintel.build.hamilton.driver_factory import build_driver
 
 
 def test_assets_module_has_dataset_nodes() -> None:
-    """Verify assets module contains dataset nodes."""
-    options = SupportGenerationOptions(
-        include_dataset_nodes=True,
-        include_loader_nodes=True,
-        include_artifact_nodes=True,
-    )
-    module = build_support_module(options=options)
+    """Verify driver graph contains dataset nodes."""
+    runtime = build_driver()
+    node_names = set(runtime.dr.graph.nodes)
 
     # Should have at least one dataset node
-    dataset_nodes = [name for name in dir(module) if name.startswith("d__")]
+    dataset_nodes = [name for name in node_names if name.startswith("d__")]
     if not dataset_nodes:
-        pytest.fail("Assets module should contain dataset nodes (d__*)")
-
-    # Verify DATASET_TO_NODE mapping exists
-    if not hasattr(module, "DATASET_TO_NODE"):
-        pytest.fail("Assets module should define DATASET_TO_NODE")
-    if len(module.DATASET_TO_NODE) == 0:
-        pytest.fail("DATASET_TO_NODE should map at least one dataset")
+        pytest.fail("Driver graph should contain dataset nodes (d__*)")
 
 
 def test_assets_module_has_loader_nodes() -> None:
-    """Verify assets module contains query and dataframe loader nodes."""
-    options = SupportGenerationOptions(
-        include_dataset_nodes=True,
-        include_loader_nodes=True,
-        include_artifact_nodes=True,
-    )
-    module = build_support_module(options=options)
+    """Verify driver graph contains query and dataframe loader nodes."""
+    runtime = build_driver()
+    node_names = set(runtime.dr.graph.nodes)
 
     # Should have query nodes (q__*)
-    query_nodes = [name for name in dir(module) if name.startswith("q__")]
+    query_nodes = [name for name in node_names if name.startswith("q__")]
     if not query_nodes:
-        pytest.fail("Assets module should contain query nodes (q__*)")
+        pytest.fail("Driver graph should contain query nodes (q__*)")
 
     # Should have dataframe nodes (df__*)
-    dataframe_nodes = [name for name in dir(module) if name.startswith("df__")]
+    dataframe_nodes = [name for name in node_names if name.startswith("df__")]
     if not dataframe_nodes:
-        pytest.fail("Assets module should contain dataframe nodes (df__*)")
-
-    # Verify mappings exist
-    if not hasattr(module, "QUERY_TO_NODE"):
-        pytest.fail("Assets module should define QUERY_TO_NODE")
-    if not hasattr(module, "DATAFRAME_TO_NODE"):
-        pytest.fail("Assets module should define DATAFRAME_TO_NODE")
-    if len(module.QUERY_TO_NODE) == 0:
-        pytest.fail("QUERY_TO_NODE should map at least one query")
-    if len(module.DATAFRAME_TO_NODE) == 0:
-        pytest.fail("DATAFRAME_TO_NODE should map at least one dataframe")
+        pytest.fail("Driver graph should contain dataframe nodes (df__*)")
 
 
 def test_assets_module_has_artifact_nodes() -> None:
-    """Verify assets module contains artifact nodes for SCIP/exports."""
-    options = SupportGenerationOptions(
-        include_dataset_nodes=True,
-        include_loader_nodes=True,
-        include_artifact_nodes=True,
-    )
-    module = build_support_module(options=options)
+    """Verify driver graph contains artifact nodes for SCIP/exports."""
+    runtime = build_driver()
+    node_names = set(runtime.dr.graph.nodes)
 
     # Should have artifact nodes (a__*)
-    artifact_nodes = [name for name in dir(module) if name.startswith("a__")]
+    artifact_nodes = [name for name in node_names if name.startswith("a__")]
     if not artifact_nodes:
-        pytest.fail("Assets module should contain artifact nodes (a__*)")
-
-    # Verify ARTIFACT_TO_NODE mapping exists
-    if not hasattr(module, "ARTIFACT_TO_NODE"):
-        pytest.fail("Assets module should define ARTIFACT_TO_NODE")
-    if len(module.ARTIFACT_TO_NODE) == 0:
-        pytest.fail("ARTIFACT_TO_NODE should map at least one artifact")
-
-
-def test_assets_module_no_target_nodes() -> None:
-    """Verify assets module does NOT contain target nodes."""
-    options = SupportGenerationOptions(
-        include_dataset_nodes=True,
-        include_loader_nodes=True,
-        include_artifact_nodes=True,
-    )
-    module = build_support_module(options=options)
-
-    # Should NOT have target nodes (t__*)
-    target_nodes = [name for name in dir(module) if name.startswith("t__")]
-    if target_nodes:
-        pytest.fail(f"Assets module should NOT contain target nodes, found: {target_nodes}")
-
-    # TARGET_TO_NODE should be empty
-    if not hasattr(module, "TARGET_TO_NODE"):
-        pytest.fail("Assets module should define TARGET_TO_NODE")
-    if len(module.TARGET_TO_NODE) != 0:
-        keys = list(module.TARGET_TO_NODE.keys())
-        pytest.fail(f"TARGET_TO_NODE should be empty in assets module, found: {keys}")
+        pytest.fail("Driver graph should contain artifact nodes (a__*)")
 
 
 def test_assets_module_all_node_types_independent() -> None:
-    """Verify assets module generation works with all node types enabled."""
-    options = SupportGenerationOptions(
-        include_dataset_nodes=True,
-        include_loader_nodes=True,
-        include_artifact_nodes=True,
-    )
-    module = build_support_module(options=options)
+    """Verify support nodes are compiled alongside targets."""
+    runtime = build_driver()
+    node_names = set(runtime.dr.graph.nodes)
 
     # Should have all asset types
-    has_datasets = any(name.startswith("d__") for name in dir(module))
-    has_queries = any(name.startswith("q__") for name in dir(module))
-    has_dataframes = any(name.startswith("df__") for name in dir(module))
-    has_artifacts = any(name.startswith("a__") for name in dir(module))
+    has_datasets = any(name.startswith("d__") for name in node_names)
+    has_queries = any(name.startswith("q__") for name in node_names)
+    has_dataframes = any(name.startswith("df__") for name in node_names)
+    has_artifacts = any(name.startswith("a__") for name in node_names)
 
     if not has_datasets:
         pytest.fail("Should have dataset nodes")

@@ -98,7 +98,6 @@ from codeintel.core.schemas.contract_service import (
     is_view,
     iter_contracts,
     iter_contracts_by_table_key,
-    overrides_from_output_contract,
 )
 
 if TYPE_CHECKING:
@@ -189,7 +188,6 @@ __all__ = [
     "iter_row_bindings",
     "iter_table_schemas",
     "normalize_duckdb_type",
-    "overrides_from_output_contract",
     "require_table_schema",
     "unified_schema_provider",
 ]

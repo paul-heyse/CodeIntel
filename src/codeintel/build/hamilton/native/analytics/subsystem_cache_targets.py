@@ -10,7 +10,8 @@ from codeintel.analytics.subsystems.cache import (
     build_subsystem_coverage_cache_rows,
     build_subsystem_profile_cache_rows,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -32,7 +33,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
 
@@ -46,7 +46,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 SUBSYSTEM_CACHES_TARGET_NAME = "subsystem_caches"
 
@@ -93,7 +93,7 @@ def subsystem_caches__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
 def subsystem_caches__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     subsystem_caches__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when subsystem_caches should be skipped.
@@ -105,7 +105,7 @@ def subsystem_caches__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SUBSYSTEM_CACHES_TARGET_NAME,
         hash_options=subsystem_caches__hash_options,
     )
@@ -292,9 +292,9 @@ def subsystem_coverage_cache__rows(
 @codeintel_target(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
 def t__subsystem_caches(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__subsystem_caches__compute: SubsystemCachesComputeResult | None,
-    subsystem_caches__table_materializations: dict[str, MaterializationMetadata],
+    subsystem_caches__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize cached subsystem profile and coverage tables.
 
@@ -321,7 +321,7 @@ def t__subsystem_caches(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SUBSYSTEM_CACHES_TARGET_NAME,
         ),
         artifact_materializations=None,

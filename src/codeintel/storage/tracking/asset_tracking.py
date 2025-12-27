@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from codeintel.core.time import utc_now
-from codeintel.storage.helpers.json import decode_json_dict, encode_json_compact
+from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
@@ -214,7 +214,7 @@ class AssetTracking:
                 r.row_count,
                 r.bytes,
                 r.created_at or now,
-                encode_json_compact(r.meta or {}),
+                r.meta or {},
             )
             for r in records
         ]
@@ -271,7 +271,7 @@ class AssetTracking:
                 r.input_hash,
                 r.options_hash,
                 r.recorded_at or now,
-                encode_json_compact(r.meta or {}),
+                r.meta or {},
             )
             for r in records
         ]
@@ -336,7 +336,7 @@ class AssetTracking:
                 r.target,
                 r.resolution_kind,
                 r.recorded_at or now,
-                encode_json_compact(r.meta or {}),
+                r.meta or {},
             )
             for r in records
         ]
@@ -390,7 +390,7 @@ class AssetTracking:
                 e.upstream_version,
                 e.edge_kind,
                 e.created_at or now,
-                encode_json_compact(e.meta or {}),
+                e.meta or {},
             )
             for e in edges
         ]
@@ -614,7 +614,7 @@ class AssetTracking:
     def save_cached_diff(self, record: AssetDiffRecord) -> None:
         """Upsert a cached diff summary."""
         computed_at = record.computed_at or utc_now()
-        summary_json = encode_json_compact(record.summary or {})
+        summary_json = record.summary or {}
         self._backend.upsert(
             "build.asset_diffs",
             [
@@ -777,7 +777,7 @@ class AssetTracking:
             Run environment record to save.
         """
         captured_at = record.captured_at or utc_now()
-        tool_versions_json = encode_json_compact(record.tool_versions or {})
+        tool_versions_json = record.tool_versions or {}
 
         self._backend.upsert(
             "build.run_environments",

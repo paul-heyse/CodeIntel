@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from codeintel.storage.tracking import PipelineRunTracking
     from codeintel.storage.tracking.asset_tracking import AssetTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
+    from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 __all__ = [
     "DuckDBBinderException",
@@ -125,6 +126,7 @@ class StorageGateway(MinimalGateway, Protocol):
     ibis: IbisGateway
     policy: DuckDBPolicyBackend
     runs: PipelineRunTracking
+    schemas: SchemaCatalogTracking
 
     @property
     def con(self) -> DuckDBConnection:

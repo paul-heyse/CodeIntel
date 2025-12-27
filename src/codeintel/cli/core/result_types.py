@@ -481,11 +481,23 @@ class BuildStatusResult:
         Number of stale targets.
     fresh_count
         Number of fresh targets.
+    computed
+        List of targets that are up to date.
+    missing
+        List of targets missing required inputs.
+    stale
+        List of stale targets, optionally annotated with reasons.
+    blocked
+        List of blocked targets, optionally annotated with reasons.
     """
 
     targets: list[dict[str, Any]]
     stale_count: int
     fresh_count: int
+    computed: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
+    stale: list[str] = field(default_factory=list)
+    blocked: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -496,6 +508,10 @@ class BuildStatusResult:
             Dictionary representation.
         """
         return {
+            "computed": self.computed,
+            "missing": self.missing,
+            "stale": self.stale,
+            "blocked": self.blocked,
             "targets": self.targets,
             "stale_count": self.stale_count,
             "fresh_count": self.fresh_count,

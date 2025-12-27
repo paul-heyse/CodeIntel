@@ -12,15 +12,16 @@ from typing import TYPE_CHECKING, cast
 import pandas as pd
 
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
 from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.hashing import stable_hash
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
 )
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
@@ -45,23 +46,23 @@ def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _make_graph() -> TargetGraph:
-    """Create a minimal TargetGraph that contains a modules target.
+def _make_graph() -> DagCatalog:
+    """Create a minimal catalog that contains a modules target.
 
     Returns
     -------
-    TargetGraph
-        Target graph containing only the modules target.
+    DagCatalog
+        Catalog containing only the modules target.
     """
-    graph = TargetGraph()
-    graph.register(
-        OutputTarget(
-            name="modules",
-            module="ingestion",
-            contract=contract_for_keys(("core.modules",)),
+    return build_catalog(
+        targets=(
+            make_target_descriptor(
+                name="modules",
+                module="ingestion",
+                contract=contract_for_keys(("core.modules",)),
+            ),
         )
     )
-    return graph
 
 
 def _module_row_for_schema(
@@ -109,7 +110,7 @@ def test_materialize_table_uses_policy_and_insert_select(
     graph = _make_graph()
     saver = DuckDBIbisTableSaver(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="modules",
         table_key="core.modules",
     )
@@ -148,7 +149,7 @@ def test_materialize_table_validates_when_schema_available(
     graph = _make_graph()
     saver = DuckDBIbisTableSaver(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="modules",
         table_key="core.modules",
     )
@@ -183,7 +184,7 @@ def test_rows_saver_resolves_deferred_columns(
 
     saver = DuckDBRowsSaver(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="modules",
         table_key=table_key,
         columns=deferred_columns_for_table_key(table_key),

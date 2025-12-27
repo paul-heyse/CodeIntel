@@ -82,7 +82,7 @@ def _backfill_impl_kind(
     table: str,
 ) -> None:
     qualified = f'"{schema}"."{table}"'
-    con.execute(f'UPDATE {qualified} SET impl_kind = ? WHERE impl_kind IS NULL', ["native"])
+    con.execute(f"UPDATE {qualified} SET impl_kind = ? WHERE impl_kind IS NULL", ["native"])
 
 
 def _migrate_table(

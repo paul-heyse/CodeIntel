@@ -13,7 +13,7 @@ from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.providers import create_default_providers
 from codeintel.build.schemas import column_names_for_table_key
-from codeintel.build.targets import OutputTarget
+from codeintel.build.targets import TargetDescriptor
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.ingestion.adapters import (
@@ -30,6 +30,7 @@ from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_cod
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.catalog import make_target_descriptor
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.fixtures.repos import write_tree
@@ -54,8 +55,8 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-def _make_ingestion_target(name: str, description: str = "") -> OutputTarget:
-    """Create a minimal OutputTarget for ingestion testing.
+def _make_ingestion_target(name: str, description: str = "") -> TargetDescriptor:
+    """Create a minimal TargetDescriptor for ingestion testing.
 
     Parameters
     ----------
@@ -66,14 +67,13 @@ def _make_ingestion_target(name: str, description: str = "") -> OutputTarget:
 
     Returns
     -------
-    OutputTarget
+    TargetDescriptor
         Minimal target suitable for test execution.
     """
-    return OutputTarget(
+    return make_target_descriptor(
         name=name,
         module="ingestion",
         contract=EMPTY_CONTRACT,
-        dependencies=(),
         description=description or f"Test target for {name}",
     )
 
@@ -197,7 +197,7 @@ class ScanSetupOptions:
 
 
 def build_target_context_for_target(
-    target: OutputTarget,
+    target: TargetDescriptor,
     tmp_path: Path,
     *,
     config: TargetContextConfig | None = None,
@@ -207,7 +207,7 @@ def build_target_context_for_target(
     Parameters
     ----------
     target
-        Output target for the context (unused; retained for callsite compatibility).
+        Target descriptor for the context (unused; retained for callsite compatibility).
     tmp_path
         Temporary directory for test isolation.
     config

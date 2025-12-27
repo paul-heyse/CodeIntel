@@ -30,7 +30,8 @@ from codeintel.analytics.resources import ProviderRegistryOptions, build_registr
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.testing.behavioral.tags import build_behavior_rows
 from codeintel.analytics.testing.coverage.edges import build_test_coverage_edges_rows
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -52,7 +53,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_f
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -64,7 +64,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, ir.Table)
 
 COVERAGE_FUNCTIONS_TARGET_NAME = "coverage_functions"
 COVERAGE_TEST_EDGES_TARGET_NAME = "coverage_test_edges"
@@ -138,7 +138,7 @@ def coverage_test_edges__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
 def coverage_test_edges__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     coverage_test_edges__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when coverage_test_edges should be skipped.
@@ -150,7 +150,7 @@ def coverage_test_edges__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         COVERAGE_TEST_EDGES_TARGET_NAME,
         hash_options=coverage_test_edges__hash_options,
     )
@@ -175,7 +175,7 @@ def behavioral_coverage__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
 def behavioral_coverage__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     behavioral_coverage__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when behavioral_coverage should be skipped.
@@ -187,7 +187,7 @@ def behavioral_coverage__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         BEHAVIORAL_COVERAGE_TARGET_NAME,
         hash_options=behavioral_coverage__hash_options,
     )
@@ -355,8 +355,8 @@ def t__coverage_functions__compute(
 @codeintel_target(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME)
 def t__coverage_functions(
     env: BuildEnv,
-    graph: TargetGraph,
-    coverage_functions__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    coverage_functions__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Aggregate per-function coverage.
 
@@ -364,10 +364,10 @@ def t__coverage_functions(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     coverage_functions__table_materializations
-        Materialization metadata for analytics.coverage_functions.
+        Materialization results for analytics.coverage_functions.
 
     Returns
     -------
@@ -377,7 +377,7 @@ def t__coverage_functions(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=COVERAGE_FUNCTIONS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -449,7 +449,7 @@ def t__coverage_test_edges__compute(
 
     try:
         try:
-            catalog = registry.require(CatalogProvider).get()
+            catalog = registry.require(CatalogProvider)
         except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
             log.warning("Failed to load catalog: %s", exc)
             catalog = None
@@ -497,9 +497,9 @@ def coverage_test_edges__rows(
 @codeintel_target(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
 def t__coverage_test_edges(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__coverage_test_edges__compute: CoverageTestEdgesComputeResult,
-    coverage_test_edges__table_materializations: dict[str, MaterializationMetadata],
+    coverage_test_edges__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Compute test-to-function coverage edges.
 
@@ -507,12 +507,12 @@ def t__coverage_test_edges(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__coverage_test_edges__compute
         Computed coverage edges result.
     coverage_test_edges__table_materializations
-        Materialization metadata for analytics.test_coverage_edges.
+        Materialization results for analytics.test_coverage_edges.
 
     Returns
     -------
@@ -537,7 +537,7 @@ def t__coverage_test_edges(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=COVERAGE_TEST_EDGES_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -639,9 +639,9 @@ def behavioral_coverage__rows(
 @codeintel_target(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
 def t__behavioral_coverage(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__behavioral_coverage__compute: BehavioralCoverageComputeResult,
-    behavioral_coverage__table_materializations: dict[str, MaterializationMetadata],
+    behavioral_coverage__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Tag behavioral coverage from test patterns.
 
@@ -649,12 +649,12 @@ def t__behavioral_coverage(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__behavioral_coverage__compute
         Computed behavioral coverage result.
     behavioral_coverage__table_materializations
-        Materialization metadata for analytics.behavioral_coverage.
+        Materialization results for analytics.behavioral_coverage.
 
     Returns
     -------
@@ -679,7 +679,7 @@ def t__behavioral_coverage(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=BEHAVIORAL_COVERAGE_TARGET_NAME,
         ),
         artifact_materializations=None,

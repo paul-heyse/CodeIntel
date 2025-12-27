@@ -99,13 +99,13 @@ class ManifestPriming:
         Raises
         ------
         RuntimeError
-            Raised when the modules target is missing from the graph.
+            Raised when the modules target is missing from the catalog.
         """
         env = self.harness.build_env()
         runtime = build_driver(config={"profile": env.profile})
-        target = runtime.graph.get("modules")
+        target = runtime.catalog.get_target("modules")
         if target is None:
-            message = "Target 'modules' not found in target graph"
+            message = "Target 'modules' not found in catalog"
             raise RuntimeError(message)
 
         opts_hash = options_hash_for_target(env, "modules")
@@ -158,13 +158,13 @@ class ManifestPriming:
         Raises
         ------
         RuntimeError
-            If the target is not found in the target graph.
+            If the target is not found in the catalog.
         """
         env = self.harness.build_env()
         runtime = build_driver(config={"profile": env.profile})
-        node = runtime.graph.get(target)
+        node = runtime.catalog.get_target(target)
         if node is None:
-            message = f"Target '{target}' not found in target graph"
+            message = f"Target '{target}' not found in catalog"
             raise RuntimeError(message)
 
         opts_hash = options_hash_for_target(env, target)

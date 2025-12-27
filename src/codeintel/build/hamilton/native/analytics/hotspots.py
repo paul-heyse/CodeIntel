@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING
 import ibis.expr.types as ir
 
 from codeintel.analytics.hotspots import ChurnSummary, compute_hotspot_rows, parse_git_log_lines
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -42,7 +43,6 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import DuckDBError
@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 LOG = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 HOTSPOTS_TARGET_NAME = "hotspots"
 HOTSPOTS_TABLE_KEY = "analytics.hotspots"
@@ -123,7 +123,7 @@ def hotspots__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def hotspots__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     hotspots__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when hotspots should be skipped.
@@ -135,7 +135,7 @@ def hotspots__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         HOTSPOTS_TARGET_NAME,
         hash_options=hotspots__hash_options,
     )
@@ -418,8 +418,8 @@ hotspots__table_materializations = make_table_materializations_collector(
 @codeintel_target(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def t__hotspots(
     env: BuildEnv,
-    graph: TargetGraph,
-    hotspots__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    hotspots__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """File hotspot analysis based on churn.
 
@@ -431,7 +431,7 @@ def t__hotspots(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=HOTSPOTS_TARGET_NAME,
         ),
         artifact_materializations=None,

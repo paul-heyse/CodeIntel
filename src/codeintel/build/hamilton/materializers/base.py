@@ -6,23 +6,23 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.run_record_utils import (
     options_hash_for_target,
     should_skip_native_target,
 )
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
-    from codeintel.build.targets import OutputTarget
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
 
 
 @dataclass(frozen=True)
 class MaterializationContext:
     """Resolved inputs for a materializer execution."""
 
-    target: OutputTarget
+    target: TargetDescriptor
     input_hash: str
     options_hash: str | None
     should_skip: bool
@@ -39,18 +39,18 @@ class MaterializationContextError:
 def resolve_materialization_context(
     *,
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     target_name: str,
     hash_options: InputHashOptions | None = None,
 ) -> MaterializationContext | MaterializationContextError:
-    """Resolve materialization context from environment and graph.
+    """Resolve materialization context from environment and catalog.
 
     Parameters
     ----------
     env
         Build environment containing snapshot, gateway, and configuration.
-    graph
-        Target graph describing build dependencies.
+    catalog
+        DAG catalog describing build dependencies.
     target_name
         Name of the target being materialized.
     hash_options
@@ -65,14 +65,16 @@ def resolve_materialization_context(
         return MaterializationContextError(
             message=f"Expected env to be BuildEnv, got {type(env).__name__}",
         )
-    if not isinstance(graph, TargetGraph):
+    if not isinstance(catalog, DagCatalog):
         return MaterializationContextError(
-            message=f"Expected graph to be TargetGraph, got {type(graph).__name__}",
+            message=f"Expected catalog to be DagCatalog, got {type(catalog).__name__}",
         )
 
-    target = graph.get(target_name)
+    target = catalog.get(target_name)
     if target is None:
-        return MaterializationContextError(message=f"Target not found in graph: {target_name}")
+        return MaterializationContextError(
+            message=f"Target not found in catalog: {target_name}"
+        )
 
     options_hash = options_hash_for_target(env, target_name)
     resolved_hash_options = hash_options

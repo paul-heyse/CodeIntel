@@ -15,7 +15,6 @@ from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.contracts.bootstrap import bootstrap_contract_catalog
 from codeintel.storage.contracts.catalog_state import (
     contract_catalog_table_schemas,
     get_contract_catalog,
@@ -83,32 +82,21 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageC
     load_contract_catalog_from_connection(con)
     clear_contract_validation_cache()
     catalog = get_contract_catalog()
-    if catalog is not None:
-        mismatches = _schema_service_mismatches()
-        should_refresh = not config.read_only and (config.apply_schema or bool(mismatches))
-        if should_refresh:
-            if mismatches:
-                LOG.warning(
-                    "Contract catalog schema mismatch for %d tables; rebuilding catalog",
-                    len(mismatches),
-                )
-            bootstrap_contract_catalog(con, config=config)
-            clear_schema_provider_cache()
-            clear_contract_validation_cache()
-        elif mismatches:
-            LOG.warning(
-                "Contract catalog mismatch detected but gateway is read-only; using existing catalog"
-            )
-        return
-    if config.read_only:
-        msg = "Contract catalog missing for read-only gateway"
+    if catalog is None:
+        msg = (
+            "Contract catalog missing. Run `codeintel meta sync` to populate "
+            "metadata.canonical_catalogs before opening a storage gateway."
+        )
         raise RuntimeError(msg)
-    bootstrap_contract_catalog(con, config=config)
+
+    mismatches = _schema_service_mismatches()
+    if mismatches:
+        LOG.warning(
+            "Contract catalog mismatch detected for %d tables; using stored catalog",
+            len(mismatches),
+        )
     clear_schema_provider_cache()
     clear_contract_validation_cache()
-    if get_contract_catalog() is None:
-        msg = "Contract catalog missing after bootstrap"
-        raise RuntimeError(msg)
 
 
 def _write_contract_validation_summary(
@@ -205,7 +193,6 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
             bootstrap_metadata_datasets(
                 con,
                 include_views=include_views_for_bootstrap,
-                validate_schema_registry=config.validate_schema,
             )
         _maybe_set_schema_service_from_catalog()
         datasets = load_dataset_registry(con)

@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.schemas.authority import SchemaAuthority
 from codeintel.core.schemas.declared import source_declared_schema_provider
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+
+
+_DECLARED_SOURCE_KIND = "declared_source"
+_DECLARED_SOURCE_NAME = "declared"
 
 
 @lru_cache(maxsize=1)
@@ -31,6 +37,35 @@ def declared_schema_provider() -> SchemaProvider:
     return source_declared_schema_provider(exclude_table_keys=exclude_table_keys)
 
 
+@dataclass(frozen=True, slots=True)
+class _SchemaIndexProvider:
+    schema_index: SchemaIndex
+    allow_inference: bool = True
+
+    def get_table_schema(self, table_key: str) -> TableSchema | None:
+        return self.schema_index.get_table_schema(
+            table_key,
+            allow_inference=self.allow_inference,
+        )
+
+    def require_table_schema(self, table_key: str) -> TableSchema:
+        schema = self.get_table_schema(table_key)
+        if schema is None:
+            msg = f"Unknown table schema: {table_key}"
+            raise KeyError(msg)
+        return schema
+
+    def iter_table_schemas(self) -> Iterable[TableSchema]:
+        return self.schema_index.iter_table_schemas(allow_inference=self.allow_inference)
+
+
+def _dag_sources(schema_index: SchemaIndex) -> Mapping[str, tuple[str, str]]:
+    return {
+        table_key: (derivation.kind, derivation.source)
+        for table_key, derivation in schema_index.derivations.items()
+    }
+
+
 @dataclass
 class UnifiedSchemaProvider:
     """Schema provider that resolves DAG outputs first, sources last."""
@@ -39,6 +74,21 @@ class UnifiedSchemaProvider:
     schema_index: SchemaIndex
     allow_inference: bool = True
     fallback_to_override_on_error: bool = True
+    schema_authority: SchemaAuthority = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Initialize the SchemaAuthority backing this provider."""
+        dag_provider = _SchemaIndexProvider(
+            schema_index=self.schema_index,
+            allow_inference=self.allow_inference,
+        )
+        self.schema_authority = SchemaAuthority(
+            dag_provider=dag_provider,
+            declared_provider=self.declared,
+            dag_sources=_dag_sources(self.schema_index),
+            declared_source_kind=_DECLARED_SOURCE_KIND,
+            declared_source_ref=_DECLARED_SOURCE_NAME,
+        )
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
         """Return the schema for a table key if known.
@@ -53,13 +103,7 @@ class UnifiedSchemaProvider:
         TableSchema | None
             Resolved table schema, or None if not found.
         """
-        schema = self.schema_index.get_table_schema(
-            table_key,
-            allow_inference=self.allow_inference,
-        )
-        if schema is not None:
-            return schema
-        return self.declared.get_table_schema(table_key)
+        return self.schema_authority.get_table_schema(table_key)
 
     def require_table_schema(self, table_key: str) -> TableSchema:
         """Return schema for table_key, raising when unknown.
@@ -79,7 +123,7 @@ class UnifiedSchemaProvider:
         KeyError
             If table_key is unknown to all providers in the fallback chain.
         """
-        schema = self.get_table_schema(table_key)
+        schema = self.schema_authority.get_table_schema(table_key)
         if schema is None:
             msg = f"Unknown table schema: {table_key}"
             raise KeyError(msg)
@@ -88,22 +132,12 @@ class UnifiedSchemaProvider:
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         """Iterate all known table schemas.
 
-        Yields
-        ------
-        TableSchema
+        Returns
+        -------
+        Iterable[TableSchema]
             Table schemas from the DAG and declared providers.
         """
-        seen: set[str] = set()
-        for schema in self.schema_index.iter_table_schemas(allow_inference=self.allow_inference):
-            seen.add(schema.table_key)
-            yield schema
-        for schema in self.declared.iter_table_schemas():
-            if schema.table_key in self.schema_index.derivations:
-                continue
-            if schema.table_key in seen:
-                continue
-            seen.add(schema.table_key)
-            yield schema
+        return self.schema_authority.iter_table_schemas()
 
     @property
     def inferable_table_keys(self) -> frozenset[str]:
@@ -115,6 +149,16 @@ class UnifiedSchemaProvider:
             Table keys eligible for inference.
         """
         return self.schema_index.inferable_table_keys
+
+    def derivation(self, table_key: str) -> SchemaDerivation | None:
+        """Return SchemaAuthority derivation metadata when available.
+
+        Returns
+        -------
+        SchemaDerivation | None
+            Derivation metadata when available, otherwise None.
+        """
+        return self.schema_authority.derivation(table_key)
 
     def with_inference(self, *, allow_inference: bool) -> UnifiedSchemaProvider:
         """Return a copy with inference enabled or disabled.

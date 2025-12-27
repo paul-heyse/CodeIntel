@@ -18,6 +18,7 @@ from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
+from codeintel.cli.commands.meta import meta_app
 from codeintel.cli.commands.registry import registry_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
@@ -51,6 +52,7 @@ app.command(datasets_ext_app, name="datasets")
 app.command(config_app, name="config")
 app.command(health_app, name="health")
 app.command(jobs_app, name="jobs")
+app.command(meta_app, name="meta")
 app.command(registry_app, name="registry")
 app.command(completions_app, name="completions")
 app.command(help_commands_app, name="help-ops")
@@ -96,6 +98,7 @@ __all__ = [
     "help_commands_app",
     "history_app",
     "jobs_app",
+    "meta_app",
     "registry_app",
     "serve_app",
     "storage_app",

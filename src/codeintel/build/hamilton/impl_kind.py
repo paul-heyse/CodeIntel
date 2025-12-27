@@ -27,7 +27,7 @@ def native_target_names(runtime: HamiltonRuntime) -> frozenset[str]:
     Parameters
     ----------
     runtime
-        Hamilton runtime containing the driver and target graph.
+        Hamilton runtime containing the driver and DAG catalog.
 
     Returns
     -------
@@ -36,7 +36,7 @@ def native_target_names(runtime: HamiltonRuntime) -> frozenset[str]:
     """
     native: set[str] = set()
     nodes = runtime.dr.graph.nodes
-    for target_name in runtime.graph:
+    for target_name in runtime.catalog:
         node = nodes.get(target_node(target_name))
         if node is None:
             continue
@@ -52,7 +52,7 @@ def target_impl_kind(runtime: HamiltonRuntime, *, target_name: str) -> ImplKind:
     Parameters
     ----------
     runtime
-        Hamilton runtime containing the driver and target graph.
+        Hamilton runtime containing the driver and DAG catalog.
     target_name
         Target to classify.
 

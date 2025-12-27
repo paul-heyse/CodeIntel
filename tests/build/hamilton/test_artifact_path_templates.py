@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.materializers import FileArtifactSaver
-from codeintel.build.targets import OutputTarget, TargetGraph
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 
@@ -18,11 +19,18 @@ def test_file_artifact_saver_resolves_path_from_template(
     template = "{build_dir}/artifacts/test.json"
     expected = env.paths.build_dir / "artifacts" / "test.json"
 
-    graph = TargetGraph()
-    graph.register(OutputTarget(name="tool_target", module="ingestion"))
+    graph = build_catalog(
+        targets=(
+            make_target_descriptor(
+                name="tool_target",
+                module="ingestion",
+                contract=EMPTY_CONTRACT,
+            ),
+        )
+    )
     saver = FileArtifactSaver(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="tool_target",
         artifact_name="tool_artifact",
         path_template=template,
@@ -44,11 +52,18 @@ def test_file_artifact_saver_requires_template(
     """Missing path templates should fail fast."""
     env = build_harness.build_env()
 
-    graph = TargetGraph()
-    graph.register(OutputTarget(name="tool_target", module="ingestion"))
+    graph = build_catalog(
+        targets=(
+            make_target_descriptor(
+                name="tool_target",
+                module="ingestion",
+                contract=EMPTY_CONTRACT,
+            ),
+        )
+    )
     saver = FileArtifactSaver(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="tool_target",
         artifact_name="tool_artifact",
         path_template=None,

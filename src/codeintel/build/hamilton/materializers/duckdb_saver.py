@@ -16,9 +16,10 @@ import ibis.expr.types as ir
 import pandas as pd
 from hamilton.io.data_adapters import DataSaver
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.contracts.pandera_hook import get_pandera_schema
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
     MaterializationContextError,
@@ -26,14 +27,14 @@ from codeintel.build.hamilton.materializers.base import (
     manifest_row_count,
     resolve_materialization_context,
 )
-from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
+from codeintel.core.execution.materialization import (
+    failed_table_result,
+    skipped_table_result,
+    succeeded_table_result,
+)
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
-
-SaveStatus = Literal["succeeded", "skipped", "failed"]
-
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -49,11 +50,11 @@ class DuckDBIbisTableSaver(DataSaver):
     """Persist an Ibis table expression to DuckDB for a specific snapshot.
 
     This adapter:
-    - Computes the target input hash (manifest key) from the graph + env.
+    - Computes the target input hash (manifest key) from the catalog + env.
     - Applies manifest-based skip (authoritative for artifact writes).
     - Writes the table for the current snapshot using ``Warehouse``.
     - Optionally validates the output against Pandera schema when enabled.
-    - Returns a metadata dict (as required by Hamilton's DataSaver API).
+    - Returns metadata convertible to a MaterializationResult describing the write outcome.
 
     Notes
     -----
@@ -63,7 +64,7 @@ class DuckDBIbisTableSaver(DataSaver):
     """
 
     env: BuildEnv
-    graph: TargetGraph
+    catalog: DagCatalog
     target_name: str
     table_key: str
     hash_options: InputHashOptions | None = None
@@ -112,7 +113,7 @@ class DuckDBIbisTableSaver(DataSaver):
                 return True
         return super().applies_to(type_)
 
-    def save_data(self, data: object) -> MaterializationMetadata:
+    def save_data(self, data: object) -> dict[str, object]:
         """Save the provided data and return metadata describing the write.
 
         Parameters
@@ -122,22 +123,22 @@ class DuckDBIbisTableSaver(DataSaver):
 
         Returns
         -------
-        MaterializationMetadata
+        dict[str, object]
             Metadata describing the write, including status, row count, and
             input hash for manifest-based incremental builds.
         """
         start = perf_counter()
         input_hash: str | None = None
-        result: MaterializationMetadata | None = None
+        result: MaterializationResult | None = None
         try:
             prepared = resolve_materialization_context(
                 env=self.env,
-                graph=self.graph,
+                catalog=self.catalog,
                 target_name=self.target_name,
                 hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
-                result = _failed(
+                result = failed_table_result(
                     table_key=self.table_key,
                     duration_ms=duration_ms(start),
                     input_hash=prepared.input_hash or "",
@@ -147,21 +148,21 @@ class DuckDBIbisTableSaver(DataSaver):
                 context = prepared
                 input_hash = context.input_hash
                 if context.should_skip:
-                    result = _skipped(
+                    result = skipped_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash,
                         row_count=manifest_row_count(self.env, target_name=self.target_name),
                     )
                 elif data is None:
-                    result = _skipped(
+                    result = skipped_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash,
                         row_count=None,
                     )
                 elif not isinstance(data, ir.Table):
-                    result = _failed(
+                    result = failed_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash,
@@ -187,7 +188,7 @@ class DuckDBIbisTableSaver(DataSaver):
                         options=options,
                     )
 
-                    result = _succeeded(
+                    result = succeeded_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash,
@@ -195,63 +196,20 @@ class DuckDBIbisTableSaver(DataSaver):
                     )
 
         except _RECOVERABLE_EXCEPTIONS as exc:
-            result = _failed(
+            result = failed_table_result(
                 table_key=self.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error=str(exc),
             )
         if result is None:
-            return _failed(
+            result = failed_table_result(
                 table_key=self.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error="Unknown materialization failure",
             )
-        return result
-
-
-def _succeeded(
-    *, table_key: str, duration_ms: float, input_hash: str, row_count: int
-) -> MaterializationMetadata:
-    return DuckDBMaterializationMetadata(
-        status="succeeded",
-        table_key=table_key,
-        row_count=row_count,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=None,
-    ).to_dict()
-
-
-def _skipped(
-    *,
-    table_key: str,
-    duration_ms: float,
-    input_hash: str,
-    row_count: int | None,
-) -> MaterializationMetadata:
-    return DuckDBMaterializationMetadata(
-        status="skipped",
-        table_key=table_key,
-        row_count=row_count,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=None,
-    ).to_dict()
-
-
-def _failed(
-    *, table_key: str, duration_ms: float, input_hash: str, error: str
-) -> MaterializationMetadata:
-    return DuckDBMaterializationMetadata(
-        status="failed",
-        table_key=table_key,
-        row_count=None,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=error,
-    ).to_dict()
+        return result.to_mapping()
 
 
 def _materialize_table(
@@ -277,7 +235,4 @@ def _materialize_table(
     return result.rows_written or 0
 
 
-__all__ = [
-    "DuckDBIbisTableSaver",
-    "SaveStatus",
-]
+__all__ = ["DuckDBIbisTableSaver"]

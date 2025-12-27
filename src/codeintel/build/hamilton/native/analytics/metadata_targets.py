@@ -50,9 +50,9 @@ from codeintel.analytics.resources.asts import AstProvider
 from codeintel.analytics.resources.catalog import CatalogProvider
 from codeintel.analytics.resources.features import FeaturesProvider
 from codeintel.analytics.resources.module_map import ModuleMapProvider
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers.metadata import DuckDBMaterializationMetadata
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
@@ -70,7 +70,6 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -159,7 +158,7 @@ def data_models__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 def data_models__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     data_models__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when data_models should be skipped.
@@ -171,7 +170,7 @@ def data_models__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         DATA_MODELS_TARGET_NAME,
         hash_options=data_models__hash_options,
     )
@@ -196,7 +195,7 @@ def data_model_usage__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
 def data_model_usage__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     data_model_usage__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when data_model_usage should be skipped.
@@ -208,7 +207,7 @@ def data_model_usage__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         DATA_MODEL_USAGE_TARGET_NAME,
         hash_options=data_model_usage__hash_options,
     )
@@ -233,7 +232,7 @@ def function_ast_features__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def function_ast_features__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     function_ast_features__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when function_ast_features should be skipped.
@@ -245,7 +244,7 @@ def function_ast_features__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         FUNCTION_AST_FEATURES_TARGET_NAME,
         hash_options=function_ast_features__hash_options,
     )
@@ -270,7 +269,7 @@ def profiles__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=PROFILES_TARGET_NAME)
 def profiles__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     profiles__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when profiles should be skipped.
@@ -282,7 +281,7 @@ def profiles__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         PROFILES_TARGET_NAME,
         hash_options=profiles__hash_options,
     )
@@ -351,7 +350,7 @@ _HAMILTON_TYPE_HINTS = (
     DataModelsInputs,
     DataModelsResult,
     ResourceRegistry,
-    TargetGraph,
+    DagCatalog,
     TargetRunRecord,
 )
 
@@ -471,8 +470,8 @@ def data_models__relationship_rows(
 @codeintel_target(domain="analytics", target=DATA_MODELS_TARGET_NAME)
 def t__data_models(
     env: BuildEnv,
-    graph: TargetGraph,
-    data_models__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    data_models__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Extract data models (dataclasses, Pydantic, etc.).
 
@@ -483,10 +482,10 @@ def t__data_models(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     data_models__table_materializations
-        Materialization metadata for data model tables.
+        Materialization results for data model tables.
 
     Returns
     -------
@@ -503,7 +502,7 @@ def t__data_models(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=DATA_MODELS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -562,13 +561,13 @@ def t__data_model_usage__compute(
             include_module_map=True,
         ),
     )
-    module_map_provider = registry.require(ModuleMapProvider)
-    ast_data = registry.require(AstProvider).get()
+    module_map = registry.require(ModuleMapProvider)
+    ast_data = registry.require(AstProvider)
 
     return build_data_model_usage_rows(
         gateway,
         env.snapshot,
-        module_map=module_map_provider.module_map,
+        module_map=module_map,
         ast_by_goid=ast_data.function_ast_map,
         missing_goids=ast_data.missing_function_goids,
     )
@@ -577,8 +576,8 @@ def t__data_model_usage__compute(
 @codeintel_target(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
 def t__data_model_usage(
     env: BuildEnv,
-    graph: TargetGraph,
-    data_model_usage__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    data_model_usage__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Track function-level data model usage.
 
@@ -586,10 +585,10 @@ def t__data_model_usage(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     data_model_usage__table_materializations
-        Materialization metadata for analytics.data_model_usage.
+        Materialization results for analytics.data_model_usage.
 
     Returns
     -------
@@ -599,7 +598,7 @@ def t__data_model_usage(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=DATA_MODEL_USAGE_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -643,13 +642,13 @@ def t__function_ast_features__compute(
         return None
 
     try:
-        _ = function_ast_features_registry.require(CatalogProvider).get()
+        _ = function_ast_features_registry.require(CatalogProvider)
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return AstFeaturesResult(success=False, error=f"CatalogProvider is required: {exc}")
 
     try:
-        features_map = function_ast_features_registry.require(FeaturesProvider).get()
+        features_map = function_ast_features_registry.require(FeaturesProvider)
     except (RuntimeError, ValueError, OSError) as exc:
         log.warning("Failed to compute function features: %s", exc)
         return AstFeaturesResult(success=True, features_map={})
@@ -660,9 +659,9 @@ def t__function_ast_features__compute(
 @codeintel_target(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def t__function_ast_features(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__function_ast_features__compute: AstFeaturesResult | None,
-    function_ast_features__table_materializations: dict[str, MaterializationMetadata],
+    function_ast_features__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """AST-derived semantic features for functions.
 
@@ -692,7 +691,7 @@ def t__function_ast_features(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=FUNCTION_AST_FEATURES_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -821,7 +820,7 @@ def t__profiles__compute(
     )
 
     try:
-        catalog = registry.require(CatalogProvider).get()
+        catalog = registry.require(CatalogProvider)
     except (ResourceNotFoundError, RuntimeError, ValueError) as exc:
         log.warning("Failed to load catalog: %s", exc)
         return ProfilesComputeResult(
@@ -886,7 +885,7 @@ def file_profile__rows(
     env: BuildEnv,
     gateway: StorageGateway,
     t__profiles__compute: ProfilesComputeResult | None,
-    m__analytics__function_profile: MaterializationMetadata,
+    m__analytics__function_profile: MaterializationResult,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Extract rows for analytics.file_profile table.
 
@@ -898,11 +897,7 @@ def file_profile__rows(
     if t__profiles__compute is None or t__profiles__compute.error:
         return None
 
-    meta = DuckDBMaterializationMetadata.from_mapping(
-        m__analytics__function_profile,
-        default_table_key=FUNCTION_PROFILE_TABLE_KEY,
-    )
-    if meta.status != "succeeded":
+    if m__analytics__function_profile.status != "succeeded":
         return None
 
     module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
@@ -926,7 +921,7 @@ def module_profile__rows(
     env: BuildEnv,
     gateway: StorageGateway,
     t__profiles__compute: ProfilesComputeResult | None,
-    m__analytics__file_profile: MaterializationMetadata,
+    m__analytics__file_profile: MaterializationResult,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Extract rows for analytics.module_profile table.
 
@@ -938,11 +933,7 @@ def module_profile__rows(
     if t__profiles__compute is None or t__profiles__compute.error:
         return None
 
-    meta = DuckDBMaterializationMetadata.from_mapping(
-        m__analytics__file_profile,
-        default_table_key=FILE_PROFILE_TABLE_KEY,
-    )
-    if meta.status != "succeeded":
+    if m__analytics__file_profile.status != "succeeded":
         return None
 
     module_table = t__profiles__compute.module_table or DEFAULT_MODULE_TABLE
@@ -956,9 +947,9 @@ def module_profile__rows(
 @codeintel_target(domain="analytics", target=PROFILES_TARGET_NAME)
 def t__profiles(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__profiles__compute: ProfilesComputeResult | None,
-    profiles__table_materializations: dict[str, MaterializationMetadata],
+    profiles__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Denormalized profile tables for querying.
 
@@ -985,7 +976,7 @@ def t__profiles(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=PROFILES_TARGET_NAME,
         ),
         artifact_materializations=None,

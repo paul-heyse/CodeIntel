@@ -1,9 +1,9 @@
-"""Validate that build target contracts match the Hamilton DAG shape.
+"""Validate that catalog outputs match the Hamilton DAG shape.
 
 This module is executed by `tools.quality_report` to ensure that:
 
 1) Every target in the canonical catalog has exactly one materialize node.
-2) The Hamilton DAG exposes dataset/artifact outputs that match each target's contract.
+2) The DAG-derived output inventory is internally consistent.
 
 The intent is to prevent "silent drift" where build metadata and the executable DAG diverge.
 """
@@ -13,10 +13,7 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.introspect import (
-    DerivedTargetOutputs,
-    derive_target_outputs_from_savers,
-)
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.hamilton.tags import NODE_TYPE_MATERIALIZE, TAG_NODE_TYPE, TAG_TARGET
 
@@ -24,7 +21,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
-    from codeintel.build.targets import TargetGraph
 
 
 class TargetContractsError(RuntimeError):
@@ -79,13 +75,7 @@ def _check_catalog_completeness(runtime: HamiltonRuntime) -> list[str]:
     target_to_node, node_issues = _derive_materialize_targets(runtime)
     issues.extend(node_issues)
 
-    graph = getattr(runtime, "graph", None)
-    all_targets = getattr(graph, "all_targets", None)
-    if not isinstance(all_targets, tuple):
-        issues.append("Hamilton runtime does not expose graph.all_targets tuple")
-        return issues
-
-    catalog_targets = {t.name for t in all_targets if hasattr(t, "name")}
+    catalog_targets = set(runtime.catalog.targets)
     dag_targets = set(target_to_node)
 
     missing = sorted(catalog_targets - dag_targets)
@@ -99,45 +89,32 @@ def _check_catalog_completeness(runtime: HamiltonRuntime) -> list[str]:
     return issues
 
 
-def _check_contract_outputs(graph: TargetGraph, outputs: DerivedTargetOutputs) -> list[str]:
+def _check_catalog_outputs(catalog: DagCatalog) -> list[str]:
     issues: list[str] = []
-    all_targets = graph.all_targets
-    datasets_by_target = outputs.datasets_by_target
-    artifacts_by_target = outputs.artifacts_by_target
-    templates_by_target = outputs.artifact_templates_by_target
-
-    for target in all_targets:
-        name = getattr(target, "name", None)
-        contract = getattr(target, "contract", None)
-        if not isinstance(name, str) or contract is None:
+    for table_key, output in catalog.table_outputs.items():
+        if output.producer_target not in catalog.targets:
+            issues.append(
+                "Catalog table output has unknown producer target: "
+                f"table_key={table_key} target={output.producer_target}"
+            )
             continue
-
-        expected_tables = tuple(sorted(getattr(contract, "table_keys", ())))
-        expected_artifacts = tuple(sorted(getattr(contract, "artifact_names", ())))
-        expected_templates = {
-            artifact.name: artifact.path_template for artifact in getattr(contract, "artifacts", ())
-        }
-
-        observed_tables = tuple(sorted(datasets_by_target.get(name, ())))
-        observed_artifacts = tuple(sorted(artifacts_by_target.get(name, ())))
-        observed_templates = templates_by_target.get(name, {})
-
-        if expected_tables != observed_tables:
+        if output not in catalog.table_outputs_by_target.get(output.producer_target, ()):
             issues.append(
-                "Target contract table_keys differ from DAG outputs "
-                f"for {name}: expected={expected_tables} observed={observed_tables}"
+                "Catalog table output missing from per-target index: "
+                f"table_key={table_key} target={output.producer_target}"
             )
-        if expected_artifacts != observed_artifacts:
+    for artifact_name, output in catalog.artifact_outputs.items():
+        if output.producer_target not in catalog.targets:
             issues.append(
-                "Target contract artifact_names differ from DAG outputs "
-                f"for {name}: expected={expected_artifacts} observed={observed_artifacts}"
+                "Catalog artifact output has unknown producer target: "
+                f"artifact_name={artifact_name} target={output.producer_target}"
             )
-        if expected_templates != observed_templates:
+            continue
+        if output not in catalog.artifact_outputs_by_target.get(output.producer_target, ()):
             issues.append(
-                "Target contract artifact templates differ from DAG outputs "
-                f"for {name}: expected={expected_templates} observed={observed_templates}"
+                "Catalog artifact output missing from per-target index: "
+                f"artifact_name={artifact_name} target={output.producer_target}"
             )
-
     return issues
 
 
@@ -151,12 +128,10 @@ def main() -> int:
     """
     service = get_target_metadata_service()
     runtime = service.system.runtime
-    graph = service.system.graph
 
     issues: list[str] = []
     issues.extend(_check_catalog_completeness(runtime))
-    derived = derive_target_outputs_from_savers(service.system.runtime)
-    issues.extend(_check_contract_outputs(graph, derived))
+    issues.extend(_check_catalog_outputs(runtime.catalog))
 
     if issues:
         err = TargetContractsError(issues=issues)

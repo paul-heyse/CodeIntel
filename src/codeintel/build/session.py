@@ -29,7 +29,7 @@ from codeintel.core.config.settings import BuildSettings
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.targets import OutputTarget
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
@@ -77,7 +77,7 @@ class BuildSession:
 
     def get_input_hash(
         self,
-        target: OutputTarget,
+        target: TargetDescriptor,
         options_hash: str | None = None,
     ) -> str:
         """Return cached input hash or compute and cache.

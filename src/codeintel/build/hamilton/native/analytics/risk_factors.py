@@ -20,7 +20,8 @@ from hamilton.function_modifiers import (
     step,
 )
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
@@ -42,10 +43,9 @@ from codeintel.build.hamilton.validators import (
     build_table_contract,
 )
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import add, cast_dtype, ge, gt, ibis_bool, truediv
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, ir.Table)
 
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
@@ -350,24 +350,24 @@ risk_factors__table_materializations = make_table_materializations_collector(
 @codeintel_target(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
 def t__risk_factors(
     env: BuildEnv,
-    graph: TargetGraph,
-    risk_factors__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    risk_factors__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Compute composite risk factors per function.
 
     The actual DuckDB write is performed by a Hamilton materializer node
     (``m__analytics__goid_risk_factors``). This target node converts the
-    materialization metadata into a TargetRunRecord and persists the manifest
+    materialization results into a TargetRunRecord and persists the manifest
     on success.
 
     Parameters
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     risk_factors__table_materializations
-        Materialization metadata for analytics.goid_risk_factors.
+        Materialization results for analytics.goid_risk_factors.
 
     Returns
     -------
@@ -377,7 +377,7 @@ def t__risk_factors(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=RISK_FACTORS_TARGET_NAME,
         ),
         artifact_materializations=None,

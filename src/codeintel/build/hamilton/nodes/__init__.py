@@ -1,18 +1,10 @@
-"""Hamilton support-node generation.
-
-The build system uses native Hamilton `t__*` target nodes. This package
-provides *mechanically derived* support nodes (datasets/loaders/artifacts)
-generated from target contracts.
-"""
+"""Hamilton support-node helpers."""
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.nodes.support_factory import (
-    SupportGenerationOptions,
-    build_support_module,
-)
+from codeintel.build.hamilton.nodes.support_spec import SupportNodeSpec, support_spec_from_catalog
 
 __all__ = [
-    "SupportGenerationOptions",
-    "build_support_module",
+    "SupportNodeSpec",
+    "support_spec_from_catalog",
 ]

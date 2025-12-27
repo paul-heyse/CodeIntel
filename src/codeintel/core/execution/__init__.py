@@ -49,6 +49,7 @@ from codeintel.core.execution.ids import (
     RUN_PREFIX_PLAN,
     new_run_id,
 )
+from codeintel.core.execution.materialization import MaterializationResult, MaterializationStatus
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -148,6 +149,8 @@ __all__ = [
     "RUN_PREFIX_PIPELINE",
     "RUN_PREFIX_PLAN",
     "ExecutionContext",
+    "MaterializationResult",
+    "MaterializationStatus",
     "PluginFatalError",
     "PluginSkipRequestError",
     "PluginSkippedError",

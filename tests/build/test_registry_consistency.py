@@ -12,12 +12,14 @@ class TestRegistryConsistency:
 
     @staticmethod
     def test_all_targets_have_hamilton_nodes() -> None:
-        """Every OutputTarget must have a corresponding Hamilton target node."""
+        """Every target descriptor must have a corresponding Hamilton target node."""
         target_system = get_target_metadata_service().system
         runtime = target_system.runtime
-        graph = target_system.graph
+        catalog = target_system.catalog
         missing = {
-            t.name for t in graph.all_targets if target_node(t.name) not in runtime.dr.graph.nodes
+            t.name
+            for t in catalog.all_targets
+            if target_node(t.name) not in runtime.dr.graph.nodes
         }
         expect_true(
             len(missing) == 0,

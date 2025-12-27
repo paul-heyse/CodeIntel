@@ -22,14 +22,13 @@ from codeintel.build.hamilton.contracts.schemas.builder import build_all_schemas
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.hamilton.tags import (
     NODE_TYPE_DATASET,
-    NODE_TYPE_MATERIALIZE,
     TAG_NODE_TYPE,
     TAG_TABLE_KEY,
     TAG_TARGET,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import ItemsView, Iterator, Mapping, ValuesView
+    from collections.abc import ItemsView, Iterator, ValuesView
 
     from hamilton.node import Node
 
@@ -44,22 +43,12 @@ __all__ = [
 
 def _dataset_node_names(table_key: str) -> frozenset[str]:
     service = get_target_metadata_service()
+    catalog = service.system.catalog
     return frozenset(
-        node_name
-        for node_name, tags in service.tag_index.tags_by_node.items()
-        if tags.get(TAG_NODE_TYPE) == NODE_TYPE_DATASET and tags.get(TAG_TABLE_KEY) == table_key
+        node.name
+        for node in catalog.find_nodes(TAG_NODE_TYPE, NODE_TYPE_DATASET)
+        if node.tags.get(TAG_TABLE_KEY) == table_key
     )
-
-
-def _materialize_nodes(tags_by_node: Mapping[str, dict[str, str]]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for node_name, tags in tags_by_node.items():
-        if tags.get(TAG_NODE_TYPE) != NODE_TYPE_MATERIALIZE:
-            continue
-        target = tags.get(TAG_TARGET)
-        if isinstance(target, str) and target:
-            result[node_name] = target
-    return result
 
 
 def _node_depends_on_dataset(
@@ -82,25 +71,27 @@ def _node_depends_on_dataset(
 
 def _producer_targets(table_key: str) -> tuple[str, ...]:
     service = get_target_metadata_service()
+    catalog = service.system.catalog
     dataset_nodes = _dataset_node_names(table_key)
     if not dataset_nodes:
         return ()
     targets = {
-        tags.get(TAG_TARGET)
-        for node_name, tags in service.tag_index.tags_by_node.items()
-        if node_name in dataset_nodes
+        catalog.nodes[node_name].tags.get(TAG_TARGET)
+        for node_name in dataset_nodes
+        if node_name in catalog.nodes
     }
     return tuple(sorted(target for target in targets if isinstance(target, str) and target))
 
 
 def _consumer_targets(table_key: str) -> tuple[str, ...]:
     service = get_target_metadata_service()
+    catalog = service.system.catalog
     dataset_nodes = _dataset_node_names(table_key)
     if not dataset_nodes:
         return ()
 
     nodes = service.system.runtime.dr.graph.nodes
-    materialize_nodes = _materialize_nodes(service.tag_index.tags_by_node)
+    materialize_nodes = catalog.node_to_target
     consumers: set[str] = set()
     for node_name, target_name in materialize_nodes.items():
         node = nodes.get(node_name)

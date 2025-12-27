@@ -9,7 +9,7 @@ from codeintel.build.hashing import InputHashOptions, compute_input_hash_with_de
 from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
-    from codeintel.build.targets import OutputTarget
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
@@ -107,7 +107,7 @@ def evaluate_hash_state(
 
 def compute_hash_evaluation(
     *,
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     settings: BuildSettings,

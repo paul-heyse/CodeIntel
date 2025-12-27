@@ -5,8 +5,8 @@ This module provides:
 2. ValidationResult: Dataclass for tracking per-node validation status
 3. Validation result capture from Hamilton's @check_output_custom
 
-When strict contracts are enabled, writes should be validated against the
-currently executing target's OutputContract. Hamilton node functions are tagged
+When strict contracts are enabled, writes are validated against the currently
+executing target's DAG-declared outputs. Hamilton node functions are tagged
 with `target=<target_name>`; this hook uses those tags to activate the
 ContractEnforcer for the duration of each node execution.
 """
@@ -26,7 +26,7 @@ from codeintel.core.hamilton import tags as ht
 if TYPE_CHECKING:
     from hamilton.node import Node
 
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
 
 _log = logging.getLogger(__name__)
 
@@ -113,31 +113,31 @@ class ContractEnforcementHook(
 
     Parameters
     ----------
-    graph
-        Target graph for looking up target contracts.
+    catalog
+        DAG catalog for looking up target contracts.
     strict
         When True, validation failures raise exceptions.
 
     Examples
     --------
-    >>> hook = ContractEnforcementHook(graph, strict=True)
+    >>> hook = ContractEnforcementHook(catalog, strict=True)
     >>> driver = Builder().with_adapters(hook).build()
     >>> result = driver.execute(["my_node"])
     >>> summary = hook.get_validation_summary()
     >>> print(f"Passed: {summary.passed_count}, Failed: {summary.failed_count}")
     """
 
-    def __init__(self, graph: TargetGraph, *, strict: bool) -> None:
+    def __init__(self, catalog: DagCatalog, *, strict: bool) -> None:
         """Initialize the contract enforcement hook.
 
         Parameters
         ----------
-        graph
-            Target graph for looking up target contracts.
+        catalog
+            DAG catalog for looking up target contracts.
         strict
             When True, validation failures raise exceptions.
         """
-        self._graph = graph
+        self._catalog = catalog
         self._strict = strict
         self._validation_results: dict[str, ValidationResult] = {}
 
@@ -182,14 +182,25 @@ class ContractEnforcementHook(
 
         target_raw = tags.get(ht.TAG_TARGET)
         if isinstance(target_raw, str) and target_raw:
-            try:
-                target = self._graph.get(target_raw)
-            except KeyError:
+            if target_raw not in self._catalog.targets:
                 ContractEnforcer.deactivate()
-            else:
-                ContractEnforcer.activate(target, strict=self._strict)
-        else:
-            ContractEnforcer.deactivate()
+                return
+            allowed_tables = frozenset(
+                output.key
+                for output in self._catalog.table_outputs_by_target.get(target_raw, ())
+            )
+            allowed_artifacts = frozenset(
+                output.key
+                for output in self._catalog.artifact_outputs_by_target.get(target_raw, ())
+            )
+            ContractEnforcer.activate(
+                target_raw,
+                strict=self._strict,
+                allowed_tables=allowed_tables,
+                allowed_artifacts=allowed_artifacts,
+            )
+            return
+        ContractEnforcer.deactivate()
 
     def post_node_execute(
         self,

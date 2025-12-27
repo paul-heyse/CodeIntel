@@ -9,11 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.dag_catalog import DagCatalog, OutputDescriptor
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.introspect import (
-    DerivedTargetOutputs,
-    derive_target_outputs_from_savers,
-)
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
@@ -22,7 +19,6 @@ from codeintel.core.schemas.hashing import schema_hash
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
 
@@ -36,8 +32,7 @@ class BuildSpecCompileOptions:
 
 
 def _artifact_specs_for_target(
-    target: OutputTarget,
-    derived_outputs: DerivedTargetOutputs,
+    outputs: Iterable[OutputDescriptor],
     *,
     artifact_names: Iterable[str],
 ) -> tuple[ArtifactOutSpec, ...]:
@@ -45,10 +40,8 @@ def _artifact_specs_for_target(
 
     Parameters
     ----------
-    target
-        OutputTarget with a contract that may declare artifacts.
-    derived_outputs
-        DAG-derived output inventory with artifact templates per target.
+    outputs
+        DAG-derived output inventory for this target.
     artifact_names
         Names of artifacts to include.
 
@@ -58,16 +51,17 @@ def _artifact_specs_for_target(
         Artifact output specifications for the target.
     """
     specs: list[ArtifactOutSpec] = []
-    templates = derived_outputs.artifact_templates_by_target.get(target.name, {})
+    templates = {output.key: output.artifact_path_template for output in outputs}
     for artifact_name in artifact_names:
-        artifact = target.contract.get_artifact(artifact_name)
         template = templates.get(artifact_name)
+        if template is None:
+            msg = f"Missing artifact template for {artifact_name}"
+            raise ValueError(msg)
         specs.append(
             ArtifactOutSpec(
                 name=artifact_name,
                 kind=None,
-                path_template=template
-                or (artifact.path_template if artifact is not None else None),
+                path_template=template,
             )
         )
     return tuple(sorted(specs, key=lambda a: a.name))
@@ -75,17 +69,14 @@ def _artifact_specs_for_target(
 
 def _compile_target_specs(
     *,
-    graph: TargetGraph,
-    derived_outputs: DerivedTargetOutputs,
+    catalog: DagCatalog,
 ) -> tuple[tuple[TargetSpec, ...], frozenset[str]]:
     """Compile TargetSpec collection and table_key inventory.
 
     Parameters
     ----------
-    graph
-        Target graph describing target dependencies.
-    derived_outputs
-        Derived output table keys and artifact names by target.
+    catalog
+        DAG catalog describing targets and outputs.
 
     Returns
     -------
@@ -95,12 +86,16 @@ def _compile_target_specs(
     """
     all_table_keys: set[str] = set()
     target_specs: list[TargetSpec] = []
-    for target_name in sorted(graph):
-        target = graph.get(target_name)
+    for target_name in sorted(catalog.targets):
+        target = catalog.get(target_name)
         impl_kind = "native"
 
-        outputs = derived_outputs.datasets_by_target.get(target_name, ())
-        artifacts = derived_outputs.artifacts_by_target.get(target_name, ())
+        outputs = tuple(
+            output.key for output in catalog.table_outputs_by_target.get(target_name, ())
+        )
+        artifacts = tuple(
+            output.key for output in catalog.artifact_outputs_by_target.get(target_name, ())
+        )
 
         all_table_keys.update(outputs)
 
@@ -110,11 +105,10 @@ def _compile_target_specs(
                 domain=target.module,
                 impl_kind=impl_kind,
                 deps=target.dependencies,
-                outputs=tuple(outputs),
+                outputs=tuple(sorted(outputs)),
                 artifacts=_artifact_specs_for_target(
-                    target,
-                    derived_outputs,
-                    artifact_names=artifacts,
+                    catalog.artifact_outputs_by_target.get(target_name, ()),
+                    artifact_names=tuple(sorted(artifacts)),
                 ),
             )
         )
@@ -174,13 +168,11 @@ def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> Buil
     opts = options or BuildSpecCompileOptions()
 
     runtime = build_driver()
-    graph = runtime.graph
-    derived_outputs = derive_target_outputs_from_savers(runtime)
+    catalog = runtime.catalog
 
     provider = get_schema_provider()
     target_specs, all_table_keys = _compile_target_specs(
-        graph=graph,
-        derived_outputs=derived_outputs,
+        catalog=catalog,
     )
     dataset_specs = _compile_dataset_specs(
         provider=provider,

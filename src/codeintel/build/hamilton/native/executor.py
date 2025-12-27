@@ -10,14 +10,14 @@ patterns found across native Hamilton targets:
 
 Example
 -------
->>> executor = NativeTargetExecutor.for_target(env, graph, "risk_factors")
+>>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
 >>> if executor.should_skip():
 ...     return executor.skip()
 >>> return executor.execute(lambda: compute_and_materialize())
 
 For async targets:
 >>> async def async_example():
-...     executor = NativeTargetExecutor.for_target(env, graph, "scip")
+...     executor = NativeTargetExecutor.for_target(env, catalog, "scip")
 ...     if executor.should_skip():
 ...         return executor.skip()
 ...     return await executor.execute_async(async_compute)
@@ -39,15 +39,16 @@ from codeintel.build.hamilton.run_records import (
     save_manifest,
     should_skip_native_target,
 )
+from codeintel.build.hamilton.native.outputs import expected_table_keys_for_target
 from codeintel.build.hashing import InputHashOptions
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.run_records import TargetRunRecord
-    from codeintel.build.targets import OutputTarget, TargetGraph
 
 
 # Exceptions that should be caught and converted to failed records
@@ -84,7 +85,7 @@ class NativeTargetExecutor:
     --------
     Synchronous execution:
 
-    >>> executor = NativeTargetExecutor.for_target(env, graph, "risk_factors")
+    >>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
     >>> if executor.should_skip():
     ...     return executor.skip()
     >>> return executor.execute(lambda: {"analytics.table": 100})
@@ -92,14 +93,15 @@ class NativeTargetExecutor:
     Asynchronous execution:
 
     >>> async def run_async():
-    ...     executor = NativeTargetExecutor.for_target(env, graph, "scip")
+    ...     executor = NativeTargetExecutor.for_target(env, catalog, "scip")
     ...     if executor.should_skip():
     ...         return executor.skip()
     ...     return await executor.execute_async(async_index_fn)
     """
 
     env: BuildEnv
-    target: OutputTarget
+    catalog: DagCatalog
+    target: TargetDescriptor
     input_hash: str
     options_hash: str | None = None
     _start_time: float = field(default=0.0, repr=False)
@@ -108,7 +110,7 @@ class NativeTargetExecutor:
     def for_target(
         cls,
         env: BuildEnv,
-        graph: TargetGraph,
+        catalog: DagCatalog,
         target_name: str,
         *,
         options_hash: str | None = None,
@@ -120,8 +122,8 @@ class NativeTargetExecutor:
         ----------
         env
             Build environment with gateway and snapshot.
-        graph
-            Target graph for looking up the target.
+        catalog
+            DAG catalog for looking up the target.
         target_name
             Name of the target to execute.
         options_hash
@@ -137,17 +139,17 @@ class NativeTargetExecutor:
         Raises
         ------
         TargetNotFoundError
-            If target is not found in the graph.
+            If target is not found in the catalog.
 
         Examples
         --------
-        >>> executor = NativeTargetExecutor.for_target(env, graph, "risk_factors")
+        >>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
         >>> executor.target.name
         'risk_factors'
         """
-        target = graph.get(target_name)
+        target = catalog.get_target(target_name)
         if target is None:
-            raise TargetNotFoundError(target_name, list(graph))
+            raise TargetNotFoundError(target_name, list(catalog))
 
         resolved_options_hash = options_hash
         if resolved_options_hash is None:
@@ -182,6 +184,7 @@ class NativeTargetExecutor:
 
         return cls(
             env=env,
+            catalog=catalog,
             target=target,
             input_hash=input_hash,
             options_hash=resolved_options_hash,
@@ -434,7 +437,7 @@ class NativeTargetExecutor:
         TargetRunRecord
             Record with status="succeeded".
         """
-        expected = set(self.target.contract.table_keys)
+        expected = set(expected_table_keys_for_target(self.target.name, outputs=self.catalog))
         observed = set(row_counts)
         if observed != expected:
             missing = tuple(sorted(expected - observed))

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.tag_index import TagIndex
-from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_views
+import hamilton.driver as h_driver
+
+from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
+from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_catalog
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.views import ibis_views
@@ -12,8 +14,8 @@ from tests._helpers.assertions.expectation_assertions import expect_true
 
 def test_semantic_registry_compiles_from_hamilton_tags() -> None:
     """Discover semantic tags via Hamilton and compile a deterministic registry."""
-    tags = TagIndex.from_modules(modules=(ibis_views,)).semantic_view_tags()
-    expect_true("docs.v_function_summary" in tags)
+    driver = h_driver.Builder().with_modules(ibis_views).allow_module_overrides().build()
+    catalog = compile_dag_catalog(driver, strict=False)
 
     provider = MappingSchemaProvider(
         schemas={
@@ -29,5 +31,5 @@ def test_semantic_registry_compiles_from_hamilton_tags() -> None:
         }
     )
 
-    compiled = compile_semantic_registry_from_views(schema_provider=provider, view_tags=tags)
+    compiled = compile_semantic_registry_from_catalog(schema_provider=provider, catalog=catalog)
     expect_true(any(v.get("id") == "function.summary" for v in compiled.views))

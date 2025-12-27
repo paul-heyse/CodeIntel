@@ -21,7 +21,7 @@ from codeintel.build.hamilton.contracts.schemas.operation_contracts_dataset impo
 )
 from codeintel.build.hamilton.contracts.schemas.pandera_schemas import _get_dataset_schemas
 from codeintel.build.hamilton.contracts.schemas.schema import DatasetMetadata, DatasetSchema
-from codeintel.build.schemas import get_schema_service
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.schemas.contract_service import get_enriched_contract_service
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 

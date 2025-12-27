@@ -7,13 +7,11 @@ for all I/O operations.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
@@ -144,10 +142,10 @@ class RepoScanStep:
                 "repo": repo,
                 "commit": commit,
                 "language": "python",
-                "tags": "[]",
-                "owners": "[]",
+                "tags": [],
+                "owners": [],
+                "row_hash": None,
             }
-            payload["row_hash"] = stable_hash(payload)
             module_rows.append(serializer(payload))
 
         repo_map_rows = self._build_repo_map_rows(
@@ -192,8 +190,8 @@ class RepoScanStep:
                 {
                     "repo": repo,
                     "commit": commit,
-                    "modules": json.dumps(module_entries),
-                    "overlays": json.dumps({}),
+                    "modules": module_entries,
+                    "overlays": {},
                     "generated_at": datetime.now(tz=UTC),
                 }
             ),

@@ -130,6 +130,12 @@ class _DataclassFields(Protocol):
     __dataclass_fields__: Mapping[str, object]
 
 
+class _ViewWithInstrumentName(Protocol):
+    """Protocol for View objects enriched with an instrument_name attribute."""
+
+    instrument_name: str
+
+
 @dataclass(frozen=True, slots=True)
 class ResourceConfig:
     """Resource metadata for OpenTelemetry spans and metrics."""
@@ -730,9 +736,19 @@ def _build_exemplar_filter(config: ObservabilityConfig) -> ExemplarFilter | None
 def _build_views(config: ObservabilityConfig) -> list[View]:
     views: list[View] = []
 
+    def _view_for(
+        *,
+        instrument_name: str,
+        aggregation: ExplicitBucketHistogramAggregation,
+    ) -> View:
+        view = View(instrument_name=instrument_name, aggregation=aggregation)
+        named_view = cast("_ViewWithInstrumentName", view)
+        named_view.instrument_name = instrument_name
+        return view
+
     if config.metrics.views.operation_duration_ms_buckets:
         views.append(
-            View(
+            _view_for(
                 instrument_name="codeintel.operation.duration_ms",
                 aggregation=ExplicitBucketHistogramAggregation(
                     list(config.metrics.views.operation_duration_ms_buckets)
@@ -742,7 +758,7 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
 
     if config.metrics.views.query_duration_ms_buckets:
         views.append(
-            View(
+            _view_for(
                 instrument_name="codeintel.query.duration_ms",
                 aggregation=ExplicitBucketHistogramAggregation(
                     list(config.metrics.views.query_duration_ms_buckets)
@@ -752,7 +768,7 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
 
     if config.metrics.views.http_duration_s_buckets:
         views.append(
-            View(
+            _view_for(
                 instrument_name="http.server.request.duration",
                 aggregation=ExplicitBucketHistogramAggregation(
                     list(config.metrics.views.http_duration_s_buckets)
@@ -762,7 +778,7 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
 
     if config.metrics.views.grpc_duration_s_buckets:
         views.append(
-            View(
+            _view_for(
                 instrument_name="grpc.client.call.duration",
                 aggregation=ExplicitBucketHistogramAggregation(
                     list(config.metrics.views.grpc_duration_s_buckets)
@@ -770,7 +786,7 @@ def _build_views(config: ObservabilityConfig) -> list[View]:
             )
         )
         views.append(
-            View(
+            _view_for(
                 instrument_name="grpc.server.call.duration",
                 aggregation=ExplicitBucketHistogramAggregation(
                     list(config.metrics.views.grpc_duration_s_buckets)

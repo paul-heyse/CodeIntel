@@ -294,11 +294,7 @@ def resolve_from_params(
 
 
 def _should_allow_fallback(params: Mapping[str, object] | Mapping[str, str]) -> bool:
-    if params.get("repo") or params.get("commit") or params.get("db_path"):
-        return True
-    base = _to_path_or_none(params.get("project_root")) or _to_path_or_none(params.get("repo_root"))
-    base = base or Path.cwd()
-    return _select_fallback_repo_root(base) is not None
+    return bool(params.get("repo") or params.get("commit") or params.get("db_path"))
 
 
 def _resolve_from_project(project_root: Path | None) -> ResolvedRuntime:

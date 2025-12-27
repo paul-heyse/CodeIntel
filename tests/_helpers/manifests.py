@@ -92,13 +92,13 @@ def compute_input_hash(
     Raises
     ------
     RuntimeError
-        If the target cannot be found in the target graph.
+        If the target cannot be found in the catalog.
     """
     env = harness.build_env()
     runtime = build_driver(config={"profile": env.profile})
-    target_spec = runtime.graph.get(target)
+    target_spec = runtime.catalog.get_target(target)
     if target_spec is None:
-        message = f"Target {target!r} not found in graph"
+        message = f"Target {target!r} not found in catalog"
         raise RuntimeError(message)
     options_hash = options_hash_for_target(env, target)
     input_hash = compute_target_input_hash(

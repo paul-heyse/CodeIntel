@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hamilton.run_records import SkipCheckRequest, should_skip
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.build import (
     TEST_BUILD_SETTINGS,
@@ -22,6 +22,7 @@ from tests._helpers.build import (
     make_build_paths,
     make_snapshot,
 )
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
@@ -122,9 +123,10 @@ class TestHashComputation:
         build_accessor.manifests["dep"] = dep_manifest
         build_accessor.raise_on_load = True
 
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="main",
             module="analytics",
+            contract=EMPTY_CONTRACT,
             dependencies=("dep",),
         )
 
@@ -156,9 +158,10 @@ class TestHashComputation:
         """Verify changing upstream hash changes downstream input_hash."""
         snapshot = make_snapshot(tmp_path, repo="test/repo", commit="abc123")
 
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="downstream",
             module="analytics",
+            contract=EMPTY_CONTRACT,
             dependencies=("upstream",),
         )
 
@@ -308,9 +311,21 @@ class TestManifestPrefetch:
         build_accessor = cast("FakeBuildAccessor", fake_gateway.build)
         build_accessor.raise_on_load = True
 
-        graph = TargetGraph()
-        graph.register(OutputTarget(name="a", module="ingestion"))
-        graph.register(OutputTarget(name="b", module="graphs", dependencies=("a",)))
+        graph = build_catalog(
+            targets=(
+                make_target_descriptor(
+                    name="a",
+                    module="ingestion",
+                    contract=EMPTY_CONTRACT,
+                ),
+                make_target_descriptor(
+                    name="b",
+                    module="graphs",
+                    contract=EMPTY_CONTRACT,
+                    dependencies=("a",),
+                ),
+            )
+        )
 
         env = build_test_env(
             BuildEnvSpec(
@@ -327,7 +342,7 @@ class TestManifestPrefetch:
         try:
             plan = compute_plan(
                 env=env,
-                graph=graph,
+                catalog=graph,
                 requested=("b",),
             )
         except RuntimeError as e:
@@ -354,14 +369,16 @@ class TestHashCascadeComplete:
         """
         snapshot = make_snapshot(tmp_path, repo="test/repo", commit="abc123")
 
-        target_b = OutputTarget(
+        target_b = make_target_descriptor(
             name="b",
             module="graphs",
+            contract=EMPTY_CONTRACT,
             dependencies=("a",),
         )
-        target_c = OutputTarget(
+        target_c = make_target_descriptor(
             name="c",
             module="analytics",
+            contract=EMPTY_CONTRACT,
             dependencies=("b",),
         )
 
@@ -457,9 +474,10 @@ class TestHashCascadeComplete:
         """Verify options_hash contributes to input_hash."""
         snapshot = make_snapshot(tmp_path, repo="test/repo", commit="abc123")
 
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="target",
             module="analytics",
+            contract=EMPTY_CONTRACT,
         )
 
         hash_options_v1 = InputHashOptions(options_hash="opts_v1", manifests={})

@@ -5,27 +5,34 @@ Show asset lineage for the current snapshot.
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ *  ASSET --asset             Asset key to traverse (e.g.,                    │
 │                              analytics.goid_risk_factors). [env var:         │
+│                              CODEINTEL_BUILD_LINEAGE_ASSET,                  │
 │                              CODEINTEL_BUILD_LINEAGE_ASSET] [required]       │
 │    DIRECTION --direction -d  Traversal direction: up (dependencies) or down  │
 │                              (dependents). [env var:                         │
+│                              CODEINTEL_BUILD_LINEAGE_DIRECTION,              │
 │                              CODEINTEL_BUILD_LINEAGE_DIRECTION] [default:    │
 │                              up]                                             │
 │    DEPTH --depth             Traversal depth (number of hops). [env var:     │
+│                              CODEINTEL_BUILD_LINEAGE_DEPTH,                  │
 │                              CODEINTEL_BUILD_LINEAGE_DEPTH] [default: 1]     │
 │    FORMAT --format -f        Output format: json (default) or text. [env     │
-│                              var: CODEINTEL_BUILD_LINEAGE_FORMAT] [default:  │
-│                              json]                                           │
-│    --flags                   [env var: CODEINTEL_BUILD_LINEAGE_FLAGS]        │
-│                              [default: --flags]                              │
+│                              var: CODEINTEL_BUILD_LINEAGE_FORMAT,            │
+│                              CODEINTEL_BUILD_LINEAGE_FORMAT] [default: json] │
+│    *                         [env var: CODEINTEL_BUILD_LINEAGE_*] [default:  │
+│                              *]                                              │
 │    ROOT --root -r            Explicit project root directory. [env var:      │
+│                              CODEINTEL_BUILD_LINEAGE_ROOT,                   │
 │                              CODEINTEL_BUILD_LINEAGE_ROOT] [default: (none)] │
 │    OUTPUT-FORMAT             Output format. [choices: text, json, jsonl]     │
 │      --output-format         [env var:                                       │
+│                              CODEINTEL_BUILD_LINEAGE_OUTPUT_FORMAT,          │
 │                              CODEINTEL_BUILD_LINEAGE_OUTPUT_FORMAT]          │
 │                              [default: text]                                 │
 │    JSON --json               Alias for --output-format json. [env var:       │
+│                              CODEINTEL_BUILD_LINEAGE_JSON,                   │
 │                              CODEINTEL_BUILD_LINEAGE_JSON] [default: false]  │
 │    VERBOSE --verbose -v      Increase verbosity (0=warnings, 1=info,         │
 │                              2=debug). [env var:                             │
+│                              CODEINTEL_BUILD_LINEAGE_VERBOSE,                │
 │                              CODEINTEL_BUILD_LINEAGE_VERBOSE] [default: 0]   │
 ╰──────────────────────────────────────────────────────────────────────────────╯

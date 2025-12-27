@@ -43,7 +43,8 @@ from typing import TYPE_CHECKING
 import sqlglot.expressions as exp
 
 import codeintel.storage.views.ibis_views as _ibis_views
-from codeintel.core.schemas.row_models import normalize_row_value
+from codeintel.core.hashing import stable_hash
+from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import (
@@ -66,7 +67,7 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
-    from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.core.schemas.primitives import ColumnType, TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import MinimalGateway
     from codeintel.storage.ibis_adapter import IbisGateway
@@ -82,6 +83,90 @@ log = logging.getLogger(__name__)
 
 
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
+
+
+def _resolve_hash_column(table_schema: TableSchema | None) -> str | None:
+    if table_schema is None:
+        return None
+    write_policy = table_schema.write_policy
+    if write_policy is not None and write_policy.hash_column:
+        return write_policy.hash_column
+    column_names = {col.name for col in table_schema.columns}
+    if "row_hash" in column_names:
+        return "row_hash"
+    return None
+
+
+def _needs_row_hash(value: object) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value
+    return False
+
+
+def _compute_row_hash(
+    *,
+    table_schema: TableSchema,
+    row: Mapping[str, object],
+    hash_column: str,
+) -> str:
+    pairs: list[tuple[str, object]] = []
+    for col in table_schema.columns:
+        if col.name == hash_column:
+            continue
+        normalized = normalize_row_value_for_type(row.get(col.name), col.type)
+        pairs.append((col.name, normalized))
+    return stable_hash(pairs)
+
+
+def _inject_row_hash_for_tuples(
+    rows: Sequence[tuple[object, ...]],
+    *,
+    columns: tuple[str, ...],
+    table_schema: TableSchema,
+    hash_column: str,
+) -> list[tuple[object, ...]]:
+    if hash_column not in columns:
+        return list(rows)
+    hash_idx = columns.index(hash_column)
+    updated_rows: list[tuple[object, ...]] = []
+    for row in rows:
+        current = row[hash_idx]
+        if not _needs_row_hash(current):
+            updated_rows.append(row)
+            continue
+        row_map = dict(zip(columns, row, strict=True))
+        computed = _compute_row_hash(
+            table_schema=table_schema,
+            row=row_map,
+            hash_column=hash_column,
+        )
+        row_list = list(row)
+        row_list[hash_idx] = computed
+        updated_rows.append(tuple(row_list))
+    return updated_rows
+
+
+def _inject_row_hash_for_mappings(
+    row_list: list[Mapping[str, object]],
+    *,
+    table_schema: TableSchema,
+    hash_column: str,
+) -> list[Mapping[str, object]]:
+    updated_rows: list[Mapping[str, object]] = []
+    for row in row_list:
+        if not _needs_row_hash(row.get(hash_column)):
+            updated_rows.append(row)
+            continue
+        row_map = dict(row)
+        row_map[hash_column] = _compute_row_hash(
+            table_schema=table_schema,
+            row=row_map,
+            hash_column=hash_column,
+        )
+        updated_rows.append(row_map)
+    return updated_rows
 
 
 def _duckdb_table_exists(con: DuckDBPyConnection, *, schema: str, table: str) -> bool:
@@ -1243,7 +1328,8 @@ class DuckDBPolicyBackend:
         RuntimeError
             If schema_provider is required to derive columns but is not configured.
         """
-        if not rows:
+        rows_list = list(rows)
+        if not rows_list:
             return 0
 
         if "." not in table_key:
@@ -1273,32 +1359,41 @@ class DuckDBPolicyBackend:
         insert_expr = _build_insert(schema, table, columns, catalog=self._default_catalog())
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
         columns_tuple = tuple(columns)
-        column_type_by_name: dict[str, str] = (
+        column_type_by_name: dict[str, ColumnType] = (
             {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
         )
+        hash_column = _resolve_hash_column(table_schema)
+        if table_schema is not None and hash_column is not None and hash_column in columns_tuple:
+            rows_list = _inject_row_hash_for_tuples(
+                rows_list,
+                columns=columns_tuple,
+                table_schema=table_schema,
+                hash_column=hash_column,
+            )
         normalized_rows = [
             tuple(
                 self._coerce_insert_value(column, value, column_type_by_name)
                 for column, value in zip(columns_tuple, row, strict=True)
             )
-            for row in rows
+            for row in rows_list
         ]
 
-        log.debug("Bulk insert into %s: %d rows", table_key, len(rows))
+        log.debug("Bulk insert into %s: %d rows", table_key, len(rows_list))
         self.con.executemany(sql, normalized_rows)
-        return len(rows)
+        return len(rows_list)
 
     @classmethod
     def _coerce_insert_value(
         cls,
         column: str,
         value: object,
-        column_type_by_name: Mapping[str, str],
+        column_type_by_name: Mapping[str, ColumnType],
     ) -> object:
-        normalized = normalize_row_value(value)
+        column_type = column_type_by_name.get(column)
+        normalized = normalize_row_value_for_type(value, column_type)
         if normalized is None:
             return None
-        if column_type_by_name.get(column) != "JSON":
+        if column_type != "JSON":
             return normalized
         return normalize_duckdb_json_value(normalized)
 
@@ -1352,7 +1447,16 @@ class DuckDBPolicyBackend:
         elif self.schema_provider is not None:
             table_schema = self.schema_provider.get_table_schema(table_key)
 
-        column_type_by_name: dict[str, str] = (
+        if table_schema is not None:
+            hash_column = _resolve_hash_column(table_schema)
+            if hash_column is not None and hash_column in resolved_columns:
+                row_list = _inject_row_hash_for_mappings(
+                    row_list,
+                    table_schema=table_schema,
+                    hash_column=hash_column,
+                )
+
+        column_type_by_name: dict[str, ColumnType] = (
             {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
         )
         try:
@@ -1375,7 +1479,7 @@ class DuckDBPolicyBackend:
         table_key: str,
         row_list: list[Mapping[str, object]],
         resolved_columns: tuple[str, ...],
-        column_type_by_name: Mapping[str, str],
+        column_type_by_name: Mapping[str, ColumnType],
         table_schema: TableSchema | None,
     ) -> list[tuple[object, ...]]:
         if table_schema is None:
@@ -1398,7 +1502,7 @@ class DuckDBPolicyBackend:
         table_key: str,
         row_list: list[Mapping[str, object]],
         resolved_columns: tuple[str, ...],
-        column_type_by_name: Mapping[str, str],
+        column_type_by_name: Mapping[str, ColumnType],
     ) -> list[tuple[object, ...]]:
         try:
             return [
@@ -1418,7 +1522,7 @@ class DuckDBPolicyBackend:
         table_key: str,
         row_list: list[Mapping[str, object]],
         resolved_columns: tuple[str, ...],
-        column_type_by_name: Mapping[str, str],
+        column_type_by_name: Mapping[str, ColumnType],
     ) -> list[tuple[object, ...]]:
         tuple_rows: list[tuple[object, ...]] = []
         for row in row_list:
@@ -1467,7 +1571,8 @@ class DuckDBPolicyBackend:
         ValueError
             If table_key is not qualified or conflict_columns is empty.
         """
-        if not rows:
+        rows_list = list(rows)
+        if not rows_list:
             return 0
 
         if "." not in table_key:
@@ -1480,8 +1585,31 @@ class DuckDBPolicyBackend:
 
         schema, table = split_table_key(table_key)
 
+        table_schema = (
+            self.schema_provider.get_table_schema(table_key) if self.schema_provider else None
+        )
+        hash_column = _resolve_hash_column(table_schema)
+        columns_tuple = tuple(columns)
+        if table_schema is not None and hash_column is not None and hash_column in columns_tuple:
+            rows_list = _inject_row_hash_for_tuples(
+                rows_list,
+                columns=columns_tuple,
+                table_schema=table_schema,
+                hash_column=hash_column,
+            )
+        column_type_by_name: dict[str, ColumnType] = (
+            {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
+        )
+        normalized_rows = [
+            tuple(
+                self._coerce_insert_value(column, value, column_type_by_name)
+                for column, value in zip(columns_tuple, row, strict=True)
+            )
+            for row in rows_list
+        ]
+
         sql = _build_upsert(schema, table, columns, upsert, catalog=self._default_catalog())
 
-        log.debug("Upsert into %s: %d rows", table_key, len(rows))
-        self.con.executemany(sql, rows)
-        return len(rows)
+        log.debug("Upsert into %s: %d rows", table_key, len(rows_list))
+        self.con.executemany(sql, normalized_rows)
+        return len(rows_list)

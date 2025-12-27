@@ -1,21 +1,19 @@
 """Output contracts for build targets.
 
-This module defines the contract types that specify what an OutputTarget
-produces. The OutputContract is the single source of truth for:
-- Table schemas (columns, types, constraints)
+This module defines the contract types that specify what a TargetDescriptor
+produces. The OutputContract is the authoritative list of:
+- Table outputs (table keys + optional write policy or schema digest pointer)
 - File artifacts (SCIP indexes, exports, etc.)
 
 By making contracts authoritative, we can:
-- Derive TABLE_SCHEMAS from target definitions
 - Validate target outputs at write time
 - Track artifacts as first-class outputs
 
 Example
 -------
->>> from codeintel.build.contracts import OutputContract, ArtifactSpec
->>> from codeintel.config.datasets.primitives import TableSchema, Column
+>>> from codeintel.build.contracts import OutputContract, ArtifactSpec, TableOutputDescriptor
 >>> contract = OutputContract(
-...     tables=(TableSchema("core", "symbols", [Column("name", "VARCHAR")]),),
+...     tables=(TableOutputDescriptor(table_key="core.symbols"),),
 ...     artifacts=(ArtifactSpec("scip_index", "{scip_dir}/index.scip"),),
 ... )
 """
@@ -26,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from codeintel.config.datasets.primitives import Column, ColumnType, Index, TableSchema
+from codeintel.core.schemas.primitives import TableWritePolicy
 
 __all__ = [
     "ArtifactSpec",
@@ -33,7 +32,9 @@ __all__ = [
     "ColumnType",
     "Index",
     "OutputContract",
+    "TableOutputDescriptor",
     "TableSchema",
+    "TableWritePolicy",
 ]
 
 
@@ -78,19 +79,36 @@ class ArtifactSpec:
 
 
 @dataclass(frozen=True)
+class TableOutputDescriptor:
+    """Descriptor for a table output produced by a target.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    schema_digest
+        Optional schema digest pointer for persisted schema registry entries.
+    write_policy
+        Optional write policy override for materialization.
+    """
+
+    table_key: str
+    schema_digest: str | None = None
+    write_policy: TableWritePolicy | None = None
+
+
+@dataclass(frozen=True)
 class OutputContract:
-    """Contract defining what an OutputTarget produces.
+    """Contract defining what a target produces.
 
     The OutputContract is the single source of truth for a target's
-    outputs. It specifies both database tables (with full schemas)
-    and file artifacts.
+    output identities. It specifies database table keys (plus optional
+    write policy or schema digest pointers) and file artifacts.
 
     Parameters
     ----------
     tables
-        Tuple of TableSchema definitions for tables this target writes.
-        These schemas (and the derived ``table_keys``) are authoritative for
-        the target; they must be populated from the canonical table registry.
+        Tuple of TableOutputDescriptor entries for tables this target writes.
     artifacts
         Tuple of ArtifactSpec definitions for files this target produces.
         Empty for targets that only write to tables.
@@ -119,24 +137,16 @@ class OutputContract:
 
     Examples
     --------
-    >>> from codeintel.config.datasets.primitives import TableSchema, Column
+    >>> from codeintel.build.contracts import TableOutputDescriptor
     >>> contract = OutputContract(
     ...     tables=(
-    ...         TableSchema(
-    ...             schema="core",
-    ...             name="goids",
-    ...             columns=[
-    ...                 Column("goid_h128", "DECIMAL(38,0)", nullable=False),
-    ...                 Column("urn", "VARCHAR", nullable=False),
-    ...             ],
-    ...             primary_key=("goid_h128",),
-    ...         ),
+    ...         TableOutputDescriptor(table_key="core.goids"),
     ...     ),
     ...     artifacts=(ArtifactSpec("scip_index", "{scip_dir}/index.scip"),),
     ... )
     """
 
-    tables: tuple[TableSchema, ...] = ()
+    tables: tuple[TableOutputDescriptor, ...] = ()
     artifacts: tuple[ArtifactSpec, ...] = ()
 
     # Extended metadata for dataset contract derivation (PR-68)
@@ -161,7 +171,7 @@ class OutputContract:
         tuple[str, ...]
             Table keys in "schema.name" format.
         """
-        return tuple(t.fq_name for t in self.tables)
+        return tuple(t.table_key for t in self.tables)
 
     @property
     def artifact_names(self) -> tuple[str, ...]:
@@ -174,8 +184,8 @@ class OutputContract:
         """
         return tuple(a.name for a in self.artifacts)
 
-    def get_table(self, table_key: str) -> TableSchema | None:
-        """Look up a table schema by key.
+    def get_table(self, table_key: str) -> TableOutputDescriptor | None:
+        """Look up a table descriptor by key.
 
         Parameters
         ----------
@@ -184,11 +194,11 @@ class OutputContract:
 
         Returns
         -------
-        TableSchema | None
-            The schema if found, None otherwise.
+        TableOutputDescriptor | None
+            The descriptor if found, None otherwise.
         """
         for table in self.tables:
-            if table.fq_name == table_key:
+            if table.table_key == table_key:
                 return table
         return None
 
@@ -220,7 +230,7 @@ class OutputContract:
         """
         errors: list[str] = []
 
-        table_keys = [t.fq_name for t in self.tables]
+        table_keys = [t.table_key for t in self.tables]
         seen_tables: set[str] = set()
         for key in table_keys:
             if key in seen_tables:
@@ -234,7 +244,9 @@ class OutputContract:
             seen_artifacts.add(artifact.name)
 
         errors.extend(
-            f"Table {table.fq_name} has no columns" for table in self.tables if not table.columns
+            f"Table output has invalid key: {table.table_key!r}"
+            for table in self.tables
+            if not table.table_key or "." not in table.table_key
         )
 
         return errors

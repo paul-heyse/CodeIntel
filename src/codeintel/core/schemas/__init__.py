@@ -8,6 +8,11 @@ Hamilton-inferred, compiled manifests, etc.).
 
 from __future__ import annotations
 
+from codeintel.core.schemas.authority import (
+    SchemaAuthority,
+    SchemaDerivation,
+    SchemaSelection,
+)
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.hashing import canonical_type, schema_hash
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
@@ -37,8 +42,11 @@ __all__ = [
     "GeneratedRowBinding",
     "Index",
     "MappingSchemaProvider",
+    "SchemaAuthority",
+    "SchemaDerivation",
     "SchemaProvider",
     "SchemaRecord",
+    "SchemaSelection",
     "SchemaService",
     "TableSchema",
     "canonical_type",

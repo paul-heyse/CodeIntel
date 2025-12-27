@@ -954,13 +954,13 @@
           "description": null,
           "name": "executable_lines",
           "nullable": true,
-          "type": "INTEGER"
+          "type": "DECIMAL(38,0)"
         },
         {
           "description": null,
           "name": "covered_lines",
           "nullable": true,
-          "type": "INTEGER"
+          "type": "DECIMAL(38,0)"
         },
         {
           "description": null,
@@ -987,16 +987,8 @@
           "type": "TIMESTAMP"
         }
       ],
-      "description": "Line coverage aggregates per function",
-      "indexes": [
-        {
-          "columns": [
-            "function_goid_h128"
-          ],
-          "name": "idx_analytics_coverage_functions_goid",
-          "unique": false
-        }
-      ],
+      "description": null,
+      "indexes": [],
       "name": "coverage_functions",
       "primary_key": [],
       "schema": "analytics",
@@ -4134,12 +4126,6 @@
         },
         {
           "description": null,
-          "name": "urn",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
           "name": "repo",
           "nullable": true,
           "type": "VARCHAR"
@@ -4152,135 +4138,9 @@
         },
         {
           "description": null,
-          "name": "rel_path",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "language",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "kind",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "qualname",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "loc",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "logical_loc",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "cyclomatic_complexity",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "complexity_bucket",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "typedness_bucket",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "typedness_source",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
-          "name": "hotspot_score",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "file_typed_ratio",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "static_error_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "has_static_errors",
-          "nullable": true,
-          "type": "BOOLEAN"
-        },
-        {
-          "description": null,
-          "name": "executable_lines",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "covered_lines",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "coverage_ratio",
-          "nullable": true,
-          "type": "DOUBLE"
-        },
-        {
-          "description": null,
-          "name": "tested",
-          "nullable": true,
-          "type": "BOOLEAN"
-        },
-        {
-          "description": null,
-          "name": "test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "failing_test_count",
-          "nullable": true,
-          "type": "INTEGER"
-        },
-        {
-          "description": null,
-          "name": "last_test_status",
-          "nullable": true,
-          "type": "VARCHAR"
-        },
-        {
-          "description": null,
           "name": "risk_score",
           "nullable": true,
-          "type": "DOUBLE"
+          "type": "BIGINT"
         },
         {
           "description": null,
@@ -4290,33 +4150,31 @@
         },
         {
           "description": null,
-          "name": "tags",
+          "name": "cyclomatic_complexity",
           "nullable": true,
-          "type": "JSON"
+          "type": "INTEGER"
         },
         {
           "description": null,
-          "name": "owners",
+          "name": "fan_in_count",
           "nullable": true,
-          "type": "JSON"
+          "type": "BIGINT"
         },
         {
           "description": null,
-          "name": "created_at",
+          "name": "fan_out_count",
           "nullable": true,
-          "type": "TIMESTAMP"
-        }
-      ],
-      "description": "Composite risk factors per function",
-      "indexes": [
+          "type": "BIGINT"
+        },
         {
-          "columns": [
-            "function_goid_h128"
-          ],
-          "name": "idx_analytics_gorf_goid",
-          "unique": false
+          "description": null,
+          "name": "has_tests",
+          "nullable": true,
+          "type": "BOOLEAN"
         }
       ],
+      "description": null,
+      "indexes": [],
       "name": "goid_risk_factors",
       "primary_key": [],
       "schema": "analytics",
@@ -5660,6 +5518,152 @@
         },
         {
           "description": null,
+          "name": "name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "description",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "function_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "risk_level",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "avg_risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "max_risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "passed_test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "failed_test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "skipped_test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "xfail_test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "flaky_test_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "total_functions_covered",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "avg_functions_covered",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "max_functions_covered",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "min_functions_covered",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "function_coverage_ratio",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Cached subsystem test coverage aggregates.",
+      "indexes": [],
+      "name": "subsystem_coverage_cache",
+      "primary_key": [
+        "repo",
+        "commit",
+        "subsystem_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.subsystem_coverage_cache"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "subsystem_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
           "name": "import_in_degree",
           "nullable": true,
           "type": "DOUBLE"
@@ -5764,6 +5768,164 @@
       ],
       "schema": "analytics",
       "table_key": "analytics.subsystem_modules"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "subsystem_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "description",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "module_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "modules_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "entrypoints_json",
+          "nullable": true,
+          "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "internal_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "external_edge_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "fan_in",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "fan_out",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "function_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "avg_risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "max_risk_score",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "high_risk_function_count",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "risk_level",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "import_in_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "import_out_degree",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "import_pagerank",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "import_betweenness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "import_closeness",
+          "nullable": true,
+          "type": "DOUBLE"
+        },
+        {
+          "description": null,
+          "name": "import_layer",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": true,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Cached subsystem profile metrics derived from subsystem analytics.",
+      "indexes": [],
+      "name": "subsystem_profile_cache",
+      "primary_key": [
+        "repo",
+        "commit",
+        "subsystem_id"
+      ],
+      "schema": "analytics",
+      "table_key": "analytics.subsystem_profile_cache"
     },
     {
       "columns": [
@@ -7451,6 +7613,12 @@
           "name": "owners",
           "nullable": true,
           "type": "JSON"
+        },
+        {
+          "description": null,
+          "name": "row_hash",
+          "nullable": true,
+          "type": "VARCHAR"
         }
       ],
       "description": "Discovered modules per repo/commit",
@@ -7476,7 +7644,25 @@
         "path"
       ],
       "schema": "core",
-      "table_key": "core.modules"
+      "table_key": "core.modules",
+      "write_policy": {
+        "conflict_columns": [
+          "module",
+          "path"
+        ],
+        "hash_column": "row_hash",
+        "mode": "upsert",
+        "replace_scope": "snapshot",
+        "update_columns": [
+          "repo",
+          "commit",
+          "language",
+          "tags",
+          "owners",
+          "row_hash"
+        ],
+        "use_staging": true
+      }
     },
     {
       "columns": [
@@ -7520,6 +7706,598 @@
       ],
       "schema": "core",
       "table_key": "core.repo_map"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "table_key",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "error",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "occurred_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        },
+        {
+          "description": null,
+          "name": "run_id",
+          "nullable": false,
+          "type": "VARCHAR"
+        }
+      ],
+      "description": "Schema inference failures recorded during schema compile.",
+      "indexes": [
+        {
+          "columns": [
+            "table_key"
+          ],
+          "name": "idx_core_schema_inference_errors_table_key",
+          "unique": false
+        },
+        {
+          "columns": [
+            "run_id"
+          ],
+          "name": "idx_core_schema_inference_errors_run_id",
+          "unique": false
+        }
+      ],
+      "name": "schema_inference_errors",
+      "primary_key": [
+        "table_key",
+        "repo",
+        "commit",
+        "run_id"
+      ],
+      "schema": "core",
+      "table_key": "core.schema_inference_errors"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "start_line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "start_col",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_col",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "severity",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "code",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "message",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "source",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Diagnostics emitted during SCIP indexing",
+      "indexes": [
+        {
+          "columns": [
+            "rel_path"
+          ],
+          "name": "idx_core_scip_diag_path",
+          "unique": false
+        }
+      ],
+      "name": "scip_diagnostics",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path",
+        "start_line",
+        "start_col",
+        "message"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_diagnostics"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "package_manager",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "package_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "package_version",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "External SCIP symbols referenced by the index",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_external_symbol",
+          "unique": false
+        }
+      ],
+      "name": "scip_external_symbols",
+      "primary_key": [
+        "repo",
+        "commit",
+        "symbol"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_external_symbols"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "content_hash",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "options_hash",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "tool_version",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "shard_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "updated_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "Per-module SCIP shard state for incremental updates",
+      "indexes": [
+        {
+          "columns": [
+            "rel_path"
+          ],
+          "name": "idx_core_scip_module_state_path",
+          "unique": false
+        },
+        {
+          "columns": [
+            "repo",
+            "commit"
+          ],
+          "name": "idx_core_scip_module_state_repo_commit",
+          "unique": false
+        }
+      ],
+      "name": "scip_module_state",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_module_state"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "start_line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "start_col",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_line",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "end_col",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "roles",
+          "nullable": false,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "SCIP symbol occurrences (definitions and references)",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_occ_symbol",
+          "unique": false
+        },
+        {
+          "columns": [
+            "rel_path"
+          ],
+          "name": "idx_core_scip_occ_path",
+          "unique": false
+        }
+      ],
+      "name": "scip_occurrences",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path",
+        "symbol",
+        "start_line",
+        "start_col"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_occurrences"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "kind",
+          "nullable": true,
+          "type": "INTEGER"
+        },
+        {
+          "description": null,
+          "name": "display_name",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "signature",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "enclosing_symbol",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "SCIP symbol metadata and documentation",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_symbol_info_symbol",
+          "unique": false
+        }
+      ],
+      "name": "scip_symbol_information",
+      "primary_key": [
+        "repo",
+        "commit",
+        "symbol"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_symbol_information"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "related_symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "relationship_kind",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "SCIP symbol relationship edges",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_rel_symbol",
+          "unique": false
+        }
+      ],
+      "name": "scip_symbol_relationships",
+      "primary_key": [
+        "repo",
+        "commit",
+        "symbol",
+        "related_symbol",
+        "relationship_kind"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_symbol_relationships"
+    },
+    {
+      "columns": [
+        {
+          "description": null,
+          "name": "repo",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "commit",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "rel_path",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "symbol",
+          "nullable": false,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "documentation",
+          "nullable": true,
+          "type": "VARCHAR"
+        },
+        {
+          "description": null,
+          "name": "created_at",
+          "nullable": false,
+          "type": "TIMESTAMP"
+        }
+      ],
+      "description": "SCIP symbol definitions",
+      "indexes": [
+        {
+          "columns": [
+            "symbol"
+          ],
+          "name": "idx_core_scip_symbols_symbol",
+          "unique": false
+        }
+      ],
+      "name": "scip_symbols",
+      "primary_key": [
+        "repo",
+        "commit",
+        "rel_path",
+        "symbol"
+      ],
+      "schema": "core",
+      "table_key": "core.scip_symbols"
     },
     {
       "columns": [

@@ -9,15 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas import schema_hash
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
-from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.bootstrap import (
     replace_dataset_dataflow_edges,
     replace_dataset_dataflow_nodes,
-    replace_dataset_schema_registry,
     replace_derived_lineage_columns,
     replace_derived_lineage_edges,
 )
@@ -30,70 +27,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "bootstrap_metadata_datasets",
-    "load_dataset_schema_registry",
     "load_derived_lineage_columns",
     "sync_dataset_dataflow_graph",
     "sync_derived_lineage_columns",
     "sync_derived_lineage_edges",
-    "validate_dataset_schema_registry",
 ]
-
-
-def load_dataset_schema_registry(con: DuckDBPyConnection) -> dict[str, str]:
-    """Load schema hashes recorded in metadata.dataset_schema_registry.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection to query.
-
-    Returns
-    -------
-    dict[str, str]
-        Mapping of dataset ``table_key`` to its persisted schema hash.
-    """
-    rows = con.execute(
-        "SELECT table_key, schema_hash FROM metadata.dataset_schema_registry"
-    ).fetchall()
-    return {str(table_key): str(schema_hash_val) for table_key, schema_hash_val in rows}
-
-
-def _register_dataset_schema_hashes(con: DuckDBPyConnection) -> None:
-    """Register schema hashes for all known tables in the schema provider."""
-    provider = get_schema_provider()
-    entries = {
-        table_schema.table_key: schema_hash(table_schema)
-        for table_schema in provider.iter_table_schemas()
-    }
-    replace_dataset_schema_registry(con, entries=entries)
-
-
-def validate_dataset_schema_registry(con: DuckDBPyConnection) -> None:
-    """Validate dataset_schema_registry matches schema provider hashes.
-
-    Raises
-    ------
-    RuntimeError
-        When entries are missing or do not match expected schema hashes.
-    """
-    provider = get_schema_provider()
-    expected = {
-        table_schema.table_key: schema_hash(table_schema)
-        for table_schema in provider.iter_table_schemas()
-    }
-    actual = load_dataset_schema_registry(con)
-
-    missing = sorted(set(expected) - set(actual))
-    mismatched = sorted(
-        table_key for table_key, hash_val in expected.items() if actual.get(table_key) != hash_val
-    )
-    if missing or mismatched:
-        parts: list[str] = []
-        if missing:
-            parts.append(f"Missing dataset schema registry entries: {', '.join(missing)}")
-        if mismatched:
-            parts.append(f"Dataset schema drift: {', '.join(mismatched)}")
-        raise RuntimeError("; ".join(parts))
 
 
 @dataclass(frozen=True)
@@ -168,13 +106,9 @@ def bootstrap_metadata_datasets(
     jsonl_filenames: Mapping[str, str] | None = None,
     parquet_filenames: Mapping[str, str] | None = None,
     include_views: bool = True,
-    validate_schema_registry: bool = True,
 ) -> None:
     """Populate metadata.datasets from DatasetContracts and default filename mappings."""
     apply_metadata_ddl(con)
-    _register_dataset_schema_hashes(con)
-    if validate_schema_registry:
-        validate_dataset_schema_registry(con)
 
     jsonl_mapping = dict(jsonl_filenames or {})
     parquet_mapping = dict(parquet_filenames or {})

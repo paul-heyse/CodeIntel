@@ -39,7 +39,8 @@ from codeintel.analytics.testing.compute import (
     TestGraphMetricsResult,
     compute_test_graph_metrics_pure,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -62,7 +63,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
 from codeintel.storage.gateway import StorageGateway
 
@@ -71,7 +71,7 @@ log = logging.getLogger(__name__)
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
     GraphRuntime,
-    TargetGraph,
+    DagCatalog,
     TargetRunRecord,
     TestGraphMetricsResult,
 )
@@ -169,7 +169,7 @@ def function_history__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
 def function_history__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     function_history__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when function_history should be skipped.
@@ -181,7 +181,7 @@ def function_history__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         FUNCTION_HISTORY_TARGET_NAME,
         hash_options=function_history__hash_options,
     )
@@ -206,7 +206,7 @@ def history_timeseries__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
 def history_timeseries__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     history_timeseries__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when history_timeseries should be skipped.
@@ -218,7 +218,7 @@ def history_timeseries__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         HISTORY_TIMESERIES_TARGET_NAME,
         hash_options=history_timeseries__hash_options,
     )
@@ -243,7 +243,7 @@ def subsystem_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def subsystem_graph_metrics__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     subsystem_graph_metrics__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when subsystem_graph_metrics should be skipped.
@@ -255,7 +255,7 @@ def subsystem_graph_metrics__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
         hash_options=subsystem_graph_metrics__hash_options,
     )
@@ -280,7 +280,7 @@ def symbol_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def symbol_graph_metrics__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     symbol_graph_metrics__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when symbol_graph_metrics should be skipped.
@@ -292,7 +292,7 @@ def symbol_graph_metrics__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SYMBOL_GRAPH_METRICS_TARGET_NAME,
         hash_options=symbol_graph_metrics__hash_options,
     )
@@ -317,7 +317,7 @@ def subsystem_agreement__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def subsystem_agreement__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     subsystem_agreement__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when subsystem_agreement should be skipped.
@@ -329,7 +329,7 @@ def subsystem_agreement__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SUBSYSTEM_AGREEMENT_TARGET_NAME,
         hash_options=subsystem_agreement__hash_options,
     )
@@ -354,7 +354,7 @@ def test_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
 def test_graph_metrics__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     test_graph_metrics__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when test_graph_metrics should be skipped.
@@ -366,7 +366,7 @@ def test_graph_metrics__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         TEST_GRAPH_METRICS_TARGET_NAME,
         hash_options=test_graph_metrics__hash_options,
     )
@@ -464,8 +464,8 @@ def t__function_history__compute(
 @codeintel_target(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
 def t__function_history(
     env: BuildEnv,
-    graph: TargetGraph,
-    function_history__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    function_history__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize function git history and churn metrics.
 
@@ -473,10 +473,10 @@ def t__function_history(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     function_history__table_materializations
-        Materialization metadata for analytics.function_history.
+        Materialization results for analytics.function_history.
 
     Returns
     -------
@@ -486,7 +486,7 @@ def t__function_history(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=FUNCTION_HISTORY_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -557,8 +557,8 @@ def t__history_timeseries__compute(
 @codeintel_target(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
 def t__history_timeseries(
     env: BuildEnv,
-    graph: TargetGraph,
-    history_timeseries__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    history_timeseries__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize historical metrics timeseries for trending.
 
@@ -566,10 +566,10 @@ def t__history_timeseries(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     history_timeseries__table_materializations
-        Materialization metadata for analytics.history_timeseries.
+        Materialization results for analytics.history_timeseries.
 
     Returns
     -------
@@ -579,7 +579,7 @@ def t__history_timeseries(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=HISTORY_TIMESERIES_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -710,9 +710,9 @@ def subsystem_graph_metrics__rows(
 @codeintel_target(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
 def t__subsystem_graph_metrics(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__subsystem_graph_metrics__compute: SubsystemGraphMetricsComputeResult,
-    subsystem_graph_metrics__table_materializations: dict[str, MaterializationMetadata],
+    subsystem_graph_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize graph metrics for subsystems.
 
@@ -720,12 +720,12 @@ def t__subsystem_graph_metrics(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__subsystem_graph_metrics__compute
         Computed subsystem graph metrics result.
     subsystem_graph_metrics__table_materializations
-        Materialization metadata for analytics.subsystem_graph_metrics.
+        Materialization results for analytics.subsystem_graph_metrics.
 
     Returns
     -------
@@ -750,7 +750,7 @@ def t__subsystem_graph_metrics(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -918,9 +918,9 @@ def symbol_graph_metrics__functions_rows(
 @codeintel_target(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
 def t__symbol_graph_metrics(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__symbol_graph_metrics__compute: SymbolGraphMetricsComputeResult,
-    symbol_graph_metrics__table_materializations: dict[str, MaterializationMetadata],
+    symbol_graph_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize graph metrics from symbol usage patterns.
 
@@ -928,12 +928,12 @@ def t__symbol_graph_metrics(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__symbol_graph_metrics__compute
         Computed symbol graph metrics result.
     symbol_graph_metrics__table_materializations
-        Materialization metadata for analytics.symbol_graph_metrics tables.
+        Materialization results for analytics.symbol_graph_metrics tables.
 
     Returns
     -------
@@ -958,7 +958,7 @@ def t__symbol_graph_metrics(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SYMBOL_GRAPH_METRICS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -1057,9 +1057,9 @@ def subsystem_agreement__rows(
 @codeintel_target(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
 def t__subsystem_agreement(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__subsystem_agreement__compute: SubsystemAgreementComputeResult,
-    subsystem_agreement__table_materializations: dict[str, MaterializationMetadata],
+    subsystem_agreement__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Compute subsystem vs import community agreement.
 
@@ -1067,12 +1067,12 @@ def t__subsystem_agreement(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__subsystem_agreement__compute
         Computed subsystem agreement result.
     subsystem_agreement__table_materializations
-        Materialization metadata for analytics.subsystem_agreement.
+        Materialization results for analytics.subsystem_agreement.
 
     Returns
     -------
@@ -1097,7 +1097,7 @@ def t__subsystem_agreement(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=SUBSYSTEM_AGREEMENT_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -1214,8 +1214,8 @@ def test_graph_metrics__functions_rows(
 @codeintel_target(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
 def t__test_graph_metrics(
     env: BuildEnv,
-    graph: TargetGraph,
-    test_graph_metrics__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    test_graph_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize graph metrics from test-function bipartite graph.
 
@@ -1223,10 +1223,10 @@ def t__test_graph_metrics(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     test_graph_metrics__table_materializations
-        Materialization metadata for test graph metrics tables.
+        Materialization results for test graph metrics tables.
 
     Returns
     -------
@@ -1236,7 +1236,7 @@ def t__test_graph_metrics(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=TEST_GRAPH_METRICS_TARGET_NAME,
         ),
         artifact_materializations=None,

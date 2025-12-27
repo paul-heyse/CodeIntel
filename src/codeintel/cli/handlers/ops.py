@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from codeintel.build.hamilton.introspect import derive_target_io_surface
 from codeintel.build.schemas import (
     ContractResolutionMode,
     ContractResolutionSettings,
@@ -225,8 +224,7 @@ def _downstream_consumers_for_contract(
 
 def _flow_targets_for_table_key(table_key: str) -> tuple[list[str], list[str]]:
     metadata_service = get_target_metadata_service()
-    runtime = metadata_service.system.runtime
-    surfaces = derive_target_io_surface(runtime)
+    surfaces = metadata_service.system.catalog.io_surfaces
 
     producers: set[str] = set()
     consumers: set[str] = set()

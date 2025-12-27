@@ -17,7 +17,8 @@ from pathlib import Path
 
 import ibis.expr.types as ir
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_mapping, get_source_root
@@ -38,7 +39,6 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
@@ -46,7 +46,7 @@ from codeintel.storage.gateway import DuckDBError
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 IMPORT_GRAPH_TARGET_NAME = "import_graph"
 IMPORT_MODULES_TABLE_KEY = "graph.import_modules"
@@ -263,7 +263,7 @@ def import_graph__run_inputs(
 @tag_tool(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def t__import_graph__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     import_graph__hash_options: InputHashOptions,
     import_graph__run_inputs: ImportGraphRunInputs,
 ) -> ImportGraphToolOutput:
@@ -276,13 +276,20 @@ def t__import_graph__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=IMPORT_GRAPH_TARGET_NAME,
         hash_options=import_graph__hash_options,
         skip_reason="import_graph skipped",
     )
 
     def _execute() -> ImportGraphToolOutput:
+        if import_graph__run_inputs.modules_record.status == "skipped":
+            return ImportGraphToolOutput(
+                result=ExecutionResult.skip(
+                    import_graph__run_inputs.modules_record.error
+                    or "Upstream modules target skipped"
+                )
+            )
         if import_graph__run_inputs.modules_record.status != "succeeded":
             return ImportGraphToolOutput(
                 result=ExecutionResult.failed(
@@ -461,14 +468,14 @@ def import_graph__edges_rows(
 
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def import_graph__table_materializations(
-    m__graph__import_modules: MaterializationMetadata,
-    m__graph__import_graph_edges: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for import graph tables.
+    m__graph__import_modules: MaterializationResult,
+    m__graph__import_graph_edges: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect materialization results for import graph tables.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Return value.
 
     """
@@ -481,7 +488,7 @@ def import_graph__table_materializations(
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
 def import_graph__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     import_graph__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for import graph.
@@ -494,7 +501,7 @@ def import_graph__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=IMPORT_GRAPH_TARGET_NAME,
         hash_options=import_graph__hash_options,
     )
@@ -505,7 +512,7 @@ def t__import_graph(
     import_graph__finalize_context: ToolFinalizeContext,
     t__import_graph__run: ImportGraphToolOutput,
     t__import_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    import_graph__table_materializations: dict[str, MaterializationMetadata],
+    import_graph__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Construct a module import graph.
 

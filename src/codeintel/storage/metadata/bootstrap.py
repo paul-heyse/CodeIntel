@@ -10,38 +10,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Iterable, Sequence
 
     from duckdb import DuckDBPyConnection
 
 __all__ = [
     "replace_dataset_dataflow_edges",
     "replace_dataset_dataflow_nodes",
-    "replace_dataset_schema_registry",
     "replace_derived_lineage_columns",
     "replace_derived_lineage_edges",
 ]
-
-
-def replace_dataset_schema_registry(con: DuckDBPyConnection, *, entries: Mapping[str, str]) -> None:
-    """Replace metadata.dataset_schema_registry with the provided entries.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection.
-    entries
-        Mapping of table_key to schema hash.
-    """
-    con.execute("DELETE FROM metadata.dataset_schema_registry")
-    con.executemany(
-        """
-        INSERT INTO metadata.dataset_schema_registry (table_key, schema_hash)
-        VALUES (?, ?)
-        """,
-        list(entries.items()),
-    )
-
 
 def replace_dataset_dataflow_nodes(
     con: DuckDBPyConnection,

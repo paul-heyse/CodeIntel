@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.graphs.graph_targets import (
@@ -42,13 +43,14 @@ from codeintel.build.hamilton.native.graphs.graph_targets import (
     t__symbol_uses__ingest,
 )
 from codeintel.build.hamilton.native.patterns import ToolFinalizeContext
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.core.execution.materialization import MaterializationStatus
 from tests._helpers.assertions import (
     assert_record_row_counts,
     assert_target_ok,
     expect_equal,
     expect_true,
 )
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 
@@ -79,66 +81,60 @@ def _make_env(harness: GraphTargetHarness) -> BuildEnv:
     )
 
 
-def _make_graph() -> TargetGraph:
-    """Create a minimal TargetGraph for graph targets.
+def _make_graph() -> DagCatalog:
+    """Create a minimal catalog for graph targets.
 
     Returns
     -------
-    TargetGraph
-        Target graph with graph targets registered.
+    DagCatalog
+        Catalog with graph targets registered.
     """
-    graph = TargetGraph()
-    graph.register(
-        OutputTarget(
-            name="goids",
-            module="graphs",
-            contract=contract_for_keys(("core.goids", "core.goid_crosswalk")),
-        )
-    )
-    graph.register(
-        OutputTarget(
-            name="symbol_uses",
-            module="graphs",
-            contract=contract_for_keys(("graph.symbol_use_edges",)),
-        )
-    )
-    graph.register(
-        OutputTarget(
-            name="graph_metrics",
-            module="graphs",
-            contract=contract_for_keys(
-                (
-                    "analytics.graph_metrics_functions",
-                    "analytics.graph_metrics_modules",
-                )
+    return build_catalog(
+        targets=(
+            make_target_descriptor(
+                name="goids",
+                module="graphs",
+                contract=contract_for_keys(("core.goids", "core.goid_crosswalk")),
+            ),
+            make_target_descriptor(
+                name="symbol_uses",
+                module="graphs",
+                contract=contract_for_keys(("graph.symbol_use_edges",)),
+            ),
+            make_target_descriptor(
+                name="graph_metrics",
+                module="graphs",
+                contract=contract_for_keys(
+                    (
+                        "analytics.graph_metrics_functions",
+                        "analytics.graph_metrics_modules",
+                    )
+                ),
+            ),
+            make_target_descriptor(
+                name="graph_validation",
+                module="graphs",
+                contract=contract_for_keys(("analytics.graph_validation",)),
             ),
         )
     )
-    graph.register(
-        OutputTarget(
-            name="graph_validation",
-            module="graphs",
-            contract=contract_for_keys(("analytics.graph_validation",)),
-        )
-    )
-    return graph
 
 
 def _make_materialization(
     table_key: str,
     row_count: int,
     *,
-    status: str = "succeeded",
+    status: MaterializationStatus = "succeeded",
     error: str | None = None,
-) -> MaterializationMetadata:
-    return {
-        "status": status,
-        "table_key": table_key,
-        "row_count": row_count,
-        "duration_ms": 0.0,
-        "input_hash": "test",
-        "error": error,
-    }
+) -> MaterializationResult:
+    return MaterializationResult(
+        status=status,
+        table_key=table_key,
+        row_count=row_count,
+        duration_ms=0.0,
+        input_hash="test",
+        error=error,
+    )
 
 
 def _make_graph_metrics_materializations(
@@ -148,7 +144,7 @@ def _make_graph_metrics_materializations(
     modules: int,
     modules_ext: int,
     stats: int,
-) -> dict[str, MaterializationMetadata]:
+) -> dict[str, MaterializationResult]:
     return {
         GRAPH_METRICS_FUNCTIONS_TABLE_KEY: _make_materialization(
             GRAPH_METRICS_FUNCTIONS_TABLE_KEY, functions
@@ -231,7 +227,7 @@ def test_goids_materialize_success(
     }
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="goids",
     )
 
@@ -262,7 +258,7 @@ def test_goids_materialize_failure(
     }
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="goids",
     )
 
@@ -306,7 +302,7 @@ def test_symbol_uses_materialize_success(
     }
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="symbol_uses",
     )
 
@@ -336,7 +332,7 @@ def test_symbol_uses_materialize_failure(
     }
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="symbol_uses",
     )
 
@@ -392,7 +388,7 @@ def test_graph_metrics_materialize_success(
     )
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="graph_metrics",
     )
 
@@ -431,7 +427,7 @@ def test_graph_metrics_materialize_failure(
     )
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="graph_metrics",
     )
 
@@ -472,7 +468,7 @@ def test_graph_validation_materialize_success(
     }
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="graph_validation",
     )
 
@@ -503,7 +499,7 @@ def test_graph_validation_materialize_failure(
     }
     finalize_context = ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=graph,
         target_name="graph_validation",
     )
 

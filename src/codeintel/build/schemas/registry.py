@@ -7,7 +7,7 @@ enable transparent schema inference and future schema sources.
 The registry uses a unified schema provider with a three-tier fallback chain:
 
 1. Hamilton-native inference for q__-driven Ibis compute nodes
-2. Target-declared schemas from OutputContract.tables
+2. Declared schema overrides for non-inferable DAG outputs
 3. Raw declared schemas for source tables
 
 Examples
@@ -39,7 +39,7 @@ def get_schema_provider() -> SchemaProvider:
     unified provider with a fallback chain:
 
     1. Hamilton-native inference (for Ibis compute nodes)
-    2. Target-declared schemas (from OutputContract.tables)
+    2. Declared schema overrides for non-inferable DAG outputs
     3. Raw declared schemas (for source tables)
 
     Returns

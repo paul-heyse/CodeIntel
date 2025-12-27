@@ -1,13 +1,13 @@
 """Build system for computing minimal execution plans.
 
-This package provides the target graph, state validation, Hamilton-based
+This package provides the Hamilton-derived catalog, state validation,
 execution, and readiness infrastructure for the CodeIntel build system.
 
 Key concepts:
 
-- **OutputTarget**: A discrete output that can be requested and validated
-- **TargetGraph**: Complete dependency graph of all output targets
-- **OutputContract**: Tables and artifacts a target produces (single source of truth)
+- **DagCatalog**: Immutable catalog derived from the Hamilton DAG + tags
+- **TargetDescriptor**: Target metadata derived from tags + contracts
+- **OutputContract**: Output identities a target produces (tables + artifacts)
 - **OutputManifest**: Record of a target's computation with input/output hashes
 - **BuildRunRecord**: Record of a build system run for observability
 - **BuildError**: Rich error hierarchy with actionable hints
@@ -15,11 +15,11 @@ Key concepts:
 Import patterns::
 
 
-    from codeintel.build import OutputTarget, TargetGraph
+    from codeintel.build import DagCatalog, TargetDescriptor
     from codeintel.build.target_metadata import get_target_metadata_service
 
 
-    from codeintel.build.contracts import OutputContract, ArtifactSpec, TableSchema
+    from codeintel.build.contracts import OutputContract, ArtifactSpec, TableOutputDescriptor
     from codeintel.build.resources import TargetResources, TargetExecution
     from codeintel.build.parameters import TargetParameters
 
@@ -42,7 +42,7 @@ CLI usage::
     codeintel build status
     codeintel build history
 
-Use ``get_target_metadata_service().system.graph`` to access the canonical target graph instance.
+Use ``get_target_metadata_service().system.catalog`` for the canonical DAG catalog.
 """
 
 from __future__ import annotations
@@ -60,12 +60,12 @@ __all__ = [
     "BuildError",
     "BuildErrorCollection",
     "BuildRunRecord",
+    "DagCatalog",
     "ExecutionPolicy",
     "OutputContract",
     "OutputManifest",
-    "OutputTarget",
+    "TargetDescriptor",
     "TargetExecution",
-    "TargetGraph",
     "TargetMetadataService",
     "TargetModule",
     "TargetParameters",
@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.execution_policy import ExecutionPolicy
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hashing import compute_input_hash, compute_options_hash
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
     from codeintel.build.resources import (
@@ -88,7 +89,7 @@ if TYPE_CHECKING:
         TargetResources,
     )
     from codeintel.build.target_metadata import TargetMetadataService, get_target_metadata_service
-    from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+    from codeintel.build.targets import TargetModule
     from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
@@ -101,11 +102,11 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "BuildErrorCollection": ("codeintel.build.errors", "BuildErrorCollection"),
     "ExecutionPolicy": ("codeintel.build.execution_policy", "ExecutionPolicy"),
     "BuildRunRecord": ("codeintel.core.build_manifest", "BuildRunRecord"),
+    "DagCatalog": ("codeintel.build.hamilton.dag_catalog", "DagCatalog"),
     "OutputContract": ("codeintel.build.contracts", "OutputContract"),
     "OutputManifest": ("codeintel.core.build_manifest", "OutputManifest"),
-    "OutputTarget": ("codeintel.build.targets", "OutputTarget"),
     "TargetExecution": ("codeintel.build.resources", "TargetExecution"),
-    "TargetGraph": ("codeintel.build.targets", "TargetGraph"),
+    "TargetDescriptor": ("codeintel.build.hamilton.dag_catalog", "TargetDescriptor"),
     "TargetModule": ("codeintel.build.targets", "TargetModule"),
     "TargetParameters": ("codeintel.build.parameters", "TargetParameters"),
     "TargetResources": ("codeintel.build.resources", "TargetResources"),

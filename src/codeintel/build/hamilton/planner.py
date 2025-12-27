@@ -18,17 +18,17 @@ from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.impl_kind import ImplKind, native_target_names
-from codeintel.build.hamilton.introspect import target_graph_from_hamilton
 from codeintel.build.hamilton.naming import target_node
+from codeintel.build.hamilton.native.outputs import expected_table_keys_for_target
 from codeintel.build.hash_evaluator import compute_hash_evaluation
 from codeintel.build.hashing import InputHashOptions, compute_target_options_hash
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.introspect import GraphSource
-    from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+    from codeintel.build.targets import TargetModule
     from codeintel.core.build_manifest import OutputManifest
 
 
@@ -314,7 +314,7 @@ class HamiltonBuildPlan:
 
     Examples
     --------
-    >>> plan = compute_plan(env=env, graph=graph, requested=("risk_factors",))
+    >>> plan = compute_plan(env=env, requested=("risk_factors",))
     >>> plan.to_compute
     ('modules', 'scip', 'ast', 'goids', 'function_metrics', 'risk_factors')
     >>> plan.to_skip
@@ -407,7 +407,7 @@ class HamiltonBuildPlan:
 
 
 def _compute_entry_for_target(
-    target: OutputTarget,
+    target: TargetDescriptor,
     env: BuildEnv,
     manifests: Mapping[str, OutputManifest],
     upstream_status: dict[str, PlanStatus],
@@ -443,7 +443,7 @@ def _compute_entry_for_target(
     node = target_node(target_name)
     module = target.module
 
-    table_keys = target.contract.table_keys
+    table_keys = expected_table_keys_for_target(target.name)
     blocked_deps = [
         dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
     ]
@@ -549,9 +549,8 @@ def _compute_entry_for_target(
 def compute_plan(
     *,
     env: BuildEnv,
-    graph: TargetGraph | None = None,
+    catalog: DagCatalog | None = None,
     requested: tuple[str, ...],
-    graph_source: GraphSource = "hamilton",
 ) -> HamiltonBuildPlan:
     """Compute build plan for requested targets.
 
@@ -562,12 +561,10 @@ def compute_plan(
     ----------
     env
         Build environment with gateway, snapshot, and configuration.
-    graph
-        Target graph to use. If None, uses the graph from the target metadata service.
+    catalog
+        DAG catalog to use. If None, uses the catalog from the Hamilton runtime.
     requested
         Tuple of target names requested by the user.
-    graph_source
-        Source of dependency edges (only "hamilton" is supported).
 
     Returns
     -------
@@ -583,16 +580,12 @@ def compute_plan(
     >>> len(plan.to_compute)
     7
     """
-    _ = graph_source
     runtime = build_driver()
-    if graph is None:
-        graph = runtime.graph
-        native_names = native_target_names(runtime)
-    else:
-        graph = target_graph_from_hamilton(runtime, base_graph=graph)
-        native_names = frozenset(target.name for target in graph.all_targets)
+    if catalog is None:
+        catalog = runtime.catalog
+    native_names = native_target_names(runtime)
 
-    closure = graph.topological_order(list(requested))
+    closure = catalog.closure(requested)
 
     if env.manifest_index is not None:
         manifests: Mapping[str, OutputManifest] = env.manifest_index
@@ -608,7 +601,7 @@ def compute_plan(
 
     for target_name in closure:
         try:
-            target = graph.get(target_name)
+            target = catalog.get(target_name)
         except KeyError:
             entry = PlanEntry(
                 target=target_name,

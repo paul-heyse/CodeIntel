@@ -31,12 +31,10 @@ from codeintel.cli.errors.results import (
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.errors.taxonomy import INVALID_FORMAT
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
-from codeintel.storage.metadata import (
-    validate_dataset_schema_registry,
-)
 from codeintel.storage.validation import ContractValidationMode
 from codeintel.storage.warehouse import Warehouse
 
@@ -45,6 +43,7 @@ if TYPE_CHECKING:
 
     from codeintel.cli.context import CommandContext
     from codeintel.storage.gateway import StorageGateway
+    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 LOG = logging.getLogger(__name__)
 
@@ -160,6 +159,24 @@ def validate_macros_handler(
         return _validate_macros(ctx.gateway)
 
 
+def _load_table_schema_registry_keys(connection: DuckDBConnection) -> set[str]:
+    rows = connection.execute("SELECT table_key FROM metadata.table_schema_registry").fetchall()
+    return {str(row[0]) for row in rows}
+
+
+def _load_missing_schema_versions(connection: DuckDBConnection) -> list[str]:
+    rows = connection.execute(
+        """
+        SELECT r.table_key
+        FROM metadata.table_schema_registry AS r
+        LEFT JOIN metadata.schema_versions AS v
+          ON r.schema_digest = v.schema_digest
+        WHERE v.schema_digest IS NULL
+        """
+    ).fetchall()
+    return [str(row[0]) for row in rows]
+
+
 def _validate_macros(
     gateway: StorageGateway,
 ) -> CliResult[ValidateMacrosResult]:
@@ -178,15 +195,28 @@ def _validate_macros(
     connection = gateway.con
     missing_ingest: list[str] = []
     present_ingest: list[str] = []
-    error_msg: str | None = None
 
     try:
-        validate_dataset_schema_registry(connection)
+        expected_keys = {contract.table_key for contract in iter_contracts()}
     except RuntimeError as exc:
-        error_msg = str(exc)
+        return fail_macro_validation(str(exc))
 
-    if error_msg is not None:
-        return fail_macro_validation(error_msg)
+    registry_keys = _load_table_schema_registry_keys(connection)
+    missing_registry = sorted(expected_keys - registry_keys)
+    missing_versions = _load_missing_schema_versions(connection)
+
+    if missing_registry or missing_versions:
+        parts: list[str] = []
+        if missing_registry:
+            parts.append(
+                f"Missing table schema registry entries: {', '.join(missing_registry)}"
+            )
+        if missing_versions:
+            parts.append(
+                "Missing schema versions for table keys: "
+                + ", ".join(sorted(missing_versions))
+            )
+        return fail_macro_validation("; ".join(parts))
 
     dataset_rows_list: list[str] = []
 

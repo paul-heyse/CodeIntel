@@ -31,13 +31,13 @@ from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
 )
-from codeintel.build.targets import TargetGraph
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_false,
     expect_in,
     expect_true,
 )
+from tests._helpers.catalog import build_catalog
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -192,8 +192,8 @@ class TestContractEnforcementHook:
     @staticmethod
     def test_hook_captures_validation_results() -> None:
         """Verify ContractEnforcementHook captures validation results."""
-        graph = TargetGraph()
-        hook = ContractEnforcementHook(graph, strict=False)
+        catalog = build_catalog(targets=())
+        hook = ContractEnforcementHook(catalog, strict=False)
 
         # Simulate node execution
         hook.pre_node_execute(node_name="test_node", node_tags={"target": "test"})
@@ -207,8 +207,8 @@ class TestContractEnforcementHook:
     @staticmethod
     def test_hook_captures_failure() -> None:
         """Verify ContractEnforcementHook captures failures."""
-        graph = TargetGraph()
-        hook = ContractEnforcementHook(graph, strict=False)
+        catalog = build_catalog(targets=())
+        hook = ContractEnforcementHook(catalog, strict=False)
 
         # Simulate failed node execution
         hook.pre_node_execute(node_name="failing_node", node_tags={"target": "test"})
@@ -226,8 +226,8 @@ class TestContractEnforcementHook:
     @staticmethod
     def test_hook_get_validation_summary() -> None:
         """Verify get_validation_summary aggregates results."""
-        graph = TargetGraph()
-        hook = ContractEnforcementHook(graph, strict=False)
+        catalog = build_catalog(targets=())
+        hook = ContractEnforcementHook(catalog, strict=False)
 
         # Simulate multiple nodes
         for name in ["node_a", "node_b", "node_c"]:
@@ -291,9 +291,9 @@ class TestBuildHooksValidation:
         """Verify build_hooks includes ContractEnforcementHook by default."""
         gateway = fresh_gateway
         writer = BuildRunWriter(gateway)
-        graph = TargetGraph()
+        catalog = build_catalog(targets=())
 
-        hooks = build_hooks("run-123", writer, graph)
+        hooks = build_hooks("run-123", writer, catalog)
 
         # Should include ContractEnforcementHook
         contract_hooks = [h for h in hooks if isinstance(h, ContractEnforcementHook)]
@@ -309,9 +309,9 @@ class TestBuildHooksValidation:
         """Verify build_hooks can disable validation."""
         gateway = fresh_gateway
         writer = BuildRunWriter(gateway)
-        graph = TargetGraph()
+        catalog = build_catalog(targets=())
 
-        hooks = build_hooks("run-123", writer, graph, options=HookOptions(enable_validation=False))
+        hooks = build_hooks("run-123", writer, catalog, options=HookOptions(enable_validation=False))
 
         # Should not include ContractEnforcementHook
         contract_hooks = [h for h in hooks if isinstance(h, ContractEnforcementHook)]

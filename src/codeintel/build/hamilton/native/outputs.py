@@ -10,37 +10,36 @@ from collections.abc import Callable
 from functools import lru_cache
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.materializers.path_templates import format_path_template
 from codeintel.core.imports.lazy import lazy_getattr
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.introspect import DerivedTargetOutputs
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.build.hamilton.runtime import HamiltonRuntime
-    from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import SnapshotRef
 
 
 @lru_cache(maxsize=1)
-def _derived_outputs() -> DerivedTargetOutputs:
+def _derived_outputs() -> DagCatalog:
     build_driver = cast(
         "Callable[..., HamiltonRuntime]",
         lazy_getattr("codeintel.build.hamilton.driver_factory", "build_driver"),
     )
     runtime = build_driver()
-    return derive_target_outputs_from_savers(runtime)
+    return runtime.catalog
 
 
-def _resolve_outputs(outputs: DerivedTargetOutputs | None) -> DerivedTargetOutputs:
+def _resolve_outputs(outputs: DagCatalog | None) -> DagCatalog:
     return outputs or _derived_outputs()
 
 
 def expected_table_keys_for_target(
     target_name: str,
     *,
-    outputs: DerivedTargetOutputs | None = None,
+    outputs: DagCatalog | None = None,
 ) -> tuple[str, ...]:
     """Return expected table keys for a target from DAG saver tags.
 
@@ -57,13 +56,15 @@ def expected_table_keys_for_target(
         Table keys expected to be written by the target.
     """
     resolved_outputs = _resolve_outputs(outputs)
-    return tuple(resolved_outputs.datasets_by_target.get(target_name, ()))
+    return tuple(
+        output.key for output in resolved_outputs.table_outputs_by_target.get(target_name, ())
+    )
 
 
 def expected_artifact_names_for_target(
     target_name: str,
     *,
-    outputs: DerivedTargetOutputs | None = None,
+    outputs: DagCatalog | None = None,
 ) -> tuple[str, ...]:
     """Return expected artifact names for a target from DAG saver tags.
 
@@ -80,13 +81,15 @@ def expected_artifact_names_for_target(
         Artifact names expected to be written by the target.
     """
     resolved_outputs = _resolve_outputs(outputs)
-    return tuple(resolved_outputs.artifacts_by_target.get(target_name, ()))
+    return tuple(
+        output.key for output in resolved_outputs.artifact_outputs_by_target.get(target_name, ())
+    )
 
 
 def artifact_templates_for_target(
     target_name: str,
     *,
-    outputs: DerivedTargetOutputs | None = None,
+    outputs: DagCatalog | None = None,
 ) -> dict[str, str]:
     """Return artifact path templates for a target from DAG saver tags.
 
@@ -103,21 +106,26 @@ def artifact_templates_for_target(
         Mapping of artifact name to path template.
     """
     resolved_outputs = _resolve_outputs(outputs)
-    return dict(resolved_outputs.artifact_templates_by_target.get(target_name, {}))
+    templates = resolved_outputs.artifact_outputs_by_target.get(target_name, ())
+    return {
+        output.key: output.artifact_path_template
+        for output in templates
+        if output.artifact_path_template is not None
+    }
 
 
 def expected_datasets(
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     *,
-    outputs: DerivedTargetOutputs | None = None,
+    outputs: DagCatalog | None = None,
 ) -> tuple[DatasetRef, ...]:
     """Generate expected DatasetRef objects for a target's output tables.
 
     Parameters
     ----------
     target
-        Output target with contract defining table_keys.
+        Target descriptor used for identity; table keys are DAG-derived.
     snapshot
         Snapshot identity (repo + commit) for lineage.
     outputs
@@ -126,14 +134,14 @@ def expected_datasets(
     Returns
     -------
     tuple[DatasetRef, ...]
-        Tuple of DatasetRef objects, one per table_key in the contract.
+        Tuple of DatasetRef objects, one per DAG-declared table key.
 
     Examples
     --------
     >>> from codeintel.config.primitives import SnapshotRef
     >>> from codeintel.build.target_metadata import get_target_metadata_service
-    >>> graph = get_target_metadata_service().system.graph
-    >>> target = graph.get("function_metrics")
+    >>> catalog = get_target_metadata_service().system.catalog
+    >>> target = catalog.get("function_metrics")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_datasets(target, snapshot)
     >>> len(refs) > 0
@@ -157,10 +165,10 @@ def expected_datasets(
 
 
 def expected_artifacts(
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     *,
-    outputs: DerivedTargetOutputs | None = None,
+    outputs: DagCatalog | None = None,
     path_formatter: dict[str, str] | None = None,
 ) -> tuple[ArtifactRef, ...]:
     """Generate expected ArtifactRef objects for a target's output artifacts.
@@ -168,7 +176,7 @@ def expected_artifacts(
     Parameters
     ----------
     target
-        Output target used for identity only (artifacts are DAG-derived).
+        Target descriptor used for identity only (artifacts are DAG-derived).
     snapshot
         Snapshot identity (repo + commit) for lineage.
     outputs
@@ -190,8 +198,8 @@ def expected_artifacts(
     --------
     >>> from codeintel.config.primitives import SnapshotRef
     >>> from codeintel.build.target_metadata import get_target_metadata_service
-    >>> graph = get_target_metadata_service().system.graph
-    >>> target = graph.get("scip")
+    >>> catalog = get_target_metadata_service().system.catalog
+    >>> target = catalog.get("scip")
     >>> snapshot = SnapshotRef(repo="example", commit="abc123")
     >>> refs = expected_artifacts(target, snapshot)
     >>> len(refs) > 0

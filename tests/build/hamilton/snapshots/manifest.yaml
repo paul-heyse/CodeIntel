@@ -223,6 +223,17 @@ cases:
     kind: "text"
 
   # ========================================================================
+  # PR-63: Schema manifest stability (native)
+  # ========================================================================
+
+  - name: "pr63_schema_manifest_native"
+    tags: ["pr63", "schema", "json", "native", "tiny"]
+    args: ["build", "schema", "compile"]
+    exit_code: 0
+    snapshot: "pr63_schema_manifest_native.json"
+    kind: "json"
+
+  # ========================================================================
   # PR-71: Schema drift detection CI gate (help-only)
   # ========================================================================
 
