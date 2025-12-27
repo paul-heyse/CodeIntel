@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.repositories.dataflow import DataflowRepository
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
@@ -16,7 +17,6 @@ from tests._helpers.assertions.expectation_assertions import (
 from tests._helpers.fixtures.rows import (
     DatasetDataflowEdgeRow,
     DatasetDataflowNodeRow,
-    insert_rows,
 )
 
 if TYPE_CHECKING:
@@ -63,12 +63,36 @@ def dataflow_ctx(test_ctx: TestContext) -> TestContext:
         Context with dataset dataflow tables populated for testing.
     """
     con = test_ctx.gateway.con
+    nodes_ref = meta_table_ref("metadata.dataset_dataflow_nodes")
+    edges_ref = meta_table_ref("metadata.dataset_dataflow_edges")
     base_counts = (
-        len(con.execute("SELECT id FROM metadata.dataset_dataflow_nodes").fetchall()),
-        len(con.execute("SELECT src FROM metadata.dataset_dataflow_edges").fetchall()),
+        len(con.execute(f"SELECT id FROM {nodes_ref}").fetchall()),
+        len(con.execute(f"SELECT src FROM {edges_ref}").fetchall()),
     )
-    insert_rows(test_ctx.gateway, DATAFLOW_NODES)
-    insert_rows(test_ctx.gateway, DATAFLOW_EDGES)
+    con.executemany(
+        f"""
+        INSERT INTO {nodes_ref} (
+            id,
+            kind,
+            family,
+            owner_package,
+            description
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        [row.to_tuple() for row in DATAFLOW_NODES],
+    )
+    con.executemany(
+        f"""
+        INSERT INTO {edges_ref} (
+            src,
+            dst,
+            edge_type
+        )
+        VALUES (?, ?, ?)
+        """,
+        [row.to_tuple() for row in DATAFLOW_EDGES],
+    )
     test_ctx.extra["dataflow_counts"] = base_counts
     return test_ctx
 

@@ -27,10 +27,8 @@ import logging
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
-from codeintel.core.ibis_typing import and_predicates, ibis_bool, isin_values
 from codeintel.core.schemas.service import get_schema_service
 from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
-from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -219,19 +217,29 @@ class DuckDBStorageAdapter(IngestStoragePort):
         self._validate_table_exists(table_key)
         if not paths:
             return 0
+        if not path_column.isidentifier():
+            message = f"Invalid path column: {path_column}"
+            raise ValueError(message)
 
-        table = ibis_facade.table(self._gateway, table_key)
-        predicates = [isin_values(table[path_column], list(paths))]
-        schema_names_attr = table.schema().names
-        schema_names = list(cast("Sequence[str]", schema_names_attr))
+        relation = self._gateway.relation_from_table_key(table_key)
+        schema_names = list(cast("Sequence[str]", relation.columns))
+        conditions: list[str] = []
+        params: list[object] = []
+
+        placeholders = ", ".join(["?"] * len(paths))
+        conditions.append(f"{path_column} IN ({placeholders})")
+        params.extend(paths)
         if repo is not None and "repo" in schema_names:
-            predicates.append(ibis_bool(table["repo"] == repo))
+            conditions.append("repo = ?")
+            params.append(repo)
         if commit is not None and "commit" in schema_names:
-            predicates.append(ibis_bool(table["commit"] == commit))
-        cond = and_predicates(*predicates)
+            conditions.append("commit = ?")
+            params.append(commit)
 
+        where_clause = " AND ".join(conditions)
+        sql = f"DELETE FROM {table_key} WHERE {where_clause}"
         try:
-            self._gateway.ibis.delete(table_key, where=cond)
+            self._gateway.execute(sql, params)
         except Exception as exc:
             message = f"Failed to delete rows from {table_key}"
             raise ValueError(message) from exc

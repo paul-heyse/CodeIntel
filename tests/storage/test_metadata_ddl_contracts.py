@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import duckdb
 
+from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.helpers.table_key import fully_qualified_table_ref
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.metadata.meta_catalog import attach_meta_database
 from codeintel.storage.metadata.schema import METADATA_TABLES
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 
@@ -13,12 +19,24 @@ def test_apply_metadata_ddl_is_idempotent() -> None:
     """apply_metadata_ddl can be safely applied multiple times."""
     con = duckdb.connect(":memory:")
     try:
-        apply_metadata_ddl(con)
-        apply_metadata_ddl(con)
+        config = StorageConfig(
+            db_path=Path(":memory:"),
+            read_only=False,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+        )
+        attach_meta_database(con, config=config)
+        apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+        apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
 
         expected_names = {table.name for table in METADATA_TABLES}
+        info_schema_ref = fully_qualified_table_ref(
+            "information_schema.tables",
+            catalog=META_CATALOG_NAME,
+        )
         rows = con.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'metadata'"
+            f"SELECT table_name FROM {info_schema_ref} WHERE table_schema = 'metadata'"
         ).fetchall()
         actual_names = {str(row[0]) for row in rows}
 

@@ -91,8 +91,13 @@ def seed_catalog_modules(
     df = pd.DataFrame(rows)
 
     gateway.execute(f"DROP TABLE IF EXISTS {CATALOG_MODULE_TABLE}")
-
-    gateway.ibis.con.create_table(
-        CATALOG_MODULE_TABLE.rsplit(".", maxsplit=1)[-1], df, temp=True, overwrite=True
-    )
+    temp_name = "catalog_modules_seed"
+    gateway.register(temp_name, df)
+    try:
+        gateway.execute(
+            "CREATE OR REPLACE TEMP TABLE catalog_modules AS SELECT * FROM "
+            f"{temp_name}"
+        )
+    finally:
+        gateway.unregister(temp_name)
     return CATALOG_MODULE_TABLE

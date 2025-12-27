@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
+
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
@@ -36,12 +38,13 @@ def replace_dataset_dataflow_nodes(
     rows
         Node rows in table order: (id, kind, family, owner_package, description).
     """
-    con.execute("DELETE FROM metadata.dataset_dataflow_nodes")
+    table_ref = meta_table_ref("metadata.dataset_dataflow_nodes")
+    con.execute(f"DELETE FROM {table_ref}")
     if not rows:
         return
     con.executemany(
-        """
-        INSERT INTO metadata.dataset_dataflow_nodes (
+        f"""
+        INSERT INTO {table_ref} (
             id,
             kind,
             family,
@@ -68,12 +71,13 @@ def replace_dataset_dataflow_edges(
     rows
         Edge rows in table order: (src, dst, edge_type).
     """
-    con.execute("DELETE FROM metadata.dataset_dataflow_edges")
+    table_ref = meta_table_ref("metadata.dataset_dataflow_edges")
+    con.execute(f"DELETE FROM {table_ref}")
     if not rows:
         return
     con.executemany(
-        """
-        INSERT INTO metadata.dataset_dataflow_edges (
+        f"""
+        INSERT INTO {table_ref} (
             src,
             dst,
             edge_type
@@ -108,9 +112,10 @@ def replace_derived_lineage_edges(
         Row iterable in table order:
         (repo, commit, downstream, upstream, edge_type).
     """
+    table_ref = meta_table_ref("metadata.derived_lineage_edges")
     con.execute(
-        """
-        DELETE FROM metadata.derived_lineage_edges
+        f"""
+        DELETE FROM {table_ref}
         WHERE repo = ? AND commit = ? AND edge_type = ?
         """,
         [repo, commit, edge_type],
@@ -119,8 +124,8 @@ def replace_derived_lineage_edges(
     if not row_list:
         return
     con.executemany(
-        """
-        INSERT INTO metadata.derived_lineage_edges (
+        f"""
+        INSERT INTO {table_ref} (
             repo,
             commit,
             downstream,
@@ -158,9 +163,10 @@ def replace_derived_lineage_columns(
         (repo, commit, downstream_table, downstream_column,
          upstream_table, upstream_column, edge_type).
     """
+    table_ref = meta_table_ref("metadata.derived_lineage_columns")
     con.execute(
-        """
-        DELETE FROM metadata.derived_lineage_columns
+        f"""
+        DELETE FROM {table_ref}
         WHERE repo = ? AND commit = ? AND edge_type = ?
         """,
         [repo, commit, edge_type],
@@ -169,8 +175,8 @@ def replace_derived_lineage_columns(
     if not row_list:
         return
     con.executemany(
-        """
-        INSERT INTO metadata.derived_lineage_columns (
+        f"""
+        INSERT INTO {table_ref} (
             repo,
             commit,
             downstream_table,

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref
@@ -29,21 +30,44 @@ class LineageMetadataError(ServingSnapshotError):
     """Raised when lineage metadata is missing from the snapshot."""
 
 
-def _table_exists(con: DuckDBConnection, *, schema: str, table: str) -> bool:
-    result = con.execute(
-        """
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = ? AND table_name = ?
-        LIMIT 1
-        """,
-        [schema, table],
-    ).fetchone()
+def _table_exists(
+    con: DuckDBConnection,
+    *,
+    schema: str,
+    table: str,
+    catalog: str | None = None,
+) -> bool:
+    if catalog is None:
+        result = con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [schema, table],
+        ).fetchone()
+    else:
+        result = con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_catalog = ? AND table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [catalog, schema, table],
+        ).fetchone()
     return result is not None
 
 
-def _require_table(con: DuckDBConnection, *, schema: str, table: str) -> None:
-    if _table_exists(con, schema=schema, table=table):
+def _require_table(
+    con: DuckDBConnection,
+    *,
+    schema: str,
+    table: str,
+    catalog: str | None = None,
+) -> None:
+    if _table_exists(con, schema=schema, table=table, catalog=catalog):
         return
     msg = f"Required table missing: {schema}.{table}"
     raise RuntimeError(msg)
@@ -63,8 +87,18 @@ def _require_search_documents(con: DuckDBConnection) -> None:
 
 
 def _require_lineage_tables(con: DuckDBConnection) -> None:
-    _require_table(con, schema="metadata", table="derived_lineage_edges")
-    _require_table(con, schema="metadata", table="derived_lineage_columns")
+    _require_table(
+        con,
+        schema="metadata",
+        table="derived_lineage_edges",
+        catalog=META_CATALOG_NAME,
+    )
+    _require_table(
+        con,
+        schema="metadata",
+        table="derived_lineage_columns",
+        catalog=META_CATALOG_NAME,
+    )
 
 
 @dataclass(frozen=True, slots=True)

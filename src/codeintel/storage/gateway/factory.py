@@ -26,6 +26,8 @@ from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.inference import InferenceGateway
 from codeintel.storage.metadata import bootstrap_metadata_datasets
+from codeintel.storage.metadata.meta_catalog import attach_meta_database
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.validation import (
@@ -207,7 +209,7 @@ def open_gateway(
         session = DuckDBSession(session_config)
         con = session.open_reader() if config.read_only else session.open()
         if not config.read_only:
-            apply_metadata_ddl(con)
+            apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
             include_views_for_bootstrap = config.ensure_views and config.apply_schema
             if seed_contract_catalog is not None:
                 seed_contract_catalog(con)
@@ -253,7 +255,15 @@ def open_inference_gateway(*, schema_provider: SchemaProvider) -> InferenceGatew
         Minimal gateway backed by an in-memory DuckDB connection.
     """
     con = duckdb.connect(":memory:")
-    return InferenceGateway(con=con, schema_provider=schema_provider)
+    config = StorageConfig(
+        db_path=Path(":memory:"),
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )
+    attach_meta_database(con, config=config)
+    return InferenceGateway(con=con, schema_provider=schema_provider, config=config)
 
 
 def build_snapshot_gateway_resolver(

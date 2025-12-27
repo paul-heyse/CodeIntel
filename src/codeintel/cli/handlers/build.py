@@ -31,6 +31,7 @@ from codeintel.build.hamilton.decision_trace import (
     read_decision_trace,
 )
 from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
@@ -39,6 +40,7 @@ from codeintel.build.hamilton.observability import (
     get_dag_info,
 )
 from codeintel.build.hamilton.planner import compute_plan
+from codeintel.build.planning.model import PlanRequest, PlanTargetEntry
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext, BuildRunContextOverrides
 from codeintel.build.serving.publisher import (
@@ -88,14 +90,13 @@ from codeintel.observability.teardown import (
 )
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 from codeintel.storage.validation import ContractValidationMode
+from codeintel.runtime.compose import compose_runtime
 
 if TYPE_CHECKING:
     from hamilton.caching.adapter import CachingEvent
 
     from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.hamilton.dag_catalog import DagCatalog
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
-    from codeintel.build.hamilton.planner import HamiltonBuildPlan
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
@@ -204,6 +205,29 @@ def _build_execution_context(
         requested_datasets=requested_datasets,
     )
     return load_execution_context(primitives=runtime.primitives, run=run_context)
+
+
+def _planning_config(env: BuildEnv) -> dict[str, Any]:
+    config: dict[str, Any] = {}
+    if env.profile:
+        config["profile"] = env.profile
+    config.update(env.variants.as_hamilton_config())
+    config["variant_fingerprint"] = env.variants.variant_fingerprint
+    return config
+
+
+def _plan_entry_summary(entry: PlanTargetEntry) -> str:
+    if entry.predicted_action == "blocked":
+        if entry.block_reasons:
+            reasons = ", ".join(entry.block_reasons)
+            return f"Blocked: {reasons}."
+        return "Blocked: missing prerequisites."
+    if entry.predicted_action == "reuse":
+        if entry.cache_hit_ratio is not None:
+            ratio = f"{entry.cache_hit_ratio:.2f}"
+            return f"Predicted reuse (cache hit ratio {ratio})."
+        return "Predicted reuse from cache."
+    return "Predicted compute due to cache misses."
 
 
 @dataclass(frozen=True)
@@ -1578,31 +1602,12 @@ def build_plan_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    catalog = get_target_metadata_service().system.catalog
     plan_args = _parse_plan_args(ctx)
 
-    try:
-        goals = _resolve_goals(
-            targets=plan_args.targets,
-            module=plan_args.module,
-            target_scope=TargetScope.ALL if plan_args.all_targets else TargetScope.REQUESTED,
-            catalog=catalog,
-        )
-    except ValidationError as e:
-        return fail_invalid_target_selection(str(e))
-
-    LOG.info(
-        "build.plan repo=%s commit=%s targets=%s force=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
-        goals,
-        plan_args.force,
-    )
-
-    with runtime_gateway(runtime, read_only=True) as gateway:
+    with runtime_gateway(runtime, read_only=False) as gateway:
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
-        execution_context = _build_execution_context(runtime, requested_datasets=tuple(goals))
+        execution_context = _build_execution_context(runtime, requested_datasets=tuple())
         overrides = BuildRunContextOverrides(
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=frozenset(plan_args.force or ()),
@@ -1615,20 +1620,54 @@ def build_plan_handler(
             overrides=overrides,
         )
         env = context.build_env()
-
-        plan = compute_plan(
+        planning_runtime = compose_runtime(
             env=env,
-            catalog=catalog,
-            requested=tuple(goals),
+            config=_planning_config(env),
+        ).bundle
+        catalog = planning_runtime.catalog
+
+        try:
+            goals = _resolve_goals(
+                targets=plan_args.targets,
+                module=plan_args.module,
+                target_scope=TargetScope.ALL if plan_args.all_targets else TargetScope.REQUESTED,
+                catalog=catalog,
+            )
+        except ValidationError as e:
+            return fail_invalid_target_selection(str(e))
+
+        LOG.info(
+            "build.plan repo=%s commit=%s targets=%s force=%s",
+            runtime.snapshot.repo,
+            runtime.snapshot.commit,
+            goals,
+            plan_args.force,
         )
 
+        plan_request = PlanRequest(
+            requested_targets=tuple(goals),
+            mode="predict",
+            include_node_details=True,
+            include_io_details=True,
+            include_cache_details=True,
+        )
+        plan = compute_plan(
+            env=env,
+            plan_request=plan_request,
+            runtime=planning_runtime,
+            materialize=True,
+        )
+
+    to_compute = [entry.target for entry in plan.entries if entry.predicted_action == "compute"]
+    to_reuse = [entry.target for entry in plan.entries if entry.predicted_action == "reuse"]
+    blocked = [entry.target for entry in plan.entries if entry.predicted_action == "blocked"]
     result = BuildPlanResult(
-        requested=list(plan.requested),
+        requested=list(plan.request.requested_targets),
         closure=list(plan.closure),
-        entries=[e.to_dict() for e in plan.entries],
-        to_compute=list(plan.to_compute),
-        to_skip=list(plan.to_skip),
-        blocked=list(plan.blocked),
+        entries=[entry.to_dict() for entry in plan.entries],
+        to_compute=to_compute,
+        to_reuse=to_reuse,
+        blocked=blocked,
     )
 
     if plan_args.output_file:
@@ -1713,38 +1752,6 @@ def _resolve_build_explain_params(
     )
 
 
-def _compute_plan_for_explain(
-    *,
-    runtime: ResolvedRuntime,
-    catalog: DagCatalog,
-    target: str,
-    force_targets: frozenset[str],
-) -> HamiltonBuildPlan:
-    _ = force_targets
-    with runtime_gateway(runtime, read_only=True) as gateway:
-        providers = create_default_providers(runtime.tools)
-        config = load_build_config(runtime.snapshot.repo_root)
-        execution_context = _build_execution_context(runtime, requested_datasets=(target,))
-
-        overrides = BuildRunContextOverrides(
-            execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
-        )
-        context = BuildRunContext.from_execution_context(
-            execution_context=execution_context,
-            gateway=gateway,
-            providers=providers,
-            config=config,
-            overrides=overrides,
-        )
-        env = context.build_env()
-
-        return compute_plan(
-            env=env,
-            catalog=catalog,
-            requested=(target,),
-        )
-
-
 def build_explain_handler(
     ctx: CommandContext,
 ) -> CliResult[BuildExplainResult]:
@@ -1767,50 +1774,76 @@ def build_explain_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    catalog = get_target_metadata_service().system.catalog
-    params = _resolve_build_explain_params(ctx, catalog=catalog)
-    if isinstance(params, CliResult):
-        return params
+    with runtime_gateway(runtime, read_only=False) as gateway:
+        providers = create_default_providers(runtime.tools)
+        config = load_build_config(runtime.snapshot.repo_root)
+        execution_context = _build_execution_context(runtime, requested_datasets=tuple())
+        overrides = BuildRunContextOverrides(
+            execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
+        )
+        context = BuildRunContext.from_execution_context(
+            execution_context=execution_context,
+            gateway=gateway,
+            providers=providers,
+            config=config,
+            overrides=overrides,
+        )
+        env = context.build_env()
+        planning_runtime = compose_runtime(
+            env=env,
+            config=_planning_config(env),
+        ).bundle
+        catalog = planning_runtime.catalog
+        params = _resolve_build_explain_params(ctx, catalog=catalog)
+        if isinstance(params, CliResult):
+            return params
 
-    LOG.info(
-        "build.explain repo=%s commit=%s target=%s force=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
-        params.target,
-        sorted(params.force_targets),
-    )
+        LOG.info(
+            "build.explain repo=%s commit=%s target=%s force=%s",
+            runtime.snapshot.repo,
+            runtime.snapshot.commit,
+            params.target,
+            sorted(params.force_targets),
+        )
 
-    plan = _compute_plan_for_explain(
-        runtime=runtime,
-        catalog=catalog,
-        target=params.target,
-        force_targets=params.force_targets,
-    )
+        plan_request = PlanRequest(
+            requested_targets=(params.target,),
+            mode="predict",
+            include_node_details=True,
+            include_io_details=True,
+            include_cache_details=True,
+        )
+        plan = compute_plan(
+            env=env,
+            plan_request=plan_request,
+            runtime=planning_runtime,
+            materialize=True,
+        )
 
-    entry = plan.get_entry(params.target)
-    if entry is None:
-        return fail_invalid_targets(f"Target not found in plan: {params.target}")
+        entry = next((entry for entry in plan.entries if entry.target == params.target), None)
+        if entry is None:
+            return fail_invalid_targets(f"Target not found in plan: {params.target}")
 
-    io_surface: dict[str, object] | None = None
-    if ctx.params.get_bool("io_surface"):
-        h_runtime = build_driver()
-        surface = h_runtime.catalog.io_surfaces.get(params.target)
-        if surface is not None:
-            io_surface = asdict(surface)
+        io_surface: dict[str, object] | None = None
+        if ctx.params.get_bool("io_surface"):
+            surface = planning_runtime.catalog.io_surfaces.get(params.target)
+            if surface is not None:
+                io_surface = asdict(surface)
 
-    summary = (
-        "Cache decisions are resolved at runtime; consult the decision trace for cache hits."
-    )
-    result = BuildExplainResult(
-        target=entry.target,
-        status=entry.status,
-        reason=entry.reason,
-        dependencies=list(entry.dependencies),
-        table_keys=list(entry.table_keys),
-        artifact_keys=list(entry.artifact_keys),
-        summary=summary,
-        io_surface=io_surface,
-    )
+        summary = _plan_entry_summary(entry)
+        result = BuildExplainResult(
+            target=entry.target,
+            predicted_action=entry.predicted_action,
+            block_reasons=list(entry.block_reasons),
+            dependencies=list(entry.deps),
+            reads=list(entry.reads),
+            writes_tables=list(entry.writes_tables),
+            writes_artifacts=list(entry.writes_artifacts),
+            cache_hit_ratio=entry.cache_hit_ratio,
+            miss_nodes=list(entry.miss_nodes),
+            summary=summary,
+            io_surface=io_surface,
+        )
 
     return CliResult.ok(result)
 

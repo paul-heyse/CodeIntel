@@ -7,8 +7,10 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
-from codeintel.storage.helpers.json import decode_json_dict
+from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.tracking.schema_catalog_compile import compile_schema_catalog_batches
 from codeintel.storage.tracking.schema_catalog_models import (
     SchemaCatalogRequest,
@@ -71,8 +73,10 @@ class SchemaCatalogTracking:
             (
                 record.schema_digest,
                 record.schema_hash,
-                record.schema_json,
-                record.renderer_cache,
+                normalize_duckdb_json_value(record.schema_json),
+                normalize_duckdb_json_value(record.renderer_cache)
+                if record.renderer_cache is not None
+                else None,
                 record.created_at or now,
             )
             for record in records
@@ -88,6 +92,7 @@ class SchemaCatalogTracking:
                 "renderer_cache",
                 "created_at",
             ),
+            catalog=META_CATALOG_NAME,
             upsert=UpsertSpec(
                 conflict_columns=("schema_digest",),
                 update_columns=(),
@@ -138,6 +143,7 @@ class SchemaCatalogTracking:
                 "catalog_hash",
                 "updated_at",
             ),
+            catalog=META_CATALOG_NAME,
             upsert=UpsertSpec(
                 conflict_columns=("table_key",),
                 update_columns=(
@@ -181,6 +187,7 @@ class SchemaCatalogTracking:
             "metadata.schema_manifest_runs",
             rows,
             columns=("run_id", "repo", "commit", "manifest_kind", "catalog_hash", "created_at"),
+            catalog=META_CATALOG_NAME,
             upsert=UpsertSpec(
                 conflict_columns=("run_id",),
                 update_columns=("repo", "commit", "manifest_kind", "catalog_hash", "created_at"),
@@ -200,11 +207,13 @@ class SchemaCatalogTracking:
         TableSchema | None
             Loaded TableSchema when present; otherwise None.
         """
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        versions_ref = meta_table_ref("metadata.schema_versions")
         row = self._con.execute(
-            """
+            f"""
             SELECT v.schema_json
-            FROM metadata.table_schema_registry AS r
-            JOIN metadata.schema_versions AS v
+            FROM {registry_ref} AS r
+            JOIN {versions_ref} AS v
               ON r.schema_digest = v.schema_digest
             WHERE r.table_key = ?
             """,
@@ -250,10 +259,12 @@ class SchemaCatalogTracking:
             return 0
 
         placeholders = ", ".join(["?"] * len(allowed_keys))
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        versions_ref = meta_table_ref("metadata.schema_versions")
         sql = (
             "SELECT r.table_key, v.schema_json "
-            "FROM metadata.table_schema_registry AS r "
-            "JOIN metadata.schema_versions AS v "
+            f"FROM {registry_ref} AS r "
+            f"JOIN {versions_ref} AS v "
             "  ON r.schema_digest = v.schema_digest "
             "WHERE r.derivation_kind = ? "
             "  AND r.inference_status IN (?, ?) "

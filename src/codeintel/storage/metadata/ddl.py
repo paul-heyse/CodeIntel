@@ -20,20 +20,25 @@ if TYPE_CHECKING:
 __all__ = ["apply_metadata_ddl"]
 
 
-def apply_metadata_ddl(con: DuckDBPyConnection) -> None:
+def apply_metadata_ddl(con: DuckDBPyConnection, *, catalog: str | None) -> None:
     """Create metadata schema tables required for runtime and export."""
     for table in METADATA_TABLES:
-        _ensure_metadata_table(con, table)
+        _ensure_metadata_table(con, table, catalog=catalog)
 
 
-def _ensure_metadata_table(con: DuckDBPyConnection, table: TableSchema) -> None:
-    con.execute(create_schema_if_not_exists_ast(table.schema).sql(dialect=DUCKDB_DIALECT))
-    con.execute(create_table_ast(table, if_not_exists=True).sql(dialect=DUCKDB_DIALECT))
+def _ensure_metadata_table(con: DuckDBPyConnection, table: TableSchema, *, catalog: str | None) -> None:
+    con.execute(
+        create_schema_if_not_exists_ast(table.schema, catalog=catalog).sql(dialect=DUCKDB_DIALECT)
+    )
+    con.execute(
+        create_table_ast(table, if_not_exists=True, catalog=catalog).sql(dialect=DUCKDB_DIALECT)
+    )
     for index in table.indexes:
         index_sql = create_index_if_not_exists_ast(
             index_name=index.name,
             table_key=table.table_key,
             columns=index.columns,
             unique=index.unique,
+            catalog=catalog,
         ).sql(dialect=DUCKDB_DIALECT)
         con.execute(index_sql)

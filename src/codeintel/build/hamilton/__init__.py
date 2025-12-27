@@ -34,9 +34,7 @@ __all__ = [
     "BuildEnv",
     "DatasetRef",
     "HamiltonBuildExecutor",
-    "HamiltonBuildPlan",
     "HamiltonBuildResult",
-    "PlanEntry",
     "TargetRunRecord",
     "compute_plan",
     "dataset_node",
@@ -78,11 +76,7 @@ if TYPE_CHECKING:
         list_execution_order,
         list_execution_targets,
     )
-    from codeintel.build.hamilton.planner import (
-        HamiltonBuildPlan,
-        PlanEntry,
-        compute_plan,
-    )
+    from codeintel.build.hamilton.planner import compute_plan
     from codeintel.build.hamilton.run_records import TargetRunRecord
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
@@ -106,8 +100,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "get_dag_info": ("codeintel.build.hamilton.observability", "get_dag_info"),
     "list_execution_order": ("codeintel.build.hamilton.observability", "list_execution_order"),
     "list_execution_targets": ("codeintel.build.hamilton.observability", "list_execution_targets"),
-    "HamiltonBuildPlan": ("codeintel.build.hamilton.planner", "HamiltonBuildPlan"),
-    "PlanEntry": ("codeintel.build.hamilton.planner", "PlanEntry"),
     "compute_plan": ("codeintel.build.hamilton.planner", "compute_plan"),
 }
 

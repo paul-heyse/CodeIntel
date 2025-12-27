@@ -359,7 +359,7 @@ def build_schema_index(
         If non-inferable outputs are missing explicit overrides.
     """
     catalog = system if isinstance(system, DagCatalog) else system.catalog
-    inferable = inference_service.inferable_table_keys(catalog=catalog)
+    inferable = inference_service.inferable_table_keys()
     derivations: dict[str, SchemaDerivation] = {}
     missing_overrides: list[tuple[str, str]] = []
 

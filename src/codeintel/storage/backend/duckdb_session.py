@@ -28,6 +28,7 @@ from codeintel.storage.gateway.extensions import (
     load_extensions_from_env,
     load_required_extensions,
 )
+from codeintel.storage.metadata.meta_catalog import attach_meta_database
 from codeintel.storage.schema import apply_all_schemas
 
 if TYPE_CHECKING:
@@ -86,6 +87,7 @@ class DuckDBSession:
         load_required_extensions(con, allow_install=not self.config.read_only)
         load_extensions_from_env(con, allow_install=not self.config.read_only)
         _attach_history_if_needed(con, self.config)
+        attach_meta_database(con, config=self.config)
         _apply_schema(con, self.config)
         _bootstrap_duckdb_secrets_from_env(con)
         _register_fsspec_filesystems_from_env()
@@ -114,6 +116,7 @@ class DuckDBSession:
         load_required_extensions(con, allow_install=False)
         load_extensions_from_env(con, allow_install=False)
         _attach_history_if_needed(con, cfg)
+        attach_meta_database(con, config=cfg)
         _bootstrap_duckdb_secrets_from_env(con)
         _register_fsspec_filesystems_from_env()
         _run_init_sql_from_env(con)

@@ -35,6 +35,7 @@ from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.gateway.minimal import MinimalStorageGateway
 from codeintel.storage.gateway.protocol import DuckDBError
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.validation import ContractValidationMode
 from codeintel.storage.warehouse import Warehouse
 
@@ -160,19 +161,22 @@ def validate_macros_handler(
 
 
 def _load_table_schema_registry_keys(connection: DuckDBConnection) -> set[str]:
-    rows = connection.execute("SELECT table_key FROM metadata.table_schema_registry").fetchall()
+    table_ref = meta_table_ref("metadata.table_schema_registry")
+    rows = connection.execute(f"SELECT table_key FROM {table_ref}").fetchall()
     return {str(row[0]) for row in rows}
 
 
 def _load_missing_schema_versions(connection: DuckDBConnection) -> list[str]:
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    versions_ref = meta_table_ref("metadata.schema_versions")
     rows = connection.execute(
         """
         SELECT r.table_key
-        FROM metadata.table_schema_registry AS r
-        LEFT JOIN metadata.schema_versions AS v
+        FROM {registry_ref} AS r
+        LEFT JOIN {versions_ref} AS v
           ON r.schema_digest = v.schema_digest
         WHERE v.schema_digest IS NULL
-        """
+        """.format(registry_ref=registry_ref, versions_ref=versions_ref)
     ).fetchall()
     return [str(row[0]) for row in rows]
 

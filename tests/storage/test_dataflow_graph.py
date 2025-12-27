@@ -8,6 +8,7 @@ from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.storage.contracts.dataflow import alias_docs_views, build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import iter_contracts, iter_contracts_by_table_key
 from codeintel.storage.metadata import bootstrap_metadata_datasets
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from tests._helpers.gateway import GatewayFactory
 
 
@@ -51,11 +52,13 @@ def test_metadata_dataflow_tables_populated() -> None:
     gateway = GatewayFactory().without_validation().open()
     try:
         bootstrap_metadata_datasets(gateway.con, include_views=True)
+        nodes_ref = meta_table_ref("metadata.dataset_dataflow_nodes")
+        edges_ref = meta_table_ref("metadata.dataset_dataflow_edges")
         node_row = gateway.con.execute(
-            "SELECT COUNT(*) FROM metadata.dataset_dataflow_nodes"
+            f"SELECT COUNT(*) FROM {nodes_ref}"
         ).fetchone()
         edge_row = gateway.con.execute(
-            "SELECT COUNT(*) FROM metadata.dataset_dataflow_edges"
+            f"SELECT COUNT(*) FROM {edges_ref}"
         ).fetchone()
         if node_row is None or edge_row is None:
             pytest.fail("Failed to count dataflow tables")

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol
 
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
+
 if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
@@ -63,10 +65,11 @@ def load_canonical_catalog(
     """
     if not catalog_kind or not catalog_hash:
         return None
+    table_ref = meta_table_ref("metadata.canonical_catalogs")
     row = gateway.con.execute(
-        """
+        f"""
         SELECT payload, inputs, created_at
-        FROM metadata.canonical_catalogs
+        FROM {table_ref}
         WHERE catalog_kind = ? AND catalog_hash = ?
         """,
         [catalog_kind, catalog_hash],
@@ -99,10 +102,11 @@ def load_latest_canonical_catalog(
     """
     if not catalog_kind:
         return None
+    table_ref = meta_table_ref("metadata.canonical_catalogs")
     row = gateway.con.execute(
-        """
+        f"""
         SELECT catalog_hash, payload, inputs, created_at
-        FROM metadata.canonical_catalogs
+        FROM {table_ref}
         WHERE catalog_kind = ?
         ORDER BY created_at DESC
         LIMIT 1
@@ -137,10 +141,11 @@ def load_latest_canonical_catalog_from_connection(
     """
     if not catalog_kind:
         return None
+    table_ref = meta_table_ref("metadata.canonical_catalogs")
     row = con.execute(
-        """
+        f"""
         SELECT catalog_hash, payload, inputs, created_at
-        FROM metadata.canonical_catalogs
+        FROM {table_ref}
         WHERE catalog_kind = ?
         ORDER BY created_at DESC
         LIMIT 1
@@ -169,9 +174,10 @@ def upsert_canonical_catalog(
     created_at = entry.created_at.astimezone(UTC)
     payload_json = json.dumps(entry.payload, sort_keys=True)
     inputs_json = json.dumps(entry.inputs, sort_keys=True) if entry.inputs is not None else None
+    table_ref = meta_table_ref("metadata.canonical_catalogs")
     gateway.con.execute(
-        """
-        INSERT INTO metadata.canonical_catalogs (
+        f"""
+        INSERT INTO {table_ref} (
             catalog_kind,
             catalog_hash,
             payload,

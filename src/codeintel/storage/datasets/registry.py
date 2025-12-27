@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.storage.contracts.provider import get_contract_for_table_key
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -143,8 +144,9 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
     KeyError
         If a metadata row lacks a corresponding DatasetContract.
     """
+    table_ref = meta_table_ref("metadata.datasets")
     rows = con.execute(
-        """
+        f"""
         SELECT
             table_key,
             name,
@@ -153,7 +155,7 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
             parquet_filename,
             family,
             description
-        FROM metadata.datasets
+        FROM {table_ref}
         ORDER BY table_key
         """
     ).fetchall()

@@ -8,14 +8,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pandas as pd
+from duckdb import ColumnExpression, ConstantExpression
 
 from codeintel.build.assets.fingerprinting import ArtifactVersionInput, TableVersionInput
 from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.errors.storage import StorageError
-from codeintel.core.ibis_typing import filter_by
 from codeintel.core.schemas.hashing import compute_table_schema_hash
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,
     AssetVersionEventRecord,
@@ -72,24 +71,16 @@ def _try_table_row_count_for_snapshot(
     table_key: str,
 ) -> int | None:
     try:
-        table = ibis_facade.table(env.gateway, table_key)
-        filtered = filter_by(
-            table, table.repo == env.snapshot.repo, table.commit == env.snapshot.commit
-        )
-        raw = filtered.count().execute()
-        value: object
-        if isinstance(raw, pd.DataFrame):
-            if raw.empty:
-                return None
-            value = raw.iloc[0, 0]
-        elif isinstance(raw, pd.Series):
-            if raw.empty:
-                return None
-            value = raw.iloc[0]
-        else:
-            value = raw
-
-        return int(str(value))
+        relation = env.gateway.relation_from_table_key(table_key)
+        if "repo" in relation.columns and "commit" in relation.columns:
+            relation = relation.filter(
+                (ColumnExpression("repo") == ConstantExpression(env.snapshot.repo))
+                & (ColumnExpression("commit") == ConstantExpression(env.snapshot.commit))
+            )
+        row = relation.count("*").fetchone()
+        if row is None:
+            return None
+        return int(row[0])
     except (AttributeError, ValueError, TypeError, DuckDBError):
         return None
 

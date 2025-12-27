@@ -126,7 +126,7 @@ def plan_cache_probe(
     return statuses
 
 
-def plan_entries(
+def plan(
     catalog: DagCatalog,
     plan_target_closure: tuple[str, ...],
     plan_target_subgraph_nodes: Mapping[str, tuple[str, ...]],
@@ -322,7 +322,7 @@ def _topo_sort_nodes(*, catalog: DagCatalog, nodes: Sequence[str]) -> tuple[str,
 
 __all__ = [
     "plan_cache_probe",
-    "plan_entries",
+    "plan",
     "plan_node_versions",
     "plan_request",
     "plan_target_closure",

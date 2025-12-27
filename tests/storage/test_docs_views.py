@@ -21,6 +21,7 @@ import pytest
 
 from codeintel.storage.datasets import load_dataset_registry
 from codeintel.storage.metadata import bootstrap_metadata_datasets
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.repositories.datasets import DatasetReadRepository
 from codeintel.storage.views.inventory import discover_derived_docs_views
 from tests._helpers import docs_views_ready_gateway, seed_call_graph_scoping
@@ -63,8 +64,9 @@ def test_subsystems_has_repo_commit_index(docs_views_gateway: StorageGateway) ->
 def test_docs_views_registered_in_metadata(docs_views_gateway: StorageGateway) -> None:
     """Derived docs views should be registered as views in metadata.datasets."""
     bootstrap_metadata_datasets(docs_views_gateway.con)
+    table_ref = meta_table_ref("metadata.datasets")
     rows = docs_views_gateway.con.execute(
-        "SELECT table_key, is_view FROM metadata.datasets WHERE table_key LIKE 'docs.%'"
+        f"SELECT table_key, is_view FROM {table_ref} WHERE table_key LIKE 'docs.%'"
     ).fetchall()
     table_keys = {row[0] for row in rows}
     missing = set(discover_derived_docs_views()) - table_keys

@@ -118,10 +118,10 @@ def persist_findings(
     if not findings:
         return
     try:
-        table = ibis_facade.table(gateway, "analytics.graph_validation")
-        gateway.ibis.delete(
+        gateway.policy.delete_for_snapshot(
             "analytics.graph_validation",
-            where=and_predicates(table.repo == repo, table.commit == commit),
+            repo=repo,
+            commit=commit,
         )
     except DuckDBError:
         return

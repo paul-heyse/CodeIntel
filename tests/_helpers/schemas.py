@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas import (
@@ -17,7 +18,10 @@ from codeintel.storage.contracts.schema_provider import (
     clear_schema_provider_cache,
     get_schema_provider,
 )
+from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.metadata.meta_catalog import attach_meta_database
 from codeintel.storage.schema import ensure_schemas_preserve
 
 if TYPE_CHECKING:
@@ -63,7 +67,27 @@ def ensure_production_schemas(con: DuckDBPyConnection) -> None:
     """
     ensure_storage_contract_catalog()
     ensure_schemas_preserve(con)
-    apply_metadata_ddl(con)
+    config = StorageConfig(
+        db_path=_resolve_db_path(con),
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )
+    attach_meta_database(con, config=config)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
+
+
+def _resolve_db_path(con: DuckDBPyConnection) -> Path:
+    rows = con.execute("PRAGMA database_list").fetchall()
+    for row in rows:
+        if str(row[1]) != "main":
+            continue
+        db_path = row[2]
+        if db_path:
+            return Path(str(db_path))
+        break
+    return Path(":memory:")
 
 
 __all__ = [

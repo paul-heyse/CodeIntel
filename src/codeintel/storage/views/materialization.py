@@ -13,12 +13,14 @@ module owns deterministic orchestration over:
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING
 
 import duckdb
 from ibis.common.exceptions import IbisError
 
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.sync import (
     sync_derived_lineage_columns,
@@ -38,10 +40,24 @@ if TYPE_CHECKING:
 
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.storage.gateway.protocol import MinimalGateway
+    from ibis.backends.duckdb import Backend as DuckDBBackend
 
 __all__ = ["materialize_registered_views"]
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _IbisGatewayAdapter:
+    """Adapter that exposes Ibis backend access for view builders."""
+
+    con: DuckDBBackend
+
+    def table(self, table_name: str) -> it.Table:
+        if "." in table_name:
+            database, name = split_table_key(table_name)
+            return self.con.table(name, database=database)
+        return self.con.table(table_name)
 
 
 def materialize_registered_views(
@@ -105,7 +121,8 @@ def _compile_view_definitions(
     dr: Driver | None,
     tag_query: TagQuery | None,
 ) -> tuple[dict[str, it.Table], dict[str, str]]:
-    ibis_gateway = gateway.ibis
+    ibis_backend = ibis_facade.backend(gateway)
+    ibis_gateway = _IbisGatewayAdapter(ibis_backend)
     builders = discover_view_builders(dr=dr, tag_query=tag_query, modules=modules)
 
     expr_by_view: dict[str, it.Table] = {}
@@ -131,7 +148,8 @@ def _materialize_views(
     overwrite: bool,
     strict: bool,
 ) -> None:
-    ibis_gateway = gateway.ibis
+    ibis_backend = ibis_facade.backend(gateway)
+    ibis_gateway = _IbisGatewayAdapter(ibis_backend)
     deps = build_dependency_graph_from_sql(sql_by_view)
     order_lower = toposort(sql_by_view.keys(), deps, raise_on_cycle=strict)
     original_by_lower = {k.lower(): k for k in sql_by_view}

@@ -7,7 +7,7 @@ explicitly requested via the IO adapters.
 Design Principles
 -----------------
 1. DatasetRef is a NamedTuple for immutability.
-2. References carry metadata but not data - data flows through IbisGateway.
+2. References carry metadata but not data - data flows through relation loaders.
 3. Helper functions bridge target execution results to DatasetRef instances.
 4. repo/commit fields enable snapshot identity for lineage tracking.
 """
