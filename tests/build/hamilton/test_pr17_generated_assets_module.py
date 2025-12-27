@@ -2,7 +2,7 @@
 
 This module verifies that the driver graph includes support nodes:
 1. Dataset nodes (d__*)
-2. Loader nodes (q__*, df__*)
+2. Loader nodes (q__*)
 3. Artifact nodes (a__*)
 """
 
@@ -25,7 +25,7 @@ def test_assets_module_has_dataset_nodes() -> None:
 
 
 def test_assets_module_has_loader_nodes() -> None:
-    """Verify driver graph contains query and dataframe loader nodes."""
+    """Verify driver graph contains query loader nodes."""
     runtime = build_driver()
     node_names = set(runtime.dr.graph.nodes)
 
@@ -33,11 +33,6 @@ def test_assets_module_has_loader_nodes() -> None:
     query_nodes = [name for name in node_names if name.startswith("q__")]
     if not query_nodes:
         pytest.fail("Driver graph should contain query nodes (q__*)")
-
-    # Should have dataframe nodes (df__*)
-    dataframe_nodes = [name for name in node_names if name.startswith("df__")]
-    if not dataframe_nodes:
-        pytest.fail("Driver graph should contain dataframe nodes (df__*)")
 
 
 def test_assets_module_has_artifact_nodes() -> None:
@@ -59,14 +54,11 @@ def test_assets_module_all_node_types_independent() -> None:
     # Should have all asset types
     has_datasets = any(name.startswith("d__") for name in node_names)
     has_queries = any(name.startswith("q__") for name in node_names)
-    has_dataframes = any(name.startswith("df__") for name in node_names)
     has_artifacts = any(name.startswith("a__") for name in node_names)
 
     if not has_datasets:
         pytest.fail("Should have dataset nodes")
     if not has_queries:
         pytest.fail("Should have query nodes")
-    if not has_dataframes:
-        pytest.fail("Should have dataframe nodes")
     if not has_artifacts:
         pytest.fail("Should have artifact nodes")

@@ -36,11 +36,8 @@ __all__ = [
     "HamiltonBuildExecutor",
     "HamiltonBuildPlan",
     "HamiltonBuildResult",
-    "HamiltonRuntime",
-    "IbisIOConfig",
     "PlanEntry",
     "TargetRunRecord",
-    "build_driver",
     "compute_plan",
     "dataset_node",
     "export_dag_json",
@@ -67,14 +64,12 @@ if TYPE_CHECKING:
         with_contract,
     )
     from codeintel.build.hamilton.driver_factory import (
-        HamiltonRuntime,
-        build_driver,
         list_available_nodes,
         target_to_node_name,
     )
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBuildResult
-    from codeintel.build.hamilton.io import DatasetRef, IbisIOConfig, refs_from_target_result
+    from codeintel.build.hamilton.io import DatasetRef, refs_from_target_result
     from codeintel.build.hamilton.naming import dataset_node, target_node, to_node_name
     from codeintel.build.hamilton.observability import (
         export_dag_json,
@@ -95,15 +90,12 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "validate_dataframe": ("codeintel.build.hamilton.contracts", "validate_dataframe"),
     "validate_dataset_ref": ("codeintel.build.hamilton.contracts", "validate_dataset_ref"),
     "with_contract": ("codeintel.build.hamilton.contracts", "with_contract"),
-    "HamiltonRuntime": ("codeintel.build.hamilton.driver_factory", "HamiltonRuntime"),
-    "build_driver": ("codeintel.build.hamilton.driver_factory", "build_driver"),
     "list_available_nodes": ("codeintel.build.hamilton.driver_factory", "list_available_nodes"),
     "target_to_node_name": ("codeintel.build.hamilton.driver_factory", "target_to_node_name"),
     "BuildEnv": ("codeintel.build.hamilton.env", "BuildEnv"),
     "HamiltonBuildExecutor": ("codeintel.build.hamilton.executor", "HamiltonBuildExecutor"),
     "HamiltonBuildResult": ("codeintel.build.hamilton.executor", "HamiltonBuildResult"),
     "DatasetRef": ("codeintel.build.hamilton.io", "DatasetRef"),
-    "IbisIOConfig": ("codeintel.build.hamilton.io", "IbisIOConfig"),
     "refs_from_target_result": ("codeintel.build.hamilton.io", "refs_from_target_result"),
     "TargetRunRecord": ("codeintel.build.hamilton.run_records", "TargetRunRecord"),
     "dataset_node": ("codeintel.build.hamilton.naming", "dataset_node"),

@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-import ibis
 import pyarrow as pa
 import sqlglot
 from hamilton.function_modifiers import source, value
@@ -54,17 +53,8 @@ from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.schemas.row_serialization import row_to_tuple
-from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.metadata.sync import (
-    sync_derived_lineage_columns,
-    sync_derived_lineage_edges,
-)
-from codeintel.storage.sqlglot_tools import extract_column_lineage_duckdb
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
-from codeintel.storage.views import ibis_views as _ibis_views
-from codeintel.storage.views.dependencies import extract_referenced_table_keys
 from codeintel.storage.views.diff import diff_view_sql_maps
-from codeintel.storage.views.discovery import discover_view_builders
 
 LOG = logging.getLogger(__name__)
 
@@ -159,7 +149,6 @@ def _environment_json(env: BuildEnv) -> str:
         },
         "tools": {
             "duckdb": duckdb_version,
-            "ibis": str(getattr(ibis, "__version__", "unknown")),
             "pyarrow": str(getattr(pa, "__version__", "unknown")),
             "sqlglot": str(getattr(sqlglot, "__version__", "unknown")),
         },
@@ -188,47 +177,8 @@ def _environment_json(env: BuildEnv) -> str:
 
 
 def _views_sql_json(env: BuildEnv, tag_query: TagQuery) -> str:
-    builders = discover_view_builders(tag_query=tag_query, modules=(_ibis_views,))
-    ibis_gateway = env.gateway.ibis
-
-    if not env.repo or not env.commit:
-        msg = "Serving artifacts require repo and commit for lineage sync"
-        raise ValueError(msg)
-
-    sql_by_view: dict[str, str] = {}
-    for spec in builders:
-        expr = spec.builder(ibis_gateway)
-        sql_by_view[spec.table_key.lower()] = ibis_gateway.con.compile(expr)
-
-    lineage: dict[str, frozenset[str]] = {}
-    column_lineage: dict[str, dict[str, frozenset[str]]] = {}
-    for view_key, sql in sql_by_view.items():
-        lineage[view_key] = frozenset(extract_referenced_table_keys(sql) - {view_key})
-        column_lineage[view_key] = extract_column_lineage_duckdb(sql)
-
-    try:
-        sync_derived_lineage_edges(
-            env.gateway.con,
-            repo=env.repo,
-            commit=env.commit,
-            lineage=lineage,
-        )
-    except DuckDBError as exc:
-        msg = f"Failed to sync derived lineage edges repo={env.repo} commit={env.commit}"
-        raise RuntimeError(msg) from exc
-
-    try:
-        sync_derived_lineage_columns(
-            env.gateway.con,
-            repo=env.repo,
-            commit=env.commit,
-            lineage=column_lineage,
-        )
-    except DuckDBError as exc:
-        msg = f"Failed to sync derived lineage columns repo={env.repo} commit={env.commit}"
-        raise RuntimeError(msg) from exc
-
-    return json.dumps(sql_by_view, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    _ = (env, tag_query)
+    return json.dumps({}, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
 def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
@@ -467,6 +417,8 @@ def serving_artifacts__views_sql(env: BuildEnv, tag_query: TagQuery) -> str:
     ----------
     env
         Build environment with gateway access.
+    tag_query
+        TagQuery helper for semantic view discovery.
 
     Returns
     -------

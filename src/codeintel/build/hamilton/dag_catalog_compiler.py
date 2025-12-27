@@ -577,11 +577,7 @@ def _read_from_node(
     node: NodeDescriptor,
     node_type: object,
 ) -> TableRead | None:
-    if node_type not in {
-        ht.NODE_TYPE_LOADER_QUERY,
-        ht.NODE_TYPE_LOADER_DATAFRAME,
-        ht.NODE_TYPE_DATASET,
-    }:
+    if node_type not in {ht.NODE_TYPE_LOADER_QUERY, ht.NODE_TYPE_DATASET}:
         return None
 
     table_key = node.tags.get(ht.TAG_TABLE_KEY)

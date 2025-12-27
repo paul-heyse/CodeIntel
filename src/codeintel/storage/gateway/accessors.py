@@ -15,8 +15,8 @@ from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
-from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
+from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking

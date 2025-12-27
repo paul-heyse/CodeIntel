@@ -92,7 +92,7 @@ def save_ibis_expression(
     dict[str, Any]
         Write metadata.
     """
-    result = Warehouse(io_config.gateway).materialize_table(
+    result = Warehouse(io_config.gateway).materialize_ibis(
         table_key,
         output,
         options=MaterializeOptions(mode="append"),

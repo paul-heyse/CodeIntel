@@ -122,9 +122,9 @@ class MinimalStorageGateway:
         self._con = connection
         self._duckdb: DuckDBContext | None = None
         self._policy: DuckDBPolicyBackend | None = None
-        self._exports: ExportService | None = None
         self._ibis: IbisGateway | None = None
         self._schema_provider = schema_provider
+        self.exports = ExportService(self)
 
     @property
     def con(self) -> DuckDBPyConnection:
@@ -164,18 +164,20 @@ class MinimalStorageGateway:
             self._ibis = IbisGateway(self)
         return self._ibis
 
-    @property
-    def exports(self) -> ExportService:
-        """Return the export service for this connection.
+    def relation_from_table_key(self, table_key: str) -> DuckDBPyRelation:
+        """Return a relation for a fully qualified table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key to resolve.
 
         Returns
         -------
-        ExportService
-            Export service wrapper for this gateway.
+        DuckDBPyRelation
+            Relation bound to the requested table.
         """
-        if self._exports is None:
-            self._exports = ExportService(self)
-        return self._exports
+        return self._con.table(table_key)
 
     # -------------------------------------------------------------------------
     # Unsupported accessor properties

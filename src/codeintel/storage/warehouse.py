@@ -28,6 +28,7 @@ from duckdb import ColumnExpression, ConstantExpression, ExplainType
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.ibis_adapter import OnConflict
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.snapshot_scoping import RepoCommitScope
 from codeintel.storage.staging import registered_temp_relation
@@ -35,6 +36,9 @@ from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
+
+    import ibis.expr.types as ir
+    import pandas as pd
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.tag_query import TagQuery
@@ -237,6 +241,103 @@ class Warehouse:
                 relation=relation,
                 options=active,
             )
+
+        ctx = _MaterializeWriterContext(
+            gateway=self.gateway,
+            table_key=table_key,
+            started_at=started_at,
+            schema_version=schema_version,
+            schema_hash=computed_schema_hash,
+        )
+        return _materialize_with_writer(ctx, options=active, writer=_write)
+
+    def materialize_ibis(
+        self,
+        table_key: str,
+        expr: ir.Table,
+        *,
+        columns: Sequence[str] | None = None,
+        options: MaterializeOptions | None = None,
+    ) -> MaterializationResult:
+        """Materialize an Ibis expression to DuckDB.
+
+        Returns
+        -------
+        MaterializationResult
+            Result metadata for the materialization.
+        """
+        active = options or MaterializeOptions()
+        _validate_materialize_options(
+            active,
+            supports_upsert=True,
+            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
+        )
+
+        started_at = datetime.now(tz=UTC)
+        self.gateway.policy.ensure_table(table_key, create_if_missing=True)
+        schema_version, computed_schema_hash = _contract_schema_metadata(
+            self.gateway,
+            table_key=table_key,
+        )
+        on_conflict = _resolve_on_conflict(active)
+
+        def _write() -> int | None:
+            result = self.gateway.ibis.write(
+                table_key,
+                expr,
+                columns=columns,
+                on_conflict=on_conflict,
+            )
+            return result.rows_affected if result.rows_affected >= 0 else None
+
+        ctx = _MaterializeWriterContext(
+            gateway=self.gateway,
+            table_key=table_key,
+            started_at=started_at,
+            schema_version=schema_version,
+            schema_hash=computed_schema_hash,
+        )
+        return _materialize_with_writer(ctx, options=active, writer=_write)
+
+    def materialize_dataframe(
+        self,
+        table_key: str,
+        df: pd.DataFrame,
+        *,
+        options: MaterializeOptions | None = None,
+    ) -> MaterializationResult:
+        """Materialize a pandas DataFrame to DuckDB.
+
+        Returns
+        -------
+        MaterializationResult
+            Result metadata for the materialization.
+        """
+        active = options or MaterializeOptions()
+        _validate_materialize_options(
+            active,
+            supports_upsert=True,
+            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
+        )
+
+        started_at = datetime.now(tz=UTC)
+        self.gateway.policy.ensure_table(table_key, create_if_missing=True)
+        schema_version, computed_schema_hash = _contract_schema_metadata(
+            self.gateway,
+            table_key=table_key,
+        )
+
+        def _write() -> int | None:
+            if df.empty:
+                return 0
+            with registered_temp_relation(self.gateway.con, df, prefix="ci_df_") as temp_name:
+                relation = self.gateway.con.table(temp_name)
+                return _write_relation(
+                    gateway=self.gateway,
+                    table_key=table_key,
+                    relation=relation,
+                    options=active,
+                )
 
         ctx = _MaterializeWriterContext(
             gateway=self.gateway,
@@ -629,6 +730,16 @@ def _validate_materialize_options(
         raise ValueError(upsert_unsupported_message)
 
 
+def _resolve_on_conflict(options: MaterializeOptions) -> OnConflict | None:
+    if options.mode != "upsert" or options.upsert is None:
+        return None
+    return OnConflict(
+        conflict_columns=options.upsert.conflict_columns,
+        update_columns=options.upsert.update_columns,
+        update_condition=options.upsert.update_condition,
+    )
+
+
 def _resolve_fallback_upsert(
     gateway: StorageGateway,
     *,
@@ -754,7 +865,6 @@ def _relation_row_count(relation: DuckDBRelation, *, table_key: str) -> int:
 
 
 def _register_relation_view(
-    gateway: StorageGateway,
     relation: DuckDBRelation,
     *,
     prefix: str = "ci_rel_",
@@ -785,7 +895,7 @@ def _write_relation(
     row_count = _relation_row_count(relation, table_key=table_key)
     if row_count == 0:
         return 0
-    view_name = _register_relation_view(gateway, relation)
+    view_name = _register_relation_view(relation)
     try:
         select_expr = exp.Select(
             expressions=[exp.Column(this=exp.to_identifier(col)) for col in columns],

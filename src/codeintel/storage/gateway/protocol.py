@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.storage.datasets import DatasetRegistry
-    from codeintel.storage.duckdb.context import DuckDBContext
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
     from codeintel.storage.exports import ExportService
     from codeintel.storage.gateway.accessors import (

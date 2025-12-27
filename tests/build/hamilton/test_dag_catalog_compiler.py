@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from types import ModuleType
 
 import hamilton.driver as h_driver
@@ -20,6 +21,16 @@ def _build_driver(module: ModuleType) -> h_driver.Driver:
     return h_driver.Builder().with_modules(module).allow_module_overrides().build()
 
 
+def _register_module_functions(
+    module: ModuleType,
+    *,
+    functions: Mapping[str, Callable[..., object]],
+) -> None:
+    for name, fn in functions.items():
+        fn.__module__ = module.__name__
+        module.__dict__[name] = fn
+
+
 def _module_with_duplicate_anchors() -> ModuleType:
     module = ModuleType("dup_anchor_module")
 
@@ -31,11 +42,12 @@ def _module_with_duplicate_anchors() -> ModuleType:
     def t__dup_two() -> int:
         return 2
 
-    module.__dict__.update(
-        {
+    _register_module_functions(
+        module,
+        functions={
             "t__dup_one": t__dup_one,
             "t__dup_two": t__dup_two,
-        }
+        },
     )
     return module
 
@@ -55,12 +67,13 @@ def _module_with_branching_chain() -> ModuleType:
     def t__alpha(t__beta: int, t__gamma: int) -> int:
         return t__beta + t__gamma
 
-    module.__dict__.update(
-        {
+    _register_module_functions(
+        module,
+        functions={
             "t__beta": t__beta,
             "t__gamma": t__gamma,
             "t__alpha": t__alpha,
-        }
+        },
     )
     return module
 
@@ -100,12 +113,13 @@ def _module_with_duplicate_outputs() -> ModuleType:
         _ = (m__core__dup_one, m__core__dup_two)
         return 1
 
-    module.__dict__.update(
-        {
+    _register_module_functions(
+        module,
+        functions={
             "dup_rows_one": dup_rows_one,
             "dup_rows_two": dup_rows_two,
             "t__dup_target": t__dup_target,
-        }
+        },
     )
     return module
 
@@ -146,13 +160,14 @@ def _module_with_io_surface() -> ModuleType:
     def t__alpha(alpha_rows: tuple[tuple[int, ...], ...]) -> int:
         return len(alpha_rows)
 
-    module.__dict__.update(
-        {
+    _register_module_functions(
+        module,
+        functions={
             "source_rows": source_rows,
             "alpha_rows": alpha_rows,
             "alpha_meta": alpha_meta,
             "t__alpha": t__alpha,
-        }
+        },
     )
     return module
 

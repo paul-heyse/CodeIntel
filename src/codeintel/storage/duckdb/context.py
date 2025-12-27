@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
+from codeintel.storage.duckdb.catalog import duckdb_default_catalog
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence

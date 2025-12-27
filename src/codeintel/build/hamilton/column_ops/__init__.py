@@ -9,9 +9,9 @@ from types import ModuleType
 from codeintel.build.hamilton.column_ops import function_features, module_features, risk_features
 
 _FEATURE_MODULES: Mapping[str, ModuleType] = {
-    "functions": function_features,
-    "modules": module_features,
-    "risk": risk_features,
+    "analytics.function_metrics": function_features,
+    "analytics.goid_risk_factors": risk_features,
+    "analytics.module_profile": module_features,
 }
 
 

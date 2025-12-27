@@ -27,18 +27,14 @@ from opentelemetry import trace as otel_trace
 
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
-from codeintel.build.hamilton.cache_adapter import ManifestBackedCacheAdapter
+from codeintel.build.hamilton.cache_adapter import CacheAdapterOptions, ManifestBackedCacheAdapter
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
 )
-from codeintel.build.hamilton.driver_factory import (
-    BuildDriverOptions,
-    build_driver,
-    target_to_node_name,
-)
+from codeintel.build.hamilton.driver_factory import BuildDriverOptions, target_to_node_name
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import (
     ContractEnforcementHook,
@@ -68,6 +64,9 @@ from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
+from codeintel.runtime.compose import compose_runtime, set_execution_active
+from codeintel.runtime.inputs import ExecutionInputs
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -75,7 +74,7 @@ if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings
     from codeintel.storage.gateway import StorageGateway
@@ -89,7 +88,7 @@ class _RunState:
 
     env: BuildEnv
     targets: tuple[str, ...]
-    runtime: HamiltonRuntime
+    runtime: RuntimeBundle
     run_id: str
     start_time: float
     started_at: datetime
@@ -235,7 +234,7 @@ def _build_hamilton_tracker_adapter(
 def _categorize_outputs(
     closure: tuple[str, ...],
     outputs: dict[str, Any],
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
 ) -> tuple[list[str], list[str], list[str]]:
     """Categorize outputs into computed/skipped/failed lists.
 
@@ -341,7 +340,7 @@ def _safe_input_hash(target: TargetDescriptor, env: BuildEnv) -> str | None:
 def _ensure_failure_records(
     *,
     env: BuildEnv,
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     closure: tuple[str, ...],
     outputs: dict[str, Any],
     error: str,
@@ -364,7 +363,7 @@ def _ensure_failure_records(
 def _apply_cache_keys(
     *,
     outputs: dict[str, Any],
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
 ) -> None:
     cache_adapter = getattr(runtime.dr, "cache", None)
     if not isinstance(cache_adapter, HamiltonCacheAdapter):
@@ -389,7 +388,7 @@ def _apply_cache_keys(
 
 def _map_closure_to_nodes(
     closure: tuple[str, ...],
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
 ) -> tuple[list[str], list[str]]:
     """Map closure targets to Hamilton node names.
 
@@ -482,7 +481,7 @@ def _maybe_persist_schema_manifest(
 def _preflight_missing_inputs(
     *,
     env: BuildEnv,
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     closure: tuple[str, ...],
 ) -> dict[str, _MissingInputs]:
     catalog = runtime.catalog
@@ -534,7 +533,7 @@ def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
 def _preflight_blocked_records(
     *,
     env: BuildEnv,
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     closure: tuple[str, ...],
     missing_by_target: Mapping[str, _MissingInputs],
 ) -> tuple[dict[str, TargetRunRecord], set[str]]:
@@ -711,7 +710,7 @@ class HamiltonBuildResult:
     run_id
         Unique identifier for this build run.
     runtime
-        Reference to the HamiltonRuntime for mapping lookups.
+        Reference to the RuntimeBundle for mapping lookups.
     validation_summary
         Optional validation summary produced by ContractEnforcementHook.
     """
@@ -726,7 +725,7 @@ class HamiltonBuildResult:
     duration_ms: float = 0.0
     error: str | None = None
     run_id: str = ""
-    runtime: HamiltonRuntime | None = None
+    runtime: RuntimeBundle | None = None
     validation_summary: ValidationSummary | None = None
 
     def get_record(self, target_name: str) -> TargetRunRecord | None:
@@ -930,13 +929,13 @@ class HamiltonBuildExecutor:
         run_id: str,
         writer: BuildRunWriter,
         domain: str | None,
-    ) -> tuple[HamiltonRuntime, NodeTelemetryHook | None, ContractEnforcementHook | None]:
+    ) -> tuple[RuntimeBundle, NodeTelemetryHook | None, ContractEnforcementHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
 
         Returns
         -------
-        HamiltonRuntime
-            Configured runtime with driver and catalog.
+        RuntimeBundle
+            Configured runtime bundle with driver and catalog.
         """
         config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
         config.update(env.variants.as_hamilton_config())
@@ -948,13 +947,16 @@ class HamiltonBuildExecutor:
         cache_adapter: ManifestBackedCacheAdapter | None = None
         cache_dir = self._options.resolved_cache_dir(env=env)
         if self._options.enable_hamilton_cache:
+            cache_options = CacheAdapterOptions(
+                default_behavior="default",
+                default_loader_behavior="disable",
+                default_saver_behavior="disable",
+            )
             cache_adapter = ManifestBackedCacheAdapter(
                 path=cache_dir,
                 manifest_writer=CacheManifestWriter(env.gateway),
                 manifest_run_id=run_id,
-                default_behavior="default",
-                default_loader_behavior="disable",
-                default_saver_behavior="disable",
+                options=cache_options,
             )
 
         def _adapter_factory(catalog: DagCatalog) -> list[LifecycleAdapter]:

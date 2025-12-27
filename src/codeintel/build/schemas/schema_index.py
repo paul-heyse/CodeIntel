@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 
@@ -331,7 +332,7 @@ class _SchemaIndexSeedProvider:
 
 def build_schema_index(
     *,
-    system: TargetSystem,
+    system: "TargetSystem | DagCatalog",
     declared_provider: SchemaProvider,
     inference_service: SchemaInferenceService,
 ) -> SchemaIndex:
@@ -347,11 +348,12 @@ def build_schema_index(
     ValueError
         If non-inferable outputs are missing explicit overrides.
     """
-    inferable = inference_service.inferable_table_keys(catalog=system.catalog)
+    catalog = system if isinstance(system, DagCatalog) else system.catalog
+    inferable = inference_service.inferable_table_keys(catalog=catalog)
     derivations: dict[str, SchemaDerivation] = {}
     missing_overrides: list[tuple[str, str]] = []
 
-    for table_key, output in sorted(system.catalog.table_outputs.items()):
+    for table_key, output in sorted(catalog.table_outputs.items()):
         override_schema = declared_provider.get_table_schema(table_key)
         if table_key in inferable:
             kind: SchemaDerivationKind = "inferred_ibis"
