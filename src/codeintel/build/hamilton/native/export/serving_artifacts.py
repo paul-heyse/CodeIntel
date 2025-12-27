@@ -116,14 +116,20 @@ def _schema_manifest_json(
         con=env.gateway.con,
     )
     run_id = env.run_context.run_id if env.run_context is not None else new_run_id("schema")
-    env.gateway.schemas.persist_schema_manifest(
+    catalog_request = SchemaCatalogRequest(
+        run_id=run_id,
+        repo=env.repo,
+        commit=env.commit,
+        catalog_inputs={"source": "serving_artifacts"},
+    )
+    result = env.gateway.schemas.persist_schema_manifest(
         manifest,
-        request=SchemaCatalogRequest(
-            run_id=run_id,
-            repo=env.repo,
-            commit=env.commit,
-            catalog_inputs={"source": "serving_artifacts"},
-        ),
+        request=catalog_request,
+    )
+    env.gateway.schemas.refresh_override_registry_from_manifest(
+        manifest,
+        request=catalog_request,
+        catalog_hash=result.catalog_hash,
     )
     persist_contract_catalog(
         env.gateway,

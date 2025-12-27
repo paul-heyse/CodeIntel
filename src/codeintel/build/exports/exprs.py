@@ -47,7 +47,7 @@ def build_export_expr(
     Parameters
     ----------
     gateway
-        StorageGateway used for Ibis table access.
+        StorageGateway used for DuckDB relation access.
     table_key
         Fully qualified table/view name (schema.table).
     limit
@@ -112,7 +112,7 @@ def compile_export_sql(expr: exp.Expression) -> str:
     Parameters
     ----------
     expr
-        Ibis table expression.
+        SQLGlot expression to compile.
 
     Returns
     -------

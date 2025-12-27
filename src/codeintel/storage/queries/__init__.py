@@ -1,7 +1,7 @@
 """Safe database query utilities.
 
 This package provides type-safe query helpers for database operations,
-using Ibis for queries and handling errors gracefully.
+using DuckDB relations and handling errors gracefully.
 
 Key Components
 --------------

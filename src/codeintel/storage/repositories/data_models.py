@@ -8,11 +8,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import SupportsInt, cast
 
-from codeintel.core.ibis_typing import and_predicates, isin_values
+from duckdb import SQLExpression
+
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
 from codeintel.storage.repositories.base import BaseRepository
 
 _DEFAULT_CREATED_AT = datetime.fromtimestamp(0, tz=UTC)
+
+
+def _sql_escape(value: str) -> str:
+    return value.replace("'", "''")
 
 
 def _as_int(value: object) -> int | None:
@@ -144,31 +149,16 @@ class DataModelsRepository(BaseRepository):
         list[dict[str, object]]
             Raw metadata rows for class GOIDs and module mapping.
         """
-        goids = self._ibis_table("core.goids")
-        modules = self._ibis_table("core.modules")
-        joined = goids.left_join(
-            modules,
-            [
-                goids.rel_path == modules.path,
-                goids.repo == modules.repo,
-                goids.commit == modules.commit,
-            ],
+        sql = (
+            "SELECT g.goid_h128 AS goid_h128, g.rel_path, g.qualname, g.start_line, "
+            "g.end_line, m.module AS module "
+            "FROM core.goids AS g "
+            "LEFT JOIN core.modules AS m "
+            "ON g.rel_path = m.path AND g.repo = m.repo AND g.commit = m.commit "
+            "WHERE g.repo = ? AND g.commit = ? AND g.kind = 'class'"
         )
-        expr = joined.filter(
-            and_predicates(
-                goids.repo == self.repo,
-                goids.commit == self.commit,
-                goids.kind == "class",
-            )
-        ).select(
-            goids.goid_h128.name("goid_h128"),
-            goids.rel_path,
-            goids.qualname,
-            goids.start_line,
-            goids.end_line,
-            modules.module.name("module"),
-        )
-        return self._ibis_to_dicts(expr)
+        relation = self.gateway.con.sql(sql, params=[self.repo, self.commit])
+        return self._relation_to_dicts(relation)
 
     def list_class_docstrings_rows(self) -> list[dict[str, object]]:
         """List docstrings needed for data model extraction.
@@ -178,20 +168,15 @@ class DataModelsRepository(BaseRepository):
         list[dict[str, object]]
             Raw docstring rows keyed by path + qualname.
         """
-        docstrings = self._ibis_table("core.docstrings")
-        expr = docstrings.filter(
-            and_predicates(
-                docstrings.repo == self.repo,
-                docstrings.commit == self.commit,
-                docstrings.kind == "class",
-            )
-        ).select(
-            docstrings.rel_path,
-            docstrings.qualname,
-            docstrings.short_desc,
-            docstrings.long_desc,
-        )
-        return self._ibis_to_dicts(expr)
+        relation = self._relation("core.docstrings")
+        predicates = [
+            self._predicate_eq("repo", self.repo),
+            self._predicate_eq("commit", self.commit),
+            self._predicate_eq("kind", "class"),
+        ]
+        relation = self._apply_predicates(relation, predicates)
+        relation = relation.select("rel_path", "qualname", "short_desc", "long_desc")
+        return self._relation_to_dicts(relation)
 
     def list_models(self) -> list[DataModelRow]:
         """List data model rows for the bound snapshot.
@@ -201,8 +186,7 @@ class DataModelsRepository(BaseRepository):
         list[DataModelRow]
             Data model rows for the repository snapshot.
         """
-        tbl = self._ibis_table("analytics.data_models")
-        expr = tbl.select(
+        relation = self._relation("analytics.data_models").select(
             "repo",
             "commit",
             "model_id",
@@ -216,7 +200,7 @@ class DataModelsRepository(BaseRepository):
             "doc_long",
             "created_at",
         )
-        rows = self._ibis_to_dicts(expr, table_key="analytics.data_models")
+        rows = self._relation_to_dicts(relation, table_key="analytics.data_models")
 
         result: list[DataModelRow] = []
         for row in rows:
@@ -252,12 +236,14 @@ class DataModelsRepository(BaseRepository):
         list[DataModelFieldRow]
             Field rows for the selected models.
         """
-        tbl = self._ibis_table("analytics.data_model_fields")
-        expr = tbl
+        if model_ids is not None and not model_ids:
+            return []
+        relation = self._relation("analytics.data_model_fields")
         if model_ids is not None:
-            expr = expr.filter(isin_values(tbl.model_id, model_ids))
+            literals = ", ".join(f"'{_sql_escape(model_id)}'" for model_id in model_ids)
+            relation = relation.filter(SQLExpression(f"model_id IN ({literals})"))
 
-        expr = expr.select(
+        relation = relation.select(
             "repo",
             "commit",
             "model_id",
@@ -272,7 +258,7 @@ class DataModelsRepository(BaseRepository):
             "lineno",
             "created_at",
         )
-        rows = self._ibis_to_dicts(expr, table_key="analytics.data_model_fields")
+        rows = self._relation_to_dicts(relation, table_key="analytics.data_model_fields")
 
         result: list[DataModelFieldRow] = []
         for row in rows:
@@ -317,12 +303,14 @@ class DataModelsRepository(BaseRepository):
         list[DataModelRelationshipRow]
             Relationship rows for the selected models.
         """
-        tbl = self._ibis_table("analytics.data_model_relationships")
-        expr = tbl
+        if model_ids is not None and not model_ids:
+            return []
+        relation = self._relation("analytics.data_model_relationships")
         if model_ids is not None:
-            expr = expr.filter(isin_values(tbl.source_model_id, model_ids))
+            literals = ", ".join(f"'{_sql_escape(model_id)}'" for model_id in model_ids)
+            relation = relation.filter(SQLExpression(f"source_model_id IN ({literals})"))
 
-        expr = expr.select(
+        relation = relation.select(
             "repo",
             "commit",
             "source_model_id",
@@ -338,7 +326,7 @@ class DataModelsRepository(BaseRepository):
             "lineno",
             "created_at",
         )
-        rows = self._ibis_to_dicts(expr, table_key="analytics.data_model_relationships")
+        rows = self._relation_to_dicts(relation, table_key="analytics.data_model_relationships")
 
         result: list[DataModelRelationshipRow] = []
         for row in rows:
@@ -388,13 +376,15 @@ class DataModelsRepository(BaseRepository):
         list[NormalizedDataModel]
             Fully decoded models with embedded field and relationship details.
         """
+        if model_ids is not None and not model_ids:
+            return []
         allowed = set(model_ids) if model_ids else None
-        tbl = self._ibis_table("docs.v_data_models_normalized")
-        expr = tbl
+        relation = self._relation("docs.v_data_models_normalized")
         if allowed is not None:
-            expr = expr.filter(isin_values(tbl.model_id, allowed))
+            literals = ", ".join(f"'{_sql_escape(model_id)}'" for model_id in allowed)
+            relation = relation.filter(SQLExpression(f"model_id IN ({literals})"))
 
-        expr = expr.select(
+        relation = relation.select(
             "repo",
             "commit",
             "model_id",
@@ -410,7 +400,7 @@ class DataModelsRepository(BaseRepository):
             "doc_long",
             "created_at",
         )
-        rows = self._ibis_to_dicts(expr, table_key="docs.v_data_models_normalized")
+        rows = self._relation_to_dicts(relation, table_key="docs.v_data_models_normalized")
 
         result: list[NormalizedDataModel] = []
         for row in rows:

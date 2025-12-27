@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ __all__ = [
     "resolve_meta_db_path",
 ]
 
+log = logging.getLogger(__name__)
 
 def default_meta_db_path(db_path: Path) -> Path:
     """Return the default meta database path for a primary database.
@@ -66,10 +68,6 @@ def attach_meta_database(con: DuckDBPyConnection, *, config: StorageConfig) -> N
     config
         Storage configuration containing meta catalog settings.
 
-    Raises
-    ------
-    FileNotFoundError
-        If the meta database is missing and the connection is read-only.
     """
     if not config.attach_meta:
         return
@@ -84,15 +82,15 @@ def attach_meta_database(con: DuckDBPyConnection, *, config: StorageConfig) -> N
         con.execute(f"ATTACH DATABASE ':memory:' AS \"{escaped_alias}\"")
         return
 
-    if config.read_only and not meta_path.exists():
-        message = f"Meta database not found: {meta_path}"
-        raise FileNotFoundError(message)
-
-    meta_path.parent.mkdir(parents=True, exist_ok=True)
-    escaped_path = str(meta_path).replace("'", "''")
     if config.read_only:
+        if not meta_path.exists():
+            log.warning("Meta database not found for read-only attach: %s", meta_path)
+            return
+        escaped_path = str(meta_path).replace("'", "''")
         con.execute(f"ATTACH DATABASE '{escaped_path}' AS \"{escaped_alias}\" (READ_ONLY)")
     else:
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        escaped_path = str(meta_path).replace("'", "''")
         con.execute(f"ATTACH DATABASE '{escaped_path}' AS \"{escaped_alias}\"")
 
 

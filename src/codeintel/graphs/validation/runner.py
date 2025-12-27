@@ -21,7 +21,6 @@ from typing import TYPE_CHECKING, SupportsInt, cast
 import pandas as pd
 
 from codeintel.core.catalog import load_function_catalog
-from codeintel.core.ibis_typing import ibis_bool, isin_values
 from codeintel.core.validation.runner import ValidationRunner
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
 from codeintel.graphs.validation.checks.anomaly import (
@@ -47,12 +46,9 @@ from codeintel.graphs.validation.findings import (
     persist_findings,
     resolve_validation_options,
 )
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    import ibis.expr.types as it
-    from ibis.expr.types import Table
-
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.catalog import FunctionCatalogProvider
     from codeintel.core.validation.runner import ValidationReport
@@ -316,55 +312,52 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
         Logger for output.
     """
 
-    def _count(table_expr: Table, *predicates: it.BooleanValue) -> int:
+    def _count(
+        table_key: str,
+        *,
+        where: str | None = None,
+        params: dict[str, object] | None = None,
+    ) -> int:
+        sql = f"SELECT COUNT(*) FROM {table_key}"
+        if where:
+            sql += f" WHERE {where}"
         try:
-            expr = table_expr if not predicates else table_expr.filter(list(predicates))
-            result = expr.count().execute()
-            if isinstance(result, pd.DataFrame):
-                return int(cast("SupportsInt", result.iloc[0, 0]))
-            if isinstance(result, pd.Series):
-                return int(cast("SupportsInt", result.iloc[0]))
-            return int(cast("SupportsInt", result))
+            result = gateway.con.sql(sql, params or {}).fetchone()
+            if result is None:
+                return 0
+            return int(cast("SupportsInt", result[0]))
         except DuckDBError as exc:
-            log.warning("Validation snapshot count failed for %s: %s", table_expr, exc)
+            log.warning("Validation snapshot count failed for %s: %s", table_key, exc)
             return -1
-
-    modules_tbl = ibis_facade.table(gateway, "core.modules")
-    goids_tbl = ibis_facade.table(gateway, "core.goids")
-    call_nodes_tbl = ibis_facade.table(gateway, "graph.call_graph_nodes")
-    call_edges_tbl = ibis_facade.table(gateway, "graph.call_graph_edges")
 
     counts = {
         "modules": _count(
-            modules_tbl,
-            ibis_bool(modules_tbl.repo == repo),
-            ibis_bool(modules_tbl.commit == commit),
+            "core.modules",
+            where="repo = $repo AND commit = $commit",
+            params={"repo": repo, "commit": commit},
         ),
         "goids": _count(
-            goids_tbl,
-            ibis_bool(goids_tbl.repo == repo),
-            ibis_bool(goids_tbl.commit == commit),
+            "core.goids",
+            where="repo = $repo AND commit = $commit",
+            params={"repo": repo, "commit": commit},
         ),
         "module_goids": _count(
-            goids_tbl,
-            ibis_bool(goids_tbl.repo == repo),
-            ibis_bool(goids_tbl.commit == commit),
-            ibis_bool(goids_tbl.kind == "module"),
+            "core.goids",
+            where="repo = $repo AND commit = $commit AND kind = 'module'",
+            params={"repo": repo, "commit": commit},
         ),
         "class_goids": _count(
-            goids_tbl,
-            ibis_bool(goids_tbl.repo == repo),
-            ibis_bool(goids_tbl.commit == commit),
-            ibis_bool(goids_tbl.kind == "class"),
+            "core.goids",
+            where="repo = $repo AND commit = $commit AND kind = 'class'",
+            params={"repo": repo, "commit": commit},
         ),
         "function_goids": _count(
-            goids_tbl,
-            ibis_bool(goids_tbl.repo == repo),
-            ibis_bool(goids_tbl.commit == commit),
-            isin_values(goids_tbl.kind, ["function", "method"]),
+            "core.goids",
+            where="repo = $repo AND commit = $commit AND kind IN ('function', 'method')",
+            params={"repo": repo, "commit": commit},
         ),
-        "call_nodes": _count(call_nodes_tbl),
-        "call_edges": _count(call_edges_tbl),
+        "call_nodes": _count("graph.call_graph_nodes"),
+        "call_edges": _count("graph.call_graph_edges"),
     }
     snapshot = (
         f"[graph_validation] repo={repo} commit={commit} "

@@ -64,13 +64,25 @@ class BuildSession:
         self._cache_keys_preloaded = True
 
     def cache_key_for_node(self, node_name: str) -> str | None:
-        """Return the computed cache key for a node, if available."""
+        """Return the computed cache key for a node, if available.
+
+        Returns
+        -------
+        str | None
+            Cache key for the node when available.
+        """
         if not self._cache_keys_preloaded:
             self.preload_cache_keys()
         return self._cache_keys.get(node_name)
 
     def cache_hit(self, node_name: str) -> bool:
-        """Return True when a cache entry exists for the node."""
+        """Return True when a cache entry exists for the node.
+
+        Returns
+        -------
+        bool
+            True when a cache entry exists for the node.
+        """
         cache_key = self.cache_key_for_node(node_name)
         if cache_key is None:
             return False

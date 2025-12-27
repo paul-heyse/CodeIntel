@@ -16,10 +16,9 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 from codeintel.core.hashing import sha256_short
-from codeintel.core.ibis_typing import and_predicates, eq, sort_desc
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
-from codeintel.storage.gateway import ibis_facade
+from duckdb import ColumnExpression, ConstantExpression
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -245,15 +244,17 @@ def _select_top_functions(
     set[str]
         Set of stable entity IDs.
     """
-    table = ibis_facade.table(gateway, "analytics.function_profile")
-    rows_df = (
-        table.filter(and_predicates(eq(table.repo, snapshot.repo), eq(table.commit, commit)))
-        .order_by(sort_desc(table.risk_score))
+    relation = gateway.relation_from_table_key("analytics.function_profile")
+    predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    rows = (
+        relation.filter(predicate)
+        .order("risk_score DESC")
         .select("rel_path", "language", "qualname")
         .limit(options.max_entities)
-        .execute()
+        .fetchall()
     )
-    rows = rows_df.itertuples(index=False, name=None)
     return {
         make_entity_stable_id(
             repo=snapshot.repo,
@@ -290,15 +291,17 @@ def _select_top_modules(
     set[str]
         Set of stable entity IDs.
     """
-    table = ibis_facade.table(gateway, "analytics.module_profile")
-    rows_df = (
-        table.filter(and_predicates(eq(table.repo, snapshot.repo), eq(table.commit, commit)))
-        .order_by(sort_desc(table.max_risk_score))
+    relation = gateway.relation_from_table_key("analytics.module_profile")
+    predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit)
+    )
+    rows = (
+        relation.filter(predicate)
+        .order("max_risk_score DESC")
         .select("path", "language", "module")
         .limit(options.max_entities)
-        .execute()
+        .fetchall()
     )
-    rows = rows_df.itertuples(index=False, name=None)
     return {
         make_entity_stable_id(
             repo=snapshot.repo,
@@ -336,14 +339,12 @@ def _collect_function_rows_for_commit(
     dict[str, object]
         Row mappings for analytics.history_timeseries.
     """
-    table = ibis_facade.table(gateway, "analytics.function_profile")
-    rows_df = (
-        table.filter(
-            and_predicates(
-                eq(table.repo, snapshot.repo),
-                eq(table.commit, commit_ctx.commit),
-            )
-        )
+    relation = gateway.relation_from_table_key("analytics.function_profile")
+    predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit_ctx.commit)
+    )
+    rows = (
+        relation.filter(predicate)
         .select(
             "function_goid_h128",
             "rel_path",
@@ -358,7 +359,7 @@ def _collect_function_rows_for_commit(
             "risk_score",
             "risk_level",
         )
-        .execute()
+        .fetchall()
     )
 
     for (
@@ -374,7 +375,7 @@ def _collect_function_rows_for_commit(
         typedness_bucket,
         risk_score,
         risk_level,
-    ) in rows_df.itertuples(index=False, name=None):
+    ) in rows:
         stable_id = make_entity_stable_id(
             repo=snapshot.repo,
             rel_path=str(rel_path),
@@ -433,14 +434,12 @@ def _collect_module_rows_for_commit(
     dict[str, object]
         Row mappings for analytics.history_timeseries.
     """
-    table = ibis_facade.table(gateway, "analytics.module_profile")
-    rows_df = (
-        table.filter(
-            and_predicates(
-                eq(table.repo, snapshot.repo),
-                eq(table.commit, commit_ctx.commit),
-            )
-        )
+    relation = gateway.relation_from_table_key("analytics.module_profile")
+    predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+        ColumnExpression("commit") == ConstantExpression(commit_ctx.commit)
+    )
+    rows = (
+        relation.filter(predicate)
         .select(
             "module",
             "path",
@@ -451,7 +450,7 @@ def _collect_module_rows_for_commit(
             "role",
             "role_confidence",
         )
-        .execute()
+        .fetchall()
     )
 
     for (
@@ -463,7 +462,7 @@ def _collect_module_rows_for_commit(
         _avg_risk_score,
         _role,
         _role_confidence,
-    ) in rows_df.itertuples(index=False, name=None):
+    ) in rows:
         stable_id = make_entity_stable_id(
             repo=snapshot.repo,
             rel_path=str(path),

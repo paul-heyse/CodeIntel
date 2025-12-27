@@ -47,9 +47,9 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
-from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
@@ -1101,12 +1101,18 @@ def _normalize_scip_teardown_status(status: str) -> ScipTeardownStatus:
     return "unknown"
 
 
+def _resolve_observability_settings(env: BuildEnv) -> ObservabilitySettings:
+    if env.execution_context is not None:
+        return env.execution_context.observability_settings
+    return ObservabilitySettings()
+
+
 def _emit_scip_teardown(
     env: BuildEnv,
     run: ScipRunResult,
     record: TargetRunRecord,
 ) -> None:
-    settings = load_runtime_settings().observability
+    settings = _resolve_observability_settings(env)
     if not settings.teardown_enabled:
         return
     if not _should_emit_scip_teardown(run):

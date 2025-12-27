@@ -1,4 +1,7 @@
-"""Native Hamilton target for the build decision trace artifact."""
+"""Native Hamilton target for the build decision trace artifact.
+
+Decision trace payloads are audit outputs, not execution control inputs.
+"""
 
 from __future__ import annotations
 

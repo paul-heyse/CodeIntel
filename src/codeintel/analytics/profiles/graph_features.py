@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import ibis
-
 from codeintel.analytics.profiles.types import FunctionGraphFeatures
-from codeintel.core.ibis_typing import and_predicates, eq, filter_by, gt
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -31,75 +28,60 @@ def summarize_graph_for_function_profile(
         Mapping keyed by function GOID containing call graph metrics.
     """
     try:
-        edges = ibis_facade.table(inputs.gateway, "graph.call_graph_edges")
-        nodes = ibis_facade.table(inputs.gateway, "graph.call_graph_nodes")
+        relation = inputs.gateway.con.sql(
+            """
+            WITH scoped_edges AS (
+                SELECT *
+                FROM graph.call_graph_edges
+                WHERE repo = $repo AND commit = $commit
+            ),
+            cg_out AS (
+                SELECT
+                    caller_goid_h128 AS function_goid_h128,
+                    COUNT(*) AS call_edge_out_count,
+                    COUNT(DISTINCT callee_goid_h128) AS call_fan_out
+                FROM scoped_edges
+                GROUP BY caller_goid_h128
+            ),
+            cg_in AS (
+                SELECT
+                    callee_goid_h128 AS function_goid_h128,
+                    COUNT(*) AS call_edge_in_count,
+                    COUNT(DISTINCT caller_goid_h128) AS call_fan_in
+                FROM scoped_edges
+                WHERE callee_goid_h128 IS NOT NULL
+                GROUP BY callee_goid_h128
+            ),
+            combined AS (
+                SELECT
+                    COALESCE(cg_out.function_goid_h128, cg_in.function_goid_h128)
+                        AS function_goid_h128,
+                    COALESCE(cg_in.call_fan_in, 0) AS call_fan_in,
+                    COALESCE(cg_out.call_fan_out, 0) AS call_fan_out,
+                    COALESCE(cg_in.call_edge_in_count, 0) AS call_edge_in_count,
+                    COALESCE(cg_out.call_edge_out_count, 0) AS call_edge_out_count
+                FROM cg_out
+                FULL OUTER JOIN cg_in
+                  ON cg_out.function_goid_h128 = cg_in.function_goid_h128
+            )
+            SELECT
+                combined.function_goid_h128,
+                combined.call_fan_in,
+                combined.call_fan_out,
+                combined.call_edge_in_count,
+                combined.call_edge_out_count,
+                combined.call_fan_out = 0 AS call_is_leaf,
+                combined.call_fan_in = 0 AND combined.call_fan_out > 0 AS call_is_entrypoint,
+                nodes.is_public AS call_is_public
+            FROM combined
+            LEFT JOIN graph.call_graph_nodes AS nodes
+              ON combined.function_goid_h128 = nodes.goid_h128
+            ORDER BY combined.function_goid_h128
+            """,
+            {"repo": inputs.repo, "commit": inputs.commit},
+        )
     except DuckDBError:
         return {}
-
-    scoped_edges = filter_by(edges, edges.repo == inputs.repo, edges.commit == inputs.commit)
-
-    cg_out = (
-        scoped_edges.group_by(scoped_edges.caller_goid_h128)
-        .aggregate(
-            call_edge_out_count=scoped_edges.caller_goid_h128.count(),
-            call_fan_out=scoped_edges.callee_goid_h128.nunique(),
-        )
-        .rename({"function_goid_h128": "caller_goid_h128"})
-    )
-
-    cg_in = (
-        scoped_edges.filter(scoped_edges.callee_goid_h128.notnull())
-        .group_by(scoped_edges.callee_goid_h128)
-        .aggregate(
-            call_edge_in_count=scoped_edges.callee_goid_h128.count(),
-            call_fan_in=scoped_edges.caller_goid_h128.nunique(),
-        )
-        .rename({"function_goid_h128": "callee_goid_h128"})
-    )
-
-    cg_nodes = nodes.select(
-        nodes.goid_h128.name("function_goid_h128"),
-        nodes.is_public,
-    )
-
-    combined = cg_out.outer_join(
-        cg_in,
-        [cg_out.function_goid_h128 == cg_in.function_goid_h128],
-        rname="{name}_in",
-    )
-    joined = combined.left_join(
-        cg_nodes,
-        [
-            (combined.function_goid_h128 == cg_nodes.function_goid_h128)
-            | (combined.function_goid_h128_in == cg_nodes.function_goid_h128)
-        ],
-        rname="{name}_node",
-    )
-
-    zero = ibis.literal(0)
-    function_goid_h128 = ibis.coalesce(
-        joined.function_goid_h128,
-        joined.function_goid_h128_in,
-    ).name("function_goid_h128")
-    call_fan_in = joined.call_fan_in.fill_null(zero)
-    call_fan_out = joined.call_fan_out.fill_null(zero)
-    call_edge_in_count = joined.call_edge_in_count.fill_null(zero)
-    call_edge_out_count = joined.call_edge_out_count.fill_null(zero)
-    call_is_leaf = eq(call_fan_out, 0).name("call_is_leaf")
-    call_is_entrypoint = and_predicates(eq(call_fan_in, 0), gt(call_fan_out, 0)).name(
-        "call_is_entrypoint"
-    )
-    selected = joined.select(
-        function_goid_h128,
-        call_fan_in,
-        call_fan_out,
-        call_edge_in_count,
-        call_edge_out_count,
-        call_is_leaf,
-        call_is_entrypoint,
-        joined.is_public.name("call_is_public"),
-    )
-    rows_df = selected.order_by(selected.function_goid_h128).execute()
 
     features: dict[int, FunctionGraphFeatures] = {}
     for (
@@ -111,7 +93,7 @@ def summarize_graph_for_function_profile(
         call_is_leaf,
         call_is_entrypoint,
         call_is_public,
-    ) in rows_df.itertuples(index=False, name=None):
+    ) in relation.fetchall():
         goid = int(function_goid_h128)
         features[goid] = FunctionGraphFeatures(
             function_goid_h128=goid,

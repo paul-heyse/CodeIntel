@@ -1,4 +1,7 @@
-"""Decision trace utilities for Hamilton build runs."""
+"""Decision trace utilities for Hamilton build runs.
+
+Decision trace payloads are audit artifacts and must not drive control flow.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntry
 
@@ -27,6 +30,7 @@ class DecisionTracePayload(TypedDict):
     status: CacheEventStatus
     cache_key: str | None
     cache_version: str | None
+    data_version: NotRequired[str | None]
     cache_path: str | None
     duration_ms: float | None
     size_bytes: int | None
@@ -35,7 +39,10 @@ class DecisionTracePayload(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class DecisionTraceRecord:
-    """Serializable decision record for a cache event."""
+    """Serializable decision record for a cache event.
+
+    cache_version represents the cache data version for the event.
+    """
 
     index: int
     node_name: str
@@ -63,6 +70,7 @@ class DecisionTraceRecord:
             "status": self.status,
             "cache_key": self.cache_key,
             "cache_version": self.cache_version,
+            "data_version": self.cache_version,
             "cache_path": self.cache_path,
             "duration_ms": self.duration_ms,
             "size_bytes": self.size_bytes,

@@ -22,7 +22,13 @@ class CacheFixture:
 
 
 def make_cache_store(path: Path) -> CacheStore:
-    """Create a cache store rooted at the given path."""
+    """Create a cache store rooted at the given path.
+
+    Returns
+    -------
+    CacheStore
+        Cache store backed by a metadata store on disk.
+    """
     metadata_store = SQLiteMetadataStore(path=str(path))
     return CacheStore(metadata_store=metadata_store, result_store=None)
 
@@ -32,7 +38,13 @@ def make_cache_key_resolver(
     node_dependencies: Mapping[str, tuple[str, ...]],
     cache_store: CacheStore | None = None,
 ) -> CacheKeyResolver:
-    """Create a CacheKeyResolver with deterministic code versions."""
+    """Create a CacheKeyResolver with deterministic code versions.
+
+    Returns
+    -------
+    CacheKeyResolver
+        Cache key resolver with deterministic code versions.
+    """
     code_versions = {node: f"code::{node}" for node in node_dependencies}
     return CacheKeyResolver(
         code_versions=code_versions,

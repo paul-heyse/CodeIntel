@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from codeintel.storage.query_results import records_from_dataframe
 from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.validation.pandera_df import validate_df
 
@@ -19,7 +18,7 @@ MAX_ROW_LIMIT = 9_223_372_036_854_775_807
 
 @dataclass(frozen=True)
 class DatasetReadRepository(BaseRepository):
-    """Read dataset rows via Ibis table access."""
+    """Read dataset rows via DuckDB relations."""
 
     def read_dataset_dataframe(
         self,
@@ -45,13 +44,14 @@ class DatasetReadRepository(BaseRepository):
         pandas.DataFrame
             Validated dataset slice.
         """
-        expr = self._ibis_table(table_key)
+        relation = self._relation(table_key)
 
         if limit is not None or offset:
             limit_value = limit if limit is not None else MAX_ROW_LIMIT
-            expr = expr.limit(limit_value, offset=offset)
+            relation = relation.limit(limit_value, offset=offset)
 
-        df = pd.DataFrame(expr.execute())
+        table = relation.fetch_arrow_table()
+        df = table.to_pandas()
         return validate_df(table_key, df)
 
     def read_dataset_rows(self, table_key: str, *, limit: int, offset: int) -> list[RowDict]:
@@ -72,5 +72,8 @@ class DatasetReadRepository(BaseRepository):
         list[RowDict]
             Slice of rows from the requested dataset.
         """
-        df = self.read_dataset_dataframe(table_key, limit=limit, offset=offset)
-        return records_from_dataframe(df)
+        relation = self._relation(table_key)
+        if limit is not None or offset:
+            limit_value = limit if limit is not None else MAX_ROW_LIMIT
+            relation = relation.limit(limit_value, offset=offset)
+        return self._relation_to_dicts(relation, table_key)

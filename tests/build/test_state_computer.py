@@ -53,9 +53,7 @@ def _node_dependencies(catalog: DagCatalog) -> dict[str, tuple[str, ...]]:
     dependencies: dict[str, tuple[str, ...]] = {}
     for target in catalog.all_targets:
         node_name = catalog.target_nodes[target.name]
-        dependencies[node_name] = tuple(
-            catalog.target_nodes[dep] for dep in target.dependencies
-        )
+        dependencies[node_name] = tuple(catalog.target_nodes[dep] for dep in target.dependencies)
     return dependencies
 
 
@@ -79,6 +77,13 @@ def snapshot(tmp_path: Path) -> SnapshotRef:
 
 @pytest.fixture
 def cache_store(tmp_path: Path) -> CacheStore:
+    """Provide a cache store for state computer tests.
+
+    Returns
+    -------
+    CacheStore
+        Cache store rooted under the temporary path.
+    """
     return make_cache_store(tmp_path / "cache")
 
 
@@ -87,6 +92,13 @@ def cache_key_resolver(
     test_graph: DagCatalog,
     cache_store: CacheStore,
 ) -> CacheKeyResolver:
+    """Provide a cache key resolver for state computer tests.
+
+    Returns
+    -------
+    CacheKeyResolver
+        Resolver configured with the test graph dependencies.
+    """
     return make_cache_key_resolver(
         node_dependencies=_node_dependencies(test_graph),
         cache_store=cache_store,

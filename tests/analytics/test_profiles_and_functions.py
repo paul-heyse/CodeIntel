@@ -138,7 +138,6 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
-
 @pytest.fixture(autouse=True)
 def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)

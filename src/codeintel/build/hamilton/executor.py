@@ -500,20 +500,33 @@ def _maybe_persist_schema_manifest(
     if domain is not None:
         catalog_inputs["domain"] = domain
 
+    catalog_request = SchemaCatalogRequest(
+        run_id=run_id,
+        repo=env.repo,
+        commit=env.commit,
+        catalog_inputs=catalog_inputs,
+    )
     result = env.gateway.schemas.persist_schema_manifest(
         manifest,
-        request=SchemaCatalogRequest(
-            run_id=run_id,
-            repo=env.repo,
-            commit=env.commit,
-            catalog_inputs=catalog_inputs,
-        ),
+        request=catalog_request,
+    )
+    override_result = env.gateway.schemas.refresh_override_registry_from_manifest(
+        manifest,
+        request=catalog_request,
+        catalog_hash=result.catalog_hash,
     )
     log.info(
         "build.hamilton.executor.schema_manifest.persisted hash=%s tables=%d views=%d",
         result.catalog_hash,
         result.tables,
         result.views,
+    )
+    log.info(
+        "build.hamilton.executor.override_registry.%s tables=%d version_id=%s reason=%s",
+        override_result.status,
+        override_result.tables,
+        override_result.version_id,
+        override_result.reason,
     )
 
 
@@ -577,6 +590,7 @@ def _preflight_blocked_records(
     missing_by_target: Mapping[str, _MissingInputs],
 ) -> tuple[dict[str, TargetRunRecord], set[str]]:
     catalog = runtime.catalog
+    cache_keys = _resolve_cache_keys(env=env, runtime=runtime)
     required_roots = {target for target, missing in missing_by_target.items() if missing.required}
     optional_roots = {
         target
@@ -598,8 +612,8 @@ def _preflight_blocked_records(
                 error = f"Missing upstream inputs: {required_list}"
             record = _failure_record(
                 target_name=target,
-                env=env,
-                catalog=catalog,
+                runtime=runtime,
+                cache_keys=cache_keys,
                 error=error,
             )
         elif target in blocked_skipped:
@@ -1059,11 +1073,12 @@ class HamiltonBuildExecutor:
             Error result indicating failed closure computation.
         """
         outputs: dict[str, Any] = {}
+        cache_keys = _resolve_cache_keys(env=context.env, runtime=context.runtime)
         for target in context.targets:
             record = _failure_record(
                 target_name=target,
-                env=context.env,
-                catalog=context.runtime.catalog,
+                runtime=context.runtime,
+                cache_keys=cache_keys,
                 error=error,
             )
             outputs[f"__failed__{target}"] = record
@@ -1093,11 +1108,12 @@ class HamiltonBuildExecutor:
         """
         log.error("build.hamilton.executor.missing_targets targets=%s", missing)
         outputs: dict[str, Any] = {}
+        cache_keys = _resolve_cache_keys(env=context.env, runtime=context.runtime)
         for target in missing:
             record = _failure_record(
                 target_name=target,
-                env=context.env,
-                catalog=context.runtime.catalog,
+                runtime=context.runtime,
+                cache_keys=cache_keys,
                 error=f"Missing node mappings for: {missing}",
             )
             outputs[f"__missing__{target}"] = record

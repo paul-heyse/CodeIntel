@@ -53,8 +53,7 @@ def test_get_table_schemas_contains_expected_keys() -> None:
         message="analytics.function_metrics table schema missing",
     )
     require(
-        condition="graph.call_graph_edges" in schemas
-        or "graph.call_graph_edges" in inferable,
+        condition="graph.call_graph_edges" in schemas or "graph.call_graph_edges" in inferable,
         message="graph.call_graph_edges should be inferable or declared",
     )
 

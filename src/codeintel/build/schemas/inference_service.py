@@ -107,8 +107,7 @@ def _is_tabular_annotation(annotation: object) -> bool:
             )
         )
     return any(
-        token in str(annotation)
-        for token in ("DuckDBPyRelation", "DuckDBRelation", "TabularInput")
+        token in str(annotation) for token in ("DuckDBPyRelation", "DuckDBRelation", "TabularInput")
     )
 
 

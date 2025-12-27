@@ -210,6 +210,11 @@ class StateComputer:
         -------
         dict[str, TargetState]
             Mapping of target names to preliminary states.
+
+        Raises
+        ------
+        KeyError
+            If a target is missing an anchor node in the catalog.
         """
         self._session.preload_cache_keys()
 
@@ -223,11 +228,7 @@ class StateComputer:
 
         return states
 
-    @staticmethod
-    def _state_from_cache(
-        self,
-        node_name: str,
-    ) -> TargetState:
+    def _state_from_cache(self, node_name: str) -> TargetState:
         """Determine state for a target based on cache presence.
 
         Parameters
@@ -319,6 +320,11 @@ class StateComputer:
         -------
         tuple[list[str], BlockingReason | None]
             List of blocking dep names and reason for first blocker.
+
+        Raises
+        ------
+        KeyError
+            If a dependency is missing an anchor node in the catalog.
         """
         blocking_deps: list[str] = []
         first_reason: BlockingReason | None = None

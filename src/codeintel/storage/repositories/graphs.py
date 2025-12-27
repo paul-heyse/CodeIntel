@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -34,19 +33,15 @@ class GraphRepository(BaseRepository):
         list[RowDict]
             Rows describing outgoing call edges limited by ``limit``.
         """
-        table = self._ibis_table("docs.v_call_graph_enriched")
-        expr = (
-            table.filter(
-                and_predicates(
-                    table.caller_goid_h128 == caller_goid_h128,
-                    table.caller_repo == self.repo,
-                    table.caller_commit == self.commit,
-                )
-            )
-            .order_by(table.callee_qualname)
-            .limit(limit)
-        )
-        return self._validated_records("docs.v_call_graph_enriched", expr)
+        relation = self._relation("docs.v_call_graph_enriched")
+        predicates = [
+            self._predicate_eq("caller_goid_h128", caller_goid_h128),
+            self._predicate_eq("caller_repo", self.repo),
+            self._predicate_eq("caller_commit", self.commit),
+        ]
+        relation = self._apply_predicates(relation, predicates)
+        relation = relation.order("callee_qualname").limit(limit)
+        return self._validated_records("docs.v_call_graph_enriched", relation)
 
     def get_incoming_callgraph_neighbors(
         self, callee_goid_h128: int, *, limit: int
@@ -66,16 +61,12 @@ class GraphRepository(BaseRepository):
         list[RowDict]
             Rows describing incoming call edges limited by ``limit``.
         """
-        table = self._ibis_table("docs.v_call_graph_enriched")
-        expr = (
-            table.filter(
-                and_predicates(
-                    table.callee_goid_h128 == callee_goid_h128,
-                    table.callee_repo == self.repo,
-                    table.callee_commit == self.commit,
-                )
-            )
-            .order_by(table.caller_qualname)
-            .limit(limit)
-        )
-        return self._validated_records("docs.v_call_graph_enriched", expr)
+        relation = self._relation("docs.v_call_graph_enriched")
+        predicates = [
+            self._predicate_eq("callee_goid_h128", callee_goid_h128),
+            self._predicate_eq("callee_repo", self.repo),
+            self._predicate_eq("callee_commit", self.commit),
+        ]
+        relation = self._apply_predicates(relation, predicates)
+        relation = relation.order("caller_qualname").limit(limit)
+        return self._validated_records("docs.v_call_graph_enriched", relation)

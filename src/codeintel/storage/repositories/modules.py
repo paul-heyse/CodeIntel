@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.ibis_typing import and_predicates
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -25,10 +24,8 @@ class ModuleRepository(BaseRepository):
         list[str]
             Sorted module names for the current snapshot.
         """
-        tbl = self._ibis_table("core.modules")
-        expr = tbl.select("module").order_by("module")
-
-        rows = self._ibis_to_dicts(expr)
+        relation = self._relation("core.modules").select("module").order("module")
+        rows = self._relation_to_dicts(relation)
         return [str(row["module"]) for row in rows]
 
     def get_file_summary(self, rel_path: str) -> RowDict | None:
@@ -45,13 +42,9 @@ class ModuleRepository(BaseRepository):
         RowDict | None
             File summary row when present.
         """
-        tbl = self._ibis_table("docs.v_file_summary")
-        expr = tbl.filter(
-            and_predicates(
-                tbl.rel_path == rel_path,
-            )
-        ).limit(1)
-        return self._ibis_to_one(expr)
+        relation = self._relation("docs.v_file_summary")
+        relation = relation.filter(self._predicate_eq("rel_path", rel_path)).limit(1)
+        return self._relation_to_one(relation)
 
     def get_module_architecture(self, module: str) -> RowDict | None:
         """
@@ -67,13 +60,9 @@ class ModuleRepository(BaseRepository):
         RowDict | None
             Module architecture when found.
         """
-        tbl = self._ibis_table("docs.v_module_architecture")
-        expr = tbl.filter(
-            and_predicates(
-                tbl.module == module,
-            )
-        ).limit(1)
-        return self._ibis_to_one(expr)
+        relation = self._relation("docs.v_module_architecture")
+        relation = relation.filter(self._predicate_eq("module", module)).limit(1)
+        return self._relation_to_one(relation)
 
     def get_module_profile(self, module: str) -> RowDict | None:
         """
@@ -89,13 +78,9 @@ class ModuleRepository(BaseRepository):
         RowDict | None
             Module profile when found.
         """
-        tbl = self._ibis_table("analytics.module_profile")
-        expr = tbl.filter(
-            and_predicates(
-                tbl.module == module,
-            )
-        ).limit(1)
-        return self._ibis_to_one(expr, table_key="analytics.module_profile")
+        relation = self._relation("analytics.module_profile")
+        relation = relation.filter(self._predicate_eq("module", module)).limit(1)
+        return self._relation_to_one(relation, table_key="analytics.module_profile")
 
     def get_file_profile(self, rel_path: str) -> RowDict | None:
         """
@@ -111,13 +96,9 @@ class ModuleRepository(BaseRepository):
         RowDict | None
             File profile when present.
         """
-        tbl = self._ibis_table("analytics.file_profile")
-        expr = tbl.filter(
-            and_predicates(
-                tbl.rel_path == rel_path,
-            )
-        ).limit(1)
-        return self._ibis_to_one(expr, table_key="analytics.file_profile")
+        relation = self._relation("analytics.file_profile")
+        relation = relation.filter(self._predicate_eq("rel_path", rel_path)).limit(1)
+        return self._relation_to_one(relation, table_key="analytics.file_profile")
 
     def get_file_hints(self, rel_path: str) -> list[RowDict]:
         """
@@ -133,10 +114,6 @@ class ModuleRepository(BaseRepository):
         list[RowDict]
             Hint rows for the requested file.
         """
-        tbl = self._ibis_table("docs.v_ide_hints")
-        expr = tbl.filter(
-            and_predicates(
-                tbl.rel_path == rel_path,
-            )
-        )
-        return self._ibis_to_dicts(expr)
+        relation = self._relation("docs.v_ide_hints")
+        relation = relation.filter(self._predicate_eq("rel_path", rel_path))
+        return self._relation_to_dicts(relation)

@@ -16,19 +16,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast
 
-import ibis.expr.types as ir
-
 from codeintel.core.catalog.function_span import FunctionSpan
 from codeintel.core.catalog.span_index import SpanIndex
-from codeintel.core.ibis_typing import filter_by, ibis_bool, isin_values
 from codeintel.core.paths import normalize_path
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.module_index import load_module_map
+from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
-
-    import pandas as pd
 
     from codeintel.storage.gateway import StorageGateway
 
@@ -76,18 +71,21 @@ def _load_function_rows(
     list[dict[str, Any]]
         Raw row dictionaries from the query.
     """
-    goids: ir.Table = ibis_facade.table(gateway, "core.goids")
-    filtered = filter_by(
-        goids,
-        ibis_bool(goids.repo == repo),
-        ibis_bool(goids.commit == commit),
-        isin_values(goids.kind, ["function", "method"]),
-    )
     columns = ["goid_h128", "rel_path", "qualname", "start_line", "end_line"]
     if include_urn:
         columns.insert(1, "urn")
-    df = cast("pd.DataFrame", filtered.select(*columns).execute())
-    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
+    select_cols = ", ".join(columns)
+    relation = gateway.con.sql(
+        f"""
+        SELECT {select_cols}
+        FROM core.goids
+        WHERE repo = $repo
+          AND commit = $commit
+          AND kind IN ('function', 'method')
+        """,
+        {"repo": repo, "commit": commit},
+    )
+    return cast("list[dict[str, Any]]", records_from_relation(relation))
 
 
 def load_function_spans(gateway: StorageGateway, *, repo: str, commit: str) -> list[FunctionSpan]:

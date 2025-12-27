@@ -10,13 +10,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import ibis
-
 from codeintel.analytics.utilities.ast import safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
-from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -315,16 +311,17 @@ def _build_function_role_rows(
 def _load_function_rows(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> list[tuple[int, str, str, int | None]]:
-    table = ibis_facade.table(gateway, "analytics.function_metrics")
-    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
-        "function_goid_h128",
-        "rel_path",
-        "qualname",
-        "loc",
+    relation = gateway.con.sql(
+        """
+        SELECT function_goid_h128, rel_path, qualname, loc
+        FROM analytics.function_metrics
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    rows = expr.execute()
+    rows = relation.fetchall()
     result: list[tuple[int, str, str, int | None]] = []
-    for goid_raw, rel_path, qualname, loc in rows.itertuples(index=False):
+    for goid_raw, rel_path, qualname, loc in rows:
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -335,18 +332,23 @@ def _load_function_rows(
 def _load_effects(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    table = ibis_facade.table(gateway, "analytics.function_effects")
-    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
-        "function_goid_h128",
-        "touches_db",
-        "uses_io",
-        "uses_time",
-        "uses_randomness",
-        "modifies_globals",
-        "modifies_closure",
-        "spawns_threads_or_tasks",
+    relation = gateway.con.sql(
+        """
+        SELECT
+            function_goid_h128,
+            touches_db,
+            uses_io,
+            uses_time,
+            uses_randomness,
+            modifies_globals,
+            modifies_closure,
+            spawns_threads_or_tasks
+        FROM analytics.function_effects
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    rows = expr.execute()
+    rows = relation.fetchall()
     mapping: dict[int, dict[str, object]] = {}
     for (
         goid_raw,
@@ -376,16 +378,21 @@ def _load_effects(
 def _load_contracts(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    table = ibis_facade.table(gateway, "analytics.function_contracts")
-    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
-        "function_goid_h128",
-        "preconditions_json",
-        "raises_json",
-        "param_nullability_json",
+    relation = gateway.con.sql(
+        """
+        SELECT
+            function_goid_h128,
+            preconditions_json,
+            raises_json,
+            param_nullability_json
+        FROM analytics.function_contracts
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    rows = expr.execute()
+    rows = relation.fetchall()
     mapping: dict[int, dict[str, object]] = {}
-    for goid_raw, preconditions, raises_json, param_nullability in rows.itertuples(index=False):
+    for goid_raw, preconditions, raises_json, param_nullability in rows:
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -400,15 +407,17 @@ def _load_contracts(
 def _load_graph_metrics(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, int]]:
-    table = ibis_facade.table(gateway, "analytics.graph_metrics_functions")
-    expr = table.filter(and_predicates(table["repo"] == repo, table["commit"] == commit)).select(
-        "function_goid_h128",
-        "call_fan_in",
-        "call_fan_out",
+    relation = gateway.con.sql(
+        """
+        SELECT function_goid_h128, call_fan_in, call_fan_out
+        FROM analytics.graph_metrics_functions
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    rows = expr.execute()
+    rows = relation.fetchall()
     mapping: dict[int, dict[str, int]] = {}
-    for goid_raw, call_fan_in, call_fan_out in rows.itertuples(index=False):
+    for goid_raw, call_fan_in, call_fan_out in rows:
         goid = normalize_decimal_id(goid_raw)
         if goid is None:
             continue
@@ -422,16 +431,17 @@ def _load_graph_metrics(
 def _load_module_meta(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[str, ModuleRecord]:
-    table = ibis_facade.table(gateway, "core.modules")
-    expr = table.filter(
-        and_predicates(
-            table["repo"].coalesce(ibis.literal(repo)) == repo,
-            table["commit"].coalesce(ibis.literal(commit)) == commit,
-        )
-    ).select("module", "path", "tags")
-    rows = expr.execute()
+    relation = gateway.con.sql(
+        """
+        SELECT module, path, tags
+        FROM core.modules
+        WHERE COALESCE(repo, $repo) = $repo AND COALESCE(commit, $commit) = $commit
+        """,
+        {"repo": repo, "commit": commit},
+    )
+    rows = relation.fetchall()
     meta: dict[str, ModuleRecord] = {}
-    for module, path, tags in rows.itertuples(index=False):
+    for module, path, tags in rows:
         normalized_path = normalize_path(path) if path is not None else ""
         normalized_tags = _normalize_tags(tags)
         meta[str(module)] = ModuleRecord(path=normalized_path, tags=normalized_tags)

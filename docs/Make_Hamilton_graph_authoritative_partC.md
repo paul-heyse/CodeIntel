@@ -129,6 +129,8 @@ No other module is allowed to:
 You add both:
 
 * **static enforcement** (AST linter that forbids driver-building imports/calls under DAG node directories), and
+  * Linter entrypoint: `tools/lint_no_driver_build_in_nodes.py`
+  * Test gate: `tests/lint/test_no_driver_build_in_nodes.py`
 * **runtime enforcement** (thread-local guards that prevent composition from being called during DAG execution).
 
 Optionally, you introduce snapshotting so serving can load catalog/registry artifacts without importing Hamilton at all when it doesn’t need to execute.

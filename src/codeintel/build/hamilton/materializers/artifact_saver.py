@@ -321,11 +321,14 @@ def _default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
 
 def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("wb") as sink, pa.ipc.new_stream(
-        sink,
-        reader.schema,
-        options=_default_ipc_write_options(),
-    ) as writer:
+    with (
+        output_path.open("wb") as sink,
+        pa.ipc.new_stream(
+            sink,
+            reader.schema,
+            options=_default_ipc_write_options(),
+        ) as writer,
+    ):
         for batch in reader:
             writer.write_batch(batch)
     return output_path.stat().st_size

@@ -352,7 +352,13 @@ class SchemaCatalogTracking:
         return schemas
 
     def registry_health_snapshot(self) -> dict[str, object]:
-        """Return health metadata for the latest schema registry state."""
+        """Return health metadata for the latest schema registry state.
+
+        Returns
+        -------
+        dict[str, object]
+            Health snapshot payload for the schema registry.
+        """
         manifest_runs_ref = meta_table_ref("metadata.schema_manifest_runs")
         registry_ref = meta_table_ref("metadata.table_schema_registry")
         override_ref = meta_table_ref("metadata.table_schema_override_registry")
@@ -423,13 +429,9 @@ class SchemaCatalogTracking:
         inferable_total = int(inferable_row[0] or 0) if inferable_row is not None else 0
         inferred_count = int(inferable_row[1] or 0) if inferable_row is not None else 0
         inference_error_count = int(inferable_row[2] or 0) if inferable_row is not None else 0
-        inference_success_rate = (
-            inferred_count / inferable_total if inferable_total else None
-        )
+        inference_success_rate = inferred_count / inferable_total if inferable_total else None
 
-        override_rows = self._con.execute(
-            f"SELECT COUNT(*) FROM {override_ref}"
-        ).fetchone()
+        override_rows = self._con.execute(f"SELECT COUNT(*) FROM {override_ref}").fetchone()
         override_registry_rows = int(override_rows[0]) if override_rows is not None else 0
 
         status = "ok"
@@ -586,6 +588,8 @@ class SchemaCatalogTracking:
         ------
         RuntimeError
             If the gateway is read-only.
+        ValueError
+            If strict provenance checks fail.
         """
         if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
             msg = "Cannot refresh override registry in a read-only storage gateway"
@@ -711,6 +715,15 @@ class SchemaCatalogTracking:
         -------
         TableSchemaOverrideRegistryRecord
             Updated override registry record.
+
+        Raises
+        ------
+        KeyError
+            If the requested override version cannot be found.
+        RuntimeError
+            If the gateway is read-only.
+        ValueError
+            If schema_digest and version_id are both missing.
         """
         if schema_digest is None and version_id is None:
             msg = "schema_digest or version_id is required to update override registry"

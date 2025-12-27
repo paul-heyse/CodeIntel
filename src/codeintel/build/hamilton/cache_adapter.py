@@ -113,7 +113,10 @@ class CacheStore(CacheIndex):
 
 
 class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
-    """Hamilton cache adapter that emits cache events to the manifest writer."""
+    """Hamilton cache adapter that emits cache events to the manifest writer.
+
+    Manifest output is audit-only and must not drive control flow.
+    """
 
     def __init__(
         self,

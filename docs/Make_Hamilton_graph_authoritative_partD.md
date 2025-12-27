@@ -1052,7 +1052,7 @@ Prefer compiling directly from returned variable objects instead of building int
 **Remove**:
 
 * `from codeintel.build.hamilton.tag_index import TagIndex`
-* `TagIndex.from_modules(modules=(_ibis_views,))`
+* `TagIndex.from_modules(modules=(_sqlglot_views,))`
 * `compile_semantic_registry_from_tag_index(...)`
 
 **Replace** semantic registry construction with runtime driver query:

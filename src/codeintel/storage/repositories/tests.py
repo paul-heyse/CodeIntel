@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.ibis_typing import and_predicates, ibis_bool
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -34,22 +33,23 @@ class TestRepository(BaseRepository):
         list[RowDict]
             Test rows limited by ``limit``.
         """
-        tbl = self._ibis_table("docs.v_test_to_function")
+        relation = self._relation("docs.v_test_to_function")
 
-        cols = set(tbl.columns)
+        cols = set(relation.columns)
         repo_field = "test_repo" if "test_repo" in cols else ("repo" if "repo" in cols else None)
         commit_field = (
             "test_commit" if "test_commit" in cols else ("commit" if "commit" in cols else None)
         )
 
-        expr = tbl.filter(ibis_bool(tbl.function_goid_h128 == goid_h128))
+        predicates = [self._predicate_eq("function_goid_h128", goid_h128)]
         if repo_field is not None:
-            expr = expr.filter(ibis_bool(tbl[repo_field] == self.repo))
+            predicates.append(self._predicate_eq(repo_field, self.repo))
         if commit_field is not None:
-            expr = expr.filter(ibis_bool(tbl[commit_field] == self.commit))
-        expr = expr.order_by("test_id").limit(limit)
+            predicates.append(self._predicate_eq(commit_field, self.commit))
+        relation = self._apply_predicates(relation, predicates)
+        relation = relation.order("test_id").limit(limit)
 
-        return self._ibis_to_dicts(expr)
+        return self._relation_to_dicts(relation)
 
     def get_test_catalog(self, *, limit: int, status: str | None = None) -> list[RowDict]:
         """
@@ -67,14 +67,11 @@ class TestRepository(BaseRepository):
         list[RowDict]
             Test catalog rows.
         """
-        tbl = self._ibis_table("analytics.test_catalog")
-        expr = tbl
-
+        relation = self._relation("analytics.test_catalog")
         if status:
-            expr = expr.filter(ibis_bool(tbl.status == status))
-
-        expr = expr.order_by("test_id").limit(limit)
-        return self._ibis_to_dicts(expr, table_key="analytics.test_catalog")
+            relation = relation.filter(self._predicate_eq("status", status))
+        relation = relation.order("test_id").limit(limit)
+        return self._relation_to_dicts(relation, table_key="analytics.test_catalog")
 
     def get_test_profile(self, test_id: str) -> RowDict | None:
         """
@@ -90,10 +87,6 @@ class TestRepository(BaseRepository):
         RowDict | None
             Test profile row when found.
         """
-        tbl = self._ibis_table("analytics.test_profile")
-        expr = tbl.filter(
-            and_predicates(
-                tbl.test_id == test_id,
-            )
-        ).limit(1)
-        return self._ibis_to_one(expr, table_key="analytics.test_profile")
+        relation = self._relation("analytics.test_profile")
+        relation = relation.filter(self._predicate_eq("test_id", test_id)).limit(1)
+        return self._relation_to_one(relation, table_key="analytics.test_profile")

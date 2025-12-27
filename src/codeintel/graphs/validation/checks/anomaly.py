@@ -10,13 +10,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from codeintel.core.ibis_typing import bool_not, filter_by, gt, ibis_bool
 from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.graphs.validation.findings import (
     SAMPLE_LIMIT,
     SYMBOL_COMMUNITY_MIN,
 )
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     import logging
@@ -99,24 +98,28 @@ def _symbol_community_findings_impl(
         Findings for symbol community anomalies.
     """
     try:
-        metrics = ibis_facade.table(gateway, "analytics.symbol_graph_metrics_modules")
-        filtered = filter_by(
-            metrics,
-            ibis_bool(metrics.repo == repo),
-            ibis_bool(metrics.commit == commit),
-            ibis_bool(metrics.symbol_community_id.notnull()),
+        relation = gateway.con.sql(
+            """
+            SELECT symbol_community_id, COUNT(*) AS sym_count
+            FROM analytics.symbol_graph_metrics_modules
+            WHERE repo = $repo
+              AND commit = $commit
+              AND symbol_community_id IS NOT NULL
+            GROUP BY symbol_community_id
+            HAVING COUNT(*) > $min_count
+            """,
+            {
+                "repo": repo,
+                "commit": commit,
+                "min_count": SYMBOL_COMMUNITY_MIN,
+            },
         )
-        grouped = filtered.group_by(metrics.symbol_community_id).aggregate(
-            sym_count=metrics.symbol_community_id.count()
-        )
-        expr = grouped.filter(gt(grouped["sym_count"], SYMBOL_COMMUNITY_MIN))
-        comm_counts_df = expr.execute()
+        comm_counts = relation.fetchall()
     except DuckDBError:
         return []
 
-    if getattr(comm_counts_df, "empty", True):
+    if not comm_counts:
         return []
-    comm_counts = list(comm_counts_df.itertuples(index=False, name=None))
     largest = max(comm_counts, key=lambda row: row[1])
     log.warning("Validation: large symbol communities detected (largest size %d)", largest[1])
     return [
@@ -143,24 +146,19 @@ def _subsystem_disagreement_findings_impl(
         Findings for subsystem disagreement anomalies.
     """
     try:
-        agreement = ibis_facade.table(gateway, "analytics.subsystem_agreement")
-        filtered = filter_by(
-            agreement,
-            agreement.repo == repo,
-            agreement.commit == commit,
-            bool_not(agreement.agrees),
+        relation = gateway.con.sql(
+            """
+            SELECT module, subsystem_id, import_community_id
+            FROM analytics.subsystem_agreement
+            WHERE repo = $repo
+              AND commit = $commit
+              AND agrees = FALSE
+            """,
+            {"repo": repo, "commit": commit},
         )
-        disagreements_df = filtered.select(
-            agreement.module, agreement.subsystem_id, agreement.import_community_id
-        ).execute()
+        disagreements = relation.fetchall()
     except DuckDBError:
         return []
-
-    disagreements = (
-        list(disagreements_df.itertuples(index=False, name=None))
-        if not getattr(disagreements_df, "empty", True)
-        else []
-    )
     if not disagreements:
         return []
     sample = ", ".join(str(row[0]) for row in disagreements[:SAMPLE_LIMIT])

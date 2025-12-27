@@ -4,25 +4,21 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-from ibis.common.exceptions import IbisError
-
-from codeintel.analytics.utilities.dataframe import to_records
-from codeintel.core.ibis_typing import and_predicates, filter_by, ne, not_null
+from duckdb import ColumnExpression, ConstantExpression
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from datetime import datetime
-
-    import pandas as pd
 
     from codeintel.analytics.compute.graphs import ComponentBundle, NeighborStats
     from codeintel.storage.gateway import StorageGateway
@@ -114,20 +110,21 @@ def component_metadata_from_import_table(
         Cached component metadata when present; otherwise ``None``.
     """
     try:
-        tbl = ibis_facade.table(gateway, "graph.import_modules")
-        scoped = filter_by(tbl, tbl.repo == repo, tbl.commit == commit)
-        df = cast(
-            "pd.DataFrame", scoped.select("module", "scc_id", "component_size", "layer").execute()
+        relation = gateway.relation_from_table_key("graph.import_modules")
+        predicate = (ColumnExpression("repo") == ConstantExpression(repo)) & (
+            ColumnExpression("commit") == ConstantExpression(commit)
         )
-    except IbisError:
+        scoped = relation.filter(predicate).select("module", "scc_id", "component_size", "layer")
+        rows = records_from_relation(scoped)
+    except DuckDBError:
         return None
-    if df.empty:
+    if not rows:
         return None
 
     comp_id: dict[str, int] = {}
     in_cycle: dict[str, bool] = {}
     layer_by_module: dict[str, int] = {}
-    for record in to_records(df):
+    for record in rows:
         name = str(record["module"])
         scc_id = record["scc_id"]
         component_size = record["component_size"]
@@ -204,25 +201,25 @@ def _load_symbol_module_edges_from_db(
     inbound: dict[str, set[str]] = defaultdict(set)
     outbound: dict[str, set[str]] = defaultdict(set)
 
-    edges = ibis_facade.table(gateway, "graph.symbol_use_edges")
-    module_defs = ibis_facade.table(gateway, "core.modules").view()
-    module_uses = ibis_facade.table(gateway, "core.modules").view()
-
-    def_module_present = and_predicates(not_null(module_defs.module), ne(module_defs.module, ""))
-    use_module_present = and_predicates(not_null(module_uses.module), ne(module_uses.module, ""))
-
-    joined = edges.left_join(
-        module_defs, predicates=[(edges.def_path, module_defs.path)]
-    ).left_join(module_uses, predicates=[(edges.use_path, module_uses.path)])
-    selected = filter_by(joined, def_module_present, use_module_present).select(
-        use_module=module_uses.module,
-        def_module=module_defs.module,
+    relation = gateway.con.sql(
+        """
+        SELECT
+            module_uses.module AS use_module,
+            module_defs.module AS def_module
+        FROM graph.symbol_use_edges AS edges
+        LEFT JOIN core.modules AS module_defs
+          ON edges.def_path = module_defs.path
+        LEFT JOIN core.modules AS module_uses
+          ON edges.use_path = module_uses.path
+        WHERE module_defs.module IS NOT NULL
+          AND module_defs.module <> ''
+          AND module_uses.module IS NOT NULL
+          AND module_uses.module <> ''
+        """
     )
-    df = cast("pd.DataFrame", selected.execute())
-
-    for record in to_records(df):
-        src = str(record["use_module"])
-        dst = str(record["def_module"])
+    for use_module, def_module in relation.fetchall():
+        src = str(use_module)
+        dst = str(def_module)
         modules.update((src, dst))
         outbound[src].add(dst)
         inbound[dst].add(src)
@@ -237,11 +234,9 @@ def _load_symbol_module_edges_from_mapping(
     inbound: dict[str, set[str]] = defaultdict(set)
     outbound: dict[str, set[str]] = defaultdict(set)
 
-    edges = ibis_facade.table(gateway, "graph.symbol_use_edges")
-    expr = edges.select("def_path", "use_path")
-    df = cast("pd.DataFrame", expr.execute())
-
-    for record in to_records(df):
+    relation = gateway.relation_from_table_key("graph.symbol_use_edges")
+    rows = records_from_relation(relation.select("def_path", "use_path"))
+    for record in rows:
         def_module = module_by_path.get(str(record["def_path"]))
         use_module = module_by_path.get(str(record["use_path"]))
         if def_module is None or use_module is None:

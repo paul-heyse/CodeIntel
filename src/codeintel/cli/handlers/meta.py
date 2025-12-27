@@ -123,7 +123,13 @@ def meta_override_pin_handler(
     schema_digest: str | None,
     version_id: str | None,
 ) -> CliResult[dict[str, object]]:
-    """Pin the override registry to a specific schema version."""
+    """Pin the override registry to a specific schema version.
+
+    Returns
+    -------
+    CliResult[dict[str, object]]
+        Result payload for the updated override registry record.
+    """
     if not ctx.has_storage:
         return fail_execution_failed("meta", "meta.override-pin requires storage access")
     if schema_digest is None and version_id is None:
@@ -160,7 +166,13 @@ def meta_override_pin_handler(
 
 
 def meta_registry_health_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
-    """Return schema registry health diagnostics for the connected gateway."""
+    """Return schema registry health diagnostics for the connected gateway.
+
+    Returns
+    -------
+    CliResult[dict[str, object]]
+        Health snapshot payload for the schema registry.
+    """
     if not ctx.has_storage:
         return fail_execution_failed("meta", "meta.health requires storage access")
     try:

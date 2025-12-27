@@ -2,8 +2,8 @@
 
 This package provides pure computation functions for analyzing code coverage.
 
-For Hamilton native execution, use ``build_coverage_functions_expr`` to get an
-Ibis expression, then materialize with ``materialize_table``.
+For Hamilton native execution, use ``build_coverage_functions_expr`` to get a
+DuckDB relation, then materialize with ``materialize_table``.
 
 The Hamilton native module is at:
 ``codeintel.build.hamilton.native.analytics.coverage_functions``

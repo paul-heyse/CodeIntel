@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
@@ -42,5 +44,34 @@ def test_apply_metadata_ddl_is_idempotent() -> None:
 
         expect_true(expected_names.issubset(actual_names), message="all metadata tables exist")
         expect_equal(len(expected_names), len(actual_names), label="metadata table count")
+    finally:
+        con.close()
+
+
+def test_attach_meta_database_warns_on_missing_read_only(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Missing meta catalogs should warn and skip attach in read-only mode."""
+    con = duckdb.connect(":memory:")
+    try:
+        config = StorageConfig(
+            db_path=tmp_path / "primary.duckdb",
+            meta_db_path=tmp_path / "meta.duckdb",
+            read_only=True,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+        )
+        with caplog.at_level(logging.WARNING):
+            attach_meta_database(con, config=config)
+
+        warning_messages = [record.message for record in caplog.records]
+        expect_true(
+            any("Meta database not found for read-only attach" in msg for msg in warning_messages),
+            message="missing_meta_warning",
+        )
+        rows = con.execute("PRAGMA database_list").fetchall()
+        attached = any(row[1] == META_CATALOG_NAME for row in rows)
+        expect_true(not attached, message="meta_not_attached")
     finally:
         con.close()

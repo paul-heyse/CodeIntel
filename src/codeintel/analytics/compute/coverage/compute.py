@@ -15,21 +15,12 @@ Example
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import ibis
-
-from codeintel.analytics.compute.ibis_utils import (
-    literal_sequence,
-    safe_ratio,
-    zero_if_null,
-)
-from codeintel.core.ibis_typing import and_predicates, gt, ibis_bool
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.duckdb_types import DuckDBRelation
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -39,12 +30,12 @@ LOG = logging.getLogger(__name__)
 def build_coverage_functions_expr(
     gateway: StorageGateway,
     snapshot: SnapshotRef,
-) -> ir.Table | None:
-    """Build Ibis expression for coverage_functions without writing.
+) -> DuckDBRelation | None:
+    """Build a DuckDB relation for coverage_functions without writing.
 
     Join function and method GOIDs with coverage line spans to compute
     per-function execution ratios. This is the pure compute version that
-    returns an Ibis expression for materialization via Hamilton.
+    returns a DuckDB relation for materialization via Hamilton.
 
     Parameters
     ----------
@@ -55,8 +46,8 @@ def build_coverage_functions_expr(
 
     Returns
     -------
-    ir.Table | None
-        Ibis table expression for analytics.coverage_functions, or None if
+    DuckDBRelation | None
+        DuckDB relation for analytics.coverage_functions, or None if
         the required source tables cannot be accessed.
 
     Notes
@@ -77,7 +68,7 @@ def build_coverage_functions_expr(
     >>> gateway = open_memory_gateway(seed_contract_catalog=_seed)
     >>> # ... setup tables ...
     >>> expr = build_coverage_functions_expr(gateway, snapshot)
-    >>> # expr is an Ibis Table expression ready for materialization
+    >>> # expr is a DuckDB relation ready for materialization
     """
     LOG.info(
         "Building coverage_functions expression for repo=%s commit=%s",
@@ -86,208 +77,123 @@ def build_coverage_functions_expr(
     )
 
     try:
-        goids = ibis_facade.table(gateway, "core.goids")
-        coverage = ibis_facade.table(gateway, "analytics.coverage_lines")
+        return gateway.con.sql(
+            """
+            WITH goids AS (
+                SELECT
+                    goid_h128,
+                    urn,
+                    repo,
+                    commit,
+                    rel_path,
+                    language,
+                    kind,
+                    qualname,
+                    start_line,
+                    end_line
+                FROM core.goids
+                WHERE repo = $repo
+                  AND commit = $commit
+                  AND kind IN ('function', 'method')
+            ),
+            coverage AS (
+                SELECT
+                    repo,
+                    commit,
+                    rel_path,
+                    line,
+                    is_executable,
+                    is_covered
+                FROM analytics.coverage_lines
+                WHERE repo = $repo
+                  AND commit = $commit
+            ),
+            joined AS (
+                SELECT
+                    goids.goid_h128,
+                    goids.urn,
+                    goids.repo,
+                    goids.commit,
+                    goids.rel_path,
+                    goids.language,
+                    goids.kind,
+                    goids.qualname,
+                    goids.start_line,
+                    goids.end_line,
+                    coverage.is_executable,
+                    coverage.is_covered
+                FROM goids
+                LEFT JOIN coverage
+                  ON goids.repo = coverage.repo
+                 AND goids.commit = coverage.commit
+                 AND goids.rel_path = coverage.rel_path
+                 AND coverage.line >= goids.start_line
+                 AND coverage.line <= COALESCE(goids.end_line, goids.start_line)
+            ),
+            aggregated AS (
+                SELECT
+                    goid_h128,
+                    urn,
+                    repo,
+                    commit,
+                    rel_path,
+                    language,
+                    kind,
+                    qualname,
+                    start_line,
+                    end_line,
+                    SUM(CASE WHEN is_executable THEN 1 ELSE 0 END) AS executable_lines_raw,
+                    SUM(
+                        CASE
+                            WHEN is_executable AND is_covered THEN 1
+                            ELSE 0
+                        END
+                    ) AS covered_lines_raw
+                FROM joined
+                GROUP BY
+                    goid_h128,
+                    urn,
+                    repo,
+                    commit,
+                    rel_path,
+                    language,
+                    kind,
+                    qualname,
+                    start_line,
+                    end_line
+            )
+            SELECT
+                goid_h128 AS function_goid_h128,
+                urn,
+                repo,
+                commit,
+                rel_path,
+                language,
+                kind,
+                qualname,
+                start_line,
+                end_line,
+                COALESCE(executable_lines_raw, 0) AS executable_lines,
+                COALESCE(covered_lines_raw, 0) AS covered_lines,
+                CASE
+                    WHEN COALESCE(executable_lines_raw, 0) = 0 THEN NULL
+                    ELSE CAST(COALESCE(covered_lines_raw, 0) AS DOUBLE)
+                         / NULLIF(CAST(COALESCE(executable_lines_raw, 0) AS DOUBLE), 0)
+                END AS coverage_ratio,
+                COALESCE(covered_lines_raw, 0) > 0 AS tested,
+                CASE
+                    WHEN COALESCE(executable_lines_raw, 0) = 0 THEN 'no_executable_code'
+                    WHEN COALESCE(covered_lines_raw, 0) = 0 THEN 'no_tests'
+                    ELSE ''
+                END AS untested_reason,
+                NOW() AS created_at
+            FROM aggregated
+            """,
+            {"repo": snapshot.repo, "commit": snapshot.commit},
+        )
     except DuckDBError as exc:
         LOG.warning("coverage_functions: failed to access tables: %s", exc)
         return None
 
-    return build_coverage_functions_expr_from_tables(goids, coverage, snapshot=snapshot)
 
-
-def build_coverage_functions_expr_from_tables(
-    goids: ir.Table,
-    coverage: ir.Table,
-    *,
-    snapshot: SnapshotRef,
-) -> ir.Table:
-    """Build Ibis expression for coverage_functions from pre-loaded tables.
-
-    Parameters
-    ----------
-    goids
-        Ibis table expression for ``core.goids``.
-    coverage
-        Ibis table expression for ``analytics.coverage_lines``.
-    snapshot
-        Repository and commit identifiers that scope the aggregation.
-
-    Returns
-    -------
-    ir.Table
-        Ibis table expression for ``analytics.coverage_functions``.
-    """
-    goids_filtered = filter_goids_for_snapshot(goids, snapshot)
-    coverage_filtered = filter_coverage_lines_for_snapshot(coverage, snapshot)
-    joined = join_goids_with_coverage_lines(goids_filtered, coverage_filtered)
-    aggregated = aggregate_coverage_lines(joined, goids_filtered)
-    return enrich_coverage_results(aggregated)
-
-
-def filter_goids_for_snapshot(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
-    """Filter GOIDs to functions/methods for the given snapshot.
-
-    Parameters
-    ----------
-    table
-        Ibis table for core.goids.
-    snapshot
-        Snapshot reference for filtering.
-
-    Returns
-    -------
-    ir.Table
-        Filtered table with only function/method GOIDs for the snapshot.
-    """
-    predicate = and_predicates(
-        ibis_bool(table.repo == snapshot.repo),
-        ibis_bool(table.commit == snapshot.commit),
-        ibis_bool(table.kind.isin(literal_sequence(["function", "method"]))),
-    )
-    return table.filter(predicate)
-
-
-def filter_coverage_lines_for_snapshot(table: ir.Table, snapshot: SnapshotRef) -> ir.Table:
-    """Filter coverage lines for the given snapshot.
-
-    Parameters
-    ----------
-    table
-        Ibis table for analytics.coverage_lines.
-    snapshot
-        Snapshot reference for filtering.
-
-    Returns
-    -------
-    ir.Table
-        Filtered table with coverage lines for the snapshot.
-    """
-    predicate = and_predicates(
-        ibis_bool(table.repo == snapshot.repo),
-        ibis_bool(table.commit == snapshot.commit),
-    )
-    return table.filter(predicate)
-
-
-def join_goids_with_coverage_lines(goids: ir.Table, coverage: ir.Table) -> ir.Table:
-    """Join GOIDs with coverage lines based on file path and line ranges.
-
-    Parameters
-    ----------
-    goids
-        Filtered GOIDs table.
-    coverage
-        Filtered coverage lines table.
-
-    Returns
-    -------
-    ir.Table
-        Joined table with GOIDs and their coverage line data.
-
-    Notes
-    -----
-    The join matches coverage lines where:
-    - Same repo, commit, and rel_path
-    - Line number is between function start_line and end_line
-    """
-    end_line = ibis.coalesce(goids.end_line, goids.start_line)
-    join_predicates = [
-        ibis_bool(goids.repo == coverage.repo),
-        ibis_bool(goids.commit == coverage.commit),
-        ibis_bool(goids.rel_path == coverage.rel_path),
-        ibis_bool(coverage.line >= goids.start_line),
-        ibis_bool(coverage.line <= end_line),
-    ]
-    return goids.left_join(coverage, join_predicates)
-
-
-def aggregate_coverage_lines(joined: ir.Table, goids: ir.Table) -> ir.Table:
-    """Aggregate coverage metrics per function.
-
-    Parameters
-    ----------
-    joined
-        Joined GOIDs and coverage lines table.
-    goids
-        Original filtered GOIDs table (for column references).
-
-    Returns
-    -------
-    ir.Table
-        Aggregated table with executable_lines_raw and covered_lines_raw.
-    """
-    executable = ibis_bool(joined["is_executable"])
-    covered = ibis_bool(joined["is_covered"])
-    executable_int = cast("ir.IntegerColumn", executable.cast("int64"))
-    covered_int = cast("ir.IntegerColumn", and_predicates(executable, covered).cast("int64"))
-    grouped = joined.group_by(
-        goids.goid_h128,
-        goids.urn,
-        goids.repo,
-        goids.commit,
-        goids.rel_path,
-        goids.language,
-        goids.kind,
-        goids.qualname,
-        goids.start_line,
-        goids.end_line,
-    )
-    return grouped.aggregate(
-        executable_lines_raw=executable_int.sum(),
-        covered_lines_raw=covered_int.sum(),
-    )
-
-
-def enrich_coverage_results(aggregated: ir.Table) -> ir.Table:
-    """Enrich aggregated coverage with derived metrics.
-
-    Parameters
-    ----------
-    aggregated
-        Aggregated coverage table with raw counts.
-
-    Returns
-    -------
-    ir.Table
-        Final table with all coverage_functions columns including:
-        coverage_ratio, tested flag, untested_reason, and created_at.
-    """
-    exec_lines = zero_if_null(aggregated.executable_lines_raw)
-    covered_lines = zero_if_null(aggregated.covered_lines_raw)
-    coverage_ratio = safe_ratio(covered_lines, exec_lines)
-    no_executable_code = ibis_bool(exec_lines == 0)
-    no_tests = ibis_bool(covered_lines == 0)
-
-    return aggregated.select(
-        aggregated.goid_h128.name("function_goid_h128"),
-        aggregated.urn,
-        aggregated.repo,
-        aggregated.commit,
-        aggregated.rel_path,
-        aggregated.language,
-        aggregated.kind,
-        aggregated.qualname,
-        aggregated.start_line,
-        aggregated.end_line,
-        exec_lines.name("executable_lines"),
-        covered_lines.name("covered_lines"),
-        coverage_ratio.name("coverage_ratio"),
-        gt(covered_lines, 0).name("tested"),
-        ibis.cases(
-            (no_executable_code, "no_executable_code"),
-            (no_tests, "no_tests"),
-            else_="",
-        ).name("untested_reason"),
-        ibis.now().name("created_at"),
-    )
-
-
-__all__ = [
-    "aggregate_coverage_lines",
-    "build_coverage_functions_expr",
-    "build_coverage_functions_expr_from_tables",
-    "enrich_coverage_results",
-    "filter_coverage_lines_for_snapshot",
-    "filter_goids_for_snapshot",
-    "join_goids_with_coverage_lines",
-]
+__all__ = ["build_coverage_functions_expr"]

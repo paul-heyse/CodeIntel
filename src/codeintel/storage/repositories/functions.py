@@ -5,10 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pandas as pd
-
-from codeintel.core.ibis_typing import and_predicates, ge, ibis_bool
-from codeintel.storage.query_results import coerce_optional_int, records_from_dataframe
+from codeintel.storage.query_results import coerce_optional_int, records_from_arrow_table
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -77,19 +74,18 @@ class FunctionRepository(BaseRepository):
         rel_path: str | None,
         qualname: str | None,
     ) -> int | None:
-        goids = self._ibis_table("core.goids")
-        expr = goids
-
+        relation = self._relation("core.goids")
+        predicates = []
         if urn:
-            expr = expr.filter(ibis_bool(goids.urn == urn))
+            predicates.append(self._predicate_eq("urn", urn))
         elif rel_path and qualname:
-            expr = expr.filter(
-                and_predicates(goids.rel_path == rel_path, goids.qualname == qualname)
-            )
+            predicates.append(self._predicate_eq("rel_path", rel_path))
+            predicates.append(self._predicate_eq("qualname", qualname))
         else:
             return None
 
-        records = self._validated_records("core.goids", expr.limit(1))
+        relation = self._apply_predicates(relation, predicates)
+        records = self._validated_records("core.goids", relation.limit(1))
         if not records:
             return None
         return self._coerce_goid(records[0].get("goid_h128"))
@@ -101,19 +97,18 @@ class FunctionRepository(BaseRepository):
         rel_path: str | None,
         qualname: str | None,
     ) -> int | None:
-        metrics = self._ibis_table("analytics.function_metrics")
-        expr = metrics
-
+        relation = self._relation("analytics.function_metrics")
+        predicates = []
         if urn:
-            expr = expr.filter(ibis_bool(metrics.urn == urn))
+            predicates.append(self._predicate_eq("urn", urn))
         elif rel_path and qualname:
-            expr = expr.filter(
-                and_predicates(metrics.rel_path == rel_path, metrics.qualname == qualname)
-            )
+            predicates.append(self._predicate_eq("rel_path", rel_path))
+            predicates.append(self._predicate_eq("qualname", qualname))
         else:
             return None
 
-        records = self._validated_records("analytics.function_metrics", expr.limit(1))
+        relation = self._apply_predicates(relation, predicates)
+        records = self._validated_records("analytics.function_metrics", relation.limit(1))
         if not records:
             return None
         return self._coerce_goid(records[0].get("function_goid_h128"))
@@ -132,13 +127,9 @@ class FunctionRepository(BaseRepository):
         RowDict | None
             Summary row when found, otherwise ``None``.
         """
-        table = self._ibis_table("docs.v_function_summary")
-        expr = table.filter(
-            and_predicates(
-                table.function_goid_h128 == goid_h128,
-            )
-        ).limit(1)
-        records = self._validated_records("docs.v_function_summary", expr)
+        relation = self._relation("docs.v_function_summary")
+        relation = relation.filter(self._predicate_eq("function_goid_h128", goid_h128)).limit(1)
+        records = self._validated_records("docs.v_function_summary", relation)
         return records[0] if records else None
 
     def list_function_summaries_for_file(self, rel_path: str) -> list[RowDict]:
@@ -155,13 +146,10 @@ class FunctionRepository(BaseRepository):
         list[RowDict]
             Function summary rows ordered by qualname.
         """
-        table = self._ibis_table("docs.v_function_summary")
-        expr = table.filter(
-            and_predicates(
-                table.rel_path == rel_path,
-            )
-        ).order_by(table.qualname)
-        return self._validated_records("docs.v_function_summary", expr)
+        relation = self._relation("docs.v_function_summary")
+        relation = relation.filter(self._predicate_eq("rel_path", rel_path))
+        relation = relation.order("qualname")
+        return self._validated_records("docs.v_function_summary", relation)
 
     def list_function_validation(
         self,
@@ -190,22 +178,20 @@ class FunctionRepository(BaseRepository):
         list[RowDict]
             Validation rows ordered by newest first.
         """
-        table = self._ibis_table("analytics.function_validation")
-        predicates: list[object] = []
+        relation = self._relation("analytics.function_validation")
+        predicates = []
         if goid_h128 is not None:
-            predicates.append(table.function_goid_h128 == goid_h128)
+            predicates.append(self._predicate_eq("function_goid_h128", goid_h128))
         if rel_path is not None:
-            predicates.append(table.rel_path == rel_path)
+            predicates.append(self._predicate_eq("rel_path", rel_path))
         if qualname is not None:
-            predicates.append(table.qualname == qualname)
+            predicates.append(self._predicate_eq("qualname", qualname))
 
-        expr = table
-        if predicates:
-            expr = expr.filter(and_predicates(*predicates))
-        expr = expr.order_by(table.created_at.desc())
+        relation = self._apply_predicates(relation, predicates)
+        relation = relation.order("created_at DESC")
         if limit is not None:
-            expr = expr.limit(limit)
-        return self._validated_records("analytics.function_validation", expr)
+            relation = relation.limit(limit)
+        return self._validated_records("analytics.function_validation", relation)
 
     def list_high_risk_functions(
         self,
@@ -231,16 +217,13 @@ class FunctionRepository(BaseRepository):
         list[RowDict]
             High-risk function rows limited by ``limit``.
         """
-        table = self._ibis_table("analytics.function_profile")
-        expr = table.filter(
-            and_predicates(
-                ge(table.risk_score, min_risk),
-            )
-        )
+        relation = self._relation("analytics.function_profile")
+        predicates = [self._predicate_ge("risk_score", min_risk)]
         if tested_only:
-            expr = expr.filter(ibis_bool(table.tested))
-        expr = expr.order_by(table.risk_score.desc()).limit(limit)
-        return self._validated_records("analytics.function_profile", expr)
+            predicates.append(self._predicate_eq("tested", True))
+        relation = self._apply_predicates(relation, predicates)
+        relation = relation.order("risk_score DESC").limit(limit)
+        return self._validated_records("analytics.function_profile", relation)
 
     def get_function_profile(self, goid_h128: int) -> RowDict | None:
         """
@@ -256,13 +239,9 @@ class FunctionRepository(BaseRepository):
         RowDict | None
             Function profile row when found.
         """
-        table = self._ibis_table("analytics.function_profile")
-        expr = table.filter(
-            and_predicates(
-                table.function_goid_h128 == goid_h128,
-            )
-        ).limit(1)
-        records = self._validated_records("analytics.function_profile", expr)
+        relation = self._relation("analytics.function_profile")
+        relation = relation.filter(self._predicate_eq("function_goid_h128", goid_h128)).limit(1)
+        records = self._validated_records("analytics.function_profile", relation)
         return records[0] if records else None
 
     def get_function_architecture(self, goid_h128: int) -> RowDict | None:
@@ -279,13 +258,9 @@ class FunctionRepository(BaseRepository):
         RowDict | None
             Architecture row when present.
         """
-        table = self._ibis_table("docs.v_function_architecture")
-        expr = table.filter(
-            and_predicates(
-                table.function_goid_h128 == goid_h128,
-            )
-        ).limit(1)
-        records = self._ibis_to_dicts(expr)
+        relation = self._relation("docs.v_function_architecture")
+        relation = relation.filter(self._predicate_eq("function_goid_h128", goid_h128)).limit(1)
+        records = self._relation_to_dicts(relation)
         return records[0] if records else None
 
     def list_function_goids(self) -> list[int]:
@@ -297,11 +272,9 @@ class FunctionRepository(BaseRepository):
         list[int]
             Function GOIDs present in the snapshot.
         """
-        table = self._ibis_table("docs.v_function_summary")
-        expr = table.select("function_goid_h128")
-
-        df = pd.DataFrame(expr.execute())
-        records = records_from_dataframe(df)
+        relation = self._relation("docs.v_function_summary").select("function_goid_h128")
+        table = relation.fetch_arrow_table()
+        records = records_from_arrow_table(table)
 
         goids: list[int] = []
         for row in records:

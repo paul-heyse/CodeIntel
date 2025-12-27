@@ -1,4 +1,4 @@
-"""Discovery helpers for tagged Ibis view builders.
+"""Discovery helpers for tagged SQLGlot view builders.
 
 This module replaces the legacy global view registry with deterministic
 Hamilton tag discovery over a set of modules.
