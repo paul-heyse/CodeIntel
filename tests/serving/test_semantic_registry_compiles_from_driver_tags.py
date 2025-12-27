@@ -22,16 +22,31 @@ from codeintel.core.schemas.provider import MappingSchemaProvider
     grain="example",
 )
 def semantic_view_example() -> int:
+    """Return sentinel value for semantic view example.
+
+    Returns
+    -------
+    int
+        Sentinel value for testing.
+    """
     return 1
 
 
 def _driver() -> h_driver.Driver:
+    """Build a Driver with the semantic view fixture module.
+
+    Returns
+    -------
+    h_driver.Driver
+        Driver seeded with the semantic view example.
+    """
     module = types.ModuleType("semantic_registry_fixture")
     setattr(module, semantic_view_example.__name__, semantic_view_example)
     return h_driver.Builder().with_modules(module).build()
 
 
 def test_compile_semantic_registry_from_driver_tags() -> None:
+    """Compile semantic registry using tags from a Driver."""
     provider = MappingSchemaProvider(
         {
             "docs.v_example": TableSchema(

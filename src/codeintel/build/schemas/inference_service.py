@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import inspect
+import types
+import typing
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, get_args, get_origin
 
 import ibis.expr.types as ir
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.hamilton.naming import compute_node
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
 from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
@@ -52,8 +53,6 @@ __all__ = [
     "inferable_native_table_keys",
 ]
 
-_INFERABLE_SINKS: frozenset[str] = frozenset({"codeintel.duckdb_table"})
-
 
 @dataclass(frozen=True)
 class _ComputeInferenceJob:
@@ -74,7 +73,24 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
     return_annotation = sig.return_annotation
     if return_annotation is inspect.Signature.empty:
         return False
-    return "ir.Table" in str(return_annotation)
+    return _is_ibis_table_annotation(return_annotation)
+
+
+def _is_ibis_table_annotation(annotation: object) -> bool:
+    if annotation is ir.Table:
+        return True
+    if isinstance(annotation, type) and issubclass(annotation, ir.Table):
+        return True
+    origin = get_origin(annotation)
+    if origin in {types.UnionType, typing.Union}:
+        return any(
+            _is_ibis_table_annotation(arg)
+            for arg in get_args(annotation)
+            if arg is not type(None)
+        )
+    if isinstance(annotation, str):
+        return "ir.Table" in annotation or "ibis.expr.types" in annotation
+    return "ibis.expr.types" in str(annotation) and "Table" in str(annotation)
 
 
 @lru_cache(maxsize=1)
@@ -99,45 +115,68 @@ def _schema_inference_providers() -> Providers:
     return create_default_providers(ToolsConfig.default())
 
 
-def _producers_by_table_key(catalog: DagCatalog) -> dict[str, list[str]]:
-    mapping: dict[str, list[str]] = {}
-    for table_key, output in catalog.table_outputs.items():
-        mapping.setdefault(table_key, []).append(output.producer_target)
-    return mapping
-
-
-def _inferable_candidates_for_table_key(
+def _output_data_node(
     *,
+    runtime: HamiltonRuntime,
     table_key: str,
-    producers: list[str],
-) -> list[tuple[str, Callable[..., object]]]:
-    candidates: list[tuple[str, Callable[..., object]]] = []
-    runtime = _runtime_auto()
+) -> str | None:
+    output = runtime.catalog.table_outputs.get(table_key)
+    if output is None:
+        return None
+    saver_node = runtime.dr.graph.nodes.get(output.saver_node)
+    if saver_node is None:
+        return None
+    ibis_deps = [
+        dep.name for dep in saver_node.dependencies if _is_ibis_table_annotation(dep.type)
+    ]
+    if len(ibis_deps) != 1:
+        return None
+    return ibis_deps[0]
 
-    for target_name in sorted(producers):
-        compute_name = compute_node(target_name)
-        node = runtime.dr.graph.nodes.get(compute_name)
-        if node is None:
-            continue
-        if not node.originating_functions:
-            continue
-        compute_fn_obj = node.originating_functions[0]
-        if not isinstance(compute_fn_obj, Callable):
-            continue
-        compute_fn: Callable[..., object] = compute_fn_obj
-        if not _looks_inferable_compute(compute_fn):
-            continue
-        try:
-            _inference_requirements(runtime=runtime, compute_name=compute_name)
-        except ValueError:
-            continue
-        candidates.append((target_name, compute_fn))
 
-    if not candidates:
-        msg = f"Table {table_key} is not inferable from any native compute target"
+def _resolve_inference_job(
+    *,
+    runtime: HamiltonRuntime,
+    table_key: str,
+) -> _ComputeInferenceJob:
+    output = runtime.catalog.table_outputs.get(table_key)
+    if output is None:
+        msg = f"Unknown table_key (no producing target): {table_key}"
+        raise KeyError(msg)
+
+    compute_name = _output_data_node(runtime=runtime, table_key=table_key)
+    if compute_name is None:
+        msg = f"Table {table_key} is not inferable from any Ibis output node"
         raise ValueError(msg)
 
-    return candidates
+    node = runtime.dr.graph.nodes.get(compute_name)
+    if node is None or not node.originating_functions:
+        msg = f"Missing compute node for {table_key}: {compute_name}"
+        raise ValueError(msg)
+
+    compute_fn_obj = node.originating_functions[0]
+    if not isinstance(compute_fn_obj, Callable):
+        msg = f"Compute node {compute_name} for {table_key} is not callable"
+        raise ValueError(msg)
+    compute_fn: Callable[..., object] = compute_fn_obj
+    if not _looks_inferable_compute(compute_fn):
+        msg = f"Compute node {compute_name} for {table_key} is not inferable"
+        raise ValueError(msg)
+
+    qparams, requires_env, requires_catalog = _inference_requirements(
+        runtime=runtime,
+        compute_name=compute_name,
+    )
+    exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
+    return _ComputeInferenceJob(
+        target_name=output.producer_target,
+        compute_name=compute_name,
+        exec_name=exec_name,
+        table_key=table_key,
+        qparams=frozenset(qparams),
+        requires_env=requires_env,
+        requires_catalog=requires_catalog,
+    )
 
 
 def _compute_node_for_inference(runtime: HamiltonRuntime, *, compute_name: str) -> str:
@@ -296,36 +335,16 @@ def infer_schema_for_table_key(
     """
     runtime = _runtime_auto()
 
-    producers = _producers_by_table_key(runtime.catalog).get(table_key)
-    if not producers:
-        msg = f"Unknown table_key (no producing target): {table_key}"
-        raise KeyError(msg)
-
     try:
-        candidates = _inferable_candidates_for_table_key(table_key=table_key, producers=producers)
-        target_name, compute_fn = candidates[0]
-        compute_name = compute_node(target_name)
-        exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
-
-        _ = compute_fn
-        qparams, requires_env, requires_catalog = _inference_requirements(
-            runtime=runtime,
-            compute_name=compute_name,
-        )
-        job = _ComputeInferenceJob(
-            target_name=target_name,
-            compute_name=compute_name,
-            exec_name=exec_name,
-            table_key=table_key,
-            qparams=frozenset(qparams),
-            requires_env=requires_env,
-            requires_catalog=requires_catalog,
-        )
+        job = _resolve_inference_job(runtime=runtime, table_key=table_key)
         return _infer_table_schema_for_compute(
             runtime=runtime,
             declared_provider=declared_provider,
             job=job,
         )
+    except KeyError as exc:
+        msg = f"Failed to infer schema for {table_key}: {exc}"
+        raise KeyError(msg) from exc
     except TypeError as exc:
         msg = f"Failed to infer schema for {table_key}: {exc}"
         raise TypeError(msg) from exc
@@ -438,31 +457,14 @@ def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
         outputs tagged with inferable saver sinks.
     """
     runtime = _runtime_auto()
-    inferable = _inferable_table_keys_from_sinks(catalog)
-    for target in catalog.all_targets:
-        compute_name = compute_node(target.name)
-        node = runtime.dr.graph.nodes.get(compute_name)
-        if node is None or not node.originating_functions:
-            continue
-        fn_obj = node.originating_functions[0]
-        if not callable(fn_obj) or not _looks_inferable_compute(fn_obj):
-            continue
+    inferable: set[str] = set()
+    for table_key in catalog.table_outputs:
         try:
-            _inference_requirements(runtime=runtime, compute_name=compute_name)
-        except ValueError:
+            _resolve_inference_job(runtime=runtime, table_key=table_key)
+        except (KeyError, ValueError):
             continue
-        inferable.update(
-            output.key for output in catalog.table_outputs_by_target.get(target.name, ())
-        )
+        inferable.add(table_key)
     return frozenset(inferable)
-
-
-def _inferable_table_keys_from_sinks(catalog: DagCatalog) -> set[str]:
-    return {
-        table_key
-        for table_key, output in catalog.table_outputs.items()
-        if output.sink in _INFERABLE_SINKS
-    }
 
 
 def _build_inference_jobs(
@@ -470,38 +472,9 @@ def _build_inference_jobs(
     runtime: HamiltonRuntime,
     table_keys: list[str],
 ) -> list[_ComputeInferenceJob]:
-    producers_by_key = _producers_by_table_key(runtime.catalog)
     jobs: list[_ComputeInferenceJob] = []
     for table_key in table_keys:
-        producers = producers_by_key.get(table_key)
-        if not producers:
-            msg = f"Unknown table_key (no producing target): {table_key}"
-            raise KeyError(msg)
-
-        candidates = _inferable_candidates_for_table_key(table_key=table_key, producers=producers)
-        if not candidates:
-            msg = f"No inferable native compute candidates for table_key: {table_key}"
-            raise ValueError(msg)
-
-        target_name, compute_fn = candidates[0]
-        compute_name = compute_node(target_name)
-        _ = compute_fn
-        exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
-        qparams, requires_env, requires_catalog = _inference_requirements(
-            runtime=runtime,
-            compute_name=compute_name,
-        )
-        jobs.append(
-            _ComputeInferenceJob(
-                target_name=target_name,
-                compute_name=compute_name,
-                exec_name=exec_name,
-                table_key=table_key,
-                qparams=frozenset(qparams),
-                requires_env=requires_env,
-                requires_catalog=requires_catalog,
-            )
-        )
+        jobs.append(_resolve_inference_job(runtime=runtime, table_key=table_key))
     return jobs
 
 

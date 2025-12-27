@@ -56,6 +56,13 @@ class CacheEventMetrics:
     """Helper for emitting cache event metrics."""
 
     def record_hit(self, duration_ms: float | None = None) -> None:
+        """Record a cache hit event.
+
+        Parameters
+        ----------
+        duration_ms
+            Optional duration in milliseconds for the cached node execution.
+        """
         runtime = get_observability()
         if not runtime.enabled or runtime.meter is None:
             return
@@ -65,6 +72,13 @@ class CacheEventMetrics:
             instruments.duration_ms.record(duration_ms)
 
     def record_miss(self, duration_ms: float | None = None) -> None:
+        """Record a cache miss event.
+
+        Parameters
+        ----------
+        duration_ms
+            Optional duration in milliseconds for the cached node execution.
+        """
         runtime = get_observability()
         if not runtime.enabled or runtime.meter is None:
             return
@@ -74,6 +88,13 @@ class CacheEventMetrics:
             instruments.duration_ms.record(duration_ms)
 
     def record_store(self, duration_ms: float | None = None) -> None:
+        """Record a cache store event.
+
+        Parameters
+        ----------
+        duration_ms
+            Optional duration in milliseconds for the cached node execution.
+        """
         runtime = get_observability()
         if not runtime.enabled or runtime.meter is None:
             return

@@ -21,11 +21,13 @@ from codeintel.build.hamilton.native.patterns.paths import (
 from codeintel.build.hamilton.native.patterns.savers import (
     ArtifactSaveSpec,
     IbisTableSaveSpec,
+    RelationTableSaveSpec,
     SaverContext,
     TableSaveSpec,
     save_artifact,
     save_artifact_internal,
     save_ibis_table,
+    save_relation_table,
     save_rows,
     save_rows_internal,
 )
@@ -52,6 +54,7 @@ __all__ = [
     "IbisTableSaveSpec",
     "IngestStep",
     "OutputRole",
+    "RelationTableSaveSpec",
     "SaverContext",
     "TableOutputSpec",
     "TableSaveSpec",
@@ -75,6 +78,7 @@ __all__ = [
     "save_artifact",
     "save_artifact_internal",
     "save_ibis_table",
+    "save_relation_table",
     "save_rows",
     "save_rows_internal",
 ]

@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-import hamilton
 import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -35,7 +34,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
-hamilton.enable_power_user_mode = True
 
 
 @dataclass(frozen=True, slots=True)

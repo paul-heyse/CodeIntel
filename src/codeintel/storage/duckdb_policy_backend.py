@@ -1,6 +1,6 @@
 """DuckDB Policy Backend for centralized DDL and mutation operations.
 
-This module provides the single point for all non-Ibis SQL operations:
+This module provides the single point for all SQL operations:
 - Schema and table creation via SQLGlot
 - Index creation
 - Snapshot-scoped deletions
@@ -11,9 +11,8 @@ consistent SQL generation without string interpolation.
 
 Architecture Note
 -----------------
-DuckDBPolicyBackend only depends on the MinimalGateway protocol, NOT on
-IbisGateway directly. It accesses the Ibis gateway via gateway.ibis, which
-avoids circular imports. MinimalStorageGateway is the composition root.
+DuckDBPolicyBackend depends only on the MinimalGateway protocol. The
+MinimalStorageGateway is the composition root for connection-only usage.
 
 Example
 -------
@@ -42,7 +41,6 @@ from typing import TYPE_CHECKING
 
 import sqlglot.expressions as exp
 
-import codeintel.storage.views.ibis_views as _ibis_views
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
@@ -54,13 +52,13 @@ from codeintel.storage.helpers.table_key import (
     split_table_key_or_default,
 )
 from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
-from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
 )
 from codeintel.storage.schema_roundtrip import create_table_ast
 from codeintel.storage.upsert import UpsertSpec
+from codeintel.storage.views.inventory import view_builder_modules
 from codeintel.storage.views.materialization import materialize_registered_views
 
 if TYPE_CHECKING:
@@ -71,7 +69,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import MinimalGateway
-    from codeintel.storage.ibis_adapter import IbisGateway
 
 __all__ = [
     "DUCKDB_DIALECT",
@@ -418,6 +415,8 @@ def _build_insert_select(
     exp.Insert
         SQLGlot INSERT expression.
     """
+    from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
+
     select_ast = assert_select_perimeter(select_sql, policy=SqlIngressPolicy())
     insert_schema = exp.Schema(
         this=exp.Table(
@@ -577,8 +576,8 @@ class DuckDBPolicyBackend:
 
     Note
     ----
-    DuckDBPolicyBackend accesses IbisGateway via `gateway.ibis` to avoid
-    circular imports. The MinimalStorageGateway acts as composition root.
+    DuckDBPolicyBackend depends only on the MinimalGateway protocol. The
+    MinimalStorageGateway acts as the composition root.
     """
 
     gateway: MinimalGateway
@@ -589,11 +588,6 @@ class DuckDBPolicyBackend:
     def con(self) -> DuckDBPyConnection:
         """Return the underlying DuckDB connection."""
         return self.gateway.con
-
-    @property
-    def ibis(self) -> IbisGateway:
-        """Return the Ibis gateway via the gateway reference."""
-        return self.gateway.ibis
 
     def _default_catalog(self) -> str | None:
         """Return the primary DuckDB catalog name for this connection.
@@ -702,8 +696,8 @@ class DuckDBPolicyBackend:
         """Execute parameterized SQL and return the connection.
 
         This is an approved escape hatch for layers that need to execute SQL
-        directly (e.g., serving query kernels). Prefer Ibis expressions and
-        SQLGlot-generated DDL wherever possible.
+        directly (e.g., serving query kernels). Prefer SQLGlot-generated DDL
+        wherever possible.
 
         Parameters
         ----------
@@ -1140,25 +1134,10 @@ class DuckDBPolicyBackend:
         strict: bool = False,
         tag_query: TagQuery | None = None,
     ) -> None:
-        """Materialize all registered Ibis views.
-
-        Parameters
-        ----------
-        overwrite
-            When True, overwrites existing views.
-        strict
-            When True, re-raises any exception that occurs during view
-            creation after logging. When False, exceptions are logged
-            but execution continues.
-        tag_query
-            Optional TagQuery used for view discovery.
-        """
-        if tag_query is None:
-            log.warning("Skipping view materialization; TagQuery not provided")
-            return
+        """Materialize all registered views."""
         materialize_registered_views(
             self.gateway,
-            modules=(_ibis_views,),
+            modules=view_builder_modules(),
             overwrite=overwrite,
             strict=strict,
             tag_query=tag_query,

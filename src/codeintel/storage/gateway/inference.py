@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.datasets.registry import DatasetRegistry
+from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
 from codeintel.storage.gateway.accessors import AnalyticsTables, CoreTables, DocsViews, GraphTables
@@ -20,7 +21,7 @@ from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
@@ -52,8 +53,9 @@ class InferenceGateway:
     schema_provider: SchemaProvider
     config: StorageConfig = field(default_factory=_inference_config)
     datasets: DatasetRegistry = field(default_factory=_empty_registry)
-    ibis: IbisGateway = field(init=False)
+    duckdb: DuckDBContext = field(init=False)
     policy: DuckDBPolicyBackend = field(init=False)
+    ibis: IbisGateway = field(init=False)
     exports: ExportService = field(init=False)
     analytics: AnalyticsTables = field(init=False)
     assets: AssetTracking = field(init=False)
@@ -66,8 +68,9 @@ class InferenceGateway:
 
     def __post_init__(self) -> None:
         """Initialize accessor helpers after construction."""
-        self.ibis = IbisGateway(self)
+        self.duckdb = DuckDBContext.from_connection(self.con)
         self.policy = DuckDBPolicyBackend(self, schema_provider=self.schema_provider)
+        self.ibis = IbisGateway(self)
         self.exports = ExportService(self)
         self.analytics = AnalyticsTables(self)
         self.assets = AssetTracking(self)
@@ -80,9 +83,14 @@ class InferenceGateway:
 
     def close(self) -> None:
         """Close the underlying connection."""
+        self.ibis.close()
         self.con.close()
 
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
+    def execute(
+        self,
+        sql: str,
+        params: Sequence[object] | Mapping[str, object] | None = None,
+    ) -> DuckDBConnection:
         """Execute SQL against the underlying connection.
 
         Returns
@@ -94,6 +102,14 @@ class InferenceGateway:
             return self.con.execute(sql)
         return self.con.execute(sql, params)
 
+    def register(self, name: str, obj: object) -> None:
+        """Register a Python object in DuckDB."""
+        self.con.register(name, obj)
+
+    def unregister(self, name: str) -> None:
+        """Unregister a previously registered object."""
+        self.con.unregister(name)
+
     def table(self, name: str) -> DuckDBRelation:
         """Return a relation for the requested table/view.
 
@@ -103,6 +119,16 @@ class InferenceGateway:
             Relation bound to the requested table/view.
         """
         return self.con.table(name)
+
+    def relation_from_table_key(self, table_key: str) -> DuckDBRelation:
+        """Return a relation for a fully qualified table key.
+
+        Returns
+        -------
+        DuckDBRelation
+            Relation bound to the requested table/view.
+        """
+        return self.con.table(table_key)
 
     def export_database(self, *, directory: Path) -> None:
         """Export the database to a directory via DuckDB EXPORT DATABASE."""

@@ -33,6 +33,13 @@ def _is_hamilton_generated_node(node_name: str) -> bool:
     return any(suffix in node_name for suffix in _HAMILTON_DECORATOR_SUFFIXES)
 
 
+def _variable_name(variable: object) -> str:
+    if isinstance(variable, str):
+        return variable
+    name = getattr(variable, "name", None)
+    return str(name) if name is not None else str(variable)
+
+
 def test_pr64_all_nodes_have_node_type_tag() -> None:
     """All Hamilton nodes should have a canonical node_type tag.
 
@@ -45,13 +52,17 @@ def test_pr64_all_nodes_have_node_type_tag() -> None:
     runtime = build_driver()
 
     missing: list[str] = []
-    for node_name, node in runtime.dr.graph.nodes.items():
-        if node.user_defined:
+    for variable in runtime.dr.list_available_variables():
+        node_name = _variable_name(variable)
+        if getattr(variable, "user_defined", False):
             continue
         # Skip Hamilton-generated decorator nodes (Phase 1.5 validators, etc.)
         if _is_hamilton_generated_node(node_name):
             continue
-        tags = node.tags
+        tags = getattr(variable, "tags", None)
+        if not isinstance(tags, dict):
+            missing.append(node_name)
+            continue
         if isinstance(tags, dict) and tags.get("hamilton.data_saver") is True:
             continue
         node_type = tags.get("node_type")

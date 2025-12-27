@@ -42,12 +42,12 @@ def load_table(
     table_key: str,
     node_name: str | None = None,
 ) -> Callable[..., ir.Table]:
-    """Build a tagged loader node for a dataset table.
+    """Build a tagged loader node for a dataset table expression.
 
     Returns
     -------
     Callable[..., ir.Table]
-        Hamilton node that loads the dataset as an Ibis expression.
+        Hamilton node that loads the dataset as an Ibis table expression.
     """
     resolved_node_name = node_name or _default_loader_name(target=target, table_key=table_key)
     dataset_param = dataset_node(table_key)
@@ -78,7 +78,7 @@ def load_query(
     Returns
     -------
     Callable[..., ir.Table]
-        Hamilton node that executes the SQL using the DuckDB connection.
+        Hamilton node that executes the SQL using Ibis.
 
     Raises
     ------

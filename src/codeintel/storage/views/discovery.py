@@ -6,8 +6,11 @@ Hamilton tag discovery over a set of modules.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
+
+from hamilton.function_modifiers import tag as h_tag
 
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.tag_query import TagQuery
@@ -55,6 +58,59 @@ def _resolve_builder(
     if modules:
         return _find_callable(modules, node_name)
     return None
+
+
+def _output_kind_matches(value: object, expected: str) -> bool:
+    if isinstance(value, str):
+        return value == expected
+    if isinstance(value, list):
+        return expected in value
+    return False
+
+
+def _tags_from_callable(fn: object) -> dict[str, object]:
+    decorators = getattr(fn, "decorate_nodes", None)
+    if not isinstance(decorators, list):
+        return {}
+    tags: dict[str, object] = {}
+    for decorator in decorators:
+        if isinstance(decorator, h_tag):
+            tags.update(decorator.tags)
+    return tags
+
+
+def _discover_from_modules(
+    *,
+    modules: tuple[ModuleType, ...],
+) -> list[DiscoveredViewBuilder]:
+    discovered: list[DiscoveredViewBuilder] = []
+    for module in modules:
+        for name, value in vars(module).items():
+            if not inspect.isfunction(value):
+                continue
+            if value.__module__ != module.__name__:
+                continue
+            tags = _tags_from_callable(value)
+            if not tags:
+                continue
+            output_kind = tags.get(ht.TAG_OUTPUT_KIND)
+            if not (
+                _output_kind_matches(output_kind, ht.OUTPUT_KIND_VIEW)
+                or _output_kind_matches(output_kind, ht.OUTPUT_KIND_SEMANTIC_VIEW)
+            ):
+                continue
+            table_key_raw = tags.get(ht.TAG_TABLE_KEY)
+            if not isinstance(table_key_raw, str) or not table_key_raw:
+                continue
+            discovered.append(
+                DiscoveredViewBuilder(
+                    table_key=table_key_raw,
+                    node_name=name,
+                    builder=cast("ViewBuilder", value),
+                    tags=dict(tags),
+                )
+            )
+    return discovered
 
 
 def _discover_by_output_kind(
@@ -111,10 +167,20 @@ def discover_view_builders(
     -------
     tuple[DiscoveredViewBuilder, ...]
         Discovered builders, sorted deterministically by table_key.
+
+    Raises
+    ------
+    ValueError
+        If neither a Driver nor a TagQuery is provided.
     """
     if dr is None and tag_query is None:
-        msg = "discover_view_builders requires a Driver or TagQuery"
-        raise ValueError(msg)
+        if not modules:
+            msg = "discover_view_builders requires a Driver, TagQuery, or modules"
+            raise ValueError(msg)
+        discovered = _discover_from_modules(modules=modules)
+        by_table: dict[str, DiscoveredViewBuilder] = {d.table_key: d for d in discovered}
+        ordered = sorted(by_table.values(), key=lambda d: d.table_key)
+        return tuple(ordered)
 
     def _list(output_kind: str) -> Iterable[object]:
         tag_filter = {ht.TAG_OUTPUT_KIND: output_kind}

@@ -122,7 +122,7 @@ cases:
     kind: "text"
 
   # ========================================================================
-  # PR-15: Explain Staleness - Explain command functionality
+  # PR-15: Explain Command - Plan entry details
   # ========================================================================
 
   - name: "pr15_explain_help"

@@ -30,7 +30,7 @@ def load_table_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
     Returns
     -------
     Callable[..., ir.Table]
-        Loader function that returns a table expression.
+        Loader function that returns an Ibis table expression.
 
     Raises
     ------
@@ -54,7 +54,7 @@ def load_query_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
     Returns
     -------
     Callable[..., ir.Table]
-        Loader function that returns a table expression.
+        Loader function that returns an Ibis table expression.
 
     Raises
     ------
@@ -79,7 +79,7 @@ def load_access(spec: DataAccessSpec) -> Callable[..., ir.Table]:
     Returns
     -------
     Callable[..., ir.Table]
-        Loader function that returns a table expression.
+        Loader function that returns an Ibis table expression.
     """
     if spec.sql:
         return load_query_spec(spec)

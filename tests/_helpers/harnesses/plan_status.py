@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.state import StateValidationOptions, StateValidator
-from tests._helpers.build import TEST_BUILD_SETTINGS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -52,12 +51,13 @@ def compute_status_summary(
     PlanSummary
         Mapping of target -> (status, reason).
     """
-    runtime = build_driver(config={"profile": harness.build_env().profile})
+    env = harness.build_env()
+    runtime = build_driver(config={"profile": env.profile})
     validator = StateValidator(
         runtime.catalog,
-        harness.build_env().gateway,
-        harness.build_env().snapshot,
-        options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
+        env.gateway,
+        env.snapshot,
+        options=StateValidationOptions(),
     )
     state = validator.validate()
     return _summarize_state(state, targets)

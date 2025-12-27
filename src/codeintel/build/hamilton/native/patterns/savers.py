@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.materializers import (
-    DuckDBIbisTableSaver,
+    DuckDBRelationSaver,
     DuckDBRowsSaver,
     FileArtifactSaver,
 )
+from codeintel.build.hamilton.materializers.duckdb_saver import DuckDBIbisTableSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
@@ -59,8 +60,17 @@ class TableSaveSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class RelationTableSaveSpec:
+    """Specification for saving a DuckDB relation table."""
+
+    table_key: str
+    output_role: OutputRole | None = None
+    output_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class IbisTableSaveSpec:
-    """Specification for saving an Ibis table."""
+    """Specification for saving an Ibis table output."""
 
     table_key: str
     output_role: OutputRole | None = None
@@ -156,6 +166,46 @@ def save_rows(
     return apply
 
 
+def save_relation_table(
+    *,
+    context: SaverContext,
+    spec: RelationTableSaveSpec,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Return a decorator that tags and materializes relation table outputs.
+
+    Parameters
+    ----------
+    context
+        Shared context for tagging and saver metadata.
+    spec
+        Relation table output specification.
+
+    Returns
+    -------
+    Callable[[Callable[P, R]], Callable[P, R]]
+        Decorator that tags and materializes the relation table output.
+    """
+    decorator = SaveToObjectMetadataDecorator(
+        [DuckDBRelationSaver],
+        output_name_=spec.output_name or materialize_node(spec.table_key),
+        env=_dep(source("env")),
+        catalog=_dep(source("catalog")),
+        target_name=_dep(value(context.target)),
+        table_key=_dep(value(spec.table_key)),
+        output_role=_dep(value(spec.output_role)),
+    )
+
+    def apply(fn: Callable[P, R]) -> Callable[P, R]:
+        tagged = tag_compute(
+            domain=context.domain,
+            target=context.target,
+            extra_tags=context.extra_tags,
+        )(fn)
+        return decorator(tagged)
+
+    return apply
+
+
 def save_ibis_table(
     *,
     context: SaverContext,
@@ -194,6 +244,8 @@ def save_ibis_table(
         return decorator(tagged)
 
     return apply
+
+
 
 
 def save_artifact_internal(
@@ -249,11 +301,13 @@ def save_rows_internal(
 __all__ = [
     "ArtifactSaveSpec",
     "IbisTableSaveSpec",
+    "RelationTableSaveSpec",
     "SaverContext",
     "TableSaveSpec",
     "save_artifact",
     "save_artifact_internal",
     "save_ibis_table",
+    "save_relation_table",
     "save_rows",
     "save_rows_internal",
 ]

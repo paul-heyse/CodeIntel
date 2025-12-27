@@ -235,7 +235,7 @@ def path_node(artifact_name: str) -> str:
 
 
 def query_node(table_key: str) -> str:
-    """Convert a table key to an Ibis query loader node identifier.
+    """Convert a table key to a query loader node identifier.
 
     Query nodes use the "q" prefix and return Ibis table expressions.
 
@@ -255,29 +255,6 @@ def query_node(table_key: str) -> str:
     'q__analytics__function_metrics'
     """
     return to_node_name(table_key, prefix="q")
-
-
-def dataframe_node(table_key: str) -> str:
-    """Convert a table key to a pandas DataFrame loader node identifier.
-
-    DataFrame nodes use the "df" prefix and return pandas DataFrames.
-
-    Parameters
-    ----------
-    table_key
-        The table key (e.g., "analytics.function_metrics").
-
-    Returns
-    -------
-    str
-        Hamilton node name with "df__" prefix.
-
-    Examples
-    --------
-    >>> dataframe_node("analytics.function_metrics")
-    'df__analytics__function_metrics'
-    """
-    return to_node_name(table_key, prefix="df")
 
 
 def materialize_node(table_key: str) -> str:
@@ -335,7 +312,6 @@ def node_to_target(node_name: str) -> str | None:
 __all__ = [
     "artifact_node",
     "compute_node",
-    "dataframe_node",
     "dataset_node",
     "materialize_node",
     "node_to_target",

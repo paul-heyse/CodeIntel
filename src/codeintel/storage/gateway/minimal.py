@@ -6,9 +6,9 @@ connection for limited use cases like bootstrap and migrations.
 Architecture Note
 -----------------
 MinimalStorageGateway is the composition root for DuckDBPolicyBackend and
-IbisGateway. Both classes depend only on the MinimalGateway protocol and
-access each other through the gateway reference. This avoids circular imports
-while keeping all imports at the top level.
+DuckDBContext. Both classes depend only on the MinimalGateway protocol and
+access the underlying connection through the gateway reference. This avoids
+circular imports while keeping all imports at the top level.
 
 Warning
 -------
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
 from codeintel.storage.ibis_adapter import IbisGateway
@@ -119,9 +120,10 @@ class MinimalStorageGateway:
             Optional schema provider for DDL and column-order enforcement.
         """
         self._con = connection
-        self._ibis: IbisGateway | None = None
+        self._duckdb: DuckDBContext | None = None
         self._policy: DuckDBPolicyBackend | None = None
         self._exports: ExportService | None = None
+        self._ibis: IbisGateway | None = None
         self._schema_provider = schema_provider
 
     @property
@@ -136,19 +138,11 @@ class MinimalStorageGateway:
         return self._con
 
     @property
-    def ibis(self) -> IbisGateway:
-        """Return an Ibis gateway bound to this connection.
-
-        Lazily initializes the IbisGateway on first access.
-
-        Returns
-        -------
-        IbisGateway
-            Ibis gateway for expression-based queries.
-        """
-        if self._ibis is None:
-            self._ibis = IbisGateway(self)
-        return self._ibis
+    def duckdb(self) -> DuckDBContext:
+        """Return a DuckDB context bound to this connection."""
+        if self._duckdb is None:
+            self._duckdb = DuckDBContext.from_connection(self._con)
+        return self._duckdb
 
     @property
     def policy(self) -> DuckDBPolicyBackend:
@@ -162,6 +156,13 @@ class MinimalStorageGateway:
         if self._policy is None:
             self._policy = DuckDBPolicyBackend(self, schema_provider=self._schema_provider)
         return self._policy
+
+    @property
+    def ibis(self) -> IbisGateway:
+        """Return an Ibis gateway bound to this connection."""
+        if self._ibis is None:
+            self._ibis = IbisGateway(self)
+        return self._ibis
 
     @property
     def exports(self) -> ExportService:
@@ -231,6 +232,8 @@ class MinimalStorageGateway:
 
     def close(self) -> None:
         """Close the underlying DuckDB connection."""
+        if self._ibis is not None:
+            self._ibis.close()
         self._con.close()
 
     def execute(

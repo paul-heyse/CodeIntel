@@ -12,9 +12,9 @@ from codeintel.build.schemas import (
 )
 from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
 
-EXPECTED_DATASET_CONTRACTS_COUNT = 129
-EXPECTED_TABLE_SCHEMAS_COUNT = 97
-EXPECTED_ROW_BINDINGS_COUNT = 97
+EXPECTED_DATASET_CONTRACTS_COUNT = 99
+EXPECTED_TABLE_SCHEMAS_COUNT = 99
+EXPECTED_ROW_BINDINGS_COUNT = 99
 
 _NON_INFERABLE_PROVIDER = non_inferable_schema_provider()
 _NON_INFERABLE_TABLE_SCHEMAS = tuple(_NON_INFERABLE_PROVIDER.iter_table_schemas())

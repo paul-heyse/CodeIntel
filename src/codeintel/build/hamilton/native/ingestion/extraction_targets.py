@@ -126,7 +126,7 @@ def _merge_result_warnings(
     result: ExecutionResult,
     warnings: tuple[str, ...],
     *,
-    skip_reason: str,
+    skip_reason: str | None = None,
     error_message: str,
 ) -> ExecutionResult:
     if not warnings:

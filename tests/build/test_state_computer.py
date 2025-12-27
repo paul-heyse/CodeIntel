@@ -71,6 +71,13 @@ def _save_manifest(
 
 @pytest.fixture
 def snapshot(tmp_path: Path) -> SnapshotRef:
+    """Provide a snapshot reference for tests.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot reference for state computer tests.
+    """
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     return SnapshotRef(
@@ -82,16 +89,37 @@ def snapshot(tmp_path: Path) -> SnapshotRef:
 
 @pytest.fixture
 def test_graph() -> DagCatalog:
+    """Provide a minimal test catalog for state computer tests.
+
+    Returns
+    -------
+    DagCatalog
+        Catalog for state computer tests.
+    """
     return _create_test_graph()
 
 
 @pytest.fixture
 def session(snapshot: SnapshotRef, fresh_gateway: StorageGateway) -> BuildSession:
+    """Provide a BuildSession for state computer tests.
+
+    Returns
+    -------
+    BuildSession
+        Build session for state computer tests.
+    """
     return BuildSession(snapshot=snapshot, gateway=fresh_gateway)
 
 
 @pytest.fixture
 def computer(test_graph: DagCatalog, session: BuildSession) -> StateComputer:
+    """Provide a StateComputer for tests.
+
+    Returns
+    -------
+    StateComputer
+        State computer for test execution.
+    """
     return StateComputer(catalog=test_graph, session=session)
 
 
@@ -147,6 +175,7 @@ class TestTargetStateEquivalence:
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
+        """Compute_all and compute_single should agree on current state."""
         _save_manifest(fresh_gateway, snapshot, target="modules", input_hash="modules")
         state_all = computer.compute_all().get("modules")
         state_single = computer.compute_single("modules")

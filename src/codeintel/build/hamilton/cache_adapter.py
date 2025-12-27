@@ -58,7 +58,13 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
         self._metrics = CacheEventMetrics()
 
     def resolve_behaviors(self, run_id: str) -> dict[str, CachingBehavior]:
-        """Resolve caching behaviors for a run, overriding materialization nodes."""
+        """Resolve caching behaviors for a run, overriding materialization nodes.
+
+        Returns
+        -------
+        dict[str, CachingBehavior]
+            Resolved caching behavior per node name.
+        """
         behaviors = super().resolve_behaviors(run_id)
         graph = self._fn_graphs.get(run_id)
         if graph is None:

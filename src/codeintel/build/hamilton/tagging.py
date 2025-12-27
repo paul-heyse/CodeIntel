@@ -223,30 +223,6 @@ def tag_loader_query(
     return tag_from_spec(spec, target_=target_)
 
 
-def tag_loader_dataframe(
-    *,
-    domain: str,
-    target: str | None = None,
-    table_key: str,
-    target_: str | Collection[str] | None = None,
-    extra_tags: Mapping[TagKey, TagValue] | None = None,
-) -> Decorator[P, R]:
-    """Tag a loader/dataframe node with canonical build tags.
-
-    Returns
-    -------
-    Decorator[P, R]
-        Decorator applying loader dataframe tags.
-    """
-    spec = TagSpec.for_loader_dataframe(
-        domain=domain,
-        target=target,
-        table_key=table_key,
-        extra_tags=extra_tags,
-    )
-    return tag_from_spec(spec, target_=target_)
-
-
 def tag_helper(
     *,
     domain: str,
@@ -277,7 +253,6 @@ __all__ = [
     "tag_dataset",
     "tag_from_spec",
     "tag_helper",
-    "tag_loader_dataframe",
     "tag_loader_query",
     "tag_materialize",
     "tag_spec_from_tags",

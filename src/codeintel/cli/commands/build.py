@@ -438,7 +438,7 @@ class BuildPlanCommand:
 @build_app.command(name="explain")
 @dataclass
 class BuildExplainCommand:
-    """Explain why a target is stale and what dependencies changed."""
+    """Explain the structural plan entry for a target."""
 
     target: Annotated[
         str,

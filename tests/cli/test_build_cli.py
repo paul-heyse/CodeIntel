@@ -57,9 +57,8 @@ class TestBuildStatusCommand:
         if result.exit_code == 0:
             data = json.loads(result.stdout)
             expect_is_instance(data, dict, label="payload type")
-            expect_in("computed", data, label="computed key")
+            expect_in("current", data, label="current key")
             expect_in("missing", data, label="missing key")
-            expect_in("stale", data, label="stale key")
             expect_in("blocked", data, label="blocked key")
 
     @staticmethod

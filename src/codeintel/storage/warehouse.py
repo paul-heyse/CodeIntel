@@ -6,7 +6,7 @@ The warehouse is the intended single I/O boundary for build + serving. It owns:
 - contract-aware metadata capture (schema hash/version) and optional profiling artifacts
 
 Implementation intentionally composes existing primitives (`StorageGateway`,
-`IbisGateway`, `DuckDBPolicyBackend`) so callers can adopt incrementally.
+`DuckDBPolicyBackend`) so callers can adopt incrementally.
 """
 
 from __future__ import annotations
@@ -14,29 +14,27 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-import pandas as pd
+import pyarrow as pa
 import sqlglot.expressions as exp
 from duckdb import ColumnExpression, ConstantExpression, ExplainType
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DUCKDB_DIALECT
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.ibis_adapter import OnConflict
 from codeintel.storage.query_results import coerce_int
-from codeintel.storage.snapshot_scoping import RepoCommitScope, maybe_scope_by_snapshot
+from codeintel.storage.snapshot_scoping import RepoCommitScope
 from codeintel.storage.staging import registered_temp_relation
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
-
-    import ibis.expr.types as ir
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.tag_query import TagQuery
@@ -122,7 +120,7 @@ class Warehouse:
     Parameters
     ----------
     gateway
-        Storage gateway providing DuckDB + Ibis access.
+        Storage gateway providing DuckDB access.
     """
 
     gateway: StorageGateway
@@ -133,21 +131,28 @@ class Warehouse:
             table_key, repo=snapshot.repo, commit=snapshot.commit
         )
 
-    def read(self, table_key: str, *, snapshot: RepoCommitScope | None = None) -> ir.Table:
-        """Return an Ibis table expression, optionally snapshot-filtered.
-
-        Snapshot filtering is applied only when both `repo` and `commit` columns
-        exist on the table and a snapshot is provided.
+    def read(
+        self,
+        table_key: str,
+        *,
+        snapshot: RepoCommitScope | None = None,
+    ) -> DuckDBRelation:
+        """Return a DuckDB relation, optionally snapshot-filtered.
 
         Returns
         -------
-        ir.Table
-            Ibis expression for the requested table, optionally filtered.
+        DuckDBRelation
+            Relation for the requested table, optionally filtered by snapshot.
         """
-        expr = ibis_facade.table(self.gateway, table_key)
+        relation = self.gateway.relation_from_table_key(table_key)
         if snapshot is None:
-            return expr
-        return maybe_scope_by_snapshot(expr, snapshot=snapshot)
+            return relation
+        if not _relation_has_repo_commit_columns(relation):
+            return relation
+        return relation.filter(
+            (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
+            & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
+        )
 
     def exists(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> bool:
         """Return True if the table/view exists.
@@ -200,25 +205,16 @@ class Warehouse:
     def materialize_table(
         self,
         table_key: str,
-        expr: ir.Table,
+        relation: DuckDBRelation,
         *,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:
-        """Materialize an Ibis table expression to DuckDB.
-
-        Parameters
-        ----------
-        table_key
-            Destination table key (schema.table).
-        expr
-            Ibis table expression to write.
-        options
-            Materialization options, including snapshot identity and write mode.
+        """Materialize a DuckDB relation to a table.
 
         Returns
         -------
         MaterializationResult
-            Structured result describing the write.
+            Result metadata for the materialization.
         """
         active = options or MaterializeOptions()
         _validate_materialize_options(
@@ -230,108 +226,17 @@ class Warehouse:
         started_at = datetime.now(tz=UTC)
         self.gateway.policy.ensure_table(table_key, create_if_missing=True)
         schema_version, computed_schema_hash = _contract_schema_metadata(
-            self.gateway, table_key=table_key
-        )
-
-        def _write() -> int:
-            raw_count = self.gateway.ibis.execute_scalar(expr.count())
-            rows_written = coerce_int(raw_count, ctx=f"{table_key}.count()")
-            on_conflict = None
-            if active.mode == "upsert" and active.upsert is not None:
-                on_conflict = OnConflict(
-                    conflict_columns=active.upsert.conflict_columns,
-                    update_columns=active.upsert.update_columns,
-                    update_condition=active.upsert.update_condition,
-                )
-            self.gateway.ibis.write(table_key, expr, on_conflict=on_conflict)
-            return rows_written
-
-        ctx = _MaterializeWriterContext(
-            gateway=self.gateway,
+            self.gateway,
             table_key=table_key,
-            started_at=started_at,
-            schema_version=schema_version,
-            schema_hash=computed_schema_hash,
-        )
-        return _materialize_with_writer(ctx, options=active, writer=_write)
-
-    def materialize_dataframe(
-        self,
-        table_key: str,
-        df: pd.DataFrame,
-        *,
-        options: MaterializeOptions | None = None,
-    ) -> MaterializationResult:
-        """Materialize a DataFrame to DuckDB using schema-aware inserts.
-
-        Parameters
-        ----------
-        table_key
-            Destination table key (schema.table).
-        df
-            DataFrame containing rows to write.
-        options
-            Materialization options, including snapshot identity and write mode.
-
-        Returns
-        -------
-        MaterializationResult
-            Structured result describing the write.
-        """
-        active = options or MaterializeOptions()
-        _validate_materialize_options(
-            active,
-            supports_upsert=True,
-            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
-        )
-
-        started_at = datetime.now(tz=UTC)
-        self.gateway.policy.ensure_table(table_key, create_if_missing=True)
-        schema_version, computed_schema_hash = _contract_schema_metadata(
-            self.gateway, table_key=table_key
         )
 
         def _write() -> int | None:
-            if df.empty:
-                return 0
-
-            if active.use_staging:
-                with registered_temp_relation(self.gateway.con, df, prefix="ci_df_") as temp_name:
-                    select_expr = exp.Select(
-                        expressions=[exp.Column(this=exp.to_identifier(col)) for col in df.columns],
-                    ).from_(exp.Table(this=exp.to_identifier(temp_name)))
-                    if active.mode == "upsert" and active.upsert is not None:
-                        self.gateway.policy.upsert_select(
-                            table_key,
-                            columns=list(df.columns),
-                            select_sql=select_expr,
-                            upsert=UpsertSpec(
-                                conflict_columns=active.upsert.conflict_columns,
-                                update_columns=active.upsert.update_columns,
-                                update_condition=active.upsert.update_condition,
-                            ),
-                        )
-                        return len(df)
-                    self.gateway.policy.insert_select(
-                        table_key,
-                        columns=list(df.columns),
-                        select_sql=select_expr,
-                    )
-                    return len(df)
-
-            if active.mode == "upsert" and active.upsert is not None:
-                on_conflict = OnConflict(
-                    conflict_columns=active.upsert.conflict_columns,
-                    update_columns=active.upsert.update_columns,
-                    update_condition=active.upsert.update_condition,
-                )
-                result = self.gateway.ibis.write(table_key, df, on_conflict=on_conflict)
-                return result.rows_affected
-
-            rows_written = len(df)
-            if rows_written:
-                self.gateway.ibis.write(table_key, df)
-            return rows_written
+            return _write_relation(
+                gateway=self.gateway,
+                table_key=table_key,
+                relation=relation,
+                options=active,
+            )
 
         ctx = _MaterializeWriterContext(
             gateway=self.gateway,
@@ -827,6 +732,101 @@ def _materialize_with_writer(
     )
 
 
+_NAME_SANITIZER = re.compile(r"[^0-9A-Za-z_]+")
+
+
+def _temp_relation_name(prefix: str) -> str:
+    cleaned = _NAME_SANITIZER.sub("_", prefix.strip()) or "ci_rel_"
+    return f"{cleaned}{uuid.uuid4().hex}"
+
+
+def _relation_columns(relation: DuckDBRelation) -> list[str]:
+    columns = getattr(relation, "columns", None)
+    if columns is None:
+        msg = "DuckDB relation does not expose columns"
+        raise TypeError(msg)
+    return [str(col) for col in columns]
+
+
+def _relation_row_count(relation: DuckDBRelation, *, table_key: str) -> int:
+    row = relation.count("*").fetchone()
+    return coerce_int(row[0], ctx=f"{table_key}.count()") if row is not None else 0
+
+
+def _register_relation_view(
+    gateway: StorageGateway,
+    relation: DuckDBRelation,
+    *,
+    prefix: str = "ci_rel_",
+) -> str:
+    name = _temp_relation_name(prefix)
+    create_view = getattr(relation, "create_view", None)
+    if not callable(create_view):
+        msg = "DuckDB relation does not support create_view"
+        raise TypeError(msg)
+    create_view(name)
+    return name
+
+
+def _drop_relation_view(gateway: StorageGateway, view_name: str) -> None:
+    gateway.con.execute(f"DROP VIEW IF EXISTS {view_name}")
+
+
+def _write_relation(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    relation: DuckDBRelation,
+    options: MaterializeOptions,
+) -> int | None:
+    columns = _relation_columns(relation)
+    if not columns:
+        return 0
+    row_count = _relation_row_count(relation, table_key=table_key)
+    if row_count == 0:
+        return 0
+    view_name = _register_relation_view(gateway, relation)
+    try:
+        select_expr = exp.Select(
+            expressions=[exp.Column(this=exp.to_identifier(col)) for col in columns],
+        ).from_(exp.Table(this=exp.to_identifier(view_name)))
+        if options.mode == "upsert" and options.upsert is not None:
+            gateway.policy.upsert_select(
+                table_key,
+                columns=columns,
+                select_sql=select_expr,
+                upsert=UpsertSpec(
+                    conflict_columns=options.upsert.conflict_columns,
+                    update_columns=options.upsert.update_columns,
+                    update_condition=options.upsert.update_condition,
+                ),
+            )
+        else:
+            gateway.policy.insert_select(
+                table_key,
+                columns=columns,
+                select_sql=select_expr,
+            )
+    finally:
+        _drop_relation_view(gateway, view_name)
+    return row_count
+
+
+def _rows_to_arrow_table(
+    rows: Sequence[tuple[object, ...]],
+    *,
+    resolved_columns: Sequence[str],
+) -> pa.Table:
+    if not rows:
+        return pa.table({name: [] for name in resolved_columns})
+    columns = list(zip(*rows, strict=False))
+    data = {
+        name: list(values)
+        for name, values in zip(resolved_columns, columns, strict=False)
+    }
+    return pa.table(data)
+
+
 def _write_rows(
     *,
     gateway: StorageGateway,
@@ -837,14 +837,6 @@ def _write_rows(
 ) -> int | None:
     if not rows:
         return 0
-    if options.use_staging:
-        return _write_rows_with_staging(
-            gateway=gateway,
-            table_key=table_key,
-            rows=rows,
-            resolved_columns=resolved_columns,
-            options=options,
-        )
     if options.mode == "upsert" and options.upsert is not None:
         return _write_rows_upsert(
             gateway=gateway,
@@ -853,80 +845,6 @@ def _write_rows(
             resolved_columns=resolved_columns,
             upsert=options.upsert,
         )
-    return _write_rows_insert(
-        gateway=gateway,
-        table_key=table_key,
-        rows=rows,
-        resolved_columns=resolved_columns,
-        options=options,
-    )
-
-
-def _write_rows_with_staging(
-    *,
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[tuple[object, ...]],
-    resolved_columns: Sequence[str],
-    options: MaterializeOptions,
-) -> int:
-    frame = pd.DataFrame.from_records(rows, columns=list(resolved_columns))
-    if frame.empty:
-        return 0
-    with registered_temp_relation(gateway.con, frame, prefix="ci_rows_") as temp_name:
-        select_expr = exp.Select(
-            expressions=[exp.Column(this=exp.to_identifier(col)) for col in resolved_columns],
-        ).from_(exp.Table(this=exp.to_identifier(temp_name)))
-        if options.mode == "upsert" and options.upsert is not None:
-            gateway.policy.upsert_select(
-                table_key,
-                columns=resolved_columns,
-                select_sql=select_expr,
-                upsert=UpsertSpec(
-                    conflict_columns=options.upsert.conflict_columns,
-                    update_columns=options.upsert.update_columns,
-                    update_condition=options.upsert.update_condition,
-                ),
-            )
-            return len(frame)
-        gateway.policy.insert_select(
-            table_key,
-            columns=resolved_columns,
-            select_sql=select_expr,
-        )
-        return len(frame)
-
-
-def _write_rows_upsert(
-    *,
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[tuple[object, ...]],
-    resolved_columns: Sequence[str],
-    upsert: UpsertConfig,
-) -> int | None:
-    on_conflict = OnConflict(
-        conflict_columns=upsert.conflict_columns,
-        update_columns=upsert.update_columns,
-        update_condition=upsert.update_condition,
-    )
-    result = gateway.ibis.write(
-        table_key,
-        rows,
-        columns=resolved_columns,
-        on_conflict=on_conflict,
-    )
-    return result.rows_affected
-
-
-def _write_rows_insert(
-    *,
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[tuple[object, ...]],
-    resolved_columns: Sequence[str],
-    options: MaterializeOptions,
-) -> int:
     if options.fallback_upsert_on_conflict:
         upsert = _resolve_fallback_upsert(
             gateway,
@@ -950,9 +868,76 @@ def _write_rows_insert(
                 or 0
             )
         log.warning("Upsert fallback requested for %s, but no primary key found", table_key)
+    return _write_rows_with_staging(
+        gateway=gateway,
+        table_key=table_key,
+        rows=rows,
+        resolved_columns=resolved_columns,
+        options=options,
+    )
 
-    gateway.ibis.write(table_key, rows, columns=resolved_columns)
-    return len(rows)
+
+def _write_rows_with_staging(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    resolved_columns: Sequence[str],
+    options: MaterializeOptions,
+) -> int:
+    table = _rows_to_arrow_table(rows, resolved_columns=resolved_columns)
+    if table.num_rows == 0:
+        return 0
+    with registered_temp_relation(gateway.con, table, prefix="ci_rows_") as temp_name:
+        select_expr = exp.Select(
+            expressions=[exp.Column(this=exp.to_identifier(col)) for col in resolved_columns],
+        ).from_(exp.Table(this=exp.to_identifier(temp_name)))
+        if options.mode == "upsert" and options.upsert is not None:
+            gateway.policy.upsert_select(
+                table_key,
+                columns=resolved_columns,
+                select_sql=select_expr,
+                upsert=UpsertSpec(
+                    conflict_columns=options.upsert.conflict_columns,
+                    update_columns=options.upsert.update_columns,
+                    update_condition=options.upsert.update_condition,
+                ),
+            )
+            return table.num_rows
+        gateway.policy.insert_select(
+            table_key,
+            columns=resolved_columns,
+            select_sql=select_expr,
+        )
+        return table.num_rows
+
+
+def _write_rows_upsert(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    rows: Sequence[tuple[object, ...]],
+    resolved_columns: Sequence[str],
+    upsert: UpsertConfig,
+) -> int | None:
+    table = _rows_to_arrow_table(rows, resolved_columns=resolved_columns)
+    if table.num_rows == 0:
+        return 0
+    with registered_temp_relation(gateway.con, table, prefix="ci_rows_") as temp_name:
+        select_expr = exp.Select(
+            expressions=[exp.Column(this=exp.to_identifier(col)) for col in resolved_columns],
+        ).from_(exp.Table(this=exp.to_identifier(temp_name)))
+        gateway.policy.upsert_select(
+            table_key,
+            columns=resolved_columns,
+            select_sql=select_expr,
+            upsert=UpsertSpec(
+                conflict_columns=upsert.conflict_columns,
+                update_columns=upsert.update_columns,
+                update_condition=upsert.update_condition,
+            ),
+        )
+    return table.num_rows
 
 
 __all__ = [

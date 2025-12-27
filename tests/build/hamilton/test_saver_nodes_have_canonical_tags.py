@@ -8,12 +8,11 @@ from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.core.hamilton import tags as ht
 
 
-def _get_saver_tags(tags: object) -> dict[str, object] | None:
-    if not isinstance(tags, dict):
-        return None
-    if tags.get("hamilton.data_saver") is not True:
-        return None
-    return tags
+def _variable_name(variable: object) -> str:
+    if isinstance(variable, str):
+        return variable
+    name = getattr(variable, "name", None)
+    return str(name) if name is not None else str(variable)
 
 
 def _saver_tag_errors(node_name: str, tags: dict[str, object]) -> list[str]:
@@ -51,11 +50,12 @@ def test_saver_nodes_have_canonical_tags() -> None:
     runtime = build_driver()
 
     missing: list[str] = []
-    for node_name, node in runtime.dr.graph.nodes.items():
-        tags = _get_saver_tags(node.tags)
-        if tags is None:
+    variables = runtime.tag_query.query({"hamilton.data_saver": True})
+    for variable in variables:
+        tags = getattr(variable, "tags", None)
+        if not isinstance(tags, dict):
             continue
-        missing.extend(_saver_tag_errors(node_name, tags))
+        missing.extend(_saver_tag_errors(_variable_name(variable), tags))
 
     if missing:
         pytest.fail("Saver nodes missing canonical tags:\n" + "\n".join(sorted(missing)))
