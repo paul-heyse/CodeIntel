@@ -14,7 +14,6 @@ from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
 from codeintel.storage.gateway.accessors import AnalyticsTables, CoreTables, DocsViews, GraphTables
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
@@ -55,7 +54,6 @@ class InferenceGateway:
     datasets: DatasetRegistry = field(default_factory=_empty_registry)
     duckdb: DuckDBContext = field(init=False)
     policy: DuckDBPolicyBackend = field(init=False)
-    ibis: IbisGateway = field(init=False)
     exports: ExportService = field(init=False)
     analytics: AnalyticsTables = field(init=False)
     assets: AssetTracking = field(init=False)
@@ -70,7 +68,6 @@ class InferenceGateway:
         """Initialize accessor helpers after construction."""
         self.duckdb = DuckDBContext.from_connection(self.con)
         self.policy = DuckDBPolicyBackend(self, schema_provider=self.schema_provider)
-        self.ibis = IbisGateway(self)
         self.exports = ExportService(self)
         self.analytics = AnalyticsTables(self)
         self.assets = AssetTracking(self)
@@ -83,7 +80,6 @@ class InferenceGateway:
 
     def close(self) -> None:
         """Close the underlying connection."""
-        self.ibis.close()
         self.con.close()
 
     def execute(

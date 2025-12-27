@@ -11,17 +11,18 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import TYPE_CHECKING, get_args, get_origin
+from typing import TYPE_CHECKING, cast, get_args, get_origin
 
-import ibis.expr.types as ir
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
-from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_ibis
+from codeintel.build.schemas.infer_duckdb import infer_table_schema_from_relation
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
+from codeintel.build.tabular.duckdb_relation import coerce_to_relation
+from codeintel.build.tabular.types import TabularInput
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.config.settings import (
@@ -73,24 +74,25 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
     return_annotation = sig.return_annotation
     if return_annotation is inspect.Signature.empty:
         return False
-    return _is_ibis_table_annotation(return_annotation)
+    return _is_tabular_annotation(return_annotation)
 
 
-def _is_ibis_table_annotation(annotation: object) -> bool:
-    if annotation is ir.Table:
+def _is_tabular_annotation(annotation: object) -> bool:
+    tabular_types = tuple(get_args(TabularInput))
+    if annotation in tabular_types:
         return True
-    if isinstance(annotation, type) and issubclass(annotation, ir.Table):
+    if isinstance(annotation, type) and issubclass(annotation, tabular_types):
         return True
     origin = get_origin(annotation)
     if origin in {types.UnionType, typing.Union}:
         return any(
-            _is_ibis_table_annotation(arg)
+            _is_tabular_annotation(arg)
             for arg in get_args(annotation)
             if arg is not type(None)
         )
     if isinstance(annotation, str):
-        return "ir.Table" in annotation or "ibis.expr.types" in annotation
-    return "ibis.expr.types" in str(annotation) and "Table" in str(annotation)
+        return "DuckDBPyRelation" in annotation or "TabularInput" in annotation
+    return "DuckDBPyRelation" in str(annotation)
 
 
 @lru_cache(maxsize=1)
@@ -126,12 +128,12 @@ def _output_data_node(
     saver_node = runtime.dr.graph.nodes.get(output.saver_node)
     if saver_node is None:
         return None
-    ibis_deps = [
-        dep.name for dep in saver_node.dependencies if _is_ibis_table_annotation(dep.type)
+    tabular_deps = [
+        dep.name for dep in saver_node.dependencies if _is_tabular_annotation(dep.type)
     ]
-    if len(ibis_deps) != 1:
+    if len(tabular_deps) != 1:
         return None
-    return ibis_deps[0]
+    return tabular_deps[0]
 
 
 def _resolve_inference_job(
@@ -146,7 +148,7 @@ def _resolve_inference_job(
 
     compute_name = _output_data_node(runtime=runtime, table_key=table_key)
     if compute_name is None:
-        msg = f"Table {table_key} is not inferable from any Ibis output node"
+        msg = f"Table {table_key} is not inferable from any tabular output node"
         raise ValueError(msg)
 
     node = runtime.dr.graph.nodes.get(compute_name)
@@ -298,11 +300,15 @@ def _infer_table_schema_for_compute(
 
         out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
         expr_obj = out[job.exec_name]
-        if not isinstance(expr_obj, ir.Table):
-            msg = f"{job.exec_name} returned {type(expr_obj)}; expected ibis Table"
+        if expr_obj is None:
+            msg = f"{job.exec_name} returned None; expected tabular output"
             raise TypeError(msg)
-
-        return infer_table_schema_from_ibis(expr=expr_obj, con=gateway.con, table_key=job.table_key)
+        relation = coerce_to_relation(
+            gateway.con,
+            cast("TabularInput", expr_obj),
+            name_hint=job.table_key,
+        )
+        return infer_table_schema_from_relation(relation=relation, table_key=job.table_key)
 
 
 def infer_schema_for_table_key(
@@ -329,7 +335,7 @@ def infer_schema_for_table_key(
     KeyError
         If no build target produces the specified table_key.
     TypeError
-        If the compute node does not return an Ibis table expression.
+        If the compute node does not return a tabular output.
     ValueError
         If the table_key is not inferable from any native compute node.
     """
@@ -453,7 +459,7 @@ def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
     Returns
     -------
     frozenset[str]
-        Output table keys inferred from q__-driven Ibis compute nodes or
+        Output table keys inferred from q__-driven tabular compute nodes or
         outputs tagged with inferable saver sinks.
     """
     runtime = _runtime_auto()
@@ -499,15 +505,16 @@ def _infer_job_schema(
 
     out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
     expr_obj = out[job.exec_name]
-    if not isinstance(expr_obj, ir.Table):
-        msg = f"{job.exec_name} returned {type(expr_obj)}; expected ibis Table"
+    if expr_obj is None:
+        msg = f"{job.exec_name} returned None; expected tabular output"
         raise TypeError(msg)
 
-    return infer_table_schema_from_ibis(
-        expr=expr_obj,
-        con=con,
-        table_key=job.table_key,
+    relation = coerce_to_relation(
+        con,
+        cast("TabularInput", expr_obj),
+        name_hint=job.table_key,
     )
+    return infer_table_schema_from_relation(relation=relation, table_key=job.table_key)
 
 
 def infer_table_schemas(

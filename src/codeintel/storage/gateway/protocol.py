@@ -21,7 +21,6 @@ if TYPE_CHECKING:
         GraphTables,
     )
     from codeintel.storage.gateway.config import StorageConfig
-    from codeintel.storage.ibis_adapter import IbisGateway
     from codeintel.storage.tracking import PipelineRunTracking
     from codeintel.storage.tracking.asset_tracking import AssetTracking
     from codeintel.storage.tracking.build_tracking import BuildTracking
@@ -113,11 +112,6 @@ class MinimalGateway(Protocol):
         """Return the policy backend for DDL and mutation operations."""
         ...
 
-    @property
-    def ibis(self) -> IbisGateway:
-        """Return the Ibis gateway for this connection."""
-        ...
-
 
 class StorageGateway(MinimalGateway, Protocol):
     """Expose DuckDB access along with dataset registry metadata."""
@@ -131,7 +125,6 @@ class StorageGateway(MinimalGateway, Protocol):
     docs: DocsViews
     exports: ExportService
     graph: GraphTables
-    ibis: IbisGateway
     policy: DuckDBPolicyBackend
     runs: PipelineRunTracking
     schemas: SchemaCatalogTracking

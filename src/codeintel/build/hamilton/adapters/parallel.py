@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING, cast
 
 from hamilton.lifecycle import base as lifecycle_base
 
-from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -320,9 +319,6 @@ class ThreadPoolAdapter(
 
             cfg = _thread_storage_config(env.gateway.config, read_only=effective_read_only)
             gw = _open_thread_gateway(cfg, datasets=env.gateway.datasets)
-            if env.strict_contracts:
-                gw = cast("StorageGateway", ContractEnforcingStorageGateway(gw))
-
             self._gateways[key] = gw
             return gw
 

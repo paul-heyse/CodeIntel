@@ -40,6 +40,16 @@ registries and strict boundary-only enforcement.
 - Hamilton targets emit schema manifests with provenance and derivation.
 - Schema enforcement at boundaries (savers/loaders, not internal nodes).
 
+## Part D Alignment (Make_Hamilton_graph_authoritative_partD.md)
+
+- Relation-first: metadata access uses DuckDB relations/SQL with parameter binding; no new Ibis
+  dependencies in the metadata path.
+- Catalog qualification: metadata tables are referenced via a shared meta catalog helper
+  (e.g., `meta.metadata.*`) rather than `USE`-based context switching.
+- Tag discovery: manifest compilation relies on Hamilton driver tag_filter; no bespoke TagIndex.
+- Boundary discipline: metadata sync avoids dataframe materialization; I/O boundaries remain
+  the only materialization points.
+
 ## Phased Plan (Critical Path Sequencing)
 
 ### Phase 0: Preflight Alignment (Fast, Low Risk)
@@ -83,16 +93,19 @@ Tasks:
   - `SchemaCatalogTracking.load_table_schema(...)`
   - `SchemaCatalogTracking.prefill_schema_index(...)`
 - Ensure all gateways attach `meta.duckdb` with consistent catalog name.
-- Use parameterized SQL and batch upserts for registry writes.
+- Introduce shared metadata table qualification helpers and route metadata DDL/queries through them.
+- Use parameterized SQL and batch upserts for registry writes (no Ibis in metadata paths).
 
 Deliverables:
 - New metadata tables and DDL applied.
 - Accessor module wired into `StorageGateway.schemas`.
 - CLI command `codeintel meta.sync` to compile + persist manifest.
+- Metadata reads/writes are catalog-qualified and do not depend on Ibis adapters.
 
 Acceptance:
 - `meta.sync` writes schema manifest and registry rows deterministically.
 - Reads from registry return canonical `TableSchema`.
+- Metadata registry operations succeed via meta catalog without Ibis dependencies.
 
 ---
 
@@ -104,6 +117,7 @@ Tasks:
 - Add schema recipe emitter nodes:
   - Hamilton tags on view/table builders (schema output kind + table_key).
   - Manifest compilation from DAG outputs.
+- Replace bespoke tag indexes with Hamilton driver tag_filter queries for schema discovery.
 - Persist schema manifests on every build:
   - Hook `serving_artifacts` and/or build executor to call
     `SchemaCatalogTracking.upsert_schema_manifest(...)`.
@@ -113,10 +127,13 @@ Tasks:
 Deliverables:
 - Schema manifests emitted from builds and persisted to meta.
 - Provenance included for each table_key.
+- Manifest compilation uses `Driver.list_available_variables(tag_filter=...)` as the only
+  tag discovery mechanism.
 
 Acceptance:
 - Manifest catalog hash is stable across identical DAG inputs.
 - `table_schema_registry` reflects latest DAG-derived schemas.
+- No runtime path depends on a bespoke TagIndex for schema discovery.
 
 ---
 
@@ -243,6 +260,7 @@ stable, and Phase 6 finalizes operational readiness.
 - All schema resolution uses meta registry or declared source overrides.
 - Legacy schema registries deleted.
 - Boundary validations pass and report to meta.
+- Metadata table access is catalog-qualified and independent of Ibis adapters.
 
 ## Test Strategy (Must-Have)
 
@@ -250,9 +268,11 @@ stable, and Phase 6 finalizes operational readiness.
 - Schema index prefill: inferable tables do not invoke inference when meta exists.
 - Registry alignment: every table_key has a current schema digest in meta.
 - Contract enforcement: only I/O boundaries enforce schemas.
+- Meta catalog queries work via catalog-qualified SQL without Ibis usage.
 
 ## Deployment Notes
 
 - Use DuckDB prepared statements and batch upserts for registry writes.
 - Attach `meta.duckdb` read-only for serving, read-write for build/ingest.
 - Track schema registry version and publish a "latest good" pointer.
+- Keep metadata DDL and queries catalog-qualified to avoid `USE` reliance.

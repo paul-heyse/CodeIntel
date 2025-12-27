@@ -25,7 +25,6 @@ from typing import TYPE_CHECKING
 from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
-from codeintel.storage.ibis_adapter import IbisGateway
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -122,7 +121,6 @@ class MinimalStorageGateway:
         self._con = connection
         self._duckdb: DuckDBContext | None = None
         self._policy: DuckDBPolicyBackend | None = None
-        self._ibis: IbisGateway | None = None
         self._schema_provider = schema_provider
         self.exports = ExportService(self)
 
@@ -157,12 +155,6 @@ class MinimalStorageGateway:
             self._policy = DuckDBPolicyBackend(self, schema_provider=self._schema_provider)
         return self._policy
 
-    @property
-    def ibis(self) -> IbisGateway:
-        """Return an Ibis gateway bound to this connection."""
-        if self._ibis is None:
-            self._ibis = IbisGateway(self)
-        return self._ibis
 
     def relation_from_table_key(self, table_key: str) -> DuckDBPyRelation:
         """Return a relation for a fully qualified table key.
@@ -234,8 +226,6 @@ class MinimalStorageGateway:
 
     def close(self) -> None:
         """Close the underlying DuckDB connection."""
-        if self._ibis is not None:
-            self._ibis.close()
         self._con.close()
 
     def execute(

@@ -20,7 +20,6 @@ from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
 from typing import TYPE_CHECKING
 
-import ibis
 import pyarrow as pa
 import sqlglot
 
@@ -55,7 +54,6 @@ def _package_version(name: str) -> str:
 def _tool_versions() -> dict[str, str]:
     return {
         "duckdb": _package_version("duckdb"),
-        "ibis": str(getattr(ibis, "__version__", "unknown")),
         "pyarrow": str(getattr(pa, "__version__", "unknown")),
         "sqlglot": str(getattr(sqlglot, "__version__", "unknown")),
     }

@@ -29,12 +29,12 @@ from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.cache_adapter import CacheAdapterOptions, ManifestBackedCacheAdapter
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
-from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
 )
-from codeintel.build.hamilton.driver_factory import BuildDriverOptions, target_to_node_name
+from codeintel.build.hamilton.driver_factory import target_to_node_name
+from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import (
     ContractEnforcementHook,
@@ -60,13 +60,13 @@ from codeintel.observability.telemetry_context import (
     RepoCommitContext,
     telemetry_context,
 )
+from codeintel.runtime.compose import compose_runtime, set_execution_active
+from codeintel.runtime.inputs import ExecutionInputs
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
-from codeintel.runtime.compose import compose_runtime, set_execution_active
-from codeintel.runtime.inputs import ExecutionInputs
-from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -74,7 +74,6 @@ if TYPE_CHECKING:
     from hamilton.lifecycle.base import LifecycleAdapter
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
-    from codeintel.runtime.runtime_bundle import RuntimeBundle
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings
     from codeintel.storage.gateway import StorageGateway
@@ -365,7 +364,9 @@ def _apply_cache_keys(
     outputs: dict[str, Any],
     runtime: RuntimeBundle,
 ) -> None:
-    cache_adapter = getattr(runtime.dr, "cache", None)
+    cache_adapter = runtime.cache_adapter
+    if cache_adapter is None:
+        cache_adapter = getattr(runtime.dr, "cache", None)
     if not isinstance(cache_adapter, HamiltonCacheAdapter):
         return
     if not cache_adapter.run_ids:
@@ -408,6 +409,24 @@ def _map_closure_to_nodes(
             final_vars.append(node_name)
 
     return final_vars, missing
+
+
+def _execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
+    mapping: dict[str, object] = {
+        "env": inputs.env,
+        "catalog": inputs.catalog,
+    }
+    optional: dict[str, object | None] = {
+        "tag_query": inputs.tag_query,
+        "cache_index": inputs.cache_index,
+        "cache_key_resolver": inputs.cache_key_resolver,
+        "schema_index": inputs.schema_index,
+        "semantic_registry": inputs.semantic_registry,
+        "runtime_fingerprint": inputs.runtime_fingerprint,
+        "plan_request": inputs.plan_request,
+    }
+    mapping.update({key: value for key, value in optional.items() if value is not None})
+    return mapping
 
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
@@ -991,7 +1010,8 @@ class HamiltonBuildExecutor:
                 adapters.append(cast("LifecycleAdapter", tracker_adapter))
             return adapters
 
-        runtime = build_driver(
+        composition = compose_runtime(
+            env=env,
             config=config,
             options=BuildDriverOptions(
                 adapter_factory=_adapter_factory,
@@ -1000,7 +1020,7 @@ class HamiltonBuildExecutor:
                 cache_adapter=cache_adapter,
             ),
         )
-        return runtime, telemetry_hook, contract_hook
+        return composition.bundle, telemetry_hook, contract_hook
 
     @staticmethod
     def _compute_closure(
@@ -1109,12 +1129,6 @@ class HamiltonBuildExecutor:
         """
         try:
             execution_env = context.env
-            if context.env.strict_contracts:
-                wrapped_gateway = ContractEnforcingStorageGateway(context.env.gateway)
-                execution_env = replace(
-                    context.env,
-                    gateway=cast("StorageGateway", wrapped_gateway),
-                )
 
             with telemetry_context(
                 run_id=context.run_id,
@@ -1124,14 +1138,25 @@ class HamiltonBuildExecutor:
                     commit=context.env.commit,
                 ),
             ):
-                outputs = context.runtime.dr.execute(
-                    list(final_vars),
-                    inputs={
-                        "env": execution_env,
-                        "catalog": context.runtime.catalog,
-                        "tag_query": context.runtime.tag_query,
-                    },
+                inputs = ExecutionInputs(
+                    env=execution_env,
+                    catalog=context.runtime.catalog,
+                    tag_query=context.runtime.tag_query,
+                    cache_index=context.runtime.cache_index,
+                    cache_key_resolver=context.runtime.cache_key_resolver,
+                    schema_index=context.runtime.schema_index,
+                    semantic_registry=context.runtime.semantic_registry,
+                    runtime_fingerprint=context.runtime.fingerprint,
                 )
+                input_mapping = _execution_input_mapping(inputs)
+                set_execution_active(active=True)
+                try:
+                    outputs = context.runtime.driver.execute(
+                        list(final_vars),
+                        inputs=input_mapping,
+                    )
+                finally:
+                    set_execution_active(active=False)
         except Exception as exc:
             log.exception("build.hamilton.executor.error run_id=%s", context.run_id)
             return {}, str(exc)
