@@ -13,7 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-import ibis.expr.types as ir
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.exports.common import ExportCallOptions
@@ -33,8 +32,9 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
+from codeintel.storage.gateway import DuckDBRelation
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, Path)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, DuckDBRelation, Path)
 
 EXPORT_JSONL_TARGET_NAME = "export_jsonl"
 EXPORT_PARQUET_TARGET_NAME = "export_parquet"
@@ -98,8 +98,8 @@ def _touch_dependencies(*_deps: object) -> None:
 def t__export_jsonl__compute(
     env: BuildEnv,
     catalog: DagCatalog,
-    q__core__modules: ir.Table,
-    q__analytics__function_metrics: ir.Table,
+    q__core__modules: DuckDBRelation,
+    q__analytics__function_metrics: DuckDBRelation,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for JSONL export.
 
@@ -173,7 +173,7 @@ def t__export_jsonl(
 def t__export_parquet__compute(
     env: BuildEnv,
     catalog: DagCatalog,
-    q__analytics__function_metrics: ir.Table,
+    q__analytics__function_metrics: DuckDBRelation,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for Parquet export.
 

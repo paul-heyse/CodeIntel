@@ -6,13 +6,12 @@ from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import ibis.expr.types as ir
 from hamilton.function_modifiers import parameterize, resolve_from_config, source, value
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.io.ibis_adapter import load_dataset_ibis
+from codeintel.build.hamilton.io.duckdb_relation_adapter import load_dataset_relation
 from codeintel.build.hamilton.naming import (
     artifact_node,
     dataset_node,
@@ -22,6 +21,7 @@ from codeintel.build.hamilton.naming import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
+from codeintel.storage.gateway import DuckDBRelation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -169,15 +169,15 @@ def _decorate_query_nodes(
 
 
 @resolve_from_config(decorate_with=_decorate_query_nodes)
-def load_relation(env: BuildEnv, ref: DatasetRef) -> ir.Table:
-    """Load a dataset as an Ibis table expression.
+def load_relation(env: BuildEnv, ref: DatasetRef) -> DuckDBRelation:
+    """Load a dataset as a DuckDB relation.
 
     Returns
     -------
-    ir.Table
-        Ibis table expression for the dataset reference.
+    DuckDBRelation
+        DuckDB relation for the dataset reference.
     """
-    return load_dataset_ibis(gateway=env.gateway, ref=ref)
+    return load_dataset_relation(gateway=env.gateway, ref=ref)
 
 
 def _decorate_artifact_nodes(

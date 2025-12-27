@@ -208,12 +208,12 @@ def _materialize_table(
     options: MaterializeOptions,
 ) -> int:
     if not validate:
-        result = warehouse.materialize_table(table_key, table, options=options)
+        result = warehouse.materialize_ibis(table_key, table, options=options)
         return result.rows_written or 0
 
     schema = get_pandera_schema(table_key)
     if schema is None:
-        result = warehouse.materialize_table(table_key, table, options=options)
+        result = warehouse.materialize_ibis(table_key, table, options=options)
         return result.rows_written or 0
 
     df = cast("pd.DataFrame", table.execute())

@@ -10,7 +10,6 @@ import pytest
 _ALLOWED_DECORATORS = {
     "tag_helper",
     "tag_loader_query",
-    "tag_loader_dataframe",
 }
 _CHECK_DECORATORS = {
     "codeintel_target",

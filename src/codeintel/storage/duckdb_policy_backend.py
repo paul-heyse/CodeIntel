@@ -45,6 +45,7 @@ from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
+from codeintel.storage.duckdb.catalog import duckdb_default_catalog, duckdb_schema_exists
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import (
     fully_qualified_table_ref,
@@ -52,6 +53,7 @@ from codeintel.storage.helpers.table_key import (
     split_table_key_or_default,
 )
 from codeintel.storage.metadata.schema import EXPORT_AUDIT_TABLE
+from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
@@ -171,50 +173,6 @@ def _duckdb_table_exists(con: DuckDBPyConnection, *, schema: str, table: str) ->
     row = con.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
         [schema, table],
-    ).fetchone()
-    return row is not None
-
-
-def duckdb_default_catalog(con: DuckDBPyConnection) -> str | None:
-    """Return the primary catalog name for a DuckDB connection.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection to query.
-
-    Returns
-    -------
-    str | None
-        Primary catalog name, or None when unavailable.
-    """
-    row = con.execute("PRAGMA database_list").fetchone()
-    if row is None:
-        return None
-    catalog = row[1]
-    if isinstance(catalog, str) and catalog.strip():
-        return catalog
-    return None
-
-
-def duckdb_schema_exists(con: DuckDBPyConnection, *, schema: str) -> bool:
-    """Return True when a DuckDB schema exists.
-
-    Parameters
-    ----------
-    con
-        DuckDB connection to query.
-    schema
-        Schema name to check.
-
-    Returns
-    -------
-    bool
-        True when the schema exists.
-    """
-    row = con.execute(
-        "SELECT 1 FROM information_schema.schemata WHERE schema_name = ? LIMIT 1",
-        [schema],
     ).fetchone()
     return row is not None
 
@@ -415,8 +373,6 @@ def _build_insert_select(
     exp.Insert
         SQLGlot INSERT expression.
     """
-    from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
-
     select_ast = assert_select_perimeter(select_sql, policy=SqlIngressPolicy())
     insert_schema = exp.Schema(
         this=exp.Table(

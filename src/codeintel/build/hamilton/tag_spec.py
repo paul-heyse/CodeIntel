@@ -46,7 +46,6 @@ class NodeType(StrEnum):
     """Canonical node type values for Hamilton tags."""
 
     LOADER_QUERY = ht.NODE_TYPE_LOADER_QUERY
-    LOADER_DATAFRAME = ht.NODE_TYPE_LOADER_DATAFRAME
     DATASET = ht.NODE_TYPE_DATASET
     COMPUTE = ht.NODE_TYPE_COMPUTE
     MATERIALIZE = ht.NODE_TYPE_MATERIALIZE
@@ -346,7 +345,7 @@ def tag_spec_from_tags(tags: Mapping[str, TagValue]) -> TagSpec | None:
 
 
 def _required_fields(node_type: NodeType) -> tuple[str, ...]:
-    if node_type in {NodeType.LOADER_QUERY, NodeType.LOADER_DATAFRAME, NodeType.DATASET}:
+    if node_type in {NodeType.LOADER_QUERY, NodeType.DATASET}:
         return ("table_key",)
     if node_type is NodeType.ARTIFACT:
         return ("artifact_name",)

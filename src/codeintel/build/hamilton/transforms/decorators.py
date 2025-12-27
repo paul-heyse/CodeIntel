@@ -24,6 +24,9 @@ def _pipe_cleaning(
     clean_mode: str,
     null_policy: str,
     max_loc_clip: int,
+    *,
+    required_cols: tuple[str, ...],
+    clip_column: str | None,
 ) -> DecoratorFactory:
     if clean_mode == "off":
         return lambda fn: fn
@@ -33,27 +36,57 @@ def _pipe_cleaning(
         drop = _drop_bad_rows_polars
     else:
         drop = _drop_bad_rows_pandas
-    return pipe_input(
-        step(drop, required_cols=value(("loc", "cyclo"))).when(clean_mode="strict"),
+    steps = [
+        step(drop, required_cols=value(required_cols)).when(clean_mode="strict"),
         step(_normalize_nulls, policy=value(null_policy)).named("nulls", namespace="prep"),
-        step(_clip_numeric, col=value("loc"), max_value=value(max_loc_clip)).named(
-            "loc_clip",
-            namespace="prep",
-        ),
-        on_input="df",
-        namespace="prep",
-    )
+    ]
+    if clip_column is not None:
+        steps.append(
+            step(_clip_numeric, col=value(clip_column), max_value=value(max_loc_clip)).named(
+                "loc_clip",
+                namespace="prep",
+            )
+        )
+    return pipe_input(*steps, on_input="df", namespace="prep")
 
 
-def pipe_clean_df() -> DecoratorFactory:
+def pipe_clean_df(
+    *,
+    required_cols: Sequence[str] = ("loc", "cyclo"),
+    clip_column: str | None = "loc",
+) -> DecoratorFactory:
     """Return a config-driven pipe_input decorator for cleaning steps.
+
+    Parameters
+    ----------
+    required_cols
+        Required columns used for strict-mode row filtering.
+    clip_column
+        Optional column name to apply numeric clipping.
 
     Returns
     -------
     DecoratorFactory
         Decorator that wires the cleaning steps for configured backends.
     """
-    return resolve_from_config(decorate_with=_pipe_cleaning)
+    required_cols_tuple = tuple(required_cols)
+
+    def _factory(
+        df_backend: str,
+        clean_mode: str,
+        null_policy: str,
+        max_loc_clip: int,
+    ) -> DecoratorFactory:
+        return _pipe_cleaning(
+            df_backend,
+            clean_mode,
+            null_policy,
+            max_loc_clip,
+            required_cols=required_cols_tuple,
+            clip_column=clip_column,
+        )
+
+    return resolve_from_config(decorate_with=_factory)
 
 
 def _decorate_features(
@@ -83,6 +116,15 @@ def with_features(
     ops_module: ModuleType,
 ) -> DecoratorFactory:
     """Return a resolve_from_config decorator for feature column subDAGs.
+
+    Parameters
+    ----------
+    table_key
+        Table key used to select configured feature ops.
+    columns_to_pass
+        Column names passed through to feature ops.
+    ops_module
+        Module containing column-op functions.
 
     Returns
     -------

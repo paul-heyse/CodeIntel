@@ -13,7 +13,7 @@ from codeintel.build.schemas import (
 from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
 
 EXPECTED_DATASET_CONTRACTS_COUNT = 99
-EXPECTED_TABLE_SCHEMAS_COUNT = 99
+EXPECTED_TABLE_SCHEMAS_COUNT = 101
 EXPECTED_ROW_BINDINGS_COUNT = 99
 
 _NON_INFERABLE_PROVIDER = non_inferable_schema_provider()

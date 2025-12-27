@@ -12,6 +12,7 @@ from codeintel.config.datasets.primitives import (
     SUBSYSTEM_ENTITY_COLS,
 )
 from codeintel.core.schemas.primitives import Column, Index, TableSchema, TableWritePolicy
+from codeintel.core.schemas.tables.ci_plan_entries import CI_PLAN_ENTRIES_TABLE_SCHEMA
 
 AST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
@@ -70,6 +71,10 @@ CST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         primary_key=("node_id",),
         description="Concrete syntax tree nodes",
     ),
+)
+
+CI_PLAN_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    CI_PLAN_ENTRIES_TABLE_SCHEMA,
 )
 
 DOCSTRINGS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
@@ -2062,6 +2067,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *COVERAGE_INGEST_OVERRIDE_TABLES,
         *COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
         *CST_OVERRIDE_TABLES,
+        *CI_PLAN_OVERRIDE_TABLES,
         *DATA_MODELS_OVERRIDE_TABLES,
         *DATA_MODEL_USAGE_OVERRIDE_TABLES,
         *DFG_OVERRIDE_TABLES,
@@ -2116,6 +2122,7 @@ __all__ = [
     "CALL_GRAPH_OVERRIDE_TABLES",
     "CFG_DFG_METRICS_OVERRIDE_TABLES",
     "CFG_OVERRIDE_TABLES",
+    "CI_PLAN_OVERRIDE_TABLES",
     "CONFIG_DATA_FLOW_OVERRIDE_TABLES",
     "CONFIG_INGEST_OVERRIDE_TABLES",
     "COVERAGE_INGEST_OVERRIDE_TABLES",

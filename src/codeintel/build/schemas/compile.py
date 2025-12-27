@@ -315,6 +315,8 @@ def _resolve_v2_extras(
         Manifest request controlling inclusion of views and artifacts.
     con
         Optional DuckDB connection required for view inference.
+    tag_query
+        Optional TagQuery helper for view discovery.
 
     Returns
     -------
@@ -361,6 +363,8 @@ def _collect_view_schemas(
         DuckDB connection with views created.
     stable
         When True, sort views deterministically by table_key.
+    tag_query
+        Optional TagQuery helper for view discovery.
 
     Returns
     -------

@@ -8,7 +8,7 @@ import polars as pl
 Column = pd.Series | pl.Series | pl.Expr
 
 
-def module_loc_density(loc: Column, function_count: Column) -> Column:
+def module_loc_density(total_loc: Column, function_count: Column) -> Column:
     """Compute LOC per function for modules.
 
     Returns
@@ -16,10 +16,10 @@ def module_loc_density(loc: Column, function_count: Column) -> Column:
     Column
         LOC divided by function count with a +1 stabilizer.
     """
-    return loc / (function_count + 1)
+    return total_loc / (function_count + 1)
 
 
-def module_risk_scaled(risk_score: Column) -> Column:
+def module_risk_scaled(avg_risk_score: Column) -> Column:
     """Compute a scaled risk score for modules.
 
     Returns
@@ -27,10 +27,10 @@ def module_risk_scaled(risk_score: Column) -> Column:
     Column
         Scaled risk score column.
     """
-    return risk_score * 1.0
+    return avg_risk_score * 1.0
 
 
-def module_coverage_gap(coverage_ratio: Column) -> Column:
+def module_coverage_gap(module_coverage_ratio: Column) -> Column:
     """Compute coverage gap (1 - coverage_ratio).
 
     Returns
@@ -38,7 +38,7 @@ def module_coverage_gap(coverage_ratio: Column) -> Column:
     Column
         Coverage gap column.
     """
-    return 1 - coverage_ratio
+    return 1 - module_coverage_ratio
 
 
 __all__ = ["module_coverage_gap", "module_loc_density", "module_risk_scaled"]

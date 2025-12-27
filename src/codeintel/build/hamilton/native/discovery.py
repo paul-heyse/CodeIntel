@@ -28,6 +28,7 @@ _NATIVE_DOMAINS: tuple[str, ...] = (
     "graphs",
     "analytics",
     "export",
+    "planning",
 )
 
 

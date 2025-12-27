@@ -9,12 +9,9 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ibis.common.exceptions import IbisError, TableNotFound
-
-from codeintel.core.ibis_typing import filter_by
 from codeintel.ingestion.infrastructure.scanning import ScanProfile, default_code_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
@@ -217,15 +214,12 @@ def get_source_root(
         Absolute path to the source root.
     """
     try:
-        snapshots = ibis_facade.table(gateway, "core.snapshots")
-        expr = (
-            filter_by(snapshots, snapshots.repo == repo, snapshots.commit == commit)
-            .select(snapshots.source_root)
-            .limit(1)
-        )
-        df = expr.execute()
-        if not getattr(df, "empty", True):
-            value = df.iloc[0][0]
+        row = gateway.con.execute(
+            "SELECT source_root FROM core.snapshots WHERE repo = ? AND commit = ? LIMIT 1",
+            [repo, commit],
+        ).fetchone()
+        if row is not None:
+            value = row[0]
             if value:
                 return Path(str(value))
     except DuckDBError as exc:
@@ -250,18 +244,12 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
         Module paths from storage; empty when unavailable.
     """
     try:
-        table = ibis_facade.table(env.gateway, "core.modules")
-        df = (
-            filter_by(
-                table,
-                table.repo == env.snapshot.repo,
-                table.commit == env.snapshot.commit,
-            )
-            .select("path")
-            .execute()
-        )
-        return [str(path) for path in df["path"].tolist()]
-    except (RuntimeError, OSError, IbisError, TableNotFound) as exc:
+        rows = env.gateway.con.execute(
+            "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
+            [env.snapshot.repo, env.snapshot.commit],
+        ).fetchall()
+        return [str(row[0]) for row in rows if row[0] is not None]
+    except (RuntimeError, OSError, DuckDBError) as exc:
         log.warning("gateway error fetching module paths: %s", exc)
         return []
 

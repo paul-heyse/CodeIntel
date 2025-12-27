@@ -32,7 +32,13 @@ def _view_modules() -> tuple[ModuleType, ...]:
 
 
 def view_builder_modules() -> tuple[ModuleType, ...]:
-    """Return the canonical module set to scan for view builders."""
+    """Return the canonical module set to scan for view builders.
+
+    Returns
+    -------
+    tuple[ModuleType, ...]
+        Modules containing view-builder node functions.
+    """
     return _view_modules()
 
 

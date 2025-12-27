@@ -19,15 +19,15 @@ def risk_scaled(risk_score: Column) -> Column:
     return risk_score * 1.0
 
 
-def risk_gap(risk_score: Column, max_score: Column) -> Column:
-    """Compute the gap between max score and current risk score.
+def risk_gap(risk_score: Column, cyclomatic_complexity: Column) -> Column:
+    """Compute the gap between complexity and current risk score.
 
     Returns
     -------
     Column
         Gap between max score and risk score.
     """
-    return max_score - risk_score
+    return cyclomatic_complexity - risk_score
 
 
 __all__ = ["risk_gap", "risk_scaled"]

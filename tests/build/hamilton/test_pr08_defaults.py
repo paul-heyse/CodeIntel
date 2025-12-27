@@ -3,7 +3,7 @@
 The build system uses a single Hamilton composition path:
 
 - Native `t__*` target nodes loaded from the unified registry.
-- Generated support nodes (`d__*`, `q__*`, `df__*`, `a__*`) derived from
+- Generated support nodes (`d__*`, `q__*`, `a__*`) derived from
   target contracts.
 """
 
@@ -40,7 +40,6 @@ class TestHamiltonDriverDefaults:
             "t__modules",
             "d__analytics__function_metrics",
             "q__analytics__function_metrics",
-            "df__analytics__function_metrics",
         ]
         missing = [name for name in required if name not in nodes]
         if missing:

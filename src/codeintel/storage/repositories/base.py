@@ -25,14 +25,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 
 from codeintel.core.repository import PagedResult
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.query_results import records_from_dataframe
 from codeintel.storage.validation.pandera_df import validate_df
-from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
     from ibis.expr import types as it
@@ -85,7 +85,15 @@ class BaseRepository:
         it.Table
             Ibis table expression.
         """
-        return Warehouse(gateway=self.gateway).read(table_key, snapshot=self)
+        table = ibis_facade.table(self.gateway, table_key)
+        cols = set(table.columns)
+        if "repo" in cols and "commit" in cols:
+            predicate = cast(
+                "it.BooleanValue",
+                (table.repo == self.repo) & (table.commit == self.commit),
+            )
+            table = table.filter(predicate)
+        return table
 
     def _ibis_to_df(
         self,

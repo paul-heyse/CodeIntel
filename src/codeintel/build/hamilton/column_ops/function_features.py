@@ -19,7 +19,7 @@ def loc_squared(loc: Column) -> Column:
     return loc * loc
 
 
-def cyclo_weighted(cyclo: Column) -> Column:
+def cyclo_weighted(cyclomatic_complexity: Column) -> Column:
     """Compute weighted cyclomatic complexity.
 
     Returns
@@ -27,10 +27,10 @@ def cyclo_weighted(cyclo: Column) -> Column:
     Column
         Weighted cyclomatic complexity column.
     """
-    return cyclo * 1.0
+    return cyclomatic_complexity * 1.0
 
 
-def loc_cyclo_sum(loc: Column, cyclo: Column) -> Column:
+def loc_cyclo_sum(loc: Column, cyclomatic_complexity: Column) -> Column:
     """Compute combined LOC + cyclo feature.
 
     Returns
@@ -38,10 +38,10 @@ def loc_cyclo_sum(loc: Column, cyclo: Column) -> Column:
     Column
         Summed LOC and cyclomatic complexity column.
     """
-    return loc + cyclo
+    return loc + cyclomatic_complexity
 
 
-def loc_per_cyclo(loc: Column, cyclo: Column) -> Column:
+def loc_per_cyclo(loc: Column, cyclomatic_complexity: Column) -> Column:
     """Compute LOC per cyclomatic complexity (stabilized).
 
     Returns
@@ -49,7 +49,7 @@ def loc_per_cyclo(loc: Column, cyclo: Column) -> Column:
     Column
         LOC divided by cyclomatic complexity with a +1 stabilizer.
     """
-    return loc / (cyclo + 1)
+    return loc / (cyclomatic_complexity + 1)
 
 
 __all__ = [

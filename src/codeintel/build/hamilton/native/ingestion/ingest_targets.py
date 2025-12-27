@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from hamilton.function_modifiers import inject, source
+
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -28,6 +30,7 @@ from codeintel.build.hamilton.helpers import (
     get_module_paths_from_env,
     paths_to_modules,
 )
+from codeintel.build.hamilton.native.ingestion.pipelines import pipe_ingest_rows
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
@@ -792,25 +795,21 @@ def t__config_ingest__ingest(
     )
 
 
-@save_rows(
-    context=CONFIG_INGEST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
-)
-@tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__rows")
-def config_ingest__rows(
+@tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__raw_rows")
+def config_ingest__raw_rows(
     t__config_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
-    """Extract rows for analytics.config_values.
+    """Extract raw rows for analytics.config_values.
 
     Returns
     -------
     tuple[tuple[object, ...], ...] | None
-        Rows for the config_values table, or None when ingestion is skipped or failed.
+        Raw rows for the config values table, or None when skipped/failed.
 
     Raises
     ------
     ValueError
-        If the ingest payload is missing expected row data.
+        If the ingest payload or rows are missing.
     """
     if t__config_ingest__ingest.result.skipped or not t__config_ingest__ingest.result.success:
         return None
@@ -823,6 +822,26 @@ def config_ingest__rows(
     if rows is None:
         msg = f"Missing rows for {CONFIG_VALUES_TABLE_KEY}"
         raise ValueError(msg)
+    return rows
+
+
+@save_rows(
+    context=CONFIG_INGEST_SAVE_CONTEXT,
+    spec=TableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
+)
+@pipe_ingest_rows(required_indices=(0, 1, 2, 3, 4))
+@inject(rows=source("config_ingest__raw_rows"))
+@tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__rows")
+def config_ingest__rows(
+    rows: tuple[tuple[object, ...], ...] | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    """Return cleaned rows for analytics.config_values.
+
+    Returns
+    -------
+    tuple[tuple[object, ...], ...] | None
+        Cleaned rows for the config values table.
+    """
     return rows
 
 

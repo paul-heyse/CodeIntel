@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import ibis.expr.types as ir
-
 from codeintel.build.hamilton.native.patterns.loaders import load_query, load_table
+from codeintel.storage.gateway import DuckDBRelation
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -24,13 +23,13 @@ class DataAccessSpec:
     node_name: str | None = None
 
 
-def load_table_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
+def load_table_spec(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
     """Build a loader node from a table access spec.
 
     Returns
     -------
-    Callable[..., ir.Table]
-        Loader function that returns an Ibis table expression.
+    Callable[..., DuckDBRelation]
+        Loader function that returns a DuckDB relation.
 
     Raises
     ------
@@ -48,13 +47,13 @@ def load_table_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
     )
 
 
-def load_query_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
+def load_query_spec(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
     """Build a loader node from a query access spec.
 
     Returns
     -------
-    Callable[..., ir.Table]
-        Loader function that returns an Ibis table expression.
+    Callable[..., DuckDBRelation]
+        Loader function that returns a DuckDB relation.
 
     Raises
     ------
@@ -73,13 +72,13 @@ def load_query_spec(spec: DataAccessSpec) -> Callable[..., ir.Table]:
     )
 
 
-def load_access(spec: DataAccessSpec) -> Callable[..., ir.Table]:
+def load_access(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
     """Build a loader node from a table/query access spec.
 
     Returns
     -------
-    Callable[..., ir.Table]
-        Loader function that returns an Ibis table expression.
+    Callable[..., DuckDBRelation]
+        Loader function that returns a DuckDB relation.
     """
     if spec.sql:
         return load_query_spec(spec)

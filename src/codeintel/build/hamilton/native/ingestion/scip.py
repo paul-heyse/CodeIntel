@@ -95,11 +95,9 @@ from codeintel.observability.teardown import (
     emit_scip_teardown_telemetry,
     emit_shutdown_error_event,
 )
-from codeintel.storage.io import IbisIOConfig, load_table_as_dataframe
 from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
 if TYPE_CHECKING:
-    import pandas as pd
 
     from codeintel.config.models import ToolsConfig
 
@@ -315,17 +313,14 @@ def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
 
 
 def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
-    io_config = IbisIOConfig(gateway=env.gateway)
-    df, _meta = load_table_as_dataframe(SCIP_MODULE_STATE_TABLE_KEY, io_config)
-    frame: pd.DataFrame = df
+    relation = env.gateway.con.sql(
+        "SELECT * FROM core.scip_module_state WHERE repo = ? AND commit = ?",
+        [env.snapshot.repo, env.snapshot.commit],
+    )
+    frame = relation.df()
     if frame.empty:
         return []
-    filtered = frame[
-        (frame["repo"] == env.snapshot.repo) & (frame["commit"] == env.snapshot.commit)
-    ]
-    if filtered.empty:
-        return []
-    rows = filtered.to_dict(orient="records")
+    rows = frame.to_dict(orient="records")
     return cast("list[dict[str, object]]", rows)
 
 
