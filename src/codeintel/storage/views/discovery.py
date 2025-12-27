@@ -7,14 +7,16 @@ Hamilton tag discovery over a set of modules.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
-
-from hamilton.driver import Driver
+from typing import TYPE_CHECKING, cast
 
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.tag_query import TagQuery
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from types import ModuleType
+
+    from hamilton.driver import Driver
 
     from codeintel.storage.views.protocol import ViewBuilder
 
@@ -39,13 +41,28 @@ def _find_callable(modules: tuple[ModuleType, ...], name: str) -> ViewBuilder | 
     return None
 
 
-def _discover_by_output_kind(
-    dr: Driver,
+def _resolve_builder(
     *,
-    modules: tuple[ModuleType, ...],
-    output_kind: str,
+    dr: Driver | None,
+    modules: tuple[ModuleType, ...] | None,
+    node_name: str,
+) -> ViewBuilder | None:
+    if dr is not None:
+        node = dr.graph.nodes.get(node_name)
+        node_callable = getattr(node, "callable", None) if node is not None else None
+        if callable(node_callable):
+            return cast("ViewBuilder", node_callable)
+    if modules:
+        return _find_callable(modules, node_name)
+    return None
+
+
+def _discover_by_output_kind(
+    variables: Iterable[object],
+    *,
+    dr: Driver | None,
+    modules: tuple[ModuleType, ...] | None,
 ) -> list[DiscoveredViewBuilder]:
-    variables = dr.list_available_variables(tag_filter={ht.TAG_OUTPUT_KIND: output_kind})
     discovered: list[DiscoveredViewBuilder] = []
 
     for var in variables:
@@ -58,7 +75,7 @@ def _discover_by_output_kind(
         node_name = str(getattr(var, "name", ""))
         if not node_name:
             continue
-        builder = _find_callable(modules, node_name)
+        builder = _resolve_builder(dr=dr, modules=modules, node_name=node_name)
         if builder is None:
             continue
         discovered.append(
@@ -75,32 +92,46 @@ def _discover_by_output_kind(
 
 def discover_view_builders(
     *,
-    modules: tuple[ModuleType, ...],
-    config: dict[str, Any] | None = None,
+    dr: Driver | None = None,
+    tag_query: TagQuery | None = None,
+    modules: tuple[ModuleType, ...] | None = None,
 ) -> tuple[DiscoveredViewBuilder, ...]:
     """Discover view builders from Hamilton tags.
 
     Parameters
     ----------
+    dr
+        Hamilton Driver used for tag discovery and callable resolution.
+    tag_query
+        Optional cached tag query helper (uses the underlying Driver).
     modules
-        Modules to scan.
-    config
-        Optional Hamilton config (used only for graph construction).
+        Optional modules to scan when graph callables are not available.
 
     Returns
     -------
     tuple[DiscoveredViewBuilder, ...]
         Discovered builders, sorted deterministically by table_key.
     """
-    dr = Driver(config or {}, *modules)
+    if dr is None and tag_query is None:
+        msg = "discover_view_builders requires a Driver or TagQuery"
+        raise ValueError(msg)
+
+    def _list(output_kind: str) -> Iterable[object]:
+        tag_filter = {ht.TAG_OUTPUT_KIND: output_kind}
+        if tag_query is not None:
+            return tag_query.query(tag_filter)
+        if dr is None:
+            return ()
+        return dr.list_available_variables(tag_filter=tag_filter)
+
     discovered = _discover_by_output_kind(
-        dr,
+        _list(ht.OUTPUT_KIND_VIEW),
+        dr=dr,
         modules=modules,
-        output_kind=ht.OUTPUT_KIND_VIEW,
     ) + _discover_by_output_kind(
-        dr,
+        _list(ht.OUTPUT_KIND_SEMANTIC_VIEW),
+        dr=dr,
         modules=modules,
-        output_kind=ht.OUTPUT_KIND_SEMANTIC_VIEW,
     )
 
     # De-duplicate by table_key (prefer later modules in the input list).

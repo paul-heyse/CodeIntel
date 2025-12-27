@@ -74,7 +74,6 @@ from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
-from codeintel.core.hamilton import tags as ht
 from codeintel.core.registry.service import RegistryService
 from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
 from codeintel.observability.runtime import flush_observability
@@ -332,18 +331,12 @@ def _resolve_domain_for_goals(goals: Sequence[str]) -> str | None:
     if not goals:
         return None
     service = get_target_metadata_service()
-    catalog = service.system.catalog
     domains: set[str] = set()
     for target_name in goals:
-        node_name = catalog.target_nodes.get(target_name)
-        if not node_name:
+        target = service.system.catalog.targets.get(target_name)
+        if target is None:
             continue
-        node = catalog.nodes.get(node_name)
-        if node is None:
-            continue
-        domain = node.tags.get(ht.TAG_DOMAIN)
-        if isinstance(domain, str) and domain:
-            domains.add(domain)
+        domains.add(target.domain)
     if len(domains) == 1:
         return next(iter(domains))
     if "export" in domains:
@@ -1621,18 +1614,9 @@ def build_plan_handler(
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
         execution_context = _build_execution_context(runtime, requested_datasets=tuple(goals))
-        manifest_index = {
-            m.target: m
-            for m in gateway.build.list_manifests(
-                repo=runtime.snapshot.repo,
-                commit=runtime.snapshot.commit,
-            )
-        }
-
         overrides = BuildRunContextOverrides(
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
             force_targets=frozenset(plan_args.force or ()),
-            manifest_index=manifest_index,
         )
         context = BuildRunContext.from_execution_context(
             execution_context=execution_context,
@@ -1747,21 +1731,14 @@ def _compute_plan_for_explain(
     target: str,
     force_targets: frozenset[str],
 ) -> HamiltonBuildPlan:
+    _ = force_targets
     with runtime_gateway(runtime, read_only=True) as gateway:
         providers = create_default_providers(runtime.tools)
         config = load_build_config(runtime.snapshot.repo_root)
         execution_context = _build_execution_context(runtime, requested_datasets=(target,))
 
-        manifests_list = gateway.build.list_manifests(
-            repo=runtime.snapshot.repo,
-            commit=runtime.snapshot.commit,
-        )
-        manifest_index = {m.target: m for m in manifests_list}
-
         overrides = BuildRunContextOverrides(
             execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
-            force_targets=force_targets,
-            manifest_index=manifest_index,
         )
         context = BuildRunContext.from_execution_context(
             execution_context=execution_context,
@@ -1782,7 +1759,7 @@ def _compute_plan_for_explain(
 def build_explain_handler(
     ctx: CommandContext,
 ) -> CliResult[BuildExplainResult]:
-    """Explain why a target is stale and what dependencies changed.
+    """Explain the structural plan entry for a target.
 
     Parameters
     ----------
@@ -1794,7 +1771,7 @@ def build_explain_handler(
     Returns
     -------
     CliResult[BuildExplainResult]
-        Structured result with staleness explanation.
+        Structured result with plan details.
     """
     try:
         runtime = ctx.runtime
@@ -1825,8 +1802,6 @@ def build_explain_handler(
     if entry is None:
         return fail_invalid_targets(f"Target not found in plan: {params.target}")
 
-    explanation = entry.explain_staleness()
-
     io_surface: dict[str, object] | None = None
     if ctx.params.get_bool("io_surface"):
         h_runtime = build_driver()
@@ -1834,17 +1809,17 @@ def build_explain_handler(
         if surface is not None:
             io_surface = asdict(surface)
 
+    summary = (
+        "Cache decisions are resolved at runtime; consult the decision trace for cache hits."
+    )
     result = BuildExplainResult(
-        target=explanation.target,
-        status=explanation.status,
-        reason=explanation.reason,
-        is_stale=explanation.is_stale,
-        input_hash_current=explanation.input_hash_current,
-        input_hash_prior=explanation.input_hash_prior,
-        changed_deps=list(explanation.changed_deps),
-        added_deps=list(explanation.added_deps),
-        removed_deps=list(explanation.removed_deps),
-        summary=explanation.summary(),
+        target=entry.target,
+        status=entry.status,
+        reason=entry.reason,
+        dependencies=list(entry.dependencies),
+        table_keys=list(entry.table_keys),
+        artifact_keys=list(entry.artifact_keys),
+        summary=summary,
         io_surface=io_surface,
     )
 

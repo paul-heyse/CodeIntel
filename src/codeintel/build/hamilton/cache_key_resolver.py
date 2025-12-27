@@ -26,6 +26,7 @@ class CacheKeyResolver:
         node_name: str,
         task_id: str | None = None,
     ) -> CacheKeySnapshot:
+        """Return cache key and version snapshot for the requested node."""
         cache_key = _peek_cache_key(adapter, run_id, node_name, task_id)
         cache_version = _peek_cache_version(adapter, run_id, node_name, task_id)
         return CacheKeySnapshot(cache_key=cache_key, cache_version=cache_version)

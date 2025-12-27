@@ -9,4 +9,18 @@ keeping the Hamilton-first architecture explicit.
 
 from __future__ import annotations
 
-__all__: list[str] = []
+from codeintel.core.hamilton.tag_filters import (
+    tf_artifacts,
+    tf_datasets,
+    tf_savers,
+    tf_semantic_views,
+)
+from codeintel.core.hamilton.tag_query import TagQuery
+
+__all__ = [
+    "TagQuery",
+    "tf_artifacts",
+    "tf_datasets",
+    "tf_savers",
+    "tf_semantic_views",
+]

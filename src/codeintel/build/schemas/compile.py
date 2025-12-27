@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.schemas.schema_index import SchemaIndex
     from codeintel.build.targets import TargetModule
+    from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import DuckDBConnection
@@ -304,6 +305,7 @@ def _resolve_v2_extras(
     *,
     request: SchemaManifestRequest,
     con: DuckDBConnection | None,
+    tag_query: TagQuery | None,
 ) -> tuple[V2Extras | None, str]:
     """Resolve optional v2 manifest extras and the effective version.
 
@@ -329,7 +331,7 @@ def _resolve_v2_extras(
         if con is None:
             msg = "DuckDB connection required for view schema inference"
             raise ValueError(msg)
-        views = _collect_view_schemas(con=con, stable=request.stable)
+        views = _collect_view_schemas(con=con, stable=request.stable, tag_query=tag_query)
 
     artifacts: tuple[ExportArtifact, ...] = ()
     if request.include_artifacts:
@@ -346,6 +348,7 @@ def _collect_view_schemas(
     *,
     con: DuckDBConnection,
     stable: bool,
+    tag_query: TagQuery | None,
 ) -> tuple[TableSchema, ...]:
     """Collect schemas for all known DuckDB views.
 
@@ -365,7 +368,7 @@ def _collect_view_schemas(
         Inferred view schemas.
     """
     views: list[TableSchema] = []
-    for view_key in discover_derived_docs_views():
+    for view_key in discover_derived_docs_views(tag_query=tag_query):
         try:
             view_schema = infer_view_schema(con=con, view_key=view_key)
             views.append(view_schema)
@@ -673,7 +676,11 @@ def compile_schema_manifest(
         batch_inferer=batch_inferer,
         schema_index=service.schema_index,
     )
-    extras, version = _resolve_v2_extras(request=req, con=con)
+    extras, version = _resolve_v2_extras(
+        request=req,
+        con=con,
+        tag_query=service.system.runtime.tag_query,
+    )
 
     manifest = compile_schema_manifest_for_table_keys(
         table_keys,

@@ -19,10 +19,15 @@ from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_COMPUTE,
     NODE_TYPE_DATASET,
+    NODE_TYPE_HELPER,
+    NODE_TYPE_LOADER_DATAFRAME,
+    NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
+    NODE_TYPE_TOOL,
     TAG_ARTIFACT,
     TAG_ARTIFACT_PATH_TEMPLATE,
     TAG_DOMAIN,
+    TAG_MCP_VISIBLE,
     TAG_NODE_TYPE,
     TAG_TABLE_KEY,
     TAG_TARGET,
@@ -147,6 +152,93 @@ def _tags_mapping(node: NodeLike) -> Mapping[str, object] | None:
     if not isinstance(tags, dict):
         return None
     return cast("Mapping[str, object]", tags)
+
+
+_ALLOWED_NODE_TYPES: frozenset[str] = frozenset(
+    {
+        NODE_TYPE_ARTIFACT,
+        NODE_TYPE_COMPUTE,
+        NODE_TYPE_DATASET,
+        NODE_TYPE_HELPER,
+        NODE_TYPE_LOADER_DATAFRAME,
+        NODE_TYPE_LOADER_QUERY,
+        NODE_TYPE_MATERIALIZE,
+        NODE_TYPE_TOOL,
+    }
+)
+
+_ALLOWED_OUTPUT_ROLES: frozenset[str] = frozenset({"contract", "internal"})
+_ALLOWED_MCP_VISIBLE: frozenset[str] = frozenset({"0", "1"})
+
+
+def _tag_type_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+
+        node_type = tags.get(TAG_NODE_TYPE)
+        if node_type is not None and (
+            not isinstance(node_type, str) or node_type not in _ALLOWED_NODE_TYPES
+        ):
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="invalid_tag",
+                    message=f"Invalid node_type tag: {node_type!r}",
+                    node=node.name,
+                )
+            )
+
+        mcp_visible = tags.get(TAG_MCP_VISIBLE)
+        if mcp_visible is not None and (
+            not isinstance(mcp_visible, str) or mcp_visible not in _ALLOWED_MCP_VISIBLE
+        ):
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="invalid_tag",
+                    message=f"Invalid mcp_visible tag: {mcp_visible!r}",
+                    node=node.name,
+                )
+            )
+
+        data_saver = tags.get("hamilton.data_saver")
+        if data_saver is not None and not isinstance(data_saver, bool):
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="invalid_tag",
+                    message=f"Invalid hamilton.data_saver tag: {data_saver!r}",
+                    node=node.name,
+                )
+            )
+
+        output_role = tags.get("output_role")
+        if output_role is not None and output_role not in _ALLOWED_OUTPUT_ROLES:
+            issues.append(
+                GraphValidationIssue(
+                    severity="error",
+                    code="invalid_tag",
+                    message=f"Invalid output_role tag: {output_role!r}",
+                    node=node.name,
+                )
+            )
+
+        for key, value in tags.items():
+            if isinstance(value, list) and not all(isinstance(item, str) for item in value):
+                issues.append(
+                    GraphValidationIssue(
+                        severity="error",
+                        code="invalid_tag",
+                        message=f"Invalid list tag {key!r}: {value!r}",
+                        node=node.name,
+                    )
+                )
+
+    return issues
 
 
 def _collect_materialize_index(
@@ -915,6 +1007,7 @@ def validate_nodes(
         *inputs.artifact_issues,
         *inputs.saver_issues,
     ]
+    errors.extend(_tag_type_issues(nodes))
     errors.extend(
         _orphan_saver_issues(
             nodes=nodes,

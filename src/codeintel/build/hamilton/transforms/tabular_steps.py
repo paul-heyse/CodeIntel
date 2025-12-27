@@ -11,14 +11,26 @@ Frame = pd.DataFrame | pl.DataFrame | pl.LazyFrame
 
 
 def _drop_bad_rows_pandas(df: pd.DataFrame, required_cols: tuple[str, ...]) -> pd.DataFrame:
-    """Drop rows with nulls in required columns (pandas)."""
+    """Drop rows with nulls in required columns (pandas).
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with invalid rows removed.
+    """
     if not required_cols:
         return df
     return df.dropna(subset=list(required_cols))
 
 
 def _drop_bad_rows_polars(df: pl.DataFrame, required_cols: tuple[str, ...]) -> pl.DataFrame:
-    """Drop rows with nulls in required columns (polars)."""
+    """Drop rows with nulls in required columns (polars).
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame with invalid rows removed.
+    """
     if not required_cols:
         return df
     return df.drop_nulls(list(required_cols))
@@ -27,14 +39,26 @@ def _drop_bad_rows_polars(df: pl.DataFrame, required_cols: tuple[str, ...]) -> p
 def _drop_bad_rows_polars_lazy(
     df: pl.LazyFrame, required_cols: tuple[str, ...]
 ) -> pl.LazyFrame:
-    """Drop rows with nulls in required columns (polars lazy)."""
+    """Drop rows with nulls in required columns (polars lazy).
+
+    Returns
+    -------
+    pl.LazyFrame
+        LazyFrame with invalid rows removed.
+    """
     if not required_cols:
         return df
     return df.drop_nulls(list(required_cols))
 
 
 def _clip_numeric(df: Frame, col: str, max_value: float) -> Frame:
-    """Clip numeric column values to a maximum bound."""
+    """Clip numeric column values to a maximum bound.
+
+    Returns
+    -------
+    Frame
+        Frame with the column clipped to the max value.
+    """
     if isinstance(df, pd.DataFrame):
         df = df.copy()
         df[col] = df[col].clip(upper=max_value)
@@ -45,7 +69,13 @@ def _clip_numeric(df: Frame, col: str, max_value: float) -> Frame:
 
 
 def _cast_schema(df: Frame, schema: Mapping[str, str]) -> Frame:
-    """Cast columns to the specified schema mapping."""
+    """Cast columns to the specified schema mapping.
+
+    Returns
+    -------
+    Frame
+        Frame with columns cast to the requested schema.
+    """
     if not schema:
         return df
     if isinstance(df, pd.DataFrame):
@@ -56,7 +86,18 @@ def _cast_schema(df: Frame, schema: Mapping[str, str]) -> Frame:
 
 
 def _normalize_nulls(df: Frame, policy: str) -> Frame:
-    """Normalize null behavior based on the configured policy."""
+    """Normalize null behavior based on the configured policy.
+
+    Returns
+    -------
+    Frame
+        Frame with null policy applied.
+
+    Raises
+    ------
+    ValueError
+        If the policy is not supported.
+    """
     if policy == "preserve":
         return df
     if policy == "drop_bad_rows":
@@ -68,7 +109,13 @@ def _normalize_nulls(df: Frame, policy: str) -> Frame:
 
 
 def _sort_columns(df: Frame, column_order: Sequence[str]) -> Frame:
-    """Reorder columns to the provided stable order."""
+    """Reorder columns to the provided stable order.
+
+    Returns
+    -------
+    Frame
+        Frame with columns reordered.
+    """
     if not column_order:
         return df
     if isinstance(df, pd.DataFrame):

@@ -111,6 +111,7 @@ class StateComputer:
             Storage gateway for database access.
         snapshot
             Repository snapshot reference.
+
         Returns
         -------
         StateComputer
@@ -195,7 +196,7 @@ class StateComputer:
         """Compute individual states ignoring dependency blocking.
 
         Bulk-loads all manifests for efficiency, then computes state
-        for each target based on manifest existence and hash comparison.
+        for each target based on manifest existence.
 
         Returns
         -------
@@ -243,47 +244,16 @@ class StateComputer:
                 name=target.name,
                 status="missing",
                 manifest=None,
-                current_hash=None,
                 blocking_reason=None,
                 blocking_deps=(),
             )
-        options_hash = self._options_hash_for_target(target)
-        current_hash = self._session.get_input_hash(target, options_hash)
-        evaluation = evaluate_hash_state(
-            manifest=manifest,
-            input_hash=current_hash,
-            options_hash=options_hash,
-        )
-
-        if evaluation.status == "missing":
-            return TargetState(
-                name=target.name,
-                status="missing",
-                manifest=None,
-                current_hash=current_hash,
-                blocking_reason=None,
-                blocking_deps=(),
-            )
-
-        if evaluation.status == "current":
-            return TargetState(
-                name=target.name,
-                status="current",
-                manifest=manifest,
-                current_hash=current_hash,
-                blocking_reason=None,
-                blocking_deps=(),
-                stored_hash=evaluation.stored_hash,
-            )
-
         return TargetState(
             name=target.name,
-            status="stale",
+            status="current",
             manifest=manifest,
-            current_hash=current_hash,
-            blocking_reason=cast("BlockingReason", evaluation.reason),
+            current_hash=None,
+            blocking_reason=None,
             blocking_deps=(),
-            stored_hash=evaluation.stored_hash,
         )
 
     def _propagate_blocking(
@@ -419,7 +389,6 @@ class StateComputer:
         status_to_reason: dict[TargetStatus, BlockingReason | None] = {
             "current": None,
             "missing": "dependency_missing",
-            "stale": "dependency_stale",
             "blocked": "dependency_blocked",
         }
         return status_to_reason[dep_state.status]

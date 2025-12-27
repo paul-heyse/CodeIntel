@@ -9,22 +9,46 @@ Column = pd.Series | pl.Series | pl.Expr
 
 
 def loc_squared(loc: Column) -> Column:
-    """Compute squared lines-of-code as a simple feature."""
+    """Compute squared lines-of-code as a simple feature.
+
+    Returns
+    -------
+    Column
+        Squared LOC feature column.
+    """
     return loc * loc
 
 
 def cyclo_weighted(cyclo: Column) -> Column:
-    """Compute weighted cyclomatic complexity."""
+    """Compute weighted cyclomatic complexity.
+
+    Returns
+    -------
+    Column
+        Weighted cyclomatic complexity column.
+    """
     return cyclo * 1.0
 
 
 def loc_cyclo_sum(loc: Column, cyclo: Column) -> Column:
-    """Compute combined LOC + cyclo feature."""
+    """Compute combined LOC + cyclo feature.
+
+    Returns
+    -------
+    Column
+        Summed LOC and cyclomatic complexity column.
+    """
     return loc + cyclo
 
 
 def loc_per_cyclo(loc: Column, cyclo: Column) -> Column:
-    """Compute LOC per cyclomatic complexity (stabilized)."""
+    """Compute LOC per cyclomatic complexity (stabilized).
+
+    Returns
+    -------
+    Column
+        LOC divided by cyclomatic complexity with a +1 stabilizer.
+    """
     return loc / (cyclo + 1)
 
 

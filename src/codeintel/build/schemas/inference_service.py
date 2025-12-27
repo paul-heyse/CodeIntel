@@ -79,7 +79,7 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
 
 @lru_cache(maxsize=1)
 def _runtime_auto() -> HamiltonRuntime:
-    return build_driver(enable_cache=False)
+    return build_driver()
 
 
 @contextmanager

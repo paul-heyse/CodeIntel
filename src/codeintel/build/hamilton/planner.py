@@ -1,14 +1,14 @@
 """Hamilton build planner for actionable dry-run output.
 
 This module provides planning infrastructure for the Hamilton build system,
-enabling best-in-class DX with real planning that shows what will run and why.
+showing the dependency closure and structural execution order.
 
 Design Principles
 -----------------
-1. PlanEntry captures complete information about why a target will/won't run.
+1. PlanEntry captures structural information about the target closure.
 2. HamiltonBuildPlan provides structured access to the full build plan.
 3. compute_plan() computes the plan without executing anything.
-4. Plans are useful for both dry-run output and incremental build optimization.
+4. Plans are useful for dry-run output and dependency inspection.
 """
 
 from __future__ import annotations
@@ -19,9 +19,10 @@ from typing import TYPE_CHECKING, Literal
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.impl_kind import ImplKind, native_target_names
 from codeintel.build.hamilton.naming import target_node
-from codeintel.build.hamilton.native.outputs import expected_table_keys_for_target
-from codeintel.build.hash_evaluator import compute_hash_evaluation
-from codeintel.build.hashing import InputHashOptions, compute_target_options_hash
+from codeintel.build.hamilton.native.outputs import (
+    expected_artifact_names_for_target,
+    expected_table_keys_for_target,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -29,17 +30,13 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetModule
-    from codeintel.core.build_manifest import OutputManifest
 
 
-PlanStatus = Literal["compute", "skip", "missing", "blocked"]
+PlanStatus = Literal["compute", "missing", "blocked"]
 
 
 PlanReason = Literal[
-    "forced",
-    "no_manifest",
-    "hash_changed",
-    "up_to_date",
+    "scheduled",
     "upstream_missing",
     "no_impl",
 ]
@@ -49,8 +46,8 @@ PlanReason = Literal[
 class PlanEntry:
     """Plan entry describing why a target will or won't run.
 
-    Each PlanEntry captures the complete decision context for a target:
-    what its status is, why, and all relevant metadata for debugging.
+    Each PlanEntry captures the structural planning context for a target:
+    where it sits in the closure and why it may be blocked or missing.
 
     Attributes
     ----------
@@ -62,21 +59,12 @@ class PlanEntry:
         Target module (ingestion, graphs, analytics, export).
         May be ``"unknown"`` for missing targets.
     status
-        Plan status: "compute", "skip", "missing", or "blocked".
+        Plan status: "compute", "missing", or "blocked".
     reason
         Reason for the status:
-        - "forced": Target is in force set, will recompute
-        - "no_manifest": No prior manifest exists, must compute
-        - "hash_changed": Input hash differs from manifest, must recompute
-        - "up_to_date": Input hash matches manifest, can skip
+        - "scheduled": Target is scheduled for execution
         - "upstream_missing": An upstream dependency is missing
         - "no_impl": No implementation registered for this target
-    input_hash
-        Current computed input hash for the target.
-    options_hash
-        Current computed options hash from configuration.
-    prior_input_hash
-        Input hash from prior manifest, if available.
     dependencies
         Tuple of target names this target depends on.
     table_keys
@@ -93,10 +81,7 @@ class PlanEntry:
     ...     node="t__function_metrics",
     ...     module="analytics",
     ...     status="compute",
-    ...     reason="hash_changed",
-    ...     input_hash="abc123",
-    ...     options_hash=None,
-    ...     prior_input_hash="def456",
+    ...     reason="scheduled",
     ...     dependencies=("goids", "ast"),
     ...     table_keys=("analytics.function_metrics",),
     ...     artifact_keys=(),
@@ -108,14 +93,9 @@ class PlanEntry:
     module: TargetModule | Literal["unknown"]
     status: PlanStatus
     reason: PlanReason
-    input_hash: str | None
-    options_hash: str | None
-    prior_input_hash: str | None
     dependencies: tuple[str, ...]
     table_keys: tuple[str, ...]
     artifact_keys: tuple[str, ...] = ()
-    dep_hashes: dict[str, str] = field(default_factory=dict)
-    prior_dep_hashes: dict[str, str] = field(default_factory=dict)
     impl_kind: ImplKind = "native"
 
     def to_dict(self) -> dict[str, object]:
@@ -132,168 +112,11 @@ class PlanEntry:
             "module": self.module,
             "status": self.status,
             "reason": self.reason,
-            "input_hash": self.input_hash,
-            "options_hash": self.options_hash,
-            "prior_input_hash": self.prior_input_hash,
             "dependencies": list(self.dependencies),
             "table_keys": list(self.table_keys),
             "artifact_keys": list(self.artifact_keys),
-            "dep_hashes": dict(self.dep_hashes),
-            "prior_dep_hashes": dict(self.prior_dep_hashes),
             "impl_kind": self.impl_kind,
         }
-
-    def explain_staleness(self) -> StalenessExplanation:
-        """Explain why this target is stale.
-
-        Compares current dep_hashes to prior_dep_hashes to identify which
-        dependencies changed and caused this target to be recomputed.
-
-        Returns
-        -------
-        StalenessExplanation
-            Detailed explanation of staleness, including changed dependencies.
-        """
-        added_deps = [dep for dep in self.dep_hashes if dep not in self.prior_dep_hashes]
-        changed_deps = [
-            dep
-            for dep, current_hash in self.dep_hashes.items()
-            if dep in self.prior_dep_hashes and self.prior_dep_hashes[dep] != current_hash
-        ]
-        removed_deps = [dep for dep in self.prior_dep_hashes if dep not in self.dep_hashes]
-
-        return StalenessExplanation(
-            target=self.target,
-            status=self.status,
-            reason=self.reason,
-            input_hash_current=self.input_hash,
-            input_hash_prior=self.prior_input_hash,
-            changed_deps=tuple(sorted(changed_deps)),
-            added_deps=tuple(sorted(added_deps)),
-            removed_deps=tuple(sorted(removed_deps)),
-            dep_hashes=dict(self.dep_hashes),
-            prior_dep_hashes=dict(self.prior_dep_hashes),
-        )
-
-
-@dataclass(frozen=True)
-class StalenessExplanation:
-    """Detailed explanation of why a target is stale.
-
-    Provides a breakdown of what changed between the prior computation
-    and the current state, enabling users to understand incremental builds.
-
-    Attributes
-    ----------
-    target
-        Target name.
-    status
-        Plan status (compute, skip, blocked, missing).
-    reason
-        Reason for the status.
-    input_hash_current
-        Current computed input hash.
-    input_hash_prior
-        Prior input hash from manifest (if any).
-    changed_deps
-        Dependencies whose hashes changed.
-    added_deps
-        Dependencies that were added since prior computation.
-    removed_deps
-        Dependencies that were removed since prior computation.
-    dep_hashes
-        Current dependency hash mapping.
-    prior_dep_hashes
-        Prior dependency hash mapping.
-
-    Examples
-    --------
-    >>> entry = plan.get_entry("risk_factors")
-    >>> explanation = entry.explain_staleness()
-    >>> explanation.changed_deps
-    ('function_metrics',)
-    """
-
-    target: str
-    status: PlanStatus
-    reason: PlanReason
-    input_hash_current: str | None
-    input_hash_prior: str | None
-    changed_deps: tuple[str, ...]
-    added_deps: tuple[str, ...]
-    removed_deps: tuple[str, ...]
-    dep_hashes: dict[str, str]
-    prior_dep_hashes: dict[str, str]
-
-    @property
-    def is_stale(self) -> bool:
-        """Check if target is stale (needs recomputation).
-
-        Returns
-        -------
-        bool
-            True if target will be computed (stale).
-        """
-        return self.status == "compute"
-
-    @property
-    def has_changes(self) -> bool:
-        """Check if there are any dependency changes.
-
-        Returns
-        -------
-        bool
-            True if any deps changed, added, or removed.
-        """
-        return bool(self.changed_deps or self.added_deps or self.removed_deps)
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation.
-        """
-        return {
-            "target": self.target,
-            "status": self.status,
-            "reason": self.reason,
-            "is_stale": self.is_stale,
-            "input_hash_current": self.input_hash_current,
-            "input_hash_prior": self.input_hash_prior,
-            "changed_deps": list(self.changed_deps),
-            "added_deps": list(self.added_deps),
-            "removed_deps": list(self.removed_deps),
-            "dep_hashes": self.dep_hashes,
-            "prior_dep_hashes": self.prior_dep_hashes,
-        }
-
-    def summary(self) -> str:
-        """Generate human-readable summary.
-
-        Returns
-        -------
-        str
-            Human-readable staleness summary.
-        """
-        if self.status == "skip":
-            return f"{self.target}: up-to-date (hash {self.input_hash_current})"
-        if self.status == "blocked":
-            return f"{self.target}: blocked on upstream dependencies"
-        if self.reason == "no_manifest":
-            return f"{self.target}: no prior manifest (first run)"
-        if self.reason == "forced":
-            return f"{self.target}: forced recomputation"
-
-        parts: list[str] = [f"{self.target}: stale"]
-        if self.changed_deps:
-            parts.append(f"changed deps: {', '.join(self.changed_deps)}")
-        if self.added_deps:
-            parts.append(f"added deps: {', '.join(self.added_deps)}")
-        if self.removed_deps:
-            parts.append(f"removed deps: {', '.join(self.removed_deps)}")
-        return " - ".join(parts)
 
 
 @dataclass(frozen=True)
@@ -343,9 +166,9 @@ class HamiltonBuildPlan:
         Returns
         -------
         tuple[str, ...]
-            Target names with status="skip".
+            Always empty for cache-driven planning.
         """
-        return tuple(e.target for e in self.entries if e.status == "skip")
+        return ()
 
     @property
     def blocked(self) -> tuple[str, ...]:
@@ -408,8 +231,6 @@ class HamiltonBuildPlan:
 
 @dataclass(frozen=True, slots=True)
 class _PlanEntryInputs:
-    env: BuildEnv
-    manifests: Mapping[str, OutputManifest]
     upstream_status: Mapping[str, PlanStatus]
     native_names: frozenset[str]
     catalog: DagCatalog
@@ -427,31 +248,37 @@ def _compute_entry_for_target(
     target
         Target metadata from the graph.
     inputs
-        Shared planning inputs for manifest state, upstream status, and catalog access.
+        Shared planning inputs for upstream status and catalog access.
 
     Returns
     -------
     PlanEntry
         Computed plan entry for this target.
 
-    Raises
-    ------
-    RuntimeError
-        If the target does not resolve to a native implementation.
     """
     target_name = target.name
     node = target_node(target_name)
     module = target.module
 
     table_keys = expected_table_keys_for_target(target.name, outputs=inputs.catalog)
+    artifact_keys = expected_artifact_names_for_target(target.name, outputs=inputs.catalog)
     blocked_deps = [
         dep
         for dep in target.dependencies
         if inputs.upstream_status.get(dep) in {"missing", "blocked"}
     ]
     if target_name not in inputs.native_names:
-        msg = f"Target '{target_name}' lacks a native implementation"
-        raise RuntimeError(msg)
+        return PlanEntry(
+            target=target_name,
+            node=node,
+            module=module,
+            status="missing",
+            reason="no_impl",
+            dependencies=tuple(target.dependencies),
+            table_keys=tuple(table_keys),
+            artifact_keys=tuple(artifact_keys),
+            impl_kind="native",
+        )
     impl_kind: ImplKind = "native"
 
     if blocked_deps:
@@ -461,73 +288,9 @@ def _compute_entry_for_target(
             module=module,
             status="blocked",
             reason="upstream_missing",
-            input_hash=None,
-            options_hash=None,
-            prior_input_hash=None,
             dependencies=tuple(target.dependencies),
             table_keys=tuple(table_keys),
-            impl_kind=impl_kind,
-        )
-
-    params = inputs.env.config.parameters_for(target_name)
-    options_hash = compute_target_options_hash(params)
-    hash_options = InputHashOptions(options_hash=options_hash, manifests=inputs.manifests)
-    evaluation = compute_hash_evaluation(
-        target=target,
-        snapshot=inputs.env.snapshot,
-        gateway=inputs.env.gateway,
-        settings=inputs.env.settings,
-        options=hash_options,
-    )
-
-    if inputs.env.is_forced(target_name):
-        return PlanEntry(
-            target=target_name,
-            node=node,
-            module=module,
-            status="compute",
-            reason="forced",
-            input_hash=evaluation.input_hash,
-            options_hash=evaluation.options_hash,
-            prior_input_hash=evaluation.stored_hash,
-            dependencies=tuple(target.dependencies),
-            table_keys=tuple(table_keys),
-            dep_hashes=evaluation.dep_hashes,
-            prior_dep_hashes=evaluation.prior_dep_hashes,
-            impl_kind=impl_kind,
-        )
-
-    if evaluation.status == "missing":
-        return PlanEntry(
-            target=target_name,
-            node=node,
-            module=module,
-            status="compute",
-            reason="no_manifest",
-            input_hash=evaluation.input_hash,
-            options_hash=evaluation.options_hash,
-            prior_input_hash=None,
-            dependencies=tuple(target.dependencies),
-            table_keys=tuple(table_keys),
-            dep_hashes=evaluation.dep_hashes,
-            prior_dep_hashes=evaluation.prior_dep_hashes,
-            impl_kind=impl_kind,
-        )
-
-    if evaluation.status == "stale":
-        return PlanEntry(
-            target=target_name,
-            node=node,
-            module=module,
-            status="compute",
-            reason="hash_changed",
-            input_hash=evaluation.input_hash,
-            options_hash=evaluation.options_hash,
-            prior_input_hash=evaluation.stored_hash,
-            dependencies=tuple(target.dependencies),
-            table_keys=tuple(table_keys),
-            dep_hashes=evaluation.dep_hashes,
-            prior_dep_hashes=evaluation.prior_dep_hashes,
+            artifact_keys=tuple(artifact_keys),
             impl_kind=impl_kind,
         )
 
@@ -535,15 +298,11 @@ def _compute_entry_for_target(
         target=target_name,
         node=node,
         module=module,
-        status="skip",
-        reason="up_to_date",
-        input_hash=evaluation.input_hash,
-        options_hash=evaluation.options_hash,
-        prior_input_hash=evaluation.stored_hash,
+        status="compute",
+        reason="scheduled",
         dependencies=tuple(target.dependencies),
         table_keys=tuple(table_keys),
-        dep_hashes=evaluation.dep_hashes,
-        prior_dep_hashes=evaluation.prior_dep_hashes,
+        artifact_keys=tuple(artifact_keys),
         impl_kind=impl_kind,
     )
 
@@ -556,8 +315,7 @@ def compute_plan(
 ) -> HamiltonBuildPlan:
     """Compute build plan for requested targets.
 
-    Analyzes the target graph and manifest state to produce a complete plan
-    showing what will run, what will be skipped, and why.
+    Analyzes the target graph to produce a structural plan for the closure.
 
     Parameters
     ----------
@@ -582,6 +340,7 @@ def compute_plan(
     >>> len(plan.to_compute)
     7
     """
+    _ = env
     runtime = build_driver()
     if catalog is None:
         catalog = runtime.catalog
@@ -589,20 +348,9 @@ def compute_plan(
 
     closure = catalog.closure(requested)
 
-    if env.manifest_index is not None:
-        manifests: Mapping[str, OutputManifest] = env.manifest_index
-    else:
-        manifest_list = env.gateway.build.list_manifests(
-            repo=env.snapshot.repo,
-            commit=env.snapshot.commit,
-        )
-        manifests = {m.target: m for m in manifest_list}
-
     entries: list[PlanEntry] = []
     upstream_status: dict[str, PlanStatus] = {}
     inputs = _PlanEntryInputs(
-        env=env,
-        manifests=manifests,
         upstream_status=upstream_status,
         native_names=native_names,
         catalog=catalog,
@@ -618,9 +366,6 @@ def compute_plan(
                 module="unknown",
                 status="missing",
                 reason="no_impl",
-                input_hash=None,
-                options_hash=None,
-                prior_input_hash=None,
                 dependencies=(),
                 table_keys=(),
             )
@@ -639,40 +384,11 @@ def compute_plan(
     )
 
 
-def explain_plan(plan: HamiltonBuildPlan) -> list[StalenessExplanation]:
-    """Generate staleness explanations for all targets in a plan.
-
-    Provides detailed explanations for each target, useful for debugging
-    incremental builds and understanding cache behavior.
-
-    Parameters
-    ----------
-    plan
-        The build plan to explain.
-
-    Returns
-    -------
-    list[StalenessExplanation]
-        List of explanations, one per target in the plan's closure.
-
-    Examples
-    --------
-    >>> plan = compute_plan(env=env, requested=("risk_factors",))
-    >>> explanations = explain_plan(plan)
-    >>> for exp in explanations:
-    ...     print(exp.summary())
-    goids: stale - changed deps: ast
-    """
-    return [entry.explain_staleness() for entry in plan.entries]
-
-
 __all__ = [
     "HamiltonBuildPlan",
     "ImplKind",
     "PlanEntry",
     "PlanReason",
     "PlanStatus",
-    "StalenessExplanation",
     "compute_plan",
-    "explain_plan",
 ]

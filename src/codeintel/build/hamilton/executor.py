@@ -25,7 +25,6 @@ import hamilton.base as h_base
 from hamilton.caching.adapter import HamiltonCacheAdapter
 from opentelemetry import trace as otel_trace
 
-from codeintel.build.errors import BuildError
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
 from codeintel.build.hamilton.cache_adapter import ManifestBackedCacheAdapter
@@ -35,7 +34,11 @@ from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
 )
-from codeintel.build.hamilton.driver_factory import build_driver, target_to_node_name
+from codeintel.build.hamilton.driver_factory import (
+    BuildDriverOptions,
+    build_driver,
+    target_to_node_name,
+)
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.hooks import (
     ContractEnforcementHook,
@@ -48,7 +51,6 @@ from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
     TargetRunRecord,
-    compute_target_input_hash,
     create_run_record,
 )
 from codeintel.build.hamilton.run_writer import BuildRunWriter
@@ -62,7 +64,6 @@ from codeintel.observability.telemetry_context import (
     RepoCommitContext,
     telemetry_context,
 )
-from codeintel.storage.gateway import StorageError
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
@@ -73,7 +74,7 @@ if TYPE_CHECKING:
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
-    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings
@@ -266,18 +267,6 @@ def _categorize_outputs(
     return computed, skipped, failed
 
 
-def _safe_input_hash(target: TargetDescriptor, env: BuildEnv) -> str:
-    try:
-        return compute_target_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            settings=env.settings,
-        )
-    except (BuildError, KeyError, RuntimeError, StorageError, ValueError):
-        return "MISSING"
-
-
 def _skip_record(
     *,
     target_name: str,
@@ -295,9 +284,8 @@ def _skip_record(
             input_hash=None,
             error=reason,
         )
-    input_hash = _safe_input_hash(target, env)
     run = NativeRunInfo(
-        input_hash=input_hash,
+        input_hash=None,
         options_hash=None,
         duration_ms=0.0,
         row_counts=None,
@@ -305,7 +293,7 @@ def _skip_record(
     record = create_run_record(
         target,
         "skipped",
-        input_hash,
+        None,
         inputs=RunRecordInputs(env=env, run=run),
     )
     if reason:
@@ -338,6 +326,16 @@ def _failure_record(
         input_hash,
         inputs=RunRecordInputs(error=exc),
     )
+
+
+def _safe_input_hash(target: TargetDescriptor, env: BuildEnv) -> str | None:
+    manifest_index = env.manifest_index
+    if manifest_index is None:
+        return None
+    manifest = manifest_index.get(target.name)
+    if manifest is None:
+        return None
+    return manifest.input_hash
 
 
 def _ensure_failure_records(
@@ -375,7 +373,7 @@ def _apply_cache_keys(
         return
     cache_run_id = cache_adapter.last_run_id
     resolver = CacheKeyResolver()
-    for target_name, node_name in runtime.catalog.target_nodes.items():
+    for node_name in runtime.catalog.target_nodes.values():
         record = outputs.get(node_name)
         if not isinstance(record, TargetRunRecord):
             continue
@@ -993,10 +991,12 @@ class HamiltonBuildExecutor:
 
         runtime = build_driver(
             config=config,
-            adapter_factory=_adapter_factory,
-            enable_cache=self._options.enable_hamilton_cache,
-            cache_dir=str(cache_dir),
-            cache_adapter=cache_adapter,
+            options=BuildDriverOptions(
+                adapter_factory=_adapter_factory,
+                enable_cache=self._options.enable_hamilton_cache,
+                cache_dir=str(cache_dir),
+                cache_adapter=cache_adapter,
+            ),
         )
         return runtime, telemetry_hook, contract_hook
 
@@ -1124,7 +1124,11 @@ class HamiltonBuildExecutor:
             ):
                 outputs = context.runtime.dr.execute(
                     list(final_vars),
-                    inputs={"env": execution_env, "catalog": context.runtime.catalog},
+                    inputs={
+                        "env": execution_env,
+                        "catalog": context.runtime.catalog,
+                        "tag_query": context.runtime.tag_query,
+                    },
                 )
         except Exception as exc:
             log.exception("build.hamilton.executor.error run_id=%s", context.run_id)

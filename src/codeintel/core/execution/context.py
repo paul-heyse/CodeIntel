@@ -24,7 +24,12 @@ if TYPE_CHECKING:
         ObservabilitySettings,
         ServingSettings,
     )
-    from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings, VariantConfig
+    from codeintel.core.runtime import (
+        RuntimeBundle,
+        RuntimePrimitives,
+        RuntimeSettings,
+        VariantConfig,
+    )
     from codeintel.core.tools import ToolBinaries
 
 

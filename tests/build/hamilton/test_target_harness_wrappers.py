@@ -8,11 +8,9 @@ import pytest
 
 from codeintel.build.hamilton.executor import HamiltonBuildResult
 from tests._helpers.assertions import assert_target_ok, expect_in, expect_true
-from tests._helpers.hamilton_manifest_priming import ManifestPriming
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 from tests._helpers.harnesses.serving_harness import ServingTargetHarness
-from tests._helpers.manifests import assert_skipped, compute_input_hash
 
 
 def test_graph_target_harness_runs(graph_target_harness: GraphTargetHarness) -> None:
@@ -28,25 +26,6 @@ def test_graph_target_harness_runs(graph_target_harness: GraphTargetHarness) -> 
     assert_target_ok(record)
     graph_target_harness.assert_call_graph_datasets(record)
     graph_target_harness.assert_graph_tables(min_rows=1)
-
-
-def test_graph_target_harness_skips_with_primed_manifest(
-    graph_target_harness: GraphTargetHarness,
-) -> None:
-    """Prime call_graph manifest so the target skips cleanly."""
-    harness = graph_target_harness.harness
-    input_hash, options_hash = compute_input_hash(harness, "call_graph")
-    harness.priming.prime_manifest(
-        ManifestPriming.ManifestSpec(
-            target="call_graph",
-            input_hash=input_hash,
-            options_hash=options_hash,
-            row_count=0,
-        )
-    )
-    records = harness.run_targets(["call_graph"])
-    record = harness.record("call_graph", result=records)
-    assert_skipped(record)
 
 
 def test_analytics_target_harness_runs(
@@ -85,25 +64,6 @@ def test_serving_target_harness_publishes_snapshot(
         Path(manifest.semantic_registry_path).is_file(),
         message="Expected semantic registry path to exist.",
     )
-
-
-def test_serving_target_harness_skips_with_primed_manifest(
-    serving_target_harness: ServingTargetHarness,
-) -> None:
-    """Prime serving_artifacts manifest so the target skips cleanly."""
-    harness = serving_target_harness.harness
-    input_hash, options_hash = compute_input_hash(harness, "serving_artifacts")
-    harness.priming.prime_manifest(
-        ManifestPriming.ManifestSpec(
-            target="serving_artifacts",
-            input_hash=input_hash,
-            options_hash=options_hash,
-            row_count=0,
-        )
-    )
-    records = harness.run_targets(["serving_artifacts"])
-    record = harness.record("serving_artifacts", result=records)
-    assert_skipped(record)
 
 
 def test_harness_record_missing_includes_error_context(tmp_path: Path) -> None:

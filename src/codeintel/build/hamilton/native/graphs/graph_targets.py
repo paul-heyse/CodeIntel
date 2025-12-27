@@ -83,7 +83,6 @@ from codeintel.build.hamilton.optional_inputs import register_optional_inputs
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
-    options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract

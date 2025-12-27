@@ -43,6 +43,7 @@ from typing import TYPE_CHECKING
 import sqlglot.expressions as exp
 
 import codeintel.storage.views.ibis_views as _ibis_views
+from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
@@ -1137,6 +1138,7 @@ class DuckDBPolicyBackend:
         *,
         overwrite: bool = True,
         strict: bool = False,
+        tag_query: TagQuery | None = None,
     ) -> None:
         """Materialize all registered Ibis views.
 
@@ -1148,12 +1150,18 @@ class DuckDBPolicyBackend:
             When True, re-raises any exception that occurs during view
             creation after logging. When False, exceptions are logged
             but execution continues.
+        tag_query
+            Optional TagQuery used for view discovery.
         """
+        if tag_query is None:
+            log.warning("Skipping view materialization; TagQuery not provided")
+            return
         materialize_registered_views(
             self.gateway,
             modules=(_ibis_views,),
             overwrite=overwrite,
             strict=strict,
+            tag_query=tag_query,
         )
 
     def ensure_schemas_preserve(

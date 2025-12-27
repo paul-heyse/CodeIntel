@@ -1,492 +1,155 @@
-"""Tests for the unified StateComputer.
-
-This module tests the StateComputer class which provides the single source
-of truth for target state computation. Tests verify:
-
-1. Correct status computation (current, stale, missing, blocked)
-2. Proper blocking propagation through dependencies
-3. Session caching efficiency
-4. Equivalence with StateValidator results (both now use unified types)
-"""
+"""Tests for the unified StateComputer."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import pytest
+
 from codeintel.build.session import BuildSession
-from codeintel.build.state import StateValidationOptions, StateValidator
 from codeintel.build.state_computer import StateComputer
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
-from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
-from tests._helpers.assertions import (
-    expect_equal,
-    expect_false,
-    expect_in,
-    expect_is_none,
-    expect_is_not_none,
-    expect_true,
-)
+from tests._helpers.assertions import expect_equal
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.storage.gateway import StorageGateway
 
-TEST_BUILD_SETTINGS = BuildSettings(
-    engine_version="test",
-    export_audit=ExportAuditSettings(),
-)
 
-
-def make_snapshot(tmp_path: Path, repo: str = "test/repo", commit: str = "abc123") -> SnapshotRef:
-    """Create a test snapshot reference.
-
-    Returns
-    -------
-    SnapshotRef
-        Snapshot reference pointing at the temporary repo root.
-    """
-    return SnapshotRef(repo=repo, commit=commit, repo_root=tmp_path)
-
-
-def make_manifest(
-    target: str,
-    repo: str = "test/repo",
-    commit: str = "abc123",
-    input_hash: str = "hash123",
-) -> OutputManifest:
-    """Create a test manifest.
-
-    Returns
-    -------
-    OutputManifest
-        Manifest populated with defaults for the provided target.
-    """
-    return OutputManifest(
-        target=target,
-        repo=repo,
-        commit=commit,
-        impl_kind=f"{target}_impl",
-        computed_at=datetime.now(tz=UTC),
-        duration_ms=100.0,
-        input_hash=input_hash,
+def _create_test_graph() -> DagCatalog:
+    modules_target = make_target_descriptor(
+        name="modules",
+        module="ingestion",
+        description="Repository module index",
+    )
+    ast_target = make_target_descriptor(
+        name="ast",
+        module="ingestion",
+        dependencies=("modules",),
+        description="AST extraction",
+    )
+    goids_target = make_target_descriptor(
+        name="goids",
+        module="graphs",
+        dependencies=("ast",),
+        description="GOID construction",
+    )
+    return build_catalog(
+        targets=(modules_target, ast_target, goids_target),
+        table_keys_by_target={
+            "modules": ("core.modules",),
+            "ast": ("core.ast_nodes",),
+            "goids": ("core.goids",),
+        },
     )
 
 
+def _save_manifest(
+    gateway: StorageGateway,
+    snapshot: SnapshotRef,
+    *,
+    target: str,
+    input_hash: str,
+) -> OutputManifest:
+    manifest = OutputManifest(
+        target=target,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        impl_kind="native",
+        computed_at=datetime.now(tz=UTC),
+        duration_ms=0.0,
+        input_hash=input_hash,
+    )
+    gateway.build.save_manifest(manifest)
+    return manifest
+
+
+@pytest.fixture
+def snapshot(tmp_path: Path) -> SnapshotRef:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    return SnapshotRef(
+        repo="test-org/test-repo",
+        commit="abc123",
+        repo_root=repo_root,
+    )
+
+
+@pytest.fixture
+def test_graph() -> DagCatalog:
+    return _create_test_graph()
+
+
+@pytest.fixture
+def session(snapshot: SnapshotRef, fresh_gateway: StorageGateway) -> BuildSession:
+    return BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+
+
+@pytest.fixture
+def computer(test_graph: DagCatalog, session: BuildSession) -> StateComputer:
+    return StateComputer(catalog=test_graph, session=session)
+
+
 class TestStateComputer:
-    """Tests for StateComputer."""
+    """Tests for StateComputer behavior."""
 
     @staticmethod
-    def test_missing_status_when_no_manifest(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """Target without manifest has missing status."""
-        # Create a simple target
-        target = make_target_descriptor(
-            name="test_target",
-            module="ingestion",
-            dependencies=(),
-        )
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session)
-
+    def test_compute_all_missing(computer: StateComputer) -> None:
+        """When no manifests exist, all targets are missing."""
         state = computer.compute_all()
-
-        expect_in("test_target", state.targets)
-        expect_equal(state.targets["test_target"].status, "missing")
-        expect_is_none(state.targets["test_target"].manifest)
-
-    @staticmethod
-    def test_current_status_when_hash_matches(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """Target with matching hash has current status."""
-        target = make_target_descriptor(
-            name="test_target",
-            module="ingestion",
-            dependencies=(),
-        )
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session)
-
-        # Compute the actual input hash
-        actual_hash = session.get_input_hash(target)
-
-        # Create manifest with matching hash
-        manifest = make_manifest("test_target", input_hash=actual_hash)
-        fresh_gateway.build.save_manifest(manifest)
-
-        state = computer.compute_all()
-
-        expect_equal(state.targets["test_target"].status, "current")
-        expect_is_not_none(state.targets["test_target"].manifest)
-        expect_equal(state.targets["test_target"].current_hash, actual_hash)
-
-    @staticmethod
-    def test_stale_status_when_hash_differs(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """Target with different hash has stale status."""
-        target = make_target_descriptor(
-            name="test_target",
-            module="ingestion",
-            dependencies=(),
-        )
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-
-        # Create manifest with different hash
-        manifest = make_manifest("test_target", input_hash="old_hash_123")
-        fresh_gateway.build.save_manifest(manifest)
-
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session)
-
-        state = computer.compute_all()
-
-        expect_equal(state.targets["test_target"].status, "stale")
-        expect_equal(state.targets["test_target"].blocking_reason, "input_hash_mismatch")
+        expect_equal(state.current_targets(), ())
+        expect_equal(state.blocked_targets(), ())
+        expect_equal(state.missing_targets(), tuple(state.targets))
 
     @staticmethod
     def test_blocked_when_dependency_missing(
+        computer: StateComputer,
         fresh_gateway: StorageGateway,
-        tmp_path: Path,
+        snapshot: SnapshotRef,
     ) -> None:
-        """Target blocked when dependency is missing."""
-        dep_target = make_target_descriptor(
-            name="dependency",
-            module="ingestion",
-            dependencies=(),
-        )
-        main_target = make_target_descriptor(
-            name="main",
-            module="ingestion",
-            dependencies=("dependency",),
-        )
-
-        catalog = build_catalog(targets=(dep_target, main_target))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-
-        # Save manifest only for main, not for dependency
-        main_hash = session.get_input_hash(main_target)
-        manifest = make_manifest("main", input_hash=main_hash)
-        fresh_gateway.build.save_manifest(manifest)
-
-        computer = StateComputer(catalog=catalog, session=session)
+        """Targets with missing dependencies should be blocked."""
+        _save_manifest(fresh_gateway, snapshot, target="goids", input_hash="goids")
         state = computer.compute_all()
-
-        expect_equal(state.targets["dependency"].status, "missing")
-        expect_equal(state.targets["main"].status, "blocked")
-        expect_equal(state.targets["main"].blocking_reason, "dependency_missing")
-        expect_in("dependency", state.targets["main"].blocking_deps)
+        goids_state = state.get("goids")
+        expect_equal(goids_state.status, "blocked")
+        expect_equal(goids_state.blocking_reason, "dependency_missing")
 
     @staticmethod
-    def test_blocked_when_dependency_stale(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """Target blocked when dependency is stale."""
-        dep_target = make_target_descriptor(
-            name="dependency",
-            module="ingestion",
-            dependencies=(),
-        )
-        main_target = make_target_descriptor(
-            name="main",
-            module="ingestion",
-            dependencies=("dependency",),
-        )
-        catalog = build_catalog(targets=(dep_target, main_target))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-
-        # Save manifest for dependency with wrong hash (stale)
-        dep_manifest = make_manifest("dependency", input_hash="stale_hash")
-        fresh_gateway.build.save_manifest(dep_manifest)
-
-        # Save manifest for main with correct hash
-        main_hash = session.get_input_hash(main_target)
-        main_manifest = make_manifest("main", input_hash=main_hash)
-        fresh_gateway.build.save_manifest(main_manifest)
-
-        computer = StateComputer(catalog=catalog, session=session)
-        state = computer.compute_all()
-
-        expect_equal(state.targets["dependency"].status, "stale")
-        expect_equal(state.targets["main"].status, "blocked")
-        expect_equal(state.targets["main"].blocking_reason, "dependency_stale")
-
-    @staticmethod
-    def test_build_state_query_methods(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """BuildState query methods return correct results."""
-        t1 = make_target_descriptor(
-            name="t1",
-            module="ingestion",
-            dependencies=(),
-        )
-        t2 = make_target_descriptor(
-            name="t2",
-            module="ingestion",
-            dependencies=(),
-        )
-        t3 = make_target_descriptor(
-            name="t3",
-            module="ingestion",
-            dependencies=("t1",),
-        )
-        catalog = build_catalog(targets=(t1, t2, t3))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-
-        # Mark t1 as current via a matching manifest.
-        t1_hash = session.get_input_hash(t1)
-        fresh_gateway.build.save_manifest(make_manifest("t1", input_hash=t1_hash))
-
-        # Leave t2 and t3 without manifests (missing).
-
-        computer = StateComputer(catalog=catalog, session=session)
-        state = computer.compute_all()
-
-        expect_equal(state.by_status("current"), ("t1",))
-        expect_equal(state.by_status("missing"), ("t2", "t3"))
-        expect_true(state.is_current("t1"))
-        expect_false(state.is_current("t2"))
-
-    @staticmethod
-    def test_compute_single_target(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """compute_single returns correct state for individual target."""
-        target = make_target_descriptor(
-            name="single",
-            module="ingestion",
-            dependencies=(),
-        )
-
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session)
-
-        state = computer.compute_single("single")
-
-        expect_equal(state.name, "single")
+    def test_compute_single_missing(computer: StateComputer) -> None:
+        """compute_single should return missing state when no manifest exists."""
+        state = computer.compute_single("modules")
         expect_equal(state.status, "missing")
 
     @staticmethod
-    def test_session_caching_efficiency(
+    def test_compute_single_blocked(
+        computer: StateComputer,
         fresh_gateway: StorageGateway,
-        tmp_path: Path,
+        snapshot: SnapshotRef,
     ) -> None:
-        """Session caches hashes to avoid redundant computation."""
-        target = make_target_descriptor(
-            name="cached",
-            module="ingestion",
-            dependencies=(),
-        )
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session)
-
-        # Compute multiple times
-        state1 = computer.compute_all()
-        state2 = computer.compute_all()
-
-        # Session should have cached the hash
-        expect_true(session.cached_hash_count >= 1, message="Expected cached hash count")
-        expect_equal(state1.targets["cached"].status, state2.targets["cached"].status)
+        """compute_single should return blocked state when deps are missing."""
+        _save_manifest(fresh_gateway, snapshot, target="goids", input_hash="goids")
+        state = computer.compute_single("goids")
+        expect_equal(state.status, "blocked")
+        expect_equal(state.blocking_reason, "dependency_missing")
 
 
-class TestStateValidatorEquivalence:
-    """Tests ensuring StateValidator produces equivalent results to StateComputer.
-
-    Note: Both now use unified types (BuildState, TargetState).
-    """
+class TestTargetStateEquivalence:
+    """Ensure compute_all and compute_single align for present manifests."""
 
     @staticmethod
-    def test_validator_and_computer_agree_on_missing(
+    def test_current_state_consistency(
+        computer: StateComputer,
         fresh_gateway: StorageGateway,
-        tmp_path: Path,
+        snapshot: SnapshotRef,
     ) -> None:
-        """StateValidator and StateComputer agree on missing targets."""
-        target = make_target_descriptor(
-            name="equiv_test",
-            module="ingestion",
-            dependencies=(),
-        )
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-
-        # Use StateValidator
-        validator = StateValidator(
-            catalog,
-            fresh_gateway,
-            snapshot,
-            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
-        )
-        validator_state = validator.validate()
-
-        # Use StateComputer
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session)
-        computer_state = computer.compute_all()
-
-        # Results should be equivalent (both use by_status now)
-        expect_equal(validator_state.by_status("missing"), computer_state.by_status("missing"))
-
-    @staticmethod
-    def test_validator_and_computer_agree_on_current(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """StateValidator and StateComputer agree on current targets."""
-        target = make_target_descriptor(
-            name="equiv_current",
-            module="ingestion",
-            dependencies=(),
-        )
-        catalog = build_catalog(targets=(target,))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-
-        # Save manifest with correct hash
-        hash_val = session.get_input_hash(target)
-        manifest = make_manifest("equiv_current", input_hash=hash_val)
-        fresh_gateway.build.save_manifest(manifest)
-
-        # Use StateValidator
-        validator = StateValidator(
-            catalog,
-            fresh_gateway,
-            snapshot,
-            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
-        )
-        validator_state = validator.validate()
-
-        # Use StateComputer
-        session2 = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session2)
-        computer_state = computer.compute_all()
-
-        # Both use "current" status now
-        expect_equal(validator_state.by_status("current"), computer_state.by_status("current"))
-
-    @staticmethod
-    def test_validator_and_computer_agree_on_blocked(
-        fresh_gateway: StorageGateway,
-        tmp_path: Path,
-    ) -> None:
-        """StateValidator and StateComputer agree on blocked targets."""
-        dep = make_target_descriptor(
-            name="dep",
-            module="ingestion",
-            dependencies=(),
-        )
-        main = make_target_descriptor(
-            name="main",
-            module="ingestion",
-            dependencies=("dep",),
-        )
-        catalog = build_catalog(targets=(dep, main))
-
-        snapshot = make_snapshot(tmp_path)
-        session = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-
-        # Save manifest for main with correct hash (but dep is missing)
-        main_hash = session.get_input_hash(main)
-        manifest = make_manifest("main", input_hash=main_hash)
-        fresh_gateway.build.save_manifest(manifest)
-
-        # Use StateValidator
-        validator = StateValidator(
-            catalog,
-            fresh_gateway,
-            snapshot,
-            options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
-        )
-        validator_state = validator.validate()
-
-        # Use StateComputer
-        session2 = BuildSession(
-            snapshot=snapshot,
-            gateway=fresh_gateway,
-            settings=TEST_BUILD_SETTINGS,
-        )
-        computer = StateComputer(catalog=catalog, session=session2)
-        computer_state = computer.compute_all()
-
-        expect_equal(validator_state.by_status("blocked"), computer_state.by_status("blocked"))
+        _save_manifest(fresh_gateway, snapshot, target="modules", input_hash="modules")
+        state_all = computer.compute_all().get("modules")
+        state_single = computer.compute_single("modules")
+        expect_equal(state_all.status, "current")
+        expect_equal(state_single.status, "current")
+        expect_equal(state_all.stored_hash, state_single.stored_hash)

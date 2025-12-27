@@ -15,6 +15,9 @@ from codeintel.storage.views.discovery import discover_view_builders
 if TYPE_CHECKING:
     from types import ModuleType
 
+    from hamilton.driver import Driver
+
+    from codeintel.core.hamilton.tag_query import TagQuery
 
 @lru_cache(maxsize=1)
 def _view_modules() -> tuple[ModuleType, ...]:
@@ -28,8 +31,11 @@ def _view_modules() -> tuple[ModuleType, ...]:
     return (importlib.import_module("codeintel.storage.views.ibis_views"),)
 
 
-@lru_cache(maxsize=1)
-def discover_view_table_keys() -> tuple[str, ...]:
+def discover_view_table_keys(
+    *,
+    dr: Driver | None = None,
+    tag_query: TagQuery | None = None,
+) -> tuple[str, ...]:
     """Discover all view table keys exposed by view-builder modules.
 
     Returns
@@ -37,13 +43,20 @@ def discover_view_table_keys() -> tuple[str, ...]:
     tuple[str, ...]
         Discovered view table keys, sorted deterministically.
     """
-    discovered = discover_view_builders(modules=_view_modules(), config=None)
+    discovered = discover_view_builders(
+        dr=dr,
+        tag_query=tag_query,
+        modules=_view_modules(),
+    )
     keys = {d.table_key for d in discovered}
     return tuple(sorted(keys))
 
 
-@lru_cache(maxsize=1)
-def discover_derived_docs_views() -> tuple[str, ...]:
+def discover_derived_docs_views(
+    *,
+    dr: Driver | None = None,
+    tag_query: TagQuery | None = None,
+) -> tuple[str, ...]:
     """Discover docs.* views defined by view builders.
 
     Returns
@@ -51,14 +64,12 @@ def discover_derived_docs_views() -> tuple[str, ...]:
     tuple[str, ...]
         Discovered docs view keys, sorted deterministically.
     """
-    keys = discover_view_table_keys()
+    keys = discover_view_table_keys(dr=dr, tag_query=tag_query)
     return tuple(key for key in keys if key.startswith("docs.v_"))
 
 
 def clear_view_inventory_cache() -> None:
     """Clear cached view inventory (for testing)."""
-    discover_derived_docs_views.cache_clear()
-    discover_view_table_keys.cache_clear()
     _view_modules.cache_clear()
 
 

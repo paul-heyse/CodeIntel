@@ -22,19 +22,12 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_file_artifact_materialization,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute
+from codeintel.build.manifest.reader import CacheManifestReader
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
-
-
-def _requested_targets(env: BuildEnv) -> tuple[str, ...]:
-    context = env.execution_context
-    if context is None:
-        return ()
-    return context.run.requested_datasets
 
 
 @SaveToObjectMetadataDecorator(
@@ -55,11 +48,13 @@ def decision_trace__content(env: BuildEnv, catalog: DagCatalog) -> str | None:
     str | None
         JSON payload for the decision trace, or None when skipped.
     """
-    requested = _requested_targets(env)
-    if not requested:
+    _ = catalog
+    run_context = env.run_context
+    if run_context is None:
         return None
-    plan = compute_plan(env=env, catalog=catalog, requested=requested)
-    payload = build_decision_trace_payload(plan)
+    reader = CacheManifestReader(env.gateway)
+    entries = reader.fetch(run_context.run_id)
+    payload = build_decision_trace_payload(entries)
     return f"{json.dumps(payload, indent=2)}\n"
 
 

@@ -19,7 +19,6 @@ from codeintel.analytics.hotspots import ChurnSummary, compute_hotspot_rows, par
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -38,7 +37,6 @@ from codeintel.build.hamilton.nodes.module_attach import tagged_attach_node
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
-    options_hash_for_target,
 )
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
@@ -318,7 +316,6 @@ def t__hotspots__compute(
     HotspotsResult
         Computed hotspot rows or an error message.
     """
-
     module_paths = _load_module_paths(hotspots__inputs.modules_table)
     if not module_paths:
         return HotspotsResult(rows=None)

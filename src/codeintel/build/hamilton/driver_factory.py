@@ -11,6 +11,7 @@ This removes template-based fallback execution and wrapper mode switching.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -23,6 +24,7 @@ from codeintel.build.hamilton.native.discovery import load_native_modules
 from codeintel.build.hamilton.nodes import support_nodes
 from codeintel.build.hamilton.nodes.support_spec import SupportNodeSpec, support_spec_from_catalog
 from codeintel.build.hamilton.runtime import HamiltonRuntime
+from codeintel.core.hamilton.tag_query import TagQuery
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -36,8 +38,21 @@ _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
 hamilton.enable_power_user_mode = True
 
 
+@dataclass(frozen=True, slots=True)
+class BuildDriverOptions:
+    """Optional settings for building Hamilton drivers."""
+
+    adapters: Sequence[LifecycleAdapter] | None = None
+    adapter_factory: Callable[[DagCatalog], Sequence[LifecycleAdapter]] | None = None
+    enable_cache: bool = False
+    cache_dir: str | Path | None = None
+    cache_adapter: HamiltonCacheAdapter | None = None
+
+
 def _normalize_config(config: dict[str, Any] | None) -> dict[str, Any]:
-    return dict(config or {})
+    normalized = dict(config or {})
+    normalized.setdefault("hamilton.enable_power_user_mode", True)
+    return normalized
 
 
 def _all_target_nodes() -> Mapping[str, str]:
@@ -96,11 +111,7 @@ def _merge_support_config(
 def build_driver(
     *,
     config: dict[str, Any] | None = None,
-    adapters: Sequence[LifecycleAdapter] | None = None,
-    adapter_factory: Callable[[DagCatalog], Sequence[LifecycleAdapter]] | None = None,
-    enable_cache: bool = False,
-    cache_dir: str | Path | None = None,
-    cache_adapter: HamiltonCacheAdapter | None = None,
+    options: BuildDriverOptions | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
@@ -112,21 +123,8 @@ def build_driver(
     config
         Optional configuration dict passed to the Hamilton Driver.
         Can include profile name and other settings.
-    adapters
-        Optional Hamilton adapter (or iterable of adapters) to attach to the
-        Driver. This is the primary seam for telemetry, contract enforcement,
-        and parallel execution.
-    adapter_factory
-        Optional factory invoked with the pre-support DagCatalog to produce additional
-        adapters. This allows callers to build adapters without re-loading specs.
-    enable_cache
-        When True, enable Hamilton's caching adapter. Disable this for schema
-        inference and other workflows that pass unhashable inputs like Ibis expressions.
-    cache_dir
-        Directory for Hamilton's on-disk cache. When omitted, defaults to
-        ``build/.hamilton_cache`` under the current working directory.
-    cache_adapter
-        Optional pre-configured cache adapter instance to attach to the driver.
+    options
+        Optional driver construction settings (adapters, cache settings, etc.).
 
     Returns
     -------
@@ -145,11 +143,12 @@ def build_driver(
     """
     base_catalog, support_spec = _build_support_spec(config=config)
 
-    adapter_list = list(adapters) if adapters else []
-    if adapter_factory is not None:
-        adapter_list.extend(adapter_factory(base_catalog))
-    if cache_adapter is not None:
-        adapter_list.append(cache_adapter)
+    resolved_options = options or BuildDriverOptions()
+    adapter_list = list(resolved_options.adapters) if resolved_options.adapters else []
+    if resolved_options.adapter_factory is not None:
+        adapter_list.extend(resolved_options.adapter_factory(base_catalog))
+    if resolved_options.cache_adapter is not None:
+        adapter_list.append(resolved_options.cache_adapter)
 
     merged_config = _merge_support_config(config=config, support_spec=support_spec)
     native_mods = load_native_modules()
@@ -162,8 +161,12 @@ def build_driver(
         )
         .allow_module_overrides()
     )
-    if enable_cache and cache_adapter is None:
-        cache_path = _DEFAULT_HAMILTON_CACHE_DIR if cache_dir is None else Path(cache_dir)
+    if resolved_options.enable_cache and resolved_options.cache_adapter is None:
+        cache_path = (
+            _DEFAULT_HAMILTON_CACHE_DIR
+            if resolved_options.cache_dir is None
+            else Path(resolved_options.cache_dir)
+        )
         builder = builder.with_cache(
             path=cache_path,
             default_behavior="default",
@@ -173,10 +176,12 @@ def build_driver(
     dr = builder.with_adapters(*adapter_list).build()
 
     catalog = compile_dag_catalog(dr, strict=True)
+    tag_query = TagQuery(dr)
 
     return HamiltonRuntime(
         dr=dr,
         catalog=catalog,
+        tag_query=tag_query,
     )
 
 

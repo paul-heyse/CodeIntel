@@ -618,23 +618,17 @@ class BuildExplainResult:
     target
         Target name being explained.
     status
-        Plan status (compute, skip, blocked, missing).
+        Plan status (compute, blocked, missing).
     reason
         Reason for the status.
-    is_stale
-        Whether the target is stale (needs recomputation).
-    input_hash_current
-        Current computed input hash.
-    input_hash_prior
-        Prior input hash from manifest.
-    changed_deps
-        List of dependencies whose hashes changed.
-    added_deps
-        List of dependencies that were added.
-    removed_deps
-        List of dependencies that were removed.
+    dependencies
+        List of dependencies for the target.
+    table_keys
+        Table keys produced by the target.
+    artifact_keys
+        Artifact keys produced by the target.
     summary
-        Human-readable summary of staleness.
+        Human-readable summary of the plan entry.
     io_surface
         Optional per-target IO surface (reads/writes).
     """
@@ -642,12 +636,9 @@ class BuildExplainResult:
     target: str
     status: str
     reason: str
-    is_stale: bool
-    input_hash_current: str | None
-    input_hash_prior: str | None
-    changed_deps: list[str]
-    added_deps: list[str]
-    removed_deps: list[str]
+    dependencies: list[str]
+    table_keys: list[str]
+    artifact_keys: list[str]
     summary: str
     io_surface: dict[str, object] | None = None
 
@@ -663,12 +654,9 @@ class BuildExplainResult:
             "target": self.target,
             "status": self.status,
             "reason": self.reason,
-            "is_stale": self.is_stale,
-            "input_hash_current": self.input_hash_current,
-            "input_hash_prior": self.input_hash_prior,
-            "changed_deps": self.changed_deps,
-            "added_deps": self.added_deps,
-            "removed_deps": self.removed_deps,
+            "dependencies": self.dependencies,
+            "table_keys": self.table_keys,
+            "artifact_keys": self.artifact_keys,
             "summary": self.summary,
             **({"io_surface": self.io_surface} if self.io_surface is not None else {}),
         }

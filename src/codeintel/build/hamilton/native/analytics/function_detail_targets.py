@@ -33,7 +33,6 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -50,7 +49,6 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
-    options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.core.resources import ResourceNotFoundError
@@ -449,7 +447,3 @@ function_contracts__table_materializations = make_table_materializations_collect
 # ---------------------------------------------------------------------------
 # function_effects target
 # ---------------------------------------------------------------------------
-
-
-
-

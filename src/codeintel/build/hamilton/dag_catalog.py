@@ -103,6 +103,11 @@ class TargetDescriptor:
         """Return estimated execution duration in milliseconds."""
         return self.execution.estimated_duration_ms()
 
+    @property
+    def domain(self) -> TargetModule:
+        """Return the target domain for this descriptor."""
+        return self.module
+
 
 @dataclass(frozen=True, slots=True)
 class DagCatalog:

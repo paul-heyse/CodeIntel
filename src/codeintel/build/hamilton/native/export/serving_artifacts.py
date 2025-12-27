@@ -21,7 +21,6 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-import hamilton.driver as h_driver
 import ibis
 import pyarrow as pa
 import sqlglot
@@ -29,7 +28,6 @@ from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
@@ -48,12 +46,13 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.serving.semantic_compile import (
-    compile_semantic_registry_from_catalog,
+    compile_semantic_registry_from_tag_query,
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.metadata.sync import (
@@ -69,7 +68,7 @@ from codeintel.storage.views.discovery import discover_view_builders
 
 LOG = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TagQuery, TargetRunRecord)
 
 SERVING_ARTIFACTS_TARGET_NAME = "serving_artifacts"
 
@@ -89,13 +88,11 @@ def _package_version(name: str) -> str:
         return "unknown"
 
 
-def _semantic_registry_json() -> str:
+def _semantic_registry_json(tag_query: TagQuery) -> str:
     schema_provider = get_schema_provider()
-    driver = h_driver.Builder().with_modules(_ibis_views).allow_module_overrides().build()
-    catalog = compile_dag_catalog(driver, strict=False)
-    compiled = compile_semantic_registry_from_catalog(
+    compiled = compile_semantic_registry_from_tag_query(
         schema_provider=schema_provider,
-        catalog=catalog,
+        tag_query=tag_query,
         version="v1",
     )
     return compiled.to_json() + "\n"
@@ -190,8 +187,8 @@ def _environment_json(env: BuildEnv) -> str:
     return json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
 
 
-def _views_sql_json(env: BuildEnv) -> str:
-    builders = discover_view_builders(modules=(_ibis_views,))
+def _views_sql_json(env: BuildEnv, tag_query: TagQuery) -> str:
+    builders = discover_view_builders(tag_query=tag_query, modules=(_ibis_views,))
     ibis_gateway = env.gateway.ibis
 
     if not env.repo or not env.commit:
@@ -297,13 +294,15 @@ def _views_sql_diff_json(env: BuildEnv, *, current_views_sql: str) -> str:
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__semantic_registry",
 )
-def serving_artifacts__semantic_registry(env: BuildEnv) -> str:
+def serving_artifacts__semantic_registry(env: BuildEnv, tag_query: TagQuery) -> str:
     """Compile semantic registry JSON for serving.
 
     Parameters
     ----------
     env
         Build environment (unused; required for Hamilton input binding).
+    tag_query
+        Cached Hamilton tag query helper.
 
     Returns
     -------
@@ -311,7 +310,7 @@ def serving_artifacts__semantic_registry(env: BuildEnv) -> str:
         Newline-terminated semantic registry JSON payload.
     """
     _ = env
-    return _semantic_registry_json()
+    return _semantic_registry_json(tag_query)
 
 
 @SaveToObjectMetadataDecorator(
@@ -461,7 +460,7 @@ def serving_artifacts__environment(env: BuildEnv) -> str:
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__views_sql",
 )
-def serving_artifacts__views_sql(env: BuildEnv) -> str:
+def serving_artifacts__views_sql(env: BuildEnv, tag_query: TagQuery) -> str:
     """Compile compiled view SQL map JSON for serving.
 
     Parameters
@@ -474,7 +473,7 @@ def serving_artifacts__views_sql(env: BuildEnv) -> str:
     str
         Newline-terminated JSON mapping of view_key -> compiled SQL.
     """
-    return _views_sql_json(env)
+    return _views_sql_json(env, tag_query)
 
 
 @SaveToObjectMetadataDecorator(

@@ -36,8 +36,8 @@ from codeintel.build.hamilton.native.patterns.savers import (
     save_ibis_table,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
-from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
-from codeintel.build.hamilton.tagging import tag_compute, tag_helper
+from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.build.hamilton.tagging import tag_compute
 from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,

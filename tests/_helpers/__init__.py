@@ -103,13 +103,10 @@ _MODULE_EXPORTS: Final[dict[str, tuple[str, ...]]] = {
     ),
     "tests._helpers.immutability": ("assert_all_frozen", "assert_frozen"),
     "tests._helpers.manifests": (
-        "assert_skipped",
         "assert_succeeded",
-        "compute_input_hash",
         "load_manifest_index",
         "prime_manifest",
         "prime_modules_manifest",
-        "run_twice_and_assert_skip",
     ),
     "tests._helpers.modules_expectations": (
         "module_paths_expected_from_repo_tree",
@@ -267,13 +264,10 @@ if TYPE_CHECKING:
     from tests._helpers.hamilton_manifest_priming import ManifestPriming
     from tests._helpers.immutability import assert_all_frozen, assert_frozen
     from tests._helpers.manifests import (
-        assert_skipped,
         assert_succeeded,
-        compute_input_hash,
         load_manifest_index,
         prime_manifest,
         prime_modules_manifest,
-        run_twice_and_assert_skip,
     )
     from tests._helpers.modules_expectations import (
         module_paths_expected_from_repo_tree,
@@ -458,13 +452,10 @@ if TYPE_CHECKING:
         list_repo_fixtures,
         pytest_report_payload,
         reload_build_config,
-        assert_skipped,
         assert_succeeded,
-        compute_input_hash,
         load_manifest_index,
         prime_manifest,
         prime_modules_manifest,
-        run_twice_and_assert_skip,
         write_build_config,
         write_build_config_sections,
     )

@@ -43,7 +43,6 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -242,7 +241,6 @@ def t__function_history__compute(
     - Lines added and deleted (churn)
     - Stability bucket classification
     """
-
     rows = build_function_history_rows(
         gateway,
         env.snapshot,
@@ -321,7 +319,6 @@ def t__history_timeseries__compute(
     tuple[tuple[object, ...], ...] | None
         Row tuples matching the history_timeseries schema, or None when skipped.
     """
-
     options = env.history_options
     gateway_resolver = env.history_db_resolver
     if options is None or gateway_resolver is None:
@@ -907,7 +904,6 @@ def t__test_graph_metrics__compute(
     TestGraphMetricsResult | None
         Container with rows for test and function metrics tables, or None if skipped.
     """
-
     runtime = _get_graph_runtime(
         env,
         target_name=TEST_GRAPH_METRICS_TARGET_NAME,

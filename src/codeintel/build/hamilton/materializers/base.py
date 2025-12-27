@@ -46,8 +46,6 @@ def resolve_materialization_context(
         DAG catalog describing build dependencies.
     target_name
         Name of the target being materialized.
-    hash_options
-        Optional hash inputs override (options hash, manifest cache, file state hash).
 
     Returns
     -------

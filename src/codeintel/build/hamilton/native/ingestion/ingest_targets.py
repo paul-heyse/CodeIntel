@@ -45,7 +45,7 @@ from codeintel.build.hamilton.native.target_decorators import (
 )
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources

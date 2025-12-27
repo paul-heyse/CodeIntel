@@ -1,9 +1,7 @@
-"""Run record, skip, and manifest utilities for Hamilton build execution.
+"""Run record and manifest utilities for Hamilton build execution.
 
 This module is the single source of truth for:
 
-- Target input hashing helpers used by planning and execution.
-- Manifest-based skip evaluation.
 - TargetRunRecord construction (succeeded/skipped/failed).
 - Manifest persistence for succeeded native targets.
 
@@ -26,14 +24,8 @@ from codeintel.build.hamilton.native.outputs import (
     expected_datasets,
     expected_table_keys_for_target,
 )
-from codeintel.build.hashing import (
-    InputHashOptions,
-    compute_input_hash,
-    compute_input_hash_with_deps,
-    compute_target_options_hash,
-)
+from codeintel.build.hashing import compute_target_options_hash
 from codeintel.core.build_manifest import OutputManifest
-from codeintel.core.config.settings import BuildSettings
 from codeintel.core.hamilton.records import TargetRunRecord
 
 if TYPE_CHECKING:
@@ -41,8 +33,6 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 
@@ -98,75 +88,6 @@ def _validate_strict_row_counts(
                 f"target={target.name} table_key={table_key} row_count={count}"
             )
             raise ValueError(msg)
-
-
-def compute_target_input_hash(
-    *,
-    target: TargetDescriptor,
-    snapshot: SnapshotRef,
-    gateway: StorageGateway,
-    settings: BuildSettings,
-    options: InputHashOptions | None = None,
-) -> str:
-    """Compute input hash for a target using the build hashing infrastructure.
-
-    Parameters
-    ----------
-    target
-        Target to compute hash for.
-    snapshot
-        Repository snapshot reference.
-    gateway
-        Storage gateway for loading dependency manifests.
-    settings
-        Build settings for engine version hashing.
-    options
-        Optional hash options (options_hash + manifest cache).
-
-    Returns
-    -------
-    str
-        16-character hex hash string.
-    """
-    return compute_input_hash(target, snapshot, gateway, settings=settings, options=options)
-
-
-def compute_target_input_hash_with_deps(
-    *,
-    target: TargetDescriptor,
-    snapshot: SnapshotRef,
-    gateway: StorageGateway,
-    settings: BuildSettings,
-    options: InputHashOptions | None = None,
-) -> tuple[str, dict[str, str]]:
-    """Compute input hash and dependency hash mapping.
-
-    Parameters
-    ----------
-    target
-        Target to compute hash for.
-    snapshot
-        Repository snapshot reference.
-    gateway
-        Storage gateway for loading dependency manifests.
-    settings
-        Build settings for engine version hashing.
-    options
-        Optional hash options (options_hash + manifest cache).
-
-    Returns
-    -------
-    tuple[str, dict[str, str]]
-        Tuple of (input_hash, dep_hashes) where dep_hashes maps dependency names
-        to their input hashes (or "MISSING" sentinel).
-    """
-    return compute_input_hash_with_deps(
-        target,
-        snapshot,
-        gateway,
-        settings=settings,
-        options=options,
-    )
 
 
 @dataclass(frozen=True)
@@ -432,8 +353,6 @@ __all__ = [
     "RunRecordBuilder",
     "RunRecordInputs",
     "TargetRunRecord",
-    "compute_target_input_hash",
-    "compute_target_input_hash_with_deps",
     "compute_target_options_hash",
     "create_run_record",
     "options_hash_for_target",

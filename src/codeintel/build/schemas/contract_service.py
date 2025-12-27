@@ -10,7 +10,11 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from codeintel.build.hamilton.dag_catalog import OutputDescriptor
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.target_metadata import TargetMetadataProvider, get_target_metadata_provider
+from codeintel.build.target_metadata import (
+    TargetMetadataProvider,
+    get_target_metadata_provider,
+    get_target_metadata_service,
+)
 from codeintel.config.datasets.composites import get_composite_schemas
 from codeintel.core.schemas.contract_factory import (
     DatasetContractOverrides,
@@ -208,7 +212,8 @@ class ContractService:
             except KeyError:
                 continue
 
-        for view_key in discover_derived_docs_views():
+        runtime = get_target_metadata_service().system.runtime
+        for view_key in discover_derived_docs_views(tag_query=runtime.tag_query):
             if view_key in seen:
                 continue
             seen.add(view_key)

@@ -6,11 +6,18 @@ contracts and runtime configuration.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 
+from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
+from codeintel.core.schemas.serde import table_schema_from_json_obj
+from codeintel.core.time import utc_now
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
+from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.bootstrap import (
     replace_dataset_dataflow_edges,
@@ -18,11 +25,11 @@ from codeintel.storage.metadata.bootstrap import (
     replace_derived_lineage_columns,
     replace_derived_lineage_edges,
 )
+from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from duckdb import DuckDBPyConnection
 
 __all__ = [
@@ -31,6 +38,7 @@ __all__ = [
     "sync_dataset_dataflow_graph",
     "sync_derived_lineage_columns",
     "sync_derived_lineage_edges",
+    "sync_table_schema_registry_from_latest_manifest",
 ]
 
 
@@ -44,6 +52,14 @@ class _DatasetUpsert:
     family: str | None
     description: str | None
     schema_version: str | None
+
+
+@dataclass(frozen=True)
+class _SchemaSyncContext:
+    catalog_hash: str
+    now: datetime
+    schema_versions: dict[str, tuple[str, str, object, object | None, object]]
+    registry_rows: list[tuple[str, str, str, str, str, str | None, str | None, str | None]]
 
 
 def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
@@ -231,3 +247,179 @@ def load_derived_lineage_columns(
             (str(upstream_table), str(upstream_column))
         )
     return out
+
+
+def _optional_str(value: object) -> str | None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+    return None
+
+
+def _manifest_section(payload: Mapping[str, object], *, key: str) -> list[object]:
+    items = payload.get(key, [])
+    if not isinstance(items, list):
+        msg = f"Expected '{key}' to be a list in schema manifest"
+        raise TypeError(msg)
+    return items
+
+
+def _collect_schema_rows(
+    items: list[object],
+    *,
+    fallback_kind: str,
+    fallback_source: str,
+    context: _SchemaSyncContext,
+) -> None:
+    for item in items:
+        if not isinstance(item, Mapping):
+            msg = "Schema manifest entries must be JSON objects"
+            raise TypeError(msg)
+        schema = table_schema_from_json_obj(item)
+        schema_json = schema.to_json_obj()
+        schema_digest = fingerprint(schema_json)
+        computed_hash = compute_schema_hash(schema)
+        if schema_digest not in context.schema_versions:
+            context.schema_versions[schema_digest] = (
+                schema_digest,
+                computed_hash,
+                normalize_duckdb_json_value(schema_json),
+                None,
+                context.now,
+            )
+        schema_hash = _optional_str(item.get("schema_hash")) or computed_hash
+        derivation_kind = _optional_str(item.get("derivation_kind")) or fallback_kind
+        derivation_source = _optional_str(item.get("derivation_source")) or fallback_source
+        inference_status = _optional_str(item.get("inference_status"))
+        inference_error = _optional_str(item.get("inference_error"))
+        context.registry_rows.append(
+            (
+                schema.table_key,
+                schema_digest,
+                schema_hash,
+                derivation_kind,
+                derivation_source,
+                inference_status,
+                inference_error,
+                context.catalog_hash,
+            )
+        )
+
+
+def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> int:
+    """Populate schema registry tables from the latest schema manifest catalog.
+
+    Returns
+    -------
+    int
+        Number of table/view registry rows upserted.
+
+    Raises
+    ------
+    TypeError
+        If the stored manifest payload is not a JSON object with list sections.
+    """
+    apply_metadata_ddl(con)
+
+    entry = load_latest_canonical_catalog_from_connection(
+        con,
+        catalog_kind=DEFAULT_SCHEMA_MANIFEST_KIND,
+    )
+    if entry is None:
+        return 0
+
+    payload = entry.payload
+    if not isinstance(payload, Mapping):
+        msg = "Schema manifest payload must be a JSON object"
+        raise TypeError(msg)
+
+    now = utc_now()
+    context = _SchemaSyncContext(
+        catalog_hash=entry.catalog_hash,
+        now=now,
+        schema_versions={},
+        registry_rows=[],
+    )
+
+    _collect_schema_rows(
+        _manifest_section(payload, key="tables"),
+        fallback_kind="explicit_override",
+        fallback_source="manifest",
+        context=context,
+    )
+    _collect_schema_rows(
+        _manifest_section(payload, key="views"),
+        fallback_kind="view_inferred",
+        fallback_source="duckdb",
+        context=context,
+    )
+    registry_rows = context.registry_rows
+    if not registry_rows:
+        return 0
+
+    con.executemany(
+        """
+        INSERT INTO metadata.schema_versions (
+            schema_digest,
+            schema_hash,
+            schema_json,
+            renderer_cache,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (schema_digest) DO NOTHING
+        """,
+        list(context.schema_versions.values()),
+    )
+
+    con.executemany(
+        """
+        INSERT INTO metadata.table_schema_registry (
+            table_key,
+            schema_digest,
+            schema_hash,
+            derivation_kind,
+            derivation_source,
+            inference_status,
+            inference_error,
+            catalog_hash,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (table_key) DO UPDATE SET
+            schema_digest = excluded.schema_digest,
+            schema_hash = excluded.schema_hash,
+            derivation_kind = excluded.derivation_kind,
+            derivation_source = excluded.derivation_source,
+            inference_status = excluded.inference_status,
+            inference_error = excluded.inference_error,
+            catalog_hash = excluded.catalog_hash,
+            updated_at = excluded.updated_at
+        """,
+        [
+            (
+                table_key,
+                schema_digest,
+                schema_hash,
+                derivation_kind,
+                derivation_source,
+                inference_status,
+                inference_error,
+                catalog_hash,
+                now,
+            )
+            for (
+                table_key,
+                schema_digest,
+                schema_hash,
+                derivation_kind,
+                derivation_source,
+                inference_status,
+                inference_error,
+                catalog_hash,
+            ) in registry_rows
+        ],
+    )
+
+    return len(registry_rows)

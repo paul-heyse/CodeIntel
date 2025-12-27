@@ -111,6 +111,7 @@ class NativeTargetExecutor:
             Name of the target to execute.
         options_hash
             Optional configuration options hash.
+
         Returns
         -------
         NativeTargetExecutor
@@ -144,7 +145,13 @@ class NativeTargetExecutor:
         )
 
     def should_skip(self) -> bool:
-        """Return False; skip decisions are delegated to Hamilton caching."""
+        """Return False; skip decisions are delegated to Hamilton caching.
+
+        Returns
+        -------
+        bool
+            False to indicate no pre-skip decision at this layer.
+        """
         return False
 
     def skip(self) -> TargetRunRecord:
