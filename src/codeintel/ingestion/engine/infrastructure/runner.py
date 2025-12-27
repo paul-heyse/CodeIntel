@@ -173,10 +173,13 @@ class ToolRunner:
     def _coerce_tool(tool: ToolName | str) -> ToolName:
         if isinstance(tool, ToolName):
             return tool
+        raw = str(tool)
+        if raw == "scip":
+            raw = ToolName.SCIP_PYTHON.value
         try:
-            return ToolName(tool)
+            return ToolName(raw)
         except ValueError as exc:
-            message = f"Unknown tool {tool!r}"
+            message = f"Unknown tool {raw!r}"
             raise ValueError(message) from exc
 
     def _resolve_executable(self, tool: ToolName) -> str:

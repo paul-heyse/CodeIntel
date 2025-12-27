@@ -35,13 +35,13 @@ def test_native_analytics_marked_in_plan(build_harness: HamiltonBuildHarness) ->
     config = BuildConfig()
     env = _make_env(build_harness, config)
 
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
 
     # Compute plan for each migrated target
     native_targets = ["coverage_functions", "hotspots", "subsystems"]
 
     for target_name in native_targets:
-        plan = compute_plan(env=env, graph=graph, requested=(target_name,))
+        plan = compute_plan(env=env, catalog=catalog, requested=(target_name,))
 
         # Find the entry for this target in the plan
         target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -69,16 +69,16 @@ def test_function_metrics_now_native_after_phase4(
     config = BuildConfig()
     env = _make_env(build_harness, config)
 
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
 
     # function_metrics was migrated in Phase 4
     target_name = "function_metrics"
 
-    # Check if target exists in graph
-    if graph.get(target_name) is None:
-        pytest.skip(f"Target '{target_name}' not in graph")
+    # Check if target exists in catalog
+    if catalog.get_target(target_name) is None:
+        pytest.skip(f"Target '{target_name}' not in catalog")
 
-    plan = compute_plan(env=env, graph=graph, requested=(target_name,))
+    plan = compute_plan(env=env, catalog=catalog, requested=(target_name,))
 
     # Find the entry for this target in the plan
     target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -100,9 +100,9 @@ def test_risk_factors_still_native_after_wave2(build_harness: HamiltonBuildHarne
     config = BuildConfig()
     env = _make_env(build_harness, config)
 
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
 
-    plan = compute_plan(env=env, graph=graph, requested=("risk_factors",))
+    plan = compute_plan(env=env, catalog=catalog, requested=("risk_factors",))
 
     # Find the entry for risk_factors
     target_entry = next((e for e in plan.entries if e.target == "risk_factors"), None)

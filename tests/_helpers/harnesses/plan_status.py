@@ -54,7 +54,7 @@ def compute_status_summary(
     """
     runtime = build_driver(config={"profile": harness.build_env().profile})
     validator = StateValidator(
-        runtime.graph,
+        runtime.catalog,
         harness.build_env().gateway,
         harness.build_env().snapshot,
         options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),

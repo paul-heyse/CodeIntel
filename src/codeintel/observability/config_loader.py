@@ -13,6 +13,7 @@ LOG = logging.getLogger(__name__)
 
 _REQUIRED_ROOT_KEYS: frozenset[str] = frozenset(
     {
+        "receivers",
         "service",
         "traces",
         "metrics",
@@ -35,16 +36,13 @@ def load_otel_config_file(path: Path) -> Mapping[str, object]:
     ------
     FileNotFoundError
         If the config file does not exist.
-    ValueError
-        If the config file is empty or invalid.
     """
     if not path.exists():
         message = f"OpenTelemetry config file not found: {path}"
         raise FileNotFoundError(message)
     text = path.read_text(encoding="utf-8").strip()
     if not text:
-        message = f"OpenTelemetry config file is empty: {path}"
-        raise ValueError(message)
+        return {}
     payload = _parse_config_payload(path, text)
     _validate_root_keys(payload, path)
     return payload
@@ -115,13 +113,11 @@ def _parse_yaml_payload(text: str, path: Path) -> Mapping[str, object]:
 
 
 def _validate_root_keys(payload: Mapping[str, object], path: Path) -> None:
+    if not payload:
+        return
     if any(key in payload for key in _REQUIRED_ROOT_KEYS):
         return
-    message = (
-        "OpenTelemetry config file is missing required sections; "
-        f"expected one of {_REQUIRED_ROOT_KEYS} in {path}"
-    )
-    raise ValueError(message)
+    LOG.warning("OpenTelemetry config file %s missing standard sections; continuing", path)
 
 
 def _load_module(module_name: str, *, label: str) -> object:

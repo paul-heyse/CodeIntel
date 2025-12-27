@@ -130,7 +130,6 @@ def apply_test_telemetry_settings(
             logs_auto_instrument=False,
             log_correlation=False,
             logs_trace_filter=False,
-            config_file=None,
             grpc_observability=disabled_grpc,
             hamilton_tracker=disabled_tracker,
         )
@@ -143,7 +142,6 @@ def apply_test_telemetry_settings(
         return replace(
             settings,
             enabled=True,
-            config_file=None,
             otlp=local_otlp,
             otlp_traces=local_traces,
             otlp_metrics=local_metrics,

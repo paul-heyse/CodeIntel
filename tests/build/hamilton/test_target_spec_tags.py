@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.target_spec_compiler import compile_output_targets_from_driver
 from codeintel.core.hamilton import tags as ht
 
 
@@ -20,16 +20,16 @@ def _materialize_tags(tags: object) -> dict[str, object] | None:
 def test_all_targets_compile_from_dag() -> None:
     """Ensure DAG-derived target compilation succeeds and produces targets."""
     runtime = build_driver()
-    targets = compile_output_targets_from_driver(runtime.dr, strict=True)
-    if not targets:
+    catalog = compile_dag_catalog(runtime.dr, strict=True)
+    if not catalog.all_targets:
         pytest.fail("No build targets compiled from DAG tags")
 
 
 def test_target_anchors_have_docstrings() -> None:
     """Ensure every target anchor has a docstring summary."""
     runtime = build_driver()
-    targets = compile_output_targets_from_driver(runtime.dr, strict=False)
-    missing = [target.name for target in targets if not target.description.strip()]
+    catalog = compile_dag_catalog(runtime.dr, strict=False)
+    missing = [target.name for target in catalog.all_targets if not target.description.strip()]
     if missing:
         pytest.fail("Targets missing docstring summaries:\n" + "\n".join(sorted(missing)))
 

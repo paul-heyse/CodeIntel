@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
     from codeintel.build.schemas.contract_service import ContractService
-    from codeintel.build.targets import OutputTarget
+    from codeintel.build.targets import TargetDescriptor
     from codeintel.core.exports.formats import ExportFormat, ExportFormatSpec
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.serving.semantic.models import SemanticViewSpec
@@ -679,7 +679,7 @@ class RegistryService:
     """Registry service for catalog and semantic discovery."""
 
     contract_catalog: Mapping[str, DatasetContract]
-    target_catalog: Mapping[str, OutputTarget]
+    target_catalog: Mapping[str, TargetDescriptor]
     semantic_registry: SemanticRegistry | None = None
 
     @classmethod
@@ -719,7 +719,7 @@ class RegistryService:
         contracts = {
             contract.table_key: contract for contract in contract_service_factory().iter_contracts()
         }
-        targets = {target.name: target for target in get_target_system().graph.all_targets}
+        targets = dict(get_target_system().catalog.targets)
         return cls(contract_catalog=contracts, target_catalog=targets, semantic_registry=None)
 
     @classmethod
@@ -835,12 +835,12 @@ class RegistryService:
         """
         return self.contract_catalog.values()
 
-    def get_target(self, name: str) -> OutputTarget:
-        """Return the OutputTarget metadata for a target name.
+    def get_target(self, name: str) -> TargetDescriptor:
+        """Return the target metadata for a target name.
 
         Returns
         -------
-        OutputTarget
+        TargetDescriptor
             Output target metadata for the requested name.
 
         Raises
@@ -853,12 +853,12 @@ class RegistryService:
             raise RegistryLookupError.missing_target(name)
         return target
 
-    def iter_targets(self) -> Iterable[OutputTarget]:
-        """Iterate all OutputTarget metadata entries.
+    def iter_targets(self) -> Iterable[TargetDescriptor]:
+        """Iterate all target metadata entries.
 
         Returns
         -------
-        Iterable[OutputTarget]
+        Iterable[TargetDescriptor]
             Iterable of output target metadata.
         """
         return self.target_catalog.values()

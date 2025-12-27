@@ -5,23 +5,29 @@ Compile a deterministic BuildSpec from the Hamilton DAG.
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ INCLUDE-COLUMNS         Include dataset column names in the compiled spec.   │
 │   --include-columns     [env var:                                            │
-│   --no-include-columns  CODEINTEL_BUILD_SPEC_COMPILE_INCLUDE_COLUMNS]        │
+│   --no-include-columns  CODEINTEL_BUILD_SPEC_COMPILE_INCLUDE_COLUMNS,        │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_INCLUDE_COLUMNS]        │
 │                         [default: false]                                     │
 │ FORMAT --format         Output format: json (default). [env var:             │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_FORMAT,                 │
 │                         CODEINTEL_BUILD_SPEC_COMPILE_FORMAT] [default: json] │
 │ OUTPUT --output -o      Output file path (stdout if not specified). [env     │
-│                         var: CODEINTEL_BUILD_SPEC_COMPILE_OUTPUT] [default:  │
+│                         var: CODEINTEL_BUILD_SPEC_COMPILE_OUTPUT,            │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_OUTPUT] [default:       │
 │                         (none)]                                              │
-│ --flags                 [env var: CODEINTEL_BUILD_SPEC_COMPILE_FLAGS]        │
-│                         [default: --flags]                                   │
+│ *                       [env var: CODEINTEL_BUILD_SPEC_COMPILE_*] [default:  │
+│                         *]                                                   │
 │ ROOT --root -r          Explicit project root directory. [env var:           │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_ROOT,                   │
 │                         CODEINTEL_BUILD_SPEC_COMPILE_ROOT] [default: (none)] │
 │ OUTPUT-FORMAT           Output format. [choices: text, json, jsonl] [env     │
-│   --output-format       var: CODEINTEL_BUILD_SPEC_COMPILE_OUTPUT_FORMAT]     │
+│   --output-format       var: CODEINTEL_BUILD_SPEC_COMPILE_OUTPUT_FORMAT,     │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_OUTPUT_FORMAT]          │
 │                         [default: text]                                      │
 │ JSON --json             Alias for --output-format json. [env var:            │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_JSON,                   │
 │                         CODEINTEL_BUILD_SPEC_COMPILE_JSON] [default: false]  │
 │ VERBOSE --verbose -v    Increase verbosity (0=warnings, 1=info, 2=debug).    │
-│                         [env var: CODEINTEL_BUILD_SPEC_COMPILE_VERBOSE]      │
-│                         [default: 0]                                         │
+│                         [env var: CODEINTEL_BUILD_SPEC_COMPILE_VERBOSE,      │
+│                         CODEINTEL_BUILD_SPEC_COMPILE_VERBOSE] [default: 0]   │
 ╰──────────────────────────────────────────────────────────────────────────────╯

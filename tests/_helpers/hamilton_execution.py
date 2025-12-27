@@ -46,10 +46,10 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
     from pathlib import Path
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.build.providers import Providers
-    from codeintel.build.targets import TargetGraph
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -58,15 +58,15 @@ class HamiltonTestContext:
     """Bundled execution context for Hamilton tests.
 
     This class bundles all the components needed to execute Hamilton targets
-    in tests. It provides access to the BuildEnv, target graph, and other
+    in tests. It provides access to the BuildEnv, DAG catalog, and other
     resources needed for execution.
 
     Attributes
     ----------
     env
         Build environment for Hamilton node execution.
-    graph
-        Target graph for looking up targets and dependencies.
+    catalog
+        DAG catalog for looking up targets and dependencies.
     runtime
         Hamilton runtime containing the Driver and node mappings.
     harness
@@ -80,13 +80,13 @@ class HamiltonTestContext:
 
     Examples
     --------
-    >>> ctx = HamiltonTestContext(env=env, graph=graph, ...)
+    >>> ctx = HamiltonTestContext(env=env, catalog=catalog, ...)
     >>> record = execute_hamilton_target("modules", ctx)
     >>> assert_target_ok(record)
     """
 
     env: BuildEnv
-    graph: TargetGraph
+    catalog: DagCatalog
     runtime: HamiltonRuntime
     harness: HamiltonBuildHarness
     gateway: StorageGateway
@@ -385,7 +385,7 @@ class HamiltonTestBuilder:
         Returns
         -------
         HamiltonRuntime
-            Runtime with Driver, target graph, and node mappings.
+            Runtime with Driver, DAG catalog, and node mappings.
         """
         if self._runtime is None:
             self._runtime = build_driver(config={"profile": self.profile})
@@ -450,11 +450,11 @@ class HamiltonTestBuilder:
         harness = self.build_harness()
         env = harness.build_env()
         runtime = self._get_runtime()
-        graph = runtime.graph
+        catalog = runtime.catalog
 
         return HamiltonTestContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             runtime=runtime,
             harness=harness,
             gateway=self.gateway,
@@ -602,7 +602,7 @@ def execute_hamilton_target(
     target_name
         Name of the target to execute (e.g., "modules", "goids").
     ctx
-        Hamilton test context with env, graph, and resources.
+        Hamilton test context with env, catalog, and resources.
     force_targets
         Optional target names that bypass skip checks.
     profile
@@ -649,7 +649,7 @@ def execute_hamilton_targets(
     targets
         Target names to execute.
     ctx
-        Hamilton test context with env, graph, and resources.
+        Hamilton test context with env, catalog, and resources.
     force_targets
         Optional target names that bypass skip checks.
     profile
@@ -699,7 +699,7 @@ async def execute_hamilton_target_async(
     target_name
         Name of the target to execute.
     ctx
-        Hamilton test context with env, graph, and resources.
+        Hamilton test context with env, catalog, and resources.
     force_targets
         Optional target names that bypass skip checks.
     profile

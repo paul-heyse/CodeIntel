@@ -4,21 +4,26 @@ Resolve an alias to a version hash.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ *  ASSET --asset         Asset key to resolve. [env var:                     │
+│                          CODEINTEL_BUILD_RESOLVE_ASSET,                      │
 │                          CODEINTEL_BUILD_RESOLVE_ASSET] [required]           │
 │ *  ALIAS --alias         Alias to resolve (e.g., main, latest). [env var:    │
+│                          CODEINTEL_BUILD_RESOLVE_ALIAS,                      │
 │                          CODEINTEL_BUILD_RESOLVE_ALIAS] [required]           │
 │    FORMAT --format -f    Output format: json (default) or text. [env var:    │
+│                          CODEINTEL_BUILD_RESOLVE_FORMAT,                     │
 │                          CODEINTEL_BUILD_RESOLVE_FORMAT] [default: json]     │
-│    --flags               [env var: CODEINTEL_BUILD_RESOLVE_FLAGS] [default:  │
-│                          --flags]                                            │
+│    *                     [env var: CODEINTEL_BUILD_RESOLVE_*] [default: *]   │
 │    ROOT --root -r        Explicit project root directory. [env var:          │
+│                          CODEINTEL_BUILD_RESOLVE_ROOT,                       │
 │                          CODEINTEL_BUILD_RESOLVE_ROOT] [default: (none)]     │
 │    OUTPUT-FORMAT         Output format. [choices: text, json, jsonl] [env    │
-│      --output-format     var: CODEINTEL_BUILD_RESOLVE_OUTPUT_FORMAT]         │
-│                          [default: text]                                     │
+│      --output-format     var: CODEINTEL_BUILD_RESOLVE_OUTPUT_FORMAT,         │
+│                          CODEINTEL_BUILD_RESOLVE_OUTPUT_FORMAT] [default:    │
+│                          text]                                               │
 │    JSON --json           Alias for --output-format json. [env var:           │
+│                          CODEINTEL_BUILD_RESOLVE_JSON,                       │
 │                          CODEINTEL_BUILD_RESOLVE_JSON] [default: false]      │
 │    VERBOSE --verbose -v  Increase verbosity (0=warnings, 1=info, 2=debug).   │
-│                          [env var: CODEINTEL_BUILD_RESOLVE_VERBOSE]          │
-│                          [default: 0]                                        │
+│                          [env var: CODEINTEL_BUILD_RESOLVE_VERBOSE,          │
+│                          CODEINTEL_BUILD_RESOLVE_VERBOSE] [default: 0]       │
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -18,7 +18,8 @@ from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
@@ -46,7 +47,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.targets import TargetGraph
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -105,7 +105,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, Path, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, Path, TargetRunRecord)
 
 ScipRunMode = Literal["incremental", "full", "skipped", "precheck_failed", "unknown"]
 
@@ -186,21 +186,21 @@ class ScipIngestInputs:
 
 @dataclass(frozen=True)
 class ScipSymbolTableMaterializations:
-    """Materialization metadata for symbol-related tables."""
+    """Materialization results for symbol-related tables."""
 
-    symbols: MaterializationMetadata
-    occurrences: MaterializationMetadata
-    symbol_information: MaterializationMetadata
+    symbols: MaterializationResult
+    occurrences: MaterializationResult
+    symbol_information: MaterializationResult
 
 
 @dataclass(frozen=True)
 class ScipAuxTableMaterializations:
-    """Materialization metadata for auxiliary SCIP tables."""
+    """Materialization results for auxiliary SCIP tables."""
 
-    relationships: MaterializationMetadata
-    diagnostics: MaterializationMetadata
-    external_symbols: MaterializationMetadata
-    module_state: MaterializationMetadata
+    relationships: MaterializationResult
+    diagnostics: MaterializationResult
+    external_symbols: MaterializationResult
+    module_state: MaterializationResult
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -602,7 +602,7 @@ def _coerce_scip_run_output(
 @tag_tool(domain="ingestion", target=SCIP_TARGET_NAME)
 def t__scip__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     scip__module_inputs: ScipModuleInputs,
     scip__run_config: ScipRunConfig,
 ) -> ScipRunResult:
@@ -624,7 +624,7 @@ def t__scip__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SCIP_TARGET_NAME,
         hash_options=scip__run_config.hash_options,
         skip_reason="SCIP target skipped",
@@ -1009,14 +1009,14 @@ def scip__module_state_rows(
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__materializations(
-    m__artifact__scip_index: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__artifact__scip_index: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect scip artifact materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Materialization metadata keyed by artifact name.
+    dict[str, MaterializationResult]
+        Materialization results keyed by artifact name.
     """
     return {
         SCIP_ARTIFACT_INDEX: m__artifact__scip_index,
@@ -1025,16 +1025,16 @@ def scip__materializations(
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__symbol_table_materializations(
-    m__core__scip_symbols: MaterializationMetadata,
-    m__core__scip_occurrences: MaterializationMetadata,
-    m__core__scip_symbol_information: MaterializationMetadata,
+    m__core__scip_symbols: MaterializationResult,
+    m__core__scip_occurrences: MaterializationResult,
+    m__core__scip_symbol_information: MaterializationResult,
 ) -> ScipSymbolTableMaterializations:
     """Collect symbol-related table materializations.
 
     Returns
     -------
     ScipSymbolTableMaterializations
-        Materialization metadata for symbols, occurrences, and symbol information.
+        Materialization results for symbols, occurrences, and symbol information.
     """
     return ScipSymbolTableMaterializations(
         symbols=m__core__scip_symbols,
@@ -1045,17 +1045,17 @@ def scip__symbol_table_materializations(
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__aux_table_materializations(
-    m__core__scip_symbol_relationships: MaterializationMetadata,
-    m__core__scip_diagnostics: MaterializationMetadata,
-    m__core__scip_external_symbols: MaterializationMetadata,
-    m__core__scip_module_state: MaterializationMetadata,
+    m__core__scip_symbol_relationships: MaterializationResult,
+    m__core__scip_diagnostics: MaterializationResult,
+    m__core__scip_external_symbols: MaterializationResult,
+    m__core__scip_module_state: MaterializationResult,
 ) -> ScipAuxTableMaterializations:
     """Collect auxiliary table materializations.
 
     Returns
     -------
     ScipAuxTableMaterializations
-        Materialization metadata for relationships, diagnostics, external symbols, and
+        Materialization results for relationships, diagnostics, external symbols, and
         module state.
     """
     return ScipAuxTableMaterializations(
@@ -1070,12 +1070,12 @@ def scip__aux_table_materializations(
 def scip__table_materializations(
     scip__symbol_table_materializations: ScipSymbolTableMaterializations,
     scip__aux_table_materializations: ScipAuxTableMaterializations,
-) -> dict[str, MaterializationMetadata]:
+) -> dict[str, MaterializationResult]:
     """Collect scip table materialization payloads into a single mapping.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Mapping from table key to saver metadata.
     """
     return {
@@ -1092,7 +1092,7 @@ def scip__table_materializations(
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     scip__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the SCIP target.
@@ -1104,7 +1104,7 @@ def scip__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SCIP_TARGET_NAME,
         hash_options=scip__hash_options,
     )
@@ -1201,8 +1201,8 @@ def t__scip(
     scip__finalize_context: ToolFinalizeContext,
     t__scip__run: ScipRunResult,
     t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    scip__materializations: dict[str, MaterializationMetadata],
-    scip__table_materializations: dict[str, MaterializationMetadata],
+    scip__materializations: dict[str, MaterializationResult],
+    scip__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """SCIP index ingestion and GOID generation.
 

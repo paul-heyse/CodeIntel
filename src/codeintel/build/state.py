@@ -9,7 +9,7 @@ Import the unified types directly for new code.
 
 Integration Points
 ------------------
-- Uses `TargetGraph` from Phase 1 for dependency traversal
+- Uses `DagCatalog` from the Hamilton compiler for dependency traversal
 - Uses `BuildTracking` from Phase 7 for manifest storage
 - Delegates to `StateComputer` for unified state computation
 """
@@ -27,7 +27,7 @@ from codeintel.build.state_types import BuildState, TargetState
 from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
 
@@ -43,7 +43,7 @@ class StateValidationOptions:
 
 
 class StateValidator:
-    """Validate database state against the target graph.
+    """Validate database state against the DAG catalog.
 
     Examines stored manifests and computes current input hashes to determine
     which targets are missing, stale, current, or blocked. This is the
@@ -59,8 +59,8 @@ class StateValidator:
 
     Parameters
     ----------
-    graph
-        Target graph defining all outputs and their dependencies.
+    catalog
+        DAG catalog defining all outputs and their dependencies.
     gateway
         Storage gateway for accessing manifests.
     snapshot
@@ -71,7 +71,7 @@ class StateValidator:
     Examples
     --------
     >>> options = StateValidationOptions(settings=build_settings)
-    >>> validator = StateValidator(graph, gateway, snapshot, options=options)
+    >>> validator = StateValidator(catalog, gateway, snapshot, options=options)
     >>> state = validator.validate()
     >>> state.by_status("missing")
     ('ast', 'modules', ...)
@@ -79,7 +79,7 @@ class StateValidator:
 
     def __init__(
         self,
-        graph: TargetGraph,
+        catalog: DagCatalog,
         gateway: StorageGateway,
         snapshot: SnapshotRef,
         *,
@@ -89,8 +89,8 @@ class StateValidator:
 
         Parameters
         ----------
-        graph
-            Target graph with all registered targets.
+        catalog
+            DAG catalog with all registered targets.
         gateway
             Storage gateway for manifest access.
         snapshot
@@ -101,17 +101,17 @@ class StateValidator:
         Raises
         ------
         ValueError
-            If the target graph has validation errors.
+            If the DAG catalog has validation errors.
         """
-        self._graph = graph
+        self._catalog = catalog
         self._gateway = gateway
         self._snapshot = snapshot
 
-        # Validate graph
-        errors = graph.validate()
+        # Validate catalog
+        errors = catalog.validate()
         if errors:
             error_msg = "\n".join(errors)
-            msg = f"Target graph validation failed:\n{error_msg}"
+            msg = f"DAG catalog validation failed:\n{error_msg}"
             raise ValueError(msg)
 
         # Create session and computer for delegation
@@ -122,13 +122,13 @@ class StateValidator:
         )
         base_config = options.config or load_build_config(snapshot.repo_root)
         self._computer = StateComputer(
-            graph=graph,
+            catalog=catalog,
             session=self._session,
             config=base_config,
         )
 
     def validate(self) -> BuildState:
-        """Validate state of all targets in the graph.
+        """Validate state of all targets in the catalog.
 
         Returns
         -------
@@ -140,7 +140,7 @@ class StateValidator:
     def validate_target(self, name: str) -> TargetState:
         """Validate state of a single target.
 
-        This is a convenience method that validates the entire graph and
+        This is a convenience method that validates the entire catalog and
         returns the state for the specified target. For repeated single-target
         queries, prefer calling `validate()` once and using `BuildState.get()`.
 
@@ -157,10 +157,10 @@ class StateValidator:
         Raises
         ------
         KeyError
-            If target name is not in the graph.
+            If target name is not in the catalog.
         """
-        if name not in self._graph:
-            msg = f"Target '{name}' not found in graph"
+        if name not in self._catalog:
+            msg = f"Target '{name}' not found in catalog"
             raise KeyError(msg)
         return self._computer.compute_single(name)
 

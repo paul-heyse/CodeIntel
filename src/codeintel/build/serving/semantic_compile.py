@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.tag_index import TagIndex
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
     TAG_DEFAULT_LIMIT,
@@ -39,6 +39,18 @@ def _split_csv(s: str | None) -> list[str]:
     if not s:
         return []
     return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def _stringify_tag_value(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bool, float, int)):
+        return str(value)
+    if isinstance(value, list):
+        return ", ".join(str(v) for v in value if v is not None)
+    return str(value)
 
 
 def _parse_joins(s: str | None) -> list[dict[str, object]]:
@@ -143,20 +155,20 @@ def compile_semantic_registry_from_views(
     return CompiledSemanticRegistry(version=version, views=views)
 
 
-def compile_semantic_registry_from_tag_index(
+def compile_semantic_registry_from_catalog(
     *,
     schema_provider: SchemaProvider,
-    tag_index: TagIndex,
+    catalog: DagCatalog,
     version: str = "v1",
 ) -> CompiledSemanticRegistry:
-    """Compile semantic registry from a TagIndex.
+    """Compile semantic registry from a DagCatalog.
 
     Parameters
     ----------
     schema_provider
         Provider for resolving table schemas.
-    tag_index
-        TagIndex containing normalized Hamilton tags.
+    catalog
+        DAG catalog containing Hamilton tags.
     version
         Registry version string.
 
@@ -165,9 +177,22 @@ def compile_semantic_registry_from_tag_index(
     CompiledSemanticRegistry
         Compiled registry.
     """
+    view_tags: dict[str, dict[str, str]] = {}
+    for node in catalog.find_nodes(ht.TAG_OUTPUT_KIND):
+        tags = node.tags
+        output_kind = tags.get(ht.TAG_OUTPUT_KIND)
+        if output_kind not in {ht.OUTPUT_KIND_SEMANTIC_VIEW, "semantic"}:
+            continue
+        if _stringify_tag_value(tags.get(ht.TAG_MCP_VISIBLE, "1")) != "1":
+            continue
+        table_key = tags.get(ht.TAG_TABLE_KEY)
+        if not isinstance(table_key, str) or not table_key:
+            continue
+        view_tags[table_key] = {str(k): _stringify_tag_value(v) for k, v in tags.items()}
+
     return compile_semantic_registry_from_views(
         schema_provider=schema_provider,
-        view_tags=tag_index.semantic_view_tags(),
+        view_tags=view_tags,
         version=version,
     )
 
@@ -180,7 +205,7 @@ def write_semantic_registry(*, registry: CompiledSemanticRegistry, out_path: Pat
 
 __all__ = [
     "CompiledSemanticRegistry",
-    "compile_semantic_registry_from_tag_index",
+    "compile_semantic_registry_from_catalog",
     "compile_semantic_registry_from_views",
     "write_semantic_registry",
 ]

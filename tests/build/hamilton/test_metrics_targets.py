@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.analytics.metrics_targets import (
@@ -20,13 +21,14 @@ from codeintel.build.hamilton.native.analytics.metrics_targets import (
     t__subsystem_graph_metrics,
     t__symbol_graph_metrics,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.core.execution.materialization import MaterializationStatus
 from tests._helpers.assertions import (
     assert_record_row_counts,
     assert_target_ok,
     expect_equal,
     expect_true,
 )
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 
@@ -47,59 +49,55 @@ def _make_env(harness: AnalyticsTargetHarness) -> BuildEnv:
     )
 
 
-def _make_graph() -> TargetGraph:
-    """Create a minimal TargetGraph for metrics targets.
+def _make_graph() -> DagCatalog:
+    """Create a minimal catalog for metrics targets.
 
     Returns
     -------
-    TargetGraph
-        Target graph with metrics targets registered.
+    DagCatalog
+        Catalog with metrics targets registered.
     """
-    graph = TargetGraph()
-    graph.register(
-        OutputTarget(
-            name="subsystem_graph_metrics",
-            module="analytics",
-            contract=contract_for_keys(("analytics.subsystem_graph_metrics",)),
-        )
-    )
-    graph.register(
-        OutputTarget(
-            name="symbol_graph_metrics",
-            module="analytics",
-            contract=contract_for_keys(
-                (
-                    "analytics.symbol_graph_metrics_modules",
-                    "analytics.symbol_graph_metrics_functions",
-                )
+    return build_catalog(
+        targets=(
+            make_target_descriptor(
+                name="subsystem_graph_metrics",
+                module="analytics",
+                contract=contract_for_keys(("analytics.subsystem_graph_metrics",)),
+            ),
+            make_target_descriptor(
+                name="symbol_graph_metrics",
+                module="analytics",
+                contract=contract_for_keys(
+                    (
+                        "analytics.symbol_graph_metrics_modules",
+                        "analytics.symbol_graph_metrics_functions",
+                    )
+                ),
+            ),
+            make_target_descriptor(
+                name="subsystem_agreement",
+                module="analytics",
+                contract=contract_for_keys(("analytics.subsystem_agreement",)),
             ),
         )
     )
-    graph.register(
-        OutputTarget(
-            name="subsystem_agreement",
-            module="analytics",
-            contract=contract_for_keys(("analytics.subsystem_agreement",)),
-        )
-    )
-    return graph
 
 
 def _make_materialization(
     table_key: str,
     row_count: int,
     *,
-    status: str = "succeeded",
+    status: MaterializationStatus = "succeeded",
     error: str | None = None,
-) -> MaterializationMetadata:
-    return {
-        "status": status,
-        "table_key": table_key,
-        "row_count": row_count,
-        "duration_ms": 0.0,
-        "input_hash": "test",
-        "error": error,
-    }
+) -> MaterializationResult:
+    return MaterializationResult(
+        status=status,
+        table_key=table_key,
+        row_count=row_count,
+        duration_ms=0.0,
+        input_hash="test",
+        error=error,
+    )
 
 
 # ---------------------------------------------------------------------------

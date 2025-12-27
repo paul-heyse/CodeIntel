@@ -2,41 +2,22 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import pytest
-
-from codeintel.build.contracts import OutputContract
 from codeintel.build.resources import TargetExecution, TargetResources
-from codeintel.build.targets import OutputTarget, derive_schemas_from_targets, get_target_by_table
-from codeintel.config.datasets.primitives import Column, TableSchema
+from codeintel.build.targets import get_target_by_table
 from tests._helpers.assertions import (
     expect_equal,
     expect_false,
     expect_true,
 )
+from tests._helpers.catalog import make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 
 _DURATION_THRESHOLD_MS = 5000
 
 
-def test_registry_derives_schemas_and_detects_duplicates(caplog: pytest.LogCaptureFixture) -> None:
-    """Schema derivation captures duplicates and returns mapping."""
-    caplog.set_level("WARNING")
-    table = TableSchema(schema="core", name="items", columns=[Column("id", "INTEGER")])
-    t1 = OutputTarget(name="one", module="analytics", contract=OutputContract(tables=(table,)))
-    t2 = OutputTarget(name="two", module="analytics", contract=OutputContract(tables=(table,)))
-
-    schemas = derive_schemas_from_targets((t1, t2))
-
-    expect_equal(schemas["core.items"], table)
-    expect_true(any("Duplicate schema" in rec.message for rec in caplog.records))
-
-
 def test_registry_get_target_by_table() -> None:
     """get_target_by_table returns producer target for table."""
-    target = OutputTarget(
+    target = make_target_descriptor(
         name="producer",
         module="analytics",
         contract=contract_for_keys(("core.produced",)),

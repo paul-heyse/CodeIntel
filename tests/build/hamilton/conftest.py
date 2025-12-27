@@ -15,8 +15,10 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.build.contracts import EMPTY_CONTRACT
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.core.build_manifest import OutputManifest
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests.build.hamilton.snapshots._manifest import load_snapshot_manifest
 
 if TYPE_CHECKING:
@@ -258,47 +260,45 @@ def manifest_index_with_modules(sample_manifest: OutputManifest) -> dict[str, Ou
 
 
 @pytest.fixture
-def minimal_target_graph() -> TargetGraph:
-    """Create a minimal 3-node target graph for deterministic testing.
+def minimal_target_graph() -> DagCatalog:
+    """Create a minimal 3-node catalog for deterministic testing.
 
     Graph structure:
         a (no deps) -> b (deps on a) -> c (deps on b)
 
     Returns
     -------
-    TargetGraph
-        A minimal target graph with three nodes.
+    DagCatalog
+        A minimal catalog with three nodes.
     """
-    graph = TargetGraph()
-    graph.register(
-        OutputTarget(
+    targets = (
+        make_target_descriptor(
             name="a",
             module="ingestion",
+            contract=EMPTY_CONTRACT,
             description="Target A - no dependencies",
-        )
-    )
-    graph.register(
-        OutputTarget(
+        ),
+        make_target_descriptor(
             name="b",
             module="graphs",
+            contract=EMPTY_CONTRACT,
             dependencies=("a",),
             description="Target B - depends on A",
-        )
-    )
-    graph.register(
-        OutputTarget(
+        ),
+        make_target_descriptor(
             name="c",
             module="analytics",
+            contract=EMPTY_CONTRACT,
             dependencies=("b",),
             description="Target C - depends on B",
-        )
+        ),
     )
-    return graph
+    return build_catalog(targets=targets)
 
 
 @pytest.fixture
-def diamond_target_graph() -> TargetGraph:
-    """Create a diamond-shaped target graph for testing.
+def diamond_target_graph() -> DagCatalog:
+    """Create a diamond-shaped catalog for testing.
 
     Graph structure:
         a -> b -> d
@@ -306,42 +306,39 @@ def diamond_target_graph() -> TargetGraph:
 
     Returns
     -------
-    TargetGraph
-        A diamond-shaped target graph with four nodes.
+    DagCatalog
+        A diamond-shaped catalog with four nodes.
     """
-    graph = TargetGraph()
-    graph.register(
-        OutputTarget(
+    targets = (
+        make_target_descriptor(
             name="a",
             module="ingestion",
+            contract=EMPTY_CONTRACT,
             description="Root target",
-        )
-    )
-    graph.register(
-        OutputTarget(
+        ),
+        make_target_descriptor(
             name="b",
             module="graphs",
+            contract=EMPTY_CONTRACT,
             dependencies=("a",),
             description="Left branch",
-        )
-    )
-    graph.register(
-        OutputTarget(
+        ),
+        make_target_descriptor(
             name="c",
             module="graphs",
+            contract=EMPTY_CONTRACT,
             dependencies=("a",),
             description="Right branch",
-        )
-    )
-    graph.register(
-        OutputTarget(
+        ),
+        make_target_descriptor(
             name="d",
             module="analytics",
+            contract=EMPTY_CONTRACT,
             dependencies=("b", "c"),
             description="Diamond tip",
-        )
+        ),
     )
-    return graph
+    return build_catalog(targets=targets)
 
 
 __all__ = [

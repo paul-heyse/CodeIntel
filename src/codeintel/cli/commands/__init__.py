@@ -39,6 +39,7 @@ from codeintel.cli.commands.health import health_app
 from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
+from codeintel.cli.commands.meta import meta_app
 from codeintel.cli.commands.registry import registry_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
@@ -63,6 +64,7 @@ __all__ = [
     "jobs_app",
     "main",
     "make_root_app",
+    "meta_app",
     "registry_app",
     "resolve_output_format",
     "runtime_field",

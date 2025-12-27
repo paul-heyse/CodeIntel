@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from codeintel.observability.semconv_keys import (
     CODEINTEL_CORRELATION_ID,
-    CODEINTEL_HEALTH_CHECK,
     CODEINTEL_OUTPUT_FORMAT,
     HTTP_METHOD,
     HTTP_ROUTE,
@@ -24,7 +23,6 @@ if TYPE_CHECKING:
 OPERATION_ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
     {
         CODEINTEL_CORRELATION_ID,
-        CODEINTEL_HEALTH_CHECK,
         CODEINTEL_OUTPUT_FORMAT,
         HTTP_METHOD,
         HTTP_ROUTE,

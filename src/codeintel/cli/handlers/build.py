@@ -32,7 +32,6 @@ from codeintel.build.hamilton.decision_trace import (
 )
 from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.hamilton.introspect import derive_target_io_surface
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_json,
@@ -96,9 +95,10 @@ if TYPE_CHECKING:
     from hamilton.caching.adapter import CachingEvent
 
     from codeintel.build.hamilton import HamiltonBuildResult
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.planner import HamiltonBuildPlan
-    from codeintel.build.targets import TargetGraph, TargetModule
+    from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
     from codeintel.core.build_manifest import BuildRunRecord
@@ -275,7 +275,7 @@ def _resolve_goals(
     targets: list[str] | None,
     module: str | None,
     target_scope: TargetScope,
-    graph: TargetGraph,
+    catalog: DagCatalog,
 ) -> list[str]:
     """Resolve target goals from CLI arguments.
 
@@ -287,8 +287,8 @@ def _resolve_goals(
         Module name to build all targets for.
     target_scope
         Scope selector indicating whether to build all targets or only requested ones.
-    graph
-        Target graph for validation.
+    catalog
+        DAG catalog for validation.
 
     Returns
     -------
@@ -301,21 +301,21 @@ def _resolve_goals(
         If no targets specified or unknown target provided.
     """
     if target_scope is TargetScope.ALL:
-        return [t.name for t in graph.all_targets]
+        return [t.name for t in catalog.all_targets]
 
     if module:
         if module not in _VALID_MODULES:
             msg = f"Unknown module: {module}. Valid: {', '.join(_VALID_MODULES)}"
             raise ValidationError(msg)
         module_typed = cast("TargetModule", module)
-        module_targets = graph.targets_for_module(module_typed)
+        module_targets = catalog.targets_for_module(module_typed)
         return [t.name for t in module_targets]
 
     if targets:
         expanded_targets = _expand_pilot_targets(targets)
         for target in expanded_targets:
             try:
-                graph.get(target)
+                catalog.get(target)
             except KeyError as exc:
                 msg = (
                     f"Unknown target: {target}. "
@@ -332,17 +332,16 @@ def _resolve_domain_for_goals(goals: Sequence[str]) -> str | None:
     if not goals:
         return None
     service = get_target_metadata_service()
-    runtime = service.system.runtime
-    tag_index = service.tag_index
+    catalog = service.system.catalog
     domains: set[str] = set()
     for target_name in goals:
-        node_name = runtime.target_to_node.get(target_name)
+        node_name = catalog.target_nodes.get(target_name)
         if not node_name:
             continue
-        tags = tag_index.tags_by_node.get(node_name)
-        if tags is None:
+        node = catalog.nodes.get(node_name)
+        if node is None:
             continue
-        domain = tags.get(ht.TAG_DOMAIN)
+        domain = node.tags.get(ht.TAG_DOMAIN)
         if isinstance(domain, str) and domain:
             domains.add(domain)
     if len(domains) == 1:
@@ -421,6 +420,10 @@ def _build_status_result(state: BuildState) -> BuildStatusResult:
         targets=targets,
         stale_count=stale_count,
         fresh_count=len(current_list),
+        computed=current_list,
+        missing=missing_list,
+        stale=stale_list,
+        blocked=blocked_list,
     )
 
 
@@ -779,7 +782,7 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_system().graph
+    catalog = get_target_system().catalog
 
     LOG.info(
         "build.status repo=%s commit=%s",
@@ -790,7 +793,7 @@ def build_status_handler(
     gateway = ctx.gateway
     build_settings = get_build_settings()
     validator = StateValidator(
-        graph,
+        catalog,
         gateway,
         runtime.snapshot,
         options=StateValidationOptions(settings=build_settings),
@@ -801,7 +804,7 @@ def build_status_handler(
         if module not in _VALID_MODULES:
             return fail_invalid_module(module, _VALID_MODULES)
 
-        module_targets = graph.targets_for_module(cast("TargetModule", module))
+        module_targets = catalog.targets_for_module(cast("TargetModule", module))
         module_names = {t.name for t in module_targets}
         state = BuildState(
             repo=state.repo,
@@ -1041,10 +1044,10 @@ def _build_run_result(
     except ResolutionError as exc:
         return fail_project_error("build", str(exc)), runtime, goals
 
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
     scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
     try:
-        goals = _resolve_goals(params.targets, params.module, scope, graph)
+        goals = _resolve_goals(params.targets, params.module, scope, catalog)
     except ValidationError as exc:
         return fail_invalid_targets(str(exc)), runtime, goals
 
@@ -1524,7 +1527,7 @@ def build_graph_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
 
     targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
@@ -1539,21 +1542,21 @@ def build_graph_handler(
             targets=targets,
             module=module,
             target_scope=TargetScope.ALL if all_targets else TargetScope.REQUESTED,
-            graph=graph,
+            catalog=catalog,
         )
     except ValidationError as e:
         return fail_invalid_target_selection(str(e))
 
     hamilton_runtime = build_driver()
 
-    dag_info = get_dag_info(hamilton_runtime, goals, graph_source="hamilton")
+    dag_info = get_dag_info(hamilton_runtime, goals)
 
     if output_format == "mermaid":
-        dag_output = export_dag_mermaid(hamilton_runtime, goals, graph_source="hamilton")
+        dag_output = export_dag_mermaid(hamilton_runtime, goals)
     elif output_format == "dot":
-        dag_output = export_dag_dot(hamilton_runtime, goals, graph_source="hamilton")
+        dag_output = export_dag_dot(hamilton_runtime, goals)
     else:
-        dag_output = export_dag_json(hamilton_runtime, goals, graph_source="hamilton")
+        dag_output = export_dag_json(hamilton_runtime, goals)
 
     if output_file:
         Path(output_file).write_text(dag_output, encoding="utf-8")
@@ -1593,7 +1596,7 @@ def build_plan_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_metadata_service().system.graph
+    catalog = get_target_metadata_service().system.catalog
     plan_args = _parse_plan_args(ctx)
 
     try:
@@ -1601,7 +1604,7 @@ def build_plan_handler(
             targets=plan_args.targets,
             module=plan_args.module,
             target_scope=TargetScope.ALL if plan_args.all_targets else TargetScope.REQUESTED,
-            graph=graph,
+            catalog=catalog,
         )
     except ValidationError as e:
         return fail_invalid_target_selection(str(e))
@@ -1642,9 +1645,8 @@ def build_plan_handler(
 
         plan = compute_plan(
             env=env,
-            graph=graph,
+            catalog=catalog,
             requested=tuple(goals),
-            graph_source="hamilton",
         )
 
     result = BuildPlanResult(
@@ -1718,7 +1720,7 @@ class _BuildExplainParams:
 def _resolve_build_explain_params(
     ctx: CommandContext,
     *,
-    graph: TargetGraph,
+    catalog: DagCatalog,
 ) -> _BuildExplainParams | CliResult[BuildExplainResult]:
     target = ctx.params.get_str("target")
     if not target:
@@ -1728,7 +1730,7 @@ def _resolve_build_explain_params(
     force_targets = frozenset(force_list or ())
 
     try:
-        graph.get(target)
+        catalog.get(target)
     except KeyError:
         return fail_invalid_targets(f"Unknown target: {target}")
 
@@ -1741,7 +1743,7 @@ def _resolve_build_explain_params(
 def _compute_plan_for_explain(
     *,
     runtime: ResolvedRuntime,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     target: str,
     force_targets: frozenset[str],
 ) -> HamiltonBuildPlan:
@@ -1772,9 +1774,8 @@ def _compute_plan_for_explain(
 
         return compute_plan(
             env=env,
-            graph=graph,
+            catalog=catalog,
             requested=(target,),
-            graph_source="hamilton",
         )
 
 
@@ -1800,8 +1801,8 @@ def build_explain_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    graph = get_target_metadata_service().system.graph
-    params = _resolve_build_explain_params(ctx, graph=graph)
+    catalog = get_target_metadata_service().system.catalog
+    params = _resolve_build_explain_params(ctx, catalog=catalog)
     if isinstance(params, CliResult):
         return params
 
@@ -1815,7 +1816,7 @@ def build_explain_handler(
 
     plan = _compute_plan_for_explain(
         runtime=runtime,
-        graph=graph,
+        catalog=catalog,
         target=params.target,
         force_targets=params.force_targets,
     )
@@ -1829,10 +1830,7 @@ def build_explain_handler(
     io_surface: dict[str, object] | None = None
     if ctx.params.get_bool("io_surface"):
         h_runtime = build_driver()
-        surface = derive_target_io_surface(
-            h_runtime,
-            include_targets=(params.target,),
-        ).get(params.target)
+        surface = h_runtime.catalog.io_surfaces.get(params.target)
         if surface is not None:
             io_surface = asdict(surface)
 

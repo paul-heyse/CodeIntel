@@ -13,6 +13,9 @@ __all__ = [
     "CANONICAL_CATALOGS_TABLE",
     "EXPORT_AUDIT_TABLE",
     "METADATA_TABLES",
+    "SCHEMA_MANIFEST_RUNS_TABLE",
+    "SCHEMA_VERSIONS_TABLE",
+    "TABLE_SCHEMA_REGISTRY_TABLE",
 ]
 
 EXPORT_AUDIT_TABLE = TableSchema(
@@ -43,18 +46,63 @@ CANONICAL_CATALOGS_TABLE = TableSchema(
     primary_key=("catalog_kind", "catalog_hash"),
 )
 
+SCHEMA_VERSIONS_TABLE = TableSchema(
+    schema="metadata",
+    name="schema_versions",
+    columns=[
+        Column("schema_digest", "VARCHAR", nullable=False),
+        Column("schema_hash", "VARCHAR", nullable=False),
+        Column("schema_json", "JSON", nullable=False),
+        Column("renderer_cache", "JSON"),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("schema_digest",),
+    indexes=(Index("idx_schema_versions_schema_hash", ("schema_hash",)),),
+)
+
+TABLE_SCHEMA_REGISTRY_TABLE = TableSchema(
+    schema="metadata",
+    name="table_schema_registry",
+    columns=[
+        Column("table_key", "VARCHAR", nullable=False),
+        Column("schema_digest", "VARCHAR", nullable=False),
+        Column("schema_hash", "VARCHAR", nullable=False),
+        Column("derivation_kind", "VARCHAR", nullable=False),
+        Column("derivation_source", "VARCHAR", nullable=False),
+        Column("inference_status", "VARCHAR"),
+        Column("inference_error", "VARCHAR"),
+        Column("catalog_hash", "VARCHAR"),
+        Column("updated_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("table_key",),
+    indexes=(
+        Index("idx_table_schema_registry_derivation_kind", ("derivation_kind",)),
+        Index("idx_table_schema_registry_inference_status", ("inference_status",)),
+        Index("idx_table_schema_registry_catalog_hash", ("catalog_hash",)),
+    ),
+)
+
+SCHEMA_MANIFEST_RUNS_TABLE = TableSchema(
+    schema="metadata",
+    name="schema_manifest_runs",
+    columns=[
+        Column("run_id", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR", nullable=False),
+        Column("commit", "VARCHAR", nullable=False),
+        Column("manifest_kind", "VARCHAR", nullable=False),
+        Column("catalog_hash", "VARCHAR", nullable=False),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("run_id",),
+    indexes=(Index("idx_schema_manifest_runs_repo_commit", ("repo", "commit", "created_at")),),
+)
+
 METADATA_TABLES: tuple[TableSchema, ...] = (
     EXPORT_AUDIT_TABLE,
     CANONICAL_CATALOGS_TABLE,
-    TableSchema(
-        schema="metadata",
-        name="dataset_schema_registry",
-        columns=[
-            Column("table_key", "VARCHAR", nullable=False),
-            Column("schema_hash", "VARCHAR", nullable=False),
-        ],
-        primary_key=("table_key",),
-    ),
+    SCHEMA_VERSIONS_TABLE,
+    TABLE_SCHEMA_REGISTRY_TABLE,
+    SCHEMA_MANIFEST_RUNS_TABLE,
     TableSchema(
         schema="metadata",
         name="datasets",

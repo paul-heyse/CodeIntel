@@ -50,7 +50,7 @@ _STORAGE_IMPORT_FLAGS_FIELD = shared_flags_field(STORAGE_IMPORT_PATH)
 @storage_app.command(name="validate-macros")
 @dataclass
 class ValidateMacrosCommand:
-    """Validate the dataset schema registry."""
+    """Validate the schema catalog registry tables."""
 
     db_path: Annotated[
         Path | None,

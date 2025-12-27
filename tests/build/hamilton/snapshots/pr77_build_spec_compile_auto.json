@@ -1,5 +1,5 @@
 {
-  "buildspec_hash": "5de90640b2209b701895bb13dc002354f4d954cd63d94e3f2de7d2574e716cfc",
+  "buildspec_hash": "acd46c8bd9d220b1fa5994fcf61df95da62088e18ccb8d793f52640dc76db396",
   "datasets": [
     {
       "schema_hash": "4fea3b6c5a5a27bc4a5461a3f75e27173887f4605159c550eac43dd3e5d0d0cb",
@@ -42,7 +42,7 @@
       "table_key": "analytics.config_values"
     },
     {
-      "schema_hash": "e5f0d70c3961c21735b7d8d6f531219a2ac097f193298c7e9a9900103c57b322",
+      "schema_hash": "6a32ddabfce6d627872a18d65f26dbfcb0e684c4e3bcc46c1f7f849332d59a5b",
       "table_key": "analytics.coverage_functions"
     },
     {
@@ -130,7 +130,7 @@
       "table_key": "analytics.function_validation"
     },
     {
-      "schema_hash": "290c8ce27dfe7691cc95a7e3b33e969aacbcea5329a5f09a2c797a03d73a5cec",
+      "schema_hash": "584d7b352bed51343a9db84f19fa415424c26165db890bf95f7bee4cfce4a87e",
       "table_key": "analytics.goid_risk_factors"
     },
     {
@@ -186,12 +186,20 @@
       "table_key": "analytics.subsystem_agreement"
     },
     {
+      "schema_hash": "803b047e4adcb156d0e20e945de82c5f4c2bb0521f500f6a463a3231bf4daa11",
+      "table_key": "analytics.subsystem_coverage_cache"
+    },
+    {
       "schema_hash": "ee8a482ef8564969646c9c052c04b84d35562ac2a98e8621d8a2caccdb08ff46",
       "table_key": "analytics.subsystem_graph_metrics"
     },
     {
       "schema_hash": "d440a90c02ad5bfa674db86f2d410a2a7a0f0ef3dd719209e7db6e9b703f6e96",
       "table_key": "analytics.subsystem_modules"
+    },
+    {
+      "schema_hash": "9fe191501e20f8dda75b53911548303ea217766e38ed7c6f84a2a321f35f80fb",
+      "table_key": "analytics.subsystem_profile_cache"
     },
     {
       "schema_hash": "2c3d207b764a9a1c02eff84f4970e9e13432df816a5aa514d1fa2b3099a5cd73",
@@ -258,12 +266,16 @@
       "table_key": "core.goids"
     },
     {
-      "schema_hash": "a7d89ba471736c1a0a9825cd27689f382331940498f4b5bb1a6b65d2454cac09",
+      "schema_hash": "a4d4b6abffc597864d328d42109558904d5791e8fd882c13b73be67342c5e0f7",
       "table_key": "core.modules"
     },
     {
       "schema_hash": "df2e4cbe6a408cf0577ae6d04277c097553559f730b0eac25ffdead624c9a1d6",
       "table_key": "core.repo_map"
+    },
+    {
+      "schema_hash": "ab32d3a8c2a88b105b6baedb101b6cec5432ff4c92222457c9b5c4fd5b1acf84",
+      "table_key": "core.schema_inference_errors"
     },
     {
       "schema_hash": "83d4d2268089d38319f7102a39b9bb36243fbe9dbd0ab0825c70215179cc72c0",
@@ -339,8 +351,7 @@
     {
       "artifacts": [],
       "deps": [
-        "modules",
-        "scip_proto"
+        "modules"
       ],
       "domain": "ingestion",
       "impl_kind": "native",
@@ -365,7 +376,8 @@
     {
       "artifacts": [],
       "deps": [
-        "goids"
+        "goids",
+        "modules"
       ],
       "domain": "graphs",
       "impl_kind": "native",
@@ -515,6 +527,20 @@
       ]
     },
     {
+      "artifacts": [
+        {
+          "kind": null,
+          "name": "build_decision_trace",
+          "path_template": "{build_dir}/decision_trace.json"
+        }
+      ],
+      "deps": [],
+      "domain": "export",
+      "impl_kind": "native",
+      "name": "decision_trace",
+      "outputs": []
+    },
+    {
       "artifacts": [],
       "deps": [
         "goids"
@@ -645,7 +671,9 @@
     },
     {
       "artifacts": [],
-      "deps": [],
+      "deps": [
+        "goids"
+      ],
       "domain": "analytics",
       "impl_kind": "native",
       "name": "function_metrics",
@@ -711,6 +739,7 @@
     {
       "artifacts": [],
       "deps": [
+        "ast",
         "modules"
       ],
       "domain": "analytics",
@@ -764,6 +793,7 @@
       "artifacts": [],
       "deps": [
         "call_graph",
+        "coverage_functions",
         "function_metrics"
       ],
       "domain": "analytics",
@@ -782,7 +812,8 @@
         }
       ],
       "deps": [
-        "modules"
+        "modules",
+        "scip_proto"
       ],
       "domain": "ingestion",
       "impl_kind": "native",
@@ -862,7 +893,9 @@
       "domain": "export",
       "impl_kind": "native",
       "name": "serving_artifacts",
-      "outputs": []
+      "outputs": [
+        "core.schema_inference_errors"
+      ]
     },
     {
       "artifacts": [],
@@ -874,6 +907,21 @@
       "name": "subsystem_agreement",
       "outputs": [
         "analytics.subsystem_agreement"
+      ]
+    },
+    {
+      "artifacts": [],
+      "deps": [
+        "subsystem_graph_metrics",
+        "subsystems",
+        "test_profile"
+      ],
+      "domain": "analytics",
+      "impl_kind": "native",
+      "name": "subsystem_caches",
+      "outputs": [
+        "analytics.subsystem_coverage_cache",
+        "analytics.subsystem_profile_cache"
       ]
     },
     {

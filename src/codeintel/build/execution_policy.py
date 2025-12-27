@@ -9,7 +9,7 @@ from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.resources import IsolationKind, TargetExecution
 
 if TYPE_CHECKING:
-    from codeintel.build.targets import TargetGraph
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,16 +72,16 @@ class ExecutionPolicy:
 def effective_max_workers_for_graph(
     *,
     run_options: BuildExecutionOptions,
-    graph: TargetGraph,
+    catalog: DagCatalog,
 ) -> int | None:
-    """Return the effective max workers for a target graph.
+    """Return the effective max workers for a DAG catalog.
 
     Parameters
     ----------
     run_options
         Run-level execution options.
-    graph
-        Target graph whose per-target execution limits are evaluated.
+    catalog
+        Catalog whose per-target execution limits are evaluated.
 
     Returns
     -------
@@ -89,7 +89,7 @@ def effective_max_workers_for_graph(
         Effective maximum worker count for the run.
     """
     limits: list[int] = []
-    for target in graph.all_targets:
+    for target in catalog.all_targets:
         policy = ExecutionPolicy(run_options=run_options, target_execution=target.execution)
         max_workers = policy.effective_max_workers()
         if max_workers is not None:

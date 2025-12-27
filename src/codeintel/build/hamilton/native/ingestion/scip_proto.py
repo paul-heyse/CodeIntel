@@ -9,7 +9,8 @@ from importlib import metadata
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.patterns import (
@@ -30,7 +31,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.targets import TargetGraph
 from codeintel.core.hashing import file_hash
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
@@ -90,9 +90,16 @@ def scip_proto__hash_options(env: BuildEnv) -> InputHashOptions:
     InputHashOptions
         Hash inputs used to gate SCIP proto execution.
     """
-    proto_path = _proto_path(env.snapshot.repo_root)
+    repo_root = env.snapshot.repo_root
+    if repo_root is None:
+        return InputHashOptions(
+            file_state_hash=None,
+            options_hash=_options_hash(env),
+        )
+    proto_path = _proto_path(repo_root)
+    file_state_hash = file_hash(proto_path) if proto_path.is_file() else None
     return InputHashOptions(
-        file_state_hash=file_hash(proto_path),
+        file_state_hash=file_state_hash,
         options_hash=_options_hash(env),
     )
 
@@ -128,7 +135,7 @@ def _run_codegen(
 @tag_tool(domain="ingestion", target=SCIP_PROTO_TARGET)
 def t__scip_proto__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     scip_proto__hash_options: InputHashOptions,
 ) -> ScipProtoRunResult:
     """Generate scip_pb2.py using grpc_tools.protoc.
@@ -144,7 +151,7 @@ def t__scip_proto__run(
 
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SCIP_PROTO_TARGET,
         hash_options=scip_proto__hash_options,
         skip_reason="SCIP proto target skipped",
@@ -211,14 +218,14 @@ def scip__proto_module_path(
 
 @tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
 def scip_proto__materializations(
-    m__artifact__scip_pb2: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
+    m__artifact__scip_pb2: MaterializationResult,
+) -> dict[str, MaterializationResult]:
     """Collect scip proto artifact materializations.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
-        Mapping of artifact names to materialization metadata.
+    dict[str, MaterializationResult]
+        Mapping of artifact names to materialization results.
     """
     return {SCIP_PROTO_ARTIFACT: m__artifact__scip_pb2}
 
@@ -226,7 +233,7 @@ def scip_proto__materializations(
 @tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
 def scip_proto__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     scip_proto__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for SCIP proto codegen.
@@ -238,7 +245,7 @@ def scip_proto__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SCIP_PROTO_TARGET,
         hash_options=scip_proto__hash_options,
     )
@@ -258,7 +265,7 @@ def scip_proto__finalize_context(
 def t__scip_proto(
     scip_proto__finalize_context: ToolFinalizeContext,
     t__scip_proto__run: ScipProtoRunResult,
-    scip_proto__materializations: dict[str, MaterializationMetadata],
+    scip_proto__materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Emit target run record for protobuf codegen.
 

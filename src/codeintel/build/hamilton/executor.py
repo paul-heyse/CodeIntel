@@ -40,8 +40,9 @@ from codeintel.build.hamilton.hooks import (
     ValidationSummary,
     build_hooks,
 )
-from codeintel.build.hamilton.introspect import derive_target_io_surface
+from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
 from codeintel.build.hamilton.run_records import (
+    NativeRunInfo,
     RunRecordInputs,
     TargetRunRecord,
     compute_target_input_hash,
@@ -62,9 +63,9 @@ if TYPE_CHECKING:
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.core.config.settings import HamiltonTrackerSettings
     from codeintel.storage.gateway import StorageGateway
 
@@ -87,6 +88,12 @@ class _RunState:
     def duration_ms(self) -> float:
         """Return elapsed milliseconds for the run."""
         return (time.perf_counter() - self.start_time) * 1000
+
+
+@dataclass(frozen=True)
+class _MissingInputs:
+    required: tuple[str, ...]
+    optional: tuple[str, ...]
 
 
 class _TrackingConstants(Protocol):
@@ -249,7 +256,7 @@ def _categorize_outputs(
     return computed, skipped, failed
 
 
-def _safe_input_hash(target: OutputTarget, env: BuildEnv) -> str:
+def _safe_input_hash(target: TargetDescriptor, env: BuildEnv) -> str:
     try:
         return compute_target_input_hash(
             target=target,
@@ -261,16 +268,51 @@ def _safe_input_hash(target: OutputTarget, env: BuildEnv) -> str:
         return "MISSING"
 
 
+def _skip_record(
+    *,
+    target_name: str,
+    env: BuildEnv,
+    catalog: DagCatalog,
+    reason: str | None,
+) -> TargetRunRecord:
+    try:
+        target = catalog.get(target_name)
+    except KeyError:
+        return TargetRunRecord(
+            target=target_name,
+            impl_kind="native",
+            status="skipped",
+            input_hash=None,
+            error=reason,
+        )
+    input_hash = _safe_input_hash(target, env)
+    run = NativeRunInfo(
+        input_hash=input_hash,
+        options_hash=None,
+        duration_ms=0.0,
+        row_counts=None,
+    )
+    record = create_run_record(
+        target,
+        "skipped",
+        input_hash,
+        inputs=RunRecordInputs(env=env, run=run),
+    )
+    if reason:
+        return replace(record, error=reason)
+    return record
+
+
 def _failure_record(
     *,
     target_name: str,
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     error: str,
 ) -> TargetRunRecord:
     exc = RuntimeError(error)
     try:
-        target = graph.get(target_name)
+        target = catalog.get(target_name)
     except KeyError:
         return TargetRunRecord(
             target=target_name,
@@ -304,7 +346,7 @@ def _ensure_failure_records(
         record = _failure_record(
             target_name=target,
             env=env,
-            graph=runtime.graph,
+            catalog=runtime.catalog,
             error=error,
         )
         key = node_name or f"__failed__{target}"
@@ -345,36 +387,44 @@ def _preflight_missing_inputs(
     env: BuildEnv,
     runtime: HamiltonRuntime,
     closure: tuple[str, ...],
-) -> dict[str, tuple[str, ...]]:
-    graph = runtime.graph
+) -> dict[str, _MissingInputs]:
+    catalog = runtime.catalog
     produced_table_keys = {
-        table_key for target in closure for table_key in graph.get(target).table_keys
+        table_key for target in closure for table_key in catalog.get(target).table_keys
     }
-    surfaces = derive_target_io_surface(runtime, include_targets=closure)
-    missing_by_target: dict[str, tuple[str, ...]] = {}
+    surfaces = runtime.catalog.io_surfaces
+    missing_by_target: dict[str, _MissingInputs] = {}
 
     for target in closure:
         surface = surfaces.get(target)
         if surface is None:
             continue
-        missing: set[str] = set()
+        missing_required: set[str] = set()
+        missing_optional: set[str] = set()
+        optional_inputs = optional_inputs_for_target(target)
         for read in surface.reads:
             table_key = read.table_key
             if table_key in produced_table_keys:
                 continue
             if not _table_key_exists(env, table_key):
-                missing.add(table_key)
-        if missing:
-            missing_by_target[target] = tuple(sorted(missing))
+                if table_key in optional_inputs:
+                    missing_optional.add(table_key)
+                else:
+                    missing_required.add(table_key)
+        if missing_required or missing_optional:
+            missing_by_target[target] = _MissingInputs(
+                required=tuple(sorted(missing_required)),
+                optional=tuple(sorted(missing_optional)),
+            )
     return missing_by_target
 
 
-def _blocked_targets(graph: TargetGraph, roots: set[str]) -> set[str]:
+def _blocked_targets(catalog: DagCatalog, roots: set[str]) -> set[str]:
     blocked = set(roots)
     queue = list(roots)
     while queue:
         current = queue.pop()
-        for dependent in graph.dependents_of(current):
+        for dependent in catalog.dependents_of(current):
             if dependent in blocked:
                 continue
             blocked.add(dependent)
@@ -382,38 +432,58 @@ def _blocked_targets(graph: TargetGraph, roots: set[str]) -> set[str]:
     return blocked
 
 
-def _preflight_failure_records(
+def _preflight_blocked_records(
     *,
     env: BuildEnv,
     runtime: HamiltonRuntime,
     closure: tuple[str, ...],
-    missing_by_target: Mapping[str, tuple[str, ...]],
+    missing_by_target: Mapping[str, _MissingInputs],
 ) -> tuple[dict[str, TargetRunRecord], set[str]]:
-    graph = runtime.graph
-    roots = set(missing_by_target)
-    blocked = _blocked_targets(graph, roots)
+    catalog = runtime.catalog
+    required_roots = {target for target, missing in missing_by_target.items() if missing.required}
+    optional_roots = {
+        target
+        for target, missing in missing_by_target.items()
+        if missing.optional and not missing.required
+    }
+    blocked_failed = _blocked_targets(catalog, required_roots)
+    blocked_skipped = _blocked_targets(catalog, optional_roots) - blocked_failed
     blocked_records: dict[str, TargetRunRecord] = {}
-    root_list = ", ".join(sorted(roots))
+    required_list = ", ".join(sorted(required_roots))
+    optional_list = ", ".join(sorted(optional_roots))
 
     for target in closure:
-        if target not in blocked:
-            continue
-        if target in missing_by_target:
-            missing_tables = ", ".join(missing_by_target[target])
-            error = f"Missing input tables: {missing_tables}"
+        if target in blocked_failed:
+            if target in missing_by_target and missing_by_target[target].required:
+                missing_tables = ", ".join(missing_by_target[target].required)
+                error = f"Missing input tables: {missing_tables}"
+            else:
+                error = f"Missing upstream inputs: {required_list}"
+            record = _failure_record(
+                target_name=target,
+                env=env,
+                catalog=catalog,
+                error=error,
+            )
+        elif target in blocked_skipped:
+            if target in missing_by_target and missing_by_target[target].optional:
+                missing_tables = ", ".join(missing_by_target[target].optional)
+                reason = f"Missing optional input tables: {missing_tables}"
+            else:
+                reason = f"Missing upstream inputs: {optional_list}"
+            record = _skip_record(
+                target_name=target,
+                env=env,
+                catalog=catalog,
+                reason=reason,
+            )
         else:
-            error = f"Missing upstream inputs: {root_list}"
-        record = _failure_record(
-            target_name=target,
-            env=env,
-            graph=graph,
-            error=error,
-        )
+            continue
         node_name = target_to_node_name(target, runtime=runtime)
         key = node_name or f"__preflight__{target}"
         blocked_records[key] = record
 
-    return blocked_records, blocked
+    return blocked_records, blocked_failed | blocked_skipped
 
 
 def _apply_preflight(
@@ -430,7 +500,7 @@ def _apply_preflight(
     if not preflight_missing:
         return final_vars, {}
 
-    preflight_records, blocked_targets = _preflight_failure_records(
+    preflight_records, blocked_targets = _preflight_blocked_records(
         env=context.env,
         runtime=context.runtime,
         closure=closure,
@@ -464,7 +534,7 @@ def _finalize_run(
     context: _RunState,
     inputs: _FinalizeInputs,
 ) -> HamiltonBuildResult:
-    graph = context.runtime.graph
+    catalog = context.runtime.catalog
     computed, skipped, failed = _categorize_outputs(inputs.closure, inputs.outputs, context.runtime)
     duration_ms = context.duration_ms
     success = not failed and inputs.error is None
@@ -476,7 +546,7 @@ def _finalize_run(
     inputs.writer.persist_asset_catalog(
         env=context.env,
         run_id=context.run_id,
-        graph=graph,
+        catalog=catalog,
         records=records,
     )
 
@@ -673,7 +743,7 @@ class HamiltonBuildExecutor:
         telemetry_hook: NodeTelemetryHook | None,
         contract_hook: ContractEnforcementHook | None,
     ) -> HamiltonBuildResult:
-        graph = context.runtime.graph
+        catalog = context.runtime.catalog
         requested_targets = list(context.targets)
 
         log.info(
@@ -689,7 +759,7 @@ class HamiltonBuildExecutor:
             started_at=context.started_at,
         )
 
-        closure = self._compute_closure(graph, requested_targets, context.run_id)
+        closure = self._compute_closure(catalog, requested_targets, context.run_id)
         if closure is None:
             writer.complete_run(
                 run_id=context.run_id,
@@ -748,8 +818,8 @@ class HamiltonBuildExecutor:
             ),
         )
 
-    def _effective_max_workers(self, graph: TargetGraph) -> int | None:
-        return effective_max_workers_for_graph(run_options=self._options, graph=graph)
+    def _effective_max_workers(self, catalog: DagCatalog) -> int | None:
+        return effective_max_workers_for_graph(run_options=self._options, catalog=catalog)
 
     def _build_runtime(
         self,
@@ -764,7 +834,7 @@ class HamiltonBuildExecutor:
         Returns
         -------
         HamiltonRuntime
-            Configured runtime with driver and target graph.
+            Configured runtime with driver and catalog.
         """
         config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
         telemetry_hook: NodeTelemetryHook | None = None
@@ -772,11 +842,11 @@ class HamiltonBuildExecutor:
 
         hook_options = self._options.hook_options(env=env)
 
-        def _adapter_factory(graph: TargetGraph) -> list[LifecycleAdapter]:
+        def _adapter_factory(catalog: DagCatalog) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
             nonlocal contract_hook
             adapters: list[LifecycleAdapter] = []
-            effective_max_workers = self._effective_max_workers(graph)
+            effective_max_workers = self._effective_max_workers(catalog)
             parallel_adapter = create_parallel_adapter(
                 self._options.parallel_backend,
                 max_workers=effective_max_workers,
@@ -787,7 +857,7 @@ class HamiltonBuildExecutor:
             else:
                 adapters.append(h_base.DictResult())
 
-            hooks = build_hooks(run_id, writer, graph, options=hook_options)
+            hooks = build_hooks(run_id, writer, catalog, options=hook_options)
             for hook in hooks:
                 if isinstance(hook, NodeTelemetryHook):
                     telemetry_hook = hook
@@ -814,7 +884,7 @@ class HamiltonBuildExecutor:
 
     @staticmethod
     def _compute_closure(
-        graph: TargetGraph,
+        catalog: DagCatalog,
         targets: list[str],
         run_id: str,
     ) -> tuple[str, ...] | None:
@@ -826,7 +896,7 @@ class HamiltonBuildExecutor:
             Ordered dependency closure, or None if computation failed.
         """
         try:
-            return graph.topological_order(targets)
+            return catalog.closure(targets)
         except (KeyError, ValueError):
             log.exception("build.hamilton.executor.closure_error run_id=%s", run_id)
             return None
@@ -848,7 +918,7 @@ class HamiltonBuildExecutor:
             record = _failure_record(
                 target_name=target,
                 env=context.env,
-                graph=context.runtime.graph,
+                catalog=context.runtime.catalog,
                 error=error,
             )
             outputs[f"__failed__{target}"] = record
@@ -882,7 +952,7 @@ class HamiltonBuildExecutor:
             record = _failure_record(
                 target_name=target,
                 env=context.env,
-                graph=context.runtime.graph,
+                catalog=context.runtime.catalog,
                 error=f"Missing node mappings for: {missing}",
             )
             outputs[f"__missing__{target}"] = record
@@ -936,7 +1006,7 @@ class HamiltonBuildExecutor:
             ):
                 outputs = context.runtime.dr.execute(
                     list(final_vars),
-                    inputs={"env": execution_env, "graph": context.runtime.graph},
+                    inputs={"env": execution_env, "catalog": context.runtime.catalog},
                 )
         except Exception as exc:
             log.exception("build.hamilton.executor.error run_id=%s", context.run_id)

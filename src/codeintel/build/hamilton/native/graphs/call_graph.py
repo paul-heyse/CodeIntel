@@ -11,7 +11,6 @@ Phase 3: Graphs domain migration with Hamilton-native validation.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,7 +20,8 @@ import ibis
 import ibis.expr.types as ir
 import libcst as cst
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
@@ -42,7 +42,6 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.catalog import FunctionSpanIndex, load_function_index
 from codeintel.core.ibis_typing import and_predicates, filter_by, isin_values
 from codeintel.core.paths import normalize_path
@@ -65,7 +64,7 @@ if TYPE_CHECKING:
     )
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 CALL_GRAPH_TARGET_NAME = "call_graph"
 CALL_GRAPH_NODES_TABLE_KEY = "graph.call_graph_nodes"
@@ -542,15 +541,8 @@ def _collect_all_edges(
     return all_edges
 
 
-def _serialize_edge_row(edge: CallGraphEdgeRow) -> CallGraphEdgeRow:
-    evidence = edge["evidence_json"]
-    if isinstance(evidence, dict):
-        return {**edge, "evidence_json": json.dumps(evidence)}
-    return edge
-
-
 def _serialize_call_graph_edges(edges: list[CallGraphEdgeRow]) -> list[CallGraphEdgeRow]:
-    return [_serialize_edge_row(edge) for edge in dedupe_edge_rows(edges)]
+    return dedupe_edge_rows(edges)
 
 
 def _coerce_call_graph_output(output: ToolStepOutput) -> CallGraphToolOutput:
@@ -562,7 +554,7 @@ def _coerce_call_graph_output(output: ToolStepOutput) -> CallGraphToolOutput:
 @tag_tool(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def t__call_graph__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     call_graph__hash_options: InputHashOptions,
     call_graph__run_inputs: CallGraphRunInputs,
 ) -> CallGraphToolOutput:
@@ -576,13 +568,15 @@ def t__call_graph__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CALL_GRAPH_TARGET_NAME,
         hash_options=call_graph__hash_options,
         skip_reason="call_graph skipped",
     )
 
     def _execute() -> CallGraphToolOutput:
+        if call_graph__run_inputs.goids_record.status == "skipped":
+            return CallGraphToolOutput(result=ExecutionResult.skip("Upstream goids target skipped"))
         if call_graph__run_inputs.goids_record.status != "succeeded":
             return CallGraphToolOutput(
                 result=ExecutionResult.failed(
@@ -788,14 +782,14 @@ def call_graph__edges_rows(
 
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def call_graph__table_materializations(
-    m__graph__call_graph_nodes: MaterializationMetadata,
-    m__graph__call_graph_edges: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for call graph tables.
+    m__graph__call_graph_nodes: MaterializationResult,
+    m__graph__call_graph_edges: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect materialization results for call graph tables.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Return value.
 
     """
@@ -808,7 +802,7 @@ def call_graph__table_materializations(
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
 def call_graph__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     call_graph__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for call graph.
@@ -821,7 +815,7 @@ def call_graph__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CALL_GRAPH_TARGET_NAME,
         hash_options=call_graph__hash_options,
     )
@@ -832,7 +826,7 @@ def t__call_graph(
     call_graph__finalize_context: ToolFinalizeContext,
     t__call_graph__run: CallGraphToolOutput,
     t__call_graph__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    call_graph__table_materializations: dict[str, MaterializationMetadata],
+    call_graph__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Construct a function call graph.
 

@@ -9,10 +9,8 @@ from typing import TYPE_CHECKING, Protocol, cast
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.build.contracts import OutputContract
     from codeintel.build.schemas.contract_service import (
         ContractResolutionSettings,
-        DatasetContractOverrides,
     )
     from codeintel.core.schemas.contract_primitives import DatasetContract
 
@@ -83,25 +81,6 @@ def is_view(table_key: str) -> bool:
     """
     handler = cast("Callable[[str], bool]", _load_handler("is_view"))
     return bool(handler(table_key))
-
-
-def overrides_from_output_contract(
-    contract: OutputContract,
-    *,
-    table_key: str,
-) -> DatasetContractOverrides:
-    """Return DatasetContract overrides sourced from an OutputContract.
-
-    Returns
-    -------
-    DatasetContractOverrides
-        Contract overrides derived from the output contract.
-    """
-    handler = cast(
-        "Callable[..., DatasetContractOverrides]",
-        _load_handler("overrides_from_output_contract"),
-    )
-    return handler(contract, table_key=table_key)
 
 
 def get_contract_for_table_key(
@@ -188,5 +167,4 @@ __all__ = [
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
-    "overrides_from_output_contract",
 ]

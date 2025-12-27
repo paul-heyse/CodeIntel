@@ -38,10 +38,6 @@ from codeintel.build.hamilton.io.dataset_ref import (
 )
 from codeintel.build.hamilton.io.ibis_adapter import IbisIOConfig
 from codeintel.build.hamilton.naming import dataset_node, target_node
-from codeintel.build.hamilton.nodes.support_factory import (
-    SupportGenerationOptions,
-    build_support_module,
-)
 from codeintel.build.hamilton.observability import (
     export_dag_json,
     get_dag_info,
@@ -64,21 +60,21 @@ class TestHamiltonDriverMappings:
 
     @staticmethod
     def test_runtime_has_target_to_node_mapping() -> None:
-        """Verify runtime carries target_to_node mapping."""
+        """Verify runtime carries target-to-node mapping in the catalog."""
         runtime = build_driver()
-        if not runtime.target_to_node:
-            pytest.fail("Runtime missing target_to_node mapping")
-        if "modules" not in runtime.target_to_node:
-            pytest.fail("Mapping missing 'modules' target")
+        if not runtime.catalog.target_nodes:
+            pytest.fail("Runtime catalog missing target_nodes mapping")
+        if "modules" not in runtime.catalog.target_nodes:
+            pytest.fail("Catalog missing 'modules' target")
 
     @staticmethod
     def test_runtime_has_node_to_target_mapping() -> None:
-        """Verify runtime carries node_to_target mapping."""
+        """Verify runtime carries node-to-target mapping in the catalog."""
         runtime = build_driver()
-        if not runtime.node_to_target:
-            pytest.fail("Runtime missing node_to_target mapping")
-        if "t__modules" not in runtime.node_to_target:
-            pytest.fail("Mapping missing 't__modules' node")
+        if not runtime.catalog.node_to_target:
+            pytest.fail("Runtime catalog missing node_to_target mapping")
+        if "t__modules" not in runtime.catalog.node_to_target:
+            pytest.fail("Catalog missing 't__modules' node")
 
     @staticmethod
     def test_target_to_node_name_with_runtime() -> None:
@@ -91,7 +87,7 @@ class TestHamiltonDriverMappings:
     @staticmethod
     def test_target_to_node_name_without_runtime() -> None:
         """Verify target_to_node_name works without runtime."""
-        node_name = target_to_node_name("modules", runtime=build_driver())
+        node_name = target_to_node_name("modules")
         if node_name != "t__modules":
             pytest.fail(f"Expected 't__modules', got '{node_name}'")
 
@@ -387,40 +383,16 @@ class TestObservability:
             pytest.fail("JSON missing 'nodes' field")
 
 
-class TestSupportFactory:
-    """Tests for support-node module generation."""
+class TestSupportNodesCompilation:
+    """Tests for support-node compilation."""
 
     @staticmethod
-    def test_build_support_module_creates_module() -> None:
-        """Verify build_support_module returns a module with nodes."""
-        module = build_support_module()
-        if not hasattr(module, "__doc__"):
-            pytest.fail("Module missing __doc__")
-
-    @staticmethod
-    def test_build_support_module_has_target_to_node() -> None:
-        """Verify support module exposes TARGET_TO_NODE mapping."""
-        module = build_support_module()
-        if not hasattr(module, "TARGET_TO_NODE"):
-            pytest.fail("Module missing TARGET_TO_NODE")
-        if len(module.TARGET_TO_NODE) != 0:
-            pytest.fail("TARGET_TO_NODE should be empty for native-only modules")
-
-    @staticmethod
-    def test_build_support_module_has_dataset_to_node() -> None:
-        """Verify support module has DATASET_TO_NODE mapping."""
-        module = build_support_module()
-        if not hasattr(module, "DATASET_TO_NODE"):
-            pytest.fail("Module missing DATASET_TO_NODE mapping")
-
-    @staticmethod
-    def test_build_support_module_respects_exclude() -> None:
-        """Verify exclude_targets filters out targets."""
-        module = build_support_module(
-            options=SupportGenerationOptions(exclude_targets=frozenset({"modules"})),
-        )
-        if hasattr(module, dataset_node("core.modules")):
-            pytest.fail("Excluded target should not expose dataset nodes")
+    def test_driver_includes_dataset_nodes() -> None:
+        """Verify driver graph includes dataset nodes for contract outputs."""
+        runtime = build_driver()
+        node_names = set(runtime.dr.graph.nodes)
+        if dataset_node("analytics.function_metrics") not in node_names:
+            pytest.fail("Expected dataset nodes for analytics.function_metrics")
 
 
 class TestDriverConstruction:

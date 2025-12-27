@@ -5,28 +5,34 @@ Show build plan with status and reason for each target.
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ TARGETS --targets            Target names to plan (e.g., function_metrics,   │
 │   --empty-targets            call_graph). [env var:                          │
+│                              CODEINTEL_BUILD_PLAN_TARGETS,                   │
 │                              CODEINTEL_BUILD_PLAN_TARGETS] [default: (none)] │
 │ MODULE --module -m           Plan all targets in a module (ingestion,        │
 │                              graphs, analytics, export). [env var:           │
+│                              CODEINTEL_BUILD_PLAN_MODULE,                    │
 │                              CODEINTEL_BUILD_PLAN_MODULE] [default: (none)]  │
 │ ALL --all -a                 Plan all targets across all modules. [env var:  │
+│                              CODEINTEL_BUILD_PLAN_ALL,                       │
 │                              CODEINTEL_BUILD_PLAN_ALL] [default: false]      │
 │ FORCE --force --empty-force  Mark specific targets as forced (repeatable).   │
-│   -f                         [env var: CODEINTEL_BUILD_PLAN_FORCE] [default: │
-│                              (none)]                                         │
+│   -f                         [env var: CODEINTEL_BUILD_PLAN_FORCE,           │
+│                              CODEINTEL_BUILD_PLAN_FORCE] [default: (none)]   │
 │ OUTPUT --output -o           Output file path (stdout if not specified).     │
-│                              [env var: CODEINTEL_BUILD_PLAN_OUTPUT]          │
-│                              [default: (none)]                               │
-│ --flags                      [env var: CODEINTEL_BUILD_PLAN_FLAGS] [default: │
-│                              --flags]                                        │
+│                              [env var: CODEINTEL_BUILD_PLAN_OUTPUT,          │
+│                              CODEINTEL_BUILD_PLAN_OUTPUT] [default: (none)]  │
+│ *                            [env var: CODEINTEL_BUILD_PLAN_*] [default: *]  │
 │ ROOT --root -r               Explicit project root directory. [env var:      │
+│                              CODEINTEL_BUILD_PLAN_ROOT,                      │
 │                              CODEINTEL_BUILD_PLAN_ROOT] [default: (none)]    │
 │ OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]     │
-│   --output-format            [env var: CODEINTEL_BUILD_PLAN_OUTPUT_FORMAT]   │
-│                              [default: text]                                 │
+│   --output-format            [env var: CODEINTEL_BUILD_PLAN_OUTPUT_FORMAT,   │
+│                              CODEINTEL_BUILD_PLAN_OUTPUT_FORMAT] [default:   │
+│                              text]                                           │
 │ JSON --json                  Alias for --output-format json. [env var:       │
+│                              CODEINTEL_BUILD_PLAN_JSON,                      │
 │                              CODEINTEL_BUILD_PLAN_JSON] [default: false]     │
 │ VERBOSE --verbose -v         Increase verbosity (0=warnings, 1=info,         │
 │                              2=debug). [env var:                             │
+│                              CODEINTEL_BUILD_PLAN_VERBOSE,                   │
 │                              CODEINTEL_BUILD_PLAN_VERBOSE] [default: 0]      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

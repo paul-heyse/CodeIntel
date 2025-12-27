@@ -347,26 +347,25 @@ def build_schema_index(
     ValueError
         If non-inferable outputs are missing explicit overrides.
     """
-    inferable = inference_service.inferable_table_keys(graph=system.graph)
+    inferable = inference_service.inferable_table_keys(catalog=system.catalog)
     derivations: dict[str, SchemaDerivation] = {}
     missing_overrides: list[tuple[str, str]] = []
 
-    for target in system.graph.all_targets:
-        for table_key in target.contract.table_keys:
-            override_schema = target.contract.get_table(table_key)
-            if table_key in inferable:
-                kind: SchemaDerivationKind = "inferred_ibis"
-            else:
-                if override_schema is None:
-                    missing_overrides.append((table_key, target.name))
-                    continue
-                kind = "explicit_override"
-            derivations[table_key] = SchemaDerivation(
-                table_key=table_key,
-                kind=kind,
-                source=target.name,
-                override_schema=override_schema,
-            )
+    for table_key, output in sorted(system.catalog.table_outputs.items()):
+        override_schema = declared_provider.get_table_schema(table_key)
+        if table_key in inferable:
+            kind: SchemaDerivationKind = "inferred_ibis"
+        else:
+            if override_schema is None:
+                missing_overrides.append((table_key, output.producer_target))
+                continue
+            kind = "explicit_override"
+        derivations[table_key] = SchemaDerivation(
+            table_key=table_key,
+            kind=kind,
+            source=output.producer_target,
+            override_schema=override_schema,
+        )
 
     if missing_overrides:
         missing = ", ".join(

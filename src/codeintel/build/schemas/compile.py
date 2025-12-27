@@ -35,9 +35,10 @@ from codeintel.storage.views.inventory import discover_derived_docs_views
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.schemas.schema_index import SchemaIndex
-    from codeintel.build.targets import TargetGraph, TargetModule
+    from codeintel.build.targets import TargetModule
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import DuckDBConnection
@@ -163,7 +164,7 @@ class NativeBatchInferer(Protocol):
 
 def _table_keys_for_selection(
     *,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     runtime: HamiltonRuntime,
     selection: TableKeySelection,
 ) -> tuple[str, ...]:
@@ -171,8 +172,8 @@ def _table_keys_for_selection(
 
     Parameters
     ----------
-    graph
-        Target graph containing target definitions.
+    catalog
+        DAG catalog containing target definitions.
     runtime
         Hamilton runtime for resolving native targets.
     selection
@@ -196,15 +197,15 @@ def _table_keys_for_selection(
     stable = selection.stable
 
     if targets:
-        missing = sorted(t for t in targets if t not in graph)
+        missing = sorted(t for t in targets if t not in catalog.targets)
         if missing:
             msg = f"Unknown targets: {missing}"
             raise KeyError(msg)
-        selected = [graph.get(t) for t in targets]
+        selected = [catalog.get(t) for t in targets]
     elif module is not None:
-        selected = list(graph.targets_for_module(module))
+        selected = list(catalog.targets_for_module(module))
     else:
-        selected = list(graph.all_targets) if all_targets or not (targets or module) else []
+        selected = list(catalog.all_targets) if all_targets or not (targets or module) else []
 
     native_names = native_target_names(runtime)
     missing_native = [t.name for t in selected if t.name not in native_names]
@@ -214,7 +215,9 @@ def _table_keys_for_selection(
 
     table_keys: list[str] = []
     for target in selected:
-        table_keys.extend(target.contract.table_keys)
+        table_keys.extend(
+            output.key for output in catalog.table_outputs_by_target.get(target.name, ())
+        )
 
     if stable:
         return tuple(sorted(set(table_keys)))
@@ -659,7 +662,7 @@ def compile_schema_manifest(
     service = get_target_metadata_service()
     selection = TableKeySelection.from_request(req)
     table_keys = _table_keys_for_selection(
-        graph=service.system.graph,
+        catalog=service.system.catalog,
         runtime=service.system.runtime,
         selection=selection,
     )

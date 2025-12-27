@@ -20,7 +20,8 @@ from typing import TYPE_CHECKING
 
 import ibis.expr.types as ir
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.helpers import filter_paths, get_source_root
@@ -41,7 +42,6 @@ from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
@@ -52,7 +52,7 @@ if TYPE_CHECKING:
     from codeintel.core.data_models.rows import CFGBlockRow, CFGEdgeRow, DFGEdgeRow
 log = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 CFG_TARGET_NAME = "cfg"
 DFG_TARGET_NAME = "dfg"
@@ -421,7 +421,7 @@ def _coerce_dfg_output(output: ToolStepOutput) -> DfgToolOutput:
 @tag_tool(domain="graphs", target=CFG_TARGET_NAME)
 def t__cfg__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     cfg__hash_options: InputHashOptions,
     cfg__run_inputs: CfgRunInputs,
 ) -> CfgToolOutput:
@@ -435,13 +435,15 @@ def t__cfg__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CFG_TARGET_NAME,
         hash_options=cfg__hash_options,
         skip_reason="cfg skipped",
     )
 
     def _execute() -> CfgToolOutput:
+        if cfg__run_inputs.goids_record.status == "skipped":
+            return CfgToolOutput(result=ExecutionResult.skip("Upstream goids target skipped"))
         if cfg__run_inputs.goids_record.status != "succeeded":
             return CfgToolOutput(
                 result=ExecutionResult.failed(
@@ -604,14 +606,14 @@ def cfg__edges_rows(
 
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
 def cfg__table_materializations(
-    m__graph__cfg_blocks: MaterializationMetadata,
-    m__graph__cfg_edges: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for CFG tables.
+    m__graph__cfg_blocks: MaterializationResult,
+    m__graph__cfg_edges: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect materialization results for CFG tables.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Return value.
 
     """
@@ -624,7 +626,7 @@ def cfg__table_materializations(
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
 def cfg__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     cfg__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for CFG.
@@ -637,7 +639,7 @@ def cfg__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=CFG_TARGET_NAME,
         hash_options=cfg__hash_options,
     )
@@ -648,7 +650,7 @@ def t__cfg(
     cfg__finalize_context: ToolFinalizeContext,
     t__cfg__run: CfgToolOutput,
     t__cfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    cfg__table_materializations: dict[str, MaterializationMetadata],
+    cfg__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Construct control flow graphs per function.
 
@@ -670,7 +672,7 @@ def t__cfg(
 @tag_tool(domain="graphs", target=DFG_TARGET_NAME)
 def t__dfg__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__cfg__run: CfgToolOutput,
     dfg__hash_options: InputHashOptions,
 ) -> DfgToolOutput:
@@ -684,7 +686,7 @@ def t__dfg__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=DFG_TARGET_NAME,
         hash_options=dfg__hash_options,
         skip_reason="dfg skipped",
@@ -802,13 +804,13 @@ def dfg__edges_rows(
 
 @tag_helper(domain="graphs", target=DFG_TARGET_NAME)
 def dfg__table_materializations(
-    m__graph__dfg_edges: MaterializationMetadata,
-) -> dict[str, MaterializationMetadata]:
-    """Collect materialization metadata for DFG tables.
+    m__graph__dfg_edges: MaterializationResult,
+) -> dict[str, MaterializationResult]:
+    """Collect materialization results for DFG tables.
 
     Returns
     -------
-    dict[str, MaterializationMetadata]
+    dict[str, MaterializationResult]
         Return value.
 
     """
@@ -818,7 +820,7 @@ def dfg__table_materializations(
 @tag_helper(domain="graphs", target=DFG_TARGET_NAME)
 def dfg__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     dfg__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for DFG.
@@ -831,7 +833,7 @@ def dfg__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=DFG_TARGET_NAME,
         hash_options=dfg__hash_options,
     )
@@ -842,7 +844,7 @@ def t__dfg(
     dfg__finalize_context: ToolFinalizeContext,
     t__dfg__run: DfgToolOutput,
     t__dfg__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    dfg__table_materializations: dict[str, MaterializationMetadata],
+    dfg__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Construct data flow graphs per function.
 

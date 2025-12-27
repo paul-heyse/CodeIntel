@@ -6,7 +6,8 @@ import json
 
 from hamilton.function_modifiers import source, value
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
     DECISION_TRACE_PATH_TEMPLATE,
@@ -25,9 +26,8 @@ from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute
-from codeintel.build.targets import TargetGraph
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 
 def _requested_targets(env: BuildEnv) -> tuple[str, ...]:
@@ -41,13 +41,13 @@ def _requested_targets(env: BuildEnv) -> tuple[str, ...]:
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{DECISION_TRACE_ARTIFACT_NAME}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(DECISION_TRACE_TARGET_NAME),
     artifact_name=value(DECISION_TRACE_ARTIFACT_NAME),
     path_template=value(DECISION_TRACE_PATH_TEMPLATE),
 )
 @tag_compute(domain="export", target=DECISION_TRACE_TARGET_NAME, target_="decision_trace__content")
-def decision_trace__content(env: BuildEnv, graph: TargetGraph) -> str | None:
+def decision_trace__content(env: BuildEnv, catalog: DagCatalog) -> str | None:
     """Materialize the build decision trace as JSON.
 
     Returns
@@ -58,7 +58,7 @@ def decision_trace__content(env: BuildEnv, graph: TargetGraph) -> str | None:
     requested = _requested_targets(env)
     if not requested:
         return None
-    plan = compute_plan(env=env, graph=graph, requested=requested, graph_source="hamilton")
+    plan = compute_plan(env=env, catalog=catalog, requested=requested)
     payload = build_decision_trace_payload(plan)
     return f"{json.dumps(payload, indent=2)}\n"
 
@@ -66,8 +66,8 @@ def decision_trace__content(env: BuildEnv, graph: TargetGraph) -> str | None:
 @codeintel_target(domain="export", target=DECISION_TRACE_TARGET_NAME)
 def t__decision_trace(
     env: BuildEnv,
-    graph: TargetGraph,
-    m__artifact__build_decision_trace: MaterializationMetadata,
+    catalog: DagCatalog,
+    m__artifact__build_decision_trace: MaterializationResult,
 ) -> TargetRunRecord:
     """Persist the decision trace artifact and emit a target record.
 
@@ -78,7 +78,7 @@ def t__decision_trace(
     """
     context = FileArtifactRecordContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=DECISION_TRACE_TARGET_NAME,
     )
     return record_from_file_artifact_materialization(

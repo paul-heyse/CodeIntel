@@ -26,7 +26,8 @@ from codeintel.analytics.graphs.config_data_flow import compute_config_data_flow
 from codeintel.analytics.graphs.config_graph_metrics import compute_config_graph_metrics_result
 from codeintel.analytics.resources import ProviderRegistryOptions, build_registry
 from codeintel.analytics.resources.asts import AstProvider
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
@@ -46,7 +47,6 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.core.hamilton.records import TargetRunRecord
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.graphs.runtime import resolve_graph_runtime
@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from codeintel.analytics.parsing.ast_cache import FunctionAst
 
 log = logging.getLogger(__name__)
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord)
 
 CONFIG_DATA_FLOW_TARGET_NAME = "config_data_flow"
 CFG_DFG_METRICS_TARGET_NAME = "cfg_dfg_metrics"
@@ -132,7 +132,7 @@ def config_data_flow__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def config_data_flow__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     config_data_flow__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when config_data_flow should be skipped.
@@ -144,7 +144,7 @@ def config_data_flow__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         CONFIG_DATA_FLOW_TARGET_NAME,
         hash_options=config_data_flow__hash_options,
     )
@@ -169,7 +169,7 @@ def cfg_dfg_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def cfg_dfg_metrics__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     cfg_dfg_metrics__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when cfg_dfg_metrics should be skipped.
@@ -181,7 +181,7 @@ def cfg_dfg_metrics__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         CFG_DFG_METRICS_TARGET_NAME,
         hash_options=cfg_dfg_metrics__hash_options,
     )
@@ -292,7 +292,7 @@ def t__config_data_flow__compute(
             ),
         )
         try:
-            ast_data = registry.require(AstProvider).get()
+            ast_data = registry.require(AstProvider)
             ast_by_goid = ast_data.function_ast_map
             missing_goids = ast_data.missing_function_goids
         except (ResourceNotFoundError, RuntimeError, ValueError, OSError) as exc:
@@ -462,9 +462,9 @@ config_data_flow__table_materializations = make_table_materializations_collector
 @codeintel_target(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
 def t__config_data_flow(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__config_data_flow__compute: ConfigDataFlowComputeResult,
-    config_data_flow__table_materializations: dict[str, MaterializationMetadata],
+    config_data_flow__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Config key usage flow through functions.
 
@@ -474,12 +474,12 @@ def t__config_data_flow(
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     t__config_data_flow__compute
         Computed config data flow result from the compute node.
     config_data_flow__table_materializations
-        Materialization metadata for config data flow tables.
+        Materialization results for config data flow tables.
 
     Returns
     -------
@@ -504,7 +504,7 @@ def t__config_data_flow(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=CONFIG_DATA_FLOW_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -517,7 +517,7 @@ def t__config_data_flow(
 # ---------------------------------------------------------------------------
 
 
-_CFG_DFG_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, CfgMetricsResult, DfgMetricsResult)
+_CFG_DFG_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, CfgMetricsResult, DfgMetricsResult)
 
 
 @tag_compute(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
@@ -720,8 +720,8 @@ cfg_dfg_metrics__table_materializations = make_table_materializations_collector(
 @codeintel_target(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
 def t__cfg_dfg_metrics(
     env: BuildEnv,
-    graph: TargetGraph,
-    cfg_dfg_metrics__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    cfg_dfg_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Control-flow and data-flow graph metrics per function.
 
@@ -733,7 +733,7 @@ def t__cfg_dfg_metrics(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=CFG_DFG_METRICS_TARGET_NAME,
         ),
         artifact_materializations=None,

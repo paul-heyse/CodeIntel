@@ -16,26 +16,27 @@ from codeintel.build.target_metadata import (
     clear_target_metadata_cache,
     is_target_metadata_loaded,
 )
-from codeintel.build.targets import OutputTarget
+from codeintel.build.targets import TargetDescriptor
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_false, expect_true
-from tests._helpers.contracts import table_schema_for_key
+from tests._helpers.catalog import make_target_descriptor
+from tests._helpers.contracts import table_output_for_key
 
 
 @dataclass(frozen=True)
 class _StubTargetMetadataProvider(TargetMetadataProvider):
-    target: OutputTarget
+    target: TargetDescriptor
 
-    def get_target(self, name: str) -> OutputTarget | None:
+    def get_target(self, name: str) -> TargetDescriptor | None:
         if name == self.target.name:
             return self.target
         return None
 
-    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+    def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
         if table_key in self.target.table_keys:
             return self.target
         return None
 
-    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+    def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         if artifact_name in self.target.contract.artifact_names:
             return self.target
         return None
@@ -59,11 +60,15 @@ def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
 
     table_key = "analytics.function_metrics"
     contract = OutputContract(
-        tables=(table_schema_for_key(table_key),),
+        tables=(table_output_for_key(table_key),),
         owner="unit-test-owner",
         jsonl_filenames=("custom.jsonl",),
     )
-    target = OutputTarget(name="unit_test_target", module="analytics", contract=contract)
+    target = make_target_descriptor(
+        name="unit_test_target",
+        module="analytics",
+        contract=contract,
+    )
     provider = _StubTargetMetadataProvider(target=target)
 
     settings = ContractResolutionSettings(target_metadata_provider=provider)

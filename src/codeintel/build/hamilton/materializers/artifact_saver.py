@@ -19,23 +19,25 @@ from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 from hamilton.io.data_adapters import DataSaver
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
     MaterializationContextError,
     duration_ms,
     resolve_materialization_context,
 )
-from codeintel.build.hamilton.materializers.metadata import FileArtifactMaterializationMetadata
 from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
-
-SaveStatus = Literal["succeeded", "skipped", "failed"]
+from codeintel.core.execution.materialization import (
+    failed_artifact_result,
+    skipped_artifact_result,
+    succeeded_artifact_result,
+)
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -71,21 +73,21 @@ class FileArtifactSaver(DataSaver):
     """Persist a file artifact for a specific snapshot.
 
     This adapter:
-    - Computes the target input hash (manifest key) from the graph + env.
+    - Computes the target input hash (manifest key) from the catalog + env.
     - Applies manifest-based skip (authoritative for artifact writes).
     - Writes bytes to a contract-resolved output path using atomic rename.
-    - Returns a metadata dict (as required by Hamilton's DataSaver API).
+    - Returns metadata convertible to a MaterializationResult describing the write outcome.
     """
 
     env: BuildEnv
-    graph: TargetGraph
+    catalog: DagCatalog
     target_name: str
     artifact_name: str
     path_template: str | None = None
     hash_options: InputHashOptions | None = None
     output_role: Literal["contract", "internal"] | None = None
 
-    _hamilton_runtime_types = (BuildEnv, TargetGraph)
+    _hamilton_runtime_types = (BuildEnv, DagCatalog)
 
     @classmethod
     def name(cls) -> str:
@@ -136,7 +138,7 @@ class FileArtifactSaver(DataSaver):
 
         return super().applies_to(type_)
 
-    def save_data(self, data: object) -> MaterializationMetadata:
+    def save_data(self, data: object) -> dict[str, object]:
         """Save the provided artifact content and return metadata.
 
         Parameters
@@ -147,22 +149,22 @@ class FileArtifactSaver(DataSaver):
 
         Returns
         -------
-        MaterializationMetadata
+        dict[str, object]
             Metadata describing the write, including status and input hash.
         """
         start = perf_counter()
         input_hash: str | None = None
-        result: MaterializationMetadata | None = None
+        result: MaterializationResult | None = None
 
         try:
             prepared = resolve_materialization_context(
                 env=self.env,
-                graph=self.graph,
+                catalog=self.catalog,
                 target_name=self.target_name,
                 hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
-                result = _failed(
+                result = failed_artifact_result(
                     artifact_name=self.artifact_name,
                     duration_ms=duration_ms(start),
                     input_hash=prepared.input_hash or "",
@@ -179,14 +181,14 @@ class FileArtifactSaver(DataSaver):
                         self.artifact_name,
                         path_template=self.path_template,
                     )
-                    result = _skipped(
+                    result = skipped_artifact_result(
                         artifact_name=self.artifact_name,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash,
                         path=str(resolved) if resolved is not None else None,
                     )
                 elif data is None:
-                    result = _skipped(
+                    result = skipped_artifact_result(
                         artifact_name=self.artifact_name,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash,
@@ -200,47 +202,47 @@ class FileArtifactSaver(DataSaver):
                         path_template=self.path_template,
                     )
                     if output_path is None:
-                        return _failed(
+                        result = failed_artifact_result(
                             artifact_name=self.artifact_name,
                             duration_ms=duration_ms(start),
                             input_hash=input_hash,
                             error=f"Artifact path could not be resolved: {self.artifact_name}",
                         )
-
-                    # Validate contract if strict mode is enabled
-                    ContractEnforcer.validate_artifact_write(self.artifact_name)
-
-                    if isinstance(data, ArtifactWritePlan):
-                        size_bytes = _atomic_write_via_plan(output_path, data)
-                        result = _succeeded(
-                            artifact_name=self.artifact_name,
-                            duration_ms=duration_ms(start),
-                            input_hash=input_hash,
-                            path=str(output_path),
-                            size_bytes=size_bytes,
-                        )
-                    elif isinstance(data, Path) and _same_path(data, output_path):
-                        size_bytes = output_path.stat().st_size
-                        result = _succeeded(
-                            artifact_name=self.artifact_name,
-                            duration_ms=duration_ms(start),
-                            input_hash=input_hash,
-                            path=str(output_path),
-                            size_bytes=size_bytes,
-                        )
                     else:
-                        content_bytes = _coerce_bytes(data)
-                        _atomic_write(output_path, content_bytes)
-                        result = _succeeded(
-                            artifact_name=self.artifact_name,
-                            duration_ms=duration_ms(start),
-                            input_hash=input_hash,
-                            path=str(output_path),
-                            size_bytes=len(content_bytes),
-                        )
+                        # Validate contract if strict mode is enabled
+                        ContractEnforcer.validate_artifact_write(self.artifact_name)
+
+                        if isinstance(data, ArtifactWritePlan):
+                            size_bytes = _atomic_write_via_plan(output_path, data)
+                            result = succeeded_artifact_result(
+                                artifact_name=self.artifact_name,
+                                duration_ms=duration_ms(start),
+                                input_hash=input_hash,
+                                path=str(output_path),
+                                size_bytes=size_bytes,
+                            )
+                        elif isinstance(data, Path) and _same_path(data, output_path):
+                            size_bytes = output_path.stat().st_size
+                            result = succeeded_artifact_result(
+                                artifact_name=self.artifact_name,
+                                duration_ms=duration_ms(start),
+                                input_hash=input_hash,
+                                path=str(output_path),
+                                size_bytes=size_bytes,
+                            )
+                        else:
+                            content_bytes = _coerce_bytes(data)
+                            _atomic_write(output_path, content_bytes)
+                            result = succeeded_artifact_result(
+                                artifact_name=self.artifact_name,
+                                duration_ms=duration_ms(start),
+                                input_hash=input_hash,
+                                path=str(output_path),
+                                size_bytes=len(content_bytes),
+                            )
 
         except _RECOVERABLE_EXCEPTIONS as exc:
-            result = _failed(
+            result = failed_artifact_result(
                 artifact_name=self.artifact_name,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
@@ -248,14 +250,14 @@ class FileArtifactSaver(DataSaver):
             )
 
         if result is None:
-            return _failed(
+            result = failed_artifact_result(
                 artifact_name=self.artifact_name,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
                 error="Unknown artifact materialization failure",
             )
 
-        return result
+        return result.to_mapping()
 
 
 def _same_path(a: Path, b: Path) -> bool:
@@ -263,61 +265,6 @@ def _same_path(a: Path, b: Path) -> bool:
         return a.resolve() == b.resolve()
     except OSError:
         return a == b
-
-
-def _succeeded(
-    *,
-    artifact_name: str,
-    duration_ms: float,
-    input_hash: str,
-    path: str,
-    size_bytes: int,
-) -> MaterializationMetadata:
-    return FileArtifactMaterializationMetadata(
-        status="succeeded",
-        artifact_name=artifact_name,
-        path=path,
-        size_bytes=size_bytes,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=None,
-    ).to_dict()
-
-
-def _skipped(
-    *,
-    artifact_name: str,
-    duration_ms: float,
-    input_hash: str,
-    path: str | None,
-) -> MaterializationMetadata:
-    return FileArtifactMaterializationMetadata(
-        status="skipped",
-        artifact_name=artifact_name,
-        path=path,
-        size_bytes=None,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=None,
-    ).to_dict()
-
-
-def _failed(
-    *,
-    artifact_name: str,
-    duration_ms: float,
-    input_hash: str,
-    error: str,
-) -> MaterializationMetadata:
-    return FileArtifactMaterializationMetadata(
-        status="failed",
-        artifact_name=artifact_name,
-        path=None,
-        size_bytes=None,
-        duration_ms=duration_ms,
-        input_hash=input_hash,
-        error=error,
-    ).to_dict()
 
 
 def _resolve_artifact_path(
@@ -398,8 +345,4 @@ def _atomic_write(output_path: Path, content: bytes) -> None:
         raise
 
 
-__all__ = [
-    "ArtifactWritePlan",
-    "FileArtifactSaver",
-    "SaveStatus",
-]
+__all__ = ["ArtifactWritePlan", "FileArtifactSaver"]

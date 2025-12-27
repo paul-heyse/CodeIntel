@@ -33,8 +33,8 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from datetime import datetime
 
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
     from codeintel.core.hamilton.records import NodeExecutionRecord, TargetRunRecord
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -237,7 +237,7 @@ class BuildRunWriter:
         *,
         env: BuildEnv,
         run_id: str,
-        graph: TargetGraph,
+        catalog: DagCatalog,
         records: Sequence[TargetRunRecord],
     ) -> None:
         """Emit Phase 4 asset catalog records for a run.
@@ -248,8 +248,8 @@ class BuildRunWriter:
             Build environment containing gateway access and snapshot metadata.
         run_id
             Run identifier.
-        graph
-            Target graph for resolving contracts/dependencies.
+        catalog
+            DAG catalog for resolving contracts/dependencies.
         records
             Target run records to emit as assets.
         """
@@ -261,7 +261,7 @@ class BuildRunWriter:
             persist_asset_catalog_for_run(
                 env=env_with_gateway,
                 run_id=run_id,
-                graph=graph,
+                catalog=catalog,
                 records=sorted_records,
             )
         except StorageError as exc:

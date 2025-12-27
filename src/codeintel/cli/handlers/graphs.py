@@ -165,8 +165,8 @@ def graph_targets_list_handler(
 
     LOG.info("Listing graph targets (names=%s)", names_set)
 
-    graph = get_target_system().graph
-    targets = [t for t in graph.all_targets if t.module == "graphs"]
+    catalog = get_target_system().catalog
+    targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
     if names_set:
         targets = [t for t in targets if t.name in names_set]
@@ -210,14 +210,14 @@ def graph_targets_plan_handler(
 
     LOG.info("Planning graph targets (names=%s)", names_set)
 
-    graph = get_target_system().graph
-    targets = [t for t in graph.all_targets if t.module == "graphs"]
+    catalog = get_target_system().catalog
+    targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
     if names_set:
         targets = [t for t in targets if t.name in names_set]
 
     target_names = [t.name for t in targets]
-    ordered = graph.topological_order(target_names) if target_names else ()
+    ordered = catalog.closure(tuple(target_names)) if target_names else ()
 
     stages = [
         GraphPlanStage(

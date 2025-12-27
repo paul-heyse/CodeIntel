@@ -82,8 +82,8 @@ def seed_catalog_modules(
             "repo": repo,
             "commit": commit,
             "language": "python",
-            "tags": "[]",
-            "owners": "[]",
+            "tags": [],
+            "owners": [],
         }
         for path, module in module_by_path.items()
     ]

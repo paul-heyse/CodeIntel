@@ -12,6 +12,7 @@ from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
 from codeintel.core.registry import RegistryService
@@ -22,8 +23,8 @@ if TYPE_CHECKING:
 
     from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
     from codeintel.build.assets.fingerprinting import FingerprintPolicy
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.build.providers import Providers
-    from codeintel.build.targets import OutputTarget
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
@@ -116,6 +117,8 @@ class BuildRunContext:
             )
         if load_schema_service:
             get_schema_service()
+            metadata_service = get_target_metadata_service()
+            self.gateway.schemas.prefill_schema_index(metadata_service.schema_index)
         storage_facade = StorageFacade.from_gateway(self.gateway)
         return BuildEnv(
             gateway=self.gateway,
@@ -155,7 +158,7 @@ class BuildRunContext:
             max_workers=execution_settings.max_workers,
         )
 
-    def execution_policy_for(self, target: OutputTarget) -> ExecutionPolicy:
+    def execution_policy_for(self, target: TargetDescriptor) -> ExecutionPolicy:
         """Return resolved execution policy for a target.
 
         Parameters

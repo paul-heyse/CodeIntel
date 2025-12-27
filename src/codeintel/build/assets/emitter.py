@@ -29,8 +29,8 @@ if TYPE_CHECKING:
     from codeintel.build.assets.fingerprinting import (
         FingerprintPolicy,
     )
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetGraph
     from codeintel.core.hamilton.records import (
         ArtifactRefProtocol,
         DatasetRefProtocol,
@@ -244,7 +244,7 @@ def _artifact_version_record(
 
 
 def _compute_upstream_versions(
-    graph: TargetGraph,
+    catalog: DagCatalog,
     target_name: str,
     target_outputs: dict[str, list[_AssetVersionKey]],
 ) -> list[str]:
@@ -257,12 +257,12 @@ def _compute_upstream_versions(
     """
     upstream_versions: list[str] = []
     try:
-        target = graph.get(target_name)
-        for dep in target.dependencies:
-            dep_outputs = target_outputs.get(dep, [])
-            upstream_versions.extend(k.version_hash for k in dep_outputs)
+        deps = catalog.dependencies_of(target_name)
     except KeyError:
-        pass  # Target not in graph, no upstream versions
+        return []
+    for dep in deps:
+        dep_outputs = target_outputs.get(dep, [])
+        upstream_versions.extend(k.version_hash for k in dep_outputs)
     return upstream_versions
 
 
@@ -314,7 +314,7 @@ def _process_target_record(
 
 def _collect_versions_for_run(
     ctx: _VersionState,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     records: Sequence[TargetRunRecord],
 ) -> tuple[
     list[AssetVersionRecord],
@@ -345,8 +345,12 @@ def _collect_versions_for_run(
 
     # Get topological order for targets we have records for
     try:
-        ordered_targets = list(graph.topological_order(list(target_to_record.keys())))
-    except (KeyError, ValueError):
+        ordered_targets = [
+            name
+            for name in catalog.closure(tuple(target_to_record))
+            if name in target_to_record
+        ]
+    except ValueError:
         ordered_targets = list(target_to_record.keys())
 
     for target_name in ordered_targets:
@@ -354,7 +358,7 @@ def _collect_versions_for_run(
         if rec is None:
             continue
 
-        upstream_versions = _compute_upstream_versions(graph, target_name, target_outputs)
+        upstream_versions = _compute_upstream_versions(catalog, target_name, target_outputs)
         rec_versions, rec_events, rec_run_maps, outputs = _process_target_record(
             ctx, rec, upstream_versions
         )
@@ -370,7 +374,7 @@ def _collect_versions_for_run(
 
 def _collect_lineage_edges(
     *,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     target_outputs: dict[str, list[_AssetVersionKey]],
 ) -> list[AssetLineageEdgeRecord]:
     """Collect lineage edge records from target outputs.
@@ -384,13 +388,12 @@ def _collect_lineage_edges(
     edges: list[AssetLineageEdgeRecord] = []
 
     for target_name, outputs in target_outputs.items():
+        upstream_versions: list[_AssetVersionKey] = []
         try:
-            target = graph.get(target_name)
+            deps = catalog.dependencies_of(target_name)
         except KeyError:
             continue
-
-        upstream_versions: list[_AssetVersionKey] = []
-        for dep in target.dependencies:
+        for dep in deps:
             dep_outputs = target_outputs.get(dep)
             if dep_outputs:
                 upstream_versions.extend(dep_outputs)
@@ -421,13 +424,15 @@ def persist_asset_catalog_for_run(
     *,
     env: BuildEnv,
     run_id: str,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     records: Sequence[TargetRunRecord],
 ) -> None:
     """Persist asset versions, run mappings, and lineage edges for a build run."""
     ctx = _VersionState(env=env, run_id=run_id, policy=env.fingerprint_policy)
-    versions, events, run_maps, target_outputs = _collect_versions_for_run(ctx, graph, records)
-    edges = _collect_lineage_edges(graph=graph, target_outputs=target_outputs)
+    versions, events, run_maps, target_outputs = _collect_versions_for_run(
+        ctx, catalog, records
+    )
+    edges = _collect_lineage_edges(catalog=catalog, target_outputs=target_outputs)
 
     try:
         env.gateway.assets.record_asset_versions_batch(versions)

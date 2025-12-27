@@ -6,13 +6,11 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.contracts import OutputContract
-from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.build.contracts import OutputContract, TableOutputDescriptor
 
 
-def table_schema_for_key(table_key: str) -> TableSchema:
-    """Return a minimal TableSchema for tests using the given table key.
+def table_output_for_key(table_key: str) -> TableOutputDescriptor:
+    """Return a minimal TableOutputDescriptor for the given table key.
 
     Parameters
     ----------
@@ -21,19 +19,14 @@ def table_schema_for_key(table_key: str) -> TableSchema:
 
     Returns
     -------
-    TableSchema
-        TableSchema with a single non-nullable id column.
+    TableOutputDescriptor
+        Output descriptor for the table key.
     """
-    schema, name = split_table_key(table_key)
-    return TableSchema(
-        schema=schema,
-        name=name,
-        columns=[Column("id", "VARCHAR", nullable=False)],
-    )
+    return TableOutputDescriptor(table_key=table_key)
 
 
 def contract_for_keys(table_keys: Iterable[str]) -> OutputContract:
-    """Return an OutputContract with minimal schemas for the provided table keys.
+    """Return an OutputContract with table outputs for the provided table keys.
 
     Parameters
     ----------
@@ -43,9 +36,9 @@ def contract_for_keys(table_keys: Iterable[str]) -> OutputContract:
     Returns
     -------
     OutputContract
-        OutputContract containing minimal table schemas.
+        OutputContract containing table output descriptors.
     """
-    tables = tuple(table_schema_for_key(key) for key in table_keys)
+    tables = tuple(table_output_for_key(key) for key in table_keys)
     return OutputContract(tables=tables)
 
 

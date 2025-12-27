@@ -12,8 +12,8 @@ from codeintel.core.build_manifest import OutputManifest
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import OutputTarget
 
 
 class BuildManifestService(Protocol):
@@ -93,7 +93,7 @@ def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
 
 def should_skip_native_target(
     env: BuildEnv,
-    target: OutputTarget,
+    target: TargetDescriptor,
     input_hash: str,
     options_hash: str | None = None,
 ) -> bool:

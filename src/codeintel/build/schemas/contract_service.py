@@ -22,7 +22,6 @@ from codeintel.storage.views.inventory import discover_derived_docs_views
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.build.contracts import OutputContract
     from codeintel.config.datasets.primitives import CompositeSchema
 
 __all__ = [
@@ -39,7 +38,7 @@ __all__ = [
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
-    "overrides_from_output_contract",
+    "overrides_from_output_descriptor",
 ]
 
 
@@ -70,114 +69,33 @@ def _get_composition_for_table_key(table_key: str) -> CompositeSchema | None:
     return get_composite_schemas().get(table_key)
 
 
-def _extract_indexed_metadata(
-    contract: OutputContract,
-    table_key: str,
-    metadata_tuple: tuple[str, ...],
-) -> str | None:
-    """Extract metadata value for a specific table from indexed tuples.
-
-    Parameters
-    ----------
-    contract
-        OutputContract containing metadata.
-    table_key
-        Table key to resolve.
-    metadata_tuple
-        Tuple of metadata entries aligned with contract table order.
-
-    Returns
-    -------
-    str | None
-        Metadata value if present.
-    """
-    if not metadata_tuple:
+def _optional_tag(tags: Mapping[str, object], key: str) -> str | None:
+    value = tags.get(key)
+    if value is None:
         return None
-    table_keys = contract.table_keys
-    try:
-        idx = table_keys.index(table_key)
-        if idx < len(metadata_tuple):
-            return metadata_tuple[idx]
-    except (ValueError, IndexError):
-        return None
-    return None
+    if not isinstance(value, str) or not value:
+        msg = f"Invalid tag value for {key}: {value!r}"
+        raise ValueError(msg)
+    return value
 
 
-def overrides_from_output_contract(
-    contract: OutputContract,
-    *,
-    table_key: str,
-) -> DatasetContractOverrides:
-    """
-    Build dataset contract overrides from an output contract and table key.
-
-    Extended Summary
-    ----------------
-    This helper pulls per-table metadata out of an OutputContract to seed
-    DatasetContract derivation. It aligns JSON schema IDs and export filenames
-    by table position, so downstream contract builders can override defaults
-    without re-parsing target metadata. It is used by ContractService when
-    enriching schema-derived contracts with target-specific metadata.
-
-    Parameters
-    ----------
-    contract : OutputContract
-        Output contract providing table metadata for a build target.
-    table_key : str
-        Fully qualified table key (schema.table) to resolve metadata for.
-
-    Returns
-    -------
-    DatasetContractOverrides
-        Override values sourced from the output contract. Per-table fields are
-        None when the table key is not present in the contract.
-
-    Notes
-    -----
-    - Time complexity is O(n) for the table key lookup in the contract table
-      list; memory overhead is constant.
-    - No I/O, caching, or global state is touched; the function is pure.
-
-    Examples
-    --------
-    >>> from codeintel.build.contracts import OutputContract
-    >>> from codeintel.core.schemas.primitives import Column, TableSchema
-    >>> contract = OutputContract(
-    ...     tables=(
-    ...         TableSchema(
-    ...             schema="core",
-    ...             name="symbols",
-    ...             columns=[Column("name", "VARCHAR")],
-    ...         ),
-    ...     ),
-    ...     json_schema_ids=("core.symbols.v1",),
-    ...     jsonl_filenames=("symbols.jsonl",),
-    ...     parquet_filenames=("symbols.parquet",),
-    ...     owner="core-team",
-    ... )
-    >>> overrides = overrides_from_output_contract(contract, table_key="core.symbols")
-    >>> overrides.json_schema_id
-    'core.symbols.v1'
-
-    >>> missing = overrides_from_output_contract(contract, table_key="core.missing")
-    >>> missing.json_schema_id is None
-    True
-    """
-    json_schema_id = _extract_indexed_metadata(contract, table_key, contract.json_schema_ids)
-    jsonl_filename = _extract_indexed_metadata(contract, table_key, contract.jsonl_filenames)
-    parquet_filename = _extract_indexed_metadata(contract, table_key, contract.parquet_filenames)
+def overrides_from_output_descriptor(output: OutputDescriptor) -> DatasetContractOverrides:
+    """Build dataset contract overrides from saver output tags."""
+    tags = output.tags
+    json_schema_id = _optional_tag(tags, "ci.json_schema_id")
+    jsonl_filename = _optional_tag(tags, "ci.jsonl_filename")
+    parquet_filename = _optional_tag(tags, "ci.parquet_filename")
+    owner = _optional_tag(tags, "ci.dataset_owner")
+    validation_profile = _optional_tag(tags, "ci.validation_profile")
+    if validation_profile is not None and validation_profile not in {"strict", "lenient"}:
+        msg = f"Invalid validation profile tag: {validation_profile!r}"
+        raise ValueError(msg)
     return DatasetContractOverrides(
         json_schema_id=json_schema_id,
         jsonl_filename=jsonl_filename,
         parquet_filename=parquet_filename,
-        owner=contract.owner,
-        description=contract.description,
-        family=contract.family,
-        freshness_sla=contract.freshness_sla,
-        retention_policy=contract.retention_policy,
-        upstream_dependencies=contract.upstream_dependencies,
-        tags=contract.tags,
-        validation_profile=contract.validation_profile,
+        owner=owner,
+        validation_profile="strict" if validation_profile is None else validation_profile,
     )
 
 
@@ -218,17 +136,6 @@ class ContractService:
     schema_service: SchemaService
     target_metadata: TargetMetadataProvider
 
-    def get_output_contract(self, target_name: str) -> OutputContract | None:
-        """Return the OutputContract for a target.
-
-        Returns
-        -------
-        OutputContract | None
-            Output contract if available, otherwise None.
-        """
-        target = self.target_metadata.get_target(target_name)
-        return target.contract if target is not None else None
-
     def get_dataset_contract(self, table_key: str) -> DatasetContract:
         """Return the DatasetContract for a table key.
 
@@ -244,13 +151,11 @@ class ContractService:
         """
         is_view = is_docs_view(table_key)
         schema = self.schema_service.table_provider.get_table_schema(table_key)
-        target = self.target_metadata.target_for_table_key(table_key)
-        if schema is None and target is None and not is_view:
+        output = self.target_metadata.output_for_table_key(table_key)
+        if schema is None and output is None and not is_view:
             msg = f"Unknown table key: {table_key}"
             raise KeyError(msg)
-        overrides = (
-            overrides_from_output_contract(target.contract, table_key=table_key) if target else None
-        )
+        overrides = overrides_from_output_descriptor(output) if output else None
         composition = _get_composition_for_table_key(table_key)
         return build_dataset_contract(
             table_key=table_key,

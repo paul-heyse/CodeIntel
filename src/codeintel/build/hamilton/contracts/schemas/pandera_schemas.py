@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any
 from pandera import Check, Column, DataFrameSchema
 from pandera.errors import SchemaErrors
 
-from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.schemas.pandera_types import PanderaDtype, dtype_for_column_type
 
 if TYPE_CHECKING:
@@ -24,8 +24,6 @@ __all__ = [
     "ValidationResult",
     "validate_with_result",
 ]
-
-
 
 
 _DATAFRAME_CHECKS: dict[str, list[Check]] = {

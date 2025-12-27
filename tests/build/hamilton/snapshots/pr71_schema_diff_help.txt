@@ -5,62 +5,80 @@ Diff a compiled schema manifest against an expected file.
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ *  EXPECTED --expected -e       Path to an expected schema manifest JSON     │
 │                                 file. [env var:                              │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_EXPECTED,        │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_EXPECTED]        │
 │                                 [required]                                   │
 │    TARGETS --targets            Target names to include (defaults to all     │
 │      --empty-targets            targets). [env var:                          │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_TARGETS,         │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_TARGETS]         │
 │                                 [default: (none)]                            │
 │    MODULE --module -m           Compile schemas for all targets in a module. │
 │                                 [env var:                                    │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_MODULE,          │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_MODULE]          │
 │                                 [default: (none)]                            │
 │    ALL --all -a                 Compile schemas for all targets across all   │
 │                                 modules. [env var:                           │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_ALL,             │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_ALL] [default:   │
 │                                 false]                                       │
 │    INFER-NATIVE --infer-native  Infer schemas for inferable native targets.  │
-│      --infer                    [env var:                                   │
+│      --infer                    [env var:                                    │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INFER_NATIVE,    │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INFER_NATIVE]    │
 │                                 [default: true]                              │
 │    STABLE --stable              Force deterministic ordering and             │
 │                                 canonicalized output. [env var:              │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_STABLE,          │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_STABLE]          │
 │                                 [default: true]                              │
 │    FAIL-ON-BREAKING             Exit with error if breaking changes detected │
 │      --fail-on-breaking         (default: true). [env var:                   │
 │      --no-fail-on-breaking      CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_BREAKING │
+│                                 ,                                            │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_BREAKING │
 │                                 ] [default: true]                            │
 │    FAIL-ON-ANY --fail-on-any    Exit with error on any schema drift, not     │
 │                                 just breaking changes. [env var:             │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_ANY,     │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_FAIL_ON_ANY]     │
 │                                 [default: false]                             │
-│    INCLUDE-VIEWS                Include DuckDB view schemas in comparison    │
+│    INCLUDE-VIEWS                Include DuckDB view schemas in the manifest  │
 │      --include-views            (v2 format). [env var:                       │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_VIEWS,   │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_VIEWS]   │
 │                                 [default: false]                             │
-│    INCLUDE-ARTIFACTS            Include export artifact metadata in          │
-│      --include-artifacts        comparison (v2 format). [env var:            │
+│    INCLUDE-ARTIFACTS            Include export artifact metadata in the      │
+│      --include-artifacts        manifest (v2 format). [env var:              │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_ARTIFACT │
+│                                 S,                                           │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_ARTIFACT │
 │                                 S] [default: false]                          │
-│    INCLUDE-PROVENANCE           Include provenance metadata in comparison    │
-│      --include-provenance       (v2 format). [env var:                       │
+│    INCLUDE-PROVENANCE           Include provenance metadata for schemas and  │
+│      --include-provenance       artifacts (v2 format). [env var:             │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_PROVENAN │
+│                                 CE,                                          │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_INCLUDE_PROVENAN │
 │                                 CE] [default: false]                         │
-│    --flags                      [env var: CODEINTEL_BUILD_SCHEMA_DIFF_FLAGS] │
-│                                 [default: --flags]                           │
+│    *                            [env var: CODEINTEL_BUILD_SCHEMA_DIFF_*]     │
+│                                 [default: *]                                 │
 │    ROOT --root -r               Explicit project root directory. [env var:   │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_ROOT,            │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_ROOT] [default:  │
 │                                 (none)]                                      │
 │    OUTPUT-FORMAT                Output format. [choices: text, json, jsonl]  │
 │      --output-format            [env var:                                    │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_OUTPUT_FORMAT,   │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_OUTPUT_FORMAT]   │
 │                                 [default: text]                              │
 │    JSON --json                  Alias for --output-format json. [env var:    │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_JSON,            │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_JSON] [default:  │
 │                                 false]                                       │
 │    VERBOSE --verbose -v         Increase verbosity (0=warnings, 1=info,      │
 │                                 2=debug). [env var:                          │
+│                                 CODEINTEL_BUILD_SCHEMA_DIFF_VERBOSE,         │
 │                                 CODEINTEL_BUILD_SCHEMA_DIFF_VERBOSE]         │
 │                                 [default: 0]                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯

@@ -4,7 +4,7 @@ tools:
   - tool_name: "scip-python"
     display_name: "scip-python"
     kind: "binary"
-    cli: "scip"
+    cli: "scip-python"
     aliases:
       - "scip"
     config_key: "scip_python_bin"
@@ -12,8 +12,8 @@ tools:
       - "ingestion.scip"
     packages:
       - "scip-python"
-    version_probe: "scip --version"
-    notes: "CLI entrypoint provided by scip-python; scip is an alias."
+    version_probe: "scip-python --version"
+    notes: "CLI entrypoint is scip-python; scip is a supported alias."
   - tool_name: "protoc"
     display_name: "grpc_tools.protoc"
     kind: "python_module"

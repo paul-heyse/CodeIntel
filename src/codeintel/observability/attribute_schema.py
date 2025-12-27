@@ -244,7 +244,10 @@ class AttributeNormalizer:
 
             max_str_len = default_str_limit
             if schema is not None and schema.max_length is not None:
-                max_str_len = schema.max_length
+                if max_str_len is None:
+                    max_str_len = schema.max_length
+                else:
+                    max_str_len = min(max_str_len, schema.max_length)
 
             attr_value = coerce_attribute_value(
                 value,

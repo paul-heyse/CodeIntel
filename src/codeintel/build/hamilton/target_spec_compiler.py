@@ -1,15 +1,12 @@
-"""Compile OutputTarget specs from Hamilton DAG tags."""
+"""Compile TargetDescriptor specs from Hamilton DAG tags."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.contracts import ArtifactSpec, OutputContract
-from codeintel.build.hamilton.introspect import derive_target_outputs_from_savers
-from codeintel.build.hamilton.runtime import HamiltonRuntime
+from codeintel.build.hamilton.dag_catalog import TargetDescriptor
 from codeintel.build.hamilton.validate import validate_nodes
 from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
 from codeintel.build.resources import (
@@ -19,20 +16,15 @@ from codeintel.build.resources import (
     TargetExecution,
     TargetResources,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph, TargetModule
+from codeintel.build.targets import TargetModule
 from codeintel.core.hamilton import tags as ht
-from codeintel.core.schemas.table_registry import get_table_schema
-from codeintel.storage.helpers.table_key import validate_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Mapping
 
     from hamilton.driver import Driver
     from hamilton.node import Node
 
-    from codeintel.build.hamilton.introspect import DerivedTargetOutputs
-    from codeintel.build.hamilton.validate import GraphValidationIssue
-    from codeintel.core.schemas.primitives import TableSchema
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,21 +38,22 @@ class TargetSpecOverride:
 
 
 @dataclass(frozen=True, slots=True)
-class _OutputTargetContext:
-    derived_outputs: DerivedTargetOutputs
+class _TargetDescriptorContext:
     derived_tools: Mapping[str, tuple[str, ...]]
     overrides_by_target: Mapping[str, TargetSpecOverride]
     strict: bool
 
 
+@dataclass(frozen=True, slots=True)
+class TargetDescriptorCompileInputs:
+    """Inputs required to compile target descriptors."""
+
+    overrides_by_target: Mapping[str, TargetSpecOverride]
+    deps_by_target: Mapping[str, tuple[str, ...]]
+
+
 class TargetSpecError(RuntimeError):
     """Error raised when target spec compilation fails."""
-
-    @classmethod
-    def graph_validation(cls, errors: Sequence[GraphValidationIssue]) -> TargetSpecError:
-        lines = ["Graph validation errors:"]
-        lines.extend(f"- {issue.message}" for issue in errors)
-        return cls("\n".join(lines))
 
     @classmethod
     def duplicate_anchor(cls, target_name: str) -> TargetSpecError:
@@ -97,10 +90,6 @@ class TargetSpecError(RuntimeError):
     @classmethod
     def invalid_tag_value(cls, target_name: str, key: str) -> TargetSpecError:
         return cls(f"Target {target_name} has invalid {key} tag")
-
-    @classmethod
-    def missing_table_schema(cls, target_name: str, table_key: str) -> TargetSpecError:
-        return cls(f"Missing TableSchema for {target_name} output: {table_key}")
 
 
 def _node_docstring(node: Node) -> str:
@@ -451,15 +440,20 @@ def _resolve_description(
     return description
 
 
-def _validate_spec_version(
+def _resolve_spec_version(
     *,
     tags: Mapping[str, object],
     target_name: str,
     strict: bool,
-) -> None:
+) -> str:
     spec_version = tags.get(ht.TAG_TARGET_SPEC_VERSION)
-    if strict and spec_version != "1":
+    if spec_version in {"1", 1}:
+        return "1"
+    if strict:
         raise TargetSpecError.invalid_spec_version(target_name, spec_version)
+    if spec_version is None:
+        return "1"
+    return str(spec_version)
 
 
 def _collect_target_anchors(
@@ -484,53 +478,13 @@ def _collect_target_anchors(
     return anchors
 
 
-def _resolve_table_schemas(
-    *,
-    target_name: str,
-    table_keys: tuple[str, ...],
-    strict: bool,
-) -> tuple[TableSchema, ...]:
-    tables: list[TableSchema] = []
-    seen: set[str] = set()
-    for key in table_keys:
-        validate_table_key(key)
-        if key in seen:
-            msg = f"Duplicate table_key in target spec: {key}"
-            raise ValueError(msg)
-        seen.add(key)
-        schema = get_table_schema(key)
-        if schema is None:
-            if strict:
-                raise TargetSpecError.missing_table_schema(target_name, key)
-            continue
-        tables.append(schema)
-
-    return tuple(tables)
-
-
-def _artifact_specs(
-    *,
-    target_name: str,
-    artifact_names: tuple[str, ...],
-    templates_by_target: Mapping[str, Mapping[str, str]],
-) -> tuple[ArtifactSpec, ...]:
-    template_map = templates_by_target.get(target_name, {})
-    specs: list[ArtifactSpec] = []
-    for name in artifact_names:
-        template = template_map.get(name)
-        if not isinstance(template, str) or not template:
-            msg = f"Missing artifact path template for {target_name}.{name}"
-            raise RuntimeError(msg)
-        specs.append(ArtifactSpec(name=name, path_template=template))
-    return tuple(sorted(specs, key=lambda spec: spec.name))
-
-
-def _build_output_target(
+def _build_target_descriptor(
     *,
     target_name: str,
     node: Node,
-    context: _OutputTargetContext,
-) -> OutputTarget:
+    deps: tuple[str, ...],
+    context: _TargetDescriptorContext,
+) -> TargetDescriptor:
     tags = cast("dict[str, object]", node.tags)
     override = context.overrides_by_target.get(target_name)
 
@@ -541,7 +495,11 @@ def _build_output_target(
         override=override,
         strict=context.strict,
     )
-    _validate_spec_version(tags=tags, target_name=target_name, strict=context.strict)
+    spec_version = _resolve_spec_version(
+        tags=tags,
+        target_name=target_name,
+        strict=context.strict,
+    )
 
     resources = _resources_from_tags(tags=tags, target_name=target_name, strict=context.strict)
     execution = _execution_from_tags(tags=tags, target_name=target_name, strict=context.strict)
@@ -563,45 +521,40 @@ def _build_output_target(
     if override and override.parameters is not None:
         parameters = override.parameters
 
-    table_keys = context.derived_outputs.datasets_by_target.get(target_name, ())
-    tables = _resolve_table_schemas(
-        target_name=target_name,
-        table_keys=table_keys,
-        strict=context.strict,
-    )
-
-    artifact_names = context.derived_outputs.artifacts_by_target.get(target_name, ())
-    artifacts = _artifact_specs(
-        target_name=target_name,
-        artifact_names=artifact_names,
-        templates_by_target=context.derived_outputs.artifact_templates_by_target,
-    )
-
-    contract = OutputContract(tables=tables, artifacts=artifacts)
-    return OutputTarget(
+    return TargetDescriptor(
         name=target_name,
         module=domain,
-        contract=contract,
-        dependencies=(),
+        anchor_node=node.name,
+        dependencies=deps,
         resources=resources,
         execution=execution,
         parameters=parameters,
         description=description,
+        spec_version=spec_version,
     )
 
 
-def compile_output_targets_from_driver(
+def compile_target_descriptors_from_driver(
     driver: Driver,
     *,
-    overrides_by_target: Mapping[str, TargetSpecOverride] | None = None,
+    inputs: TargetDescriptorCompileInputs,
     strict: bool = True,
-) -> tuple[OutputTarget, ...]:
-    """Compile OutputTarget specs from a Hamilton Driver.
+) -> tuple[TargetDescriptor, ...]:
+    """Compile TargetDescriptor specs from a Hamilton Driver.
+
+    Parameters
+    ----------
+    driver
+        Hamilton Driver with a compiled FunctionGraph.
+    inputs
+        Precomputed target inputs (outputs, dependencies, overrides).
+    strict
+        When True, enforce required tags and schema availability.
 
     Returns
     -------
-    tuple[OutputTarget, ...]
-        Sorted output targets derived from the driver graph.
+    tuple[TargetDescriptor, ...]
+        Sorted target descriptors derived from the driver graph.
 
     Raises
     ------
@@ -609,34 +562,30 @@ def compile_output_targets_from_driver(
         If validation fails or required target metadata is missing.
     """
     nodes = driver.graph.nodes
-    overrides_by_target = overrides_by_target or MappingProxyType({})
 
     if strict:
         validation = validate_nodes(nodes, validate_schema=False)
         if validation.errors:
             lines = ["Graph validation errors:"]
             lines.extend(f"- {issue.message}" for issue in validation.errors)
-            message = "\n".join(lines)
-            raise TargetSpecError(message)
-
-    runtime = HamiltonRuntime(dr=driver, graph=TargetGraph())
-    derived_outputs = derive_target_outputs_from_savers(runtime)
+            msg = "\n".join(lines)
+            raise TargetSpecError(msg)
     anchors = _collect_target_anchors(nodes, strict=strict)
     derived_tools = {
         target_name: _derive_tools_from_nodes(nodes, target_name=target_name)
         for target_name in anchors
     }
-    context = _OutputTargetContext(
-        derived_outputs=derived_outputs,
+    context = _TargetDescriptorContext(
         derived_tools=derived_tools,
-        overrides_by_target=overrides_by_target,
+        overrides_by_target=inputs.overrides_by_target,
         strict=strict,
     )
 
     results = [
-        _build_output_target(
+        _build_target_descriptor(
             target_name=target_name,
             node=anchors[target_name],
+            deps=inputs.deps_by_target.get(target_name, ()),
             context=context,
         )
         for target_name in sorted(anchors)
@@ -645,6 +594,7 @@ def compile_output_targets_from_driver(
 
 
 __all__ = [
+    "TargetDescriptorCompileInputs",
     "TargetSpecOverride",
-    "compile_output_targets_from_driver",
+    "compile_target_descriptors_from_driver",
 ]

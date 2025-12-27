@@ -18,14 +18,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.introspect import GraphSource
 
 
 def list_execution_order(
     runtime: HamiltonRuntime,
     targets: list[str],
-    *,
-    graph_source: GraphSource = "hamilton",
 ) -> list[str]:
     """Return the execution order for targets.
 
@@ -35,11 +32,9 @@ def list_execution_order(
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to compute execution order for.
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -53,27 +48,27 @@ def list_execution_order(
     >>> "t__modules" in order
     True
     """
-    _ = graph_source
-    closure = runtime.graph.topological_order(targets)
-    return [runtime.target_to_node[t] for t in closure if t in runtime.target_to_node]
+    closure = runtime.catalog.closure(targets)
+    ordered: list[str] = []
+    for target_name in closure:
+        node_name = runtime.catalog.target_nodes.get(target_name)
+        if node_name is not None:
+            ordered.append(node_name)
+    return ordered
 
 
 def list_execution_targets(
     runtime: HamiltonRuntime,
     targets: list[str],
-    *,
-    graph_source: GraphSource = "hamilton",
 ) -> list[str]:
     """Return the execution order as target names.
 
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to compute execution order for.
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -87,26 +82,21 @@ def list_execution_targets(
     >>> "modules" in order
     True
     """
-    _ = graph_source
-    return list(runtime.graph.topological_order(targets))
+    return list(runtime.catalog.closure(targets))
 
 
 def get_dag_info(
     runtime: HamiltonRuntime,
     targets: list[str],
-    *,
-    graph_source: GraphSource = "hamilton",
 ) -> dict[str, Any]:
     """Get detailed DAG information for targets.
 
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to get DAG info for.
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -120,23 +110,36 @@ def get_dag_info(
     >>> "nodes" in info
     True
     """
-    _ = graph_source
-    graph = runtime.graph
-    closure = graph.topological_order(targets)
+    closure = runtime.catalog.closure(targets)
+    closure_set = set(closure)
 
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, str]] = []
 
     for target_name in closure:
-        target = graph.get(target_name)
-        node_name = runtime.target_to_node.get(target_name)
+        target = runtime.catalog.get_target(target_name)
+        node_name = runtime.catalog.target_nodes.get(target_name)
+        dependencies: tuple[str, ...]
+        tables: tuple[str, ...]
+        module: str
+        if target is None:
+            dependencies = ()
+            tables = ()
+            module = "unknown"
+        else:
+            dependencies = target.dependencies
+            tables = tuple(
+                output.key
+                for output in runtime.catalog.table_outputs_by_target.get(target_name, ())
+            )
+            module = target.module
 
         node_info: dict[str, Any] = {
             "name": target_name,
             "node_name": node_name,
-            "module": target.module,
-            "tables": list(target.table_keys),
-            "dependencies": list(target.dependencies),
+            "module": module,
+            "tables": list(tables),
+            "dependencies": list(dependencies),
         }
         nodes.append(node_info)
 
@@ -145,8 +148,8 @@ def get_dag_info(
                 "from": dep,
                 "to": target_name,
             }
-            for dep in target.dependencies
-            if dep in runtime.target_to_node
+            for dep in dependencies
+            if dep in closure_set
         )
 
     return {
@@ -164,20 +167,17 @@ def export_dag_json(
     targets: list[str],
     *,
     indent: int | None = 2,
-    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG information as JSON string.
 
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to export DAG for.
     indent
         JSON indentation level (None for compact).
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -193,7 +193,7 @@ def export_dag_json(
     >>> "nodes" in data
     True
     """
-    info = get_dag_info(runtime, targets, graph_source=graph_source)
+    info = get_dag_info(runtime, targets)
     return json.dumps(info, indent=indent)
 
 
@@ -202,7 +202,6 @@ def export_execution_json(
     *,
     targets: list[str],
     env: BuildEnv,
-    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG execution plan as JSON.
 
@@ -212,13 +211,11 @@ def export_execution_json(
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to compute.
     env
         Build environment for input resolution.
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -234,11 +231,11 @@ def export_execution_json(
     >>> "execution_order" in data
     True
     """
-    dag_info = get_dag_info(runtime, targets, graph_source=graph_source)
+    dag_info = get_dag_info(runtime, targets)
 
     execution_info = {
         **dag_info,
-        "execution_order": list_execution_order(runtime, targets, graph_source=graph_source),
+        "execution_order": list_execution_order(runtime, targets),
         "inputs": {
             "env": {
                 "repo": env.repo,
@@ -255,8 +252,6 @@ def export_execution_json(
 def export_dag_mermaid(
     runtime: HamiltonRuntime,
     targets: list[str],
-    *,
-    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG as Mermaid graph definition.
 
@@ -266,11 +261,9 @@ def export_dag_mermaid(
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to export DAG for.
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -284,7 +277,7 @@ def export_dag_mermaid(
     >>> mermaid.startswith("graph TD")
     True
     """
-    info = get_dag_info(runtime, targets, graph_source=graph_source)
+    info = get_dag_info(runtime, targets)
     lines = ["graph TD"]
 
     for node in info["nodes"]:
@@ -305,8 +298,6 @@ def export_dag_mermaid(
 def export_dag_dot(
     runtime: HamiltonRuntime,
     targets: list[str],
-    *,
-    graph_source: GraphSource = "hamilton",
 ) -> str:
     """Export DAG as Graphviz DOT definition.
 
@@ -316,11 +307,9 @@ def export_dag_dot(
     Parameters
     ----------
     runtime
-        Hamilton runtime with driver and graph.
+        Hamilton runtime with driver and catalog.
     targets
         Target names to export DAG for.
-    graph_source
-        Dependency graph source (only "hamilton" is supported).
 
     Returns
     -------
@@ -334,7 +323,7 @@ def export_dag_dot(
     >>> dot.startswith("digraph G {")
     True
     """
-    info = get_dag_info(runtime, targets, graph_source=graph_source)
+    info = get_dag_info(runtime, targets)
     lines = ["digraph G {", "  rankdir=TB;"]
 
     for node in info["nodes"]:

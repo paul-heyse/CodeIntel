@@ -147,12 +147,30 @@ def encode_json_compact(value: object) -> str:
     return json.dumps(value, separators=(",", ":"))
 
 
+def _coerce_json_container(value: object) -> object:
+    if isinstance(value, set):
+        return sorted(value)
+    if isinstance(value, tuple):
+        return list(value)
+    return value
+
+
+def _parse_json_value(raw: str) -> object | None:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            return ast.literal_eval(raw)
+        except (SyntaxError, ValueError):
+            return None
+
+
 def normalize_duckdb_json_value(value: object) -> object:
     """Normalize a Python value for DuckDB JSON column insertion.
 
-    DuckDB's JSON column type accepts JSON text for parameter binding. This
-    helper centralizes conversion rules so callers do not implement bespoke
-    `json.dumps(...)` logic.
+    DuckDB's JSON column type accepts native Python containers (dict/list).
+    This helper keeps containers in native form and coerces non-JSON container
+    types (sets/tuples) into JSON-compatible lists.
 
     Parameters
     ----------
@@ -162,42 +180,42 @@ def normalize_duckdb_json_value(value: object) -> object:
     Returns
     -------
     object
-        JSON text (str) for container inputs, otherwise the original value.
+        JSON-compatible Python object suitable for JSON-typed columns.
     """
-    if isinstance(value, set):
-        return encode_json_compact(sorted(value))
-    if isinstance(value, (dict, list, tuple)):
-        return encode_json_compact(value)
-    return value
+    if value is None:
+        return None
+    normalized = _coerce_json_container(value)
+    if isinstance(normalized, str):
+        parsed = _parse_json_value(normalized)
+        if parsed is not None:
+            normalized = parsed
+    return _coerce_json_container(normalized)
 
 
-def serialize_str_sequence(items: Sequence[str]) -> str:
-    """Serialize a sequence of strings to compact JSON array.
-
-    This is a convenience wrapper for encoding string sequences (like
-    dataset names or target names) to JSON for storage in DuckDB columns.
+def serialize_str_sequence(items: Sequence[str]) -> list[str]:
+    """Normalize a sequence of strings for JSON column storage.
 
     Parameters
     ----------
     items
-        Sequence of strings to serialize.
+        Sequence of strings to normalize.
 
     Returns
     -------
-    str
-        JSON-encoded array string.
+    list[str]
+        JSON-compatible list of strings.
 
     Examples
     --------
     >>> serialize_str_sequence(["a", "b", "c"])
-    '["a","b","c"]'
+    ['a', 'b', 'c']
     >>> serialize_str_sequence(())
-    '[]'
+    []
     """
-    return encode_json_compact(list(items))
+    return list(items)
 
 
-def deserialize_str_tuple(raw: str | None) -> tuple[str, ...]:
+def deserialize_str_tuple(raw: object | None) -> tuple[str, ...]:
     """Deserialize JSON array to string tuple.
 
     This is a convenience wrapper for decoding JSON arrays stored in
@@ -207,7 +225,7 @@ def deserialize_str_tuple(raw: str | None) -> tuple[str, ...]:
     Parameters
     ----------
     raw
-        JSON-encoded array or None.
+        JSON array as string, list, or None.
 
     Returns
     -------
@@ -223,7 +241,7 @@ def deserialize_str_tuple(raw: str | None) -> tuple[str, ...]:
     >>> deserialize_str_tuple("")
     ()
     """
-    if not raw:
+    if raw in {None, ""}:
         return ()
     items = decode_json_list(raw)
     return tuple(str(x) for x in items)

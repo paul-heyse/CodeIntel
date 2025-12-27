@@ -32,7 +32,6 @@ from codeintel.core.hamilton.tags import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from codeintel.build.targets import TargetGraph
     from codeintel.core.schemas.provider import SchemaProvider
 
 
@@ -585,57 +584,6 @@ def _collect_validation_inputs(nodes: Mapping[str, NodeLike]) -> _ValidationInpu
     )
 
 
-def _derived_outputs_mismatch_issues(
-    *,
-    base_graph: TargetGraph,
-    produced_table_to_target: Mapping[str, str],
-    produced_artifact_to_target: Mapping[str, str],
-) -> list[GraphValidationIssue]:
-    tables_by_target: dict[str, set[str]] = {}
-    for table_key, producer in produced_table_to_target.items():
-        tables_by_target.setdefault(producer, set()).add(table_key)
-
-    artifacts_by_target: dict[str, set[str]] = {}
-    for artifact, producer in produced_artifact_to_target.items():
-        artifacts_by_target.setdefault(producer, set()).add(artifact)
-
-    issues: list[GraphValidationIssue] = []
-    for target in sorted(base_graph.all_targets, key=lambda t: t.name):
-        derived_tables = tables_by_target.get(target.name, set())
-        derived_artifacts = artifacts_by_target.get(target.name, set())
-
-        contract_tables = set(target.contract.table_keys)
-        contract_artifacts = set(target.contract.artifact_names)
-
-        if derived_tables != contract_tables:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="contract_tables_mismatch",
-                    message=(
-                        f"Contract tables do not match DAG-derived tables "
-                        f"(contract={sorted(contract_tables)}, derived={sorted(derived_tables)})"
-                    ),
-                    target=target.name,
-                )
-            )
-
-        if derived_artifacts != contract_artifacts:
-            issues.append(
-                GraphValidationIssue(
-                    severity="error",
-                    code="contract_artifacts_mismatch",
-                    message=(
-                        f"Contract artifacts do not match DAG-derived artifacts "
-                        f"(contract={sorted(contract_artifacts)}, derived={sorted(derived_artifacts)})"
-                    ),
-                    target=target.name,
-                )
-            )
-
-    return issues
-
-
 def _target_tag_value(tags: Mapping[str, object]) -> str | None:
     target = tags.get(TAG_TARGET)
     return target if isinstance(target, str) and target else None
@@ -821,34 +769,9 @@ def _unknown_schema_issues(
     return issues
 
 
-def _deps_mismatch_warnings(
-    *,
-    derived_deps: Mapping[str, Sequence[str]],
-    base_graph: TargetGraph,
-) -> list[GraphValidationIssue]:
-    warnings: list[GraphValidationIssue] = []
-    for target in sorted(base_graph.all_targets, key=lambda t: t.name):
-        derived = set(derived_deps.get(target.name, ()))
-        declared = set(target.dependencies)
-        if derived != declared:
-            warnings.append(
-                GraphValidationIssue(
-                    severity="warning",
-                    code="deps_mismatch",
-                    message=(
-                        f"Declared deps drift from Hamilton-derived deps "
-                        f"(declared={sorted(declared)}, derived={sorted(derived)})"
-                    ),
-                    target=target.name,
-                )
-            )
-    return warnings
-
-
 def validate_nodes(
     nodes: Mapping[str, NodeLike],
     *,
-    base_graph: TargetGraph | None = None,
     schema_provider: SchemaProvider | None = None,
     validate_schema: bool = True,
     enforce_compute_io_purity: bool = False,
@@ -859,8 +782,6 @@ def validate_nodes(
     ----------
     nodes
         Mapping of Hamilton node name to node-like objects.
-    base_graph
-        Optional TargetGraph used for warn-only dependency parity checks.
     schema_provider
         Optional schema provider override (defaults to canonical provider).
     validate_schema
@@ -909,16 +830,6 @@ def validate_nodes(
                 message="Target dependency cycle detected: " + " -> ".join(cycle),
             )
             for cycle in cycles
-        )
-
-    if derived_deps is not None and base_graph is not None:
-        warnings.extend(_deps_mismatch_warnings(derived_deps=derived_deps, base_graph=base_graph))
-        errors.extend(
-            _derived_outputs_mismatch_issues(
-                base_graph=base_graph,
-                produced_table_to_target=inputs.saver_table_to_target,
-                produced_artifact_to_target=inputs.saver_artifact_to_target,
-            )
         )
 
     if enforce_compute_io_purity:

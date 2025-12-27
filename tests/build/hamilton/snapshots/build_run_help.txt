@@ -5,28 +5,41 @@ Build targets with automatic dependency resolution.
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ TARGETS --targets             Target names to build (e.g., function_metrics, │
 │   --empty-targets             call_graph). [env var:                         │
+│                               CODEINTEL_BUILD_RUN_TARGETS,                   │
 │                               CODEINTEL_BUILD_RUN_TARGETS] [default: (none)] │
 │ MODULE --module -m            Build all targets in a module (ingestion,      │
 │                               graphs, analytics, export). [env var:          │
+│                               CODEINTEL_BUILD_RUN_MODULE,                    │
 │                               CODEINTEL_BUILD_RUN_MODULE] [default: (none)]  │
 │ ALL --all -a                  Build all targets across all modules. [env     │
-│                               var: CODEINTEL_BUILD_RUN_ALL] [default: false] │
+│                               var: CODEINTEL_BUILD_RUN_ALL,                  │
+│                               CODEINTEL_BUILD_RUN_ALL] [default: false]      │
 │ DRY-RUN --dry-run -n          Show build plan without executing. [env var:   │
+│                               CODEINTEL_BUILD_RUN_DRY_RUN,                   │
 │                               CODEINTEL_BUILD_RUN_DRY_RUN] [default: false]  │
 │ FORCE --force --empty-force   Force recompute of specific targets            │
 │   -f                          (repeatable). [env var:                        │
+│                               CODEINTEL_BUILD_RUN_FORCE,                     │
 │                               CODEINTEL_BUILD_RUN_FORCE] [default: (none)]   │
 │ VALIDATE-OUTPUTS              Validate produced datasets against Pandera     │
 │   --validate-outputs          schemas after write. [env var:                 │
+│                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS,          │
 │                               CODEINTEL_BUILD_RUN_VALIDATE_OUTPUTS]          │
 │                               [default: false]                               │
 │ STRICT-CONTRACTS              Fail if target writes outside declared         │
 │   --strict-contracts          contract. [env var:                            │
+│                               CODEINTEL_BUILD_RUN_STRICT_CONTRACTS,          │
 │                               CODEINTEL_BUILD_RUN_STRICT_CONTRACTS]          │
 │                               [default: false]                               │
+│ VALIDATION-MODE               Contract validation mode: lenient, strict, or  │
+│   --validation-mode           off. [env var:                                 │
+│                               CODEINTEL_BUILD_RUN_VALIDATION_MODE,           │
+│                               CODEINTEL_BUILD_RUN_VALIDATION_MODE] [default: │
+│                               (none)]                                        │
 │ PUBLISH-SERVING-SNAPSHOT      Publish an immutable serving snapshot (writes  │
 │   --publish-serving-snapshot  current.json and snapshot artifacts). [env     │
 │                               var:                                           │
+│                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT,  │
 │                               CODEINTEL_BUILD_RUN_PUBLISH_SERVING_SNAPSHOT]  │
 │                               [default: false]                               │
 │ PARALLEL-BACKEND              Parallel execution backend.                    │
@@ -37,39 +50,49 @@ Build targets with automatic dependency resolution.
 │                                                                              │
 │                               Example: --parallel-backend=threadpool         │
 │                               --max-workers=4. [env var:                     │
+│                               CODEINTEL_BUILD_RUN_PARALLEL_BACKEND,          │
 │                               CODEINTEL_BUILD_RUN_PARALLEL_BACKEND]          │
 │                               [default: sequential]                          │
 │ MAX-WORKERS --max-workers     Maximum parallel workers for threadpool        │
 │   --workers                   backend. [env var:                             │
+│                               CODEINTEL_BUILD_RUN_MAX_WORKERS,               │
 │                               CODEINTEL_BUILD_RUN_MAX_WORKERS] [default:     │
 │                               (none)]                                        │
 │ CACHE --cache --no-cache      Enable Hamilton on-disk caching for nodes      │
 │                               decorated with @cache. [env var:               │
+│                               CODEINTEL_BUILD_RUN_CACHE,                     │
 │                               CODEINTEL_BUILD_RUN_CACHE] [default: true]     │
 │ CACHE-DIR --cache-dir         Directory for Hamilton cache (default:         │
 │                               build/.hamilton_cache). [env var:              │
+│                               CODEINTEL_BUILD_RUN_CACHE_DIR,                 │
 │                               CODEINTEL_BUILD_RUN_CACHE_DIR] [default:       │
 │                               (none)]                                        │
 │ CLEAR-CACHE --clear-cache     Clear the Hamilton cache directory before      │
 │                               executing. [env var:                           │
+│                               CODEINTEL_BUILD_RUN_CLEAR_CACHE,               │
 │                               CODEINTEL_BUILD_RUN_CLEAR_CACHE] [default:     │
 │                               false]                                         │
 │ CACHE-REPORT --cache-report   Include a cache hit/miss report for nodes      │
 │                               decorated with @cache. [env var:               │
+│                               CODEINTEL_BUILD_RUN_CACHE_REPORT,              │
 │                               CODEINTEL_BUILD_RUN_CACHE_REPORT] [default:    │
 │                               false]                                         │
 │ PROGRESS --progress           Show progress bar during execution. [env var:  │
-│   --no-progress               CODEINTEL_BUILD_RUN_PROGRESS] [default: false] │
-│ --flags                       [env var: CODEINTEL_BUILD_RUN_FLAGS] [default: │
-│                               --flags]                                       │
+│   --no-progress               CODEINTEL_BUILD_RUN_PROGRESS,                  │
+│                               CODEINTEL_BUILD_RUN_PROGRESS] [default: false] │
+│ *                             [env var: CODEINTEL_BUILD_RUN_*] [default: *]  │
 │ ROOT --root -r                Explicit project root directory. [env var:     │
+│                               CODEINTEL_BUILD_RUN_ROOT,                      │
 │                               CODEINTEL_BUILD_RUN_ROOT] [default: (none)]    │
 │ OUTPUT-FORMAT                 Output format. [choices: text, json, jsonl]    │
-│   --output-format             [env var: CODEINTEL_BUILD_RUN_OUTPUT_FORMAT]   │
-│                               [default: text]                                │
+│   --output-format             [env var: CODEINTEL_BUILD_RUN_OUTPUT_FORMAT,   │
+│                               CODEINTEL_BUILD_RUN_OUTPUT_FORMAT] [default:   │
+│                               text]                                          │
 │ JSON --json                   Alias for --output-format json. [env var:      │
+│                               CODEINTEL_BUILD_RUN_JSON,                      │
 │                               CODEINTEL_BUILD_RUN_JSON] [default: false]     │
 │ VERBOSE --verbose -v          Increase verbosity (0=warnings, 1=info,        │
 │                               2=debug). [env var:                            │
+│                               CODEINTEL_BUILD_RUN_VERBOSE,                   │
 │                               CODEINTEL_BUILD_RUN_VERBOSE] [default: 0]      │
 ╰──────────────────────────────────────────────────────────────────────────────╯

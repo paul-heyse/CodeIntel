@@ -9,13 +9,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from codeintel.build.schemas.provider_unified import (
     clear_unified_provider_cache,
     unified_schema_provider,
 )
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas import (
     DatasetSchemaLike,
@@ -28,7 +27,9 @@ from codeintel.core.schemas.row_models import row_binding_for_table_schema
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
+    from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.core.schemas.row_models import GeneratedRowBinding
 
 
@@ -58,6 +59,15 @@ class _DatasetSchemaRegistry(Protocol):
         Iterable[DatasetSchema]
             Registered dataset schemas.
         """
+        ...
+
+
+@runtime_checkable
+class _SchemaDerivationProvider(Protocol):
+    """Protocol for schema providers that expose derivation metadata."""
+
+    def derivation(self, table_key: str) -> SchemaDerivation | None:
+        """Return derivation metadata for the table key."""
         ...
 
 
@@ -102,20 +112,23 @@ _DECLARED_SOURCE_KIND = "declared_source"
 _DECLARED_SOURCE_NAME = "declared"
 
 
-def _row_binding_factory(table_schema: TableSchema) -> GeneratedRowBinding:
-    schema_index = get_target_metadata_service().schema_index
-    table_key = getattr(table_schema, "table_key", None)
-    derivation = schema_index.derivations.get(table_key) if isinstance(table_key, str) else None
-    if derivation is None:
-        return row_binding_for_table_schema(
-            table_schema=table_schema,
-            derivation_kind=_DECLARED_SOURCE_KIND,
-            derivation_source=_DECLARED_SOURCE_NAME,
-        )
+def _row_binding_for_provider(
+    table_schema: TableSchema,
+    schema_provider: SchemaProvider,
+) -> GeneratedRowBinding:
+    table_key = table_schema.table_key
+    if isinstance(schema_provider, _SchemaDerivationProvider):
+        derivation = schema_provider.derivation(table_key)
+        if derivation is not None:
+            return row_binding_for_table_schema(
+                table_schema=table_schema,
+                derivation_kind=derivation.source_kind,
+                derivation_source=derivation.source_ref,
+            )
     return row_binding_for_table_schema(
         table_schema=table_schema,
-        derivation_kind=derivation.kind,
-        derivation_source=derivation.source,
+        derivation_kind=_DECLARED_SOURCE_KIND,
+        derivation_source=_DECLARED_SOURCE_NAME,
     )
 
 
@@ -128,8 +141,13 @@ def get_schema_service() -> SchemaService:
     SchemaService
         Configured schema service.
     """
+    schema_provider = unified_schema_provider()
+
+    def _row_binding_factory(table_schema: TableSchema) -> GeneratedRowBinding:
+        return _row_binding_for_provider(table_schema, schema_provider)
+
     service = SchemaService(
-        table_provider=unified_schema_provider(),
+        table_provider=schema_provider,
         dataset_provider=_BuildDatasetSchemaProvider(),
         row_binding_factory=_row_binding_factory,
     )

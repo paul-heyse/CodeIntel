@@ -46,7 +46,8 @@ from codeintel.analytics.graphs.graph_stats import build_graph_stats_rows
 from codeintel.analytics.graphs.module_graph_metrics_ext import (
     build_graph_metrics_modules_ext_rows,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.graph_runtime_options import load_graph_runtime_options
@@ -78,6 +79,7 @@ from codeintel.build.hamilton.native.patterns.materialization_collectors import 
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
+from codeintel.build.hamilton.optional_inputs import register_optional_inputs
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
@@ -86,7 +88,6 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.ibis_typing import (
     and_predicates,
@@ -105,14 +106,14 @@ from codeintel.graphs.runtime import (
     GraphMetricsOptions,
     build_graph_runtime,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, StorageGateway
 
 if TYPE_CHECKING:
     from codeintel.graphs.compute.goid import GoidCrosswalkRow, GoidRow
 log = logging.getLogger(__name__)
 LOG = log
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, ir.Table)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, ir.Table)
 
 GOIDS_TARGET_NAME = "goids"
 SYMBOL_USES_TARGET_NAME = "symbol_uses"
@@ -123,6 +124,7 @@ GRAPH_VALIDATION_TARGET_NAME = "graph_validation"
 GOIDS_GOIDS_TABLE_KEY = "core.goids"
 GOIDS_CROSSWALK_TABLE_KEY = "core.goid_crosswalk"
 GOIDS_TABLE_KEYS = (GOIDS_GOIDS_TABLE_KEY, GOIDS_CROSSWALK_TABLE_KEY)
+SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
 SYMBOL_USE_EDGES_TABLE_KEY = "graph.symbol_use_edges"
 SYMBOL_USES_TABLE_KEYS = (SYMBOL_USE_EDGES_TABLE_KEY,)
 
@@ -148,6 +150,8 @@ GRAPH_METRICS_TABLE_KEYS = (
 
 GRAPH_VALIDATION_TABLE_KEY = "analytics.graph_validation"
 GRAPH_VALIDATION_TABLE_KEYS = (GRAPH_VALIDATION_TABLE_KEY,)
+
+register_optional_inputs(SYMBOL_USES_TARGET_NAME, (SCIP_OCCURRENCES_TABLE_KEY,))
 
 CALL_GRAPH_FUNCTION_CALL_COUNTS_NAMESPACE = "call_graph_function_call_counts"
 CALL_GRAPH_DEPTH_STATS_NAMESPACE = "call_graph_call_depth_stats"
@@ -1081,7 +1085,7 @@ def _coerce_goids_output(output: ToolStepOutput) -> GoidsToolOutput:
 @tag_tool(domain="graphs", target=GOIDS_TARGET_NAME)
 def t__goids__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     goids__hash_options: InputHashOptions,
     goids__run_inputs: GoidsRunInputs,
 ) -> GoidsToolOutput:
@@ -1095,18 +1099,23 @@ def t__goids__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=GOIDS_TARGET_NAME,
         hash_options=goids__hash_options,
         skip_reason="goids skipped",
     )
 
     def _execute() -> GoidsToolOutput:
+        if goids__run_inputs.modules_record.status == "skipped":
+            return GoidsToolOutput(
+                result=ExecutionResult.skip(
+                    goids__run_inputs.modules_record.error or "Upstream modules target skipped"
+                )
+            )
         if goids__run_inputs.modules_record.status != "succeeded":
             return GoidsToolOutput(
                 result=ExecutionResult.failed(
-                    f"Upstream modules target failed: "
-                    f"{goids__run_inputs.modules_record.error}"
+                    f"Upstream modules target failed: {goids__run_inputs.modules_record.error}"
                 )
             )
 
@@ -1295,7 +1304,7 @@ goids__table_materializations = make_table_materializations_collector(
 @tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
 def goids__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     goids__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for GOIDs.
@@ -1308,7 +1317,7 @@ def goids__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=GOIDS_TARGET_NAME,
         hash_options=goids__hash_options,
     )
@@ -1319,7 +1328,7 @@ def t__goids(
     goids__finalize_context: ToolFinalizeContext,
     t__goids__run: GoidsToolOutput,
     t__goids__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    goids__table_materializations: dict[str, MaterializationMetadata],
+    goids__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Resolve GOIDs and build crosswalks.
 
@@ -1352,7 +1361,7 @@ def _coerce_symbol_uses_output(output: ToolStepOutput) -> SymbolUsesToolOutput:
 @tag_tool(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def t__symbol_uses__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     symbol_uses__hash_options: InputHashOptions,
     symbol_uses__run_inputs: SymbolUsesRunInputs,
 ) -> SymbolUsesToolOutput:
@@ -1366,7 +1375,7 @@ def t__symbol_uses__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SYMBOL_USES_TARGET_NAME,
         hash_options=symbol_uses__hash_options,
         skip_reason="symbol_uses skipped",
@@ -1378,6 +1387,10 @@ def t__symbol_uses__run(
             ("modules", symbol_uses__run_inputs.modules_record),
             ("goids", symbol_uses__run_inputs.goids_record),
         ]:
+            if record.status == "skipped":
+                return SymbolUsesToolOutput(
+                    result=ExecutionResult.skip(record.error or f"Upstream {name} target skipped")
+                )
             if record.status != "succeeded":
                 return SymbolUsesToolOutput(
                     result=ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
@@ -1506,7 +1519,7 @@ symbol_uses__table_materializations = make_table_materializations_collector(
 @tag_helper(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
 def symbol_uses__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     symbol_uses__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for symbol uses.
@@ -1519,7 +1532,7 @@ def symbol_uses__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SYMBOL_USES_TARGET_NAME,
         hash_options=symbol_uses__hash_options,
     )
@@ -1530,7 +1543,7 @@ def t__symbol_uses(
     symbol_uses__finalize_context: ToolFinalizeContext,
     t__symbol_uses__run: SymbolUsesToolOutput,
     t__symbol_uses__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    symbol_uses__table_materializations: dict[str, MaterializationMetadata],
+    symbol_uses__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Extract symbol definition-to-use edges.
 
@@ -1890,8 +1903,8 @@ call_graph_views__table_materializations = make_table_materializations_collector
 @codeintel_target(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
 def t__call_graph_views(
     env: BuildEnv,
-    graph: TargetGraph,
-    call_graph_views__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    call_graph_views__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize derived views over the call graph for analytics.
 
@@ -1905,7 +1918,7 @@ def t__call_graph_views(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=CALL_GRAPH_VIEWS_TARGET_NAME,
         ),
         artifact_materializations=None,
@@ -1916,6 +1929,18 @@ def t__call_graph_views(
 # ---------------------------------------------------------------------------
 # graph_metrics target - compute and materialize
 # ---------------------------------------------------------------------------
+
+
+@tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
+def graph_metrics__gateway(env: BuildEnv) -> StorageGateway:
+    """Expose the storage gateway for graph metrics.
+
+    Returns
+    -------
+    StorageGateway
+        Storage gateway from the build environment.
+    """
+    return env.gateway
 
 
 @tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
@@ -1944,8 +1969,9 @@ def _coerce_graph_metrics_output(output: ToolStepOutput) -> GraphMetricsToolOutp
 @tag_tool(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def t__graph_metrics__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     t__call_graph: TargetRunRecord,
+    graph_metrics__gateway: StorageGateway,
     graph_metrics__hash_options: InputHashOptions,
 ) -> GraphMetricsToolOutput:
     """Compute graph metrics rows from call graph data.
@@ -1958,13 +1984,19 @@ def t__graph_metrics__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=GRAPH_METRICS_TARGET_NAME,
         hash_options=graph_metrics__hash_options,
         skip_reason="graph_metrics skipped",
     )
 
     def _execute() -> GraphMetricsToolOutput:
+        if t__call_graph.status == "skipped":
+            return GraphMetricsToolOutput(
+                result=ExecutionResult.skip(
+                    t__call_graph.error or "Upstream call_graph target skipped"
+                )
+            )
         if t__call_graph.status != "succeeded":
             return GraphMetricsToolOutput(
                 result=ExecutionResult.failed(
@@ -1984,11 +2016,11 @@ def t__graph_metrics__run(
                 snapshot=env.snapshot,
                 backend=GraphBackendConfig(use_gpu=True, backend="auto", strict=False),
             )
-            runtime = build_graph_runtime(env.gateway, runtime_options)
-            filters = build_graph_metric_filters(env.gateway, env.snapshot)
+            runtime = build_graph_runtime(graph_metrics__gateway, runtime_options)
+            filters = build_graph_metric_filters(graph_metrics__gateway, env.snapshot)
 
             metrics_rows = build_graph_metrics_rows(
-                env.gateway,
+                graph_metrics__gateway,
                 env.snapshot,
                 options=load_target_options(
                     env,
@@ -2002,21 +2034,21 @@ def t__graph_metrics__run(
                 ),
             )
             functions_ext_rows = build_graph_metrics_functions_ext_rows(
-                env.gateway,
+                graph_metrics__gateway,
                 repo=env.snapshot.repo,
                 commit=env.snapshot.commit,
                 runtime=runtime,
                 filters=filters,
             )
             modules_ext_rows = build_graph_metrics_modules_ext_rows(
-                env.gateway,
+                graph_metrics__gateway,
                 repo=env.snapshot.repo,
                 commit=env.snapshot.commit,
                 runtime=runtime,
                 filters=filters,
             )
             graph_stats_rows = build_graph_stats_rows(
-                env.gateway,
+                graph_metrics__gateway,
                 repo=env.snapshot.repo,
                 commit=env.snapshot.commit,
                 runtime=runtime,
@@ -2276,7 +2308,7 @@ graph_metrics__table_materializations = make_table_materializations_collector(
 @tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
 def graph_metrics__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     graph_metrics__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for graph metrics.
@@ -2289,7 +2321,7 @@ def graph_metrics__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=GRAPH_METRICS_TARGET_NAME,
         hash_options=graph_metrics__hash_options,
     )
@@ -2300,7 +2332,7 @@ def t__graph_metrics(
     graph_metrics__finalize_context: ToolFinalizeContext,
     t__graph_metrics__run: GraphMetricsToolOutput,
     t__graph_metrics__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    graph_metrics__table_materializations: dict[str, MaterializationMetadata],
+    graph_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Compute graph topology metrics for functions and modules.
 
@@ -2370,10 +2402,60 @@ def _coerce_graph_validation_output(output: ToolStepOutput) -> GraphValidationTo
     return GraphValidationToolOutput(result=output.result)
 
 
+def _graph_validation_upstream_result(
+    run_inputs: GraphValidationRunInputs,
+) -> ExecutionResult | None:
+    deps = [
+        ("call_graph", run_inputs.call_graph_record),
+        ("import_graph", run_inputs.import_graph_record),
+        ("cfg", run_inputs.cfg_record),
+    ]
+    for name, record in deps:
+        if record.status == "skipped":
+            return ExecutionResult.skip(record.error or f"Upstream {name} target skipped")
+        if record.status != "succeeded":
+            return ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
+    return None
+
+
+def _collect_graph_validation_issues(
+    run_inputs: GraphValidationRunInputs,
+    *,
+    repo: str,
+    commit: str,
+) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    issues.extend(
+        _validate_call_graph_integrity(
+            run_inputs.inputs.call_graph_edges,
+            run_inputs.inputs.call_graph_nodes,
+            repo,
+            commit,
+        )
+    )
+    issues.extend(
+        _validate_import_graph_integrity(
+            run_inputs.inputs.import_graph_edges,
+            run_inputs.inputs.import_modules,
+            repo,
+            commit,
+        )
+    )
+    issues.extend(
+        _validate_cfg_integrity(
+            run_inputs.inputs.cfg_edges,
+            run_inputs.inputs.cfg_blocks,
+            repo,
+            commit,
+        )
+    )
+    return issues
+
+
 @tag_tool(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def t__graph_validation__run(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     graph_validation__hash_options: InputHashOptions,
     graph_validation__run_inputs: GraphValidationRunInputs,
 ) -> GraphValidationToolOutput:
@@ -2387,51 +2469,24 @@ def t__graph_validation__run(
     """
     context = ToolRunContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=GRAPH_VALIDATION_TARGET_NAME,
         hash_options=graph_validation__hash_options,
         skip_reason="graph_validation skipped",
     )
 
     def _execute() -> GraphValidationToolOutput:
-        deps = [
-            ("call_graph", graph_validation__run_inputs.call_graph_record),
-            ("import_graph", graph_validation__run_inputs.import_graph_record),
-            ("cfg", graph_validation__run_inputs.cfg_record),
-        ]
-        for name, record in deps:
-            if record.status != "succeeded":
-                return GraphValidationToolOutput(
-                    result=ExecutionResult.failed(f"Upstream {name} target failed: {record.error}")
-                )
+        upstream_result = _graph_validation_upstream_result(graph_validation__run_inputs)
+        if upstream_result is not None:
+            return GraphValidationToolOutput(result=upstream_result)
 
         repo = env.snapshot.repo
         commit = env.snapshot.commit
 
-        issues: list[GraphValidationIssue] = []
-        issues.extend(
-            _validate_call_graph_integrity(
-                graph_validation__run_inputs.inputs.call_graph_edges,
-                graph_validation__run_inputs.inputs.call_graph_nodes,
-                repo,
-                commit,
-            )
-        )
-        issues.extend(
-            _validate_import_graph_integrity(
-                graph_validation__run_inputs.inputs.import_graph_edges,
-                graph_validation__run_inputs.inputs.import_modules,
-                repo,
-                commit,
-            )
-        )
-        issues.extend(
-            _validate_cfg_integrity(
-                graph_validation__run_inputs.inputs.cfg_edges,
-                graph_validation__run_inputs.inputs.cfg_blocks,
-                repo,
-                commit,
-            )
+        issues = _collect_graph_validation_issues(
+            graph_validation__run_inputs,
+            repo=repo,
+            commit=commit,
         )
 
         for issue in issues:
@@ -2561,7 +2616,7 @@ graph_validation__table_materializations = make_table_materializations_collector
 @tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
 def graph_validation__finalize_context(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     graph_validation__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for graph validation.
@@ -2574,7 +2629,7 @@ def graph_validation__finalize_context(
     """
     return ToolFinalizeContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=GRAPH_VALIDATION_TARGET_NAME,
         hash_options=graph_validation__hash_options,
     )
@@ -2585,7 +2640,7 @@ def t__graph_validation(
     graph_validation__finalize_context: ToolFinalizeContext,
     t__graph_validation__run: GraphValidationToolOutput,
     t__graph_validation__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-    graph_validation__table_materializations: dict[str, MaterializationMetadata],
+    graph_validation__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Run graph integrity validation checks and persist findings.
 

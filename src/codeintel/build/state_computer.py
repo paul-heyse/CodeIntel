@@ -15,7 +15,7 @@ rather than implementing their own state computation.
 Example
 -------
 >>> session = BuildSession(snapshot, gateway, settings)
->>> computer = StateComputer(graph, session)
+>>> computer = StateComputer(catalog, session)
 >>> build_state = computer.compute_all()
 >>> build_state.runnable_targets()
 ('ast', 'modules')
@@ -37,11 +37,11 @@ from codeintel.build.state_types import (
 from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.state_types import (
         BlockingReason,
         TargetStatus,
     )
-    from codeintel.build.targets import OutputTarget, TargetGraph
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
@@ -66,15 +66,15 @@ class StateComputer:
 
     Parameters
     ----------
-    graph
-        Target graph defining all outputs and their dependencies.
+    catalog
+        DAG catalog defining all outputs and their dependencies.
     session
         Build session providing caching and gateway access.
 
     Examples
     --------
     >>> session = BuildSession(snapshot, gateway, settings)
-    >>> computer = StateComputer(graph, session)
+    >>> computer = StateComputer(catalog, session)
     >>> state = computer.compute_all()
     >>> state.by_status("current")
     ('modules', 'ast')
@@ -82,7 +82,7 @@ class StateComputer:
 
     def __init__(
         self,
-        graph: TargetGraph,
+        catalog: DagCatalog,
         session: BuildSession,
         *,
         config: BuildConfig | None = None,
@@ -91,21 +91,21 @@ class StateComputer:
 
         Parameters
         ----------
-        graph
-            Target graph with all registered targets.
+        catalog
+            DAG catalog with all registered targets.
         session
             Build session for caching and storage access.
         config
             Build configuration used to compute per-target options hashes.
         """
-        self._graph = graph
+        self._catalog = catalog
         self._session = session
         self._config = config or BuildConfig.empty()
 
     @classmethod
     def create(
         cls,
-        graph: TargetGraph,
+        catalog: DagCatalog,
         gateway: StorageGateway,
         snapshot: SnapshotRef,
         settings: BuildSettings,
@@ -116,8 +116,8 @@ class StateComputer:
 
         Parameters
         ----------
-        graph
-            Target graph with all registered targets.
+        catalog
+            DAG catalog with all registered targets.
         gateway
             Storage gateway for database access.
         snapshot
@@ -131,9 +131,9 @@ class StateComputer:
             New state computer instance.
         """
         session = BuildSession(snapshot=snapshot, gateway=gateway, settings=settings)
-        return cls(graph=graph, session=session)
+        return cls(catalog=catalog, session=session)
 
-    def _options_hash_for_target(self, target: OutputTarget) -> str | None:
+    def _options_hash_for_target(self, target: TargetDescriptor) -> str | None:
         params = self._config.parameters_for(target.name)
         return compute_target_options_hash(params)
 
@@ -180,14 +180,14 @@ class StateComputer:
         Raises
         ------
         KeyError
-            If target name is not in the graph.
+            If target name is not in the catalog.
         """
-        if name not in self._graph:
-            msg = f"Target '{name}' not found in graph"
+        if name not in self._catalog:
+            msg = f"Target '{name}' not found in catalog"
             raise KeyError(msg)
 
         # Get the target and its manifest
-        target = self._graph.get(name)
+        target = self._catalog.targets[name]
         manifest = self._session.get_manifest(name)
 
         # Compute preliminary state
@@ -224,14 +224,16 @@ class StateComputer:
         self._session.preload_manifests()
 
         unknown_targets = sorted(
-            name for name in self._session.cached_manifest_targets() if name not in self._graph
+            name
+            for name in self._session.cached_manifest_targets()
+            if name not in self._catalog
         )
         for name in unknown_targets:
             log.warning("Ignoring manifest for unknown target: %s", name)
 
         states: dict[str, TargetState] = {}
-        for target_name in self._graph:
-            target = self._graph.get(target_name)
+        for target_name in self._catalog:
+            target = self._catalog.targets[target_name]
             manifest = self._session.get_manifest(target_name)
             states[target_name] = self._state_from_manifest(target, manifest)
 
@@ -239,7 +241,7 @@ class StateComputer:
 
     def _state_from_manifest(
         self,
-        target: OutputTarget,
+        target: TargetDescriptor,
         manifest: OutputManifest | None,
     ) -> TargetState:
         """Determine state for a target based on its manifest.
@@ -326,7 +328,7 @@ class StateComputer:
         final = dict(preliminary)
 
         # Get topological order to process deps before dependents
-        topo_order = self._graph.topological_order(list(self._graph))
+        topo_order = self._catalog.closure(tuple(self._catalog.targets))
 
         for target_name in topo_order:
             current_state = final[target_name]
@@ -335,7 +337,7 @@ class StateComputer:
             if current_state.status == "missing":
                 continue
 
-            target = self._graph.get(target_name)
+            target = self._catalog.targets[target_name]
             blocking_deps, blocking_reason = self._find_blocking_deps_from_states(
                 target.dependencies, final
             )
@@ -375,7 +377,7 @@ class StateComputer:
         first_reason: BlockingReason | None = None
 
         for dep_name in dependencies:
-            dep_target = self._graph.get(dep_name)
+            dep_target = self._catalog.targets[dep_name]
             dep_manifest = self._session.get_manifest(dep_name)
             dep_state = self._state_from_manifest(dep_target, dep_manifest)
             reason = self._check_dep_blocking(dep_state)

@@ -8,7 +8,7 @@ from functools import lru_cache
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, cast
 
-from codeintel.build.hamilton.tag_index import TagIndex
+from codeintel.build.hamilton.dag_catalog import DagCatalog, OutputDescriptor, TargetDescriptor
 from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.declared import source_declared_schema_provider
 
@@ -19,20 +19,19 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.schemas.inference_service import SchemaInferenceService
     from codeintel.build.schemas.schema_index import SchemaIndex
-    from codeintel.build.targets import OutputTarget, TargetGraph
 
 
 @dataclass(frozen=True, slots=True)
 class TargetSystem:
-    """Bundle runtime, graph, and target lookup indexes."""
+    """Bundle runtime, catalog, and target lookup indexes."""
 
     runtime: HamiltonRuntime
-    graph: TargetGraph
-    by_name: Mapping[str, OutputTarget]
-    by_table_key: Mapping[str, OutputTarget]
-    by_artifact_name: Mapping[str, OutputTarget]
+    catalog: DagCatalog
+    by_name: Mapping[str, TargetDescriptor]
+    by_table_key: Mapping[str, TargetDescriptor]
+    by_artifact_name: Mapping[str, TargetDescriptor]
 
-    def get_target(self, name: str) -> OutputTarget | None:
+    def get_target(self, name: str) -> TargetDescriptor | None:
         """Return target metadata by name.
 
         Parameters
@@ -42,7 +41,7 @@ class TargetSystem:
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if present, otherwise None.
         """
         return self.by_name.get(name)
@@ -60,9 +59,9 @@ class TargetSystem:
         tuple[str, ...]
             Dependency closure in topological order.
         """
-        return self.graph.topological_order(targets)
+        return self.catalog.closure(targets)
 
-    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+    def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
         """Return producing target for a table key.
 
         Parameters
@@ -72,12 +71,27 @@ class TargetSystem:
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Producing target if present, otherwise None.
         """
         return self.by_table_key.get(table_key)
 
-    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+    def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
+        """Return output descriptor for a table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully-qualified table key (schema.table).
+
+        Returns
+        -------
+        OutputDescriptor | None
+            Output descriptor if present, otherwise None.
+        """
+        return self.catalog.table_outputs.get(table_key)
+
+    def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         """Return producing target for an artifact name.
 
         Parameters
@@ -87,7 +101,7 @@ class TargetSystem:
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Producing target if present, otherwise None.
         """
         return self.by_artifact_name.get(artifact_name)
@@ -104,33 +118,32 @@ class TargetSystem:
 
 
 def _build_indexes(
-    targets: Sequence[OutputTarget],
-) -> tuple[Mapping[str, OutputTarget], Mapping[str, OutputTarget], Mapping[str, OutputTarget]]:
-    by_name: dict[str, OutputTarget] = {}
-    by_table_key: dict[str, OutputTarget] = {}
-    by_artifact_name: dict[str, OutputTarget] = {}
+    catalog: DagCatalog,
+) -> tuple[
+    Mapping[str, TargetDescriptor],
+    Mapping[str, TargetDescriptor],
+    Mapping[str, TargetDescriptor],
+]:
+    by_name: dict[str, TargetDescriptor] = {}
+    by_table_key: dict[str, TargetDescriptor] = {}
+    by_artifact_name: dict[str, TargetDescriptor] = {}
 
-    for target in targets:
+    for target in catalog.all_targets:
         by_name[target.name] = target
-        for table_key in target.contract.table_keys:
-            existing = by_table_key.get(table_key)
-            if existing is not None and existing.name != target.name:
-                msg = (
-                    "Duplicate table_key declared by multiple targets: "
-                    f"{table_key} ({existing.name}, {target.name})"
-                )
-                raise ValueError(msg)
-            by_table_key[table_key] = target
 
-        for artifact_name in target.contract.artifact_names:
-            existing = by_artifact_name.get(artifact_name)
-            if existing is not None and existing.name != target.name:
-                msg = (
-                    "Duplicate artifact name declared by multiple targets: "
-                    f"{artifact_name} ({existing.name}, {target.name})"
-                )
-                raise ValueError(msg)
-            by_artifact_name[artifact_name] = target
+    for table_key, output in catalog.table_outputs.items():
+        target = catalog.targets.get(output.producer_target)
+        if target is None:
+            msg = f"Unknown target for table output {table_key}: {output.producer_target}"
+            raise ValueError(msg)
+        by_table_key[table_key] = target
+
+    for artifact_name, output in catalog.artifact_outputs.items():
+        target = catalog.targets.get(output.producer_target)
+        if target is None:
+            msg = f"Unknown target for artifact output {artifact_name}: {output.producer_target}"
+            raise ValueError(msg)
+        by_artifact_name[artifact_name] = target
 
     return (
         MappingProxyType(by_name),
@@ -163,13 +176,13 @@ def _load_target_system() -> TargetSystem:
 
     build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
     runtime = build_driver_fn()
-    graph = runtime.graph
+    catalog = runtime.catalog
 
-    by_name, by_table_key, by_artifact_name = _build_indexes(graph.all_targets)
+    by_name, by_table_key, by_artifact_name = _build_indexes(catalog)
 
     return TargetSystem(
         runtime=runtime,
-        graph=graph,
+        catalog=catalog,
         by_name=by_name,
         by_table_key=by_table_key,
         by_artifact_name=by_artifact_name,
@@ -178,13 +191,12 @@ def _load_target_system() -> TargetSystem:
 
 @dataclass(frozen=True, slots=True)
 class TargetMetadataService:
-    """Bundle of target system, tag index, and schema index."""
+    """Bundle of target system and schema index."""
 
     system: TargetSystem
-    tag_index: TagIndex
     schema_index: SchemaIndex
 
-    def get_target(self, name: str) -> OutputTarget | None:
+    def get_target(self, name: str) -> TargetDescriptor | None:
         """Return target metadata by name.
 
         Parameters
@@ -194,12 +206,12 @@ class TargetMetadataService:
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if found.
         """
         return self.system.get_target(name)
 
-    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+    def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
         """Return the target that produces a dataset table key.
 
         Parameters
@@ -209,12 +221,27 @@ class TargetMetadataService:
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if found.
         """
         return self.system.target_for_table_key(table_key)
 
-    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+    def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
+        """Return the output descriptor for a dataset table key.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        OutputDescriptor | None
+            Output descriptor if found.
+        """
+        return self.system.output_for_table_key(table_key)
+
+    def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         """Return the target that produces an artifact name.
 
         Parameters
@@ -224,7 +251,7 @@ class TargetMetadataService:
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if found.
         """
         return self.system.target_for_artifact(artifact_name)
@@ -233,15 +260,19 @@ class TargetMetadataService:
 class TargetMetadataProvider(Protocol):
     """Protocol for resolving target metadata."""
 
-    def get_target(self, name: str) -> OutputTarget | None:
+    def get_target(self, name: str) -> TargetDescriptor | None:
         """Return target metadata by name."""
         ...
 
-    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+    def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
         """Return target metadata for a table key."""
         ...
 
-    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+    def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
+        """Return output descriptor for a table key."""
+        ...
+
+    def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         """Return target metadata for an artifact name."""
         ...
 
@@ -258,35 +289,52 @@ class LazyTargetMetadataProvider:
             self._service = self.factory()
         return self._service
 
-    def get_target(self, name: str) -> OutputTarget | None:
+    def get_target(self, name: str) -> TargetDescriptor | None:
         """Return target metadata by name.
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if present, otherwise None.
         """
         return self._resolve().get_target(name)
 
-    def target_for_table_key(self, table_key: str) -> OutputTarget | None:
+    def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
         """Return target metadata for a table key.
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if present, otherwise None.
         """
         return self._resolve().target_for_table_key(table_key)
 
-    def target_for_artifact(self, artifact_name: str) -> OutputTarget | None:
+    def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
+        """Return output descriptor for a table key.
+
+        Returns
+        -------
+        OutputDescriptor | None
+            Output descriptor if present, otherwise None.
+        """
+        return self._resolve().output_for_table_key(table_key)
+
+    def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
         """Return target metadata for an artifact name.
 
         Returns
         -------
-        OutputTarget | None
+        TargetDescriptor | None
             Target metadata if present, otherwise None.
         """
         return self._resolve().target_for_artifact(artifact_name)
+
+    def reset(self) -> None:
+        """Clear any cached target metadata service."""
+        self._service = None
+
+
+_TARGET_METADATA_PROVIDERS: list[LazyTargetMetadataProvider] = []
 
 
 @lru_cache(maxsize=1)
@@ -307,17 +355,17 @@ def get_target_metadata_service() -> TargetMetadataService:
         "Callable[[], SchemaInferenceService]",
         lazy_getattr("codeintel.build.schemas.inference_service", "get_schema_inference_service"),
     )
+    inference_service = get_schema_inference_service()
+    inferable_table_keys = inference_service.inferable_table_keys(catalog=system.catalog)
     schema_index = build_schema_index(
         system=system,
         declared_provider=source_declared_schema_provider(
-            exclude_table_keys=system.all_table_keys,
+            exclude_table_keys=inferable_table_keys,
         ),
-        inference_service=get_schema_inference_service(),
+        inference_service=inference_service,
     )
-    tag_index = TagIndex.from_runtime(system.runtime)
     return TargetMetadataService(
         system=system,
-        tag_index=tag_index,
         schema_index=schema_index,
     )
 
@@ -341,7 +389,9 @@ def get_target_metadata_provider() -> TargetMetadataProvider:
     TargetMetadataProvider
         Lazy provider that resolves metadata on demand.
     """
-    return LazyTargetMetadataProvider(get_target_metadata_service)
+    provider = LazyTargetMetadataProvider(get_target_metadata_service)
+    _TARGET_METADATA_PROVIDERS.append(provider)
+    return provider
 
 
 def is_target_metadata_loaded() -> bool:
@@ -362,6 +412,8 @@ def clear_target_metadata_cache() -> None:
     """Clear cached target metadata services."""
     _load_target_system.cache_clear()
     get_target_metadata_service.cache_clear()
+    for provider in _TARGET_METADATA_PROVIDERS:
+        provider.reset()
 
 
 __all__ = [

@@ -23,11 +23,11 @@ def test_auto_mode_native_outputs_have_helpers() -> None:
 
     missing: list[str] = []
     for target_name in sorted(native_target_names(runtime)):
-        target = runtime.graph.get(target_name)
+        target = runtime.catalog.get_target(target_name)
         if target is None:
-            pytest.fail(f"Target not found in runtime graph: {target_name}")
+            pytest.fail(f"Target not found in catalog: {target_name}")
 
-        for table_key in target.contract.table_keys:
+        for table_key in target.table_keys:
             d_name = dataset_node(table_key)
             q_name = query_node(table_key)
             if d_name not in node_names:
@@ -35,7 +35,7 @@ def test_auto_mode_native_outputs_have_helpers() -> None:
             if q_name not in node_names:
                 missing.append(f"{target_name}: missing loader node {q_name} for {table_key}")
 
-        for artifact_name in target.contract.artifact_names:
+        for artifact_name in target.artifact_names:
             a_name = artifact_node(artifact_name)
             if a_name not in node_names:
                 missing.append(f"{target_name}: missing artifact node {a_name} for {artifact_name}")

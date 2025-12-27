@@ -16,7 +16,6 @@ from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import (
     decode_json_dict,
     deserialize_str_tuple,
-    encode_json_compact,
     serialize_str_sequence,
 )
 from codeintel.storage.query_results import coerce_int
@@ -378,10 +377,8 @@ class PipelineRunTracking:
         record
             Step record to persist.
         """
-        row_counts_json = (
-            encode_json_compact(dict(record.row_counts)) if record.row_counts else None
-        )
-        extra_json = encode_json_compact(dict(record.extra)) if record.extra else None
+        row_counts_json = dict(record.row_counts) if record.row_counts else None
+        extra_json = dict(record.extra) if record.extra else None
 
         self.con.execute(
             """

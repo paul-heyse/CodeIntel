@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.analytics.coverage_targets import (
@@ -13,13 +14,14 @@ from codeintel.build.hamilton.native.analytics.coverage_targets import (
     t__behavioral_coverage,
     t__coverage_test_edges,
 )
-from codeintel.build.targets import OutputTarget, TargetGraph
+from codeintel.core.execution.materialization import MaterializationStatus
 from tests._helpers.assertions import (
     assert_record_row_counts,
     assert_target_ok,
     expect_equal,
     expect_true,
 )
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 
@@ -38,47 +40,45 @@ def _make_env(harness: AnalyticsTargetHarness) -> BuildEnv:
     )
 
 
-def _make_graph() -> TargetGraph:
-    """Create a minimal TargetGraph for coverage targets.
+def _make_graph() -> DagCatalog:
+    """Create a minimal catalog for coverage targets.
 
     Returns
     -------
-    TargetGraph
-        Target graph with coverage targets registered.
+    DagCatalog
+        Catalog with coverage targets registered.
     """
-    graph = TargetGraph()
-    graph.register(
-        OutputTarget(
-            name="coverage_test_edges",
-            module="analytics",
-            contract=contract_for_keys(("analytics.test_coverage_edges",)),
+    return build_catalog(
+        targets=(
+            make_target_descriptor(
+                name="coverage_test_edges",
+                module="analytics",
+                contract=contract_for_keys(("analytics.test_coverage_edges",)),
+            ),
+            make_target_descriptor(
+                name="behavioral_coverage",
+                module="analytics",
+                contract=contract_for_keys(("analytics.behavioral_coverage",)),
+            ),
         )
     )
-    graph.register(
-        OutputTarget(
-            name="behavioral_coverage",
-            module="analytics",
-            contract=contract_for_keys(("analytics.behavioral_coverage",)),
-        )
-    )
-    return graph
 
 
 def _make_materialization(
     table_key: str,
     row_count: int,
     *,
-    status: str = "succeeded",
+    status: MaterializationStatus = "succeeded",
     error: str | None = None,
-) -> MaterializationMetadata:
-    return {
-        "status": status,
-        "table_key": table_key,
-        "row_count": row_count,
-        "duration_ms": 0.0,
-        "input_hash": "test",
-        "error": error,
-    }
+) -> MaterializationResult:
+    return MaterializationResult(
+        status=status,
+        table_key=table_key,
+        row_count=row_count,
+        duration_ms=0.0,
+        input_hash="test",
+        error=error,
+    )
 
 
 # ---------------------------------------------------------------------------

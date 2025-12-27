@@ -10,13 +10,22 @@ import pytest
 from codeintel.build.schemas import declared_schema_provider
 from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.build.target_metadata import get_target_metadata_service
-from tests._helpers.contracts import table_schema_for_key
+from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+
+
+def _schema_for_key(table_key: str) -> TableSchema:
+    schema, name = split_table_key(table_key)
+    return TableSchema(
+        schema=schema,
+        name=name,
+        columns=[Column("id", "VARCHAR", nullable=False)],
+    )
 
 
 @dataclass
@@ -36,7 +45,7 @@ class _SpyBatchInferer:
         self.calls += 1
         keys = tuple(sorted(table_keys))
         self.seen.append(keys)
-        return {key: table_schema_for_key(key) for key in keys}
+        return {key: _schema_for_key(key) for key in keys}
 
 
 def test_pr80_schema_compile_uses_batch_inference() -> None:
@@ -57,9 +66,9 @@ def test_pr80_schema_compile_uses_batch_inference() -> None:
     if spy.calls != 1:
         pytest.fail(f"Expected batch inferer to be called once, got {spy.calls}")
 
-    graph = get_target_metadata_service().system.graph
-    risk_table_keys = set(graph.get("risk_factors").contract.table_keys)
-    hotspot_table_keys = set(graph.get("hotspots").contract.table_keys)
+    catalog = get_target_metadata_service().system.catalog
+    risk_table_keys = set(catalog.get("risk_factors").table_keys)
+    hotspot_table_keys = set(catalog.get("hotspots").table_keys)
     expected_keys = sorted(risk_table_keys | hotspot_table_keys)
     if spy.seen != [tuple(expected_keys)]:
         pytest.fail(f"Expected batch inferer keys {expected_keys}, got {spy.seen}")

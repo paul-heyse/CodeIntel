@@ -25,7 +25,8 @@ from codeintel.analytics.functions.metrics import (
     FunctionAnalyticsResult,
     compute_function_analytics_result_from_table,
 )
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
@@ -48,7 +49,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hashing import InputHashOptions
-from codeintel.build.targets import TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.row_serialization import row_to_tuple
 
@@ -56,7 +56,7 @@ _HAMILTON_TYPE_HINTS = (
     BuildEnv,
     InputHashOptions,
     SnapshotRef,
-    TargetGraph,
+    DagCatalog,
     TargetRunRecord,
     FunctionAnalyticsResult,
     FunctionAnalyticsOptions,
@@ -98,7 +98,7 @@ def function_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
 @tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def function_metrics__skip(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     function_metrics__hash_options: InputHashOptions,
 ) -> bool:
     """Return True when function_metrics should be skipped.
@@ -110,7 +110,7 @@ def function_metrics__skip(
     """
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         FUNCTION_METRICS_TARGET_NAME,
         hash_options=function_metrics__hash_options,
     )
@@ -302,22 +302,22 @@ function_metrics__table_materializations = make_table_materializations_collector
 @codeintel_target(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def t__function_metrics(
     env: BuildEnv,
-    graph: TargetGraph,
-    function_metrics__table_materializations: dict[str, MaterializationMetadata],
+    catalog: DagCatalog,
+    function_metrics__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Materialize function structural metrics and type annotations.
 
-    Combines materialization metadata from all three table writes into a
+    Combines materialization results from all three table writes into a
     single TargetRunRecord for the function_metrics target.
 
     Parameters
     ----------
     env
         Build environment with gateway and snapshot info.
-    graph
-        Target graph for metadata lookup.
+    catalog
+        DAG catalog for metadata lookup.
     function_metrics__table_materializations
-        Aggregated materialization metadata for function_metrics tables.
+        Aggregated materialization results for function_metrics tables.
 
     Returns
     -------
@@ -327,7 +327,7 @@ def t__function_metrics(
     return record_from_materializations(
         context=MaterializationRecordContext(
             env=env,
-            graph=graph,
+            catalog=catalog,
             target_name=FUNCTION_METRICS_TARGET_NAME,
         ),
         artifact_materializations=None,

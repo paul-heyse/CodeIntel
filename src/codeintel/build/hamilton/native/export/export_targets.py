@@ -18,7 +18,8 @@ from hamilton.function_modifiers import source, value
 
 from codeintel.build.exports.common import ExportCallOptions
 from codeintel.build.exports.engine import ExportFormat, export_all_datasets
-from codeintel.build.hamilton.boundary_types import MaterializationMetadata
+from codeintel.build.hamilton.boundary_types import MaterializationResult
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from codeintel.build.hamilton.materializers.artifact_saver import ArtifactWritePlan
@@ -37,9 +38,8 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
-from codeintel.build.targets import TargetGraph
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, TargetGraph, TargetRunRecord, Path)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, Path)
 
 EXPORT_JSONL_TARGET_NAME = "export_jsonl"
 EXPORT_PARQUET_TARGET_NAME = "export_parquet"
@@ -63,12 +63,12 @@ class ExportManifestRequest:
 
 def _export_manifest_plan(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     *,
     request: ExportManifestRequest,
 ) -> ArtifactWritePlan | None:
     target_name = request.target_name
-    target = graph.get(target_name)
+    target = catalog.get_target(target_name)
     if target is not None:
         options_hash = options_hash_for_target(env, target_name)
         hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
@@ -115,7 +115,7 @@ def _touch_dependencies(*_deps: object) -> None:
 @tag_tool(domain="export", target=EXPORT_JSONL_TARGET_NAME)
 def t__export_jsonl__compute(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     q__core__modules: ir.Table,
     q__analytics__function_metrics: ir.Table,
 ) -> ArtifactWritePlan | None:
@@ -129,7 +129,7 @@ def t__export_jsonl__compute(
     _touch_dependencies(q__core__modules, q__analytics__function_metrics)
     return _export_manifest_plan(
         env,
-        graph,
+        catalog,
         request=ExportManifestRequest(
             target_name=EXPORT_JSONL_TARGET_NAME,
             artifact_name=EXPORT_JSONL_ARTIFACT_NAME,
@@ -143,7 +143,7 @@ def t__export_jsonl__compute(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{EXPORT_JSONL_ARTIFACT_NAME}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(EXPORT_JSONL_TARGET_NAME),
     artifact_name=value(EXPORT_JSONL_ARTIFACT_NAME),
     path_template=value("{export_dir}/datasets_manifest.json"),
@@ -165,8 +165,8 @@ def export_jsonl__content(
 @codeintel_target(domain="export", target=EXPORT_JSONL_TARGET_NAME)
 def t__export_jsonl(
     env: BuildEnv,
-    graph: TargetGraph,
-    m__artifact__datasets_manifest_jsonl: MaterializationMetadata,
+    catalog: DagCatalog,
+    m__artifact__datasets_manifest_jsonl: MaterializationResult,
 ) -> TargetRunRecord:
     """Export datasets to JSONL format for Document Output.
 
@@ -177,7 +177,7 @@ def t__export_jsonl(
     """
     context = FileArtifactRecordContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=EXPORT_JSONL_TARGET_NAME,
     )
     return record_from_file_artifact_materialization(
@@ -190,7 +190,7 @@ def t__export_jsonl(
 @tag_compute(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
 def t__export_parquet__compute(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     q__analytics__function_metrics: ir.Table,
 ) -> ArtifactWritePlan | None:
     """Compute export manifest and gather data for Parquet export.
@@ -203,7 +203,7 @@ def t__export_parquet__compute(
     _touch_dependencies(q__analytics__function_metrics)
     return _export_manifest_plan(
         env,
-        graph,
+        catalog,
         request=ExportManifestRequest(
             target_name=EXPORT_PARQUET_TARGET_NAME,
             artifact_name=EXPORT_PARQUET_ARTIFACT_NAME,
@@ -217,7 +217,7 @@ def t__export_parquet__compute(
     [FileArtifactSaver],
     output_name_=materialize_node(f"artifact.{EXPORT_PARQUET_ARTIFACT_NAME}"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(EXPORT_PARQUET_TARGET_NAME),
     artifact_name=value(EXPORT_PARQUET_ARTIFACT_NAME),
     path_template=value("{export_dir}/datasets_manifest.json"),
@@ -239,8 +239,8 @@ def export_parquet__bytes(
 @codeintel_target(domain="export", target=EXPORT_PARQUET_TARGET_NAME)
 def t__export_parquet(
     env: BuildEnv,
-    graph: TargetGraph,
-    m__artifact__datasets_manifest_parquet: MaterializationMetadata,
+    catalog: DagCatalog,
+    m__artifact__datasets_manifest_parquet: MaterializationResult,
 ) -> TargetRunRecord:
     """Export datasets to Parquet format for Document Output.
 
@@ -251,7 +251,7 @@ def t__export_parquet(
     """
     context = FileArtifactRecordContext(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=EXPORT_PARQUET_TARGET_NAME,
     )
     return record_from_file_artifact_materialization(

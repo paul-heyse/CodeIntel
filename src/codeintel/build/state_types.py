@@ -83,7 +83,7 @@ class TargetState:
     Attributes
     ----------
     name
-        Target identifier matching OutputTarget.name.
+        Target identifier matching TargetDescriptor.name.
     status
         Computed status: current, stale, missing, or blocked.
     manifest

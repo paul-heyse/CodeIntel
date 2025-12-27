@@ -5,8 +5,8 @@ This module contains:
 - COMPOSITE_SCHEMAS: Profile composition schema definitions.
 
 The registry is the canonical source of explicit table schemas used by
-metadata tables, caches, docs views, and build output datasets. Output
-schemas are included here to seed OutputContracts and schema validation.
+metadata tables, caches, docs views, and non-inferable output overrides.
+Inferable outputs are persisted in metadata and rendered on demand.
 """
 
 from __future__ import annotations

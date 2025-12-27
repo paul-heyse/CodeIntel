@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.contracts import EMPTY_CONTRACT
-from codeintel.build.targets import OutputTarget
+from codeintel.build.targets import TargetDescriptor
 from codeintel.storage.queries.safe import (
     DUCKDB_QUERY_ERRORS,
     ColumnNotFoundError,
@@ -46,6 +46,7 @@ from tests._helpers.assertions import (
     expect_is_none,
     expect_true,
 )
+from tests._helpers.catalog import make_target_descriptor
 from tests._helpers.factories import make_snapshot
 from tests._helpers.ingestion import (
     SeedIngestionConfig,
@@ -70,7 +71,7 @@ EXPECTED_MIN_VALUE = 5.0
 EXPECTED_MAX_VALUE = 20.0
 
 
-def _make_test_target(name: str = "repo_scan") -> OutputTarget:
+def _make_test_target(name: str = "repo_scan") -> TargetDescriptor:
     """Create a minimal test target.
 
     Parameters
@@ -80,14 +81,13 @@ def _make_test_target(name: str = "repo_scan") -> OutputTarget:
 
     Returns
     -------
-    OutputTarget
+    TargetDescriptor
         Target instance suitable for test execution.
     """
-    return OutputTarget(
+    return make_target_descriptor(
         name=name,
         module="ingestion",
         contract=EMPTY_CONTRACT,
-        dependencies=(),
         description="Test target",
     )
 

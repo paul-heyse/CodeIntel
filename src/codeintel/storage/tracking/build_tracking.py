@@ -17,9 +17,7 @@ from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import (
     decode_json_dict,
-    decode_json_list,
     deserialize_str_tuple,
-    encode_json_compact,
     serialize_str_sequence,
 )
 from codeintel.storage.helpers.table_key import split_table_key
@@ -207,11 +205,7 @@ class BuildTracking:
         manifest
             The manifest to save.
         """
-        change_delta = (
-            encode_json_compact(manifest.change_delta)
-            if manifest.change_delta is not None
-            else None
-        )
+        change_delta = dict(manifest.change_delta) if manifest.change_delta is not None else None
         impl_column = self._impl_kind_column("build.output_manifests")
         self._backend.upsert(
             "build.output_manifests",
@@ -537,7 +531,7 @@ class BuildTracking:
         rows: list[tuple[object, ...]] = []
 
         for rec in records:
-            row_counts_json = encode_json_compact(dict(rec.row_counts) if rec.row_counts else {})
+            row_counts_json = dict(rec.row_counts) if rec.row_counts else {}
             rows.append(
                 (
                     run_id,
@@ -608,7 +602,7 @@ class BuildTracking:
                 "input_hash": row[3],
                 "options_hash": row[4],
                 "duration_ms": row[5],
-                "row_counts": decode_json_list(row[6]) if row[6] else {},
+                "row_counts": decode_json_dict(row[6]) if row[6] else {},
                 "error": row[7],
                 "recorded_at": row[8],
             }
@@ -648,7 +642,7 @@ class BuildTracking:
                 r.completed_at,
                 r.duration_ms,
                 r.error,
-                encode_json_compact(r.tags or {}),
+                r.tags or {},
             )
             for r in records
         ]
@@ -824,7 +818,7 @@ class BuildTracking:
                 "completed_at": row[5],
                 "duration_ms": row[6],
                 "error": row[7],
-                "tags": decode_json_list(row[8]) if row[8] else {},
+                "tags": decode_json_dict(row[8]) if row[8] else {},
             }
             for row in results
         ]

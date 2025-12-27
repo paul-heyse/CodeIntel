@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator, TargetState
 from codeintel.build.target_metadata import get_target_metadata_service
-from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
@@ -22,7 +22,8 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
-from tests._helpers.contracts import contract_for_keys, table_schema_for_key
+from tests._helpers.catalog import build_catalog, make_target_descriptor
+from tests._helpers.contracts import contract_for_keys, table_output_for_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,24 +36,22 @@ TEST_BUILD_SETTINGS = BuildSettings(
 )
 
 
-def _create_test_graph() -> TargetGraph:
-    """Create a minimal test graph for state validation tests.
+def _create_test_graph() -> DagCatalog:
+    """Create a minimal test catalog for state validation tests.
 
     Returns
     -------
-    TargetGraph
-        Graph with modules -> ast -> goids chain and independent typing target.
+    DagCatalog
+        Catalog with modules -> ast -> goids chain and independent typing target.
     """
-    graph = TargetGraph()
-
-    modules_target = OutputTarget(
+    modules_target = make_target_descriptor(
         name="modules",
         module="ingestion",
         contract=contract_for_keys(("core.modules",)),
         description="Repository module index",
     )
 
-    ast_target = OutputTarget(
+    ast_target = make_target_descriptor(
         name="ast",
         module="ingestion",
         contract=contract_for_keys(("core.ast_nodes",)),
@@ -60,7 +59,7 @@ def _create_test_graph() -> TargetGraph:
         description="AST extraction",
     )
 
-    goids_target = OutputTarget(
+    goids_target = make_target_descriptor(
         name="goids",
         module="graphs",
         contract=contract_for_keys(("core.goids",)),
@@ -68,7 +67,7 @@ def _create_test_graph() -> TargetGraph:
         description="GOID construction",
     )
 
-    typing_target = OutputTarget(
+    typing_target = make_target_descriptor(
         name="typing",
         module="ingestion",
         contract=contract_for_keys(("analytics.typedness",)),
@@ -76,7 +75,7 @@ def _create_test_graph() -> TargetGraph:
         description="Type analysis",
     )
 
-    metrics_target = OutputTarget(
+    metrics_target = make_target_descriptor(
         name="function_metrics",
         module="analytics",
         contract=contract_for_keys(("analytics.function_metrics",)),
@@ -84,23 +83,25 @@ def _create_test_graph() -> TargetGraph:
         description="Function metrics",
     )
 
-    graph.register(modules_target)
-    graph.register(ast_target)
-    graph.register(goids_target)
-    graph.register(typing_target)
-    graph.register(metrics_target)
-
-    return graph
+    return build_catalog(
+        targets=(
+            modules_target,
+            ast_target,
+            goids_target,
+            typing_target,
+            metrics_target,
+        )
+    )
 
 
 @pytest.fixture
-def test_graph() -> TargetGraph:
-    """Provide a minimal test graph for state validation tests.
+def test_graph() -> DagCatalog:
+    """Provide a minimal test catalog for state validation tests.
 
     Returns
     -------
-    TargetGraph
-        Graph with modules -> ast -> goids chain.
+    DagCatalog
+        Catalog with modules -> ast -> goids chain.
     """
     return _create_test_graph()
 
@@ -130,7 +131,7 @@ def snapshot(tmp_path: Path) -> SnapshotRef:
 
 @pytest.fixture
 def validator(
-    test_graph: TargetGraph,
+    test_graph: DagCatalog,
     fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> StateValidator:
@@ -139,7 +140,7 @@ def validator(
     Parameters
     ----------
     test_graph
-        Minimal test graph.
+        Minimal test catalog.
     fresh_gateway
         Fresh gateway with schema applied.
     snapshot
@@ -415,7 +416,7 @@ class TestStateValidatorInit:
 
     @staticmethod
     def test_create_validator(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -433,19 +434,18 @@ class TestStateValidatorInit:
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
-        """Creating validator with invalid graph raises ValueError."""
-        graph = TargetGraph()
-        target = OutputTarget(
+        """Creating validator with invalid catalog raises ValueError."""
+        target = make_target_descriptor(
             name="target",
             module="ingestion",
-            contract=OutputContract(tables=(table_schema_for_key("core.table"),)),
+            contract=OutputContract(tables=(table_output_for_key("core.table"),)),
             dependencies=("nonexistent",),
         )
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         with pytest.raises(ValueError, match="validation failed"):
             StateValidator(
-                graph,
+                catalog,
                 fresh_gateway,
                 snapshot,
                 options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
@@ -473,7 +473,7 @@ class TestValidateCurrentTargets:
 
     @staticmethod
     def test_single_current_target(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -510,7 +510,7 @@ class TestValidateCurrentTargets:
 
     @staticmethod
     def test_chain_of_current_targets(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -570,7 +570,7 @@ class TestValidateStaleTargets:
 
     @staticmethod
     def test_stale_due_to_input_hash_mismatch(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -604,7 +604,7 @@ class TestValidateBlockedTargets:
 
     @staticmethod
     def test_blocked_by_missing_dependency(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -644,7 +644,7 @@ class TestValidateBlockedTargets:
 
     @staticmethod
     def test_blocked_by_stale_dependency(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -695,7 +695,7 @@ class TestValidateBlockedTargets:
 
     @staticmethod
     def test_cascade_blocking(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -766,7 +766,7 @@ class TestValidateBlockedTargets:
 
     @staticmethod
     def test_multiple_blocking_dependencies(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
@@ -851,7 +851,7 @@ class TestEdgeCases:
 
     @staticmethod
     def test_manifest_for_unknown_target_logged(
-        test_graph: TargetGraph,
+        test_graph: DagCatalog,
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
         caplog: pytest.LogCaptureFixture,
@@ -887,8 +887,8 @@ class TestEdgeCases:
         fresh_gateway: StorageGateway,
         snapshot: SnapshotRef,
     ) -> None:
-        """Validating empty graph should work."""
-        empty_graph = TargetGraph()
+        """Validating empty catalog should work."""
+        empty_graph = build_catalog(targets=())
 
         validator = StateValidator(
             empty_graph,
@@ -912,16 +912,16 @@ class TestWithRealRegistry:
         snapshot: SnapshotRef,
     ) -> None:
         """Validate using the full target registry."""
-        graph = get_target_metadata_service().system.graph
+        catalog = get_target_metadata_service().system.catalog
         validator = StateValidator(
-            graph,
+            catalog,
             fresh_gateway,
             snapshot,
             options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
         )
         state = validator.validate()
 
-        expect_equal(len(state.by_status("missing")), len(graph))
+        expect_equal(len(state.by_status("missing")), len(catalog))
         expect_equal(len(state.by_status("current")), 0)
 
     @staticmethod
@@ -930,13 +930,13 @@ class TestWithRealRegistry:
         snapshot: SnapshotRef,
     ) -> None:
         """Verify state covers all registered targets."""
-        graph = get_target_metadata_service().system.graph
+        catalog = get_target_metadata_service().system.catalog
         validator = StateValidator(
-            graph,
+            catalog,
             fresh_gateway,
             snapshot,
             options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
         )
         state = validator.validate()
 
-        expect_equal(len(state.targets), len(graph))
+        expect_equal(len(state.targets), len(catalog))

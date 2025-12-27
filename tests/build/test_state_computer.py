@@ -18,7 +18,6 @@ from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.session import BuildSession
 from codeintel.build.state import StateValidationOptions, StateValidator
 from codeintel.build.state_computer import StateComputer
-from codeintel.build.targets import OutputTarget, TargetGraph
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
@@ -30,6 +29,7 @@ from tests._helpers.assertions import (
     expect_is_not_none,
     expect_true,
 )
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -87,15 +87,13 @@ class TestStateComputer:
     ) -> None:
         """Target without manifest has missing status."""
         # Create a simple target
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="test_target",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -103,7 +101,7 @@ class TestStateComputer:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
 
         state = computer.compute_all()
 
@@ -117,15 +115,13 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """Target with matching hash has current status."""
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="test_target",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -133,7 +129,7 @@ class TestStateComputer:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
 
         # Compute the actual input hash
         actual_hash = session.get_input_hash(target)
@@ -154,15 +150,13 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """Target with different hash has stale status."""
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="test_target",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
 
@@ -175,7 +169,7 @@ class TestStateComputer:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
 
         state = computer.compute_all()
 
@@ -188,22 +182,20 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """Target blocked when dependency is missing."""
-        dep_target = OutputTarget(
+        dep_target = make_target_descriptor(
             name="dependency",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-        main_target = OutputTarget(
+        main_target = make_target_descriptor(
             name="main",
             module="ingestion",
             dependencies=("dependency",),
             contract=EMPTY_CONTRACT,
         )
 
-        graph = TargetGraph()
-        graph.register(dep_target)
-        graph.register(main_target)
+        catalog = build_catalog(targets=(dep_target, main_target))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -217,7 +209,7 @@ class TestStateComputer:
         manifest = make_manifest("main", input_hash=main_hash)
         fresh_gateway.build.save_manifest(manifest)
 
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
         state = computer.compute_all()
 
         expect_equal(state.targets["dependency"].status, "missing")
@@ -231,22 +223,19 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """Target blocked when dependency is stale."""
-        dep_target = OutputTarget(
+        dep_target = make_target_descriptor(
             name="dependency",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-        main_target = OutputTarget(
+        main_target = make_target_descriptor(
             name="main",
             module="ingestion",
             dependencies=("dependency",),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(dep_target)
-        graph.register(main_target)
+        catalog = build_catalog(targets=(dep_target, main_target))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -264,7 +253,7 @@ class TestStateComputer:
         main_manifest = make_manifest("main", input_hash=main_hash)
         fresh_gateway.build.save_manifest(main_manifest)
 
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
         state = computer.compute_all()
 
         expect_equal(state.targets["dependency"].status, "stale")
@@ -277,29 +266,25 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """BuildState query methods return correct results."""
-        t1 = OutputTarget(
+        t1 = make_target_descriptor(
             name="t1",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-        t2 = OutputTarget(
+        t2 = make_target_descriptor(
             name="t2",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-        t3 = OutputTarget(
+        t3 = make_target_descriptor(
             name="t3",
             module="ingestion",
             dependencies=("t1",),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(t1)
-        graph.register(t2)
-        graph.register(t3)
+        catalog = build_catalog(targets=(t1, t2, t3))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -314,7 +299,7 @@ class TestStateComputer:
 
         # Leave t2 and t3 without manifests (missing).
 
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
         state = computer.compute_all()
 
         expect_equal(state.by_status("current"), ("t1",))
@@ -328,15 +313,14 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """compute_single returns correct state for individual target."""
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="single",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
 
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -344,7 +328,7 @@ class TestStateComputer:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
 
         state = computer.compute_single("single")
 
@@ -357,15 +341,13 @@ class TestStateComputer:
         tmp_path: Path,
     ) -> None:
         """Session caches hashes to avoid redundant computation."""
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="cached",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -373,7 +355,7 @@ class TestStateComputer:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
 
         # Compute multiple times
         state1 = computer.compute_all()
@@ -396,23 +378,21 @@ class TestStateValidatorEquivalence:
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on missing targets."""
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="equiv_test",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
 
         # Use StateValidator
         validator = StateValidator(
-            graph=graph,
-            gateway=fresh_gateway,
-            snapshot=snapshot,
+            catalog,
+            fresh_gateway,
+            snapshot,
             options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
         )
         validator_state = validator.validate()
@@ -423,7 +403,7 @@ class TestStateValidatorEquivalence:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session)
+        computer = StateComputer(catalog=catalog, session=session)
         computer_state = computer.compute_all()
 
         # Results should be equivalent (both use by_status now)
@@ -435,15 +415,13 @@ class TestStateValidatorEquivalence:
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on current targets."""
-        target = OutputTarget(
+        target = make_target_descriptor(
             name="equiv_current",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(target)
+        catalog = build_catalog(targets=(target,))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -459,9 +437,9 @@ class TestStateValidatorEquivalence:
 
         # Use StateValidator
         validator = StateValidator(
-            graph=graph,
-            gateway=fresh_gateway,
-            snapshot=snapshot,
+            catalog,
+            fresh_gateway,
+            snapshot,
             options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
         )
         validator_state = validator.validate()
@@ -472,7 +450,7 @@ class TestStateValidatorEquivalence:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session2)
+        computer = StateComputer(catalog=catalog, session=session2)
         computer_state = computer.compute_all()
 
         # Both use "current" status now
@@ -484,22 +462,19 @@ class TestStateValidatorEquivalence:
         tmp_path: Path,
     ) -> None:
         """StateValidator and StateComputer agree on blocked targets."""
-        dep = OutputTarget(
+        dep = make_target_descriptor(
             name="dep",
             module="ingestion",
             dependencies=(),
             contract=EMPTY_CONTRACT,
         )
-        main = OutputTarget(
+        main = make_target_descriptor(
             name="main",
             module="ingestion",
             dependencies=("dep",),
             contract=EMPTY_CONTRACT,
         )
-
-        graph = TargetGraph()
-        graph.register(dep)
-        graph.register(main)
+        catalog = build_catalog(targets=(dep, main))
 
         snapshot = make_snapshot(tmp_path)
         session = BuildSession(
@@ -515,9 +490,9 @@ class TestStateValidatorEquivalence:
 
         # Use StateValidator
         validator = StateValidator(
-            graph=graph,
-            gateway=fresh_gateway,
-            snapshot=snapshot,
+            catalog,
+            fresh_gateway,
+            snapshot,
             options=StateValidationOptions(settings=TEST_BUILD_SETTINGS),
         )
         validator_state = validator.validate()
@@ -528,7 +503,7 @@ class TestStateValidatorEquivalence:
             gateway=fresh_gateway,
             settings=TEST_BUILD_SETTINGS,
         )
-        computer = StateComputer(graph=graph, session=session2)
+        computer = StateComputer(catalog=catalog, session=session2)
         computer_state = computer.compute_all()
 
         expect_equal(validator_state.by_status("blocked"), computer_state.by_status("blocked"))

@@ -15,7 +15,7 @@ Example
 >>> print(error.user_message)
 Target 'scip' outputs table 'core.scip_symbols' which has no schema defined
 >>> print(error.actionable_hint)
-Add schema for 'core.scip_symbols' to the target's OutputContract
+Register schema for 'core.scip_symbols' in the table registry
 """
 
 from __future__ import annotations
@@ -256,7 +256,7 @@ class SchemaNotFoundError(ContractError):
     @property
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
-        return f"Add schema for '{self.table_key}' to the target's OutputContract"
+        return f"Register schema for '{self.table_key}' in the table registry"
 
 
 class ColumnCountMismatchError(ContractError):
@@ -311,10 +311,10 @@ class ColumnCountMismatchError(ContractError):
 
 
 class ContractViolationError(ContractError):
-    """Target attempted to write outside its declared contract.
+    """Target attempted to write outside its declared outputs.
 
     This error is raised when strict_contracts mode is enabled and a target
-    attempts to write to a table or artifact that is not in its OutputContract.
+    attempts to write to a table or artifact that is not declared by saver tags.
 
     Attributes
     ----------
@@ -343,15 +343,15 @@ class ContractViolationError(ContractError):
         if table_key:
             msg = (
                 f"Target '{target}' attempted to write to '{table_key}' "
-                f"which is not in its contract"
+                f"which is not declared by saver tags"
             )
         elif artifact_name:
             msg = (
                 f"Target '{target}' attempted to write artifact '{artifact_name}' "
-                f"which is not in its contract"
+                f"which is not declared by saver tags"
             )
         else:
-            msg = f"Target '{target}' violated its output contract"
+            msg = f"Target '{target}' violated its declared outputs"
         super().__init__(msg)
 
     @property
@@ -360,31 +360,30 @@ class ContractViolationError(ContractError):
         if self.table_key:
             return (
                 f"Target '{self.target}' attempted to write to '{self.table_key}' "
-                f"which is not in its contract"
+                f"which is not declared by saver tags"
             )
         if self.artifact_name:
             return (
                 f"Target '{self.target}' attempted to write artifact '{self.artifact_name}' "
-                f"which is not in its contract"
+                f"which is not declared by saver tags"
             )
-        return f"Target '{self.target}' violated its output contract"
+        return f"Target '{self.target}' violated its declared outputs"
 
     @property
     def actionable_hint(self) -> str:
         """Return suggestion for fixing the error."""
         if self.table_key and self.allowed_tables:
             return (
-                f"Add '{self.table_key}' to the OutputContract for '{self.target}' "
+                f"Declare '{self.table_key}' via a saver tag for '{self.target}' "
                 f"or remove the write. Allowed tables: {sorted(self.allowed_tables)}"
             )
         if self.artifact_name:
             return (
-                f"Add '{self.artifact_name}' to the OutputContract for '{self.target}' "
+                f"Declare '{self.artifact_name}' via a saver tag for '{self.target}' "
                 f"or remove the write"
             )
         return (
-            f"Review the OutputContract for '{self.target}' and ensure all writes "
-            f"match declared outputs"
+            f"Review saver tags for '{self.target}' and ensure all writes match declared outputs"
         )
 
 

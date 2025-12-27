@@ -12,100 +12,99 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from types import ModuleType
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import hamilton.driver as h_driver
 
-from codeintel.build.hamilton.introspect import (
-    derive_target_dependencies,
-    derive_target_outputs_from_savers,
-    target_graph_from_hamilton,
-    target_names_from_nodes,
-)
-from codeintel.build.hamilton.naming import target_node
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
 from codeintel.build.hamilton.native.discovery import load_native_modules
-from codeintel.build.hamilton.nodes.support_factory import (
-    SupportGenerationOptions,
-    build_support_module,
-)
+from codeintel.build.hamilton.nodes import support_nodes
+from codeintel.build.hamilton.nodes.support_spec import SupportNodeSpec, support_spec_from_catalog
 from codeintel.build.hamilton.runtime import HamiltonRuntime
-from codeintel.build.hamilton.target_spec_compiler import compile_output_targets_from_driver
-from codeintel.build.targets import TargetGraph
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
+_POWER_USER_CONFIG_KEY = "hamilton.enable_power_user_mode"
 
 
-def _all_target_names() -> frozenset[str]:
-    native_mods = load_native_modules()
-    driver = h_driver.Builder().with_modules(*native_mods).allow_module_overrides().build()
-    return target_names_from_nodes(driver.graph.nodes)
+def _normalize_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    normalized = dict(config or {})
+    normalized[_POWER_USER_CONFIG_KEY] = True
+    return normalized
 
 
-def _build_base_graph(
-    *,
-    config: dict[str, Any] | None,
-) -> tuple[TargetGraph, h_driver.Driver]:
+def _all_target_nodes() -> Mapping[str, str]:
     native_mods = load_native_modules()
     driver = (
         h_driver.Builder()
-        .with_config(config or {})
+        .with_config(_normalize_config(None))
         .with_modules(*native_mods)
         .allow_module_overrides()
         .build()
     )
-    targets = compile_output_targets_from_driver(driver, strict=True)
-    base_graph = TargetGraph()
-    for target in targets:
-        base_graph.register(target)
-    return base_graph, driver
+    catalog = compile_dag_catalog(driver, strict=False)
+    return catalog.target_nodes
 
 
-def _build_support_graph_and_module(
+def _build_base_driver(
     *,
     config: dict[str, Any] | None,
-) -> tuple[TargetGraph, ModuleType]:
-    base_graph, native_driver = _build_base_graph(config=config)
-    native_runtime = HamiltonRuntime(dr=native_driver, graph=base_graph)
-    native_deps = derive_target_dependencies(native_runtime)
-    native_graph = target_graph_from_hamilton(
-        native_runtime,
-        base_graph=base_graph,
-        derived_deps=native_deps,
-        strict=True,
+) -> h_driver.Driver:
+    native_mods = load_native_modules()
+    normalized_config = _normalize_config(config)
+    return (
+        h_driver.Builder()
+        .with_config(normalized_config)
+        .with_modules(*native_mods)
+        .allow_module_overrides()
+        .build()
     )
-    derived_outputs = derive_target_outputs_from_savers(native_runtime)
-    support_module = build_support_module(
-        options=SupportGenerationOptions(
-            include_dataset_nodes=True,
-            include_loader_nodes=True,
-            include_artifact_nodes=True,
-        ),
-        graph=native_graph,
-        derived_outputs=derived_outputs,
-    )
-    return base_graph, support_module
+
+
+def _build_support_spec(
+    *,
+    config: dict[str, Any] | None,
+) -> tuple[DagCatalog, SupportNodeSpec]:
+    base_driver = _build_base_driver(config=config)
+    base_catalog = compile_dag_catalog(base_driver, strict=True)
+    support_spec = support_spec_from_catalog(base_catalog)
+    support_spec.validate(catalog=base_catalog)
+    return base_catalog, support_spec
+
+
+def _merge_support_config(
+    *,
+    config: dict[str, Any] | None,
+    support_spec: SupportNodeSpec,
+) -> dict[str, Any]:
+    merged: dict[str, Any] = _normalize_config(config)
+    support_config = support_spec.to_hamilton_config()
+    for key, value in support_config.items():
+        if key in merged and key.startswith("ci_support_include_"):
+            continue
+        merged[key] = value
+    return merged
 
 
 def build_driver(
     *,
     config: dict[str, Any] | None = None,
     adapters: Sequence[LifecycleAdapter] | None = None,
-    adapter_factory: Callable[[TargetGraph], Sequence[LifecycleAdapter]] | None = None,
+    adapter_factory: Callable[[DagCatalog], Sequence[LifecycleAdapter]] | None = None,
     enable_cache: bool = False,
     cache_dir: str | Path | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
     Constructs a Hamilton Driver using native target modules, then returns it
-    bundled with the target graph and mappings.
+    bundled with the DAG catalog.
 
     Parameters
     ----------
@@ -117,9 +116,8 @@ def build_driver(
         Driver. This is the primary seam for telemetry, contract enforcement,
         and parallel execution.
     adapter_factory
-        Optional factory that will be invoked with the pre-registry target graph to produce
-        additional adapters. This allows callers to build adapters without re-loading target
-        specs or duplicating graph construction.
+        Optional factory invoked with the pre-support DagCatalog to produce additional
+        adapters. This allows callers to build adapters without re-loading specs.
     enable_cache
         When True, enable Hamilton's caching adapter for nodes decorated with
         ``@cache``. Disable this for schema inference and other workflows that
@@ -131,7 +129,7 @@ def build_driver(
     Returns
     -------
     HamiltonRuntime
-        Runtime containing Driver, TargetGraph, and mappings.
+        Runtime containing Driver and DagCatalog.
 
     Notes
     -----
@@ -140,22 +138,23 @@ def build_driver(
     Examples
     --------
     >>> runtime = build_driver()
-    >>> len(runtime.target_to_node) > 0
-    True
+    >>> runtime.catalog.target_node("modules")
+    't__modules'
     """
-    base_graph, support_module = _build_support_graph_and_module(config=config)
+    base_catalog, support_spec = _build_support_spec(config=config)
 
     adapter_list = list(adapters) if adapters else []
     if adapter_factory is not None:
-        adapter_list.extend(adapter_factory(base_graph))
+        adapter_list.extend(adapter_factory(base_catalog))
 
+    merged_config = _merge_support_config(config=config, support_spec=support_spec)
     native_mods = load_native_modules()
     builder = (
         h_driver.Builder()
-        .with_config(config or {})
+        .with_config(merged_config)
         .with_modules(
             *native_mods,
-            support_module,
+            support_nodes,
         )
         .allow_module_overrides()
     )
@@ -169,23 +168,11 @@ def build_driver(
         )
     dr = builder.with_adapters(*adapter_list).build()
 
-    runtime_pre = HamiltonRuntime(dr=dr, graph=base_graph)
-    derived = derive_target_dependencies(runtime_pre)
-    graph = target_graph_from_hamilton(
-        runtime_pre,
-        base_graph=base_graph,
-        derived_deps=derived,
-        strict=True,
-    )
-
-    t2n = {t.name: target_node(t.name) for t in graph.all_targets}
-    n2t = {v: k for k, v in t2n.items()}
+    catalog = compile_dag_catalog(dr, strict=True)
 
     return HamiltonRuntime(
         dr=dr,
-        graph=graph,
-        target_to_node=t2n,
-        node_to_target=n2t,
+        catalog=catalog,
     )
 
 
@@ -252,11 +239,10 @@ def target_to_node_name(
     't__modules'
     """
     if runtime is not None:
-        return runtime.target_to_node.get(target_name)
+        return runtime.catalog.target_nodes.get(target_name)
 
-    if target_name not in _all_target_names():
-        return None
-    return target_node(target_name)
+    target_nodes = _all_target_nodes()
+    return target_nodes.get(target_name)
 
 
 __all__ = [

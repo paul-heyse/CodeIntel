@@ -19,6 +19,7 @@ from codeintel.storage.ibis_adapter import IbisGateway
 from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -367,6 +368,7 @@ class DuckDBGateway:
     docs: DocsViews = field(init=False)
     graph: GraphTables = field(init=False)
     runs: PipelineRunTracking = field(init=False)
+    schemas: SchemaCatalogTracking = field(init=False)
 
     def __post_init__(self) -> None:
         """Initialize table accessor instances after dataclass init."""
@@ -385,6 +387,7 @@ class DuckDBGateway:
         self.docs = DocsViews(self)
         self.graph = GraphTables(self)
         self.runs = PipelineRunTracking(self.con)
+        self.schemas = SchemaCatalogTracking(self)
 
     def close(self) -> None:
         """Close the underlying connection."""

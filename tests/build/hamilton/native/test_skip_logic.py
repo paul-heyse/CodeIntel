@@ -177,7 +177,7 @@ class TestNativeTargetExecutorSkipLogic:
         This tests the executor's skip() method in isolation.
         """
         # This is a unit test of the skip() method structure
-        # Full integration would need BuildEnv and TargetGraph
+        # Full integration would need BuildEnv and DagCatalog
 
         # Create a minimal mock record to verify the pattern
         record = TargetRunRecord(

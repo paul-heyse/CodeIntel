@@ -20,7 +20,7 @@ from codeintel.core.config.settings import BuildSettings
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.targets import OutputTarget
+    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
     from codeintel.storage.gateway import StorageGateway
@@ -36,7 +36,7 @@ class InputHashOptions:
 
 
 def compute_input_hash(
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     *,
@@ -88,7 +88,7 @@ def compute_input_hash(
 
 
 def compute_input_hash_with_deps(
-    target: OutputTarget,
+    target: TargetDescriptor,
     snapshot: SnapshotRef,
     gateway: StorageGateway,
     *,

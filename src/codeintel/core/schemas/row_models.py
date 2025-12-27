@@ -150,32 +150,36 @@ def normalize_row_value(value: object) -> object:
     return value
 
 
-def _normalize_json_value(value: object) -> object:
-    if value is None:
-        return None
+def _coerce_json_container(value: object) -> object:
     if isinstance(value, set):
-        return json.dumps(sorted(value), separators=(",", ":"))
-    if isinstance(value, (dict, list, tuple)):
-        return json.dumps(value, separators=(",", ":"))
-    if isinstance(value, str):
-        parsed: object | None = None
-        try:
-            parsed = json.loads(value)
-        except json.JSONDecodeError:
-            try:
-                parsed = ast.literal_eval(value)
-            except (SyntaxError, ValueError):
-                parsed = None
-        payload = parsed if parsed is not None else value
-        if isinstance(payload, set):
-            payload = sorted(payload)
-        return json.dumps(payload, separators=(",", ":"))
+        return sorted(value)
+    if isinstance(value, tuple):
+        return list(value)
     return value
 
 
-def normalize_row_value_for_type(
-    value: object, column_type: ColumnType | None
-) -> object:
+def _parse_json_value(raw: str) -> object | None:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            return ast.literal_eval(raw)
+        except (SyntaxError, ValueError):
+            return None
+
+
+def _normalize_json_value(value: object) -> object:
+    if value is None:
+        return None
+    normalized = _coerce_json_container(value)
+    if isinstance(normalized, str):
+        parsed = _parse_json_value(normalized)
+        if parsed is not None:
+            normalized = parsed
+    return _coerce_json_container(normalized)
+
+
+def normalize_row_value_for_type(value: object, column_type: ColumnType | None) -> object:
     """Normalize row values with awareness of column types.
 
     Parameters
