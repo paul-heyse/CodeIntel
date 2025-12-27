@@ -1,3 +1,135 @@
+Here’s the narrative pairing for **(7)**, **(8)**, and **(9)**—what the system *becomes* and how the day-to-day mental model changes, without the file-by-file mechanics.
+
+---
+
+## 7) Variant logic + cross-cutting transforms move from “branchy code” to “DAG shape”
+
+### Before
+
+Variants (pandas vs polars, strict vs lenient cleaning, feature selection, per-target tweaks) tend to leak into node bodies as `if cfg...` logic and repeated boilerplate:
+
+* each table node re-implements “cleanup + normalize + enrich + enforce schema”
+* feature selection is implemented as runtime branching (or duplicate nodes)
+* “cross-cutting” rules (e.g., clip risk scores, drop bad rows, canonicalize columns) are scattered across modules and hard to audit
+
+### After
+
+Variants become **compile-time DAG construction decisions** and cross-cutting transforms become **explicit subDAG structure**, using Hamilton’s higher-level primitives:
+
+1. **`resolve_from_config` becomes the single switch for “which variant exists”**
+   Variant selection happens when the Driver is built (compile-time); you don’t branch inside the function body. The DAG literally differs by config—so the plan is introspectable and deterministic. Hamilton explicitly frames this as build-time DAG shaping, and `resolve_from_config` is resolved at compile time. 
+
+2. **`pipe_input(step(...).when(...))` becomes your universal “preprocess pipeline”**
+   Instead of repeating sanitization logic, you centralize it into reusable kwarg-friendly step functions and apply them declaratively. Step gating (`when/when_not/...`) means strict mode adds nodes; lenient mode omits them—again, visible in DAG structure. 
+
+3. **`with_columns` becomes the column-feature “subDAG engine”**
+   Feature engineering stops being large monolithic pandas/polars logic blocks and becomes a stable library of column ops with a config-driven selection list. `columns_to_pass` is the interface contract; `select` is the feature-set contract; namespacing keeps the global DAG clean. 
+
+4. **`mutate(apply_to(...).on_output(...))` becomes the cross-cutting “policy plane”**
+   Instead of editing each node, you apply consistent postprocess rules (clip, cast, canonicalize, enforce) as a graph-local rewrite step that is itself DAG-visible and config-gated. 
+
+**Net effect:** “variants” and “policies” are no longer hidden in code paths; they are **structural DAG features** you can list, diff, and tag.
+
+---
+
+## 8) Tag discovery stops being “your own index” and becomes “Hamilton tag_filter everywhere”
+
+### Before
+
+You have a parallel metadata discovery plane:
+
+* `TagIndex(tags_by_node=...)` and other bespoke indexes
+* local loops scanning `node.tags` dictionaries
+* separate “how do we interpret tags?” logic scattered across compiler/serving/planner tools
+
+Even when the index is derived, it becomes “truthy” because downstream code uses it as *the* query mechanism.
+
+### After
+
+Tags become a **query ABI** with one implementation: Hamilton’s driver tag-filtering.
+
+* The primitive becomes: `Driver.list_available_variables(tag_filter=...)`
+* The semantics are standardized (“tag exists”, AND across keys, multi-values) and used uniformly. Hamilton’s docs explicitly call out the `tag_filter` semantics in the driver surface. 
+
+In practice this shifts your system in two ways:
+
+1. **Registry compilation becomes a pure “tag query → compile” process**
+   “Semantic view registry”, “MCP-visible surfaces”, “dataset nodes”, “saver nodes”, etc. are all built by tag-filter queries instead of reading bespoke indexes.
+
+2. **Tag emission quality becomes more important than tag indexing tricks**
+   Once you stop normalizing tags in a separate layer, you enforce that tags are type-stable and canonical at emission time (booleans stay booleans, enums stay strings), because `tag_filter` semantics rely on exact matching.
+
+This also dovetails directly with your Phase 6 architecture: support nodes are attached with tags into a derived module and were previously indexed by a custom TagIndex path.  Now those tags are queried directly from the Driver.
+
+**Net effect:** metadata discovery is now a first-class library feature; your code shrinks because you stop maintaining an internal “query engine” for tags.
+
+---
+
+## 9) Tabular compute becomes “DuckDB relation everywhere,” Arrow/Polars only at boundaries
+
+### Before
+
+Phase 6 shows IO boundaries centered on:
+
+* **DataFrame loader nodes (`df__*`)** that call `load_dataset_df(...) → pd.DataFrame` via an Ibis adapter layer
+* **Query loader nodes (`q__*`)** that call `load_dataset_ibis(...) → ibis ir.Table`
+* a **DuckDB/Ibis table saver** (`DuckDBIbisTableSaver`) writing the tables
+
+This forces a lot of format interop code and creates repeated “convert/execute/materialize” pressure inside the DAG.
+
+### After
+
+Your tabular story collapses into one coherent substrate:
+
+1. **Inside the DAG, the canonical type is `DuckDBPyRelation`**
+   Most compute nodes become relation algebra (lazy). DuckDB’s relational API explicitly supports method chaining (`filter`, `project`, `join`, `aggregate`, `order`) and does not execute until you request output. 
+
+2. **Loaders yield relations, not pandas/Ibis objects**
+   You delete the DataFrame loader and Ibis loader duality. Loader nodes return relations sourced from DuckDB tables/views or Arrow/Parquet scans.
+
+3. **Savers materialize relations using engine-native sinks**
+   Materialization happens at the write boundary (tables/artifacts). DuckDB supports writing directly to Parquet and materializing relations as tables/views; these are explicit execution triggers and keep large results out of Python RAM. 
+
+4. **Arrow becomes the interchange layer; streaming is the default for big results**
+   When you do need to emit Arrow, you prefer *streaming* readers (`fetch_arrow_reader`) over full-table Arrow materialization (`arrow()` / `fetch_arrow_table()`), precisely to avoid accidental gigabyte pulls. DuckDB exposes a streaming Arrow `RecordBatchReader`. 
+
+5. **Polars becomes a *surgical escape hatch* (prefer LazyFrame)**
+   DuckDB can hand you a Polars LazyFrame (`rel.pl(lazy=True)`) when a transform is easier in Polars, and then you re-register back into DuckDB for downstream relational work. 
+
+6. **SQL becomes safer and more reusable via parameter substitution**
+   When you do drop to SQL, the system standardizes on DuckDB parameter substitution (`?` / `$name`) instead of f-strings—both for safety and for prepared statement reuse. 
+
+### Why the PyArrow “advanced” guide matters in this design
+
+Once Arrow is the interchange plane, the high-leverage knobs are exactly the ones you pulled into `pyarrow-advanced.md`:
+
+* **IPC write options** (`IpcWriteOptions`) define compression, threading, and dictionary unification behavior for file artifacts and streaming protocols—these become a single shared policy surface instead of ad hoc defaults. 
+* **Zero-copy discipline**: Arrow buffers slice zero-copy; converting to Python bytes copies. That distinction directly informs how you implement “serve Arrow bytes” endpoints and artifact sinks without hidden copies. 
+
+
+
+**Net effect:** you delete most bespoke “dataframe plumbing” and replace it with:
+
+* a single lazy compute substrate (relations),
+* a single interchange substrate (Arrow),
+* and a disciplined escape hatch (Polars lazy).
+
+---
+
+## How these three changes reinforce each other
+
+* **(7)** makes the DAG *structural* (variants + transforms are DAG shape), so the runtime becomes predictable and introspectable.
+* **(8)** makes the DAG *queryable* (tags queried by the Driver itself), so registries and serving surfaces compile from metadata without bespoke indexes.
+* **(9)** makes the DAG *cheap and scalable* (relations stay lazy; Arrow/Polars boundaries are controlled), so you stop paying conversion + materialization costs in the graph interior.
+
+Together, they turn CodeIntel into a system where:
+
+* “adding behavior” mostly means **adding tagged nodes + column ops**, not wiring new pipelines,
+* “changing variants” means **changing config** and getting a different DAG (auditable),
+* and “scaling performance” is mostly about **tuning DuckDB + Arrow policies**, not writing new bespoke batching code.
+
+
+
 Below is a **repo-concrete, breaking-change–optimized** implementation plan for:
 
 > **(7) Use `resolve_from_config` + `pipe_input`/`mutate`/`with_columns` to collapse “variant logic” and cross‑cutting transforms**
@@ -1577,3 +1709,366 @@ For compute that is “vectorizable but not expressible in SQL,” create Arrow 
 ---
 
 If you want, I can extend this plan with a **mechanical conversion rubric** for native target modules (how to rewrite a pandas/Ibis node into (a) relation chaining, (b) conn.sql + params, or (c) polars escape hatch + re-register), including “before/after” micro-patterns that reduce the probability of the agent generating non-deterministic SQL or accidentally materializing gigabyte tables in Python.
+
+Below is a **mechanical conversion rubric** for rewriting *native target modules* (i.e., the DAG node implementations that currently operate in **pandas** and/or **Ibis**) into the **DuckDB Relation + Arrow/Polars boundary** model, with **three canonical rewrite targets**:
+
+* **(A) Relation chaining** (`DuckDBPyRelation` algebra) as the default.
+* **(B) `conn.sql(...)` with parameter substitution** for “SQL-shaped” transforms (CTEs/windows/UNNEST/etc).
+* **(C) Polars escape hatch (lazy)** for transforms that are genuinely easier outside SQL, followed by **re-registration** into DuckDB.
+
+This rubric is explicitly shaped to (i) prevent “accidental `.to_df()` gigabyte pulls”, and (ii) reduce “AI-generated nondeterministic SQL” failure modes by strongly preferring **typed relational primitives** + **parameterization**.
+
+It also assumes you will delete/retire the current loader shapes that yield `pd.DataFrame` / `ibis.ir.Table` out of the support factory boundary (your architecture currently does exactly that via `support_factory.py` → `ibis_adapter.load_dataset_df/load_dataset_ibis`).
+
+---
+
+## 0) Non-negotiable invariants (agent guardrails)
+
+### 0.1 “Return type discipline” for compute nodes
+
+**Compute nodes MUST return `DuckDBPyRelation` (or a light wrapper around it), not `pd.DataFrame` / `pa.Table` / `pl.DataFrame`.**
+
+Rationale: DuckDB relations are **lazy** until an execution trigger is invoked; conversion calls (`to_df`, `arrow`, etc.) are exactly the footguns you’re trying to delete from the graph interior.
+
+### 0.2 “Only savers materialize”
+
+Materialization triggers are *strictly* saver-side concerns:
+
+* “bring results to Python” triggers include `.to_df()` / `.df()` / fetch calls; avoid in graph interior.
+* Prefer **engine sinks**: `relation.to_parquet(...)`, `relation.create(...)`, `relation.create_view(...)` to keep the data in DuckDB’s execution domain.
+
+### 0.3 “No string interpolation SQL”
+
+If you choose (B), all SQL must use DuckDB’s **parameter substitution** (`?` or `$name`) rather than Python formatting; DuckDB supports parameters in `execute()` and `conn.sql()` per the advanced guide.
+
+---
+
+## 1) Mechanical triage: classify each legacy node (pandas/Ibis) into A/B/C
+
+For each node function `def X(...): ...` in a native target module, do this classification pass:
+
+### 1.1 Extract the “shape” of the transformation
+
+Label the node as one of:
+
+1. **Relational algebra** (filters/projections/joins/groupby/union)
+   → **(A) Relation chaining**.
+
+2. **SQL-native** (CTEs, window functions, complex subqueries, UNNEST, QUALIFY-like patterns)
+   → **(B) `conn.sql` + params**, but *only* if (A) is awkward.
+
+3. **Non-SQL ergonomic** (complex string/list manip, multi-step regex extraction, bespoke vector ops)
+   → **(C) Polars escape hatch** (lazy), then re-register.
+
+### 1.2 Identify “materialization triggers” in the old implementation
+
+If the old node contains any of:
+
+* `df = ...` where `df` is a `pd.DataFrame` produced from upstream
+* `ibis_table.execute()` or conversions
+* `.to_df()`, `.df()`, `.arrow()`, `.fetch_arrow_table()`, `.pl()` (non-lazy), `.fetchnumpy()`, `.fetchall()`, `.show()`
+
+…then the rewrite must eliminate those calls from the node interior; note that `.show()` triggers execution and prints up to 10k rows (debug-only).
+
+---
+
+## 2) Canonical “after” signatures (node templates)
+
+### 2.1 Default compute node template (A/B/C all use this)
+
+```python
+import duckdb
+
+def some_node(
+    *,
+    conn: duckdb.DuckDBPyConnection,
+    upstream_rel: duckdb.DuckDBPyRelation,
+    # plus scalar config inputs...
+) -> duckdb.DuckDBPyRelation:
+    ...
+```
+
+If you need multiple upstream tables, accept multiple `DuckDBPyRelation`s (or accept identifiers and resolve to relations at the boundary).
+
+### 2.2 “Loader node” template (this replaces DataFrame/Ibis loaders)
+
+Instead of `load_dataset_df(...) -> pd.DataFrame` and `load_dataset_ibis(...) -> ir.Table` currently described in the architecture, loaders should yield relations, e.g.:
+
+```python
+def load_dataset_rel(*, conn, table_name: str) -> duckdb.DuckDBPyRelation:
+    return conn.table(table_name)   # lazy
+```
+
+---
+
+## 3) Rewrite target (A): Relation chaining rubric
+
+DuckDB’s relational API supports chained `filter/project/join/aggregate/order` calls and remains lazy until execution triggers occur.
+
+### 3.1 Preferred micro-patterns (pandas → relation chaining)
+
+#### 3.1.1 Filter + select + computed column
+
+**Before (pandas):**
+
+```python
+df = df[df.score > 50][["user", "score"]]
+df["adj"] = df["score"] * 1.1
+```
+
+**After (relation):**
+
+```python
+rel = upstream_rel \
+    .filter("score > 50") \
+    .project("user, score, score * 1.1 AS adj")
+return rel
+```
+
+(Relation method chaining and `project` semantics are explicitly documented.)
+
+#### 3.1.2 Groupby/aggregate
+
+**Before (pandas):**
+
+```python
+out = df.groupby("k", as_index=False)["v"].sum()
+```
+
+**After (relation):**
+
+```python
+out = upstream_rel.aggregate("SUM(v) AS v_sum", "k")
+return out
+```
+
+(Relation `.aggregate(agg_expr, group_expr)` is a first-class primitive.)
+
+#### 3.1.3 Join
+
+**Before (pandas):**
+
+```python
+out = left.merge(right, on="id", how="inner")
+```
+
+**After (relation):**
+
+```python
+out = left_rel.join(right_rel, "left.id = right.id")
+return out
+```
+
+(Relation `.join(other_relation, "condition")` is documented.)
+
+### 3.2 Hardening against nondeterminism
+
+DuckDB relations are unordered sets unless you impose ordering. Your agent must apply:
+
+* **Never use `limit` without a deterministic `order(...)`** when the *consumer* expects stable ordering.
+* Always include a **tie-breaker** in `order` for stable results (e.g., `ORDER BY primary_key, secondary_key`).
+* Treat ordering as a **boundary concern**: only impose ordering when (i) required for a stable artifact, (ii) required for stable sampling, or (iii) required for stable hashing.
+
+DuckDB supports `relation.order("...")` for explicit ordering.
+
+### 3.3 Reducing SQL-string surface area inside (A)
+
+If you want to shrink string-based SQL further, DuckDB’s Expression API can be mixed into relational methods; relational methods accept either SQL strings or Expression objects, enabling programmatic query construction and reducing SQL injection risk.
+
+---
+
+## 4) Rewrite target (B): `conn.sql(...)` + params rubric
+
+Use this when you need SQL features that are awkward via method chaining (CTEs, windows, complex subqueries), but obey:
+
+1. **parameter substitution** (never f-strings)
+2. return a `DuckDBPyRelation` (not immediate `.fetch…()`)
+
+DuckDB supports both positional `?` and named `$name` parameters, and the advanced guide explicitly calls out using parameters as the second argument to `execute()` or `conn.sql()`.
+
+### 4.1 Micro-pattern: parameterized WHERE
+
+**Before (f-string):**
+
+```python
+rel = conn.sql(f"SELECT * FROM t WHERE dt = '{dt}'")
+```
+
+**After (named params):**
+
+```python
+rel = conn.sql(
+    "SELECT * FROM t WHERE dt = $dt",
+    {"dt": dt},
+)
+return rel
+```
+
+(“Named parameters `$name` … provide a dictionary mapping names to values” is documented; `conn.sql()` is explicitly included as a supported entry point for parameter binding.)
+
+### 4.2 Micro-pattern: window function
+
+If your pandas/Ibis node does “rank within partition then filter top-1”, SQL is usually the cleanest expression. Keep it parameterized and deterministic:
+
+```python
+rel = conn.sql(
+    """
+    WITH ranked AS (
+      SELECT
+        *,
+        row_number() OVER (PARTITION BY grp ORDER BY ts DESC, id DESC) AS rn
+      FROM base
+      WHERE dt = $dt
+    )
+    SELECT * FROM ranked WHERE rn = 1
+    """,
+    {"dt": dt},
+)
+return rel
+```
+
+Key nondeterminism guard: **include a tie-breaker** (`id DESC`) in the window `ORDER BY`.
+
+### 4.3 Avoiding accidental Python materialization in (B)
+
+Even when using SQL, the agent must never append `.to_df()` etc. inside the node. Those calls are documented execution triggers that bring data into Python memory.
+
+---
+
+## 5) Rewrite target (C): Polars lazy escape hatch + re-register rubric
+
+This is the controlled “non-SQL ergonomic” path:
+
+1. Convert relation → **Polars LazyFrame** (not eager) using `relation.pl(lazy=True)`
+2. Apply Polars-native transforms lazily
+3. Register result back into DuckDB and continue relationally
+
+### 5.1 Micro-pattern: relation → lazy polars → re-register → relation
+
+```python
+import polars as pl
+
+lf: pl.LazyFrame = upstream_rel.pl(lazy=True)   # stays lazy
+lf2 = (
+    lf
+    # ...complex transforms...
+)
+
+conn.register("tmp_polars", lf2)  # register LazyFrame by name
+try:
+    out = conn.table("tmp_polars")  # or conn.sql("SELECT ... FROM tmp_polars")
+    return out
+finally:
+    conn.unregister("tmp_polars")
+```
+
+Two documented supports that make this viable:
+
+* DuckDB can produce a Polars **LazyFrame** via `relation.pl(lazy=True)` (deferred execution).
+* DuckDB supports querying Polars objects by name and provides `conn.unregister(...)`; registering is pointer-based and is dereferenced when scanned in query execution.
+
+### 5.2 Hardening rule: no eager `.pl()` in graph interior
+
+`relation.pl()` (default) returns a Polars **DataFrame** (eager) and therefore executes + materializes; only `pl(lazy=True)` is permitted inside compute nodes.
+
+---
+
+## 6) Output conversion rubric (how to avoid “materialize gigabytes”)
+
+This is where most agent mistakes happen: calling a conversion method because “it’s convenient”.
+
+### 6.1 Explicitly allowed “large output” paths
+
+#### 6.1.1 Write to Parquet directly from relation
+
+Use `relation.to_parquet("file.parquet")` to avoid pulling result into Python; this is an explicit sink method in the DuckDB client docs.
+
+#### 6.1.2 Stream Arrow record batches (serving / artifact emission)
+
+DuckDB supports retrieving a **streaming Arrow RecordBatchReader** via `relation.fetch_arrow_reader()`, which is explicitly documented as a streaming alternative to `arrow()` (which returns a full `pa.Table`).
+
+This enables service layers to stream batches without materializing a full table.
+
+### 6.2 Prohibited in compute nodes
+
+* `.to_df()`, `.df()`: pulls into pandas
+* `.arrow()` / `.fetch_arrow_table()`: returns entire Arrow table (materializes)
+* `.pl()` (non-lazy): eager polars materialization
+* `.show()`: triggers execution up to 10k rows (debug only)
+
+---
+
+## 7) PyArrow boundary micro-patterns (zero-copy discipline for serving/artifacts)
+
+When you do hit the Arrow boundary (typically in savers or serving), Arrow’s advanced APIs matter because they determine whether you silently copy gigabytes.
+
+### 7.1 Zero-copy vs copy: Buffer slicing is free; `to_pybytes()` copies
+
+Arrow buffers can be sliced **zero-copy**, while converting to Python bytes explicitly copies memory; this is exactly the kind of “accidental copy” you want to prevent at the serving boundary.
+
+### 7.2 Canonical “serve Arrow IPC bytes without intermediate copies”
+
+Use `BufferOutputStream` to build an in-memory Arrow payload, and only convert to Python `bytes` if the transport requires it (since `to_pybytes()` copies).
+
+### 7.3 IPC compression + threading options
+
+Arrow IPC write options include compression (`lz4`/`zstd`) and thread pool usage; these are real system knobs for throughput/size tradeoffs at the artifact/serving boundary.
+
+### 7.4 Dataset scan knobs if you ever do Arrow-side scanning
+
+If you must scan Parquet via Arrow (generally you’ll prefer DuckDB’s Parquet scanning, but this is the fallback), Arrow’s dataset fragment/scanner API is lazy (“data is not loaded immediately”) and exposes batch/readahead controls and schema unification. This is the correct way to prevent “read the whole dataset into RAM”.
+
+---
+
+## 8) Ibis → DuckDB rewrite micro-patterns (the “mechanical mapping”)
+
+### 8.1 If the Ibis node is pure relational algebra
+
+**Before (Ibis-ish pseudoshape):**
+
+```python
+t = load_dataset_ibis(...)
+t2 = t.filter(...).mutate(...).group_by(...).aggregate(...)
+return t2
+```
+
+**After:** map directly to (A) or (B):
+
+* (A) use `.filter/.project/.aggregate/.join`
+* (B) use a CTE query (parameterized) if the Ibis pipeline is window-heavy
+
+Key point: do **not** call `.execute()`; return a `DuckDBPyRelation`.
+
+### 8.2 If the Ibis node exists mainly to generate SQL strings
+
+That’s a smell you can delete: switch to (B) with parameter substitution, or to (A)+(Expression API) to shrink bespoke SQL construction and reduce injection risk (DuckDB expression primitives integrate directly with relation methods).
+
+---
+
+## 9) Optional: enforce these rules mechanically (agent-proofing)
+
+If you want to reduce error rate for an LLM agent doing large-scale refactors, add an explicit “ban list” and make CI fail on it:
+
+* Disallow `.to_df(`, `.df(`, `.arrow(`, `.fetch_arrow_table(`, `.pl(` (unless `lazy=True`), `.fetchnumpy(`, `.show(` in `src/codeintel/build/hamilton/native/targets/**` (or wherever native target modules live).
+* Allow them only in saver/materializer packages.
+
+This mirrors the architecture intent that IO is at the saver boundary (you already have materializer/saver abstractions in the design).
+
+---
+
+## 10) Summary: the “choose A/B/C” decision tree (strict and mechanical)
+
+1. **Can you express it with `filter/project/join/aggregate/order`?**
+   → do (A) Relation chaining.
+
+2. **Is it window/CTE/UNNEST-heavy or just much clearer in SQL?**
+   → do (B) `conn.sql("""...""", params)` with `?` / `$name` parameters (never f-strings).
+
+3. **Is it meaningfully easier as Polars transforms?**
+   → do (C) `rel.pl(lazy=True)` → Polars LazyFrame transforms → `conn.register(...)` → back to relation, then `conn.unregister(...)`.
+
+4. **Do you need to emit results?**
+   → only in saver/serving layers: `to_parquet` or `fetch_arrow_reader` (stream), not `.to_df()` in compute nodes.
+
+---
+

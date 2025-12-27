@@ -69,7 +69,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.resources import ResourceNotFoundError, ResourceRegistry
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -102,22 +101,18 @@ PROFILES_TABLE_KEYS = (
 DATA_MODELS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=DATA_MODELS_TARGET_NAME,
-    hash_options_node="data_models__hash_options",
 )
 DATA_MODEL_USAGE_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=DATA_MODEL_USAGE_TARGET_NAME,
-    hash_options_node="data_model_usage__hash_options",
 )
 FUNCTION_AST_FEATURES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=FUNCTION_AST_FEATURES_TARGET_NAME,
-    hash_options_node="function_ast_features__hash_options",
 )
 PROFILES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=PROFILES_TARGET_NAME,
-    hash_options_node="profiles__hash_options",
 )
 
 LOG = logging.getLogger(__name__)
@@ -140,160 +135,26 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=DATA_MODELS_TARGET_NAME)
-def data_models__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for data_models execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, DATA_MODELS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=DATA_MODELS_TARGET_NAME)
-def data_models__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    data_models__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when data_models should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        DATA_MODELS_TARGET_NAME,
-        hash_options=data_models__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
-def data_model_usage__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for data_model_usage execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, DATA_MODEL_USAGE_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=DATA_MODEL_USAGE_TARGET_NAME)
-def data_model_usage__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    data_model_usage__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when data_model_usage should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        DATA_MODEL_USAGE_TARGET_NAME,
-        hash_options=data_model_usage__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
-def function_ast_features__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for function_ast_features execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, FUNCTION_AST_FEATURES_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
-def function_ast_features__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    function_ast_features__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when function_ast_features should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        FUNCTION_AST_FEATURES_TARGET_NAME,
-        hash_options=function_ast_features__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=PROFILES_TARGET_NAME)
-def profiles__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for profiles execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, PROFILES_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=PROFILES_TARGET_NAME)
-def profiles__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    profiles__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when profiles should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        PROFILES_TARGET_NAME,
-        hash_options=profiles__hash_options,
-    )
-    return executor.should_skip()
 
 
 @tag_helper(domain="analytics", target=FUNCTION_AST_FEATURES_TARGET_NAME)
 def function_ast_features_registry(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    function_ast_features__skip: bool,
 ) -> ResourceRegistry | None:
     """Build the resource registry for AST feature computation.
 
@@ -302,8 +163,6 @@ def function_ast_features_registry(
     ResourceRegistry
         Registry configured with feature providers.
     """
-    if function_ast_features__skip:
-        return None
 
     return build_registry(
         gateway=gateway,
@@ -327,8 +186,6 @@ class DataModelsComputeContext:
 def data_models_compute_context(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    data_models__skip: bool,
 ) -> DataModelsComputeContext:
     """Prepare data model inputs and skip decisions.
 
@@ -337,8 +194,6 @@ def data_models_compute_context(
     DataModelsComputeContext
         Inputs plus skip metadata for the compute node.
     """
-    if data_models__skip:
-        return DataModelsComputeContext(inputs=None, skip=True)
 
     inputs = load_data_models_inputs(gateway, env.snapshot)
     return DataModelsComputeContext(inputs=inputs, skip=False)
@@ -529,8 +384,6 @@ data_models__table_materializations = make_table_materializations_collector(
 def t__data_model_usage__compute(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    data_model_usage__skip: bool,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute rows for analytics.data_model_usage.
 
@@ -540,7 +393,6 @@ def t__data_model_usage__compute(
         Build environment with gateway and snapshot info.
     gateway
         Storage gateway for analytics queries.
-    data_model_usage__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -549,8 +401,6 @@ def t__data_model_usage__compute(
         Row tuples for analytics.data_model_usage in schema order.
         Returns None when manifest-skip indicates the target is current.
     """
-    if data_model_usage__skip:
-        return None
 
     registry = build_registry(
         gateway=gateway,
@@ -788,8 +638,6 @@ def t__profiles__compute(
     gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
     t__symbol_uses: TargetRunRecord,
-    *,
-    profiles__skip: bool,
 ) -> ProfilesComputeResult | None:
     """Build aggregated profiles for functions, files, and modules.
 
@@ -810,8 +658,6 @@ def t__profiles__compute(
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
 
-    if profiles__skip:
-        return None
 
     registry = build_registry(
         gateway=gateway,
@@ -995,25 +841,17 @@ __all__ = [
     "AstFeaturesResult",
     "DataModelsComputeContext",
     "ProfilesComputeResult",
-    "data_model_usage__hash_options",
-    "data_model_usage__skip",
     "data_model_usage__table_materializations",
     "data_models__field_rows",
-    "data_models__hash_options",
     "data_models__model_rows",
     "data_models__relationship_rows",
-    "data_models__skip",
     "data_models__table_materializations",
     "data_models_compute_context",
     "file_profile__rows",
-    "function_ast_features__hash_options",
     "function_ast_features__rows",
-    "function_ast_features__skip",
     "function_ast_features__table_materializations",
     "function_profile__rows",
     "module_profile__rows",
-    "profiles__hash_options",
-    "profiles__skip",
     "profiles__table_materializations",
     "t__data_model_usage",
     "t__data_model_usage__compute",

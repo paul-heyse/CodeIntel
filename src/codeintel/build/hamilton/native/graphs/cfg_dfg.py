@@ -41,7 +41,6 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import cfg as cfg_compute
@@ -64,12 +63,10 @@ DFG_EDGES_TABLE_KEY = "graph.dfg_edges"
 CFG_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=CFG_TARGET_NAME,
-    hash_options_node="cfg__hash_options",
 )
 DFG_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=DFG_TARGET_NAME,
-    hash_options_node="dfg__hash_options",
 )
 
 
@@ -98,46 +95,8 @@ class CfgRunInputs:
     source_root: Path | None
 
 
-@tag_helper(domain="graphs", target=CFG_TARGET_NAME)
-def cfg__hash_options(
-    env: BuildEnv,
-    goids__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build hash options for CFG materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, CFG_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=goids__hash_options.file_state_hash,
-    )
 
 
-@tag_helper(domain="graphs", target=DFG_TARGET_NAME)
-def dfg__hash_options(
-    env: BuildEnv,
-    cfg__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build hash options for DFG materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, DFG_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=cfg__hash_options.file_state_hash,
-    )
 
 
 @tag_helper(domain="graphs", target=CFG_TARGET_NAME)
@@ -422,7 +381,6 @@ def _coerce_dfg_output(output: ToolStepOutput) -> DfgToolOutput:
 def t__cfg__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    cfg__hash_options: InputHashOptions,
     cfg__run_inputs: CfgRunInputs,
 ) -> CfgToolOutput:
     """Execute CFG extraction for all functions.
@@ -437,8 +395,6 @@ def t__cfg__run(
         env=env,
         catalog=catalog,
         target_name=CFG_TARGET_NAME,
-        hash_options=cfg__hash_options,
-        skip_reason="cfg skipped",
     )
 
     def _execute() -> CfgToolOutput:
@@ -627,7 +583,6 @@ def cfg__table_materializations(
 def cfg__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    cfg__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for CFG.
 
@@ -641,7 +596,6 @@ def cfg__finalize_context(
         env=env,
         catalog=catalog,
         target_name=CFG_TARGET_NAME,
-        hash_options=cfg__hash_options,
     )
 
 
@@ -674,7 +628,6 @@ def t__dfg__run(
     env: BuildEnv,
     catalog: DagCatalog,
     t__cfg__run: CfgToolOutput,
-    dfg__hash_options: InputHashOptions,
 ) -> DfgToolOutput:
     """Execute DFG extraction from CFG results.
 
@@ -688,8 +641,6 @@ def t__dfg__run(
         env=env,
         catalog=catalog,
         target_name=DFG_TARGET_NAME,
-        hash_options=dfg__hash_options,
-        skip_reason="dfg skipped",
     )
 
     def _execute() -> DfgToolOutput:
@@ -821,7 +772,6 @@ def dfg__table_materializations(
 def dfg__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    dfg__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for DFG.
 
@@ -835,7 +785,6 @@ def dfg__finalize_context(
         env=env,
         catalog=catalog,
         target_name=DFG_TARGET_NAME,
-        hash_options=dfg__hash_options,
     )
 
 

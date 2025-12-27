@@ -47,7 +47,7 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions, compute_options_hash
+from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.paths import normalize_path
@@ -103,27 +103,22 @@ _DUPLICATE_SAMPLE_LIMIT = 5
 MODULES_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=MODULES_TARGET_NAME,
-    hash_options_node="modules__hash_options",
 )
 CONFIG_INGEST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=CONFIG_INGEST_TARGET_NAME,
-    hash_options_node="config_ingest__hash_options",
 )
 COVERAGE_INGEST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=COVERAGE_INGEST_TARGET_NAME,
-    hash_options_node="coverage_ingest__hash_options",
 )
 TESTS_INGEST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=TESTS_INGEST_TARGET_NAME,
-    hash_options_node="tests_ingest__hash_options",
 )
 TYPING_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=TYPING_TARGET_NAME,
-    hash_options_node="typing__hash_options",
 )
 
 
@@ -285,21 +280,6 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
         return ModuleToolOutput(result=ExecutionResult.failed(str(exc)))
 
 
-@tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
-def modules__hash_options(env: BuildEnv, t__modules__run: ModuleToolOutput) -> InputHashOptions:
-    """Build input hash options for modules target materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs used to gate target materialization.
-    """
-    options_hash = options_hash_for_target(env, MODULES_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=t__modules__run.file_state_hash,
-    )
 
 
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME)
@@ -566,7 +546,6 @@ def modules__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
     t__modules__run: ModuleToolOutput,
-    modules__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the modules target.
 
@@ -596,7 +575,6 @@ def modules__finalize_context(
         env=env,
         catalog=catalog,
         target_name=MODULES_TARGET_NAME,
-        hash_options=modules__hash_options,
         change_delta=change_delta,
     )
 
@@ -734,17 +712,6 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
         return ConfigScanResult(success=False, error="Config file discovery failed with exception")
 
 
-@tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
-def config_ingest__hash_options(
-    env: BuildEnv,
-    t__config_ingest__scan: ConfigScanResult,
-) -> InputHashOptions:
-    options_hash = options_hash_for_target(env, CONFIG_INGEST_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=t__config_ingest__scan.file_state_hash,
-    )
 
 
 @tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
@@ -752,7 +719,6 @@ def t__config_ingest__run(
     env: BuildEnv,
     catalog: DagCatalog,
     t__config_ingest__scan: ConfigScanResult,
-    config_ingest__hash_options: InputHashOptions,
 ) -> ConfigToolOutput:
     """Discover and ingest config files into structured tables.
 
@@ -770,8 +736,6 @@ def t__config_ingest__run(
         env=env,
         catalog=catalog,
         target_name=CONFIG_INGEST_TARGET_NAME,
-        hash_options=config_ingest__hash_options,
-        skip_reason="Config ingest skipped",
     )
 
     def _execute() -> ConfigToolOutput:
@@ -880,7 +844,6 @@ def config_ingest__table_materializations(
 def config_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    config_ingest__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for config ingest.
 
@@ -893,7 +856,6 @@ def config_ingest__finalize_context(
         env=env,
         catalog=catalog,
         target_name=CONFIG_INGEST_TARGET_NAME,
-        hash_options=config_ingest__hash_options,
     )
 
 
@@ -958,22 +920,6 @@ def coverage_ingest__file_state_hash(env: BuildEnv) -> str | None:
     return _state_hash_for_paths((coverage_path,), root=env.snapshot.repo_root)
 
 
-@tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
-def coverage_ingest__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-    coverage_ingest__file_state_hash: str | None,
-) -> InputHashOptions:
-    options_hash = options_hash_for_target(env, COVERAGE_INGEST_TARGET_NAME)
-    file_state_hash = _combine_state_hashes(
-        modules__hash_options.file_state_hash,
-        coverage_ingest__file_state_hash,
-    )
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=file_state_hash,
-    )
 
 
 def _coerce_coverage_output(
@@ -997,7 +943,6 @@ def t__coverage_ingest__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-    coverage_ingest__hash_options: InputHashOptions,
 ) -> CoverageToolOutput:
     """Execute coverage data ingestion from coverage.py output.
 
@@ -1014,8 +959,6 @@ def t__coverage_ingest__run(
         env=env,
         catalog=catalog,
         target_name=COVERAGE_INGEST_TARGET_NAME,
-        hash_options=coverage_ingest__hash_options,
-        skip_reason="Coverage ingest skipped",
     )
 
     def _execute() -> CoverageToolOutput:
@@ -1132,7 +1075,6 @@ def coverage_ingest__table_materializations(
 def coverage_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    coverage_ingest__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for coverage ingest.
 
@@ -1145,7 +1087,6 @@ def coverage_ingest__finalize_context(
         env=env,
         catalog=catalog,
         target_name=COVERAGE_INGEST_TARGET_NAME,
-        hash_options=coverage_ingest__hash_options,
     )
 
 
@@ -1215,22 +1156,6 @@ def tests_ingest__file_state_hash(env: BuildEnv) -> str | None:
     return _state_hash_for_paths((report_path,), root=env.snapshot.repo_root)
 
 
-@tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
-def tests_ingest__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-    tests_ingest__file_state_hash: str | None,
-) -> InputHashOptions:
-    options_hash = options_hash_for_target(env, TESTS_INGEST_TARGET_NAME)
-    file_state_hash = _combine_state_hashes(
-        modules__hash_options.file_state_hash,
-        tests_ingest__file_state_hash,
-    )
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=file_state_hash,
-    )
 
 
 def _coerce_tests_output(
@@ -1254,7 +1179,6 @@ def t__tests_ingest__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-    tests_ingest__hash_options: InputHashOptions,
 ) -> TestsToolOutput:
     """Execute pytest report ingestion into analytics tables.
 
@@ -1271,8 +1195,6 @@ def t__tests_ingest__run(
         env=env,
         catalog=catalog,
         target_name=TESTS_INGEST_TARGET_NAME,
-        hash_options=tests_ingest__hash_options,
-        skip_reason="Tests ingest skipped",
     )
 
     def _execute() -> TestsToolOutput:
@@ -1385,7 +1307,6 @@ def tests_ingest__table_materializations(
 def tests_ingest__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    tests_ingest__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for tests ingest.
 
@@ -1398,7 +1319,6 @@ def tests_ingest__finalize_context(
         env=env,
         catalog=catalog,
         target_name=TESTS_INGEST_TARGET_NAME,
-        hash_options=tests_ingest__hash_options,
     )
 
 
@@ -1430,17 +1350,6 @@ def t__tests_ingest(
 # ---------------------------------------------------------------------------
 
 
-@tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
-def typing__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    options_hash = options_hash_for_target(env, TYPING_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=modules__hash_options.file_state_hash,
-    )
 
 
 def _coerce_typing_output(
@@ -1465,7 +1374,6 @@ def t__typing__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-    typing__hash_options: InputHashOptions,
 ) -> TypingToolOutput:
     """Execute typing analysis and persist typedness + diagnostics tables.
 
@@ -1482,8 +1390,6 @@ def t__typing__run(
         env=env,
         catalog=catalog,
         target_name=TYPING_TARGET_NAME,
-        hash_options=typing__hash_options,
-        skip_reason="Typing ingest skipped",
     )
 
     def _execute() -> TypingToolOutput:
@@ -1644,7 +1550,6 @@ def typing__table_materializations(
 def typing__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    typing__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for typing ingest.
 
@@ -1657,7 +1562,6 @@ def typing__finalize_context(
         env=env,
         catalog=catalog,
         target_name=TYPING_TARGET_NAME,
-        hash_options=typing__hash_options,
     )
 
 

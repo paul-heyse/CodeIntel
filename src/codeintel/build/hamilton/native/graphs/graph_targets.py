@@ -87,7 +87,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hamilton.validators import build_table_contract
-from codeintel.build.hashing import InputHashOptions
 from codeintel.config.primitives import GraphBackendConfig
 from codeintel.core.ibis_typing import (
     and_predicates,
@@ -159,27 +158,22 @@ CALL_GRAPH_DEPTH_STATS_NAMESPACE = "call_graph_call_depth_stats"
 GOIDS_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=GOIDS_TARGET_NAME,
-    hash_options_node="goids__hash_options",
 )
 SYMBOL_USES_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=SYMBOL_USES_TARGET_NAME,
-    hash_options_node="symbol_uses__hash_options",
 )
 CALL_GRAPH_VIEWS_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=CALL_GRAPH_VIEWS_TARGET_NAME,
-    hash_options_node="call_graph_views__hash_options",
 )
 GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=GRAPH_METRICS_TARGET_NAME,
-    hash_options_node="graph_metrics__hash_options",
 )
 GRAPH_VALIDATION_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=GRAPH_VALIDATION_TARGET_NAME,
-    hash_options_node="graph_validation__hash_options",
 )
 
 
@@ -409,25 +403,6 @@ def graph_validation__inputs(
 # ---------------------------------------------------------------------------
 
 
-@tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
-def goids__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build input hash options for GOID materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, GOIDS_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=modules__hash_options.file_state_hash,
-    )
 
 
 @tag_helper(domain="graphs", target=GOIDS_TARGET_NAME)
@@ -718,25 +693,6 @@ def symbol_uses__inputs(
     )
 
 
-@tag_helper(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
-def symbol_uses__hash_options(
-    env: BuildEnv,
-    goids__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build input hash options for symbol use materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, SYMBOL_USES_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=goids__hash_options.file_state_hash,
-    )
 
 
 @tag_helper(domain="graphs", target=SYMBOL_USES_TARGET_NAME)
@@ -1086,7 +1042,6 @@ def _coerce_goids_output(output: ToolStepOutput) -> GoidsToolOutput:
 def t__goids__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    goids__hash_options: InputHashOptions,
     goids__run_inputs: GoidsRunInputs,
 ) -> GoidsToolOutput:
     """Execute GOID extraction on repository modules.
@@ -1101,8 +1056,6 @@ def t__goids__run(
         env=env,
         catalog=catalog,
         target_name=GOIDS_TARGET_NAME,
-        hash_options=goids__hash_options,
-        skip_reason="goids skipped",
     )
 
     def _execute() -> GoidsToolOutput:
@@ -1305,7 +1258,6 @@ goids__table_materializations = make_table_materializations_collector(
 def goids__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    goids__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for GOIDs.
 
@@ -1319,7 +1271,6 @@ def goids__finalize_context(
         env=env,
         catalog=catalog,
         target_name=GOIDS_TARGET_NAME,
-        hash_options=goids__hash_options,
     )
 
 
@@ -1362,7 +1313,6 @@ def _coerce_symbol_uses_output(output: ToolStepOutput) -> SymbolUsesToolOutput:
 def t__symbol_uses__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    symbol_uses__hash_options: InputHashOptions,
     symbol_uses__run_inputs: SymbolUsesRunInputs,
 ) -> SymbolUsesToolOutput:
     """Execute symbol use extraction from SCIP data.
@@ -1377,8 +1327,6 @@ def t__symbol_uses__run(
         env=env,
         catalog=catalog,
         target_name=SYMBOL_USES_TARGET_NAME,
-        hash_options=symbol_uses__hash_options,
-        skip_reason="symbol_uses skipped",
     )
 
     def _execute() -> SymbolUsesToolOutput:
@@ -1520,7 +1468,6 @@ symbol_uses__table_materializations = make_table_materializations_collector(
 def symbol_uses__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    symbol_uses__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for symbol uses.
 
@@ -1534,7 +1481,6 @@ def symbol_uses__finalize_context(
         env=env,
         catalog=catalog,
         target_name=SYMBOL_USES_TARGET_NAME,
-        hash_options=symbol_uses__hash_options,
     )
 
 
@@ -1599,21 +1545,6 @@ class CallGraphDepthTables:
     caller_funcs: ir.Table
 
 
-@tag_helper(domain="graphs", target=CALL_GRAPH_VIEWS_TARGET_NAME)
-def call_graph_views__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for call graph views.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, CALL_GRAPH_VIEWS_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-    )
 
 
 def _call_graph_views_filter_edges(edges: ir.Table, env: BuildEnv) -> ir.Table:
@@ -1943,21 +1874,6 @@ def graph_metrics__gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="graphs", target=GRAPH_METRICS_TARGET_NAME)
-def graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for graph metrics.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, GRAPH_METRICS_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-    )
 
 
 def _coerce_graph_metrics_output(output: ToolStepOutput) -> GraphMetricsToolOutput:
@@ -1972,7 +1888,6 @@ def t__graph_metrics__run(
     catalog: DagCatalog,
     t__call_graph: TargetRunRecord,
     graph_metrics__gateway: StorageGateway,
-    graph_metrics__hash_options: InputHashOptions,
 ) -> GraphMetricsToolOutput:
     """Compute graph metrics rows from call graph data.
 
@@ -1986,8 +1901,6 @@ def t__graph_metrics__run(
         env=env,
         catalog=catalog,
         target_name=GRAPH_METRICS_TARGET_NAME,
-        hash_options=graph_metrics__hash_options,
-        skip_reason="graph_metrics skipped",
     )
 
     def _execute() -> GraphMetricsToolOutput:
@@ -2309,7 +2222,6 @@ graph_metrics__table_materializations = make_table_materializations_collector(
 def graph_metrics__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    graph_metrics__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for graph metrics.
 
@@ -2323,7 +2235,6 @@ def graph_metrics__finalize_context(
         env=env,
         catalog=catalog,
         target_name=GRAPH_METRICS_TARGET_NAME,
-        hash_options=graph_metrics__hash_options,
     )
 
 
@@ -2356,21 +2267,6 @@ def t__graph_metrics(
 # ---------------------------------------------------------------------------
 
 
-@tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
-def graph_validation__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for graph validation.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, GRAPH_VALIDATION_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-    )
 
 
 @tag_helper(domain="graphs", target=GRAPH_VALIDATION_TARGET_NAME)
@@ -2456,7 +2352,6 @@ def _collect_graph_validation_issues(
 def t__graph_validation__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    graph_validation__hash_options: InputHashOptions,
     graph_validation__run_inputs: GraphValidationRunInputs,
 ) -> GraphValidationToolOutput:
     """Run validation checks on all graph data.
@@ -2471,8 +2366,6 @@ def t__graph_validation__run(
         env=env,
         catalog=catalog,
         target_name=GRAPH_VALIDATION_TARGET_NAME,
-        hash_options=graph_validation__hash_options,
-        skip_reason="graph_validation skipped",
     )
 
     def _execute() -> GraphValidationToolOutput:
@@ -2617,7 +2510,6 @@ graph_validation__table_materializations = make_table_materializations_collector
 def graph_validation__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    graph_validation__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for graph validation.
 
@@ -2631,7 +2523,6 @@ def graph_validation__finalize_context(
         env=env,
         catalog=catalog,
         target_name=GRAPH_VALIDATION_TARGET_NAME,
-        hash_options=graph_validation__hash_options,
     )
 
 

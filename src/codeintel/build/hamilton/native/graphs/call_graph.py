@@ -41,7 +41,6 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.catalog import FunctionSpanIndex, load_function_index
 from codeintel.core.ibis_typing import and_predicates, filter_by, isin_values
 from codeintel.core.paths import normalize_path
@@ -77,7 +76,6 @@ CALL_GRAPH_TABLE_KEYS = (
 CALL_GRAPH_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=CALL_GRAPH_TARGET_NAME,
-    hash_options_node="call_graph__hash_options",
 )
 
 
@@ -100,25 +98,6 @@ class CallGraphRunInputs:
     function_index: FunctionSpanIndex | None
 
 
-@tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
-def call_graph__hash_options(
-    env: BuildEnv,
-    goids__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build hash options for call graph materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, CALL_GRAPH_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=goids__hash_options.file_state_hash,
-    )
 
 
 @tag_helper(domain="graphs", target=CALL_GRAPH_TARGET_NAME)
@@ -555,7 +534,6 @@ def _coerce_call_graph_output(output: ToolStepOutput) -> CallGraphToolOutput:
 def t__call_graph__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    call_graph__hash_options: InputHashOptions,
     call_graph__run_inputs: CallGraphRunInputs,
 ) -> CallGraphToolOutput:
     """Execute call graph extraction on repository modules.
@@ -570,8 +548,6 @@ def t__call_graph__run(
         env=env,
         catalog=catalog,
         target_name=CALL_GRAPH_TARGET_NAME,
-        hash_options=call_graph__hash_options,
-        skip_reason="call_graph skipped",
     )
 
     def _execute() -> CallGraphToolOutput:
@@ -803,7 +779,6 @@ def call_graph__table_materializations(
 def call_graph__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    call_graph__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for call graph.
 
@@ -817,7 +792,6 @@ def call_graph__finalize_context(
         env=env,
         catalog=catalog,
         target_name=CALL_GRAPH_TARGET_NAME,
-        hash_options=call_graph__hash_options,
     )
 
 

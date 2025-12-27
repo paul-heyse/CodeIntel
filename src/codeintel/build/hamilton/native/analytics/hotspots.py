@@ -42,7 +42,6 @@ from codeintel.build.hamilton.run_records import (
 )
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.gateway import DuckDBError
@@ -59,7 +58,6 @@ HOTSPOTS_TABLE_KEYS = (HOTSPOTS_TABLE_KEY,)
 HOTSPOTS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=HOTSPOTS_TARGET_NAME,
-    hash_options_node="hotspots__hash_options",
 )
 AST_METRICS_TABLE_KEY = "core.ast_metrics"
 MODULES_TABLE_KEY = "core.modules"
@@ -105,41 +103,8 @@ tagged_attach_node(
 )
 
 
-@tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
-def hotspots__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for hotspots execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, HOTSPOTS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
-def hotspots__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    hotspots__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when hotspots should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        HOTSPOTS_TARGET_NAME,
-        hash_options=hotspots__hash_options,
-    )
-    return executor.should_skip()
 
 
 @tag_helper(domain="analytics", target=HOTSPOTS_TARGET_NAME)
@@ -339,8 +304,6 @@ def hotspots__inputs(
 @tag_compute(domain="analytics", target=HOTSPOTS_TARGET_NAME)
 def t__hotspots__compute(
     hotspots__inputs: HotspotsInputs,
-    *,
-    hotspots__skip: bool,
 ) -> HotspotsResult:
     """Compute file hotspot metrics.
 
@@ -348,7 +311,6 @@ def t__hotspots__compute(
     ----------
     hotspots__inputs
         Bundled inputs for hotspots computation.
-    hotspots__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -356,8 +318,6 @@ def t__hotspots__compute(
     HotspotsResult
         Computed hotspot rows or an error message.
     """
-    if hotspots__skip:
-        return HotspotsResult(rows=None)
 
     module_paths = _load_module_paths(hotspots__inputs.modules_table)
     if not module_paths:
@@ -441,13 +401,11 @@ def t__hotspots(
 
 __all__ = [
     "hotspots__ast_metrics_table",
-    "hotspots__hash_options",
     "hotspots__inputs",
     "hotspots__modules_table",
     "hotspots__options",
     "hotspots__repo_root",
     "hotspots__rows",
-    "hotspots__skip",
     "hotspots__tool_runner",
     "t__hotspots",
     "t__hotspots__compute",

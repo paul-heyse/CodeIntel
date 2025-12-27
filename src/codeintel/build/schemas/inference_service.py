@@ -52,6 +52,8 @@ __all__ = [
     "inferable_native_table_keys",
 ]
 
+_INFERABLE_SINKS: frozenset[str] = frozenset({"codeintel.duckdb_table"})
+
 
 @dataclass(frozen=True)
 class _ComputeInferenceJob:
@@ -432,10 +434,11 @@ def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
     Returns
     -------
     frozenset[str]
-        Output table keys from targets that have q__-driven Ibis compute nodes.
+        Output table keys inferred from q__-driven Ibis compute nodes or
+        outputs tagged with inferable saver sinks.
     """
     runtime = _runtime_auto()
-    inferable: set[str] = set()
+    inferable = _inferable_table_keys_from_sinks(catalog)
     for target in catalog.all_targets:
         compute_name = compute_node(target.name)
         node = runtime.dr.graph.nodes.get(compute_name)
@@ -452,6 +455,14 @@ def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
             output.key for output in catalog.table_outputs_by_target.get(target.name, ())
         )
     return frozenset(inferable)
+
+
+def _inferable_table_keys_from_sinks(catalog: DagCatalog) -> set[str]:
+    return {
+        table_key
+        for table_key, output in catalog.table_outputs.items()
+        if output.sink in _INFERABLE_SINKS
+    }
 
 
 def _build_inference_jobs(

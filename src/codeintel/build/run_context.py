@@ -11,6 +11,7 @@ from codeintel.build.config import BuildConfig, BuildConfigOverrides, BuildConfi
 from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
+from codeintel.build.hamilton.variants import variant_config_from_build_config
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
@@ -109,6 +110,9 @@ class BuildRunContext:
             profile = self.execution_options.profile
         fingerprint_policy = self.fingerprint_policy or DEFAULT_FINGERPRINT_POLICY
         execution_settings = self.execution_settings or HamiltonExecutionSettings()
+        variants = variant_config_from_build_config(stacked)
+        if self.execution_context is not None:
+            variants = self.execution_context.variants
         registry_service = None
         if load_catalogs:
             registry_service = RegistryService.from_gateway(
@@ -129,6 +133,7 @@ class BuildRunContext:
             config=stacked,
             settings=self.settings,
             execution_settings=execution_settings,
+            variants=variants,
             profile=profile,
             force_targets=self.force_targets,
             manifest_index=self.manifest_index,

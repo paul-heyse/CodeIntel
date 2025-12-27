@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
@@ -40,8 +40,11 @@ def _columns_for(con: DuckDBConnection, schema_name: str, table_name: str) -> se
 def test_ingestion_sql_tables_match_schema(fresh_gateway: StorageGateway) -> None:
     """Ensure registry tables exist with expected columns."""
     con = fresh_gateway.con
-    provider = get_schema_provider()
-    registry = {schema.table_key: schema.column_names() for schema in provider.iter_table_schemas()}
+    provider = non_inferable_schema_provider()
+    registry = {
+        schema.table_key: schema.column_names()
+        for schema in provider.iter_table_schemas()
+    }
     for fq_name, registry_cols in sorted(registry.items()):
         schema_name, table_name = fq_name.split(".", maxsplit=1)
         if not _table_exists(con, schema_name, table_name):

@@ -36,7 +36,6 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -54,7 +53,6 @@ SUBSYSTEMS_TABLE_KEYS = (
 SUBSYSTEMS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SUBSYSTEMS_TARGET_NAME,
-    hash_options_node="subsystems__hash_options",
 )
 
 
@@ -70,41 +68,8 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
-def subsystems__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for subsystems execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, SUBSYSTEMS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEMS_TARGET_NAME)
-def subsystems__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    subsystems__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when subsystems should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        SUBSYSTEMS_TARGET_NAME,
-        hash_options=subsystems__hash_options,
-    )
-    return executor.should_skip()
 
 
 @dataclass(frozen=True)
@@ -121,8 +86,6 @@ def t__subsystems__compute(
     gateway: StorageGateway,
     t__import_graph: TargetRunRecord,
     t__semantic_roles: TargetRunRecord,
-    *,
-    subsystems__skip: bool,
 ) -> SubsystemsComputeResult | None:
     """Compute subsystems by executing the subsystem inference pipeline.
 
@@ -136,7 +99,6 @@ def t__subsystems__compute(
         Upstream import graph record.
     t__semantic_roles
         Upstream semantic roles record.
-    subsystems__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -144,8 +106,6 @@ def t__subsystems__compute(
     SubsystemsComputeResult | None
         Computed subsystem rows or None when skipped.
     """
-    if subsystems__skip:
-        return None
 
     if t__import_graph.status != "succeeded":
         return SubsystemsComputeResult(
@@ -290,9 +250,7 @@ subsystems__table_materializations = make_table_materializations_collector(
 __all__ = [
     "SubsystemsComputeResult",
     "subsystem_modules__rows",
-    "subsystems__hash_options",
     "subsystems__rows",
-    "subsystems__skip",
     "subsystems__table_materializations",
     "t__subsystems",
     "t__subsystems__compute",

@@ -38,7 +38,6 @@ from codeintel.build.hamilton.native.target_decorators import (
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions
 from codeintel.build.resources import CPU_INTENSIVE_EXECUTION, TargetResources
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.ingestion.adapters import FilesystemDiscoveryAdapter
@@ -74,17 +73,14 @@ DOCSTRINGS_TABLE_KEYS = (DOCSTRINGS_TABLE_KEY,)
 AST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=AST_TARGET_NAME,
-    hash_options_node="ast__hash_options",
 )
 CST_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=CST_TARGET_NAME,
-    hash_options_node="cst__hash_options",
 )
 DOCSTRINGS_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=DOCSTRINGS_TARGET_NAME,
-    hash_options_node="docstrings__hash_options",
 )
 
 
@@ -162,7 +158,6 @@ def _coerce_ast_output(
                 result=_merge_result_warnings(
                     output.result,
                     warnings,
-                    skip_reason="AST extraction skipped",
                     error_message="AST extraction failed",
                 ),
                 ast_rows=output.ast_rows,
@@ -173,7 +168,6 @@ def _coerce_ast_output(
     merged = _merge_result_warnings(
         output.result,
         warnings,
-        skip_reason="AST extraction skipped",
         error_message="AST extraction failed",
     )
     return AstToolOutput(result=merged, ast_rows=(), metric_rows=())
@@ -189,7 +183,6 @@ def _coerce_cst_output(
                 result=_merge_result_warnings(
                     output.result,
                     warnings,
-                    skip_reason="CST extraction skipped",
                     error_message="CST extraction failed",
                 ),
                 rows=output.rows,
@@ -199,7 +192,6 @@ def _coerce_cst_output(
     merged = _merge_result_warnings(
         output.result,
         warnings,
-        skip_reason="CST extraction skipped",
         error_message="CST extraction failed",
     )
     return CstToolOutput(result=merged, rows=())
@@ -215,7 +207,6 @@ def _coerce_docstrings_output(
                 result=_merge_result_warnings(
                     output.result,
                     warnings,
-                    skip_reason="Docstrings skipped",
                     error_message="Docstrings extraction failed",
                 ),
                 rows=output.rows,
@@ -225,30 +216,11 @@ def _coerce_docstrings_output(
     merged = _merge_result_warnings(
         output.result,
         warnings,
-        skip_reason="Docstrings skipped",
         error_message="Docstrings extraction failed",
     )
     return DocstringsToolOutput(result=merged, rows=())
 
 
-@tag_helper(domain="ingestion", target=AST_TARGET_NAME)
-def ast__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build input hash options for AST extraction.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs used to gate AST execution.
-    """
-    options_hash = options_hash_for_target(env, AST_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=modules__hash_options.file_state_hash,
-    )
 
 
 @tag_tool(domain="ingestion", target=AST_TARGET_NAME)
@@ -257,7 +229,6 @@ def t__ast__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-    ast__hash_options: InputHashOptions,
 ) -> AstToolOutput:
     """Execute AST extraction on repository modules.
 
@@ -274,8 +245,6 @@ def t__ast__run(
         env=env,
         catalog=catalog,
         target_name=AST_TARGET_NAME,
-        hash_options=ast__hash_options,
-        skip_reason="AST extraction skipped",
     )
 
     def _execute() -> AstToolOutput:
@@ -428,7 +397,6 @@ def ast__table_materializations(
 def ast__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    ast__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the AST target.
 
@@ -441,7 +409,6 @@ def ast__finalize_context(
         env=env,
         catalog=catalog,
         target_name=AST_TARGET_NAME,
-        hash_options=ast__hash_options,
     )
 
 
@@ -478,24 +445,6 @@ def t__ast(
     )
 
 
-@tag_helper(domain="ingestion", target=CST_TARGET_NAME)
-def cst__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build input hash options for CST extraction.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs used to gate CST execution.
-    """
-    options_hash = options_hash_for_target(env, CST_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=modules__hash_options.file_state_hash,
-    )
 
 
 @tag_tool(domain="ingestion", target=CST_TARGET_NAME)
@@ -504,7 +453,6 @@ def t__cst__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-    cst__hash_options: InputHashOptions,
 ) -> CstToolOutput:
     """Execute CST extraction on repository modules.
 
@@ -521,8 +469,6 @@ def t__cst__run(
         env=env,
         catalog=catalog,
         target_name=CST_TARGET_NAME,
-        hash_options=cst__hash_options,
-        skip_reason="CST extraction skipped",
     )
 
     def _execute() -> CstToolOutput:
@@ -627,7 +573,6 @@ def cst__table_materializations(
 def cst__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    cst__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the CST target.
 
@@ -640,7 +585,6 @@ def cst__finalize_context(
         env=env,
         catalog=catalog,
         target_name=CST_TARGET_NAME,
-        hash_options=cst__hash_options,
     )
 
 
@@ -670,24 +614,6 @@ def t__cst(
     )
 
 
-@tag_helper(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
-def docstrings__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build input hash options for docstrings extraction.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs used to gate docstrings execution.
-    """
-    options_hash = options_hash_for_target(env, DOCSTRINGS_TARGET_NAME)
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=modules__hash_options.file_state_hash,
-    )
 
 
 @tag_tool(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
@@ -696,7 +622,6 @@ def t__docstrings__run(
     catalog: DagCatalog,
     t__modules: TargetRunRecord,
     module_records: tuple[ModuleRecord, ...],
-    docstrings__hash_options: InputHashOptions,
 ) -> DocstringsToolOutput:
     """Execute docstring extraction on repository modules.
 
@@ -713,8 +638,6 @@ def t__docstrings__run(
         env=env,
         catalog=catalog,
         target_name=DOCSTRINGS_TARGET_NAME,
-        hash_options=docstrings__hash_options,
-        skip_reason="Docstrings skipped",
     )
 
     def _execute() -> DocstringsToolOutput:
@@ -819,7 +742,6 @@ def docstrings__table_materializations(
 def docstrings__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    docstrings__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the docstrings target.
 
@@ -832,7 +754,6 @@ def docstrings__finalize_context(
         env=env,
         catalog=catalog,
         target_name=DOCSTRINGS_TARGET_NAME,
-        hash_options=docstrings__hash_options,
     )
 
 

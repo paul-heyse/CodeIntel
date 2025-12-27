@@ -31,7 +31,6 @@ from codeintel.build.hamilton.run_records import (
     create_run_record,
     options_hash_for_target,
 )
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
@@ -99,7 +98,6 @@ class NativeTargetExecutor:
         target_name: str,
         *,
         options_hash: str | None = None,
-        hash_options: InputHashOptions | None = None,
     ) -> NativeTargetExecutor:
         """Create an executor for a named target.
 
@@ -113,9 +111,6 @@ class NativeTargetExecutor:
             Name of the target to execute.
         options_hash
             Optional configuration options hash.
-        hash_options
-            Optional hash inputs override (for example, file-state hash).
-
         Returns
         -------
         NativeTargetExecutor
@@ -136,7 +131,6 @@ class NativeTargetExecutor:
         if target is None:
             raise TargetNotFoundError(target_name, list(catalog))
 
-        _ = hash_options
         resolved_options_hash = options_hash
         if resolved_options_hash is None:
             resolved_options_hash = options_hash_for_target(env, target_name)

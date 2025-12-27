@@ -12,6 +12,7 @@ from codeintel.core.config.settings import (
     ServingSettings,
 )
 from codeintel.core.runtime.primitives import RuntimePrimitives
+from codeintel.core.runtime.variants import VariantConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +24,7 @@ class RuntimeSettings:
     execution: HamiltonExecutionSettings
     serving: ServingSettings
     observability: ObservabilitySettings
+    variants: VariantConfig
 
 
 @dataclass(frozen=True, slots=True)

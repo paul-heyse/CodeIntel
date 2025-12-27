@@ -56,7 +56,6 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.storage.gateway import StorageGateway
@@ -90,12 +89,10 @@ ENTRYPOINTS_TABLE_KEYS = (ENTRYPOINTS_TABLE_KEY, ENTRYPOINT_TESTS_TABLE_KEY)
 EXTERNAL_DEPS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=EXTERNAL_DEPS_TARGET_NAME,
-    hash_options_node="external_deps__hash_options",
 )
 ENTRYPOINTS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=ENTRYPOINTS_TARGET_NAME,
-    hash_options_node="entrypoints__hash_options",
 )
 
 
@@ -111,78 +108,12 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
-def external_deps__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for external_deps execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, EXTERNAL_DEPS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=EXTERNAL_DEPS_TARGET_NAME)
-def external_deps__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    external_deps__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when external_deps should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        EXTERNAL_DEPS_TARGET_NAME,
-        hash_options=external_deps__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
-def entrypoints__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for entrypoints execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, ENTRYPOINTS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=ENTRYPOINTS_TARGET_NAME)
-def entrypoints__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    entrypoints__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when entrypoints should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        ENTRYPOINTS_TARGET_NAME,
-        hash_options=entrypoints__hash_options,
-    )
-    return executor.should_skip()
 
 
 def _build_inputs(
@@ -270,8 +201,6 @@ def t__external_deps__compute_calls(
     env: BuildEnv,
     gateway: StorageGateway,
     external_deps_inputs: ExternalDependencyInputs | None,
-    *,
-    external_deps__skip: bool,
 ) -> DependencyCallsResult | None:
     """Compute external dependency calls for all functions in the snapshot.
 
@@ -286,7 +215,6 @@ def t__external_deps__compute_calls(
         Storage gateway for analytics queries.
     external_deps_inputs
         Pre-built AST and module inputs for dependency analysis.
-    external_deps__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -302,8 +230,6 @@ def t__external_deps__compute_calls(
     - Usage modes (read, write, admin, etc.)
     - Evidence with code snippets
     """
-    if external_deps__skip:
-        return None
 
     if external_deps_inputs is None:
         return None
@@ -503,8 +429,6 @@ def t__entrypoints__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     entrypoints_inputs: EntrypointBuildInputs | None,
-    *,
-    entrypoints__skip: bool,
 ) -> EntrypointsResult | None:
     """Compute entrypoints for all modules in the snapshot.
 
@@ -513,8 +437,6 @@ def t__entrypoints__compute(
     EntrypointsResult | None
         Computed entrypoints, or None when skipped or inputs are unavailable.
     """
-    if entrypoints__skip:
-        return None
 
     if entrypoints_inputs is None:
         return None
@@ -626,16 +548,12 @@ __all__ = [
     "DependencyCallsResult",
     "EntrypointsResult",
     "entrypoints__entrypoint_rows",
-    "entrypoints__hash_options",
-    "entrypoints__skip",
     "entrypoints__table_materializations",
     "entrypoints__test_rows",
     "entrypoints__upstream_error",
     "entrypoints_inputs",
     "external_deps__calls_rows",
     "external_deps__dependencies_rows",
-    "external_deps__hash_options",
-    "external_deps__skip",
     "external_deps__table_materializations",
     "external_deps_inputs",
     "t__entrypoints",

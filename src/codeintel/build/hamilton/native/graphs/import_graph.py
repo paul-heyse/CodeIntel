@@ -38,7 +38,6 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.ibis_typing import filter_by
 from codeintel.core.paths import normalize_path
 from codeintel.graphs.compute import imports as imports_compute
@@ -59,7 +58,6 @@ IMPORT_GRAPH_TABLE_KEYS = (
 IMPORT_GRAPH_SAVE_CONTEXT = SaverContext(
     domain="graphs",
     target=IMPORT_GRAPH_TARGET_NAME,
-    hash_options_node="import_graph__hash_options",
 )
 
 
@@ -80,26 +78,6 @@ class ImportGraphRunInputs:
     module_map: dict[str, str]
 
 
-@tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
-def import_graph__hash_options(
-    env: BuildEnv,
-    modules__hash_options: InputHashOptions,
-) -> InputHashOptions:
-    """Build hash options for import graph materialization.
-
-    Returns
-    -------
-    InputHashOptions
-        Return value.
-
-    """
-    options_hash = options_hash_for_target(env, IMPORT_GRAPH_TARGET_NAME)
-    file_state_hash = modules__hash_options.file_state_hash
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=file_state_hash,
-    )
 
 
 @tag_helper(domain="graphs", target=IMPORT_GRAPH_TARGET_NAME)
@@ -264,7 +242,6 @@ def import_graph__run_inputs(
 def t__import_graph__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    import_graph__hash_options: InputHashOptions,
     import_graph__run_inputs: ImportGraphRunInputs,
 ) -> ImportGraphToolOutput:
     """Execute import graph extraction on repository modules.
@@ -278,8 +255,6 @@ def t__import_graph__run(
         env=env,
         catalog=catalog,
         target_name=IMPORT_GRAPH_TARGET_NAME,
-        hash_options=import_graph__hash_options,
-        skip_reason="import_graph skipped",
     )
 
     def _execute() -> ImportGraphToolOutput:
@@ -489,7 +464,6 @@ def import_graph__table_materializations(
 def import_graph__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    import_graph__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for import graph.
 
@@ -503,7 +477,6 @@ def import_graph__finalize_context(
         env=env,
         catalog=catalog,
         target_name=IMPORT_GRAPH_TARGET_NAME,
-        hash_options=import_graph__hash_options,
     )
 
 

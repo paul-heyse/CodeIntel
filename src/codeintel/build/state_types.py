@@ -39,37 +39,27 @@ __all__ = [
 ]
 
 
-TargetStatus = Literal["current", "stale", "missing", "blocked"]
+TargetStatus = Literal["current", "missing", "blocked"]
 """Unified status for a build target.
 
-- ``current``: Manifest exists, input hash matches, data exists
-- ``stale``: Manifest exists but input hash differs
+- ``current``: Manifest exists for this target
 - ``missing``: No manifest exists for this target
-- ``blocked``: Dependencies are not ready (missing, stale, or blocked)
+- ``blocked``: Dependencies are not ready (missing or blocked)
 
 The status is computed purely from observable facts:
 1. Does a manifest exist?
-2. Does the stored input_hash match the current computation?
-3. Are all dependencies in "current" status?
+2. Are all dependencies in "current" status?
 """
 
 
 BlockingReason = Literal[
-    "input_hash_mismatch",
     "dependency_missing",
-    "dependency_stale",
     "dependency_blocked",
-    "options_hash_mismatch",
-    "data_missing",
 ]
 """Reason why a target is not in "current" status.
 
-- ``input_hash_mismatch``: Stored hash differs from current computation
 - ``dependency_missing``: A dependency has never been computed
-- ``dependency_stale``: A dependency needs recomputation
 - ``dependency_blocked``: A dependency is itself blocked
-- ``options_hash_mismatch``: Plugin options have changed
-- ``data_missing``: Output tables are empty despite manifest existing
 """
 
 
@@ -85,17 +75,17 @@ class TargetState:
     name
         Target identifier matching TargetDescriptor.name.
     status
-        Computed status: current, stale, missing, or blocked.
+        Computed status: current, missing, or blocked.
     manifest
         Stored manifest if one exists, None otherwise.
     current_hash
-        Computed input hash for current snapshot (None if not computed).
+        Cache key for the current snapshot (None if not computed).
     blocking_reason
         Primary reason for non-current status (None if current).
     blocking_deps
         Dependencies causing blocked status (empty if not blocked).
     stored_hash
-        Input hash from manifest (None if no manifest).
+        Cache key from manifest (None if no manifest).
 
     Examples
     --------
@@ -146,17 +136,6 @@ class TargetState:
         return self.status == "current"
 
     @property
-    def is_stale(self) -> bool:
-        """Check if target needs recomputation.
-
-        Returns
-        -------
-        bool
-            True if status is "stale".
-        """
-        return self.status == "stale"
-
-    @property
     def is_missing(self) -> bool:
         """Check if target has never been computed.
 
@@ -182,15 +161,15 @@ class TargetState:
     def needs_computation(self) -> bool:
         """Check if target needs to be computed.
 
-        A target needs computation if it's missing or stale.
+        A target needs computation if it's missing.
         Blocked targets cannot be computed until deps are ready.
 
         Returns
         -------
         bool
-            True if target is missing or stale.
+            True if target is missing.
         """
-        return self.status in {"missing", "stale"}
+        return self.status == "missing"
 
     @property
     def can_run(self) -> bool:
@@ -204,20 +183,6 @@ class TargetState:
             True if target is runnable.
         """
         return self.needs_computation and not self.is_blocked
-
-    @property
-    def hash_mismatch(self) -> bool:
-        """Check if input hashes differ.
-
-        Returns
-        -------
-        bool
-            True if stored hash differs from current hash.
-        """
-        if self.stored_hash is None or self.current_hash is None:
-            return False
-        return self.stored_hash != self.current_hash
-
 
 @dataclass(frozen=True)
 class BuildState:
@@ -350,16 +315,6 @@ class BuildState:
         """
         return self.by_status("missing")
 
-    def stale_targets(self) -> tuple[str, ...]:
-        """Return targets that need recomputation.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Sorted names of targets with status "stale".
-        """
-        return self.by_status("stale")
-
     def blocked_targets(self) -> tuple[str, ...]:
         """Return targets blocked by dependencies.
 
@@ -392,7 +347,6 @@ class BuildState:
         """
         counts: dict[TargetStatus, int] = {
             "current": 0,
-            "stale": 0,
             "missing": 0,
             "blocked": 0,
         }

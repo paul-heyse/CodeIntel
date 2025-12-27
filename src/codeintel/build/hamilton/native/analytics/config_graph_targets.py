@@ -46,7 +46,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.hamilton.records import TargetRunRecord
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.graphs.runtime import resolve_graph_runtime
@@ -93,12 +92,10 @@ CFG_DFG_METRICS_TABLE_KEYS = (
 CONFIG_DATA_FLOW_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=CONFIG_DATA_FLOW_TARGET_NAME,
-    hash_options_node="config_data_flow__hash_options",
 )
 CFG_DFG_METRICS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=CFG_DFG_METRICS_TARGET_NAME,
-    hash_options_node="cfg_dfg_metrics__hash_options",
 )
 
 
@@ -114,78 +111,12 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
-def config_data_flow__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for config_data_flow execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, CONFIG_DATA_FLOW_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=CONFIG_DATA_FLOW_TARGET_NAME)
-def config_data_flow__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    config_data_flow__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when config_data_flow should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        CONFIG_DATA_FLOW_TARGET_NAME,
-        hash_options=config_data_flow__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
-def cfg_dfg_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for cfg_dfg_metrics execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, CFG_DFG_METRICS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=CFG_DFG_METRICS_TARGET_NAME)
-def cfg_dfg_metrics__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    cfg_dfg_metrics__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when cfg_dfg_metrics should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        CFG_DFG_METRICS_TARGET_NAME,
-        hash_options=cfg_dfg_metrics__hash_options,
-    )
-    return executor.should_skip()
 
 
 @dataclass(frozen=True)
@@ -213,8 +144,6 @@ def t__config_data_flow__compute(
     gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
     t__goids: TargetRunRecord,
-    *,
-    config_data_flow__skip: bool,
 ) -> ConfigDataFlowComputeResult:
     """Track configuration key usage and data flow at the function level.
 
@@ -231,9 +160,7 @@ def t__config_data_flow__compute(
         Upstream call_graph target result (for dependency).
     t__goids
         Upstream goids target result (for dependency).
-    config_data_flow__skip
         Skip flag derived from manifest-based input hash evaluation.
-    config_data_flow__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -263,8 +190,6 @@ def t__config_data_flow__compute(
             error=f"Upstream goids target failed: {t__goids.error}",
         )
 
-    if config_data_flow__skip:
-        return ConfigDataFlowComputeResult(data_flow=None, graph_metrics=None)
 
     try:
         # Get graph runtime for call graph
@@ -524,8 +449,6 @@ _CFG_DFG_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, CfgMetricsResult, 
 def t__cfg_dfg_metrics__compute_cfg(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    cfg_dfg_metrics__skip: bool,
 ) -> CfgMetricsResult | None:
     """Compute CFG metrics for all functions in the snapshot.
 
@@ -534,8 +457,6 @@ def t__cfg_dfg_metrics__compute_cfg(
     CfgMetricsResult | None
         Computed metrics, or None when the target is skipped.
     """
-    if cfg_dfg_metrics__skip:
-        return None
     return compute_cfg_metrics_pure(
         gateway,
         env.snapshot.repo,
@@ -547,8 +468,6 @@ def t__cfg_dfg_metrics__compute_cfg(
 def t__cfg_dfg_metrics__compute_dfg(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    cfg_dfg_metrics__skip: bool,
 ) -> DfgMetricsResult | None:
     """Compute DFG metrics for all functions in the snapshot.
 
@@ -557,8 +476,6 @@ def t__cfg_dfg_metrics__compute_dfg(
     DfgMetricsResult | None
         Computed metrics, or None when the target is skipped.
     """
-    if cfg_dfg_metrics__skip:
-        return None
     return compute_dfg_metrics_pure(
         gateway,
         env.snapshot.repo,
@@ -744,14 +661,10 @@ def t__cfg_dfg_metrics(
 __all__ = [
     "ConfigDataFlowComputeResult",
     "cfg_block_metrics__rows",
-    "cfg_dfg_metrics__hash_options",
-    "cfg_dfg_metrics__skip",
     "cfg_dfg_metrics__table_materializations",
     "cfg_function_metrics__rows",
     "cfg_function_metrics_ext__rows",
-    "config_data_flow__hash_options",
     "config_data_flow__rows",
-    "config_data_flow__skip",
     "config_data_flow__table_materializations",
     "config_graph_metrics_keys__rows",
     "config_graph_metrics_modules__rows",

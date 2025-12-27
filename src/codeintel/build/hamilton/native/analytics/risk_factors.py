@@ -42,7 +42,6 @@ from codeintel.build.hamilton.validators import (
     build_enum_column_contract,
     build_table_contract,
 )
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.ibis_typing import add, cast_dtype, ge, gt, ibis_bool, truediv
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, ir.Table)
@@ -53,7 +52,6 @@ RISK_FACTORS_TABLE_KEYS = (RISK_FACTORS_TABLE_KEY,)
 RISK_FACTORS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=RISK_FACTORS_TARGET_NAME,
-    hash_options_node="risk_factors__hash_options",
 )
 
 
@@ -239,19 +237,6 @@ def _risk_factors_finalize(risk: ir.Table) -> ir.Table:
     )
 
 
-@tag_helper(domain="analytics", target=RISK_FACTORS_TARGET_NAME)
-def risk_factors__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for risk_factors execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, RISK_FACTORS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
 @save_ibis_table(
@@ -387,7 +372,6 @@ def t__risk_factors(
 
 # Export node names for Hamilton discovery
 __all__ = [
-    "risk_factors__hash_options",
     "t__risk_factors",
     "t__risk_factors__compute",
 ]

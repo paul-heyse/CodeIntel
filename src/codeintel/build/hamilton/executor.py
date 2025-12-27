@@ -941,6 +941,8 @@ class HamiltonBuildExecutor:
             Configured runtime with driver and catalog.
         """
         config: dict[str, Any] = {"profile": self._options.resolved_profile(env=env)}
+        config.update(env.variants.as_hamilton_config())
+        config["variant_fingerprint"] = env.variants.variant_fingerprint
         telemetry_hook: NodeTelemetryHook | None = None
         contract_hook: ContractEnforcementHook | None = None
 

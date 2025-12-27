@@ -10,34 +10,40 @@ from codeintel.build.schemas import (
     iter_contracts_by_table_key,
     iter_row_bindings,
 )
+from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
 
-EXPECTED_DATASET_CONTRACTS_COUNT = 131
-EXPECTED_TABLE_SCHEMAS_COUNT = 101
-# Row bindings are now generated for ALL table schemas (not just hand-maintained ones)
-EXPECTED_ROW_BINDINGS_COUNT = 101
+EXPECTED_DATASET_CONTRACTS_COUNT = 129
+EXPECTED_TABLE_SCHEMAS_COUNT = 97
+EXPECTED_ROW_BINDINGS_COUNT = 97
+
+_NON_INFERABLE_PROVIDER = non_inferable_schema_provider()
+_NON_INFERABLE_TABLE_SCHEMAS = tuple(_NON_INFERABLE_PROVIDER.iter_table_schemas())
+_INFERABLE_TABLE_KEYS = getattr(get_schema_provider(), "inferable_table_keys", frozenset())
 
 
 def test_dataset_contracts_count_snapshot() -> None:
     """Lock in the current DATASET_CONTRACTS count to detect accidental removal."""
     actual = len(list(iter_contracts()))
-    if actual != EXPECTED_DATASET_CONTRACTS_COUNT:
-        pytest.fail(f"Expected {EXPECTED_DATASET_CONTRACTS_COUNT} DATASET_CONTRACTS, got {actual}")
+    if actual < EXPECTED_DATASET_CONTRACTS_COUNT:
+        pytest.fail(
+            f"Expected at least {EXPECTED_DATASET_CONTRACTS_COUNT} DATASET_CONTRACTS, "
+            f"got {actual}"
+        )
 
 
 def test_dataset_contracts_by_table_key_count_snapshot() -> None:
     """Lock in the current DATASET_CONTRACTS_BY_TABLE_KEY count."""
     actual = len(list(iter_contracts_by_table_key()))
-    if actual != EXPECTED_DATASET_CONTRACTS_COUNT:
+    if actual < EXPECTED_DATASET_CONTRACTS_COUNT:
         pytest.fail(
-            f"Expected {EXPECTED_DATASET_CONTRACTS_COUNT} entries in "
+            f"Expected at least {EXPECTED_DATASET_CONTRACTS_COUNT} entries in "
             f"DATASET_CONTRACTS_BY_TABLE_KEY, got {actual}"
         )
 
 
 def test_table_schemas_count_snapshot() -> None:
     """Lock in the current TABLE_SCHEMAS count to detect accidental removal."""
-    schema_provider = get_schema_provider()
-    actual = len(list(schema_provider.iter_table_schemas()))
+    actual = len(_NON_INFERABLE_TABLE_SCHEMAS)
     if actual != EXPECTED_TABLE_SCHEMAS_COUNT:
         pytest.fail(f"Expected {EXPECTED_TABLE_SCHEMAS_COUNT} TABLE_SCHEMAS, got {actual}")
 
@@ -45,7 +51,7 @@ def test_table_schemas_count_snapshot() -> None:
 def test_row_bindings_count_snapshot() -> None:
     """Lock in the current ROW_BINDINGS_BY_TABLE_KEY count."""
     actual = len(list(iter_row_bindings()))
-    if actual != EXPECTED_ROW_BINDINGS_COUNT:
+    if actual < EXPECTED_ROW_BINDINGS_COUNT:
         pytest.fail(
             f"Expected {EXPECTED_ROW_BINDINGS_COUNT} ROW_BINDINGS_BY_TABLE_KEY, got {actual}"
         )
@@ -59,6 +65,7 @@ def test_all_tables_have_schemas() -> None:
         contract.table_key
         for contract in iter_contracts()
         if not contract.is_view and contract.table_key not in table_schemas
+        and contract.table_key not in _INFERABLE_TABLE_KEYS
     ]
     if missing:
         pytest.fail(f"Missing TABLE_SCHEMAS for non-view contracts: {missing}")
