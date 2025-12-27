@@ -1,6 +1,6 @@
 Usage: codeintel build explain TARGET [ARGS]
 
-Explain why a target is stale and what dependencies changed.
+Explain the structural plan entry for a target.
 
 ╭─ Parameters ─────────────────────────────────────────────────────────────────╮
 │ *  TARGET --target              Target name to explain (e.g.,                │

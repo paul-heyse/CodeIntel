@@ -124,10 +124,9 @@ class BuildSession:
     def clear_caches(self) -> None:
         """Clear all caches.
 
-        Use when starting a new computation pass where cached values
-        may be stale.
+        Use when starting a new computation pass where cached manifests
+        may be out of date.
         """
-        self._hash_cache.clear()
         self._manifest_cache.clear()
         self._manifests_preloaded = False
 
@@ -141,14 +140,3 @@ class BuildSession:
             Count of manifests in cache.
         """
         return len(self._manifest_cache)
-
-    @property
-    def cached_hash_count(self) -> int:
-        """Return the number of cached hashes.
-
-        Returns
-        -------
-        int
-            Count of hashes in cache.
-        """
-        return len(self._hash_cache)

@@ -477,26 +477,26 @@ class BuildStatusResult:
     ----------
     targets
         List of target status dictionaries.
-    stale_count
-        Number of stale targets.
-    fresh_count
-        Number of fresh targets.
-    computed
+    current_count
+        Number of current targets.
+    missing_count
+        Number of missing targets.
+    blocked_count
+        Number of blocked targets.
+    current
         List of targets that are up to date.
     missing
-        List of targets missing required inputs.
-    stale
-        List of stale targets, optionally annotated with reasons.
+        List of missing targets.
     blocked
         List of blocked targets, optionally annotated with reasons.
     """
 
     targets: list[dict[str, Any]]
-    stale_count: int
-    fresh_count: int
-    computed: list[str] = field(default_factory=list)
+    current_count: int
+    missing_count: int
+    blocked_count: int
+    current: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
-    stale: list[str] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
@@ -508,13 +508,13 @@ class BuildStatusResult:
             Dictionary representation.
         """
         return {
-            "computed": self.computed,
+            "current": self.current,
             "missing": self.missing,
-            "stale": self.stale,
             "blocked": self.blocked,
             "targets": self.targets,
-            "stale_count": self.stale_count,
-            "fresh_count": self.fresh_count,
+            "current_count": self.current_count,
+            "missing_count": self.missing_count,
+            "blocked_count": self.blocked_count,
         }
 
 
@@ -800,7 +800,7 @@ class BuildTargetInfo:
     name
         Target name.
     status
-        Current status (fresh, stale, error).
+        Current status (current, missing, blocked).
     last_run
         Timestamp of last successful run.
     dependencies

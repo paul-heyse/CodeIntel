@@ -20,6 +20,8 @@ _SCAN_DIRS: tuple[str, ...] = ("src", "tests", "tools")
 
 @dataclass(frozen=True)
 class Violation:
+    """Single lint violation discovered during scanning."""
+
     path: Path
     lineno: int
     message: str
@@ -144,6 +146,18 @@ def _lint_file(path: Path, *, root: Path) -> list[Violation]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the manual tag scan lint.
+
+    Parameters
+    ----------
+    argv
+        Optional CLI arguments, with the repo root as the first entry.
+
+    Returns
+    -------
+    int
+        Exit code (0 for success, 1 for violations).
+    """
     args = list(argv) if argv is not None else []
     root = Path(args[0]).resolve() if args else Path.cwd().resolve()
     violations: list[Violation] = []

@@ -16,9 +16,9 @@ import logging
 from types import ModuleType
 from typing import TYPE_CHECKING
 
+import duckdb
 from ibis.common.exceptions import IbisError
 
-from codeintel.storage.gateway.protocol import DuckDBError, MinimalGateway
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.sync import (
     sync_derived_lineage_columns,
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from hamilton.driver import Driver
 
     from codeintel.core.hamilton.tag_query import TagQuery
+    from codeintel.storage.gateway.protocol import MinimalGateway
 
 __all__ = ["materialize_registered_views"]
 
@@ -115,7 +116,7 @@ def _compile_view_definitions(
             expr = spec.builder(ibis_gateway)
             expr_by_view[view_name] = expr
             sql_by_view[view_name] = ibis_gateway.con.compile(expr)
-        except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
+        except (duckdb.Error, IbisError, KeyError, TypeError, ValueError):
             log.exception("Failed to build view expression: %s", view_name)
             if strict:
                 raise
@@ -144,7 +145,7 @@ def _materialize_views(
             database, name = split_table_key(view_name)
             ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
             log.debug("Materialized view: %s", view_name)
-        except (DuckDBError, IbisError, KeyError, TypeError, ValueError):
+        except (duckdb.Error, IbisError, KeyError, TypeError, ValueError):
             log.exception("Failed to materialize view: %s", view_name)
             if strict:
                 raise
@@ -166,7 +167,7 @@ def _sync_view_lineage(gateway: MinimalGateway, *, sql_by_view: dict[str, str]) 
 
     try:
         sync_derived_lineage_edges(gateway.con, repo=repo, commit=commit, lineage=lineage)
-    except DuckDBError:
+    except duckdb.Error:
         log.exception("Failed to sync derived lineage edges repo=%s commit=%s", repo, commit)
 
     try:
@@ -176,5 +177,5 @@ def _sync_view_lineage(gateway: MinimalGateway, *, sql_by_view: dict[str, str]) 
             commit=commit,
             lineage=column_lineage,
         )
-    except DuckDBError:
+    except duckdb.Error:
         log.exception("Failed to sync derived lineage columns repo=%s commit=%s", repo, commit)

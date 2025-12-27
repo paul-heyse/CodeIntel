@@ -45,7 +45,6 @@ from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
-from codeintel.build.settings import get_build_settings
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator
 from codeintel.build.target_metadata import get_target_metadata_service, get_target_system
 from codeintel.cli.core import CliResult
@@ -348,7 +347,7 @@ def _resolve_domain_for_goals(goals: Sequence[str]) -> str | None:
 
 def _group_targets_by_status(
     state: BuildState,
-) -> tuple[list[str], list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str]]:
     """Group targets by their status.
 
     Parameters
@@ -358,22 +357,16 @@ def _group_targets_by_status(
 
     Returns
     -------
-    tuple[list[str], list[str], list[str], list[str]]
-        (current, stale, missing, blocked) lists.
+    tuple[list[str], list[str], list[str]]
+        (current, missing, blocked) lists.
     """
     current: list[str] = []
-    stale: list[str] = []
     missing: list[str] = []
     blocked: list[str] = []
 
     for target_name, target_state in state.targets.items():
         if target_state.status == "current":
             current.append(target_name)
-        elif target_state.status == "stale":
-            reason = ""
-            if target_state.blocking_reason:
-                reason = f" ({target_state.blocking_reason})"
-            stale.append(f"{target_name}{reason}")
         elif target_state.status == "missing":
             missing.append(target_name)
         elif target_state.status == "blocked":
@@ -382,7 +375,7 @@ def _group_targets_by_status(
                 reason = f" (blocked by: {', '.join(target_state.blocking_deps)})"
             blocked.append(f"{target_name}{reason}")
 
-    return current, stale, missing, blocked
+    return current, missing, blocked
 
 
 def _build_status_result(state: BuildState) -> BuildStatusResult:
@@ -400,22 +393,19 @@ def _build_status_result(state: BuildState) -> BuildStatusResult:
     """
     targets: list[dict[str, object]] = []
 
-    current_list, stale_list, missing_list, blocked_list = _group_targets_by_status(state)
+    current_list, missing_list, blocked_list = _group_targets_by_status(state)
 
-    targets.extend({"name": name, "status": "fresh"} for name in current_list)
-    targets.extend({"name": name, "status": "stale"} for name in stale_list)
+    targets.extend({"name": name, "status": "current"} for name in current_list)
     targets.extend({"name": name, "status": "missing"} for name in missing_list)
     targets.extend({"name": name, "status": "blocked"} for name in blocked_list)
 
-    stale_count = len(stale_list) + len(missing_list)
-
     return BuildStatusResult(
         targets=targets,
-        stale_count=stale_count,
-        fresh_count=len(current_list),
-        computed=current_list,
+        current_count=len(current_list),
+        missing_count=len(missing_list),
+        blocked_count=len(blocked_list),
+        current=current_list,
         missing=missing_list,
-        stale=stale_list,
         blocked=blocked_list,
     )
 
@@ -784,12 +774,11 @@ def build_status_handler(
     )
 
     gateway = ctx.gateway
-    build_settings = get_build_settings()
     validator = StateValidator(
         catalog,
         gateway,
         runtime.snapshot,
-        options=StateValidationOptions(settings=build_settings),
+        options=StateValidationOptions(),
     )
     state = validator.validate()
 

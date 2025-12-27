@@ -7,16 +7,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import ibis.expr.types as ir
-import pandas as pd
 from hamilton.function_modifiers import parameterize, resolve_from_config, source, value
 
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.io.ibis_adapter import load_dataset_df, load_dataset_ibis
+from codeintel.build.hamilton.io.ibis_adapter import load_dataset_ibis
 from codeintel.build.hamilton.naming import (
     artifact_node,
-    dataframe_node,
     dataset_node,
     path_node,
     query_node,
@@ -31,6 +29,7 @@ if TYPE_CHECKING:
     from hamilton.function_modifiers.base import NodeTransformLifecycle
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
     from hamilton.node import Node
+
 
 
 class _ParameterizeWithTags(parameterize):
@@ -170,56 +169,15 @@ def _decorate_query_nodes(
 
 
 @resolve_from_config(decorate_with=_decorate_query_nodes)
-def load_ibis(env: BuildEnv, ref: DatasetRef) -> ir.Table:
-    """Load a dataset as an Ibis table.
+def load_relation(env: BuildEnv, ref: DatasetRef) -> ir.Table:
+    """Load a dataset as an Ibis table expression.
 
     Returns
     -------
     ir.Table
-        Ibis table for the dataset reference.
+        Ibis table expression for the dataset reference.
     """
     return load_dataset_ibis(gateway=env.gateway, ref=ref)
-
-
-def _decorate_dataframe_nodes(
-    ci_support_datasets: Sequence[Mapping[str, str]] | None = None,
-    *,
-    ci_support_include_loader_nodes: bool = True,
-) -> NodeTransformLifecycle:
-    if not ci_support_include_loader_nodes:
-        return _ParameterizeWithTags(tags_by_output={})
-    if not ci_support_datasets:
-        return _ParameterizeWithTags(tags_by_output={})
-
-    mapping: dict[str, dict[str, ParametrizedDependency]] = {}
-    tags_by_output: dict[str, dict[str, str]] = {}
-    for spec in ci_support_datasets:
-        table_key = spec["table_key"]
-        producer_target = spec["producer_target"]
-        domain = spec["domain"]
-        node_name = dataframe_node(table_key)
-        mapping[node_name] = {"ref": source(dataset_node(table_key))}
-        tags_by_output[node_name] = _normalize_tags(
-            TagSpec.for_loader_dataframe(
-                domain=domain,
-                target=producer_target,
-                table_key=table_key,
-            ).to_tags()
-        )
-
-    return _ParameterizeWithTags(tags_by_output=tags_by_output, **mapping)
-
-
-@resolve_from_config(decorate_with=_decorate_dataframe_nodes)
-def load_df(env: BuildEnv, ref: DatasetRef) -> pd.DataFrame:
-    """Load a dataset as a pandas DataFrame.
-
-    Returns
-    -------
-    pd.DataFrame
-        DataFrame for the dataset reference.
-    """
-    return load_dataset_df(gateway=env.gateway, ref=ref)
 
 
 def _decorate_artifact_nodes(
@@ -333,6 +291,5 @@ __all__ = [
     "artifact_path",
     "artifact_ref",
     "dataset_ref",
-    "load_df",
-    "load_ibis",
+    "load_relation",
 ]

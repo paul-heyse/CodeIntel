@@ -12,17 +12,18 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
-from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.ibis_adapter import IbisGateway
+from codeintel.storage.gateway.base_accessor import BaseTableAccessor
 from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogTracking
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.storage.datasets import DatasetRegistry
@@ -358,8 +359,9 @@ class DuckDBGateway:
     config: StorageConfig
     datasets: DatasetRegistry
     con: DuckDBConnection
-    ibis: IbisGateway = field(init=False)
+    duckdb: DuckDBContext = field(init=False)
     policy: DuckDBPolicyBackend = field(init=False)
+    ibis: IbisGateway = field(init=False)
     exports: ExportService = field(init=False)
     analytics: AnalyticsTables = field(init=False)
     assets: AssetTracking = field(init=False)
@@ -372,13 +374,14 @@ class DuckDBGateway:
 
     def __post_init__(self) -> None:
         """Initialize table accessor instances after dataclass init."""
-        self.ibis = IbisGateway(self)
+        self.duckdb = DuckDBContext.from_connection(self.con)
         schemas = {
             table_key: contract.schema
             for table_key, contract in self.datasets.by_table_key.items()
             if contract.schema is not None and not contract.is_view
         }
         self.policy = DuckDBPolicyBackend(self, schema_provider=MappingSchemaProvider(schemas))
+        self.ibis = IbisGateway(self)
         self.exports = ExportService(self)
         self.analytics = AnalyticsTables(self)
         self.assets = AssetTracking(self)
@@ -391,9 +394,14 @@ class DuckDBGateway:
 
     def close(self) -> None:
         """Close the underlying connection."""
+        self.ibis.close()
         self.con.close()
 
-    def execute(self, sql: str, params: Sequence[object] | None = None) -> DuckDBConnection:
+    def execute(
+        self,
+        sql: str,
+        params: Sequence[object] | Mapping[str, object] | None = None,
+    ) -> DuckDBConnection:
         """Execute SQL against the underlying connection.
 
         Parameters
@@ -412,6 +420,14 @@ class DuckDBGateway:
             return self.con.execute(sql)
         return self.con.execute(sql, params)
 
+    def register(self, name: str, obj: object) -> None:
+        """Register a Python object in DuckDB."""
+        self.con.register(name, obj)
+
+    def unregister(self, name: str) -> None:
+        """Unregister a previously registered object."""
+        self.con.unregister(name)
+
     def table(self, name: str) -> DuckDBRelation:
         """Return a relation for the requested table/view.
 
@@ -426,6 +442,16 @@ class DuckDBGateway:
             DuckDB relation for the requested table/view.
         """
         return self.con.table(name)
+
+    def relation_from_table_key(self, table_key: str) -> DuckDBRelation:
+        """Return a relation for a fully qualified table key.
+
+        Returns
+        -------
+        DuckDBRelation
+            Relation bound to the requested table/view.
+        """
+        return self.con.table(table_key)
 
     def export_database(self, *, directory: Path) -> None:
         """Export the database to a directory via DuckDB EXPORT DATABASE."""

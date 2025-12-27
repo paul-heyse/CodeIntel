@@ -74,7 +74,6 @@ if TYPE_CHECKING:
         SnapshotGatewayResolver,
         StorageGateway,
     )
-    from codeintel.storage.ibis_adapter import IbisGateway
     from codeintel.storage.validation import table_has_rows_for_snapshot
 
 
@@ -100,7 +99,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "DuckDBRelation": ("codeintel.storage.gateway.protocol", "DuckDBRelation"),
     "ExportService": ("codeintel.storage.exports", "ExportService"),
     "GraphTables": ("codeintel.storage.gateway.accessors", "GraphTables"),
-    "IbisGateway": ("codeintel.storage.ibis_adapter", "IbisGateway"),
     "MinimalStorageGateway": ("codeintel.storage.gateway.minimal", "MinimalStorageGateway"),
     "PoolConfig": ("codeintel.storage.gateway.pool", "PoolConfig"),
     "ReadPoolWarehouse": ("codeintel.storage.gateway.pool", "ReadPoolWarehouse"),
@@ -157,7 +155,6 @@ __all__ = [
     "DuckDBRelation",
     "ExportService",
     "GraphTables",
-    "IbisGateway",
     "MemoryGatewayOptions",
     "MinimalStorageGateway",
     "PoolConfig",

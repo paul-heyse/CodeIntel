@@ -1,20 +1,16 @@
-"""DuckDB data saver for row-oriented materialization.
-
-This module implements a Hamilton ``DataSaver`` that persists a sequence of
-row tuples into DuckDB for a specific snapshot. It is used by targets that
-compute structured row data (rather than Ibis expressions) and want DAG-visible
-I/O via Hamilton's saver nodes.
-"""
+"""DuckDB relation saver for Hamilton materialization."""
 
 from __future__ import annotations
 
 import types
 import typing
-from collections.abc import Sequence
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Literal, cast, get_args, get_origin
+from typing import Literal, get_args, get_origin
 
+import duckdb
+import polars as pl
+import pyarrow as pa
 from hamilton.io.data_adapters import DataSaver
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
@@ -27,12 +23,8 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
-from codeintel.build.schemas.column_resolution import DeferredColumns, resolve_columns
-from codeintel.build.schemas.service import get_schema_service
-from codeintel.core.execution.materialization import (
-    failed_table_result,
-    succeeded_table_result,
-)
+from codeintel.build.tabular.duckdb_relation import register_ephemeral
+from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 _RECOVERABLE_EXCEPTIONS = (
@@ -43,33 +35,30 @@ _RECOVERABLE_EXCEPTIONS = (
     OSError,
 )
 
-
-@dataclass(frozen=True)
-class _RowsMaterializationRequest:
-    """Bundle parameters for row materialization to satisfy strict style gates."""
-
-    table_key: str
-    rows: tuple[tuple[object, ...], ...]
-    columns: tuple[str, ...]
-    validate: bool
-    options: MaterializeOptions
+_TABULAR_TYPES: tuple[type, ...] = (
+    duckdb.DuckDBPyRelation,
+    pa.Table,
+    pa.RecordBatchReader,
+    pl.DataFrame,
+    pl.LazyFrame,
+)
 
 
 @dataclass(frozen=True)
-class DuckDBRowsSaver(DataSaver):
-    """Persist row tuples to DuckDB for a specific snapshot.
+class DuckDBRelationSaver(DataSaver):
+    """Persist relation-like tabular outputs to DuckDB.
 
-    This adapter:
+    This saver:
     - Resolves target metadata from the DAG catalog.
-    - Writes rows for the current snapshot using ``Warehouse``.
-    - Returns metadata convertible to a MaterializationResult describing the write outcome.
+    - Coerces tabular inputs to DuckDB relations.
+    - Writes the relation for the current snapshot using ``Warehouse``.
+    - Returns metadata convertible to a ``MaterializationResult`` describing the outcome.
     """
 
     env: BuildEnv
     catalog: DagCatalog
     target_name: str
     table_key: str
-    columns: tuple[str, ...] | DeferredColumns
     output_role: Literal["contract", "internal"] | None = None
 
     @classmethod
@@ -81,7 +70,7 @@ class DuckDBRowsSaver(DataSaver):
         str
             Adapter name used by Hamilton for saver metadata.
         """
-        return "codeintel.duckdb_rows"
+        return "codeintel.duckdb_relation"
 
     @classmethod
     def applicable_types(cls) -> list[type]:
@@ -92,7 +81,7 @@ class DuckDBRowsSaver(DataSaver):
         list[type]
             Types that this saver can write to DuckDB.
         """
-        return [tuple, list]
+        return list(_TABULAR_TYPES)
 
     @classmethod
     def applies_to(cls, type_: type) -> bool:
@@ -109,38 +98,30 @@ class DuckDBRowsSaver(DataSaver):
             True when the saver can persist the output type.
         """
         origin = get_origin(type_)
-        if origin in {tuple, list}:
-            return True
-
         if origin in {types.UnionType, typing.Union}:
-            bases = {get_origin(arg) or arg for arg in get_args(type_)}
-            if bases.issubset({tuple, list, type(None)}):
+            args = set(get_args(type_))
+            if args.issubset(set(_TABULAR_TYPES) | {type(None)}):
                 return True
-
         return super().applies_to(type_)
 
     def save_data(self, data: object) -> dict[str, object]:
-        """Save the provided rows and return metadata describing the write.
+        """Save the provided data and return metadata describing the write.
 
         Parameters
         ----------
         data
-            Data value produced by the upstream compute node. Must be a sequence
-            of row tuples (or None to indicate no output).
+            Data value produced by the upstream compute node.
 
         Returns
         -------
         dict[str, object]
-            Metadata describing the write and materialization outcome.
-
-        Raises
-        ------
-        ValueError
-            If the provided data does not contain row tuples.
+            Metadata describing the write, including status, row count, and
+            input hash for manifest-based incremental builds.
         """
         start = perf_counter()
         input_hash: str | None = None
         result: MaterializationResult | None = None
+        temp_name: str | None = None
 
         try:
             prepared = resolve_materialization_context(
@@ -163,46 +144,34 @@ class DuckDBRowsSaver(DataSaver):
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash or "",
-                        error="Expected row data but received None",
+                        error="Expected relation data but received None",
                     )
                 else:
-                    rows = _coerce_rows(data)
-                    # Validate contract if strict mode is enabled
-                    ContractEnforcer.validate_table_write(self.table_key)
-
-                    warehouse = self.env.warehouse
-                    resolved_columns = resolve_columns(
-                        self.columns,
-                        schema_service=get_schema_service(),
+                    relation, temp_name = _coerce_relation(
+                        self.env,
+                        data=data,
+                        table_key=self.table_key,
                     )
-                    if not resolved_columns:
-                        msg = f"Missing column order for {self.table_key}"
-                        raise ValueError(msg)
+                    ContractEnforcer.validate_table_write(self.table_key)
                     options = resolve_materialize_options(
                         env=self.env,
                         target_name=self.target_name,
                         table_key=self.table_key,
                         input_hash=input_hash,
-                        column_names=resolved_columns,
+                        column_names=tuple(relation.columns),
                     )
-                    row_count = _materialize_rows(
-                        warehouse,
-                        _RowsMaterializationRequest(
-                            table_key=self.table_key,
-                            rows=rows,
-                            columns=resolved_columns,
-                            validate=self.env.validate_outputs,
-                            options=options,
-                        ),
+                    row_count = _materialize_relation(
+                        self.env.warehouse,
+                        table_key=self.table_key,
+                        relation=relation,
+                        options=options,
                     )
-
                     result = succeeded_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
                         input_hash=input_hash or "",
                         row_count=row_count,
                     )
-
         except _RECOVERABLE_EXCEPTIONS as exc:
             result = failed_table_result(
                 table_key=self.table_key,
@@ -210,64 +179,65 @@ class DuckDBRowsSaver(DataSaver):
                 input_hash=input_hash or "",
                 error=str(exc),
             )
+        finally:
+            if temp_name is not None:
+                self.env.gateway.unregister(temp_name)
 
         if result is None:
             result = failed_table_result(
                 table_key=self.table_key,
                 duration_ms=duration_ms(start),
                 input_hash=input_hash or "",
-                error="Unknown row materialization failure",
+                error="Unknown materialization failure",
             )
-
         return result.to_mapping()
 
 
-def _coerce_rows(data: object) -> tuple[tuple[object, ...], ...]:
-    """Coerce a Hamilton node output into an immutable row tuple sequence.
+def _coerce_relation(
+    env: BuildEnv,
+    *,
+    data: object,
+    table_key: str,
+) -> tuple[duckdb.DuckDBPyRelation, str | None]:
+    """Coerce a tabular input into a DuckDB relation.
 
     Parameters
     ----------
+    env
+        Build environment providing the DuckDB gateway.
     data
-        Value produced by an upstream node.
+        Tabular input object to coerce.
+    table_key
+        Table key used for temp name prefixing.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Rows as an immutable tuple of row tuples.
+    tuple[duckdb.DuckDBPyRelation, str | None]
+        DuckDB relation plus optional registered temp name.
 
     Raises
     ------
     TypeError
-        If the provided data is not a sequence of row tuples.
+        If the input type is not supported.
     """
-    if isinstance(data, tuple):
-        # Common case: tuple[tuple[...], ...]
-        if not data:
-            return ()
-        if isinstance(data[0], tuple):
-            return cast("tuple[tuple[object, ...], ...]", data)
-
-    if isinstance(data, list):
-        return tuple(_coerce_rows(tuple(data)))
-
-    if isinstance(data, Sequence):
-        rows_list: list[tuple[object, ...]] = []
-        for row in data:
-            if not isinstance(row, tuple):
-                msg = f"Expected rows to be tuples, got {type(row).__name__}"
-                raise TypeError(msg)
-            rows_list.append(row)
-        return tuple(rows_list)
-
-    msg = f"Expected rows to be a sequence, got {type(data).__name__}"
+    if isinstance(data, duckdb.DuckDBPyRelation):
+        return data, None
+    if isinstance(data, _TABULAR_TYPES):
+        temp_name = register_ephemeral(env.gateway.con, data, prefix=table_key)
+        return env.gateway.con.table(temp_name), temp_name
+    msg = f"Unsupported relation input type: {type(data).__name__}"
     raise TypeError(msg)
 
 
-def _materialize_rows(warehouse: Warehouse, request: _RowsMaterializationRequest) -> int:
-    result = warehouse.materialize_rows(
-        request.table_key, request.rows, columns=request.columns, options=request.options
-    )
+def _materialize_relation(
+    warehouse: Warehouse,
+    *,
+    table_key: str,
+    relation: duckdb.DuckDBPyRelation,
+    options: MaterializeOptions,
+) -> int:
+    result = warehouse.materialize_table(table_key, relation, options=options)
     return result.rows_written or 0
 
 
-__all__ = ["DuckDBRowsSaver"]
+__all__ = ["DuckDBRelationSaver"]

@@ -21,21 +21,49 @@ from codeintel.core.hamilton.tag_query import TagQuery
 
 @tag(node_type=ht.NODE_TYPE_DATASET, table_key="core.modules")
 def dataset_modules() -> int:
+    """Return sentinel value for dataset module node.
+
+    Returns
+    -------
+    int
+        Sentinel value for testing.
+    """
     return 1
 
 
 @tag(node_type=ht.NODE_TYPE_DATASET, table_key="core.functions")
 def dataset_functions() -> int:
+    """Return sentinel value for dataset function node.
+
+    Returns
+    -------
+    int
+        Sentinel value for testing.
+    """
     return 1
 
 
 @tag(node_type=ht.NODE_TYPE_ARTIFACT, artifact="semantic_registry")
 def artifact_semantic_registry() -> int:
+    """Return sentinel value for semantic registry artifact node.
+
+    Returns
+    -------
+    int
+        Sentinel value for testing.
+    """
     return 1
 
 
 @tag(**{"hamilton.data_saver": True, "output_role": "contract", "hamilton.data_saver.sink": "duckdb"})
 def saver_duckdb() -> int:
+    """Return sentinel value for a duckdb saver node.
+
+    Returns
+    -------
+    int
+        Sentinel value for testing.
+    """
     return 1
 
 
@@ -46,6 +74,13 @@ def saver_duckdb() -> int:
     grain="example",
 )
 def semantic_view_example() -> int:
+    """Return sentinel value for semantic view node.
+
+    Returns
+    -------
+    int
+        Sentinel value for testing.
+    """
     return 1
 
 
@@ -74,6 +109,7 @@ def _names(variables: Iterable[object]) -> set[str]:
 
 
 def test_tag_filters_discover_nodes() -> None:
+    """Discover nodes with tag filters using TagQuery."""
     dr = _build_driver()
     tag_query = TagQuery(dr)
 

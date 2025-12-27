@@ -1642,13 +1642,14 @@ def _call_graph_views_prepare_depth_tables(edges: ir.Table) -> CallGraphDepthTab
     CallGraphDepthTables
         Intermediate tables required to compute depth stats.
     """
+    dtype = edges.caller_goid_h128.type().copy(nullable=True)
     caller_funcs: ir.Table = edges.select(
-        caller_function_goid_h128=edges.caller_goid_h128,
+        caller_function_goid_h128=edges.caller_goid_h128.cast(dtype),
     ).distinct()
     callee_funcs: ir.Table = (
         filter_by(edges, not_null(edges.callee_goid_h128))
         .select(
-            function_goid_h128=edges.callee_goid_h128,
+            function_goid_h128=edges.callee_goid_h128.cast(dtype),
         )
         .distinct()
     )

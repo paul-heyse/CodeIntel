@@ -88,13 +88,25 @@ def _save_manifest(
 
 @pytest.fixture
 def test_graph() -> DagCatalog:
-    """Provide a minimal test catalog for state validation tests."""
+    """Provide a minimal test catalog for state validation tests.
+
+    Returns
+    -------
+    DagCatalog
+        Catalog for state validation tests.
+    """
     return _create_test_graph()
 
 
 @pytest.fixture
 def snapshot(tmp_path: Path) -> SnapshotRef:
-    """Provide a snapshot reference for tests."""
+    """Provide a snapshot reference for tests.
+
+    Returns
+    -------
+    SnapshotRef
+        Snapshot reference for state validation tests.
+    """
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     return SnapshotRef(
@@ -110,7 +122,13 @@ def validator(
     fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
 ) -> StateValidator:
-    """Provide a StateValidator for tests."""
+    """Provide a StateValidator for tests.
+
+    Returns
+    -------
+    StateValidator
+        Validator for state validation tests.
+    """
     return StateValidator(
         test_graph,
         fresh_gateway,

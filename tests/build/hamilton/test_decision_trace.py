@@ -2,85 +2,61 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from codeintel.build.hamilton.decision_trace import build_decision_trace_payload
-from codeintel.build.hamilton.planner import HamiltonBuildPlan, PlanEntry
+from codeintel.build.manifest.records import CacheManifestEntry
 
-
-def test_decision_trace_payload_sorts_dep_hashes() -> None:
-    """Sort dependency hashes within decision trace payloads."""
-    entry = PlanEntry(
-        target="alpha",
-        node="t__alpha",
-        module="analytics",
-        status="compute",
-        reason="forced",
-        input_hash="hash-alpha",
-        options_hash="opts-alpha",
-        prior_input_hash=None,
-        dependencies=("beta", "alpha"),
-        table_keys=("analytics.alpha",),
-        artifact_keys=(),
-        dep_hashes={"beta": "2", "alpha": "1"},
-        prior_dep_hashes={"zeta": "9", "alpha": "0"},
-        impl_kind="native",
-    )
-    plan = HamiltonBuildPlan(
-        requested=("alpha",),
-        closure=("alpha",),
-        entries=(entry,),
-    )
-
-    payload = build_decision_trace_payload(plan)
-    dep_hashes = payload[0]["dep_hashes"]
-    prior_dep_hashes = payload[0]["prior_dep_hashes"]
-
-    assert list(dep_hashes.keys()) == ["alpha", "beta"]
-    assert list(prior_dep_hashes.keys()) == ["alpha", "zeta"]
+DURATION_MS = 10.0
+SIZE_BYTES = 100
 
 
 def test_decision_trace_payload_preserves_entry_order() -> None:
     """Preserve entry order in decision trace payloads."""
-    entry_a = PlanEntry(
-        target="alpha",
-        node="t__alpha",
-        module="analytics",
-        status="compute",
-        reason="forced",
-        input_hash="hash-alpha",
-        options_hash="opts-alpha",
-        prior_input_hash=None,
-        dependencies=(),
-        table_keys=("analytics.alpha",),
-        artifact_keys=(),
-        dep_hashes={},
-        prior_dep_hashes={},
-        impl_kind="native",
+    first = CacheManifestEntry(
+        run_id="run-1",
+        node_name="t__alpha",
+        status="hit",
+        recorded_at=datetime.now(tz=UTC),
+        cache_key="alpha",
     )
-    entry_b = PlanEntry(
-        target="beta",
-        node="t__beta",
-        module="graphs",
-        status="skip",
-        reason="up_to_date",
-        input_hash="hash-beta",
-        options_hash="opts-beta",
-        prior_input_hash="hash-beta",
-        dependencies=(),
-        table_keys=("graph.beta",),
-        artifact_keys=(),
-        dep_hashes={},
-        prior_dep_hashes={},
-        impl_kind="native",
-    )
-    plan = HamiltonBuildPlan(
-        requested=("beta", "alpha"),
-        closure=("beta", "alpha"),
-        entries=(entry_b, entry_a),
+    second = CacheManifestEntry(
+        run_id="run-1",
+        node_name="t__beta",
+        status="miss",
+        recorded_at=datetime.now(tz=UTC),
+        cache_key="beta",
     )
 
-    payload = build_decision_trace_payload(plan)
+    payload = build_decision_trace_payload([first, second])
 
-    assert payload[0]["target"] == "beta"
+    assert payload[0]["node_name"] == "t__alpha"
     assert payload[0]["index"] == 0
-    assert payload[1]["target"] == "alpha"
+    assert payload[1]["node_name"] == "t__beta"
     assert payload[1]["index"] == 1
+
+
+def test_decision_trace_payload_includes_cache_fields() -> None:
+    """Include cache metadata in decision trace payloads."""
+    entry = CacheManifestEntry(
+        run_id="run-1",
+        node_name="t__alpha",
+        status="store",
+        recorded_at=datetime.now(tz=UTC),
+        cache_key="alpha",
+        cache_version="v1",
+        cache_path="/tmp/cache",
+        duration_ms=DURATION_MS,
+        size_bytes=SIZE_BYTES,
+        target="alpha",
+    )
+
+    payload = build_decision_trace_payload([entry])
+    record = payload[0]
+
+    assert record["cache_key"] == "alpha"
+    assert record["cache_version"] == "v1"
+    assert record["cache_path"] == "/tmp/cache"
+    assert record["duration_ms"] == DURATION_MS
+    assert record["size_bytes"] == SIZE_BYTES
+    assert record["target"] == "alpha"

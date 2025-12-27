@@ -31,6 +31,11 @@ def _view_modules() -> tuple[ModuleType, ...]:
     return (importlib.import_module("codeintel.storage.views.ibis_views"),)
 
 
+def view_builder_modules() -> tuple[ModuleType, ...]:
+    """Return the canonical module set to scan for view builders."""
+    return _view_modules()
+
+
 def discover_view_table_keys(
     *,
     dr: Driver | None = None,
@@ -46,7 +51,7 @@ def discover_view_table_keys(
     discovered = discover_view_builders(
         dr=dr,
         tag_query=tag_query,
-        modules=_view_modules(),
+        modules=view_builder_modules(),
     )
     keys = {d.table_key for d in discovered}
     return tuple(sorted(keys))
@@ -77,4 +82,5 @@ __all__ = [
     "clear_view_inventory_cache",
     "discover_derived_docs_views",
     "discover_view_table_keys",
+    "view_builder_modules",
 ]

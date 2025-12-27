@@ -4,7 +4,7 @@ DuckDB connections are not designed to be shared concurrently across threads. Fo
 serving, we instead maintain a pool of *read-only* connections and hand out one
 exclusive handle per request. Each handle is wrapped with:
 
-- ``MinimalStorageGateway`` (policy + Ibis access over a raw connection)
+- ``MinimalStorageGateway`` (policy + DuckDB context access over a raw connection)
 - ``Warehouse`` (single I/O boundary façade used by higher layers)
 
 This keeps serving code free from ad-hoc gateway creation and centralizes

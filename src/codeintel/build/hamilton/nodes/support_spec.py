@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.naming import (
     artifact_node,
-    dataframe_node,
     dataset_node,
     path_node,
     query_node,
@@ -67,7 +66,6 @@ class SupportNodeSpec:
         for spec in self.datasets:
             _require_identifier(dataset_node(spec.table_key), label="dataset_node")
             _require_identifier(query_node(spec.table_key), label="query_node")
-            _require_identifier(dataframe_node(spec.table_key), label="dataframe_node")
             if catalog is not None and spec.producer_target not in catalog.targets:
                 msg = f"Unknown producer target in dataset spec: {spec.producer_target}"
                 raise ValueError(msg)

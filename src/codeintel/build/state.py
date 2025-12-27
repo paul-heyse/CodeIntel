@@ -19,7 +19,6 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
@@ -35,8 +34,6 @@ log = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class StateValidationOptions:
     """Inputs required to compute target state."""
-
-    config: BuildConfig | None = None
 
 
 class StateValidator:
@@ -61,11 +58,11 @@ class StateValidator:
     snapshot
         Repository snapshot reference (repo, commit, repo_root).
     options
-        State validation options (optional config overrides).
+        State validation options.
 
     Examples
     --------
-    >>> options = StateValidationOptions(settings=build_settings)
+    >>> options = StateValidationOptions()
     >>> validator = StateValidator(catalog, gateway, snapshot, options=options)
     >>> state = validator.validate()
     >>> state.by_status("missing")
@@ -91,7 +88,7 @@ class StateValidator:
         snapshot
             Repository snapshot reference.
         options
-            State validation options (build settings + config).
+            State validation options.
 
         Raises
         ------
@@ -101,6 +98,7 @@ class StateValidator:
         self._catalog = catalog
         self._gateway = gateway
         self._snapshot = snapshot
+        self._options = options
 
         # Validate catalog
         errors = catalog.validate()
@@ -114,11 +112,9 @@ class StateValidator:
             snapshot=snapshot,
             gateway=gateway,
         )
-        base_config = options.config or load_build_config(snapshot.repo_root)
         self._computer = StateComputer(
             catalog=catalog,
             session=self._session,
-            config=base_config,
         )
 
     def validate(self) -> BuildState:

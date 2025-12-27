@@ -11,10 +11,9 @@ from codeintel.storage.warehouse import MaterializationResult, MaterializeOption
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    import ibis.expr.types as ir
-
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.datasets.registry import DatasetRegistry
+    from codeintel.storage.duckdb_types import DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -43,13 +42,13 @@ class StorageFacade:
             datasets=gateway.datasets,
         )
 
-    def read(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> ir.Table:
-        """Return an Ibis table expression for a table key.
+    def read(self, table_key: str, *, snapshot: SnapshotRef | None = None) -> DuckDBRelation:
+        """Return a DuckDB relation for a table key.
 
         Returns
         -------
-        ir.Table
-            Ibis table expression for the requested table.
+        DuckDBRelation
+            DuckDB relation for the requested table.
         """
         return self.warehouse.read(table_key, snapshot=snapshot)
 
@@ -76,11 +75,11 @@ class StorageFacade:
     def materialize_table(
         self,
         table_key: str,
-        expr: ir.Table,
+        expr: DuckDBRelation,
         *,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:
-        """Materialize an Ibis table expression to DuckDB.
+        """Materialize a DuckDB relation to DuckDB.
 
         Returns
         -------

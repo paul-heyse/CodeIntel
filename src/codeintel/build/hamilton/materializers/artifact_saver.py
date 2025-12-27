@@ -17,6 +17,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
+import pyarrow as pa
 from hamilton.io.data_adapters import DataSaver
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
@@ -36,6 +37,7 @@ from codeintel.core.execution.materialization import (
     failed_artifact_result,
     succeeded_artifact_result,
 )
+from codeintel.storage.duckdb_types import DuckDBRelation
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -105,7 +107,15 @@ class FileArtifactSaver(DataSaver):
         list[type]
             Types that this saver can write as a file artifact.
         """
-        return [ArtifactWritePlan, bytes, str, Path]
+        return [
+            ArtifactWritePlan,
+            bytes,
+            str,
+            Path,
+            DuckDBRelation,
+            pa.Table,
+            pa.RecordBatchReader,
+        ]
 
     @classmethod
     def applies_to(cls, type_: type) -> bool:
@@ -121,7 +131,7 @@ class FileArtifactSaver(DataSaver):
         bool
             True when the saver can persist the output type.
         """
-        if type_ in {bytes, str, Path}:
+        if type_ in {bytes, str, Path, DuckDBRelation, pa.Table, pa.RecordBatchReader}:
             return True
         if type_ is ArtifactWritePlan:
             return True
@@ -129,7 +139,18 @@ class FileArtifactSaver(DataSaver):
         origin = get_origin(type_)
         if origin in {types.UnionType, typing.Union}:
             bases = {get_origin(arg) or arg for arg in get_args(type_)}
-            if bases.issubset({ArtifactWritePlan, bytes, str, Path, type(None)}):
+            if bases.issubset(
+                {
+                    ArtifactWritePlan,
+                    bytes,
+                    str,
+                    Path,
+                    DuckDBRelation,
+                    pa.Table,
+                    pa.RecordBatchReader,
+                    type(None),
+                }
+            ):
                 return True
 
         return super().applies_to(type_)
@@ -141,7 +162,8 @@ class FileArtifactSaver(DataSaver):
         ----------
         data
             Artifact payload. Supported types are bytes, str (encoded as UTF-8),
-            or Path (reads bytes from the referenced file).
+            Path (reads bytes from the referenced file), DuckDB relations, or
+            Arrow tables/readers.
 
         Returns
         -------
@@ -195,6 +217,33 @@ class FileArtifactSaver(DataSaver):
 
                         if isinstance(data, ArtifactWritePlan):
                             size_bytes = _atomic_write_via_plan(output_path, data)
+                            result = succeeded_artifact_result(
+                                artifact_name=self.artifact_name,
+                                duration_ms=duration_ms(start),
+                                input_hash=input_hash or "",
+                                path=str(output_path),
+                                size_bytes=size_bytes,
+                            )
+                        elif isinstance(data, DuckDBRelation):
+                            size_bytes = _write_relation_artifact(output_path, data)
+                            result = succeeded_artifact_result(
+                                artifact_name=self.artifact_name,
+                                duration_ms=duration_ms(start),
+                                input_hash=input_hash or "",
+                                path=str(output_path),
+                                size_bytes=size_bytes,
+                            )
+                        elif isinstance(data, pa.RecordBatchReader):
+                            size_bytes = _write_arrow_reader(output_path, data)
+                            result = succeeded_artifact_result(
+                                artifact_name=self.artifact_name,
+                                duration_ms=duration_ms(start),
+                                input_hash=input_hash or "",
+                                path=str(output_path),
+                                size_bytes=size_bytes,
+                            )
+                        elif isinstance(data, pa.Table):
+                            size_bytes = _write_arrow_reader(output_path, data.to_reader())
                             result = succeeded_artifact_result(
                                 artifact_name=self.artifact_name,
                                 duration_ms=duration_ms(start),
@@ -283,6 +332,36 @@ def _coerce_bytes(data: object) -> bytes:
         return data.read_bytes()
     msg = f"Unsupported artifact payload type: {type(data).__name__}"
     raise TypeError(msg)
+
+
+def _default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
+    return pa.ipc.IpcWriteOptions(
+        metadata_version=pa.ipc.MetadataVersion.V5,
+        compression="zstd",
+        use_threads=True,
+        unify_dictionaries=True,
+    )
+
+
+def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("wb") as sink:
+        with pa.ipc.new_stream(sink, reader.schema, options=_default_ipc_write_options()) as writer:
+            for batch in reader:
+                writer.write_batch(batch)
+    return output_path.stat().st_size
+
+
+def _write_relation_artifact(output_path: Path, relation: DuckDBRelation) -> int:
+    suffix = output_path.suffix.lower()
+    if suffix in {".parquet", ".pq"}:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        relation.to_parquet(str(output_path))
+        return output_path.stat().st_size
+    if suffix in {".arrow", ".ipc"}:
+        return _write_arrow_reader(output_path, relation.fetch_arrow_reader())
+    msg = f"Unsupported relation artifact extension: {output_path.suffix}"
+    raise ValueError(msg)
 
 
 def _atomic_write_via_plan(output_path: Path, plan: ArtifactWritePlan) -> int:

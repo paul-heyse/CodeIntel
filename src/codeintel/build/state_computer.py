@@ -220,8 +220,8 @@ class StateComputer:
 
         return states
 
+    @staticmethod
     def _state_from_manifest(
-        self,
         target: TargetDescriptor,
         manifest: OutputManifest | None,
     ) -> TargetState:

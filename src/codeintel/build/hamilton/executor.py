@@ -74,7 +74,7 @@ if TYPE_CHECKING:
 
     from hamilton.lifecycle.base import LifecycleAdapter
 
-    from codeintel.build.hamilton.dag_catalog import DagCatalog
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings

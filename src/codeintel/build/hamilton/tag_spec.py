@@ -226,30 +226,6 @@ class TagSpec:
             extra_tags=_copy_extra_tags(extra_tags),
         )
 
-    @classmethod
-    def for_loader_dataframe(
-        cls,
-        *,
-        domain: str,
-        target: str | None = None,
-        table_key: str,
-        extra_tags: Mapping[TagKey, TagValue] | None = None,
-    ) -> TagSpec:
-        """Create a TagSpec for loader dataframe nodes.
-
-        Returns
-        -------
-        TagSpec
-            Tag specification for a loader dataframe node.
-        """
-        return cls(
-            node_type=NodeType.LOADER_DATAFRAME,
-            domain=domain,
-            target=target,
-            table_key=table_key,
-            extra_tags=_copy_extra_tags(extra_tags),
-        )
-
     def with_extra_tags(self, extra_tags: Mapping[TagKey, TagValue] | None) -> TagSpec:
         """Return a new TagSpec with additional tags merged in.
 
