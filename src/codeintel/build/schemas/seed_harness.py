@@ -1,7 +1,7 @@
 """Mini seed harness for deterministic schema compilation.
 
-The harness creates empty upstream tables required for compiling Ibis-native
-Hamilton compute nodes, then produces Ibis inputs that reference those tables.
+The harness creates empty upstream tables required for compiling relation-native
+Hamilton compute nodes, then produces DuckDB relations that reference them.
 """
 
 from __future__ import annotations
@@ -10,16 +10,13 @@ import inspect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from codeintel.storage.gateway import ibis_facade
-
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from types import ModuleType
 
-    import ibis.expr.types as ir
-
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import MinimalGateway
+    from codeintel.storage.gateway.protocol import DuckDBRelation
 
 
 def qparam_to_table_key(qparam: str) -> str:
@@ -93,7 +90,7 @@ def extract_qparams_for_target_module(target: str, module: ModuleType) -> set[st
 
 @dataclass
 class MiniSeedHarness:
-    """Seed upstream empty tables and build q__ Ibis inputs for compute execution."""
+    """Seed upstream empty tables and build q__ relation inputs for compute execution."""
 
     gateway: MinimalGateway
     schema_provider: SchemaProvider
@@ -118,8 +115,8 @@ class MiniSeedHarness:
         """
         return tuple(sorted(self._seeded))
 
-    def ibis_input(self, qparam: str) -> ir.Table:
-        """Return an Ibis table expression for a q__ parameter.
+    def relation_input(self, qparam: str) -> DuckDBRelation:
+        """Return a relation for a q__ parameter.
 
         Parameters
         ----------
@@ -128,14 +125,14 @@ class MiniSeedHarness:
 
         Returns
         -------
-        ir.Table
-            Ibis table expression for the referenced upstream table.
+        DuckDBRelation
+            Relation for the referenced upstream table.
         """
         table_key = qparam_to_table_key(qparam)
         self.ensure_seeded_table(table_key)
-        return ibis_facade.table(self.gateway, table_key)
+        return self.gateway.relation_from_table_key(table_key)
 
-    def build_inputs(self, qparams: set[str]) -> Mapping[str, ir.Table]:
+    def build_inputs(self, qparams: set[str]) -> Mapping[str, DuckDBRelation]:
         """Build a deterministic mapping of q__ inputs for compute execution.
 
         Parameters
@@ -145,10 +142,10 @@ class MiniSeedHarness:
 
         Returns
         -------
-        Mapping[str, ir.Table]
-            Mapping from q__ parameter name to Ibis table expression.
+        Mapping[str, DuckDBRelation]
+            Mapping from q__ parameter name to DuckDB relations.
         """
-        return {q: self.ibis_input(q) for q in sorted(qparams)}
+        return {q: self.relation_input(q) for q in sorted(qparams)}
 
 
 __all__ = [

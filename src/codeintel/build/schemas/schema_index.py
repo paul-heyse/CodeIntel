@@ -294,6 +294,16 @@ class SchemaIndex:
     def _clear_inference_error(self, table_key: str) -> None:
         self._inference_errors.pop(table_key, None)
 
+    def schema_provider(self) -> SchemaProvider:
+        """Return a SchemaProvider view for this index.
+
+        Returns
+        -------
+        SchemaProvider
+            Provider that resolves schemas with inference support.
+        """
+        return self._schema_seed_provider()
+
     def _schema_seed_provider(self) -> SchemaProvider:
         if self._seed_provider is None:
             self._seed_provider = _SchemaIndexSeedProvider(
@@ -332,7 +342,7 @@ class _SchemaIndexSeedProvider:
 
 def build_schema_index(
     *,
-    system: "TargetSystem | DagCatalog",
+    system: TargetSystem | DagCatalog,
     declared_provider: SchemaProvider,
     inference_service: SchemaInferenceService,
 ) -> SchemaIndex:

@@ -45,5 +45,41 @@ class TagQuery:
             )
         return self._cache[key]
 
+    def one(self, tag_filter: Mapping[str, object]) -> object | None:
+        """Return the first matching variable or None.
+
+        Parameters
+        ----------
+        tag_filter
+            Tag filter to query via the underlying Driver.
+
+        Returns
+        -------
+        object | None
+            First matching variable or None when no matches exist.
+        """
+        results = self.query(tag_filter)
+        return results[0] if results else None
+
+    def names(self, tag_filter: Mapping[str, object]) -> tuple[str, ...]:
+        """Return matching variable names for the tag filter.
+
+        Parameters
+        ----------
+        tag_filter
+            Tag filter to query via the underlying Driver.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Tuple of variable names matching the tag filter.
+        """
+        return tuple(_variable_name(var) for var in self.query(tag_filter))
+
+
+def _variable_name(variable: object) -> str:
+    name = getattr(variable, "name", None)
+    return str(name) if name is not None else str(variable)
+
 
 __all__ = ["TagQuery"]

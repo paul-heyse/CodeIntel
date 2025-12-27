@@ -11,11 +11,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.native.executor import NativeTargetExecutor
-    from codeintel.build.hamilton.native.ibis_helpers import (
-        filter_for_snapshot,
-        filter_tables_for_snapshot,
-        select_snapshot_columns,
-    )
     from codeintel.build.hamilton.run_records import (
         NativeRunInfo,
         create_run_record,
@@ -27,10 +22,7 @@ if TYPE_CHECKING:
             NativeRunInfo,
             NativeTargetExecutor,
             create_run_record,
-            filter_for_snapshot,
-            filter_tables_for_snapshot,
             save_manifest,
-            select_snapshot_columns,
         )
 
 
@@ -42,28 +34,13 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "codeintel.build.hamilton.native.executor",
         "NativeTargetExecutor",
     ),
-    "filter_for_snapshot": (
-        "codeintel.build.hamilton.native.ibis_helpers",
-        "filter_for_snapshot",
-    ),
-    "filter_tables_for_snapshot": (
-        "codeintel.build.hamilton.native.ibis_helpers",
-        "filter_tables_for_snapshot",
-    ),
-    "select_snapshot_columns": (
-        "codeintel.build.hamilton.native.ibis_helpers",
-        "select_snapshot_columns",
-    ),
 }
 
 __all__ = [
     "NativeRunInfo",
     "NativeTargetExecutor",
     "create_run_record",
-    "filter_for_snapshot",
-    "filter_tables_for_snapshot",
     "save_manifest",
-    "select_snapshot_columns",
 ]
 
 

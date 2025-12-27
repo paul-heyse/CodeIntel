@@ -2,30 +2,25 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
-from functools import lru_cache
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog, OutputDescriptor, TargetDescriptor
-from codeintel.core.imports.lazy import lazy_getattr
+from codeintel.build.schemas.inference_service import get_schema_inference_service
+from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
 from codeintel.core.schemas.declared import source_declared_schema_provider
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
-    from types import ModuleType
-
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
-    from codeintel.build.schemas.inference_service import SchemaInferenceService
-    from codeintel.build.schemas.schema_index import SchemaIndex
+    from collections.abc import Mapping, Sequence
 
 
 @dataclass(frozen=True, slots=True)
 class TargetSystem:
     """Bundle runtime, catalog, and target lookup indexes."""
 
-    runtime: HamiltonRuntime
+    runtime: RuntimeBundle
     catalog: DagCatalog
     by_name: Mapping[str, TargetDescriptor]
     by_table_key: Mapping[str, TargetDescriptor]
@@ -152,34 +147,10 @@ def _build_indexes(
     )
 
 
-@lru_cache(maxsize=1)
-def _load_target_system() -> TargetSystem:
-    """Load the singleton TargetSystem for the current process.
-
-    Returns
-    -------
-    TargetSystem
-        Loaded TargetSystem (runtime + graph + indexes).
-
-    Raises
-    ------
-    TypeError
-        If the Hamilton driver factory does not expose a callable ``build_driver`` function.
-    """
-    driver_factory_mod: ModuleType = importlib.import_module(
-        "codeintel.build.hamilton.driver_factory"
-    )
-    build_driver_fn_raw = getattr(driver_factory_mod, "build_driver", None)
-    if not callable(build_driver_fn_raw):
-        msg = "codeintel.build.hamilton.driver_factory.build_driver is missing or not callable"
-        raise TypeError(msg)
-
-    build_driver_fn = cast("Callable[[], HamiltonRuntime]", build_driver_fn_raw)
-    runtime = build_driver_fn()
+def build_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
+    """Build a TargetSystem from a runtime bundle."""
     catalog = runtime.catalog
-
     by_name, by_table_key, by_artifact_name = _build_indexes(catalog)
-
     return TargetSystem(
         runtime=runtime,
         catalog=catalog,
@@ -281,12 +252,12 @@ class TargetMetadataProvider(Protocol):
 class LazyTargetMetadataProvider:
     """Lazy provider that loads the target metadata service on demand."""
 
-    factory: Callable[[], TargetMetadataService]
+    runtime: RuntimeBundle
     _service: TargetMetadataService | None = None
 
     def _resolve(self) -> TargetMetadataService:
         if self._service is None:
-            self._service = self.factory()
+            self._service = get_target_metadata_service(runtime=self.runtime)
         return self._service
 
     def get_target(self, name: str) -> TargetDescriptor | None:
@@ -337,89 +308,61 @@ class LazyTargetMetadataProvider:
 _TARGET_METADATA_PROVIDERS: list[LazyTargetMetadataProvider] = []
 
 
-@lru_cache(maxsize=1)
-def get_target_metadata_service() -> TargetMetadataService:
-    """Return the canonical target metadata service.
+def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataService:
+    """Return the canonical target metadata service for a runtime.
 
     Returns
     -------
     TargetMetadataService
-        Singleton target metadata service.
+        Target metadata service scoped to the runtime bundle.
     """
-    system = _load_target_system()
-    build_schema_index = cast(
-        "Callable[..., SchemaIndex]",
-        lazy_getattr("codeintel.build.schemas.schema_index", "build_schema_index"),
-    )
-    get_schema_inference_service = cast(
-        "Callable[[], SchemaInferenceService]",
-        lazy_getattr("codeintel.build.schemas.inference_service", "get_schema_inference_service"),
-    )
-    inference_service = get_schema_inference_service()
-    inferable_table_keys = inference_service.inferable_table_keys(catalog=system.catalog)
-    schema_index = build_schema_index(
-        system=system,
-        declared_provider=source_declared_schema_provider(
-            exclude_table_keys=inferable_table_keys,
-        ),
-        inference_service=inference_service,
-    )
+    schema_index = runtime.schema_index
+    if schema_index is None:
+        inference_service = get_schema_inference_service()
+        inferable_table_keys = inference_service.inferable_table_keys(catalog=runtime.catalog)
+        schema_index = build_schema_index(
+            system=runtime.catalog,
+            declared_provider=source_declared_schema_provider(
+                exclude_table_keys=inferable_table_keys,
+            ),
+            inference_service=inference_service,
+        )
     return TargetMetadataService(
-        system=system,
+        system=build_target_system(runtime=runtime),
         schema_index=schema_index,
     )
 
 
-def get_target_system() -> TargetSystem:
-    """Return the cached TargetSystem without loading schema inventory helpers.
-
-    Returns
-    -------
-    TargetSystem
-        Cached target system with runtime and graph metadata.
-    """
-    return _load_target_system()
+def get_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
+    """Return the target system for a runtime bundle."""
+    return build_target_system(runtime=runtime)
 
 
-def get_target_metadata_provider() -> TargetMetadataProvider:
-    """Return a lazy target metadata provider.
-
-    Returns
-    -------
-    TargetMetadataProvider
-        Lazy provider that resolves metadata on demand.
-    """
-    provider = LazyTargetMetadataProvider(get_target_metadata_service)
+def get_target_metadata_provider(*, runtime: RuntimeBundle) -> TargetMetadataProvider:
+    """Return a lazy target metadata provider bound to a runtime bundle."""
+    provider = LazyTargetMetadataProvider(runtime=runtime)
     _TARGET_METADATA_PROVIDERS.append(provider)
     return provider
 
 
 def is_target_metadata_loaded() -> bool:
-    """Return True if the target metadata service has been initialized.
-
-    Returns
-    -------
-    bool
-        True when the metadata service has been initialized.
-    """
-    return (
-        _load_target_system.cache_info().currsize > 0
-        or get_target_metadata_service.cache_info().currsize > 0
-    )
+    """Return True if any target metadata providers have been loaded."""
+    return any(provider._service is not None for provider in _TARGET_METADATA_PROVIDERS)
 
 
 def clear_target_metadata_cache() -> None:
     """Clear cached target metadata services."""
-    _load_target_system.cache_clear()
-    get_target_metadata_service.cache_clear()
     for provider in _TARGET_METADATA_PROVIDERS:
         provider.reset()
+    _TARGET_METADATA_PROVIDERS.clear()
 
 
 __all__ = [
+    "LazyTargetMetadataProvider",
     "TargetMetadataProvider",
     "TargetMetadataService",
     "TargetSystem",
+    "build_target_system",
     "clear_target_metadata_cache",
     "get_target_metadata_provider",
     "get_target_metadata_service",

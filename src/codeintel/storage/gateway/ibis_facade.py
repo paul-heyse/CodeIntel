@@ -1,26 +1,42 @@
-"""Typed facade for Ibis gateway access.
+"""Typed facade for Ibis access via DuckDB connections.
 
-This module provides a small, storage-owned wrapper around ``gateway.ibis.table(...)``.
-
-Why this exists
----------------
-Even though ``StorageGateway.ibis.table(...)`` is already typed, many higher-level call sites
-end up repeating table acquisition patterns or introducing casts to satisfy type checkers.
-Centralizing the "table acquisition" seam here:
-
-- Keeps table access uniform across storage/build/analytics call sites.
-- Avoids scattering "table typing" casts outside of the canonical typing seams.
-- Preserves storage ownership of gateway semantics (core must not depend on storage).
+This module centralizes "Ibis backend from gateway connection" logic so call
+sites do not depend on gateway-level Ibis adapters.
 """
 
 from __future__ import annotations
 
+import ibis
 import ibis.expr.types as ir
 
 from codeintel.storage.gateway.protocol import MinimalGateway
-from codeintel.storage.helpers.table_key import TableKey
+from codeintel.storage.helpers.table_key import TableKey, split_table_key
 
-__all__ = ["table"]
+_BACKEND_CACHE: dict[int, ibis.backends.duckdb.Backend] = {}
+
+__all__ = ["backend", "table"]
+
+
+def backend(gateway: MinimalGateway) -> ibis.backends.duckdb.Backend:
+    """Return an Ibis DuckDB backend bound to the gateway connection.
+
+    Parameters
+    ----------
+    gateway
+        Storage gateway providing the DuckDB connection.
+
+    Returns
+    -------
+    ibis.backends.duckdb.Backend
+        Ibis backend bound to the gateway connection.
+    """
+    key = id(gateway.con)
+    cached = _BACKEND_CACHE.get(key)
+    if cached is not None:
+        return cached
+    backend_conn = ibis.duckdb.from_connection(gateway.con)
+    _BACKEND_CACHE[key] = backend_conn
+    return backend_conn
 
 
 def table(gateway: MinimalGateway, table_key: TableKey) -> ir.Table:
@@ -29,7 +45,7 @@ def table(gateway: MinimalGateway, table_key: TableKey) -> ir.Table:
     Parameters
     ----------
     gateway
-        Storage gateway providing the Ibis adapter.
+        Storage gateway providing the DuckDB connection.
     table_key
         Fully qualified table/view key (e.g., ``analytics.function_metrics``).
 
@@ -38,4 +54,8 @@ def table(gateway: MinimalGateway, table_key: TableKey) -> ir.Table:
     ir.Table
         Ibis table expression for the requested object.
     """
-    return gateway.ibis.table(table_key)
+    ibis_backend = backend(gateway)
+    if "." in table_key:
+        database, name = split_table_key(table_key)
+        return ibis_backend.table(name, database=database)
+    return ibis_backend.table(table_key)

@@ -13,6 +13,7 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.build.serving.semantic_compile import CompiledSemanticRegistry
 from codeintel.core.hamilton.tag_query import TagQuery
+from codeintel.core.runtime.variants import VariantConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,7 @@ class RuntimeBundle:
     driver: h_driver.Driver
     catalog: DagCatalog
     tag_query: TagQuery
+    variants: VariantConfig
     cache_adapter: HamiltonCacheAdapter | None
     cache_index: CacheIndex | None
     cache_key_resolver: CacheKeyResolver | None

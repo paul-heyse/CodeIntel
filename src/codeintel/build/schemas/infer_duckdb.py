@@ -1,9 +1,8 @@
-"""DuckDB-backed schema inference for Ibis expressions.
+"""DuckDB-backed schema inference for relation outputs.
 
 This module implements the Phase 2 schema inference strategy:
 
-- compile an Ibis expression to SQL
-- use DuckDB's relation metadata for schema
+- inspect DuckDB relation metadata
 - map DuckDB types into the project TableSchema primitives
 
 Notes
@@ -17,20 +16,12 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-import ibis
-import sqlglot
-import sqlglot.expressions as exp
-from sqlglot.errors import ParseError
-
 from codeintel.core.schemas.primitives import Column, TableSchema
-from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
-    import ibis.expr.types as ir
-
     from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.storage.gateway.protocol import DuckDBConnection
+    from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
 
 
 _DECIMAL_RE = re.compile(r"^DECIMAL\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)$")
@@ -38,35 +29,6 @@ _DECIMAL_INT_PRECISION = 38
 _DECIMAL_INT_SCALE = 0
 _DESCRIBE_NULLABILITY_INDEX = 2
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-
-_BANNED_SQLGLOT_NODES: tuple[type[exp.Expression], ...] = (
-    exp.Alter,
-    exp.Command,
-    exp.Create,
-    exp.Delete,
-    exp.Drop,
-    exp.Insert,
-    exp.Transaction,
-    exp.TruncateTable,
-    exp.Update,
-)
-
-
-def _strip_trailing_semicolon(sql: str) -> str:
-    """Remove a single trailing semicolon from SQL if present.
-
-    Parameters
-    ----------
-    sql
-        SQL query text.
-
-    Returns
-    -------
-    str
-        SQL query with at most one trailing semicolon removed.
-    """
-    return re.sub(r";\s*$", "", sql.strip())
-
 
 def _validate_identifier(identifier: str, *, kind: str) -> str:
     """Validate a DuckDB identifier.
@@ -92,39 +54,6 @@ def _validate_identifier(identifier: str, *, kind: str) -> str:
         msg = f"Invalid DuckDB identifier for {kind}: {identifier!r}"
         raise ValueError(msg)
     return identifier
-
-
-def _validate_trusted_select_sql(sql: str) -> str:
-    """Validate a SQL string is a single SELECT-like query with no DDL/DML.
-
-    Parameters
-    ----------
-    sql
-        SQL query text.
-
-    Returns
-    -------
-    str
-        Stripped SQL query text safe to pass to ``DuckDBConnection.sql``.
-
-    Raises
-    ------
-    ValueError
-        If parsing fails or the query contains DDL/DML statements.
-    """
-    stripped_sql = _strip_trailing_semicolon(sql)
-    try:
-        parsed = sqlglot.parse_one(stripped_sql, read=DUCKDB_DIALECT)
-    except ParseError as exc:
-        msg = "Failed to parse SQL for schema inference"
-        raise ValueError(msg) from exc
-
-    for node in parsed.walk():
-        if type(node) in _BANNED_SQLGLOT_NODES:
-            msg = "Schema inference only supports SELECT-style queries (DDL/DML is not allowed)"
-            raise ValueError(msg)
-
-    return stripped_sql
 
 
 def normalize_duckdb_type(type_str: str) -> ColumnType:
@@ -184,33 +113,26 @@ def normalize_duckdb_type(type_str: str) -> ColumnType:
     raise ValueError(msg)
 
 
-def infer_table_schema_from_ibis(
+def infer_table_schema_from_relation(
     *,
-    expr: ir.Table,
-    con: DuckDBConnection,
+    relation: DuckDBRelation,
     table_key: str,
 ) -> TableSchema:
-    """Infer a TableSchema for an Ibis table expression using DuckDB DESCRIBE.
+    """Infer a TableSchema for a DuckDB relation using relation metadata.
 
     Parameters
     ----------
-    expr
-        Ibis table expression to infer.
-    con
-        DuckDB connection used to run DESCRIBE.
+    relation
+        DuckDB relation to infer.
     table_key
         Table key (schema.table) to assign to the inferred schema.
 
     Returns
     -------
     TableSchema
-        Inferred schema for the Ibis expression output.
+        Inferred schema for the relation output.
     """
-    sql = ibis.to_sql(expr, dialect=DUCKDB_DIALECT)
-    validated_sql = _validate_trusted_select_sql(sql)
-
     schema_name, table_name = split_table_key(table_key)
-    relation = con.sql(validated_sql)
 
     columns: list[Column] = []
     for col_name, dtype in zip(relation.columns, relation.types, strict=True):
@@ -275,7 +197,7 @@ def infer_view_schema(
 
 
 __all__ = [
-    "infer_table_schema_from_ibis",
+    "infer_table_schema_from_relation",
     "infer_view_schema",
     "normalize_duckdb_type",
 ]
