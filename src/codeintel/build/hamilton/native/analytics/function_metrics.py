@@ -28,7 +28,6 @@ from codeintel.analytics.functions.metrics import (
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -45,7 +44,6 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
-    options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.config.primitives import SnapshotRef
@@ -138,7 +136,6 @@ def t__function_metrics__compute(
     - Nesting depth
     - Type annotation coverage
     """
-
     return compute_function_analytics_result_from_table(
         q__core__goids,
         function_metrics__snapshot,

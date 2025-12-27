@@ -4,63 +4,49 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
-from codeintel.build.hamilton.impl_kind import ImplKind
-from codeintel.build.hamilton.planner import (
-    HamiltonBuildPlan,
-    PlanReason,
-    PlanStatus,
-)
+from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntry
 
 DECISION_TRACE_TARGET_NAME = "decision_trace"
 DECISION_TRACE_ARTIFACT_NAME = "build_decision_trace"
 DECISION_TRACE_PATH_TEMPLATE = "{build_dir}/decision_trace.json"
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Sequence
 
 
 class DecisionTracePayload(TypedDict):
     """Typed payload for decision trace JSON entries."""
 
     index: int
-    target: str
-    node: str
-    module: str
-    status: PlanStatus
-    reason: PlanReason
-    input_hash: str | None
-    options_hash: str | None
-    prior_input_hash: str | None
-    dependencies: list[str]
-    table_keys: list[str]
-    artifact_keys: list[str]
-    dep_hashes: dict[str, str]
-    prior_dep_hashes: dict[str, str]
-    impl_kind: ImplKind
+    node_name: str
+    target: str | None
+    status: CacheEventStatus
+    cache_key: str | None
+    cache_version: str | None
+    cache_path: str | None
+    duration_ms: float | None
+    size_bytes: int | None
+    recorded_at: str
 
 
 @dataclass(frozen=True, slots=True)
 class DecisionTraceRecord:
-    """Serializable decision record for a planned target."""
+    """Serializable decision record for a cache event."""
 
     index: int
-    target: str
-    node: str
-    module: str
-    status: PlanStatus
-    reason: PlanReason
-    input_hash: str | None
-    options_hash: str | None
-    prior_input_hash: str | None
-    dependencies: tuple[str, ...]
-    table_keys: tuple[str, ...]
-    artifact_keys: tuple[str, ...]
-    dep_hashes: dict[str, str]
-    prior_dep_hashes: dict[str, str]
-    impl_kind: ImplKind
+    node_name: str
+    target: str | None
+    status: CacheEventStatus
+    cache_key: str | None
+    cache_version: str | None
+    cache_path: str | None
+    duration_ms: float | None
+    size_bytes: int | None
+    recorded_at: datetime
 
     def to_dict(self) -> DecisionTracePayload:
         """Return a JSON-ready dictionary.
@@ -72,56 +58,48 @@ class DecisionTraceRecord:
         """
         return {
             "index": self.index,
+            "node_name": self.node_name,
             "target": self.target,
-            "node": self.node,
-            "module": self.module,
             "status": self.status,
-            "reason": self.reason,
-            "input_hash": self.input_hash,
-            "options_hash": self.options_hash,
-            "prior_input_hash": self.prior_input_hash,
-            "dependencies": list(self.dependencies),
-            "table_keys": list(self.table_keys),
-            "artifact_keys": list(self.artifact_keys),
-            "dep_hashes": dict(self.dep_hashes),
-            "prior_dep_hashes": dict(self.prior_dep_hashes),
-            "impl_kind": self.impl_kind,
+            "cache_key": self.cache_key,
+            "cache_version": self.cache_version,
+            "cache_path": self.cache_path,
+            "duration_ms": self.duration_ms,
+            "size_bytes": self.size_bytes,
+            "recorded_at": self.recorded_at.isoformat(),
         }
 
 
-def build_decision_trace(plan: HamiltonBuildPlan) -> list[DecisionTraceRecord]:
-    """Build decision trace records from a Hamilton plan.
+def build_decision_trace(entries: Sequence[CacheManifestEntry]) -> list[DecisionTraceRecord]:
+    """Build decision trace records from cache manifest entries.
 
     Returns
     -------
     list[DecisionTraceRecord]
-        Ordered decision trace records for the plan entries.
+        Ordered decision trace records for the cache events.
     """
     records: list[DecisionTraceRecord] = []
-    for idx, entry in enumerate(plan.entries):
+    for idx, entry in enumerate(entries):
         records.append(
             DecisionTraceRecord(
                 index=idx,
+                node_name=entry.node_name,
                 target=entry.target,
-                node=entry.node,
-                module=str(entry.module),
                 status=entry.status,
-                reason=entry.reason,
-                input_hash=entry.input_hash,
-                options_hash=entry.options_hash,
-                prior_input_hash=entry.prior_input_hash,
-                dependencies=entry.dependencies,
-                table_keys=entry.table_keys,
-                artifact_keys=entry.artifact_keys,
-                dep_hashes=_sorted_mapping(entry.dep_hashes),
-                prior_dep_hashes=_sorted_mapping(entry.prior_dep_hashes),
-                impl_kind=entry.impl_kind,
+                cache_key=entry.cache_key,
+                cache_version=entry.cache_version,
+                cache_path=entry.cache_path,
+                duration_ms=entry.duration_ms,
+                size_bytes=entry.size_bytes,
+                recorded_at=entry.recorded_at,
             )
         )
     return records
 
 
-def build_decision_trace_payload(plan: HamiltonBuildPlan) -> list[DecisionTracePayload]:
+def build_decision_trace_payload(
+    entries: Sequence[CacheManifestEntry],
+) -> list[DecisionTracePayload]:
     """Return decision trace payload as a JSON-ready list.
 
     Returns
@@ -129,7 +107,7 @@ def build_decision_trace_payload(plan: HamiltonBuildPlan) -> list[DecisionTraceP
     list[dict[str, object]]
         JSON-serializable decision trace payload.
     """
-    return [record.to_dict() for record in build_decision_trace(plan)]
+    return [record.to_dict() for record in build_decision_trace(entries)]
 
 
 def default_decision_trace_path(build_dir: Path) -> Path:
@@ -143,9 +121,9 @@ def default_decision_trace_path(build_dir: Path) -> Path:
     return build_dir / "decision_trace.json"
 
 
-def write_decision_trace(path: Path, plan: HamiltonBuildPlan) -> None:
+def write_decision_trace(path: Path, entries: Sequence[CacheManifestEntry]) -> None:
     """Write decision trace JSON to the provided path."""
-    payload = build_decision_trace_payload(plan)
+    payload = build_decision_trace_payload(entries)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload_text = json.dumps(payload, indent=2)
     path.write_text(f"{payload_text}\n", encoding="utf-8")
@@ -169,10 +147,6 @@ def read_decision_trace(path: Path) -> list[DecisionTracePayload]:
         msg = f"Decision trace payload must be a list, got {type(data)}"
         raise TypeError(msg)
     return cast("list[DecisionTracePayload]", data)
-
-
-def _sorted_mapping(mapping: Mapping[str, str]) -> dict[str, str]:
-    return dict(sorted(mapping.items(), key=lambda item: item[0]))
 
 
 __all__ = [

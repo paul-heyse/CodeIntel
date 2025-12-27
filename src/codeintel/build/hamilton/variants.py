@@ -21,6 +21,11 @@ def variant_config_from_build_config(config: BuildConfig) -> VariantConfig:
     -------
     VariantConfig
         Parsed variant configuration.
+
+    Raises
+    ------
+    TypeError
+        If the variants section is not a mapping.
     """
     raw_variants = config.get("variants", {})
     if raw_variants is None:

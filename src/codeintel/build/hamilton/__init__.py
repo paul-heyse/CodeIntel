@@ -4,7 +4,7 @@ Hamilton is the orchestration layer for CodeIntel's build graph. This package pr
 
 - Driver construction for native pipelines
 - Execution via ``HamiltonBuildExecutor``
-- Planning (``compute_plan`` / ``explain_plan``) and DAG observability exports
+- Planning (``compute_plan``) and DAG observability exports
 - Contract enforcement hooks for datasets and artifacts
 
 Driver construction
@@ -39,12 +39,10 @@ __all__ = [
     "HamiltonRuntime",
     "IbisIOConfig",
     "PlanEntry",
-    "StalenessExplanation",
     "TargetRunRecord",
     "build_driver",
     "compute_plan",
     "dataset_node",
-    "explain_plan",
     "export_dag_json",
     "export_execution_json",
     "get_dag_info",
@@ -88,9 +86,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.planner import (
         HamiltonBuildPlan,
         PlanEntry,
-        StalenessExplanation,
         compute_plan,
-        explain_plan,
     )
     from codeintel.build.hamilton.run_records import TargetRunRecord
 
@@ -120,9 +116,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "list_execution_targets": ("codeintel.build.hamilton.observability", "list_execution_targets"),
     "HamiltonBuildPlan": ("codeintel.build.hamilton.planner", "HamiltonBuildPlan"),
     "PlanEntry": ("codeintel.build.hamilton.planner", "PlanEntry"),
-    "StalenessExplanation": ("codeintel.build.hamilton.planner", "StalenessExplanation"),
     "compute_plan": ("codeintel.build.hamilton.planner", "compute_plan"),
-    "explain_plan": ("codeintel.build.hamilton.planner", "explain_plan"),
 }
 
 

@@ -34,6 +34,9 @@ from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
     import ibis.expr.types as it
+    from hamilton.driver import Driver
+
+    from codeintel.core.hamilton.tag_query import TagQuery
 
 __all__ = ["materialize_registered_views"]
 
@@ -46,6 +49,8 @@ def materialize_registered_views(
     modules: tuple[ModuleType, ...],
     overwrite: bool = True,
     strict: bool = False,
+    dr: Driver | None = None,
+    tag_query: TagQuery | None = None,
 ) -> dict[str, str]:
     """Compile and materialize tagged Ibis views.
 
@@ -60,13 +65,23 @@ def materialize_registered_views(
     strict
         When True, raise on any view build/materialization failure. When False,
         failures are logged and processing continues.
+    dr
+        Hamilton Driver used for view discovery and callable resolution.
+    tag_query
+        Optional cached tag query helper.
 
     Returns
     -------
     dict[str, str]
         Mapping of view table_key -> compiled SQL used for dependency resolution.
     """
-    expr_by_view, sql_by_view = _compile_view_definitions(gateway, modules=modules, strict=strict)
+    expr_by_view, sql_by_view = _compile_view_definitions(
+        gateway,
+        modules=modules,
+        strict=strict,
+        dr=dr,
+        tag_query=tag_query,
+    )
     if not sql_by_view:
         return {}
 
@@ -86,9 +101,11 @@ def _compile_view_definitions(
     *,
     modules: tuple[ModuleType, ...],
     strict: bool,
+    dr: Driver | None,
+    tag_query: TagQuery | None,
 ) -> tuple[dict[str, it.Table], dict[str, str]]:
     ibis_gateway = gateway.ibis
-    builders = discover_view_builders(modules=modules)
+    builders = discover_view_builders(dr=dr, tag_query=tag_query, modules=modules)
 
     expr_by_view: dict[str, it.Table] = {}
     sql_by_view: dict[str, str] = {}

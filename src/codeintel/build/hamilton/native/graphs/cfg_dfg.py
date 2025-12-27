@@ -39,7 +39,7 @@ from codeintel.build.hamilton.native.patterns import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.core.ibis_typing import filter_by, isin_values
 from codeintel.core.paths import normalize_path

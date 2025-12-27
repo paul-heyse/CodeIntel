@@ -53,7 +53,6 @@ from codeintel.build.hamilton.native.patterns.savers import (
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
-    options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.config.primitives import SnapshotRef
@@ -230,7 +229,6 @@ def t__external_deps__compute_calls(
     - Usage modes (read, write, admin, etc.)
     - Evidence with code snippets
     """
-
     if external_deps_inputs is None:
         return None
 
@@ -437,7 +435,6 @@ def t__entrypoints__compute(
     EntrypointsResult | None
         Computed entrypoints, or None when skipped or inputs are unavailable.
     """
-
     if entrypoints_inputs is None:
         return None
 

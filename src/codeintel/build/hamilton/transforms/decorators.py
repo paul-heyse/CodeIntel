@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from types import ModuleType
-from typing import Callable
 
 from hamilton.function_modifiers import pipe_input, resolve_from_config, step, value
 
@@ -47,7 +46,13 @@ def _pipe_cleaning(
 
 
 def pipe_clean_df() -> DecoratorFactory:
-    """Return a config-driven pipe_input decorator for cleaning steps."""
+    """Return a config-driven pipe_input decorator for cleaning steps.
+
+    Returns
+    -------
+    DecoratorFactory
+        Decorator that wires the cleaning steps for configured backends.
+    """
     return resolve_from_config(decorate_with=_pipe_cleaning)
 
 
@@ -77,7 +82,13 @@ def with_features(
     columns_to_pass: Sequence[str],
     ops_module: ModuleType,
 ) -> DecoratorFactory:
-    """Return a resolve_from_config decorator for feature column subDAGs."""
+    """Return a resolve_from_config decorator for feature column subDAGs.
+
+    Returns
+    -------
+    DecoratorFactory
+        Decorator that injects configured feature column operations.
+    """
 
     def _factory(df_backend: str, feature_sets: dict[str, tuple[str, ...]]) -> DecoratorFactory:
         return _decorate_features(

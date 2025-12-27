@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         load_derived_lineage_columns,
         sync_dataset_dataflow_graph,
         sync_derived_lineage_columns,
+        sync_table_schema_registry_from_latest_manifest,
     )
 
 _EXPORTS: Final[dict[str, tuple[str, str]]] = {
@@ -49,6 +50,10 @@ _EXPORTS: Final[dict[str, tuple[str, str]]] = {
         "codeintel.storage.metadata.sync",
         "sync_derived_lineage_columns",
     ),
+    "sync_table_schema_registry_from_latest_manifest": (
+        "codeintel.storage.metadata.sync",
+        "sync_table_schema_registry_from_latest_manifest",
+    ),
     "upsert_canonical_catalog": ("codeintel.storage.metadata.catalogs", "upsert_canonical_catalog"),
 }
 
@@ -77,5 +82,6 @@ __all__: tuple[str, ...] = (
     "load_latest_canonical_catalog_from_connection",
     "sync_dataset_dataflow_graph",
     "sync_derived_lineage_columns",
+    "sync_table_schema_registry_from_latest_manifest",
     "upsert_canonical_catalog",
 )

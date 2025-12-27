@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from hamilton.plugins.h_pandas import with_columns as with_columns_pd
 from hamilton.plugins.h_polars import with_columns as with_columns_pl
 from hamilton.plugins.h_polars_lazyframe import with_columns as with_columns_pl_lazy
 
-
 WithColumnsFactory = Callable[..., Callable[..., object]]
 
 
 def select_with_columns(df_backend: str) -> WithColumnsFactory:
-    """Select the correct with_columns decorator for the configured backend."""
+    """Select the correct with_columns decorator for the configured backend.
+
+    Returns
+    -------
+    WithColumnsFactory
+        Decorator factory for the configured backend.
+
+    Raises
+    ------
+    ValueError
+        If the backend name is not supported.
+    """
     if df_backend == "pandas":
         return with_columns_pd
     if df_backend == "polars":

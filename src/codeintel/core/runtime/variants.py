@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, Mapping
+from typing import Literal
 
 from codeintel.core.hashing.fingerprint import fingerprint
 
@@ -57,6 +58,7 @@ class VariantConfig:
     variant_fingerprint: str = field(init=False)
 
     def __post_init__(self) -> None:
+        """Normalize feature sets and compute the variant fingerprint."""
         normalized: dict[str, tuple[str, ...]] = {}
         for table_key, ops in self.feature_sets.items():
             normalized[table_key] = tuple(sorted(str(op) for op in ops))
@@ -76,6 +78,11 @@ class VariantConfig:
         -------
         VariantConfig
             Parsed variant configuration.
+
+        Raises
+        ------
+        TypeError
+            If feature_sets or its entries are not valid sequences/mappings.
         """
         df_backend = str(data.get("df_backend", "polars"))
         clean_mode = str(data.get("clean_mode", "lenient"))

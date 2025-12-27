@@ -16,7 +16,13 @@ _FEATURE_MODULES: Mapping[str, ModuleType] = {
 
 
 def allowed_ops_by_table() -> dict[str, set[str]]:
-    """Return allowed column operation names for each feature module."""
+    """Return allowed column operation names for each feature module.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping of table keys to allowed operation names.
+    """
     allowed: dict[str, set[str]] = {}
     for table_key, module in _FEATURE_MODULES.items():
         ops = {

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.core.hamilton.tag_query import TagQuery
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,8 @@ class HamiltonRuntime:
         Hamilton Driver configured with the appropriate node module.
     catalog
         Immutable catalog derived from the Hamilton graph.
+    tag_query
+        Cached tag-filter query helper bound to the Driver.
 
     Examples
     --------
@@ -35,6 +38,7 @@ class HamiltonRuntime:
 
     dr: h_driver.Driver
     catalog: DagCatalog
+    tag_query: TagQuery
 
 
 __all__ = ["HamiltonRuntime"]

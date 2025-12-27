@@ -53,7 +53,6 @@ from codeintel.analytics.resources.module_map import ModuleMapProvider
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -163,7 +162,6 @@ def function_ast_features_registry(
     ResourceRegistry
         Registry configured with feature providers.
     """
-
     return build_registry(
         gateway=gateway,
         snapshot=env.snapshot,
@@ -194,7 +192,6 @@ def data_models_compute_context(
     DataModelsComputeContext
         Inputs plus skip metadata for the compute node.
     """
-
     inputs = load_data_models_inputs(gateway, env.snapshot)
     return DataModelsComputeContext(inputs=inputs, skip=False)
 
@@ -401,7 +398,6 @@ def t__data_model_usage__compute(
         Row tuples for analytics.data_model_usage in schema order.
         Returns None when manifest-skip indicates the target is current.
     """
-
     registry = build_registry(
         gateway=gateway,
         snapshot=env.snapshot,

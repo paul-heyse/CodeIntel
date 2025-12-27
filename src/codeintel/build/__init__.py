@@ -66,7 +66,6 @@ __all__ = [
     "TargetModule",
     "TargetParameters",
     "TargetResources",
-    "compute_input_hash",
     "compute_options_hash",
     "get_target_metadata_service",
 ]
@@ -75,7 +74,7 @@ if TYPE_CHECKING:
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.execution_policy import ExecutionPolicy
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
-    from codeintel.build.hashing import compute_input_hash, compute_options_hash
+    from codeintel.build.hashing import compute_options_hash
     from codeintel.build.parameters import EMPTY_PARAMETERS, TargetParameters
     from codeintel.build.resources import (
         DEFAULT_EXECUTION,
@@ -102,7 +101,6 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "TargetModule": ("codeintel.build.targets", "TargetModule"),
     "TargetParameters": ("codeintel.build.parameters", "TargetParameters"),
     "TargetResources": ("codeintel.build.resources", "TargetResources"),
-    "compute_input_hash": ("codeintel.build.hashing", "compute_input_hash"),
     "compute_options_hash": ("codeintel.build.hashing", "compute_options_hash"),
     "TargetMetadataService": ("codeintel.build.target_metadata", "TargetMetadataService"),
     "get_target_metadata_service": (

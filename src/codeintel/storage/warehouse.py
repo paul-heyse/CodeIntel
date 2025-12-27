@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     import ibis.expr.types as ir
 
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.contract_primitives import DatasetContract
     from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
@@ -461,9 +462,19 @@ class Warehouse:
         )
         return _materialize_with_writer(ctx, options=active, writer=_write)
 
-    def ensure_all_views(self, *, overwrite: bool = True, strict: bool = False) -> None:
+    def ensure_all_views(
+        self,
+        *,
+        overwrite: bool = True,
+        strict: bool = False,
+        tag_query: TagQuery | None = None,
+    ) -> None:
         """Ensure all registered views are materialized."""
-        self.gateway.policy.ensure_all_views(overwrite=overwrite, strict=strict)
+        self.gateway.policy.ensure_all_views(
+            overwrite=overwrite,
+            strict=strict,
+            tag_query=tag_query,
+        )
 
     def explain_table(
         self,

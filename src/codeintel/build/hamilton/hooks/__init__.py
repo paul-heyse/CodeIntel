@@ -54,8 +54,6 @@ from codeintel.build.hamilton.hooks.telemetry_hook import (
 # Re-export from manifest hook
 from codeintel.build.hamilton.run_records import (
     TargetRunRecord,
-    compute_target_input_hash,
-    compute_target_input_hash_with_deps,
     compute_target_options_hash,
     save_manifest,
 )
@@ -159,8 +157,6 @@ __all__ = [
     "ValidationResult",
     "ValidationSummary",
     "build_hooks",
-    "compute_target_input_hash",
-    "compute_target_input_hash_with_deps",
     "compute_target_options_hash",
     "create_progress_hook",
     "save_manifest",

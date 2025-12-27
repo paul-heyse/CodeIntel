@@ -31,7 +31,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.core.hashing import file_hash
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,

@@ -13,7 +13,6 @@ from codeintel.analytics.subsystems.cache import (
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -138,7 +137,6 @@ def t__subsystem_caches__compute(
     SubsystemCachesComputeResult | None
         Computed cache rows or None when skipped.
     """
-
     gateway = subsystem_caches__inputs.gateway
 
     if subsystem_caches__inputs.subsystems.status != "succeeded":

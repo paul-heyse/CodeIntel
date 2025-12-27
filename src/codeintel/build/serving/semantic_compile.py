@@ -10,7 +10,6 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.core.hamilton import tags as ht
 from codeintel.core.hamilton.semantic_tags import (
     TAG_DEFAULT_LIMIT,
@@ -28,10 +27,15 @@ from codeintel.core.hamilton.semantic_tags import (
     TAG_SENSITIVITY,
     TAG_TABLE_KEY,
 )
+from codeintel.core.hamilton.tag_filters import tf_semantic_views
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
+    from hamilton.driver import Driver
+
+    from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.provider import SchemaProvider
 
 
@@ -51,6 +55,13 @@ def _stringify_tag_value(value: object) -> str:
     if isinstance(value, list):
         return ", ".join(str(v) for v in value if v is not None)
     return str(value)
+
+
+def _tags_from_variable(variable: object) -> dict[str, object] | None:
+    tags = getattr(variable, "tags", None)
+    if isinstance(tags, dict):
+        return tags
+    return None
 
 
 def _parse_joins(s: str | None) -> list[dict[str, object]]:
@@ -155,20 +166,20 @@ def compile_semantic_registry_from_views(
     return CompiledSemanticRegistry(version=version, views=views)
 
 
-def compile_semantic_registry_from_catalog(
+def _compile_semantic_registry_from_variables(
     *,
     schema_provider: SchemaProvider,
-    catalog: DagCatalog,
+    variables: Iterable[object],
     version: str = "v1",
 ) -> CompiledSemanticRegistry:
-    """Compile semantic registry from a DagCatalog.
+    """Compile semantic registry from Hamilton variables.
 
     Parameters
     ----------
     schema_provider
         Provider for resolving table schemas.
-    catalog
-        DAG catalog containing Hamilton tags.
+    variables
+        Hamilton variables returned by tag-filter queries.
     version
         Registry version string.
 
@@ -178,12 +189,9 @@ def compile_semantic_registry_from_catalog(
         Compiled registry.
     """
     view_tags: dict[str, dict[str, str]] = {}
-    for node in catalog.find_nodes(ht.TAG_OUTPUT_KIND):
-        tags = node.tags
-        output_kind = tags.get(ht.TAG_OUTPUT_KIND)
-        if output_kind not in {ht.OUTPUT_KIND_SEMANTIC_VIEW, "semantic"}:
-            continue
-        if _stringify_tag_value(tags.get(ht.TAG_MCP_VISIBLE, "1")) != "1":
+    for variable in variables:
+        tags = _tags_from_variable(variable)
+        if not tags:
             continue
         table_key = tags.get(ht.TAG_TABLE_KEY)
         if not isinstance(table_key, str) or not table_key:
@@ -197,6 +205,48 @@ def compile_semantic_registry_from_catalog(
     )
 
 
+def compile_semantic_registry_from_driver(
+    *,
+    schema_provider: SchemaProvider,
+    dr: Driver,
+    version: str = "v1",
+) -> CompiledSemanticRegistry:
+    """Compile semantic registry from a Hamilton Driver tag filter query.
+
+    Returns
+    -------
+    CompiledSemanticRegistry
+        Compiled registry.
+    """
+    variables = dr.list_available_variables(tag_filter=tf_semantic_views())
+    return _compile_semantic_registry_from_variables(
+        schema_provider=schema_provider,
+        variables=variables,
+        version=version,
+    )
+
+
+def compile_semantic_registry_from_tag_query(
+    *,
+    schema_provider: SchemaProvider,
+    tag_query: TagQuery,
+    version: str = "v1",
+) -> CompiledSemanticRegistry:
+    """Compile semantic registry from a TagQuery helper.
+
+    Returns
+    -------
+    CompiledSemanticRegistry
+        Compiled registry.
+    """
+    variables = tag_query.query(tf_semantic_views())
+    return _compile_semantic_registry_from_variables(
+        schema_provider=schema_provider,
+        variables=variables,
+        version=version,
+    )
+
+
 def write_semantic_registry(*, registry: CompiledSemanticRegistry, out_path: Path) -> None:
     """Write semantic registry to file."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -205,7 +255,8 @@ def write_semantic_registry(*, registry: CompiledSemanticRegistry, out_path: Pat
 
 __all__ = [
     "CompiledSemanticRegistry",
-    "compile_semantic_registry_from_catalog",
+    "compile_semantic_registry_from_driver",
+    "compile_semantic_registry_from_tag_query",
     "compile_semantic_registry_from_views",
     "write_semantic_registry",
 ]

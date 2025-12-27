@@ -17,7 +17,6 @@ from codeintel.analytics.subsystems.materialize import SubsystemRows, build_subs
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.native.executor import NativeTargetExecutor
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -106,7 +105,6 @@ def t__subsystems__compute(
     SubsystemsComputeResult | None
         Computed subsystem rows or None when skipped.
     """
-
     if t__import_graph.status != "succeeded":
         return SubsystemsComputeResult(
             rows=None,

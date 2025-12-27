@@ -8,8 +8,7 @@ from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
 from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.run_records import compute_target_input_hash, options_hash_for_target
-from codeintel.build.hashing import InputHashOptions
+from codeintel.build.hamilton.run_records import options_hash_for_target
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
 
 if TYPE_CHECKING:
@@ -24,7 +23,7 @@ class _HarnessProtocol(Protocol):
 
 @dataclass(frozen=True)
 class ManifestPriming:
-    """Insert manifests and minimal state for skip logic tests."""
+    """Insert manifests and minimal state for build tests."""
 
     harness: _HarnessProtocol
 
@@ -80,7 +79,7 @@ class ManifestPriming:
         row_count: int | None = None,
         change_delta: dict[str, object] | None = None,
     ) -> OutputManifest:
-        """Prime the modules manifest for deterministic skip behavior.
+        """Prime the modules manifest for deterministic test setup.
 
         Parameters
         ----------
@@ -109,17 +108,7 @@ class ManifestPriming:
             raise RuntimeError(message)
 
         opts_hash = options_hash_for_target(env, "modules")
-        input_hash = compute_target_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            settings=env.settings,
-            options=InputHashOptions(
-                options_hash=opts_hash,
-                file_state_hash=file_state_hash,
-                manifests=None,
-            ),
-        )
+        input_hash = file_state_hash or opts_hash or "modules"
         spec = self.ManifestSpec(
             target="modules",
             input_hash=input_hash,
@@ -168,17 +157,7 @@ class ManifestPriming:
             raise RuntimeError(message)
 
         opts_hash = options_hash_for_target(env, target)
-        input_hash = compute_target_input_hash(
-            target=node,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            settings=env.settings,
-            options=InputHashOptions(
-                options_hash=opts_hash,
-                file_state_hash=file_state_hash,
-                manifests=None,
-            ),
-        )
+        input_hash = file_state_hash or opts_hash or target
         spec = self.ManifestSpec(
             target=target,
             input_hash=input_hash,
