@@ -176,7 +176,7 @@ def graph_targets_list_handler(
             name=t.name,
             description=t.description or f"Graph target: {t.name}",
             dependencies=list(t.dependencies),
-            tables=list(t.table_keys),
+            tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
         )
         for t in targets
     ]

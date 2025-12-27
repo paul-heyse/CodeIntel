@@ -14,9 +14,11 @@ from warnings import warn
 
 import duckdb
 
+from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBConnection, StorageConfig, open_gateway
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
+from codeintel.storage.gateway.factory import MemoryGatewayOptions
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 
@@ -252,16 +254,19 @@ class GatewayFactory:
                 ensure_views=self._ensure_views,
                 validate_schema=self._validate_schema,
             )
-            gateway = open_gateway(cfg)
+            gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
         else:
             effective_ensure_views = self._ensure_views or self._strict_schema
             effective_validate_schema = self._validate_schema or self._strict_schema
             gateway = _open_memory_gateway(
-                apply_schema=self._apply_schema,
-                ensure_views=effective_ensure_views,
-                validate_schema=effective_validate_schema,
-                repo=self._repo,
-                commit=self._commit,
+                options=MemoryGatewayOptions(
+                    apply_schema=self._apply_schema,
+                    ensure_views=effective_ensure_views,
+                    validate_schema=effective_validate_schema,
+                    repo=self._repo,
+                    commit=self._commit,
+                ),
+                seed_contract_catalog=seed_contract_catalog,
             )
 
         return gateway
@@ -345,6 +350,14 @@ def gateway_with_macros() -> StorageGateway:
     return GatewayFactory().open()
 
 
+def seed_contract_catalog(con: DuckDBConnection) -> None:
+    """Seed the canonical dataset contract catalog into a DuckDB connection."""
+    persist_contract_catalog_to_connection(
+        con,
+        inputs={"source": "tests"},
+    )
+
+
 def seed_tables(gateway: StorageGateway, ddl: list[str]) -> None:
     """Apply defensive DDL statements (DROP/CREATE) to avoid cross-test conflicts."""
     for stmt in ddl:
@@ -413,6 +426,7 @@ __all__ = [
     "GatewayFactory",
     "gateway_with_macros",
     "memory_con_with_macros",
+    "seed_contract_catalog",
     "seed_repo_identity",
     "seed_tables",
 ]

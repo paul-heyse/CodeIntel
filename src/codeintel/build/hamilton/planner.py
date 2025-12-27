@@ -406,13 +406,19 @@ class HamiltonBuildPlan:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class _PlanEntryInputs:
+    env: BuildEnv
+    manifests: Mapping[str, OutputManifest]
+    upstream_status: Mapping[str, PlanStatus]
+    native_names: frozenset[str]
+    catalog: DagCatalog
+
+
 def _compute_entry_for_target(
     target: TargetDescriptor,
-    env: BuildEnv,
-    manifests: Mapping[str, OutputManifest],
-    upstream_status: dict[str, PlanStatus],
     *,
-    native_names: frozenset[str],
+    inputs: _PlanEntryInputs,
 ) -> PlanEntry:
     """Compute plan entry for a single target.
 
@@ -420,14 +426,8 @@ def _compute_entry_for_target(
     ----------
     target
         Target metadata from the graph.
-    env
-        Build environment with configuration and snapshot.
-    manifests
-        Pre-loaded manifest index.
-    upstream_status
-        Status of upstream targets computed so far.
-    native_names
-        Set of target names whose `t__*` node originates from a native module.
+    inputs
+        Shared planning inputs for manifest state, upstream status, and catalog access.
 
     Returns
     -------
@@ -443,11 +443,13 @@ def _compute_entry_for_target(
     node = target_node(target_name)
     module = target.module
 
-    table_keys = expected_table_keys_for_target(target.name)
+    table_keys = expected_table_keys_for_target(target.name, outputs=inputs.catalog)
     blocked_deps = [
-        dep for dep in target.dependencies if upstream_status.get(dep) in {"missing", "blocked"}
+        dep
+        for dep in target.dependencies
+        if inputs.upstream_status.get(dep) in {"missing", "blocked"}
     ]
-    if target_name not in native_names:
+    if target_name not in inputs.native_names:
         msg = f"Target '{target_name}' lacks a native implementation"
         raise RuntimeError(msg)
     impl_kind: ImplKind = "native"
@@ -467,18 +469,18 @@ def _compute_entry_for_target(
             impl_kind=impl_kind,
         )
 
-    params = env.config.parameters_for(target_name)
+    params = inputs.env.config.parameters_for(target_name)
     options_hash = compute_target_options_hash(params)
-    hash_options = InputHashOptions(options_hash=options_hash, manifests=manifests)
+    hash_options = InputHashOptions(options_hash=options_hash, manifests=inputs.manifests)
     evaluation = compute_hash_evaluation(
         target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        settings=env.settings,
+        snapshot=inputs.env.snapshot,
+        gateway=inputs.env.gateway,
+        settings=inputs.env.settings,
         options=hash_options,
     )
 
-    if env.is_forced(target_name):
+    if inputs.env.is_forced(target_name):
         return PlanEntry(
             target=target_name,
             node=node,
@@ -598,6 +600,13 @@ def compute_plan(
 
     entries: list[PlanEntry] = []
     upstream_status: dict[str, PlanStatus] = {}
+    inputs = _PlanEntryInputs(
+        env=env,
+        manifests=manifests,
+        upstream_status=upstream_status,
+        native_names=native_names,
+        catalog=catalog,
+    )
 
     for target_name in closure:
         try:
@@ -619,9 +628,7 @@ def compute_plan(
             upstream_status[target_name] = "missing"
             continue
 
-        entry = _compute_entry_for_target(
-            target, env, manifests, upstream_status, native_names=native_names
-        )
+        entry = _compute_entry_for_target(target, inputs=inputs)
         entries.append(entry)
         upstream_status[target_name] = entry.status
 

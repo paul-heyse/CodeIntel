@@ -9,7 +9,8 @@ import pytest
 
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import FunctionProfileInputs
-from codeintel.storage.gateway.factory import open_memory_gateway
+from codeintel.storage.gateway.factory import MemoryGatewayOptions, open_memory_gateway
+from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.schemas import ensure_production_schemas
 
 if TYPE_CHECKING:
@@ -51,11 +52,14 @@ def _setup_graph() -> StorageGateway:
         Gateway with minimal test graph tables.
     """
     gateway = open_memory_gateway(
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
-        repo="r",
-        commit="c",
+        options=MemoryGatewayOptions(
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+            repo="r",
+            commit="c",
+        ),
+        seed_contract_catalog=seed_contract_catalog,
     )
     con = gateway.con
     ensure_production_schemas(con)

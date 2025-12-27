@@ -17,6 +17,7 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.configs.coverage_config import CoverageEdgeEnv, CoverageSeedConfig
 from tests._helpers.fixtures.rows import GoidRow, ModuleRow, RepoMapRow, TestCatalogRow, insert_rows
+from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration.tooling import generate_coverage_for_function
 
@@ -73,7 +74,8 @@ def create_coverage_edge_env(
             apply_schema=True,
             ensure_views=True,
             validate_schema=True,
-        )
+        ),
+        seed_contract_catalog=seed_contract_catalog,
     )
     snapshot = SnapshotInit(
         repo=seed_cfg.repo,

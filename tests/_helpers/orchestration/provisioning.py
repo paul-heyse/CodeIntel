@@ -69,7 +69,7 @@ from tests._helpers.fixtures.rows import (
     insert_rows,
 )
 from tests._helpers.fixtures.snapshots import SnapshotVariant
-from tests._helpers.gateway import GatewayFactory
+from tests._helpers.gateway import GatewayFactory, seed_contract_catalog
 from tests._helpers.harnesses.hamilton_build import (
     HamiltonBuildHarness,
     HarnessConfig,
@@ -225,7 +225,7 @@ def _open_gateway_from_context(ctx: RepoContext, opts: GatewayOptions) -> Storag
             repo=ctx.repo,
             commit=ctx.commit,
         )
-        gateway = open_gateway(cfg)
+        gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     else:
         factory = GatewayFactory()
         if not opts.apply_schema:

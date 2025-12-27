@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from codeintel.build.contracts import OutputContract
+from codeintel.build.hamilton.dag_catalog import OutputDescriptor
 from codeintel.build.schemas import (
     ContractResolutionSettings,
     clear_contract_cache,
@@ -19,12 +19,13 @@ from codeintel.build.target_metadata import (
 from codeintel.build.targets import TargetDescriptor
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_false, expect_true
 from tests._helpers.catalog import make_target_descriptor
-from tests._helpers.contracts import table_output_for_key
 
 
 @dataclass(frozen=True)
 class _StubTargetMetadataProvider(TargetMetadataProvider):
     target: TargetDescriptor
+    outputs: dict[str, OutputDescriptor]
+    artifacts: frozenset[str] = frozenset()
 
     def get_target(self, name: str) -> TargetDescriptor | None:
         if name == self.target.name:
@@ -32,12 +33,15 @@ class _StubTargetMetadataProvider(TargetMetadataProvider):
         return None
 
     def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
-        if table_key in self.target.table_keys:
+        if table_key in self.outputs:
             return self.target
         return None
 
+    def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
+        return self.outputs.get(table_key)
+
     def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
-        if artifact_name in self.target.contract.artifact_names:
+        if artifact_name in self.artifacts:
             return self.target
         return None
 
@@ -59,17 +63,26 @@ def test_contract_resolution_uses_injected_target_metadata_provider() -> None:
     clear_contract_cache()
 
     table_key = "analytics.function_metrics"
-    contract = OutputContract(
-        tables=(table_output_for_key(table_key),),
-        owner="unit-test-owner",
-        jsonl_filenames=("custom.jsonl",),
-    )
     target = make_target_descriptor(
         name="unit_test_target",
         module="analytics",
-        contract=contract,
     )
-    provider = _StubTargetMetadataProvider(target=target)
+    output = OutputDescriptor(
+        kind="table",
+        key=table_key,
+        role="contract",
+        producer_target=target.name,
+        saver_node="m__table__unit_test",
+        sink="test",
+        tags={
+            "ci.dataset_owner": "unit-test-owner",
+            "ci.jsonl_filename": "custom.jsonl",
+        },
+    )
+    provider = _StubTargetMetadataProvider(
+        target=target,
+        outputs={table_key: output},
+    )
 
     settings = ContractResolutionSettings(target_metadata_provider=provider)
     resolved = get_contract_for_table_key(table_key, settings=settings)

@@ -1,12 +1,12 @@
 """Helpers for build-system unit tests.
 
-Use ``OutputContract`` / ``TargetDescriptor`` directly for defining targets in tests.
-The contract is the source of truth for outputs.
+Use catalog outputs derived from saver tags; tests should not declare output
+inventories outside the catalog.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,7 +19,6 @@ from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.config.settings import BuildSettings, ExportAuditSettings
 from codeintel.core.runtime.loader import load_runtime_settings
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import contract_for_keys
 from tests._helpers.fakes.configs import create_test_build_paths, create_test_snapshot
 from tests._helpers.fakes.fake_providers import (
     FakeCoverageCollector,
@@ -32,8 +31,6 @@ from tests._helpers.fakes.fake_providers import (
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.config.primitives import BuildPaths, SnapshotRef
 
 _RUNTIME_BUILD_SETTINGS = load_runtime_settings().build
@@ -145,6 +142,8 @@ def write_build_config(project_root: Path, sections: Mapping[str, Mapping[str, A
 
 def sample_target_graph(
     targets: Sequence[TargetDescriptor] | None = None,
+    *,
+    table_keys_by_target: Mapping[str, Sequence[str]] | None = None,
 ) -> DagCatalog:
     """Build a small DAG catalog for tests.
 
@@ -153,7 +152,10 @@ def sample_target_graph(
     DagCatalog
         Catalog populated with default targets unless provided.
     """
-    return build_catalog(targets=targets or _default_targets())
+    if targets is None:
+        targets = _default_targets()
+        table_keys_by_target = table_keys_by_target or _DEFAULT_TABLE_KEYS_BY_TARGET
+    return build_catalog(targets=targets, table_keys_by_target=table_keys_by_target)
 
 
 @dataclass(frozen=True)
@@ -243,31 +245,35 @@ def _format_toml_value(value: object) -> str:
     raise TypeError(message)
 
 
+_DEFAULT_TABLE_KEYS_BY_TARGET: Mapping[str, Sequence[str]] = {
+    "modules": ("core.modules",),
+    "ast": ("core.ast_nodes",),
+    "goids": ("core.goids",),
+    "function_metrics": ("analytics.function_metrics",),
+}
+
+
 def _default_targets() -> tuple[TargetDescriptor, ...]:
     ingestion_modules = make_target_descriptor(
         name="modules",
         module="ingestion",
-        contract=contract_for_keys(("core.modules",)),
         description="Repository module index",
     )
     ast_target = make_target_descriptor(
         name="ast",
         module="ingestion",
-        contract=contract_for_keys(("core.ast_nodes",)),
         dependencies=("modules",),
         description="AST extraction",
     )
     goids_target = make_target_descriptor(
         name="goids",
         module="graphs",
-        contract=contract_for_keys(("core.goids",)),
         dependencies=("ast",),
         description="GOID construction",
     )
     metrics_target = make_target_descriptor(
         name="function_metrics",
         module="analytics",
-        contract=contract_for_keys(("analytics.function_metrics",)),
         dependencies=("goids",),
         description="Function metrics",
     )

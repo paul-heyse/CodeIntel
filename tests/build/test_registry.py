@@ -64,8 +64,8 @@ class TestTargetRegistry:
         """All targets specify at least one output table or artifact."""
         catalog = get_target_metadata_service().system.catalog
         for target in catalog.all_targets:
-            has_tables = len(target.table_keys) > 0
-            has_artifacts = len(target.contract.artifact_names) > 0
+            has_tables = len(catalog.table_outputs_by_target.get(target.name, ())) > 0
+            has_artifacts = len(catalog.artifact_outputs_by_target.get(target.name, ())) > 0
             expect_true(
                 has_tables or has_artifacts,
                 message=f"No tables or artifacts for {target.name}",
@@ -155,7 +155,6 @@ def test_key_targets_are_registered(target_name: str) -> None:
     """Key targets are available in the registry."""
     catalog = get_target_metadata_service().system.catalog
     expect_in(target_name, catalog)
-
 
 
 def _transitive_deps(catalog: DagCatalog, target_name: str) -> frozenset[str]:

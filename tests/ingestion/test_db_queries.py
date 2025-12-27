@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.targets import TargetDescriptor
 from codeintel.storage.queries.safe import (
     DUCKDB_QUERY_ERRORS,
@@ -87,7 +86,6 @@ def _make_test_target(name: str = "repo_scan") -> TargetDescriptor:
     return make_target_descriptor(
         name=name,
         module="ingestion",
-        contract=EMPTY_CONTRACT,
         description="Test target",
     )
 

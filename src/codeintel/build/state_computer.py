@@ -224,9 +224,7 @@ class StateComputer:
         self._session.preload_manifests()
 
         unknown_targets = sorted(
-            name
-            for name in self._session.cached_manifest_targets()
-            if name not in self._catalog
+            name for name in self._session.cached_manifest_targets() if name not in self._catalog
         )
         for name in unknown_targets:
             log.warning("Ignoring manifest for unknown target: %s", name)

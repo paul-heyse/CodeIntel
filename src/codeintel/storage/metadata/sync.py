@@ -84,7 +84,6 @@ def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> Non
 
 def sync_dataset_dataflow_graph(con: DuckDBPyConnection) -> None:
     """Refresh dataset-level dataflow graph metadata tables based on static contracts."""
-    get_schema_provider()
     nodes, edges = build_contract_dataflow_graph()
 
     replace_dataset_dataflow_nodes(

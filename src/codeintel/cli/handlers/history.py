@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.history.history_timeseries import HistoryTimeseriesOptions
 from codeintel.build.config import load_build_config
 from codeintel.build.hamilton import HamiltonBuildExecutor
+from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext, BuildRunContextOverrides
 from codeintel.cli.core import CliResult
@@ -37,6 +38,7 @@ from codeintel.core.runtime.loader import (
     load_execution_context,
 )
 from codeintel.storage.gateway import (
+    DuckDBConnection,
     DuckDBError,
     DuckDBInvalidInputException,
     StorageConfig,
@@ -68,7 +70,17 @@ def _output_gateway(output_db: Path) -> Iterator[StorageGateway]:
     StorageGateway
         Open gateway that closes on context exit.
     """
-    gw = open_gateway(StorageConfig.for_ingest(output_db))
+
+    def _seed_contract_catalog(con: DuckDBConnection) -> None:
+        persist_contract_catalog_to_connection(
+            con,
+            inputs={"source": "history.timeseries"},
+        )
+
+    gw = open_gateway(
+        StorageConfig.for_ingest(output_db),
+        seed_contract_catalog=_seed_contract_catalog,
+    )
     try:
         yield gw
     finally:

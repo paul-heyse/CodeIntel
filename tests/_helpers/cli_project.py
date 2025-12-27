@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.settings import DEFAULT_PROFILE_NAME
 from codeintel.storage import gateway as gateway_pkg
+from tests._helpers.gateway import seed_contract_catalog
 from tests.cli._harness import CliTestHarness
 
 if TYPE_CHECKING:
@@ -79,7 +80,10 @@ def create_cli_project(tmp_path: Path, *, repo: str, commit: str) -> CLIProjectC
         "CODEINTEL_BUILD_DIR": str(build_dir),
     }
 
-    gateway = gateway_pkg.open_gateway(gateway_pkg.StorageConfig.for_ingest(db_path))
+    gateway = gateway_pkg.open_gateway(
+        gateway_pkg.StorageConfig.for_ingest(db_path),
+        seed_contract_catalog=seed_contract_catalog,
+    )
 
     return CLIProjectContext(
         repo_root=repo_root,

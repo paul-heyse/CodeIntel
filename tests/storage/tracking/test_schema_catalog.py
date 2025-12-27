@@ -11,6 +11,7 @@ from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from tests._helpers.assertions import expect_equal, expect_is_none, expect_is_not_none
 
 if TYPE_CHECKING:
@@ -55,9 +56,11 @@ def test_schema_manifest_roundtrip_from_metadata(fresh_gateway: StorageGateway) 
 
     result = fresh_gateway.schemas.persist_schema_manifest(
         manifest,
-        run_id="run-1",
-        repo="org/repo",
-        commit="deadbeef",
+        request=SchemaCatalogRequest(
+            run_id="run-1",
+            repo="org/repo",
+            commit="deadbeef",
+        ),
     )
 
     expect_equal(result.tables, 1, label="tables")
@@ -106,9 +109,11 @@ def test_schema_index_prefill_avoids_inference(fresh_gateway: StorageGateway) ->
 
     fresh_gateway.schemas.persist_schema_manifest(
         manifest,
-        run_id="run-2",
-        repo="org/repo",
-        commit="deadbeef",
+        request=SchemaCatalogRequest(
+            run_id="run-2",
+            repo="org/repo",
+            commit="deadbeef",
+        ),
     )
 
     schema_index = SchemaIndex(

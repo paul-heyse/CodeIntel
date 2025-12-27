@@ -14,6 +14,8 @@ from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_cano
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from duckdb import DuckDBPyConnection
+
     from codeintel.storage.gateway.protocol import StorageGateway
 
 
@@ -29,7 +31,19 @@ class ContractCatalogResult:
     contract_count: int
 
 
-def _build_contract_payload() -> dict[str, object]:
+@dataclass(frozen=True, slots=True)
+class _CatalogConnectionGateway:
+    con: DuckDBPyConnection
+
+
+def build_contract_catalog_payload() -> dict[str, object]:
+    """Build the canonical dataset contract catalog payload.
+
+    Returns
+    -------
+    dict[str, object]
+        JSON-serializable contract catalog payload.
+    """
     service = get_enriched_contract_service()
     contracts = {contract.table_key: contract for contract in service.iter_contracts()}
     return {
@@ -38,6 +52,45 @@ def _build_contract_payload() -> dict[str, object]:
             table_key: contract_to_json_obj(contract) for table_key, contract in contracts.items()
         },
     }
+
+
+def persist_contract_catalog_to_connection(
+    con: DuckDBPyConnection,
+    *,
+    inputs: Mapping[str, object] | None = None,
+) -> ContractCatalogResult:
+    """Persist the canonical dataset contract catalog using a DuckDB connection.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection for catalog persistence.
+    inputs
+        Optional inputs metadata stored alongside the canonical catalog entry.
+
+    Returns
+    -------
+    ContractCatalogResult
+        Summary of the persisted catalog entry.
+    """
+    payload = build_contract_catalog_payload()
+    catalog_hash = fingerprint(payload)
+    entry = build_catalog_entry(
+        catalog_kind=_CONTRACT_CATALOG_KIND,
+        catalog_hash=catalog_hash,
+        payload=payload,
+        inputs=dict(inputs) if inputs is not None else None,
+    )
+    upsert_canonical_catalog(_CatalogConnectionGateway(con), entry)
+
+    contracts_raw = payload.get("contracts")
+    contract_count = len(contracts_raw) if isinstance(contracts_raw, dict) else 0
+
+    return ContractCatalogResult(
+        catalog_kind=_CONTRACT_CATALOG_KIND,
+        catalog_hash=catalog_hash,
+        contract_count=contract_count,
+    )
 
 
 def persist_contract_catalog(
@@ -58,33 +111,27 @@ def persist_contract_catalog(
     -------
     ContractCatalogResult
         Summary of the persisted catalog entry.
+
+    Raises
+    ------
+    RuntimeError
+        If the gateway is read-only.
     """
     if gateway.config.read_only:
         msg = "Cannot persist contract catalog into a read-only storage gateway"
         raise RuntimeError(msg)
 
-    payload = _build_contract_payload()
-    catalog_hash = fingerprint(payload)
-    entry = build_catalog_entry(
-        catalog_kind=_CONTRACT_CATALOG_KIND,
-        catalog_hash=catalog_hash,
-        payload=payload,
-        inputs=dict(inputs) if inputs is not None else None,
+    result = persist_contract_catalog_to_connection(
+        gateway.con,
+        inputs=inputs,
     )
-    upsert_canonical_catalog(gateway, entry)
     load_contract_catalog_from_connection(gateway.con)
-
-    contracts_raw = payload.get("contracts")
-    contract_count = len(contracts_raw) if isinstance(contracts_raw, dict) else 0
-
-    return ContractCatalogResult(
-        catalog_kind=_CONTRACT_CATALOG_KIND,
-        catalog_hash=catalog_hash,
-        contract_count=contract_count,
-    )
+    return result
 
 
 __all__ = [
     "ContractCatalogResult",
+    "build_contract_catalog_payload",
     "persist_contract_catalog",
+    "persist_contract_catalog_to_connection",
 ]

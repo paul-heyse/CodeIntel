@@ -18,7 +18,7 @@ from codeintel.analytics.functions.function_contracts import (
 from codeintel.analytics.parsing.ast_cache import FunctionAst
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import expect_equal, expect_is_none
-from tests._helpers.contracts import count_rows
+from tests._helpers.db import count_rows
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.goldens import assert_table_matches_golden
 from tests._helpers.serving_snapshot_factory import ServingSnapshot, ServingSnapshotFactory
 
@@ -23,7 +24,7 @@ def _open_snapshot_gateway(snapshot: ServingSnapshot) -> StorageGateway:
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
-    return open_gateway(config)
+    return open_gateway(config, seed_contract_catalog=seed_contract_catalog)
 
 
 def test_core_modules_table_matches_golden(tmp_path: Path) -> None:

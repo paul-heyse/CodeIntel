@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -36,10 +36,15 @@ from codeintel.storage.validation import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.storage.gateway.protocol import SnapshotGatewayResolver, StorageGateway
 
+    CatalogSeeder = Callable[[duckdb.DuckDBPyConnection], None]
+
 __all__ = [
+    "MemoryGatewayOptions",
     "build_snapshot_gateway_resolver",
     "open_gateway",
     "open_inference_gateway",
@@ -48,6 +53,17 @@ __all__ = [
 
 LOG = logging.getLogger(__name__)
 ISSUE_PREVIEW_LIMIT = 10
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryGatewayOptions:
+    """Options for configuring an in-memory gateway."""
+
+    apply_schema: bool = True
+    ensure_views: bool = False
+    validate_schema: bool = True
+    repo: str | None = None
+    commit: str | None = None
 
 
 def _maybe_set_schema_service_from_catalog() -> None:
@@ -78,7 +94,7 @@ def _schema_service_mismatches() -> list[str]:
     return mismatches
 
 
-def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection, *, config: StorageConfig) -> None:
+def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection) -> None:
     load_contract_catalog_from_connection(con)
     clear_contract_validation_cache()
     catalog = get_contract_catalog()
@@ -158,13 +174,20 @@ def _apply_contract_validation(
     )
 
 
-def open_gateway(config: StorageConfig) -> StorageGateway:
+def open_gateway(
+    config: StorageConfig,
+    *,
+    seed_contract_catalog: CatalogSeeder | None = None,
+) -> StorageGateway:
     """Create a StorageGateway bound to a DuckDB database.
 
     Parameters
     ----------
     config
         Storage configuration describing connection options.
+    seed_contract_catalog
+        Callback to seed the contract catalog before opening the gateway.
+        Required for in-memory gateways because metadata catalogs start empty.
 
     Returns
     -------
@@ -186,7 +209,9 @@ def open_gateway(config: StorageConfig) -> StorageGateway:
         if not config.read_only:
             apply_metadata_ddl(con)
             include_views_for_bootstrap = config.ensure_views and config.apply_schema
-        _ensure_contract_catalog(con, config=config)
+            if seed_contract_catalog is not None:
+                seed_contract_catalog(con)
+        _ensure_contract_catalog(con)
         if not config.read_only and config.apply_schema:
             apply_all_schemas(con)
         if not config.read_only:
@@ -283,42 +308,46 @@ def build_snapshot_gateway_resolver(
 
 def open_memory_gateway(
     *,
-    apply_schema: bool = True,
-    ensure_views: bool = False,
-    validate_schema: bool = True,
-    repo: str | None = None,
-    commit: str | None = None,
+    options: MemoryGatewayOptions | None = None,
+    seed_contract_catalog: CatalogSeeder | None = None,
 ) -> StorageGateway:
     """
     Create an in-memory StorageGateway for tests.
 
     Parameters
     ----------
-    apply_schema
-        When True, apply all table schemas to the in-memory database.
-    ensure_views
-        When True, create docs views after schema application.
-    validate_schema
-        When True, validate schema alignment after setup.
-    repo
-        Optional repository slug to record in the StorageConfig for observability.
-    commit
-        Optional commit hash to record in the StorageConfig for observability.
+    options
+        Configuration options for schema application, view creation, validation,
+        and repo/commit metadata.
+    seed_contract_catalog
+        Callback to seed the contract catalog before opening the gateway.
 
     Returns
     -------
     StorageGateway
         Gateway backed by an in-memory DuckDB connection.
+
+    Raises
+    ------
+    RuntimeError
+        If no seed_contract_catalog callback is provided.
     """
-    repo_value = repo if repo is not None else "demo/repo"
-    commit_value = commit if commit is not None else "deadbeef"
+    if seed_contract_catalog is None:
+        msg = (
+            "open_memory_gateway requires seed_contract_catalog to populate metadata.canonical_catalogs. "
+            "Pass an explicit seed callback or use open_inference_gateway for schema-only workflows."
+        )
+        raise RuntimeError(msg)
+    resolved = options or MemoryGatewayOptions()
+    repo_value = resolved.repo or "demo/repo"
+    commit_value = resolved.commit or "deadbeef"
     cfg = StorageConfig(
         db_path=Path(":memory:"),
         read_only=False,
-        apply_schema=apply_schema,
-        ensure_views=ensure_views,
-        validate_schema=validate_schema,
+        apply_schema=resolved.apply_schema,
+        ensure_views=resolved.ensure_views,
+        validate_schema=resolved.validate_schema,
         repo=repo_value,
         commit=commit_value,
     )
-    return open_gateway(cfg)
+    return open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)

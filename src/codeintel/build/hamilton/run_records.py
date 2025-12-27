@@ -20,7 +20,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
-from codeintel.build.hamilton import run_record_utils as run_utils
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import (
     expected_artifacts,
@@ -47,10 +46,16 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-SkipCheckRequest = run_utils.SkipCheckRequest
-options_hash_for_target = run_utils.options_hash_for_target
-should_skip = run_utils.should_skip
-should_skip_native_target = run_utils.should_skip_native_target
+def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
+    """Compute the current configuration options hash for a target.
+
+    Returns
+    -------
+    str | None
+        Hash string for target options, or None when the target has no parameters.
+    """
+    params = env.config.parameters_for(target_name)
+    return compute_target_options_hash(params)
 
 
 def _validate_strict_row_counts(
@@ -168,7 +173,7 @@ def compute_target_input_hash_with_deps(
 class NativeRunInfo:
     """Execution metadata used to create a TargetRunRecord."""
 
-    input_hash: str
+    input_hash: str | None
     options_hash: str | None
     duration_ms: float
     row_counts: dict[str, int] | None = None
@@ -292,7 +297,7 @@ class RunRecordBuilder:
 def create_run_record(
     target: TargetDescriptor,
     status: Literal["succeeded", "skipped", "failed"],
-    input_hash: str,
+    input_hash: str | None,
     *,
     inputs: RunRecordInputs | None = None,
 ) -> TargetRunRecord:
@@ -426,7 +431,6 @@ __all__ = [
     "NativeRunInfo",
     "RunRecordBuilder",
     "RunRecordInputs",
-    "SkipCheckRequest",
     "TargetRunRecord",
     "compute_target_input_hash",
     "compute_target_input_hash_with_deps",
@@ -434,6 +438,4 @@ __all__ = [
     "create_run_record",
     "options_hash_for_target",
     "save_manifest",
-    "should_skip",
-    "should_skip_native_target",
 ]

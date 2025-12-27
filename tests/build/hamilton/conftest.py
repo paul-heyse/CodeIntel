@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.catalog import build_catalog, make_target_descriptor
@@ -275,20 +274,17 @@ def minimal_target_graph() -> DagCatalog:
         make_target_descriptor(
             name="a",
             module="ingestion",
-            contract=EMPTY_CONTRACT,
             description="Target A - no dependencies",
         ),
         make_target_descriptor(
             name="b",
             module="graphs",
-            contract=EMPTY_CONTRACT,
             dependencies=("a",),
             description="Target B - depends on A",
         ),
         make_target_descriptor(
             name="c",
             module="analytics",
-            contract=EMPTY_CONTRACT,
             dependencies=("b",),
             description="Target C - depends on B",
         ),
@@ -313,27 +309,23 @@ def diamond_target_graph() -> DagCatalog:
         make_target_descriptor(
             name="a",
             module="ingestion",
-            contract=EMPTY_CONTRACT,
             description="Root target",
         ),
         make_target_descriptor(
             name="b",
             module="graphs",
-            contract=EMPTY_CONTRACT,
             dependencies=("a",),
             description="Left branch",
         ),
         make_target_descriptor(
             name="c",
             module="graphs",
-            contract=EMPTY_CONTRACT,
             dependencies=("a",),
             description="Right branch",
         ),
         make_target_descriptor(
             name="d",
             module="analytics",
-            contract=EMPTY_CONTRACT,
             dependencies=("b", "c"),
             description="Diamond tip",
         ),

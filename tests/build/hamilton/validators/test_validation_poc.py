@@ -311,7 +311,9 @@ class TestBuildHooksValidation:
         writer = BuildRunWriter(gateway)
         catalog = build_catalog(targets=())
 
-        hooks = build_hooks("run-123", writer, catalog, options=HookOptions(enable_validation=False))
+        hooks = build_hooks(
+            "run-123", writer, catalog, options=HookOptions(enable_validation=False)
+        )
 
         # Should not include ContractEnforcementHook
         contract_hooks = [h for h in hooks if isinstance(h, ContractEnforcementHook)]

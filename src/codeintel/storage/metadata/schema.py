@@ -76,6 +76,8 @@ TABLE_SCHEMA_REGISTRY_TABLE = TableSchema(
     ],
     primary_key=("table_key",),
     indexes=(
+        Index("idx_table_schema_registry_schema_digest", ("schema_digest",)),
+        Index("idx_table_schema_registry_schema_hash", ("schema_hash",)),
         Index("idx_table_schema_registry_derivation_kind", ("derivation_kind",)),
         Index("idx_table_schema_registry_inference_status", ("inference_status",)),
         Index("idx_table_schema_registry_catalog_hash", ("catalog_hash",)),
@@ -94,7 +96,11 @@ SCHEMA_MANIFEST_RUNS_TABLE = TableSchema(
         Column("created_at", "TIMESTAMPTZ", nullable=False),
     ],
     primary_key=("run_id",),
-    indexes=(Index("idx_schema_manifest_runs_repo_commit", ("repo", "commit", "created_at")),),
+    indexes=(
+        Index("idx_schema_manifest_runs_repo_commit", ("repo", "commit", "created_at")),
+        Index("idx_schema_manifest_runs_manifest_kind", ("manifest_kind", "created_at")),
+        Index("idx_schema_manifest_runs_catalog_hash", ("catalog_hash",)),
+    ),
 )
 
 METADATA_TABLES: tuple[TableSchema, ...] = (

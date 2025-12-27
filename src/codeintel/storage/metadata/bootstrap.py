@@ -21,6 +21,7 @@ __all__ = [
     "replace_derived_lineage_edges",
 ]
 
+
 def replace_dataset_dataflow_nodes(
     con: DuckDBPyConnection,
     *,

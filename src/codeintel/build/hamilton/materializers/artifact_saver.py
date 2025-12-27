@@ -32,10 +32,8 @@ from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
     format_path_template,
 )
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.execution.materialization import (
     failed_artifact_result,
-    skipped_artifact_result,
     succeeded_artifact_result,
 )
 
@@ -73,8 +71,7 @@ class FileArtifactSaver(DataSaver):
     """Persist a file artifact for a specific snapshot.
 
     This adapter:
-    - Computes the target input hash (manifest key) from the catalog + env.
-    - Applies manifest-based skip (authoritative for artifact writes).
+    - Resolves target metadata from the DAG catalog.
     - Writes bytes to a contract-resolved output path using atomic rename.
     - Returns metadata convertible to a MaterializationResult describing the write outcome.
     """
@@ -84,7 +81,6 @@ class FileArtifactSaver(DataSaver):
     target_name: str
     artifact_name: str
     path_template: str | None = None
-    hash_options: InputHashOptions | None = None
     output_role: Literal["contract", "internal"] | None = None
 
     _hamilton_runtime_types = (BuildEnv, DagCatalog)
@@ -150,7 +146,7 @@ class FileArtifactSaver(DataSaver):
         Returns
         -------
         dict[str, object]
-            Metadata describing the write, including status and input hash.
+            Metadata describing the write and materialization outcome.
         """
         start = perf_counter()
         input_hash: str | None = None
@@ -161,7 +157,6 @@ class FileArtifactSaver(DataSaver):
                 env=self.env,
                 catalog=self.catalog,
                 target_name=self.target_name,
-                hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
                 result = failed_artifact_result(
@@ -173,26 +168,12 @@ class FileArtifactSaver(DataSaver):
             else:
                 context = prepared
                 input_hash = context.input_hash
-
-                if context.should_skip:
-                    resolved = _resolve_artifact_path(
-                        self.env,
-                        self.target_name,
-                        self.artifact_name,
-                        path_template=self.path_template,
-                    )
-                    result = skipped_artifact_result(
+                if data is None:
+                    result = failed_artifact_result(
                         artifact_name=self.artifact_name,
                         duration_ms=duration_ms(start),
-                        input_hash=input_hash,
-                        path=str(resolved) if resolved is not None else None,
-                    )
-                elif data is None:
-                    result = skipped_artifact_result(
-                        artifact_name=self.artifact_name,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash,
-                        path=None,
+                        input_hash=input_hash or "",
+                        error="Expected artifact payload but received None",
                     )
                 else:
                     output_path = _resolve_artifact_path(
@@ -205,7 +186,7 @@ class FileArtifactSaver(DataSaver):
                         result = failed_artifact_result(
                             artifact_name=self.artifact_name,
                             duration_ms=duration_ms(start),
-                            input_hash=input_hash,
+                            input_hash=input_hash or "",
                             error=f"Artifact path could not be resolved: {self.artifact_name}",
                         )
                     else:
@@ -217,7 +198,7 @@ class FileArtifactSaver(DataSaver):
                             result = succeeded_artifact_result(
                                 artifact_name=self.artifact_name,
                                 duration_ms=duration_ms(start),
-                                input_hash=input_hash,
+                                input_hash=input_hash or "",
                                 path=str(output_path),
                                 size_bytes=size_bytes,
                             )
@@ -226,7 +207,7 @@ class FileArtifactSaver(DataSaver):
                             result = succeeded_artifact_result(
                                 artifact_name=self.artifact_name,
                                 duration_ms=duration_ms(start),
-                                input_hash=input_hash,
+                                input_hash=input_hash or "",
                                 path=str(output_path),
                                 size_bytes=size_bytes,
                             )
@@ -236,7 +217,7 @@ class FileArtifactSaver(DataSaver):
                             result = succeeded_artifact_result(
                                 artifact_name=self.artifact_name,
                                 duration_ms=duration_ms(start),
-                                input_hash=input_hash,
+                                input_hash=input_hash or "",
                                 path=str(output_path),
                                 size_bytes=len(content_bytes),
                             )

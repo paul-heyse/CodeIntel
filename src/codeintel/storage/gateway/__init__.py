@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     )
     from codeintel.storage.gateway.config import StorageConfig
     from codeintel.storage.gateway.factory import (
+        MemoryGatewayOptions,
         build_snapshot_gateway_resolver,
         open_gateway,
         open_inference_gateway,
@@ -114,6 +115,7 @@ _EXPORTS: dict[str, tuple[str, str]] = {
         "codeintel.storage.gateway.factory",
         "build_snapshot_gateway_resolver",
     ),
+    "MemoryGatewayOptions": ("codeintel.storage.gateway.factory", "MemoryGatewayOptions"),
     "open_gateway": ("codeintel.storage.gateway.factory", "open_gateway"),
     "open_inference_gateway": ("codeintel.storage.gateway.factory", "open_inference_gateway"),
     "open_memory_gateway": ("codeintel.storage.gateway.factory", "open_memory_gateway"),
@@ -156,6 +158,7 @@ __all__ = [
     "ExportService",
     "GraphTables",
     "IbisGateway",
+    "MemoryGatewayOptions",
     "MinimalStorageGateway",
     "PoolConfig",
     "ReadPoolWarehouse",

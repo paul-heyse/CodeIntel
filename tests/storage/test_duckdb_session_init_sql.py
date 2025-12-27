@@ -12,6 +12,7 @@ from codeintel.storage.gateway.factory import open_gateway
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_is_not_none
 from tests._helpers.env_vars import temporary_env
+from tests._helpers.gateway import seed_contract_catalog
 
 
 def test_open_gateway_applies_init_sql(tmp_path: Path) -> None:
@@ -25,7 +26,7 @@ def test_open_gateway_applies_init_sql(tmp_path: Path) -> None:
             ensure_views=False,
             validate_schema=False,
         )
-        gateway = open_gateway(cfg)
+        gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
         try:
             row = gateway.con.execute("SELECT COUNT(*) FROM ci_init_test").fetchone()
             expect_is_not_none(row, label="ci_init_test count row")

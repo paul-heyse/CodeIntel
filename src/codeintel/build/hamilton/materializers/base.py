@@ -8,11 +8,6 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.run_record_utils import (
-    options_hash_for_target,
-    should_skip_native_target,
-)
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import TargetDescriptor
@@ -23,9 +18,8 @@ class MaterializationContext:
     """Resolved inputs for a materializer execution."""
 
     target: TargetDescriptor
-    input_hash: str
+    input_hash: str | None
     options_hash: str | None
-    should_skip: bool
 
 
 @dataclass(frozen=True)
@@ -41,7 +35,6 @@ def resolve_materialization_context(
     env: BuildEnv,
     catalog: DagCatalog,
     target_name: str,
-    hash_options: InputHashOptions | None = None,
 ) -> MaterializationContext | MaterializationContextError:
     """Resolve materialization context from environment and catalog.
 
@@ -72,42 +65,12 @@ def resolve_materialization_context(
 
     target = catalog.get(target_name)
     if target is None:
-        return MaterializationContextError(
-            message=f"Target not found in catalog: {target_name}"
-        )
+        return MaterializationContextError(message=f"Target not found in catalog: {target_name}")
 
-    options_hash = options_hash_for_target(env, target_name)
-    resolved_hash_options = hash_options
-    if resolved_hash_options is None:
-        resolved_hash_options = InputHashOptions(
-            options_hash=options_hash,
-            manifests=env.manifest_index,
-        )
-    else:
-        if resolved_hash_options.options_hash is None:
-            resolved_hash_options = InputHashOptions(
-                options_hash=options_hash,
-                manifests=resolved_hash_options.manifests,
-                file_state_hash=resolved_hash_options.file_state_hash,
-            )
-        if resolved_hash_options.manifests is None:
-            resolved_hash_options = InputHashOptions(
-                options_hash=resolved_hash_options.options_hash,
-                manifests=env.manifest_index,
-                file_state_hash=resolved_hash_options.file_state_hash,
-            )
-    input_hash = compute_input_hash(
-        target=target,
-        snapshot=env.snapshot,
-        gateway=env.gateway,
-        settings=env.settings,
-        options=resolved_hash_options,
-    )
     return MaterializationContext(
         target=target,
-        input_hash=input_hash,
-        options_hash=options_hash,
-        should_skip=should_skip_native_target(env, target, input_hash, options_hash=options_hash),
+        input_hash=None,
+        options_hash=None,
     )
 
 
@@ -127,34 +90,9 @@ def duration_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000
 
 
-def manifest_row_count(env: BuildEnv, *, target_name: str) -> int | None:
-    """Return the row count recorded in an existing manifest if present.
-
-    Parameters
-    ----------
-    env
-        Build environment containing manifest index.
-    target_name
-        Target name to lookup in the manifest index.
-
-    Returns
-    -------
-    int | None
-        Row count from the manifest, or None if unavailable.
-    """
-    index = env.manifest_index
-    if index is None:
-        return None
-    manifest = index.get(target_name)
-    if manifest is None:
-        return None
-    return manifest.row_count
-
-
 __all__ = [
     "MaterializationContext",
     "MaterializationContextError",
     "duration_ms",
-    "manifest_row_count",
     "resolve_materialization_context",
 ]

@@ -14,7 +14,6 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.session import BuildSession
 from codeintel.build.state import StateValidationOptions, StateValidator
 from codeintel.build.state_computer import StateComputer
@@ -91,7 +90,6 @@ class TestStateComputer:
             name="test_target",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(target,))
 
@@ -119,7 +117,6 @@ class TestStateComputer:
             name="test_target",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(target,))
 
@@ -154,7 +151,6 @@ class TestStateComputer:
             name="test_target",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(target,))
 
@@ -186,13 +182,11 @@ class TestStateComputer:
             name="dependency",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         main_target = make_target_descriptor(
             name="main",
             module="ingestion",
             dependencies=("dependency",),
-            contract=EMPTY_CONTRACT,
         )
 
         catalog = build_catalog(targets=(dep_target, main_target))
@@ -227,13 +221,11 @@ class TestStateComputer:
             name="dependency",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         main_target = make_target_descriptor(
             name="main",
             module="ingestion",
             dependencies=("dependency",),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(dep_target, main_target))
 
@@ -270,19 +262,16 @@ class TestStateComputer:
             name="t1",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         t2 = make_target_descriptor(
             name="t2",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         t3 = make_target_descriptor(
             name="t3",
             module="ingestion",
             dependencies=("t1",),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(t1, t2, t3))
 
@@ -317,7 +306,6 @@ class TestStateComputer:
             name="single",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
 
         catalog = build_catalog(targets=(target,))
@@ -345,7 +333,6 @@ class TestStateComputer:
             name="cached",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(target,))
 
@@ -382,7 +369,6 @@ class TestStateValidatorEquivalence:
             name="equiv_test",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(target,))
 
@@ -419,7 +405,6 @@ class TestStateValidatorEquivalence:
             name="equiv_current",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(target,))
 
@@ -466,13 +451,11 @@ class TestStateValidatorEquivalence:
             name="dep",
             module="ingestion",
             dependencies=(),
-            contract=EMPTY_CONTRACT,
         )
         main = make_target_descriptor(
             name="main",
             module="ingestion",
             dependencies=("dep",),
-            contract=EMPTY_CONTRACT,
         )
         catalog = build_catalog(targets=(dep, main))
 

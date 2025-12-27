@@ -61,6 +61,7 @@ from codeintel.storage.metadata.sync import (
     sync_derived_lineage_edges,
 )
 from codeintel.storage.sqlglot_tools import extract_column_lineage_duckdb
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from codeintel.storage.views import ibis_views as _ibis_views
 from codeintel.storage.views.dependencies import extract_referenced_table_keys
 from codeintel.storage.views.diff import diff_view_sql_maps
@@ -117,12 +118,12 @@ def _schema_manifest_json(env: BuildEnv) -> str:
     run_id = env.run_context.run_id if env.run_context is not None else new_run_id("schema")
     env.gateway.schemas.persist_schema_manifest(
         manifest,
-        run_id=run_id,
-        repo=env.repo,
-        commit=env.commit,
-        catalog_inputs={"source": "serving_artifacts"},
-        include_views=True,
-        strict_provenance=True,
+        request=SchemaCatalogRequest(
+            run_id=run_id,
+            repo=env.repo,
+            commit=env.commit,
+            catalog_inputs={"source": "serving_artifacts"},
+        ),
     )
     persist_contract_catalog(
         env.gateway,

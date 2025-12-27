@@ -1,0 +1,1 @@
+"""Schema build tests package."""

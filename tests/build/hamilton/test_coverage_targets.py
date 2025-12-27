@@ -22,7 +22,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 
 
@@ -53,14 +52,16 @@ def _make_graph() -> DagCatalog:
             make_target_descriptor(
                 name="coverage_test_edges",
                 module="analytics",
-                contract=contract_for_keys(("analytics.test_coverage_edges",)),
             ),
             make_target_descriptor(
                 name="behavioral_coverage",
                 module="analytics",
-                contract=contract_for_keys(("analytics.behavioral_coverage",)),
             ),
-        )
+        ),
+        table_keys_by_target={
+            "coverage_test_edges": ("analytics.test_coverage_edges",),
+            "behavioral_coverage": ("analytics.behavioral_coverage",),
+        },
     )
 
 

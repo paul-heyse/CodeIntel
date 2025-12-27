@@ -382,9 +382,7 @@ class ContractViolationError(ContractError):
                 f"Declare '{self.artifact_name}' via a saver tag for '{self.target}' "
                 f"or remove the write"
             )
-        return (
-            f"Review saver tags for '{self.target}' and ensure all writes match declared outputs"
-        )
+        return f"Review saver tags for '{self.target}' and ensure all writes match declared outputs"
 
 
 class ArtifactNotFoundError(ContractError):

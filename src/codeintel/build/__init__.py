@@ -6,8 +6,8 @@ execution, and readiness infrastructure for the CodeIntel build system.
 Key concepts:
 
 - **DagCatalog**: Immutable catalog derived from the Hamilton DAG + tags
-- **TargetDescriptor**: Target metadata derived from tags + contracts
-- **OutputContract**: Output identities a target produces (tables + artifacts)
+- **TargetDescriptor**: Target metadata derived from Hamilton tags
+- **OutputDescriptor**: Saver-tagged output inventory from the DAG
 - **OutputManifest**: Record of a target's computation with input/output hashes
 - **BuildRunRecord**: Record of a build system run for observability
 - **BuildError**: Rich error hierarchy with actionable hints
@@ -19,7 +19,6 @@ Import patterns::
     from codeintel.build.target_metadata import get_target_metadata_service
 
 
-    from codeintel.build.contracts import OutputContract, ArtifactSpec, TableOutputDescriptor
     from codeintel.build.resources import TargetResources, TargetExecution
     from codeintel.build.parameters import TargetParameters
 
@@ -54,15 +53,12 @@ from codeintel.core.imports.lazy import lazy_import
 __all__ = [
     "DEFAULT_EXECUTION",
     "DEFAULT_RESOURCES",
-    "EMPTY_CONTRACT",
     "EMPTY_PARAMETERS",
-    "ArtifactSpec",
     "BuildError",
     "BuildErrorCollection",
     "BuildRunRecord",
     "DagCatalog",
     "ExecutionPolicy",
-    "OutputContract",
     "OutputManifest",
     "TargetDescriptor",
     "TargetExecution",
@@ -76,7 +72,6 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    from codeintel.build.contracts import EMPTY_CONTRACT, ArtifactSpec, OutputContract
     from codeintel.build.errors import BuildError, BuildErrorCollection
     from codeintel.build.execution_policy import ExecutionPolicy
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
@@ -95,15 +90,12 @@ if TYPE_CHECKING:
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "DEFAULT_EXECUTION": ("codeintel.build.resources", "DEFAULT_EXECUTION"),
     "DEFAULT_RESOURCES": ("codeintel.build.resources", "DEFAULT_RESOURCES"),
-    "EMPTY_CONTRACT": ("codeintel.build.contracts", "EMPTY_CONTRACT"),
     "EMPTY_PARAMETERS": ("codeintel.build.parameters", "EMPTY_PARAMETERS"),
-    "ArtifactSpec": ("codeintel.build.contracts", "ArtifactSpec"),
     "BuildError": ("codeintel.build.errors", "BuildError"),
     "BuildErrorCollection": ("codeintel.build.errors", "BuildErrorCollection"),
     "ExecutionPolicy": ("codeintel.build.execution_policy", "ExecutionPolicy"),
     "BuildRunRecord": ("codeintel.core.build_manifest", "BuildRunRecord"),
     "DagCatalog": ("codeintel.build.hamilton.dag_catalog", "DagCatalog"),
-    "OutputContract": ("codeintel.build.contracts", "OutputContract"),
     "OutputManifest": ("codeintel.core.build_manifest", "OutputManifest"),
     "TargetExecution": ("codeintel.build.resources", "TargetExecution"),
     "TargetDescriptor": ("codeintel.build.hamilton.dag_catalog", "TargetDescriptor"),

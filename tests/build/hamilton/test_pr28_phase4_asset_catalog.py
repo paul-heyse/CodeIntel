@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from codeintel.storage.gateway import open_memory_gateway
+from codeintel.storage.gateway.factory import MemoryGatewayOptions, open_memory_gateway
 from codeintel.storage.tracking.asset_tracking import (
     AssetAliasRecord,
     AssetDiffRecord,
@@ -20,11 +20,15 @@ from tests._helpers.assertions import (
     expect_length,
     expect_true,
 )
+from tests._helpers.gateway import seed_contract_catalog
 
 
 def test_pr28_phase4_asset_catalog_tables_exist() -> None:
     """Verify Phase 4 asset catalog tables are created by schema bootstrap."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         expected = {
             ("build", "asset_versions"),
@@ -52,7 +56,10 @@ def test_pr28_phase4_asset_catalog_tables_exist() -> None:
 
 def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
     """Verify version insert, run mapping, alias resolve, and diff caching."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         now = datetime.now(tz=UTC)
         version = AssetVersionRecord(
@@ -160,7 +167,10 @@ def test_pr28_phase4_asset_catalog_insert_and_resolve() -> None:
 
 def test_pr28_phase4_asset_catalog_lineage_edges_upsert() -> None:
     """Verify lineage edges can be recorded and are queryable."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         now = datetime.now(tz=UTC)
         edges_written = gateway.assets.record_lineage_edges_batch(

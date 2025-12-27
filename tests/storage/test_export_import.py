@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.gateway import seed_contract_catalog
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
@@ -20,7 +21,8 @@ def _make_gateway(db_path: Path) -> StorageGateway:
             apply_schema=False,
             ensure_views=False,
             validate_schema=False,
-        )
+        ),
+        seed_contract_catalog=seed_contract_catalog,
     )
 
 

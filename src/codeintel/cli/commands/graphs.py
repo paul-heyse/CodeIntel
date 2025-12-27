@@ -196,7 +196,7 @@ class GraphTargetsList(Command[GraphTargetsResult]):
                 name=t.name,
                 description=t.description or f"Graph target: {t.name}",
                 dependencies=list(t.dependencies),
-                tables=list(t.table_keys),
+                tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
             )
             for t in targets
         ]
@@ -349,7 +349,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
                 name=t.name,
                 description=t.description or f"Graph plugin: {t.name}",
                 dependencies=list(t.dependencies),
-                tables=list(t.table_keys),
+                tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
             )
             for t in graph_targets
         ]
@@ -422,7 +422,7 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
                 name=t.name,
                 description=t.description or f"Graph target: {t.name}",
                 dependencies=list(t.dependencies),
-                tables=list(t.table_keys),
+                tables=[output.key for output in catalog.table_outputs_by_target.get(t.name, ())],
             )
             for t in graph_targets
         ]

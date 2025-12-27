@@ -102,47 +102,24 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
             A metadata node that executes the saver and returns a materialization result.
 
         """
-        node_to_save_str = str(node_.name if self.target is None else self.target)
-        metadata_node_name, metadata_namespace = _resolve_metadata_node_name(
-            node_to_save=node_to_save_str,
+        target_override = _normalize_target_override(target_override=self.target, fn=fn)
+        inputs = _SaverNodeInputs(
+            node=node_,
+            fn=fn,
             output_name=self.artifact_name,
-        )
-        saver_cls = _resolve_saver_class(
-            node_type=node_.type,
             saver_classes=self.saver_classes,
-            fn=fn,
-        )
-        adapter_factory, dependencies, resolved_kwargs_typed = _resolve_saver_factory(
-            saver_cls=saver_cls,
             kwargs=self.kwargs,
+            target_override=target_override,
         )
-        dependencies_inverted = {v: k for k, v in dependencies.items()}
-        sink = _resolve_saver_sink(saver_cls=saver_cls, fn=fn)
-        output_role = _resolve_output_role(
-            fn=fn,
-            kwargs=self.kwargs,
-            resolved_kwargs=resolved_kwargs_typed,
-        )
-        target_name = _resolve_target_name(fn=fn, resolved_kwargs=resolved_kwargs_typed)
-        table_key, artifact_name = _resolve_output_identity(
-            fn=fn,
-            resolved_kwargs=resolved_kwargs_typed,
-            output_role=output_role,
-        )
-        path_template = _resolve_artifact_path_template(
-            fn=fn,
-            resolved_kwargs=resolved_kwargs_typed,
-            artifact_name=artifact_name,
-        )
-        metadata_tags = _resolve_metadata_tags(fn=fn, resolved_kwargs=resolved_kwargs_typed)
+        resolution = _resolve_saver_node(inputs=inputs)
 
         def save_data(
-            __adapter_factory: AdapterFactory = adapter_factory,
-            __dependencies: dict[str, str] = dependencies_inverted,
-            __resolved_kwargs: dict[str, object] = resolved_kwargs_typed,
-            __data_node_name: str = node_to_save_str,
-            __table_key: str | None = table_key,
-            __artifact_name: str | None = artifact_name,
+            __adapter_factory: AdapterFactory = resolution.adapter_factory,
+            __dependencies: dict[str, str] = resolution.dependencies_inverted,
+            __resolved_kwargs: dict[str, object] = resolution.resolved_kwargs,
+            __data_node_name: str = resolution.node_to_save_str,
+            __table_key: str | None = resolution.table_key,
+            __artifact_name: str | None = resolution.artifact_name,
             /,
             **input_kwargs: object,
         ) -> MaterializationResult:
@@ -165,43 +142,30 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
                 saver_name=type(data_saver).__name__,
             )
 
-        def get_input_type_key(key: str) -> str:
-            return dependencies.get(key, key)
-
-        input_types: dict[str, type | tuple[type, DependencyType]] = {
-            get_input_type_key(key): (type_, DependencyType.REQUIRED)
-            for key, type_ in saver_cls.get_required_arguments().items()
-        }
-        input_types.update(
-            {
-                dependencies[key]: (type_, DependencyType.OPTIONAL)
-                for key, type_ in saver_cls.get_optional_arguments().items()
-                if key in dependencies
-            }
+        input_types = _build_input_types(node_=node_, resolution=resolution)
+        node_input_types = cast(
+            "dict[str, type | tuple[type, DependencyType]]",
+            input_types,
         )
-        input_types = {
-            key: value for key, value in input_types.items() if key not in resolved_kwargs_typed
-        }
-        input_types[node_to_save_str] = (node_.type, DependencyType.REQUIRED)
 
         return h_node.Node(
-            name=metadata_node_name,
+            name=resolution.metadata_node_name,
             callabl=save_data,
             typ=cast("type[object]", MaterializationResult),
-            input_types=input_types,
-            namespace=metadata_namespace,
+            input_types=node_input_types,
+            namespace=resolution.metadata_namespace,
             tags=_build_saver_tags(
                 node_=node_,
                 context=SaverTagContext(
-                    sink=sink,
-                    saver_cls=saver_cls,
-                    output_role=output_role,
-                    target_name=target_name,
-                    table_key=table_key,
-                    artifact_name=artifact_name,
-                    path_template=path_template,
+                    sink=resolution.sink,
+                    saver_cls=resolution.saver_cls,
+                    output_role=resolution.output_role,
+                    target_name=resolution.target_name,
+                    table_key=resolution.table_key,
+                    artifact_name=resolution.artifact_name,
+                    path_template=resolution.path_template,
                 ),
-                metadata_tags=metadata_tags,
+                metadata_tags=resolution.metadata_tags,
             ),
         )
 
@@ -234,6 +198,132 @@ class SaveToObjectMetadataDecorator(SingleNodeNodeTransformer):
         fn
             Function being decorated.
         """
+
+
+@dataclass(frozen=True, slots=True)
+class _SaverNodeInputs:
+    node: h_node.Node
+    fn: Callable[..., object]
+    output_name: str | None
+    saver_classes: Sequence[type[AdapterCommon]]
+    kwargs: dict[str, ParametrizedDependency]
+    target_override: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _SaverNodeResolution:
+    adapter_factory: AdapterFactory
+    dependencies: dict[str, str]
+    dependencies_inverted: dict[str, str]
+    resolved_kwargs: dict[str, object]
+    node_to_save_str: str
+    metadata_node_name: str
+    metadata_namespace: tuple[str, ...]
+    sink: str
+    saver_cls: type[AdapterCommon]
+    output_role: str | None
+    target_name: str
+    table_key: str | None
+    artifact_name: str | None
+    path_template: str | None
+    metadata_tags: dict[str, object]
+
+
+def _resolve_saver_node(*, inputs: _SaverNodeInputs) -> _SaverNodeResolution:
+    node_to_save = inputs.node.name if inputs.target_override is None else inputs.target_override
+    metadata_node_name, metadata_namespace = _resolve_metadata_node_name(
+        node_to_save=node_to_save,
+        output_name=inputs.output_name,
+    )
+
+    saver_cls = _resolve_saver_class(
+        node_type=inputs.node.type,
+        saver_classes=inputs.saver_classes,
+        fn=inputs.fn,
+    )
+    adapter_factory, dependencies, resolved_kwargs = _resolve_saver_factory(
+        saver_cls=saver_cls,
+        kwargs=inputs.kwargs,
+    )
+    output_role = _resolve_output_role(
+        fn=inputs.fn,
+        kwargs=inputs.kwargs,
+        resolved_kwargs=resolved_kwargs,
+    )
+    target_name = _resolve_target_name(fn=inputs.fn, resolved_kwargs=resolved_kwargs)
+    table_key, artifact_name = _resolve_output_identity(
+        fn=inputs.fn,
+        resolved_kwargs=resolved_kwargs,
+        output_role=output_role,
+    )
+    path_template = _resolve_artifact_path_template(
+        fn=inputs.fn,
+        resolved_kwargs=resolved_kwargs,
+        artifact_name=artifact_name,
+    )
+    metadata_tags = _resolve_metadata_tags(fn=inputs.fn, resolved_kwargs=resolved_kwargs)
+    sink = _resolve_saver_sink(saver_cls=saver_cls, fn=inputs.fn)
+    dependencies_inverted = {value: key for key, value in dependencies.items()}
+
+    return _SaverNodeResolution(
+        adapter_factory=adapter_factory,
+        dependencies=dependencies,
+        dependencies_inverted=dependencies_inverted,
+        resolved_kwargs=resolved_kwargs,
+        node_to_save_str=node_to_save,
+        metadata_node_name=metadata_node_name,
+        metadata_namespace=metadata_namespace,
+        sink=sink,
+        saver_cls=saver_cls,
+        output_role=output_role,
+        target_name=target_name,
+        table_key=table_key,
+        artifact_name=artifact_name,
+        path_template=path_template,
+        metadata_tags=metadata_tags,
+    )
+
+
+def _normalize_target_override(
+    *,
+    target_override: object | None,
+    fn: Callable[..., object],
+) -> str | None:
+    if target_override is None:
+        return None
+    if isinstance(target_override, str) and target_override:
+        return target_override
+    msg = f"{fn.__qualname__}: target_ must be a non-empty string"
+    raise InvalidDecoratorException(msg)
+
+
+def _build_input_types(
+    *,
+    node_: h_node.Node,
+    resolution: _SaverNodeResolution,
+) -> dict[str, tuple[type, DependencyType]]:
+    def _input_key(key: str) -> str:
+        return resolution.dependencies.get(key, key)
+
+    input_types = {
+        _input_key(key): (cast("type", type_), DependencyType.REQUIRED)
+        for key, type_ in resolution.saver_cls.get_required_arguments().items()
+    }
+    input_types.update(
+        {
+            resolution.dependencies[key]: (cast("type", type_), DependencyType.OPTIONAL)
+            for key, type_ in resolution.saver_cls.get_optional_arguments().items()
+            if key in resolution.dependencies
+        }
+    )
+    input_types = {
+        key: value for key, value in input_types.items() if key not in resolution.resolved_kwargs
+    }
+    input_types[resolution.node_to_save_str] = (
+        cast("type", node_.type),
+        DependencyType.REQUIRED,
+    )
+    return input_types
 
 
 __all__ = ["SaveToObjectMetadataDecorator"]

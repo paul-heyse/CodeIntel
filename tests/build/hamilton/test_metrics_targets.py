@@ -29,7 +29,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
 
 
@@ -62,24 +61,24 @@ def _make_graph() -> DagCatalog:
             make_target_descriptor(
                 name="subsystem_graph_metrics",
                 module="analytics",
-                contract=contract_for_keys(("analytics.subsystem_graph_metrics",)),
             ),
             make_target_descriptor(
                 name="symbol_graph_metrics",
                 module="analytics",
-                contract=contract_for_keys(
-                    (
-                        "analytics.symbol_graph_metrics_modules",
-                        "analytics.symbol_graph_metrics_functions",
-                    )
-                ),
             ),
             make_target_descriptor(
                 name="subsystem_agreement",
                 module="analytics",
-                contract=contract_for_keys(("analytics.subsystem_agreement",)),
             ),
-        )
+        ),
+        table_keys_by_target={
+            "subsystem_graph_metrics": ("analytics.subsystem_graph_metrics",),
+            "symbol_graph_metrics": (
+                "analytics.symbol_graph_metrics_modules",
+                "analytics.symbol_graph_metrics_functions",
+            ),
+            "subsystem_agreement": ("analytics.subsystem_agreement",),
+        },
     )
 
 

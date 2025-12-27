@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.helpers import paths_to_modules
 from codeintel.build.providers import create_default_providers
 from codeintel.build.schemas import column_names_for_table_key
@@ -73,7 +72,6 @@ def _make_ingestion_target(name: str, description: str = "") -> TargetDescriptor
     return make_target_descriptor(
         name=name,
         module="ingestion",
-        contract=EMPTY_CONTRACT,
         description=description or f"Test target for {name}",
     )
 

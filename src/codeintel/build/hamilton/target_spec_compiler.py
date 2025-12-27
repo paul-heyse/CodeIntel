@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from hamilton.node import Node
 
 
-
 @dataclass(frozen=True, slots=True)
 class TargetSpecOverride:
     """Small override layer for truly non-derivable settings."""

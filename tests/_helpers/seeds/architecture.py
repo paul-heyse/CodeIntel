@@ -19,7 +19,7 @@ from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions import ModulesAssertions
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.fixtures.rows import RowFactory
-from tests._helpers.gateway import GatewayFactory
+from tests._helpers.gateway import GatewayFactory, seed_contract_catalog
 from tests._helpers.modules_expectations import modules_expected_from_repo_tree
 from tests._helpers.orchestration import seed_coverage_rows
 from tests._helpers.orchestration.coverage_orchestration import CoverageSeedOptions
@@ -147,7 +147,7 @@ def open_seeded_architecture_gateway(
             ensure_views=strict_schema,
             validate_schema=strict_schema,
         )
-        gateway = open_gateway(cfg)
+        gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     return seed_architecture(gateway=gateway, repo=repo, commit=commit, repo_root=repo_root)
 
 

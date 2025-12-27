@@ -584,6 +584,114 @@ def _collect_validation_inputs(nodes: Mapping[str, NodeLike]) -> _ValidationInpu
     )
 
 
+def _build_dependents_map(nodes: Mapping[str, NodeLike]) -> dict[str, tuple[str, ...]]:
+    dependents: dict[str, set[str]] = {}
+    for node in nodes.values():
+        for dep in node.dependencies:
+            dependents.setdefault(dep.name, set()).add(node.name)
+    return {name: tuple(sorted(children)) for name, children in dependents.items()}
+
+
+def _contract_saver_target(node: NodeLike) -> str | None:
+    tags = _tags_mapping(node)
+    if tags is None:
+        return None
+    if tags.get("hamilton.data_saver") is not True:
+        return None
+    if tags.get("output_role") != "contract":
+        return None
+    return _target_tag_value(tags)
+
+
+def _materialize_node_reachable(
+    *,
+    start_node: str,
+    target: str,
+    nodes: Mapping[str, NodeLike],
+    dependents: Mapping[str, Sequence[str]],
+) -> bool:
+    visited: set[str] = set()
+    queue: list[str] = [start_node]
+
+    while queue:
+        current = queue.pop()
+        if current in visited:
+            continue
+        visited.add(current)
+        for dependent_name in dependents.get(current, ()):
+            dep_node = nodes.get(dependent_name)
+            if dep_node is None:
+                continue
+            dep_tags = _tags_mapping(dep_node)
+            if dep_tags is None:
+                continue
+            if (
+                dep_tags.get(TAG_NODE_TYPE) == NODE_TYPE_MATERIALIZE
+                and dep_tags.get(TAG_TARGET) == target
+            ):
+                return True
+            queue.append(dependent_name)
+    return False
+
+
+def _orphan_issue_for_saver(
+    *,
+    node: NodeLike,
+    target: str,
+    nodes: Mapping[str, NodeLike],
+    dependents: Mapping[str, Sequence[str]],
+    materialize_nodes_by_target: Mapping[str, Sequence[str]],
+) -> GraphValidationIssue | None:
+    if target not in materialize_nodes_by_target:
+        return GraphValidationIssue(
+            severity="error",
+            code="orphan_saver",
+            message="Contract DataSaver node missing downstream materialize node",
+            node=node.name,
+            target=target,
+        )
+    if _materialize_node_reachable(
+        start_node=node.name,
+        target=target,
+        nodes=nodes,
+        dependents=dependents,
+    ):
+        return None
+    return GraphValidationIssue(
+        severity="error",
+        code="orphan_saver",
+        message="Contract DataSaver node not connected to target materialize node",
+        node=node.name,
+        target=target,
+    )
+
+
+def _orphan_saver_issues(
+    *,
+    nodes: Mapping[str, NodeLike],
+    materialize_nodes_by_target: Mapping[str, Sequence[str]],
+) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+    dependents = _build_dependents_map(nodes)
+
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        target = _contract_saver_target(node)
+        if target is None:
+            continue
+        issue = _orphan_issue_for_saver(
+            node=node,
+            target=target,
+            nodes=nodes,
+            dependents=dependents,
+            materialize_nodes_by_target=materialize_nodes_by_target,
+        )
+        if issue is not None:
+            issues.append(issue)
+
+    return issues
+
+
 def _target_tag_value(tags: Mapping[str, object]) -> str | None:
     target = tags.get(TAG_TARGET)
     return target if isinstance(target, str) and target else None
@@ -807,6 +915,12 @@ def validate_nodes(
         *inputs.artifact_issues,
         *inputs.saver_issues,
     ]
+    errors.extend(
+        _orphan_saver_issues(
+            nodes=nodes,
+            materialize_nodes_by_target=inputs.materialize_nodes_by_target,
+        )
+    )
     errors.extend(_async_node_issues(nodes))
     errors.extend(_duplicate_materialize_issues(inputs.materialize_nodes_by_target))
     if validate_schema and provider is not None:

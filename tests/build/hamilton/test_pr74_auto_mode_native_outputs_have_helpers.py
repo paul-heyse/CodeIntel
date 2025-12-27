@@ -27,7 +27,8 @@ def test_auto_mode_native_outputs_have_helpers() -> None:
         if target is None:
             pytest.fail(f"Target not found in catalog: {target_name}")
 
-        for table_key in target.table_keys:
+        for output in runtime.catalog.table_outputs_by_target.get(target_name, ()):
+            table_key = output.key
             d_name = dataset_node(table_key)
             q_name = query_node(table_key)
             if d_name not in node_names:
@@ -35,10 +36,10 @@ def test_auto_mode_native_outputs_have_helpers() -> None:
             if q_name not in node_names:
                 missing.append(f"{target_name}: missing loader node {q_name} for {table_key}")
 
-        for artifact_name in target.artifact_names:
-            a_name = artifact_node(artifact_name)
+        for output in runtime.catalog.artifact_outputs_by_target.get(target_name, ()):
+            a_name = artifact_node(output.key)
             if a_name not in node_names:
-                missing.append(f"{target_name}: missing artifact node {a_name} for {artifact_name}")
+                missing.append(f"{target_name}: missing artifact node {a_name} for {output.key}")
 
     if missing:
         summary = "\n".join(missing[:_MAX_MISSING_LINES])

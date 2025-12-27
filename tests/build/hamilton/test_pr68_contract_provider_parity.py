@@ -120,7 +120,7 @@ class TestGetContractForTableKey:
         expect_is_not_none(contract.name, label="name")
         # owner_package should be derived from schema prefix
         expect_in(contract.owner_package, {"core", "analytics", "graphs", "qa", "docs", None})
-        # family should be derived from schema prefix or OutputContract
+        # family should be derived from schema prefix or registry metadata
         expect_in(contract.family, {"core", "analytics", "graph", "docs", "qa", None})
 
 

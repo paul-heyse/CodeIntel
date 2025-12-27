@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, TypeGuard, cast
 
-from codeintel.build.contracts import ArtifactSpec, OutputContract, TableOutputDescriptor
 from codeintel.build.hamilton.dag_catalog import (
     ArtifactWrite,
     DagCatalog,
@@ -17,6 +16,7 @@ from codeintel.build.hamilton.dag_catalog import (
     OutputRole,
     TableRead,
     TableWrite,
+    TargetDescriptor,
     freeze_mapping,
 )
 from codeintel.build.hamilton.tag_spec import TagSpec, TagValue, tag_spec_from_tags
@@ -29,7 +29,7 @@ from codeintel.core.hamilton import tags as ht
 from codeintel.storage.helpers.table_key import TableKeyValidationError, validate_table_key
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from hamilton.driver import Driver
     from hamilton.node import Node
@@ -41,6 +41,29 @@ class _OutputInventory:
     artifact_outputs: dict[str, OutputDescriptor]
     table_outputs_by_target: dict[str, tuple[OutputDescriptor, ...]]
     artifact_outputs_by_target: dict[str, tuple[OutputDescriptor, ...]]
+
+
+def _attach_output_metadata(
+    targets: Sequence[TargetDescriptor],
+    *,
+    outputs: _OutputInventory,
+) -> tuple[TargetDescriptor, ...]:
+    enriched: list[TargetDescriptor] = []
+    for target in targets:
+        table_keys = tuple(
+            sorted(output.key for output in outputs.table_outputs_by_target.get(target.name, ()))
+        )
+        artifact_names = tuple(
+            sorted(output.key for output in outputs.artifact_outputs_by_target.get(target.name, ()))
+        )
+        enriched.append(
+            replace(
+                target,
+                table_keys=table_keys,
+                artifact_names=artifact_names,
+            )
+        )
+    return tuple(enriched)
 
 
 def compile_dag_catalog(
@@ -80,13 +103,8 @@ def compile_dag_catalog(
         inputs=inputs,
         strict=strict,
     )
-    target_map: dict[str, TargetDescriptor] = {}
-    for target in targets:
-        contract = _contract_from_outputs(
-            table_outputs=outputs.table_outputs_by_target.get(target.name, ()),
-            artifact_outputs=outputs.artifact_outputs_by_target.get(target.name, ()),
-        )
-        target_map[target.name] = replace(target, contract=contract)
+    targets_with_outputs = _attach_output_metadata(targets, outputs=outputs)
+    target_map = {target.name: target for target in targets_with_outputs}
 
     _validate_target_nodes(target_map, target_nodes, strict=strict)
     dependents = _build_dependents_map(deps_by_target)
@@ -110,27 +128,6 @@ def compile_dag_catalog(
         artifact_outputs_by_target=freeze_mapping(outputs.artifact_outputs_by_target),
         io_surfaces=freeze_mapping(io_surfaces),
     )
-
-
-def _contract_from_outputs(
-    *,
-    table_outputs: tuple[OutputDescriptor, ...],
-    artifact_outputs: tuple[OutputDescriptor, ...],
-) -> OutputContract:
-    tables = tuple(
-        TableOutputDescriptor(table_key=output.key)
-        for output in sorted(table_outputs, key=lambda out: out.key)
-    )
-
-    artifacts: list[ArtifactSpec] = []
-    for output in sorted(artifact_outputs, key=lambda out: out.key):
-        template = output.artifact_path_template
-        if template is None:
-            msg = f"Missing artifact path template for {output.key}"
-            raise RuntimeError(msg)
-        artifacts.append(ArtifactSpec(name=output.key, path_template=template))
-
-    return OutputContract(tables=tables, artifacts=tuple(artifacts))
 
 
 def _compile_nodes(nodes: Mapping[str, Node]) -> dict[str, NodeDescriptor]:

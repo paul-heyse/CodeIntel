@@ -31,7 +31,6 @@ if TYPE_CHECKING:
         FingerprintPolicy,
     )
     from codeintel.build.config import BuildConfig
-    from codeintel.build.hamilton.run_record_utils import BuildManifestService
     from codeintel.build.providers import Providers
     from codeintel.config.primitives import BuildPaths, SnapshotRef
     from codeintel.core.build_manifest import OutputManifest
@@ -76,7 +75,7 @@ class BuildEnv:
     manifest_index
         Pre-loaded mapping of target names to their manifests for this
         repo/commit. Used to avoid per-target DB round trips during
-        skip checks and hash computation.
+        hash computation.
     validate_outputs
         When True, validate produced datasets against their Pandera schemas
         after write. Validation failures will mark the target as failed and
@@ -186,18 +185,6 @@ class BuildEnv:
         if self.storage is not None:
             return self.storage.warehouse
         return Warehouse(self.gateway)
-
-    @property
-    def manifest_service(self) -> BuildManifestService:
-        """Return the manifest service for skip evaluation.
-
-        Returns
-        -------
-        BuildManifestService
-            Manifest service used to resolve OutputManifest entries.
-        """
-        return self.gateway.build
-
 
 __all__ = [
     "BuildEnv",

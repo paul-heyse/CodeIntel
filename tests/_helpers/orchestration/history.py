@@ -16,6 +16,7 @@ from codeintel.build.schemas import (
 )
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
+from tests._helpers.gateway import seed_contract_catalog
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -186,7 +187,7 @@ def create_snapshot_db(
     base_dir.mkdir(parents=True, exist_ok=True)
     db_path = base_dir / f"codeintel-{spec.commit}.duckdb"
     cfg = StorageConfig.for_ingest(db_path)
-    gateway = open_gateway(cfg)
+    gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     con = gateway.con
     apply_all_schemas(con)
     fp_columns = _require_columns(_FUNCTION_PROFILE_TABLE_KEY, contract_provider=contract_provider)

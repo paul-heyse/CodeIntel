@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.storage.gateway import StorageGateway
@@ -48,7 +47,6 @@ def test_input_hash_changes_with_dependency_manifest(tmp_path: Path) -> None:
     target = make_target_descriptor(
         name="main",
         module="analytics",
-        contract=EMPTY_CONTRACT,
         dependencies=("dep",),
     )
     gateway = cast("StorageGateway", _FakeGateway(build=_FakeBuildAccessor()))
@@ -57,7 +55,9 @@ def test_input_hash_changes_with_dependency_manifest(tmp_path: Path) -> None:
     dep_manifest_v2 = _make_manifest("dep", "hash_v2")
 
     hash_options_v1 = InputHashOptions(options_hash="opts", manifests={"dep": dep_manifest_v1})
-    hash_options_v1_repeat = InputHashOptions(options_hash="opts", manifests={"dep": dep_manifest_v1})
+    hash_options_v1_repeat = InputHashOptions(
+        options_hash="opts", manifests={"dep": dep_manifest_v1}
+    )
     hash_options_v2 = InputHashOptions(options_hash="opts", manifests={"dep": dep_manifest_v2})
 
     hash_v1 = compute_input_hash(

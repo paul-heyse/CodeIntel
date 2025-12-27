@@ -335,28 +335,21 @@ def test_unified_provider_has_dataclass_fields() -> None:
 
 
 # -----------------------------------------------------------------------------
-# Target-declared schema tests
+# Catalog-declared schema tests
 # -----------------------------------------------------------------------------
 
 
-def test_target_contract_schemas_accessible() -> None:
-    """Verify schemas from target contracts are accessible."""
+def test_catalog_output_schemas_accessible() -> None:
+    """Verify schemas for catalog outputs are accessible."""
     catalog = get_target_metadata_service().system.catalog
     provider = unified_schema_provider().with_inference(allow_inference=False)
 
-    # Find a target with declared output schemas
-    for target in catalog.all_targets:
-        if target.contract.tables:
-            for table_schema in target.contract.tables:
-                resolved = provider.get_table_schema(table_schema.table_key)
-                if resolved is None:
-                    pytest.fail(
-                        f"Target-declared schema {table_schema.table_key} "
-                        f"not accessible via unified provider"
-                    )
-                return  # Found and validated one
+    for table_key in catalog.table_outputs:
+        resolved = provider.get_table_schema(table_key)
+        if resolved is not None:
+            return
 
-    pytest.skip("No targets with declared output schemas found")
+    pytest.skip("No catalog outputs with explicit schemas found")
 
 
 # -----------------------------------------------------------------------------

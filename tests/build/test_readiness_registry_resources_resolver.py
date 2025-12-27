@@ -9,8 +9,7 @@ from tests._helpers.assertions import (
     expect_false,
     expect_true,
 )
-from tests._helpers.catalog import make_target_descriptor
-from tests._helpers.contracts import contract_for_keys
+from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 _DURATION_THRESHOLD_MS = 5000
 
@@ -20,10 +19,11 @@ def test_registry_get_target_by_table() -> None:
     target = make_target_descriptor(
         name="producer",
         module="analytics",
-        contract=contract_for_keys(("core.produced",)),
     )
-
-    found = get_target_by_table("core.produced", targets=(target,))
+    catalog = build_catalog(
+        targets=(target,), table_keys_by_target={"producer": ("core.produced",)}
+    )
+    found = get_target_by_table("core.produced", catalog=catalog)
 
     expect_true(found is target)
 

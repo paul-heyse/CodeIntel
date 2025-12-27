@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal, cast
 
-from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
 from codeintel.build.hamilton.tag_spec import TagSpec
 
 if TYPE_CHECKING:
@@ -96,17 +95,8 @@ class TargetDescriptor:
     parameters: TargetParameters
     description: str
     spec_version: str
-    contract: OutputContract = EMPTY_CONTRACT
-
-    @property
-    def table_keys(self) -> tuple[str, ...]:
-        """Return table keys declared by this target."""
-        return self.contract.table_keys
-
-    @property
-    def artifact_names(self) -> tuple[str, ...]:
-        """Return artifact names declared by this target."""
-        return self.contract.artifact_names
+    table_keys: tuple[str, ...] = ()
+    artifact_names: tuple[str, ...] = ()
 
     @property
     def estimated_duration_ms(self) -> int:
