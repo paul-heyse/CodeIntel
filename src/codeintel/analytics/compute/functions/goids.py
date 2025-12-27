@@ -15,17 +15,13 @@ Example
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.analytics.utilities.dataframe import to_records
-from codeintel.core.ibis_typing import eq, filter_by, get_column, isin_values
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
-
-    import pandas as pd
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.gateway import StorageGateway
@@ -150,35 +146,34 @@ class FunctionGoidLoader:
         return list(self.iter_goids())
 
     def iter_goids(self) -> Iterator[FunctionGoid]:
-        """Iterate over function GOIDs using Ibis.
+        """Iterate over function GOIDs using DuckDB relations.
 
         Yields
         ------
         FunctionGoid
             Each function GOID in the snapshot.
         """
-        tbl = ibis_facade.table(self._gateway, "core.goids")
-        filtered = filter_by(
-            tbl,
-            eq(get_column(tbl, "repo"), self._snapshot.repo),
-            eq(get_column(tbl, "commit"), self._snapshot.commit),
-            isin_values(get_column(tbl, "kind"), ["function", "method"]),
+        relation = self._gateway.con.sql(
+            """
+            SELECT
+                goid_h128,
+                urn,
+                repo,
+                commit,
+                rel_path,
+                language,
+                kind,
+                qualname,
+                start_line,
+                end_line
+            FROM core.goids
+            WHERE repo = $repo
+              AND commit = $commit
+              AND kind IN ('function', 'method')
+            """,
+            {"repo": self._snapshot.repo, "commit": self._snapshot.commit},
         )
-        expr = filtered.select(
-            "goid_h128",
-            "urn",
-            "repo",
-            "commit",
-            "rel_path",
-            "language",
-            "kind",
-            "qualname",
-            "start_line",
-            "end_line",
-        )
-        df = cast("pd.DataFrame", expr.execute())
-
-        for record in to_records(df):
+        for record in records_from_relation(relation):
             goid_row: GoidRow = {
                 "goid_h128": record["goid_h128"],
                 "urn": record["urn"],

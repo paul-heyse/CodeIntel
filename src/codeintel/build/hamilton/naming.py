@@ -148,7 +148,7 @@ def compute_node(target_name: str) -> str:
     """Return the canonical compute node name for a target.
 
     Native targets commonly expose a pure compute node named
-    ``t__<target>__compute`` that returns an Ibis expression.
+    ``t__<target>__compute`` that returns a DuckDB relation.
 
     Parameters
     ----------
@@ -237,7 +237,7 @@ def path_node(artifact_name: str) -> str:
 def query_node(table_key: str) -> str:
     """Convert a table key to a query loader node identifier.
 
-    Query nodes use the "q" prefix and return Ibis table expressions.
+    Query nodes use the "q" prefix and return DuckDB relations.
 
     Parameters
     ----------

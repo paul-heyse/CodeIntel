@@ -23,25 +23,32 @@ Existence check:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pandas as pd
+import pyarrow as pa
+from duckdb import ColumnExpression, ConstantExpression, Expression
 
 from codeintel.core.repository import PagedResult
-from codeintel.storage.gateway import ibis_facade
-from codeintel.storage.query_results import records_from_dataframe
+from codeintel.storage.query_results import records_from_arrow_table
 from codeintel.storage.validation.pandera_df import validate_df
 
 if TYPE_CHECKING:
-    from ibis.expr import types as it
+    from collections.abc import Sequence
 
-    from codeintel.storage.gateway import DuckDBConnection, StorageGateway
-
-log = logging.getLogger(__name__)
+    from codeintel.storage.gateway import DuckDBConnection, DuckDBRelation, StorageGateway
 
 RowDict = dict[str, object]
+
+
+def _combine_predicates(predicates: Sequence[Expression]) -> Expression | None:
+    if not predicates:
+        return None
+    combined = predicates[0]
+    for predicate in predicates[1:]:
+        combined = combined & predicate
+    return combined
 
 
 @dataclass(frozen=True)
@@ -71,9 +78,9 @@ class BaseRepository:
         """Return the underlying DuckDB connection."""
         return self.gateway.con
 
-    def _ibis_table(self, table_key: str) -> it.Table:
+    def _relation(self, table_key: str) -> DuckDBRelation:
         """
-        Return an Ibis table expression for the given table key.
+        Return a relation scoped to repo/commit when columns exist.
 
         Parameters
         ----------
@@ -82,154 +89,80 @@ class BaseRepository:
 
         Returns
         -------
-        it.Table
-            Ibis table expression.
+        DuckDBRelation
+            Relation scoped to the repository snapshot when applicable.
         """
-        table = ibis_facade.table(self.gateway, table_key)
-        cols = set(table.columns)
-        if "repo" in cols and "commit" in cols:
-            predicate = cast(
-                "it.BooleanValue",
-                (table.repo == self.repo) & (table.commit == self.commit),
+        relation = self.gateway.relation_from_table_key(table_key)
+        columns = set(relation.columns)
+        if "repo" in columns and "commit" in columns:
+            predicate = (ColumnExpression("repo") == ConstantExpression(self.repo)) & (
+                ColumnExpression("commit") == ConstantExpression(self.commit)
             )
-            table = table.filter(predicate)
-        return table
+            relation = relation.filter(predicate)
+        return relation
 
-    def _ibis_to_df(
+    def _relation_to_arrow(
         self,
-        expr: it.Table,
+        relation: DuckDBRelation,
+        *,
+        table_key: str | None = None,
+    ) -> pa.Table:
+        table = relation.fetch_arrow_table()
+        if table_key is None:
+            return table
+        df = table.to_pandas()
+        validated = validate_df(table_key, df)
+        return pa.Table.from_pandas(validated, preserve_index=False)
+
+    def _relation_to_df(
+        self,
+        relation: DuckDBRelation,
+        *,
         table_key: str | None = None,
     ) -> pd.DataFrame:
-        """
-        Execute an Ibis expression and return a validated DataFrame.
-
-        Parameters
-        ----------
-        expr
-            Ibis table expression.
-        table_key
-            Optional table key for Pandera validation.
-
-        Returns
-        -------
-        pd.DataFrame
-            Validated DataFrame.
-        """
-        _ = self
-        df = pd.DataFrame(expr.execute())
+        table = relation.fetch_arrow_table()
+        df = table.to_pandas()
         if table_key:
             return validate_df(table_key, df)
         return df
 
-    def _ibis_to_dicts(
+    def _relation_to_dicts(
         self,
-        expr: it.Table,
+        relation: DuckDBRelation,
         table_key: str | None = None,
     ) -> list[RowDict]:
-        """
-        Execute an Ibis expression and return rows as dicts.
+        table = self._relation_to_arrow(relation, table_key=table_key)
+        return records_from_arrow_table(table)
 
-        Parameters
-        ----------
-        expr
-            Ibis table expression.
-        table_key
-            Optional table key for Pandera validation.
-
-        Returns
-        -------
-        list[RowDict]
-            List of row dictionaries.
-        """
-        df = self._ibis_to_df(expr, table_key)
-        return records_from_dataframe(df)
-
-    def _ibis_to_one(
+    def _relation_to_one(
         self,
-        expr: it.Table,
+        relation: DuckDBRelation,
         table_key: str | None = None,
     ) -> RowDict | None:
-        """
-        Execute an Ibis expression and return the first row.
-
-        Parameters
-        ----------
-        expr
-            Ibis table expression.
-        table_key
-            Optional table key for Pandera validation.
-
-        Returns
-        -------
-        RowDict | None
-            First row as dict, or None if no rows.
-        """
-        dicts = self._ibis_to_dicts(expr.limit(1), table_key)
+        dicts = self._relation_to_dicts(relation.limit(1), table_key)
         return dicts[0] if dicts else None
 
-    def _ibis_exists(
+    def _relation_exists(self, relation: DuckDBRelation) -> bool:
+        """Check if at least one row exists in the relation result."""
+        return relation.limit(1).fetchone() is not None
+
+    def _relation_paginated(
         self,
-        expr: it.Table,
-    ) -> bool:
-        """
-        Check if at least one row exists in the Ibis expression result.
-
-        Execute an Ibis expression and return True if at least one row
-        is present.
-
-        Parameters
-        ----------
-        expr
-            Ibis table expression (typically with filters applied).
-
-        Returns
-        -------
-        bool
-            True if at least one row matches the expression.
-        """
-        _ = self
-
-        limited = expr.limit(1)
-        df = pd.DataFrame(limited.execute())
-        return len(df) > 0
-
-    def _ibis_paginated(
-        self,
-        expr: it.Table,
+        relation: DuckDBRelation,
         *,
         limit: int,
         table_key: str | None = None,
     ) -> PagedResult[RowDict]:
         """
-        Execute an Ibis expression with pagination and truncation detection.
+        Execute a relation with pagination and truncation detection.
 
         Fetch limit+1 rows to detect if more data exists beyond the page,
         returning a PagedResult with truncation metadata.
-
-        Parameters
-        ----------
-        expr
-            Ibis table expression (filters/ordering should already be applied).
-        limit
-            Maximum rows to return.
-        table_key
-            Optional table key for Pandera validation.
-
-        Returns
-        -------
-        PagedResult[RowDict]
-            Paginated result with truncation metadata.
         """
-        _ = self
-
         fetch_limit = limit + 1
-        limited_expr = expr.limit(fetch_limit)
-        df = pd.DataFrame(limited_expr.execute())
-
-        if table_key:
-            df = validate_df(table_key, df)
-
-        all_rows = records_from_dataframe(df)
+        limited = relation.limit(fetch_limit)
+        table = self._relation_to_arrow(limited, table_key=table_key)
+        all_rows = records_from_arrow_table(table)
         truncated = len(all_rows) > limit
         items = all_rows[:limit]
 
@@ -244,27 +177,29 @@ class BaseRepository:
     @staticmethod
     def _validated_records(
         table_key: str,
-        expr: it.Table,
+        relation: DuckDBRelation,
     ) -> list[RowDict]:
-        """
-        Execute an Ibis expression and return validated row dictionaries.
-
-        This method combines execution, Pandera validation, and null normalization
-        into a single operation. Use this when you need validated records with
-        consistent null handling.
-
-        Parameters
-        ----------
-        table_key
-            Dataset key used for Pandera schema lookup.
-        expr
-            Ibis table expression to execute.
-
-        Returns
-        -------
-        list[RowDict]
-            Validated records with ``None`` substituted for missing values.
-        """
-        df = pd.DataFrame(expr.execute())
+        """Execute a relation and return validated row dictionaries."""
+        table = relation.fetch_arrow_table()
+        df = table.to_pandas()
         validated = validate_df(table_key, df)
-        return records_from_dataframe(validated)
+        validated_table = pa.Table.from_pandas(validated, preserve_index=False)
+        return records_from_arrow_table(validated_table)
+
+    @staticmethod
+    def _predicate_eq(column: str, value: object) -> Expression:
+        return ColumnExpression(column) == ConstantExpression(value)
+
+    @staticmethod
+    def _predicate_ge(column: str, value: object) -> Expression:
+        return ColumnExpression(column) >= ConstantExpression(value)
+
+    @staticmethod
+    def _apply_predicates(
+        relation: DuckDBRelation,
+        predicates: Sequence[Expression],
+    ) -> DuckDBRelation:
+        combined = _combine_predicates(predicates)
+        if combined is None:
+            return relation
+        return relation.filter(combined)

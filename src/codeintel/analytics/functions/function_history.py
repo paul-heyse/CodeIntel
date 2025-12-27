@@ -11,17 +11,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.history.git_history import iter_file_history
-from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.schemas.row_serialization import row_to_tuple
-from codeintel.storage.gateway import ibis_facade
-from codeintel.storage.query_results import coerce_int, coerce_optional_int
+from codeintel.storage.query_results import (
+    coerce_int,
+    coerce_optional_int,
+    records_from_relation,
+)
 
 if TYPE_CHECKING:
-    import pandas as pd
-
     from codeintel.analytics.history.git_history import FileCommitDelta
     from codeintel.config.primitives import SnapshotRef
     from codeintel.ingestion.engine.infrastructure import ToolRunner
@@ -261,30 +261,29 @@ def _load_function_spans(
     repo: str,
     commit: str,
 ) -> dict[str, list[FuncSpan]]:
-    metrics = ibis_facade.table(gateway, "analytics.function_metrics")
-    modules = ibis_facade.table(gateway, "core.modules")
-    join_expr = metrics.left_join(
-        modules,
-        [
-            metrics.repo == modules.repo,
-            metrics.commit == modules.commit,
-            metrics.rel_path == modules.path,
-        ],
+    relation = gateway.con.sql(
+        """
+        SELECT
+            metrics.repo AS repo,
+            metrics.commit AS commit,
+            metrics.function_goid_h128,
+            metrics.urn,
+            metrics.rel_path,
+            modules.module,
+            metrics.qualname,
+            metrics.start_line,
+            metrics.end_line,
+            metrics.loc
+        FROM analytics.function_metrics AS metrics
+        LEFT JOIN core.modules AS modules
+          ON metrics.repo = modules.repo
+         AND metrics.commit = modules.commit
+         AND metrics.rel_path = modules.path
+        WHERE metrics.repo = $repo AND metrics.commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    expr = join_expr.filter(and_predicates(metrics.repo == repo, metrics.commit == commit)).select(
-        metrics.repo.name("repo"),
-        metrics.commit.name("commit"),
-        metrics.function_goid_h128,
-        metrics.urn,
-        metrics.rel_path,
-        modules.module,
-        metrics.qualname,
-        metrics.start_line,
-        metrics.end_line,
-        metrics.loc,
-    )
-    df = cast("pd.DataFrame", expr.execute())
-    rows = df.to_dict(orient="records")
+    rows = records_from_relation(relation)
 
     spans_by_path: dict[str, list[FuncSpan]] = {}
     for row in rows:

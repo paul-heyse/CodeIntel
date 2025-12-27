@@ -11,18 +11,19 @@
   * A target is anchored by a `t__<target>` node tagged `node_type="materialize"` and decorated with target spec tags (resources/execution/parameters/spec_version).
     `src/codeintel/build/hamilton/native/target_decorators.py :: codeintel_target(...)` / `TargetSpecDescriptor`
     `src/codeintel/core/hamilton/tags.py :: TAG_NODE_TYPE` / `NODE_TYPE_MATERIALIZE`
-  * Target metadata (`OutputTarget`) is compiled from the Hamilton driver graph (anchors + tags + docstrings) and then dependency edges are derived from upstream traversal.
-    `src/codeintel/build/hamilton/target_spec_compiler.py :: compile_output_targets_from_driver(...)`
-    `src/codeintel/build/hamilton/introspect.py :: derive_target_dependencies(...)`
+  * Target metadata (`TargetDescriptor`) is compiled into a `DagCatalog` from the Hamilton driver graph (anchors + tags + docstrings), with dependencies captured in catalog edges.
+    `src/codeintel/build/hamilton/dag_catalog_compiler.py :: compile_dag_catalog(...)`
 
-* **BuildEnv is the sole Hamilton input** for node execution; it bundles gateway, snapshot/paths, config/settings, storage helpers, manifests/force flags, and optional registry/execution context.
+* **BuildEnv is the sole Hamilton input** for node execution; it bundles gateway, snapshot/paths, config/settings, storage helpers, force flags, and optional registry/execution context.
   `src/codeintel/build/hamilton/env.py :: BuildEnv`
 
-* **Incremental execution is manifest-driven**:
+* **Incremental execution is cache-driven**:
 
-  * Planning and skipping compare computed input hashes vs stored `OutputManifest` entries and support `force_targets` bypass.
-    `src/codeintel/build/hash_evaluator.py :: compute_hash_evaluation(...)` / `evaluate_hash_state(...)`
-    `src/codeintel/build/hamilton/run_record_utils.py :: should_skip_native_target(...)`
+  * Planning and skipping compare computed cache keys against cache presence and honor `force_targets` bypass.
+    `src/codeintel/build/hamilton/cache_key_resolver.py :: CacheKeyResolver`
+    `src/codeintel/build/hamilton/cache_index.py :: CacheIndex`
+    `src/codeintel/build/session.py :: BuildSession`
+  * OutputManifest rows are emitted for audit/reporting only.
     `src/codeintel/core/build_manifest.py :: OutputManifest`
 
 * **Non-execution build operations exist as first-class CLI workflows**:
@@ -46,7 +47,7 @@
 ## 2.1 `src/codeintel/build/` (top-level)
 
 * Public facade + lazy exports: `src/codeintel/build/__init__.py :: _LAZY_IMPORTS` / `__getattr__(...)`
-* Target model + dependency graph: `src/codeintel/build/targets.py :: OutputTarget` / `TargetGraph`
+* Dag catalog + target descriptors: `src/codeintel/build/hamilton/dag_catalog.py :: DagCatalog` / `TargetDescriptor`
 * Contracts: `src/codeintel/build/contracts.py :: OutputContract` / `ArtifactSpec`
 * Config + parameters + resources:
 
@@ -72,7 +73,7 @@
 
   * Typed tag spec: `src/codeintel/build/hamilton/tag_spec.py :: TagSpec` / `TagKey` / `NodeType` / `validate_tag_spec(...)`
   * Canonical tag decorators: `src/codeintel/build/hamilton/tagging.py :: tag_materialize(...)` / `tag_compute(...)` / `tag_tool(...)`
-  * Tag index: `src/codeintel/build/hamilton/tag_index.py :: TagIndex.from_runtime(...)` / `semantic_view_tags(...)` / `data_saver_nodes(...)`
+  * Tag queries: `src/codeintel/core/hamilton/tag_query.py :: TagQuery` / `Driver.list_available_variables(tag_filter=...)`
 * Introspection: `src/codeintel/build/hamilton/introspect.py :: derive_target_dependencies(...)` / `derive_target_outputs_from_savers(...)` / `derive_target_io_surface(...)`
 * Options loading (plan/execution alignment): `src/codeintel/build/hamilton/options_loading.py :: load_target_options(...)`
 * Graph runtime options loader: `src/codeintel/build/hamilton/graph_runtime_options.py :: load_graph_runtime_options(...)`
@@ -80,7 +81,7 @@
 * Materialization records: `src/codeintel/build/hamilton/native/executor.py :: NativeTargetExecutor`
 * Decision trace: `src/codeintel/build/hamilton/decision_trace.py :: build_decision_trace(...)` / `read_decision_trace(...)`
 * Observability exports: `src/codeintel/build/hamilton/observability.py :: export_dag_json(...)` / `export_dag_mermaid(...)` / `export_dag_dot(...)`
-* Support nodes: `src/codeintel/build/hamilton/nodes/support_factory.py :: build_support_module(...)`
+* Support nodes: `src/codeintel/build/hamilton/nodes/support_nodes.py` / `support_spec.py`
 * Save-to and materializers: `src/codeintel/build/hamilton/save_to.py :: SaveToObjectMetadataDecorator`, `src/codeintel/build/hamilton/materializers/*`
 
 ## 2.3 Build products subsystems (still present)
@@ -103,11 +104,11 @@
 * Base driver is built from native modules: `src/codeintel/build/hamilton/driver_factory.py :: _build_base_graph(...)`, `src/codeintel/build/hamilton/native/discovery.py :: load_native_modules(...)`
 * OutputTarget specs compiled from the driver: `src/codeintel/build/hamilton/target_spec_compiler.py :: compile_output_targets_from_driver(...)`
 * Dependencies derived from graph traversal: `src/codeintel/build/hamilton/introspect.py :: derive_target_dependencies(...)`, `target_graph_from_hamilton(...)`
-* Support module generated using saver-derived outputs:
+* Support nodes are parameterized from configuration at composition time:
 
-  * Derived outputs: `src/codeintel/build/hamilton/introspect.py :: derive_target_outputs_from_savers(...)`
-  * Support module: `src/codeintel/build/hamilton/nodes/support_factory.py :: build_support_module(...)`
-  * Wiring: `src/codeintel/build/hamilton/driver_factory.py :: _build_support_graph_and_module(...)`
+  * Support node definitions: `src/codeintel/build/hamilton/nodes/support_nodes.py`
+  * Config spec: `src/codeintel/build/hamilton/nodes/support_spec.py`
+  * Module attachment: `src/codeintel/build/hamilton/nodes/module_attach.py :: attach_support_nodes(...)`
 
 ## 3.2 Execution runtime
 
@@ -189,7 +190,6 @@
 * BuildEnv IO accessors:
 
   * Warehouse façade resolution: `src/codeintel/build/hamilton/env.py :: BuildEnv.warehouse` (uses `storage.warehouse` when `storage` present, else wraps gateway)
-  * Manifest service shortcut: `src/codeintel/build/hamilton/env.py :: BuildEnv.manifest_service`
 * Materialization result boundary (saver metadata nodes):
 
   * `src/codeintel/build/hamilton/boundary_types.py :: MaterializationResult`

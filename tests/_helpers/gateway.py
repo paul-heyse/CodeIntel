@@ -14,9 +14,26 @@ from warnings import warn
 
 import duckdb
 
+from codeintel.build.config import BuildConfig
+from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
-from codeintel.config.primitives import SnapshotRef
-from codeintel.storage.gateway import DuckDBConnection, StorageConfig, open_gateway
+from codeintel.build.providers import create_default_providers
+from codeintel.build.schemas.contract_service import get_contract_service
+from codeintel.config.models import ToolsConfig
+from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.core.config.settings import (
+    BuildSettings,
+    ExportAuditSettings,
+    HamiltonExecutionSettings,
+)
+from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.runtime.compose import compose_runtime
+from codeintel.storage.gateway import (
+    DuckDBConnection,
+    StorageConfig,
+    open_gateway,
+    open_inference_gateway,
+)
 from codeintel.storage.gateway import open_memory_gateway as _open_memory_gateway
 from codeintel.storage.gateway.factory import MemoryGatewayOptions
 from tests._helpers.assertions import ModulesAssertions
@@ -350,8 +367,40 @@ def gateway_with_macros() -> StorageGateway:
     return GatewayFactory().open()
 
 
+def _ensure_contract_service_configured() -> None:
+    try:
+        get_contract_service()
+    except RuntimeError:
+        providers = create_default_providers(ToolsConfig.default())
+        snapshot = SnapshotRef.from_args(
+            repo="demo/repo",
+            commit="deadbeef",
+            repo_root=Path.cwd(),
+        )
+        gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
+        try:
+            env = BuildEnv(
+                gateway=gateway,
+                snapshot=snapshot,
+                paths=BuildPaths.from_repo_root(snapshot.repo_root),
+                providers=providers,
+                config=BuildConfig.empty(),
+                settings=BuildSettings(
+                    engine_version="test",
+                    export_audit=ExportAuditSettings(),
+                ),
+                execution_settings=HamiltonExecutionSettings(),
+            )
+            config = env.variants.as_hamilton_config()
+            config["variant_fingerprint"] = env.variants.variant_fingerprint
+            compose_runtime(env=env, config=config)
+        finally:
+            gateway.close()
+
+
 def seed_contract_catalog(con: DuckDBConnection) -> None:
     """Seed the canonical dataset contract catalog into a DuckDB connection."""
+    _ensure_contract_service_configured()
     persist_contract_catalog_to_connection(
         con,
         inputs={"source": "tests"},

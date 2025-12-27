@@ -40,10 +40,7 @@ def _get_declared_schemas(runtime: RuntimeBundle) -> dict[str, TableSchema]:
     dict[str, TableSchema]
         Mapping from table_key to declared schema.
     """
-    return {
-        s.table_key: s
-        for s in declared_schema_provider(runtime=runtime).iter_table_schemas()
-    }
+    return {s.table_key: s for s in declared_schema_provider(runtime=runtime).iter_table_schemas()}
 
 
 def _get_schema_index(runtime: RuntimeBundle) -> SchemaIndex:

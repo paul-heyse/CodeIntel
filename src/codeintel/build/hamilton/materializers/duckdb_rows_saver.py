@@ -2,7 +2,7 @@
 
 This module implements a Hamilton ``DataSaver`` that persists a sequence of
 row tuples into DuckDB for a specific snapshot. It is used by targets that
-compute structured row data (rather than Ibis expressions) and want DAG-visible
+compute structured row data (rather than DuckDB relations) and want DAG-visible
 I/O via Hamilton's saver nodes.
 """
 

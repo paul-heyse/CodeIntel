@@ -55,9 +55,7 @@ def _schema_service() -> SchemaService:
     return get_service()
 
 
-def _target_metadata_provider(
-    *, runtime: RuntimeBundle
-) -> TargetMetadataProvider:
+def _target_metadata_provider(*, runtime: RuntimeBundle) -> TargetMetadataProvider:
     get_provider = cast(
         "Callable[..., TargetMetadataProvider]",
         lazy_getattr("codeintel.build.target_metadata", "get_target_metadata_provider"),

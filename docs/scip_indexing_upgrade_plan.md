@@ -436,7 +436,7 @@ from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.core.hashing import file_hash
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import ToolExecutionError, ToolRunOptions
-from codeintel.build.targets import TargetGraph
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 
 SCIP_PROTO_TARGET = "scip_proto"
 SCIP_PROTO_ARTIFACT = "scip_pb2"
@@ -458,14 +458,14 @@ def _proto_out_dir(env: BuildEnv) -> Path:
 
 
 @tag_tool(domain="ingestion", target=SCIP_PROTO_TARGET)
-def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
+def t__scip_proto__run(env: BuildEnv, catalog: DagCatalog) -> ScipProtoRunResult:
     proto_path = _proto_path(env.snapshot.repo_root)
     out_dir = _proto_out_dir(env)
     output_path = out_dir / "scip_pb2.py"
     hash_options = InputHashOptions(file_state_hash=file_hash(proto_path))
     executor = NativeTargetExecutor.for_target(
         env,
-        graph,
+        catalog,
         SCIP_PROTO_TARGET,
         hash_options=hash_options,
     )
@@ -501,7 +501,7 @@ def t__scip_proto__run(env: BuildEnv, graph: TargetGraph) -> ScipProtoRunResult:
     [FileArtifactSaver],
     output_name_=materialize_node("artifact.scip_pb2"),
     env=source("env"),
-    graph=source("graph"),
+    catalog=source("catalog"),
     target_name=value(SCIP_PROTO_TARGET),
     artifact_name=value(SCIP_PROTO_ARTIFACT),
     path_template=value("{scip_dir}/proto/scip_pb2.py"),
@@ -543,12 +543,12 @@ def scip__proto_materializations(
 )
 def t__scip_proto(
     env: BuildEnv,
-    graph: TargetGraph,
+    catalog: DagCatalog,
     scip__proto_materializations: dict[str, MaterializationMetadata],
 ) -> TargetRunRecord:
     return record_from_file_artifact_materializations(
         env=env,
-        graph=graph,
+        catalog=catalog,
         target_name=SCIP_PROTO_TARGET,
         materializations=scip__proto_materializations,
     )

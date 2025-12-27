@@ -47,7 +47,10 @@ def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
 
 @dataclass(frozen=True)
 class NativeRunInfo:
-    """Execution metadata used to create a TargetRunRecord."""
+    """Execution metadata used to create a TargetRunRecord.
+
+    The input_hash value is the cache key for the target inputs.
+    """
 
     input_hash: str | None
     options_hash: str | None
@@ -204,7 +207,7 @@ def create_run_record(
     status
         Completion status: succeeded, skipped, or failed.
     input_hash
-        Input hash for this execution.
+        Cache key for this execution inputs.
     inputs
         Inputs required for record construction.
 
@@ -294,14 +297,14 @@ def save_manifest(
     *,
     change_delta: Mapping[str, object] | None = None,
 ) -> None:
-    """Persist an OutputManifest for a completed native target execution.
+    """Persist an audit-only OutputManifest for a completed native target execution.
 
     Parameters
     ----------
     env
         Build environment with gateway access.
     record
-        Target run record to persist as manifest.
+        Target run record to persist as manifest. Input hash is the cache key.
     change_delta
         Optional change-detection delta payload for auditability.
     """

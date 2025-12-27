@@ -1,47 +1,36 @@
 """Typed query-result coercion helpers.
 
-DuckDB and Ibis return dynamically typed Python values for scalar queries
-(`.fetchone()`, `.execute()`). This module provides runtime-checked coercion
-helpers so call sites do not rely on unchecked casts.
+DuckDB returns dynamically typed Python values for scalar queries (`.fetchone()`).
+This module provides runtime-checked coercion helpers so call sites do not rely
+on unchecked casts.
 """
 
 from __future__ import annotations
 
 import math
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, cast
 
-import ibis.expr.types as it
-import pandas as pd
+import pyarrow as pa
 
 from codeintel.core.schemas.row_models import normalize_row_value
+from codeintel.storage.duckdb_types import DuckDBRelation
 
 if TYPE_CHECKING:
     from typing import SupportsFloat, SupportsInt
 
 __all__ = [
     "ScalarCoercionError",
-    "ScalarExecution",
     "coerce_float",
     "coerce_int",
     "coerce_optional_float",
     "coerce_optional_int",
-    "execute_float",
-    "execute_int",
-    "execute_optional_float",
-    "records_from_dataframe",
+    "records_from_arrow_table",
+    "records_from_relation",
 ]
 
 _KIND_FLOAT = "float"
 _KIND_INT = "int"
-
-
-class ScalarExecution(Protocol):
-    """Protocol for Ibis scalar expressions that support `.execute()`."""
-
-    def execute(self, *, limit: object | None = None, **kwargs: object) -> object:
-        """Execute the scalar expression and return a Python value."""
-        ...
 
 
 class ScalarCoercionError(TypeError):
@@ -61,7 +50,7 @@ def coerce_int(value: object, *, ctx: str) -> int:
     Parameters
     ----------
     value
-        Scalar value returned by DuckDB/Ibis.
+        Scalar value returned by DuckDB.
     ctx
         Human-readable context string included in errors.
 
@@ -101,7 +90,7 @@ def coerce_float(value: object, *, ctx: str) -> float:
     Parameters
     ----------
     value
-        Scalar value returned by DuckDB/Ibis.
+        Scalar value returned by DuckDB.
     ctx
         Human-readable context string included in errors.
 
@@ -140,7 +129,7 @@ def coerce_optional_float(value: object | None, *, ctx: str) -> float | None:
     Parameters
     ----------
     value
-        Scalar value returned by DuckDB/Ibis.
+        Scalar value returned by DuckDB.
     ctx
         Human-readable context string included in errors.
 
@@ -161,7 +150,7 @@ def coerce_optional_int(value: object | None, *, ctx: str) -> int | None:
     Parameters
     ----------
     value
-        Scalar value returned by DuckDB/Ibis.
+        Scalar value returned by DuckDB.
     ctx
         Human-readable context string included in errors.
 
@@ -175,86 +164,43 @@ def coerce_optional_int(value: object | None, *, ctx: str) -> int | None:
     return coerce_int(value, ctx=ctx)
 
 
-def execute_int(expr: it.Value, *, ctx: str) -> int:
-    """Execute an Ibis scalar expression and coerce the result to int.
+def records_from_arrow_table(table: pa.Table) -> list[dict[str, object]]:
+    """Convert an Arrow table to row dictionaries with normalized values.
 
     Parameters
     ----------
-    expr
-        Ibis scalar expression to execute.
-    ctx
-        Context string for errors.
-
-    Returns
-    -------
-    int
-        Coerced integer value.
-    """
-    raw = cast("ScalarExecution", expr).execute()
-    return coerce_int(raw, ctx=ctx)
-
-
-def execute_float(expr: it.Value, *, ctx: str) -> float:
-    """Execute an Ibis scalar expression and coerce the result to float.
-
-    Parameters
-    ----------
-    expr
-        Ibis scalar expression to execute.
-    ctx
-        Context string for errors.
-
-    Returns
-    -------
-    float
-        Coerced float value.
-    """
-    raw = cast("ScalarExecution", expr).execute()
-    return coerce_float(raw, ctx=ctx)
-
-
-def execute_optional_float(expr: it.Value, *, ctx: str) -> float | None:
-    """Execute an Ibis scalar expression and coerce the result to float|None.
-
-    Parameters
-    ----------
-    expr
-        Ibis scalar expression to execute.
-    ctx
-        Context string for errors.
-
-    Returns
-    -------
-    float | None
-        Coerced float value, or None when the value is missing.
-    """
-    raw = cast("ScalarExecution", expr).execute()
-    return coerce_optional_float(raw, ctx=ctx)
-
-
-def records_from_dataframe(frame: pd.DataFrame) -> list[dict[str, object]]:
-    """Normalize a DataFrame into row dictionaries with nulls standardized.
-
-    Parameters
-    ----------
-    frame
-        DataFrame to normalize.
+    table
+        Arrow table to normalize.
 
     Returns
     -------
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    sanitized = frame.astype("object")
-    for column in sanitized.columns:
-        if "goid" not in str(column).lower():
-            continue
-        sanitized[column] = sanitized[column].map(_normalize_goid_value)
-    records = sanitized.to_dict(orient="records")
-    return [
-        {str(key): normalize_row_value(value) for key, value in record.items()}
-        for record in records
-    ]
+    records = cast("list[dict[str, object]]", table.to_pylist())
+    normalized = []
+    for record in records:
+        cleaned: dict[str, object] = {}
+        for key, value in record.items():
+            cleaned[str(key)] = normalize_row_value(_normalize_goid_value(value))
+        normalized.append(cleaned)
+    return normalized
+
+
+def records_from_relation(relation: DuckDBRelation) -> list[dict[str, object]]:
+    """Convert a DuckDB relation to row dictionaries with normalized values.
+
+    Parameters
+    ----------
+    relation
+        DuckDB relation to materialize into row dictionaries.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        List of row dictionaries with missing values set to None.
+    """
+    return records_from_arrow_table(relation.fetch_arrow_table())
 
 
 def _normalize_goid_value(value: object) -> object:

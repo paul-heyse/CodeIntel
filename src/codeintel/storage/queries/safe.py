@@ -1,9 +1,9 @@
-"""Safe database query helpers using Ibis.
+"""Safe database query helpers using DuckDB relations.
 
-This module provides typed query helpers that use Ibis for database queries,
-properly handling errors without resorting to blind exception catching.
-Each function handles specific exception types and returns None or default
-values on failure.
+This module provides typed query helpers that use DuckDB relations or
+parameterized SQL, properly handling errors without resorting to blind
+exception catching. Each function handles specific exception types and
+returns None or default values on failure.
 
 This is the canonical location for safe query utilities.
 
@@ -22,15 +22,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from duckdb import ColumnExpression, ConstantExpression
-from ibis.common.exceptions import (
-    ExpressionError,
-    IbisError,
-    IbisInputError,
-    IbisTypeError,
-    IntegrityError,
-    RelationError,
-    TableNotFound,
-)
 from sqlglot import exp, parse
 from sqlglot.errors import ParseError
 
@@ -38,17 +29,6 @@ from codeintel.core.errors.storage import (
     ColumnNotFoundError,
     QueryError,
     TableNotFoundError,
-)
-from codeintel.core.ibis_typing import (
-    col_max,
-    col_min,
-    col_nunique,
-    filter_by,
-    get_column,
-    ibis_bool,
-    is_null,
-    le,
-    not_null,
 )
 from codeintel.storage.duckdb_types import (
     DuckDBBinderException,
@@ -59,19 +39,15 @@ from codeintel.storage.duckdb_types import (
     DuckDBInvalidInputException,
     DuckDBProgrammingError,
 )
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import is_valid_table_key
-from codeintel.storage.query_results import execute_int, execute_optional_float
 from codeintel.storage.sqlglot_tools import extract_table_refs
-
-IbisBaseError = IbisError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.storage.duckdb_types import DuckDBConnection
+    from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -83,15 +59,10 @@ DUCKDB_QUERY_ERRORS: tuple[type[BaseException], ...] = (
     DuckDBBinderException,
     DuckDBDatabaseError,
     DuckDBProgrammingError,
-    IbisError,
-    IbisBaseError,
-    IbisInputError,
-    IbisTypeError,
-    TableNotFound,
-    ExpressionError,
-    IntegrityError,
-    RelationError,
     KeyError,
+    RuntimeError,
+    TypeError,
+    ValueError,
 )
 
 log = logging.getLogger(__name__)
@@ -102,6 +73,19 @@ def _ensure_valid_table_key(table_key: str) -> bool:
         log.debug("Invalid table key provided: %s", table_key)
         return False
     return True
+
+
+def _relation_for_table_key(
+    gateway: StorageGateway,
+    table_key: str,
+) -> DuckDBRelation | None:
+    if not _ensure_valid_table_key(table_key):
+        return None
+    try:
+        return gateway.relation_from_table_key(table_key)
+    except DUCKDB_QUERY_ERRORS as exc:
+        log.debug("Failed to resolve relation for %s: %s", table_key, exc)
+        return None
 
 
 class UnsafeSqlError(ValueError):
@@ -446,7 +430,7 @@ def safe_count_rows(
 
 
 def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
-    """Safely count rows in a table using Ibis.
+    """Safely count rows in a table using DuckDB relations.
 
     Parameters
     ----------
@@ -468,9 +452,14 @@ def safe_count(gateway: StorageGateway, table_key: str) -> int | None:
     """
     if not _ensure_valid_table_key(table_key):
         return None
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return None
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        return execute_int(tbl.count(), ctx=f"{table_key}.count()")
+        result = relation.count("*").fetchone()
+        if result is None:
+            return 0
+        return coerce_int(result[0], ctx=f"{table_key}.count()")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count query failed for %s: %s", table_key, exc)
         return None
@@ -481,7 +470,7 @@ def safe_count_with_scope(
     table_key: str,
     snapshot: SnapshotRef,
 ) -> int | None:
-    """Safely count rows in a table scoped to a snapshot using Ibis.
+    """Safely count rows in a table scoped to a snapshot using relations.
 
     Parameters
     ----------
@@ -499,17 +488,28 @@ def safe_count_with_scope(
     """
     if not _ensure_valid_table_key(table_key):
         return None
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return None
+    columns = set(relation.columns)
+    if "repo" in columns and "commit" in columns:
+        predicate = (
+            (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
+            & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
+        )
+        relation = relation.filter(predicate)
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        filtered = filter_by(tbl, tbl.repo == snapshot.repo, tbl.commit == snapshot.commit)
-        return execute_int(filtered.count(), ctx=f"{table_key}.count(scope)")
+        result = relation.count("*").fetchone()
+        if result is None:
+            return 0
+        return coerce_int(result[0], ctx=f"{table_key}.count(scope)")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Scoped count query failed for %s: %s", table_key, exc)
         return None
 
 
 def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
-    """Check if a table exists in the database using Ibis.
+    """Check if a table exists in the database using relations.
 
     Parameters
     ----------
@@ -525,16 +525,18 @@ def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
     """
     if not _ensure_valid_table_key(table_key):
         return False
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return False
     try:
-        ibis_facade.table(gateway, table_key)
+        _ = relation.columns
+        return True
     except DUCKDB_QUERY_ERRORS:
         return False
-    else:
-        return True
 
 
 def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
-    """Get column names for a table using Ibis.
+    """Get column names for a table using relations.
 
     Parameters
     ----------
@@ -550,9 +552,11 @@ def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
     """
     if not _ensure_valid_table_key(table_key):
         return set()
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return set()
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        return set(tbl.columns)
+        return set(relation.columns)
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Get columns failed for %s: %s", table_key, exc)
         return set()
@@ -563,7 +567,7 @@ def safe_count_nulls(
     table_key: str,
     column: str,
 ) -> int:
-    """Count NULL values in a column using Ibis.
+    """Count NULL values in a column using relations.
 
     Parameters
     ----------
@@ -581,11 +585,17 @@ def safe_count_nulls(
     """
     if not _ensure_valid_table_key(table_key):
         return 0
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return 0
+    if column not in relation.columns:
+        return 0
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        col = get_column(tbl, column)
-        filtered = filter_by(tbl, is_null(col))
-        return execute_int(filtered.count(), ctx=f"{table_key}.{column}.null_count")
+        predicate = ColumnExpression(column).isnull()
+        result = relation.filter(predicate).count("*").fetchone()
+        if result is None:
+            return 0
+        return coerce_int(result[0], ctx=f"{table_key}.{column}.null_count")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count nulls failed for %s.%s: %s", table_key, column, exc)
         return 0
@@ -596,7 +606,7 @@ def safe_min_value(
     table_key: str,
     column: str,
 ) -> float | None:
-    """Get minimum value in a numeric column using Ibis.
+    """Get minimum value in a numeric column using relations.
 
     Parameters
     ----------
@@ -614,10 +624,16 @@ def safe_min_value(
     """
     if not _ensure_valid_table_key(table_key):
         return None
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return None
+    if column not in relation.columns:
+        return None
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        col = get_column(tbl, column)
-        return execute_optional_float(col_min(col), ctx=f"{table_key}.{column}.min")
+        result = relation.aggregate(f"min({column}) as min_value").fetchone()
+        if result is None:
+            return None
+        return coerce_optional_float(result[0], ctx=f"{table_key}.{column}.min")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Min value failed for %s.%s: %s", table_key, column, exc)
         return None
@@ -628,7 +644,7 @@ def safe_max_value(
     table_key: str,
     column: str,
 ) -> float | None:
-    """Get maximum value in a numeric column using Ibis.
+    """Get maximum value in a numeric column using relations.
 
     Parameters
     ----------
@@ -646,10 +662,16 @@ def safe_max_value(
     """
     if not _ensure_valid_table_key(table_key):
         return None
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return None
+    if column not in relation.columns:
+        return None
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        col = get_column(tbl, column)
-        return execute_optional_float(col_max(col), ctx=f"{table_key}.{column}.max")
+        result = relation.aggregate(f"max({column}) as max_value").fetchone()
+        if result is None:
+            return None
+        return coerce_optional_float(result[0], ctx=f"{table_key}.{column}.max")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Max value failed for %s.%s: %s", table_key, column, exc)
         return None
@@ -660,7 +682,7 @@ def safe_count_non_positive(
     table_key: str,
     column: str,
 ) -> int:
-    """Count non-positive values in a numeric column using Ibis.
+    """Count non-positive values in a numeric column using relations.
 
     Parameters
     ----------
@@ -678,11 +700,17 @@ def safe_count_non_positive(
     """
     if not _ensure_valid_table_key(table_key):
         return 0
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return 0
+    if column not in relation.columns:
+        return 0
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        col = get_column(tbl, column)
-        filtered = filter_by(tbl, le(col, 0))
-        return execute_int(filtered.count(), ctx=f"{table_key}.{column}.non_positive_count")
+        predicate = ColumnExpression(column) <= ConstantExpression(0)
+        result = relation.filter(predicate).count("*").fetchone()
+        if result is None:
+            return 0
+        return coerce_int(result[0], ctx=f"{table_key}.{column}.non_positive_count")
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count non-positive failed for %s.%s: %s", table_key, column, exc)
         return 0
@@ -693,7 +721,7 @@ def safe_count_duplicates(
     table_key: str,
     column: str,
 ) -> int:
-    """Count duplicate values in a column using Ibis.
+    """Count duplicate values in a column using relations.
 
     Parameters
     ----------
@@ -711,13 +739,21 @@ def safe_count_duplicates(
     """
     if not _ensure_valid_table_key(table_key):
         return 0
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return 0
+    if column not in relation.columns:
+        return 0
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        col = get_column(tbl, column)
-
-        non_null = filter_by(tbl, not_null(col))
-        total = execute_int(non_null.count(), ctx=f"{table_key}.{column}.non_null_count")
-        distinct = execute_int(col_nunique(col), ctx=f"{table_key}.{column}.distinct_count")
+        non_null = relation.filter(~ColumnExpression(column).isnull())
+        total_result = non_null.count("*").fetchone()
+        distinct_result = non_null.aggregate(
+            f"count(distinct {column}) as distinct_count"
+        ).fetchone()
+        if total_result is None or distinct_result is None:
+            return 0
+        total = coerce_int(total_result[0], ctx=f"{table_key}.{column}.non_null_count")
+        distinct = coerce_int(distinct_result[0], ctx=f"{table_key}.{column}.distinct_count")
         return total - distinct
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Count duplicates failed for %s.%s: %s", table_key, column, exc)
@@ -729,7 +765,7 @@ def safe_not_null_fraction(
     table_key: str,
     column: str,
 ) -> float:
-    """Get fraction of non-null values in a column using Ibis.
+    """Get fraction of non-null values in a column using relations.
 
     Parameters
     ----------
@@ -747,15 +783,24 @@ def safe_not_null_fraction(
     """
     if not _ensure_valid_table_key(table_key):
         return 0.0
+    relation = _relation_for_table_key(gateway, table_key)
+    if relation is None:
+        return 0.0
+    if column not in relation.columns:
+        return 0.0
     try:
-        tbl = ibis_facade.table(gateway, table_key)
-        col = get_column(tbl, column)
-        total = execute_int(tbl.count(), ctx=f"{table_key}.count()")
+        total_result = relation.count("*").fetchone()
+        if total_result is None:
+            return 0.0
+        total = coerce_int(total_result[0], ctx=f"{table_key}.count()")
         if total == 0:
             return 0.0
-        non_null_table = filter_by(tbl, not_null(col))
-        non_null_count = execute_int(
-            non_null_table.count(), ctx=f"{table_key}.{column}.non_null_count"
+        non_null = relation.filter(~ColumnExpression(column).isnull())
+        non_null_result = non_null.count("*").fetchone()
+        if non_null_result is None:
+            return 0.0
+        non_null_count = coerce_int(
+            non_null_result[0], ctx=f"{table_key}.{column}.non_null_count"
         )
         return float(non_null_count) / float(total)
     except DUCKDB_QUERY_ERRORS as exc:
@@ -789,7 +834,7 @@ class ForeignKeyRef:
 
 
 def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
-    """Count orphaned foreign key references using Ibis.
+    """Count orphaned foreign key references using relations.
 
     Parameters
     ----------
@@ -807,22 +852,32 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         return 0
     if not _ensure_valid_table_key(fk.ref_table):
         return 0
+    src = _relation_for_table_key(gateway, fk.source_table)
+    tgt = _relation_for_table_key(gateway, fk.ref_table)
+    if src is None or tgt is None:
+        return 0
+    if fk.source_column not in src.columns or fk.ref_column not in tgt.columns:
+        return 0
+    src_name = fk.source_table
+    tgt_name = fk.ref_table
+    src_col = fk.source_column
+    tgt_col = fk.ref_column
     try:
-        src_tbl = ibis_facade.table(gateway, fk.source_table)
-        tgt_tbl = ibis_facade.table(gateway, fk.ref_table)
-
-        src_col = get_column(src_tbl, fk.source_column)
-        tgt_col = get_column(tgt_tbl, fk.ref_column)
-
-        joined = src_tbl.left_join(tgt_tbl, predicates=(ibis_bool(src_col == tgt_col),))
-
-        orphans = filter_by(joined, is_null(tgt_col))
-
+        sql = (
+            "SELECT COUNT(*) AS orphan_count "
+            f"FROM {src_name} AS src "
+            f"LEFT JOIN {tgt_name} AS tgt "
+            f"ON src.{src_col} = tgt.{tgt_col} "
+            f"WHERE tgt.{tgt_col} IS NULL"
+        )
         if not fk.allow_null:
-            orphans = filter_by(orphans, not_null(src_col))
-
-        return execute_int(
-            orphans.count(), ctx=f"{fk.source_table}.{fk.source_column}.orphan_count"
+            sql += f" AND src.{src_col} IS NOT NULL"
+        result = gateway.con.execute(sql).fetchone()
+        if result is None:
+            return 0
+        return coerce_int(
+            result[0],
+            ctx=f"{fk.source_table}.{fk.source_column}.orphan_count",
         )
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug(

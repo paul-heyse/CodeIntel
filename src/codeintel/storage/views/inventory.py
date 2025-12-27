@@ -29,7 +29,7 @@ def _view_modules() -> tuple[ModuleType, ...]:
     tuple[ModuleType, ...]
         Modules containing view-builder node functions.
     """
-    return (importlib.import_module("codeintel.storage.views.ibis_views"),)
+    return (importlib.import_module("codeintel.storage.views.sqlglot_views"),)
 
 
 def view_builder_modules() -> tuple[ModuleType, ...]:

@@ -19,8 +19,8 @@ from codeintel.cli.config import TOML_CONFIG_PATHS
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
-from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.core.runtime.loader import load_runtime_settings
+from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.runtime import (
     flush_observability,

@@ -99,9 +99,7 @@ def test_schema_index_requires_explicit_schema_for_non_inferable(
 def test_schema_index_uses_catalog_outputs(hamilton_runtime: RuntimeBundle) -> None:
     """Schema index derivations should come from catalog outputs."""
     system = _build_target_system(hamilton_runtime)
-    declared_provider = MappingSchemaProvider(
-        {}
-    )
+    declared_provider = MappingSchemaProvider({})
     override_provider = MappingSchemaProvider(
         {
             "analytics.explicit": TableSchema(

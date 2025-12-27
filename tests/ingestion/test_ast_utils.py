@@ -353,10 +353,7 @@ def test_ast_visitor_records_decorator_span(ast_nodes_columns: tuple[str, ...]) 
     visitor.visit(tree)
 
     serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
-    rows = [
-        dict(zip(ast_nodes_columns, serializer(row), strict=True))
-        for row in visitor.ast_rows
-    ]
+    rows = [dict(zip(ast_nodes_columns, serializer(row), strict=True)) for row in visitor.ast_rows]
     func_rows = [row for row in rows if row["node_type"] == "FunctionDef"]
 
     expect_equal(len(func_rows), 1)

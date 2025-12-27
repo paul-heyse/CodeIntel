@@ -234,10 +234,7 @@ def plan(
         nodes = plan_graph_inputs.plan_target_subgraph_nodes.get(target, ())
         node_statuses = cast(
             "list[PlanCacheStatus]",
-            [
-                plan_graph_inputs.plan_cache_probe.get(node, UNKNOWN_CACHE_STATUS)
-                for node in nodes
-            ],
+            [plan_graph_inputs.plan_cache_probe.get(node, UNKNOWN_CACHE_STATUS) for node in nodes],
         )
         cache_hit_ratio = _cache_hit_ratio(
             statuses=node_statuses,

@@ -10,10 +10,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, SupportsInt, cast
 
-import ibis
-
 from codeintel.core.hashing import sha256_short
-from codeintel.core.ibis_typing import filter_by, ibis_bool, window_over
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.ports.change_detection import (
@@ -22,13 +19,10 @@ from codeintel.ingestion.ports.change_detection import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
-
-    import pandas as pd
 
     from codeintel.ingestion.ports.change_detection import (
         ChangeRequest,
@@ -162,20 +156,36 @@ class HashChangeDetectionAdapter:
         """
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
-            file_state = ibis_facade.table(gateway, "core.file_state")
-            window = window_over(
-                partition_by=[file_state.rel_path],
-                order_by=[file_state.mtime_ns.desc()],
+            relation = gateway.con.sql(
+                """
+                WITH ranked AS (
+                    SELECT
+                        rel_path,
+                        size_bytes,
+                        mtime_ns,
+                        content_hash,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY rel_path
+                            ORDER BY mtime_ns DESC
+                        ) AS rn
+                    FROM core.file_state
+                    WHERE repo = $repo AND language = $language
+                )
+                SELECT rel_path, size_bytes, mtime_ns, content_hash
+                FROM ranked
+                WHERE rn = 1
+                """,
+                {"repo": repo, "language": language},
             )
-            rn_expr = ibis.row_number().over(window)
-            ranked = (
-                filter_by(file_state, file_state.repo == repo, file_state.language == language)
-                .mutate(rn=rn_expr)
-                .filter(ibis_bool(rn_expr == 0))
-                .select("rel_path", "size_bytes", "mtime_ns", "content_hash")
-            )
-            df = cast("pd.DataFrame", ranked.execute())
-            rows = df.to_dict(orient="records")
+            rows = [
+                {
+                    "rel_path": rel_path,
+                    "size_bytes": size_bytes,
+                    "mtime_ns": mtime_ns,
+                    "content_hash": content_hash,
+                }
+                for rel_path, size_bytes, mtime_ns, content_hash in relation.fetchall()
+            ]
         else:
             self._storage.ensure_schema("core.file_state")
             result = self._storage.execute_query(

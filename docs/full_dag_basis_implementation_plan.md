@@ -783,7 +783,7 @@ Add the missing “unified record builder” you explicitly called out:
 * Inputs:
 
   * `env: BuildEnv`
-  * `graph: TargetGraph`
+  * `catalog: DagCatalog`
   * `target_name: str`
   * `artifact_materializations: Mapping[str, MaterializationMetadata] | None`
   * `table_materializations: Mapping[str, MaterializationMetadata] | None`

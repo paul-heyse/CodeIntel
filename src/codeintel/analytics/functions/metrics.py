@@ -19,9 +19,9 @@ import ast
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, TypedDict
 
-import pandas as pd
+from duckdb import ColumnExpression, ConstantExpression
 
 from codeintel.analytics.compute.functions import (
     compute_complexity,
@@ -38,16 +38,13 @@ from codeintel.analytics.functions.config import (
 )
 from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
-from codeintel.analytics.utilities.dataframe import to_records
-from codeintel.core.ibis_typing import and_predicates, isin_values
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.validation.reporters import FunctionValidationReporter
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.duckdb_types import DuckDBRelation
+from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import ibis.expr.types as ir
 
     from codeintel.analytics.compute.functions import (
         ComplexityMetrics,
@@ -410,16 +407,16 @@ def build_function_analytics(
     )
 
 
-def _load_goids_from_table(
-    goids_table: ir.Table,
+def _load_goids_from_relation(
+    goids_relation: DuckDBRelation,
     snapshot: SnapshotRef,
 ) -> dict[str, list[GoidRow]]:
-    """Load function GOIDs from an Ibis table expression.
+    """Load function GOIDs from a DuckDB relation.
 
     Parameters
     ----------
-    goids_table
-        Ibis table expression for ``core.goids``.
+    goids_relation
+        DuckDB relation for ``core.goids``.
     snapshot
         Repository and commit identifiers.
 
@@ -428,33 +425,24 @@ def _load_goids_from_table(
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
-    scoped = goids_table.filter(
-        and_predicates(
-            goids_table.repo == snapshot.repo,
-            goids_table.commit == snapshot.commit,
-            isin_values(goids_table.kind, ["function", "method"]),
+    kind_col = ColumnExpression("kind")
+    predicate = (
+        (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
+        & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
+        & (
+            (kind_col == ConstantExpression("function"))
+            | (kind_col == ConstantExpression("method"))
         )
     )
-    expr = scoped.select(
-        "goid_h128",
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "language",
-        "kind",
-        "qualname",
-        "start_line",
-        "end_line",
-    )
-    df = cast("pd.DataFrame", expr.execute())
+    scoped = goids_relation.filter(predicate)
+    rows = records_from_relation(scoped)
 
-    if df.empty:
+    if not rows:
         log.info("No function GOIDs found for repo=%s commit=%s", snapshot.repo, snapshot.commit)
         return {}
 
     goids_by_file: dict[str, list[GoidRow]] = {}
-    for record in to_records(df):
+    for record in rows:
         rel_path = str(record["rel_path"]).replace("\\", "/")
         goid_row: GoidRow = {
             "goid_h128": int(record["goid_h128"]),
@@ -473,7 +461,7 @@ def _load_goids_from_table(
 
 
 def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, list[GoidRow]]:
-    """Load function GOIDs from core.goids using Ibis.
+    """Load function GOIDs from core.goids using DuckDB relations.
 
     Parameters
     ----------
@@ -487,8 +475,8 @@ def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, lis
     dict[str, list[GoidRow]]
         GOIDs grouped by relative file path.
     """
-    table = ibis_facade.table(gateway, "core.goids")
-    return _load_goids_from_table(table, snapshot)
+    relation = gateway.relation_from_table_key("core.goids")
+    return _load_goids_from_relation(relation, snapshot)
 
 
 def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
@@ -568,17 +556,17 @@ def _compute_from_goids(
 
 
 def compute_function_analytics_result_from_table(
-    goids_table: ir.Table,
+    goids_relation: DuckDBRelation,
     snapshot: SnapshotRef,
     *,
     options: FunctionAnalyticsOptions | None = None,
 ) -> FunctionAnalyticsResult:
-    """Compute function analytics result from a GOIDs table expression.
+    """Compute function analytics result from a GOIDs relation.
 
     Parameters
     ----------
-    goids_table
-        Ibis table expression for ``core.goids``.
+    goids_relation
+        DuckDB relation for ``core.goids``.
     snapshot
         Repository and commit identifiers.
     options
@@ -590,7 +578,7 @@ def compute_function_analytics_result_from_table(
     FunctionAnalyticsResult
         Container with metrics_rows, types_rows, and validation reporter.
     """
-    goids_by_file = _load_goids_from_table(goids_table, snapshot)
+    goids_by_file = _load_goids_from_relation(goids_relation, snapshot)
     return _compute_from_goids(goids_by_file, snapshot, options=options)
 
 

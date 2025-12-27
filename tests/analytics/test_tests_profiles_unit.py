@@ -59,8 +59,6 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-
-
 @pytest.fixture(autouse=True)
 def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
     configure_schema_service(runtime=hamilton_runtime)

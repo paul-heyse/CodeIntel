@@ -10,8 +10,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-from ibis.common.exceptions import IbisError
-
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.parsing.ast_cache import (
     FunctionAstLoadRequest,
@@ -20,14 +18,12 @@ from codeintel.analytics.parsing.ast_cache import (
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.ibis_typing import and_predicates, eq, is_null, or_predicates
 from codeintel.graphs.runtime import resolve_graph_runtime
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:
     import networkx as nx
-    import pandas as pd
 
     from codeintel.analytics.parsing.ast_cache import (
         FunctionAst,
@@ -396,30 +392,25 @@ def _compute_transitive_effects(
 def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> dict[int, int]:
     counts: dict[int, int] = {}
     try:
-        edges = ibis_facade.table(gateway, "graph.call_graph_edges")
-        callee_is_unresolved = or_predicates(
-            is_null(edges.callee_goid_h128), eq(edges.callee_goid_h128, -1)
+        relation = gateway.con.sql(
+            """
+            SELECT caller_goid_h128, COUNT(*) AS unresolved_count
+            FROM graph.call_graph_edges
+            WHERE repo = $repo
+              AND commit = $commit
+              AND (callee_goid_h128 IS NULL OR callee_goid_h128 = -1)
+            GROUP BY caller_goid_h128
+            """,
+            {"repo": repo, "commit": commit},
         )
-        expr = (
-            edges.filter(
-                and_predicates(
-                    edges.repo == repo,
-                    edges.commit == commit,
-                    callee_is_unresolved,
-                )
-            )
-            .group_by(edges.caller_goid_h128)
-            .aggregate(unresolved_count=edges.caller_goid_h128.count())
-        )
-        rows_df = cast("pd.DataFrame", expr.execute())
-        rows = rows_df.to_dict(orient="records")
-    except IbisError:
+        rows = relation.fetchall()
+    except DuckDBError:
         return counts
-    for row in rows:
-        goid = normalize_decimal_id(row["caller_goid_h128"])
+    for caller_goid_h128, unresolved_count in rows:
+        goid = normalize_decimal_id(caller_goid_h128)
         if goid is None:
             continue
-        counts[goid] = coerce_int(row["unresolved_count"], ctx="unresolved_count")
+        counts[goid] = coerce_int(unresolved_count, ctx="unresolved_count")
     return counts
 
 

@@ -18,9 +18,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
-from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.paths import normalize_path
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.repositories import DataModelsRepository
 
 if TYPE_CHECKING:
@@ -425,31 +423,24 @@ def _load_models(gateway: StorageGateway, repo: str, commit: str) -> list[ModelI
 def _subsystem_by_module(
     gateway: StorageGateway, repo: str, commit: str
 ) -> dict[str, tuple[str, str]]:
-    modules = ibis_facade.table(gateway, "analytics.subsystem_modules")
-    subsystems = ibis_facade.table(gateway, "analytics.subsystems")
-    joined = modules.left_join(
-        subsystems,
-        predicates=[
-            and_predicates(
-                modules["repo"] == subsystems["repo"],
-                modules["commit"] == subsystems["commit"],
-                modules["subsystem_id"] == subsystems["subsystem_id"],
-            )
-        ],
-    ).filter(
-        and_predicates(
-            modules["repo"] == repo,
-            modules["commit"] == commit,
-        )
+    relation = gateway.con.sql(
+        """
+        SELECT
+            modules.module AS module,
+            modules.subsystem_id AS subsystem_id,
+            subsystems.name AS name
+        FROM analytics.subsystem_modules AS modules
+        LEFT JOIN analytics.subsystems AS subsystems
+          ON modules.repo = subsystems.repo
+         AND modules.commit = subsystems.commit
+         AND modules.subsystem_id = subsystems.subsystem_id
+        WHERE modules.repo = $repo AND modules.commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    expr = joined.select(
-        modules["module"].name("module"),
-        modules["subsystem_id"],
-        subsystems["name"],
-    )
-    rows = expr.execute()
+    rows = relation.fetchall()
     mapping: dict[str, tuple[str, str]] = {}
-    for module, subsystem_id, name in rows.itertuples(index=False):
+    for module, subsystem_id, name in rows:
         mapping[str(module)] = (str(subsystem_id), str(name) if name is not None else "")
     return mapping
 
@@ -532,19 +523,16 @@ def build_data_model_usage_rows(
             len(missing),
         )
 
-    function_types = ibis_facade.table(gateway, "analytics.function_types")
-    param_rows = (
-        function_types.filter(
-            and_predicates(
-                function_types["repo"] == snapshot.repo,
-                function_types["commit"] == snapshot.commit,
-            )
-        )
-        .select("function_goid_h128", "param_types")
-        .execute()
+    relation = gateway.con.sql(
+        """
+        SELECT function_goid_h128, param_types
+        FROM analytics.function_types
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": snapshot.repo, "commit": snapshot.commit},
     )
     param_types: dict[int, dict[str, str]] = {}
-    for goid_raw, raw_param_types in param_rows.itertuples(index=False):
+    for goid_raw, raw_param_types in relation.fetchall():
         goid_int = int(goid_raw)
         param_types[goid_int] = _parse_param_types(raw_param_types)
 

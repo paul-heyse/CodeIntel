@@ -27,6 +27,15 @@ def _schema_for_key(table_key: str) -> TableSchema:
     )
 
 
+def _provenance_for_schema(table_schema: TableSchema) -> TableProvenance:
+    return TableProvenance(
+        schema_hash=schema_hash(table_schema),
+        derivation_kind="inferred_relation",
+        derivation_source="test",
+        inference_status="inferred",
+    )
+
+
 def test_schema_manifest_roundtrip_from_metadata(fresh_gateway: StorageGateway) -> None:
     """Persisted schema manifests should round-trip through metadata tables."""
     table_key = "analytics.roundtrip_table"
@@ -141,3 +150,223 @@ def test_schema_index_prefill_avoids_inference(fresh_gateway: StorageGateway) ->
         table_schema.to_json_obj(),
         label="prefill_schema",
     )
+
+
+def test_override_registry_refresh_populates_registry(
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Override refresh should populate registry for inferred tables."""
+    table_key = "analytics.override_table"
+    table_schema = _schema_for_key(table_key)
+    manifest = SchemaManifest(
+        version="v2",
+        tables=(table_schema,),
+        table_provenance={table_key: _provenance_for_schema(table_schema)},
+    )
+
+    request = SchemaCatalogRequest(
+        run_id="run-override-1",
+        repo="org/repo",
+        commit="deadbeef",
+    )
+    persist_result = fresh_gateway.schemas.persist_schema_manifest(
+        manifest,
+        request=request,
+    )
+    override_result = fresh_gateway.schemas.refresh_override_registry_from_manifest(
+        manifest,
+        request=request,
+        catalog_hash=persist_result.catalog_hash,
+    )
+
+    expect_equal(override_result.status, "updated", label="override_status")
+    expect_equal(override_result.tables, 1, label="override_tables")
+    expect_is_not_none(override_result.version_id, label="override_version_id")
+
+    overrides = fresh_gateway.schemas.load_override_registry()
+    override_schema = expect_is_not_none(
+        overrides.get(table_key),
+        label="override_schema",
+    )
+    expect_equal(
+        override_schema.to_json_obj(),
+        table_schema.to_json_obj(),
+        label="override_schema_roundtrip",
+    )
+
+
+def test_override_registry_pin_restores_prior_version(
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Override pin should restore a previous override version."""
+    table_key = "analytics.override_pin"
+    schema_v1 = _schema_for_key(table_key)
+    schema_v2 = TableSchema(
+        schema=schema_v1.schema,
+        name=schema_v1.name,
+        columns=[
+            *schema_v1.columns,
+            Column("name", "VARCHAR"),
+        ],
+    )
+
+    request = SchemaCatalogRequest(
+        run_id="run-override-2",
+        repo="org/repo",
+        commit="deadbeef",
+    )
+
+    manifest_v1 = SchemaManifest(
+        version="v2",
+        tables=(schema_v1,),
+        table_provenance={table_key: _provenance_for_schema(schema_v1)},
+    )
+    persist_v1 = fresh_gateway.schemas.persist_schema_manifest(
+        manifest_v1,
+        request=request,
+    )
+    override_v1 = fresh_gateway.schemas.refresh_override_registry_from_manifest(
+        manifest_v1,
+        request=request,
+        catalog_hash=persist_v1.catalog_hash,
+    )
+    version_id_v1 = expect_is_not_none(override_v1.version_id, label="version_id_v1")
+
+    manifest_v2 = SchemaManifest(
+        version="v2",
+        tables=(schema_v2,),
+        table_provenance={table_key: _provenance_for_schema(schema_v2)},
+    )
+    persist_v2 = fresh_gateway.schemas.persist_schema_manifest(
+        manifest_v2,
+        request=request,
+    )
+    fresh_gateway.schemas.refresh_override_registry_from_manifest(
+        manifest_v2,
+        request=request,
+        catalog_hash=persist_v2.catalog_hash,
+    )
+
+    overrides_latest = fresh_gateway.schemas.load_override_registry()
+    latest_schema = expect_is_not_none(
+        overrides_latest.get(table_key),
+        label="latest_override_schema",
+    )
+    expect_equal(
+        latest_schema.to_json_obj(),
+        schema_v2.to_json_obj(),
+        label="override_schema_latest",
+    )
+
+    pinned_record = fresh_gateway.schemas.set_override_registry_version(
+        table_key=table_key,
+        version_id=version_id_v1,
+    )
+    expect_equal(pinned_record.version_id, version_id_v1, label="pinned_version_id")
+
+    overrides_pinned = fresh_gateway.schemas.load_override_registry()
+    pinned_schema = expect_is_not_none(
+        overrides_pinned.get(table_key),
+        label="pinned_override_schema",
+    )
+    expect_equal(
+        pinned_schema.to_json_obj(),
+        schema_v1.to_json_obj(),
+        label="override_schema_pinned",
+    )
+
+
+def test_registry_health_snapshot_reflects_latest_manifest(
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Registry health should reflect the latest manifest and overrides."""
+    inferable_key = "analytics.health_inferable"
+    explicit_key = "analytics.health_explicit"
+    view_key = "docs.v_health_view"
+
+    inferable_schema = _schema_for_key(inferable_key)
+    explicit_schema = _schema_for_key(explicit_key)
+    view_schema = _schema_for_key(view_key)
+
+    manifest = SchemaManifest(
+        version="v2",
+        tables=(explicit_schema, inferable_schema),
+        views=(view_schema,),
+        table_provenance={
+            explicit_key: TableProvenance(
+                schema_hash=schema_hash(explicit_schema),
+                derivation_kind="explicit_override",
+                derivation_source="test",
+            ),
+            inferable_key: _provenance_for_schema(inferable_schema),
+        },
+        view_provenance={
+            view_key: TableProvenance(
+                schema_hash=schema_hash(view_schema),
+                derivation_kind="view_inferred",
+                derivation_source="duckdb",
+            )
+        },
+    )
+
+    request = SchemaCatalogRequest(
+        run_id="run-health-1",
+        repo="org/repo",
+        commit="deadbeef",
+    )
+    persist_result = fresh_gateway.schemas.persist_schema_manifest(
+        manifest,
+        request=request,
+    )
+    refresh_result = fresh_gateway.schemas.refresh_override_registry_from_manifest(
+        manifest,
+        request=request,
+        catalog_hash=persist_result.catalog_hash,
+    )
+
+    health = fresh_gateway.schemas.registry_health_snapshot()
+    status = cast("str", health.get("status"))
+    expect_equal(status, "ok", label="health_status")
+
+    latest_manifest = expect_is_not_none(
+        cast("dict[str, object] | None", health.get("latest_manifest")),
+        label="latest_manifest",
+    )
+    expect_equal(
+        latest_manifest.get("catalog_hash"),
+        persist_result.catalog_hash,
+        label="latest_manifest_hash",
+    )
+    expect_equal(
+        latest_manifest.get("repo"),
+        request.repo,
+        label="latest_manifest_repo",
+    )
+    expect_equal(
+        latest_manifest.get("commit"),
+        request.commit,
+        label="latest_manifest_commit",
+    )
+
+    registry_rows = cast("int", health.get("registry_rows"))
+    expect_equal(registry_rows, 3, label="registry_rows")
+
+    override_registry_rows = cast("int", health.get("override_registry_rows"))
+    expect_equal(override_registry_rows, refresh_result.tables, label="override_registry_rows")
+
+    inferable_total = cast("int", health.get("inferable_total"))
+    inferred_count = cast("int", health.get("inferred_count"))
+    inference_error_count = cast("int", health.get("inference_error_count"))
+    inference_success_rate = cast("float | None", health.get("inference_success_rate"))
+
+    expect_equal(inferable_total, 1, label="inferable_total")
+    expect_equal(inferred_count, 1, label="inferred_count")
+    expect_equal(inference_error_count, 0, label="inference_error_count")
+    expect_equal(inference_success_rate, 1.0, label="inference_success_rate")
+
+    registry_stale = cast("bool", health.get("registry_stale"))
+    expect_equal(registry_stale, False, label="registry_stale")
+
+    for table_key in (inferable_key, explicit_key, view_key):
+        loaded_schema = fresh_gateway.schemas.load_table_schema(table_key)
+        expect_is_not_none(loaded_schema, label=f"schema_digest_{table_key}")

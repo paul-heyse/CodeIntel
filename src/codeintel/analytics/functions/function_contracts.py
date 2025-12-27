@@ -7,17 +7,14 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
-from codeintel.core.ibis_typing import and_predicates
-from codeintel.storage.gateway import ibis_facade
+from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Hashable, Iterable, Mapping
-
-    import pandas as pd
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
@@ -169,14 +166,15 @@ def _build_rows(inputs: _RowInputs) -> list[dict[str, object]]:
 def _load_docstrings(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[tuple[str, str], dict[str, object]]:
-    tbl = ibis_facade.table(gateway, "core.docstrings")
-    df = cast(
-        "pd.DataFrame",
-        tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
-        .select("rel_path", "qualname", "params", "returns")
-        .execute(),
+    relation = gateway.con.sql(
+        """
+        SELECT rel_path, qualname, params, returns
+        FROM core.docstrings
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    rows = _normalize_records(df.to_dict(orient="records"))
+    rows = _normalize_records(records_from_relation(relation))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
     for row in rows:
         rel_path = row["rel_path"]
@@ -193,14 +191,15 @@ def _load_docstrings(
 def _load_function_types(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
-    tbl = ibis_facade.table(gateway, "analytics.function_types")
-    df = cast(
-        "pd.DataFrame",
-        tbl.filter(and_predicates(tbl.repo == repo, tbl.commit == commit))
-        .select("function_goid_h128", "return_type", "param_types")
-        .execute(),
+    relation = gateway.con.sql(
+        """
+        SELECT function_goid_h128, return_type, param_types
+        FROM analytics.function_types
+        WHERE repo = $repo AND commit = $commit
+        """,
+        {"repo": repo, "commit": commit},
     )
-    rows = _normalize_records(df.to_dict(orient="records"))
+    rows = _normalize_records(records_from_relation(relation))
     mapping: dict[int, dict[str, object]] = {}
     for row in rows:
         goid = normalize_decimal_id(row["function_goid_h128"])

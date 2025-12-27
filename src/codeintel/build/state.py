@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.runtime.runtime_bundle import RuntimeBundle
 
+
 @dataclass(frozen=True, slots=True)
 class StateValidationOptions:
     """Inputs required to compute target state."""
@@ -141,20 +142,6 @@ class StateValidator:
             options=options or StateValidationOptions(),
         )
 
-
-def _state_input_values(*, runtime: RuntimeBundle, env: BuildEnv) -> Mapping[str, object]:
-    inputs = ExecutionInputs(
-        env=env,
-        catalog=runtime.catalog,
-        tag_query=runtime.tag_query,
-        cache_index=runtime.cache_index,
-        cache_key_resolver=runtime.cache_key_resolver,
-        schema_index=runtime.schema_index,
-        semantic_registry=runtime.semantic_registry,
-        runtime_fingerprint=runtime.fingerprint,
-    )
-    return execution_input_mapping(inputs)
-
     def validate(self) -> BuildState:
         """Validate state of all targets in the catalog.
 
@@ -191,6 +178,20 @@ def _state_input_values(*, runtime: RuntimeBundle, env: BuildEnv) -> Mapping[str
             msg = f"Target '{name}' not found in catalog"
             raise KeyError(msg)
         return self._computer.compute_single(name)
+
+
+def _state_input_values(*, runtime: RuntimeBundle, env: BuildEnv) -> Mapping[str, object]:
+    inputs = ExecutionInputs(
+        env=env,
+        catalog=runtime.catalog,
+        tag_query=runtime.tag_query,
+        cache_index=runtime.cache_index,
+        cache_key_resolver=runtime.cache_key_resolver,
+        schema_index=runtime.schema_index,
+        semantic_registry=runtime.semantic_registry,
+        runtime_fingerprint=runtime.fingerprint,
+    )
+    return execution_input_mapping(inputs)
 
 
 __all__ = [

@@ -123,7 +123,9 @@ def cast_schema(df: Frame, schema: Mapping[str, str]) -> Frame:
         return df.with_columns(
             [pl.col(name).cast(_polars_dtype(dtype)) for name, dtype in schema.items()]
         )
-    return df.with_columns([pl.col(name).cast(_polars_dtype(dtype)) for name, dtype in schema.items()])
+    return df.with_columns(
+        [pl.col(name).cast(_polars_dtype(dtype)) for name, dtype in schema.items()]
+    )
 
 
 def normalize_nulls(df: Frame, policy: str) -> Frame:

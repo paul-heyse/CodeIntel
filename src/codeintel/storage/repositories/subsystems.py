@@ -5,14 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.ibis_typing import (
-    and_predicates,
-    filter_by,
-    ibis_bool,
-    ilike,
-    isin_column,
-    or_predicates,
-)
+from duckdb import SQLExpression
+
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -47,29 +41,26 @@ class SubsystemRepository(BaseRepository):
         list[RowDict]
             Subsystem summary rows ordered by module count.
         """
-        table = self._ibis_table("docs.v_subsystem_summary")
-        expr = table
+        relation = self._relation("docs.v_subsystem_summary")
 
         if role:
-            modules = self._ibis_table("analytics.subsystem_modules")
+            modules = self._relation("analytics.subsystem_modules")
             role_subsystems = (
-                modules.filter(ibis_bool(modules.role == role))
-                .select(modules.subsystem_id)
+                modules.filter(self._predicate_eq("role", role))
+                .select("subsystem_id")
                 .distinct()
             )
-            expr = filter_by(
-                expr,
-                isin_column(table.subsystem_id, role_subsystems.subsystem_id),
-            )
+            relation = relation.join(role_subsystems, "subsystem_id")
 
         if query:
-            pattern = f"%{query}%"
-            expr = expr.filter(
-                or_predicates(ilike(table.name, pattern), ilike(table.description, pattern))
+            pattern = f"%{query.replace(\"'\", \"''\")}%"
+            predicate = SQLExpression(
+                f"name ILIKE '{pattern}' OR description ILIKE '{pattern}'"
             )
+            relation = relation.filter(predicate)
 
-        expr = expr.order_by([table.module_count.desc(), table.subsystem_id]).limit(limit)
-        return self._ibis_to_dicts(expr, "docs.v_subsystem_summary")
+        relation = relation.order("module_count DESC, subsystem_id").limit(limit)
+        return self._relation_to_dicts(relation, "docs.v_subsystem_summary")
 
     def get_subsystem_summary(self, subsystem_id: str) -> RowDict | None:
         """
@@ -85,13 +76,9 @@ class SubsystemRepository(BaseRepository):
         RowDict | None
             Subsystem summary row when present.
         """
-        table = self._ibis_table("docs.v_subsystem_summary")
-        expr = table.filter(
-            and_predicates(
-                table.subsystem_id == subsystem_id,
-            )
-        ).limit(1)
-        rows = self._ibis_to_dicts(expr, "docs.v_subsystem_summary")
+        relation = self._relation("docs.v_subsystem_summary")
+        relation = relation.filter(self._predicate_eq("subsystem_id", subsystem_id)).limit(1)
+        rows = self._relation_to_dicts(relation, "docs.v_subsystem_summary")
         return rows[0] if rows else None
 
     def search_subsystems(
@@ -134,13 +121,10 @@ class SubsystemRepository(BaseRepository):
         list[RowDict]
             Module membership rows ordered by module.
         """
-        table = self._ibis_table("docs.v_module_with_subsystem")
-        expr = table.filter(
-            and_predicates(
-                table.subsystem_id == subsystem_id,
-            )
-        ).order_by(table.module)
-        return self._ibis_to_dicts(expr, "docs.v_module_with_subsystem")
+        relation = self._relation("docs.v_module_with_subsystem")
+        relation = relation.filter(self._predicate_eq("subsystem_id", subsystem_id))
+        relation = relation.order("module")
+        return self._relation_to_dicts(relation, "docs.v_module_with_subsystem")
 
     def list_subsystem_memberships(self) -> list[RowDict]:
         """
@@ -151,9 +135,8 @@ class SubsystemRepository(BaseRepository):
         list[RowDict]
             Membership rows keyed by subsystem and module.
         """
-        table = self._ibis_table("analytics.subsystem_modules")
-        expr = table.select("subsystem_id", "module")
-        return self._ibis_to_dicts(expr)
+        relation = self._relation("analytics.subsystem_modules").select("subsystem_id", "module")
+        return self._relation_to_dicts(relation)
 
     def list_subsystems_for_module(self, module: str) -> list[RowDict]:
         """
@@ -169,13 +152,9 @@ class SubsystemRepository(BaseRepository):
         list[RowDict]
             Subsystem membership rows for the module.
         """
-        table = self._ibis_table("docs.v_module_with_subsystem")
-        expr = table.filter(
-            and_predicates(
-                table.module == module,
-            )
-        )
-        return self._ibis_to_dicts(expr, "docs.v_module_with_subsystem")
+        relation = self._relation("docs.v_module_with_subsystem")
+        relation = relation.filter(self._predicate_eq("module", module))
+        return self._relation_to_dicts(relation, "docs.v_module_with_subsystem")
 
     def _has_cache(self, cache_table: str) -> bool:
         """
@@ -191,9 +170,8 @@ class SubsystemRepository(BaseRepository):
         bool
             True if cache has at least one row for this repo/commit.
         """
-        table = self._ibis_table(cache_table)
-        expr = table.limit(1)
-        return self._ibis_exists(expr)
+        relation = self._relation(cache_table).limit(1)
+        return self._relation_exists(relation)
 
     def list_subsystem_profiles(self, *, limit: int) -> list[RowDict]:
         """
@@ -211,13 +189,13 @@ class SubsystemRepository(BaseRepository):
         """
         cache_table = "analytics.subsystem_profile_cache"
         if self._has_cache(cache_table):
-            table = self._ibis_table(cache_table)
-            expr = table.order_by([table.module_count.desc(), table.subsystem_id]).limit(limit)
-            return self._ibis_to_dicts(expr, cache_table)
+            relation = self._relation(cache_table)
+            relation = relation.order("module_count DESC, subsystem_id").limit(limit)
+            return self._relation_to_dicts(relation, cache_table)
 
-        table = self._ibis_table("docs.v_subsystem_profile")
-        expr = table.order_by([table.module_count.desc(), table.subsystem_id]).limit(limit)
-        return self._ibis_to_dicts(expr, "docs.v_subsystem_profile")
+        relation = self._relation("docs.v_subsystem_profile")
+        relation = relation.order("module_count DESC, subsystem_id").limit(limit)
+        return self._relation_to_dicts(relation, "docs.v_subsystem_profile")
 
     def list_subsystem_coverage(self, *, limit: int) -> list[RowDict]:
         """
@@ -235,20 +213,10 @@ class SubsystemRepository(BaseRepository):
         """
         cache_table = "analytics.subsystem_coverage_cache"
         if self._has_cache(cache_table):
-            table = self._ibis_table(cache_table)
-            expr = table.order_by(
-                [
-                    table.test_count.desc(nulls_first=False),
-                    table.subsystem_id,
-                ]
-            ).limit(limit)
-            return self._ibis_to_dicts(expr, cache_table)
+            relation = self._relation(cache_table)
+            relation = relation.order("test_count DESC NULLS LAST, subsystem_id").limit(limit)
+            return self._relation_to_dicts(relation, cache_table)
 
-        table = self._ibis_table("docs.v_subsystem_coverage")
-        expr = table.order_by(
-            [
-                table.test_count.desc(nulls_first=False),
-                table.subsystem_id,
-            ]
-        ).limit(limit)
-        return self._ibis_to_dicts(expr, "docs.v_subsystem_coverage")
+        relation = self._relation("docs.v_subsystem_coverage")
+        relation = relation.order("test_count DESC NULLS LAST, subsystem_id").limit(limit)
+        return self._relation_to_dicts(relation, "docs.v_subsystem_coverage")

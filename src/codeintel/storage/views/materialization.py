@@ -4,9 +4,9 @@ DuckDB requires dependent views to exist when a view is materialized. This
 module owns deterministic orchestration over:
 
 - discovering view builders (Hamilton tags)
-- compiling Ibis expressions to DuckDB SQL
+- compiling SQLGlot expressions to DuckDB SQL
 - dependency-aware ordering (CTE-safe via SQLGlot)
-- materializing views via the Ibis DuckDB backend
+- materializing views via DuckDB SQL execution
 - syncing derived lineage edges when snapshot identity is present
 """
 
@@ -15,17 +15,17 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import duckdb
-from ibis.common.exceptions import IbisError, TableNotFound
+from sqlglot.errors import ParseError
 
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.sync import (
     sync_derived_lineage_columns,
     sync_derived_lineage_edges,
 )
+from codeintel.storage.queries.safe import SqlIngressPolicy, assert_select_perimeter
 from codeintel.storage.sqlglot_tools import extract_column_lineage_duckdb
 from codeintel.storage.views.dependencies import (
     build_dependency_graph_from_sql,
@@ -35,9 +35,8 @@ from codeintel.storage.views.dependencies import (
 from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
-    import ibis.expr.types as it
     from hamilton.driver import Driver
-    from ibis.backends.duckdb import Backend as DuckDBBackend
+    from sqlglot import exp
 
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.storage.gateway.protocol import MinimalGateway
@@ -45,19 +44,6 @@ if TYPE_CHECKING:
 __all__ = ["ViewMaterializationOptions", "materialize_registered_views"]
 
 log = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, slots=True)
-class _IbisGatewayAdapter:
-    """Adapter that exposes Ibis backend access for view builders."""
-
-    con: DuckDBBackend
-
-    def table(self, table_name: str) -> it.Table:
-        if "." in table_name:
-            database, name = split_table_key(table_name)
-            return self.con.table(name, database=database)
-        return self.con.table(table_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,12 +62,12 @@ def materialize_registered_views(
     modules: tuple[ModuleType, ...],
     options: ViewMaterializationOptions | None = None,
 ) -> dict[str, str]:
-    """Compile and materialize tagged Ibis views.
+    """Compile and materialize tagged SQLGlot views.
 
     Parameters
     ----------
     gateway
-        Gateway providing DuckDB connection access and Ibis integration.
+        Gateway providing DuckDB connection access.
     modules
         Python modules containing view builder functions decorated/tagged for discovery.
     options
@@ -93,7 +79,7 @@ def materialize_registered_views(
         Mapping of view table_key -> compiled SQL used for dependency resolution.
     """
     active = options or ViewMaterializationOptions()
-    expr_by_view, sql_by_view = _compile_view_definitions(
+    sql_by_view = _compile_view_definitions(
         gateway,
         modules=modules,
         strict=active.strict,
@@ -105,7 +91,6 @@ def materialize_registered_views(
 
     _materialize_views(
         gateway,
-        expr_by_view=expr_by_view,
         sql_by_view=sql_by_view,
         overwrite=active.overwrite,
         strict=active.strict,
@@ -121,59 +106,53 @@ def _compile_view_definitions(
     strict: bool,
     dr: Driver | None,
     tag_query: TagQuery | None,
-) -> tuple[dict[str, it.Table], dict[str, str]]:
-    ibis_backend = ibis_facade.backend(gateway)
-    ibis_gateway = _IbisGatewayAdapter(ibis_backend)
+) -> dict[str, str]:
+    _ = gateway
     builders = discover_view_builders(dr=dr, tag_query=tag_query, modules=modules)
 
-    expr_by_view: dict[str, it.Table] = {}
     sql_by_view: dict[str, str] = {}
     for spec in builders:
         view_name = spec.table_key
         try:
-            expr = spec.builder(ibis_gateway)
-            expr_by_view[view_name] = expr
-            sql_by_view[view_name] = ibis_gateway.con.compile(expr)
-        except TableNotFound:
-            log.warning("Skipping view with missing source tables: %s", view_name)
-        except duckdb.CatalogException as exc:
-            if "does not exist" in str(exc):
-                log.warning("Skipping view with missing source tables: %s", view_name)
-                continue
+            expr = cast("exp.Expression", spec.builder())
+            sql = expr.sql(dialect="duckdb")
+            assert_select_perimeter(sql, policy=SqlIngressPolicy())
+            sql_by_view[view_name] = sql
+        except ParseError as exc:
+            log.exception("Failed to parse SQL for view: %s", view_name)
+            if strict:
+                raise
+            log.debug("SQLGlot parse error: %s", exc)
+        except (duckdb.Error, KeyError, TypeError, ValueError):
             log.exception("Failed to build view expression: %s", view_name)
             if strict:
                 raise
-        except (duckdb.Error, IbisError, KeyError, TypeError, ValueError):
-            log.exception("Failed to build view expression: %s", view_name)
-            if strict:
-                raise
-    return expr_by_view, sql_by_view
+    return sql_by_view
 
 
 def _materialize_views(
     gateway: MinimalGateway,
     *,
-    expr_by_view: dict[str, it.Table],
     sql_by_view: dict[str, str],
     overwrite: bool,
     strict: bool,
 ) -> None:
-    ibis_backend = ibis_facade.backend(gateway)
-    ibis_gateway = _IbisGatewayAdapter(ibis_backend)
     deps = build_dependency_graph_from_sql(sql_by_view)
     order_lower = toposort(sql_by_view.keys(), deps, raise_on_cycle=strict)
     original_by_lower = {k.lower(): k for k in sql_by_view}
 
     for view_key_lower in order_lower:
         view_name = original_by_lower[view_key_lower]
-        expr = expr_by_view.get(view_name)
-        if expr is None:
-            continue
         try:
             database, name = split_table_key(view_name)
-            ibis_gateway.con.create_view(name, expr, database=database, overwrite=overwrite)
+            replace = "OR REPLACE " if overwrite else ""
+            sql = sql_by_view.get(view_name)
+            if sql is None:
+                continue
+            create_sql = f"CREATE {replace}VIEW {database}.{name} AS {sql}"
+            gateway.con.execute(create_sql)
             log.debug("Materialized view: %s", view_name)
-        except (duckdb.Error, IbisError, KeyError, TypeError, ValueError):
+        except (duckdb.Error, KeyError, TypeError, ValueError):
             log.exception("Failed to materialize view: %s", view_name)
             if strict:
                 raise

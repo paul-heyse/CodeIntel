@@ -1,6 +1,6 @@
 """Decorators for tagging view builder functions.
 
-View builders are plain Python functions that construct Ibis expressions. To
+View builders are plain Python functions that construct SQLGlot expressions. To
 avoid manual registries and import-side effects, we tag view builder functions
 using Hamilton's `@tag` modifier and discover them via Hamilton introspection.
 """
@@ -17,8 +17,8 @@ from codeintel.core.hamilton import tags as ht
 _TFunc = TypeVar("_TFunc", bound=Callable[..., object])
 
 
-def ibis_view(table_key: str) -> Callable[[_TFunc], _TFunc]:
-    """Tag a function as an Ibis view builder for a specific table/view.
+def sql_view(table_key: str) -> Callable[[_TFunc], _TFunc]:
+    """Tag a function as a SQLGlot view builder for a specific table/view.
 
     Parameters
     ----------
@@ -43,4 +43,7 @@ def ibis_view(table_key: str) -> Callable[[_TFunc], _TFunc]:
     return decorator
 
 
-__all__ = ["ibis_view"]
+view_builder = sql_view
+
+
+__all__ = ["sql_view", "view_builder"]
