@@ -6,7 +6,7 @@ from typing import cast
 
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.storage.constants import DUCKDB_DIALECT
-from codeintel.storage.schema_roundtrip import create_table_ast, ibis_schema_from_table_schema
+from codeintel.storage.schema_roundtrip import create_table_ast
 from tests._helpers.assertions.expectation_assertions import expect_true
 
 
@@ -24,15 +24,9 @@ def test_schema_roundtrip_supports_advanced_types() -> None:
         ],
     )
 
-    ibis_schema = ibis_schema_from_table_schema(schema)
-    expect_true(ibis_schema["id"].is_uuid(), message="uuid type")
-    expect_true(ibis_schema["tags"].is_array(), message="list/array type")
-    expect_true(ibis_schema["attrs"].is_map(), message="map type")
-    expect_true(ibis_schema["payload"].is_struct(), message="struct type")
-    expect_true(ibis_schema["ts_ns"].is_timestamp(), message="timestamp type")
-
     ddl = create_table_ast(schema, if_not_exists=True).sql(dialect=DUCKDB_DIALECT)
     expect_true("UUID" in ddl, message="uuid ddl")
-    expect_true("TEXT[]" in ddl, message="array ddl")
-    expect_true("MAP(" in ddl, message="map ddl")
+    expect_true("LIST" in ddl, message="list ddl")
+    expect_true("MAP" in ddl, message="map ddl")
     expect_true("STRUCT" in ddl, message="struct ddl")
+    expect_true("TIMESTAMP_NS" in ddl, message="timestamp ddl")

@@ -10,8 +10,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog, OutputDescriptor
-from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec.primitives import ArtifactOutSpec, BuildSpec, DatasetSpec, TargetSpec
 from codeintel.build.spec.serdes import ensure_buildspec_hash
 from codeintel.core.schemas.hashing import schema_hash
@@ -157,11 +155,20 @@ def _compile_dataset_specs(
     return tuple(specs)
 
 
-def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> BuildSpec:
+def compile_buildspec(
+    *,
+    catalog: DagCatalog,
+    provider: SchemaProvider,
+    options: BuildSpecCompileOptions | None = None,
+) -> BuildSpec:
     """Compile a BuildSpec from the Hamilton DAG.
 
     Parameters
     ----------
+    catalog
+        DAG catalog used to resolve target specs.
+    provider
+        Schema provider used to resolve table schemas.
     options
         Compilation options controlling output detail.
 
@@ -172,10 +179,6 @@ def compile_buildspec(*, options: BuildSpecCompileOptions | None = None) -> Buil
     """
     opts = options or BuildSpecCompileOptions()
 
-    runtime = build_driver()
-    catalog = runtime.catalog
-
-    provider = get_schema_provider()
     target_specs, all_table_keys = _compile_target_specs(
         catalog=catalog,
     )

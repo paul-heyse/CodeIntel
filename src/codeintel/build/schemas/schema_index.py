@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from codeintel.build.target_metadata import TargetSystem
 
 
-SchemaDerivationKind = Literal["explicit_override", "inferred_ibis"]
+SchemaDerivationKind = Literal["explicit_override", "inferred_relation"]
 InferenceStatus = Literal["inferred", "override", "disabled", "error", "pending"]
 
 
@@ -73,7 +73,7 @@ class SchemaIndex:
         if derivation is None:
             return None
 
-        if derivation.kind != "inferred_ibis":
+        if derivation.kind != "inferred_relation":
             return derivation.override_schema
         return self._resolve_inferred_schema(
             table_key,
@@ -206,7 +206,7 @@ class SchemaIndex:
         derivation = self.derivations.get(table_key)
         if derivation is None:
             return None
-        if derivation.kind != "inferred_ibis":
+        if derivation.kind != "inferred_relation":
             return "override"
         if table_key in self._cache:
             return "inferred"
@@ -366,7 +366,7 @@ def build_schema_index(
     for table_key, output in sorted(catalog.table_outputs.items()):
         override_schema = declared_provider.get_table_schema(table_key)
         if table_key in inferable:
-            kind: SchemaDerivationKind = "inferred_ibis"
+            kind: SchemaDerivationKind = "inferred_relation"
         else:
             if override_schema is None:
                 missing_overrides.append((table_key, output.producer_target))

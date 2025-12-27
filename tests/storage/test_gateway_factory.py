@@ -39,6 +39,8 @@ def test_storage_config_creates_with_defaults() -> None:
     expect_true(cfg.validate_schema is False, message="validate_schema default")
     expect_true(cfg.attach_history is False, message="attach_history default")
     expect_true(cfg.history_db_path is None, message="history_db_path default")
+    expect_true(cfg.attach_meta is True, message="attach_meta default")
+    expect_true(cfg.meta_db_path is None, message="meta_db_path default")
     expect_true(cfg.repo is None, message="repo default")
     expect_true(cfg.commit is None, message="commit default")
 
@@ -47,6 +49,7 @@ def test_storage_config_creates_with_all_options(tmp_path: Path) -> None:
     """Verify StorageConfig accepts all options."""
     db_path = tmp_path / "test.duckdb"
     history_path = tmp_path / "history.duckdb"
+    meta_path = tmp_path / "meta.duckdb"
     cfg = StorageConfig(
         db_path=db_path,
         read_only=True,
@@ -55,6 +58,8 @@ def test_storage_config_creates_with_all_options(tmp_path: Path) -> None:
         validate_schema=True,
         attach_history=True,
         history_db_path=history_path,
+        attach_meta=False,
+        meta_db_path=meta_path,
         repo="test/repo",
         commit="abc123",
     )
@@ -65,6 +70,8 @@ def test_storage_config_creates_with_all_options(tmp_path: Path) -> None:
     expect_true(cfg.validate_schema is True, message="validate_schema")
     expect_true(cfg.attach_history is True, message="attach_history")
     expect_equal(cfg.history_db_path, history_path, label="history_db_path")
+    expect_true(cfg.attach_meta is False, message="attach_meta")
+    expect_equal(cfg.meta_db_path, meta_path, label="meta_db_path")
     expect_equal(cfg.repo, "test/repo", label="repo")
     expect_equal(cfg.commit, "abc123", label="commit")
 
@@ -79,6 +86,8 @@ def test_storage_config_for_ingest(tmp_path: Path) -> None:
     expect_true(cfg.ensure_views is True, message="ensure_views")
     expect_true(cfg.validate_schema is True, message="validate_schema")
     expect_true(cfg.attach_history is False, message="attach_history")
+    expect_true(cfg.attach_meta is True, message="attach_meta")
+    expect_true(cfg.meta_db_path is None, message="meta_db_path")
 
 
 def test_storage_config_for_ingest_with_history(tmp_path: Path) -> None:
@@ -102,6 +111,8 @@ def test_storage_config_for_readonly(tmp_path: Path) -> None:
     expect_true(cfg.apply_schema is False, message="apply_schema")
     expect_true(cfg.ensure_views is True, message="ensure_views")
     expect_true(cfg.validate_schema is True, message="validate_schema")
+    expect_true(cfg.attach_meta is True, message="attach_meta")
+    expect_true(cfg.meta_db_path is None, message="meta_db_path")
 
 
 def test_storage_config_is_frozen() -> None:
@@ -183,7 +194,7 @@ def test_open_memory_gateway_with_views() -> None:
             WHERE table_schema = 'analytics' AND table_name = 'v_function_summary'
             """
         ).fetchone()
-        expect_is_not_none(analytics_view, label="analytics Ibis view exists")
+        expect_is_not_none(analytics_view, label="analytics view exists")
     finally:
         gateway.close()
 
@@ -220,16 +231,16 @@ def test_open_memory_gateway_creates_accessors() -> None:
         gateway.close()
 
 
-def test_open_memory_gateway_exposes_ibis_backend() -> None:
-    """Verify gateway exposes an Ibis backend bound to the DuckDB connection."""
+def test_open_memory_gateway_exposes_relation_access() -> None:
+    """Verify gateway exposes relation access bound to the DuckDB connection."""
     gateway = open_memory_gateway(
         options=MemoryGatewayOptions(validate_schema=False),
         seed_contract_catalog=seed_contract_catalog,
     )
     try:
-        table = gateway.ibis.table("core.modules")
-        row_count = table.count().execute()
-        expect_equal(row_count, 0, label="ibis table count")
+        table = gateway.relation_from_table_key("core.modules")
+        row_count = len(table.df())
+        expect_equal(row_count, 0, label="relation row count")
     finally:
         gateway.close()
 

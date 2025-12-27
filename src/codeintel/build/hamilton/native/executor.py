@@ -172,7 +172,7 @@ class NativeTargetExecutor:
             self.target,
             "skipped",
             self.input_hash,
-            inputs=RunRecordInputs(env=self.env, run=run),
+            inputs=RunRecordInputs(env=self.env, run=run, catalog=self.catalog),
         )
 
     def execute(
@@ -384,7 +384,12 @@ class NativeTargetExecutor:
                 self.target,
                 "failed",
                 self.input_hash,
-                inputs=RunRecordInputs(env=self.env, run=run, error=ValueError(message)),
+                inputs=RunRecordInputs(
+                    env=self.env,
+                    run=run,
+                    error=ValueError(message),
+                    catalog=self.catalog,
+                ),
             )
 
         duration_ms = (time.perf_counter() - start) * 1000
@@ -398,7 +403,7 @@ class NativeTargetExecutor:
             self.target,
             "succeeded",
             self.input_hash,
-            inputs=RunRecordInputs(env=self.env, run=run),
+            inputs=RunRecordInputs(env=self.env, run=run, catalog=self.catalog),
         )
 
 

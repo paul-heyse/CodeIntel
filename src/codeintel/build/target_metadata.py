@@ -7,9 +7,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog, OutputDescriptor, TargetDescriptor
-from codeintel.build.schemas.inference_service import get_schema_inference_service
-from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
-from codeintel.core.schemas.declared import source_declared_schema_provider
+from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
@@ -148,7 +146,13 @@ def _build_indexes(
 
 
 def build_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
-    """Build a TargetSystem from a runtime bundle."""
+    """Build a TargetSystem from a runtime bundle.
+
+    Returns
+    -------
+    TargetSystem
+        Target system derived from the runtime.
+    """
     catalog = runtime.catalog
     by_name, by_table_key, by_artifact_name = _build_indexes(catalog)
     return TargetSystem(
@@ -304,6 +308,16 @@ class LazyTargetMetadataProvider:
         """Clear any cached target metadata service."""
         self._service = None
 
+    def is_loaded(self) -> bool:
+        """Return True if the target metadata service has been loaded.
+
+        Returns
+        -------
+        bool
+            True when the provider has initialized its service.
+        """
+        return self._service is not None
+
 
 _TARGET_METADATA_PROVIDERS: list[LazyTargetMetadataProvider] = []
 
@@ -315,21 +329,16 @@ def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataServ
     -------
     TargetMetadataService
         Target metadata service scoped to the runtime bundle.
+
+    Raises
+    ------
+    ValueError
+        If the runtime bundle lacks a schema index.
     """
     schema_index = runtime.schema_index
     if schema_index is None:
-        inference_service = get_schema_inference_service(
-            driver=runtime.driver,
-            catalog=runtime.catalog,
-        )
-        inferable_table_keys = inference_service.inferable_table_keys()
-        schema_index = build_schema_index(
-            system=runtime.catalog,
-            declared_provider=source_declared_schema_provider(
-                exclude_table_keys=inferable_table_keys,
-            ),
-            inference_service=inference_service,
-        )
+        msg = "RuntimeBundle.schema_index is required to build TargetMetadataService"
+        raise ValueError(msg)
     return TargetMetadataService(
         system=build_target_system(runtime=runtime),
         schema_index=schema_index,
@@ -337,20 +346,38 @@ def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataServ
 
 
 def get_target_system(*, runtime: RuntimeBundle) -> TargetSystem:
-    """Return the target system for a runtime bundle."""
+    """Return the target system for a runtime bundle.
+
+    Returns
+    -------
+    TargetSystem
+        Target system derived from the runtime.
+    """
     return build_target_system(runtime=runtime)
 
 
 def get_target_metadata_provider(*, runtime: RuntimeBundle) -> TargetMetadataProvider:
-    """Return a lazy target metadata provider bound to a runtime bundle."""
+    """Return a lazy target metadata provider bound to a runtime bundle.
+
+    Returns
+    -------
+    TargetMetadataProvider
+        Lazy target metadata provider.
+    """
     provider = LazyTargetMetadataProvider(runtime=runtime)
     _TARGET_METADATA_PROVIDERS.append(provider)
     return provider
 
 
 def is_target_metadata_loaded() -> bool:
-    """Return True if any target metadata providers have been loaded."""
-    return any(provider._service is not None for provider in _TARGET_METADATA_PROVIDERS)
+    """Return True if any target metadata providers have been loaded.
+
+    Returns
+    -------
+    bool
+        True when any provider has initialized its service.
+    """
+    return any(provider.is_loaded() for provider in _TARGET_METADATA_PROVIDERS)
 
 
 def clear_target_metadata_cache() -> None:

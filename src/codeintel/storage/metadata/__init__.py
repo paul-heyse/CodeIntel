@@ -21,6 +21,10 @@ if TYPE_CHECKING:
         sync_derived_lineage_columns,
         sync_table_schema_registry_from_latest_manifest,
     )
+    from codeintel.storage.metadata.validation import (
+        SchemaValidationRun,
+        record_schema_validation_run,
+    )
 
 _EXPORTS: Final[dict[str, tuple[str, str]]] = {
     "apply_metadata_ddl": ("codeintel.storage.metadata.ddl", "apply_metadata_ddl"),
@@ -54,6 +58,14 @@ _EXPORTS: Final[dict[str, tuple[str, str]]] = {
         "codeintel.storage.metadata.sync",
         "sync_table_schema_registry_from_latest_manifest",
     ),
+    "record_schema_validation_run": (
+        "codeintel.storage.metadata.validation",
+        "record_schema_validation_run",
+    ),
+    "SchemaValidationRun": (
+        "codeintel.storage.metadata.validation",
+        "SchemaValidationRun",
+    ),
     "upsert_canonical_catalog": ("codeintel.storage.metadata.catalogs", "upsert_canonical_catalog"),
 }
 
@@ -73,6 +85,7 @@ def __dir__() -> list[str]:
 
 
 __all__: tuple[str, ...] = (
+    "SchemaValidationRun",
     "apply_metadata_ddl",
     "bootstrap_metadata_datasets",
     "build_catalog_entry",
@@ -80,6 +93,7 @@ __all__: tuple[str, ...] = (
     "load_derived_lineage_columns",
     "load_latest_canonical_catalog",
     "load_latest_canonical_catalog_from_connection",
+    "record_schema_validation_run",
     "sync_dataset_dataflow_graph",
     "sync_derived_lineage_columns",
     "sync_table_schema_registry_from_latest_manifest",

@@ -155,7 +155,6 @@ class MinimalStorageGateway:
             self._policy = DuckDBPolicyBackend(self, schema_provider=self._schema_provider)
         return self._policy
 
-
     def relation_from_table_key(self, table_key: str) -> DuckDBPyRelation:
         """Return a relation for a fully qualified table key.
 

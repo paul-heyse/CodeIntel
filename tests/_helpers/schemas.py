@@ -12,13 +12,13 @@ from codeintel.build.schemas import (
 )
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.catalog_state import get_contract_catalog
 from codeintel.storage.contracts.provider import set_contract_catalog
 from codeintel.storage.contracts.schema_provider import (
     clear_schema_provider_cache,
     get_schema_provider,
 )
-from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database

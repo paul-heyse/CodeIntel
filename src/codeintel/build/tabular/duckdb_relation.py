@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from typing import Literal, overload
 
 import duckdb
 import polars as pl
@@ -105,6 +106,22 @@ def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
         Arrow reader for streaming record batches.
     """
     return relation.fetch_arrow_reader()
+
+
+@overload
+def relation_to_polars(
+    relation: TabularRelation,
+    *,
+    lazy: Literal[True] = True,
+) -> pl.LazyFrame: ...
+
+
+@overload
+def relation_to_polars(
+    relation: TabularRelation,
+    *,
+    lazy: Literal[False],
+) -> pl.DataFrame: ...
 
 
 def relation_to_polars(

@@ -10,18 +10,15 @@ callable backs each `t__*` node; we use that as the source of truth.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 from codeintel.build.hamilton.naming import target_node
-
-if TYPE_CHECKING:
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
-
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 ImplKind = Literal["native"]
 
 
-def native_target_names(runtime: HamiltonRuntime) -> frozenset[str]:
+def native_target_names(runtime: RuntimeBundle) -> frozenset[str]:
     """Return target names implemented by `codeintel.build.hamilton.native.*`.
 
     Parameters
@@ -46,7 +43,7 @@ def native_target_names(runtime: HamiltonRuntime) -> frozenset[str]:
     return frozenset(native)
 
 
-def target_impl_kind(runtime: HamiltonRuntime, *, target_name: str) -> ImplKind:
+def target_impl_kind(runtime: RuntimeBundle, *, target_name: str) -> ImplKind:
     """Return the implementation kind for a target name.
 
     Parameters

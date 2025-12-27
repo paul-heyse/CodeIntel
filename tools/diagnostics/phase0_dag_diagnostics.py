@@ -9,8 +9,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from codeintel.build.hamilton.contracts.schemas import SCHEMA_REGISTRY
-from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.resolution.runtime import resolve_from_params
 from codeintel.core.hamilton.tags import TAG_NODE_TYPE
+from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.storage.gateway import StorageConfig, open_gateway
 
 LOG = logging.getLogger(__name__)
 
@@ -42,10 +45,19 @@ def _collect_invalid_identifiers(nodes: Mapping[str, object]) -> tuple[str, ...]
     return tuple(sorted(invalid))
 
 
-def _collect_targets_missing_schemas() -> tuple[str, ...]:
-    runtime = build_driver()
+def _compose_runtime_bundle() -> RuntimeBundle:
+    runtime = resolve_from_params({"project_root": Path.cwd()})
+    config = StorageConfig.for_readonly(runtime.paths.db_path)
+    gateway = open_gateway(config)
+    try:
+        return compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
+    finally:
+        gateway.close()
+
+
+def _collect_targets_missing_schemas(runtime: RuntimeBundle) -> tuple[str, ...]:
     missing: set[str] = set()
-    for target in runtime.graph.all_targets:
+    for target in runtime.catalog.all_targets:
         for table_key in target.table_keys:
             if SCHEMA_REGISTRY.get(table_key) is None:
                 missing.add(table_key)
@@ -63,12 +75,12 @@ def _write_json(output_path: Path, diagnostics: DagDiagnostics) -> None:
 
 def main() -> None:
     """Generate diagnostics and write to the default output path."""
-    runtime = build_driver()
+    runtime = _compose_runtime_bundle()
     nodes = runtime.dr.graph.nodes
     diagnostics = DagDiagnostics(
         nodes_missing_tags=_collect_nodes_missing_tags(nodes),
         invalid_identifiers=_collect_invalid_identifiers(nodes),
-        targets_missing_schemas=_collect_targets_missing_schemas(),
+        targets_missing_schemas=_collect_targets_missing_schemas(runtime),
     )
     output_path = Path("build/diagnostics/phase0_dag_diagnostics.json")
     _write_json(output_path, diagnostics)

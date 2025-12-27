@@ -7,7 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_args
 
-from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
+from codeintel.build.schemas.compile import (
+    SchemaManifestContext,
+    SchemaManifestRequest,
+    compile_schema_manifest,
+)
 from codeintel.build.schemas.diff import compute_manifest_diffs
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
@@ -25,6 +29,7 @@ from codeintel.cli.errors.results import (
     fail_invalid_targets,
     fail_missing_required,
 )
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 
 if TYPE_CHECKING:
@@ -217,8 +222,19 @@ def _compile_manifest(
         include_provenance=selection.include_provenance,
     )
 
+    runtime = ctx.runtime
+    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    schema_index = runtime_bundle.schema_index
+    if schema_index is None:
+        msg = "Runtime schema_index is required to compile schema manifests"
+        raise RuntimeError(msg)
     manifest = compile_schema_manifest(
         provider=get_schema_provider(),
+        context=SchemaManifestContext(
+            catalog=runtime_bundle.catalog,
+            schema_index=schema_index,
+            tag_query=runtime_bundle.tag_query,
+        ),
         request=request,
         con=gateway_con,
     )

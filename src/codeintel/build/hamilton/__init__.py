@@ -5,7 +5,6 @@ Hamilton is the orchestration layer for CodeIntel's build graph. This package pr
 - Driver construction for native pipelines
 - Execution via ``HamiltonBuildExecutor``
 - Planning (``compute_plan``) and DAG observability exports
-- Contract enforcement hooks for datasets and artifacts
 
 Driver construction
 -------------------
@@ -13,7 +12,7 @@ The build DAG is composed using native target modules only.
 
 Observability
 -------------
-This package uses Hamilton lifecycle adapters for telemetry and contract enforcement.
+This package uses Hamilton lifecycle adapters for telemetry.
 
 Example
 -------
@@ -41,7 +40,6 @@ __all__ = [
     "export_dag_json",
     "export_execution_json",
     "get_dag_info",
-    "get_pandera_schema",
     "list_available_nodes",
     "list_execution_order",
     "list_execution_targets",
@@ -49,18 +47,9 @@ __all__ = [
     "target_node",
     "target_to_node_name",
     "to_node_name",
-    "validate_dataframe",
-    "validate_dataset_ref",
-    "with_contract",
 ]
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.contracts import (
-        get_pandera_schema,
-        validate_dataframe,
-        validate_dataset_ref,
-        with_contract,
-    )
     from codeintel.build.hamilton.driver_factory import (
         list_available_nodes,
         target_to_node_name,
@@ -80,10 +69,6 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.run_records import TargetRunRecord
 
 _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
-    "get_pandera_schema": ("codeintel.build.hamilton.contracts", "get_pandera_schema"),
-    "validate_dataframe": ("codeintel.build.hamilton.contracts", "validate_dataframe"),
-    "validate_dataset_ref": ("codeintel.build.hamilton.contracts", "validate_dataset_ref"),
-    "with_contract": ("codeintel.build.hamilton.contracts", "with_contract"),
     "list_available_nodes": ("codeintel.build.hamilton.driver_factory", "list_available_nodes"),
     "target_to_node_name": ("codeintel.build.hamilton.driver_factory", "target_to_node_name"),
     "BuildEnv": ("codeintel.build.hamilton.env", "BuildEnv"),

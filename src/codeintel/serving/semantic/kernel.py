@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
 from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
@@ -45,6 +44,7 @@ from codeintel.serving.semantic.planner import (
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (

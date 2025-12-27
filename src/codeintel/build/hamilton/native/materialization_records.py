@@ -156,7 +156,12 @@ def record_from_duckdb_materialization(
             target,
             "failed",
             result.input_hash,
-            inputs=RunRecordInputs(env=env, run=run, error=ValueError(error_message)),
+            inputs=RunRecordInputs(
+                env=env,
+                run=run,
+                error=ValueError(error_message),
+                catalog=catalog,
+            ),
         )
 
     table_key = cast("str", result.table_key)
@@ -173,7 +178,10 @@ def record_from_duckdb_materialization(
             "failed",
             result.input_hash,
             inputs=RunRecordInputs(
-                env=env, run=run, error=RuntimeError(result.error or "Write failed")
+                env=env,
+                run=run,
+                error=RuntimeError(result.error or "Write failed"),
+                catalog=catalog,
             ),
         )
 
@@ -182,14 +190,14 @@ def record_from_duckdb_materialization(
             target,
             "skipped",
             result.input_hash,
-            inputs=RunRecordInputs(env=env, run=run),
+            inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
         )
 
     record = create_run_record(
         target,
         "succeeded",
         result.input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
+        inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
     save_manifest(env, record)
     return record
@@ -278,7 +286,12 @@ def record_from_file_artifact_materialization(
             target,
             "failed",
             result.input_hash,
-            inputs=RunRecordInputs(env=env, run=run, error=ValueError(error_message)),
+            inputs=RunRecordInputs(
+                env=env,
+                run=run,
+                error=ValueError(error_message),
+                catalog=catalog,
+            ),
         )
 
     run = NativeRunInfo(
@@ -294,7 +307,10 @@ def record_from_file_artifact_materialization(
             "failed",
             result.input_hash,
             inputs=RunRecordInputs(
-                env=env, run=run, error=RuntimeError(result.error or "Artifact write failed")
+                env=env,
+                run=run,
+                error=RuntimeError(result.error or "Artifact write failed"),
+                catalog=catalog,
             ),
         )
 
@@ -303,14 +319,14 @@ def record_from_file_artifact_materialization(
             target,
             "skipped",
             result.input_hash,
-            inputs=RunRecordInputs(env=env, run=run),
+            inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
         )
 
     record = create_run_record(
         target,
         "succeeded",
         result.input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
+        inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
 
     record = _apply_file_artifact_results(record, {expected_artifact_name: result})
@@ -378,7 +394,12 @@ def record_from_duckdb_materializations(
             target,
             "failed",
             "",
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
+            inputs=RunRecordInputs(
+                env=env,
+                run=run,
+                error=RuntimeError(msg),
+                catalog=catalog,
+            ),
         )
 
     parsed = _parse_expected_table_materializations(expected_table_keys, materializations)
@@ -397,7 +418,12 @@ def record_from_duckdb_materializations(
             target,
             "failed",
             input_hash,
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(message)),
+            inputs=RunRecordInputs(
+                env=env,
+                run=run,
+                error=RuntimeError(message),
+                catalog=catalog,
+            ),
         )
 
     if statuses == {"skipped"}:
@@ -411,7 +437,7 @@ def record_from_duckdb_materializations(
             target,
             "skipped",
             input_hash,
-            inputs=RunRecordInputs(env=env, run=run),
+            inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
         )
 
     row_counts = cast("dict[str, int]", row_counts)
@@ -426,7 +452,7 @@ def record_from_duckdb_materializations(
         target,
         "succeeded",
         input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
+        inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
     save_manifest(env, record, change_delta=change_delta)
     return record
@@ -491,7 +517,12 @@ def record_from_file_artifact_materializations(
             target,
             "failed",
             "",
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(msg)),
+            inputs=RunRecordInputs(
+                env=env,
+                run=run,
+                error=RuntimeError(msg),
+                catalog=catalog,
+            ),
         )
 
     parsed = _parse_expected_artifact_materializations(expected_names, materializations)
@@ -512,7 +543,12 @@ def record_from_file_artifact_materializations(
             target,
             "failed",
             input_hash,
-            inputs=RunRecordInputs(env=env, run=run, error=RuntimeError(message)),
+            inputs=RunRecordInputs(
+                env=env,
+                run=run,
+                error=RuntimeError(message),
+                catalog=catalog,
+            ),
         )
 
     if statuses == {"skipped"}:
@@ -526,7 +562,7 @@ def record_from_file_artifact_materializations(
             target,
             "skipped",
             input_hash,
-            inputs=RunRecordInputs(env=env, run=run),
+            inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
         )
 
     run = NativeRunInfo(
@@ -539,7 +575,7 @@ def record_from_file_artifact_materializations(
         target,
         "succeeded",
         input_hash,
-        inputs=RunRecordInputs(env=env, run=run),
+        inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
     record = _apply_file_artifact_results(record, parsed)
 
@@ -618,7 +654,7 @@ def record_from_materializations(
         target,
         "succeeded",
         summary.input_hash,
-        inputs=RunRecordInputs(env=context.env, run=run),
+        inputs=RunRecordInputs(env=context.env, run=run, catalog=context.catalog),
     )
     record = _apply_file_artifact_results(record, parsed_artifacts)
     save_manifest(context.env, record, change_delta=context.change_delta)
@@ -675,6 +711,7 @@ def _error_run_record(
             env=record.context.env,
             run=run,
             error=RuntimeError(message),
+            catalog=record.context.catalog,
         ),
     )
 
@@ -792,7 +829,11 @@ def _build_failure_record(
             record.target,
             "skipped",
             summary.input_hash,
-            inputs=RunRecordInputs(env=record.context.env, run=run),
+            inputs=RunRecordInputs(
+                env=record.context.env,
+                run=run,
+                catalog=record.context.catalog,
+            ),
         )
     return None
 
@@ -847,7 +888,7 @@ def _parse_expected_artifact_materializations(
 def _expected_artifact_names(
     target_name: str,
     *,
-    catalog: DagCatalog | None = None,
+    catalog: DagCatalog,
 ) -> tuple[str, ...]:
     return expected_artifact_names_for_target(target_name, outputs=catalog)
 
@@ -855,7 +896,7 @@ def _expected_artifact_names(
 def _expected_table_keys(
     target_name: str,
     *,
-    catalog: DagCatalog | None = None,
+    catalog: DagCatalog,
 ) -> tuple[str, ...]:
     return expected_table_keys_for_target(target_name, outputs=catalog)
 

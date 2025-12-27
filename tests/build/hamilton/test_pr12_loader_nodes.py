@@ -10,11 +10,12 @@ import importlib.util
 
 import pytest
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.naming import query_node
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.cli.commands.build import BuildRunCommand
+from codeintel.runtime.compose import compose_runtime
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.assertions import assert_target_ok
 
 
@@ -30,22 +31,27 @@ class TestLoaderNodeNaming:
         if not name.isidentifier():
             pytest.fail(f"query_node should return valid identifier, got '{name}'")
 
+
 class TestDriverLoaderNodes:
     """Tests for loader nodes in the driver graph."""
 
     @staticmethod
-    def test_generated_module_has_query_nodes() -> None:
+    def test_generated_module_has_query_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify driver graph includes q__* nodes."""
-        runtime = build_driver()
-        node_names = set(runtime.dr.graph.nodes)
+        node_names = set(hamilton_runtime.dr.graph.nodes)
         expected = query_node("analytics.function_metrics")
         if expected not in node_names:
             pytest.fail(f"Missing query node {expected}")
 
     @staticmethod
-    def test_loader_nodes_disabled_by_config() -> None:
+    def test_loader_nodes_disabled_by_config(runtime_env: BuildEnv) -> None:
         """Verify loader nodes are not generated when flag is False."""
-        runtime = build_driver(config={"ci_support_include_loader_nodes": False})
+        config: dict[str, object] = {"ci_support_include_loader_nodes": False}
+        if runtime_env.profile:
+            config["profile"] = runtime_env.profile
+        config.update(runtime_env.variants.as_hamilton_config())
+        config["variant_fingerprint"] = runtime_env.variants.variant_fingerprint
+        runtime = compose_runtime(env=runtime_env, config=config).bundle
         node_names = set(runtime.dr.graph.nodes)
         query_name = query_node("analytics.function_metrics")
         if query_name in node_names:

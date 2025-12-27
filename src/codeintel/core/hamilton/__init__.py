@@ -13,6 +13,7 @@ from codeintel.core.hamilton.tag_filters import (
     tf_artifacts,
     tf_datasets,
     tf_savers,
+    tf_schema_tables,
     tf_semantic_views,
 )
 from codeintel.core.hamilton.tag_query import TagQuery
@@ -22,5 +23,6 @@ __all__ = [
     "tf_artifacts",
     "tf_datasets",
     "tf_savers",
+    "tf_schema_tables",
     "tf_semantic_views",
 ]

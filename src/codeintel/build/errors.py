@@ -38,7 +38,6 @@ __all__ = [
     "BuildProblemError",
     "ColumnCountMismatchError",
     "ContractError",
-    "ContractViolationError",
     "CycleDetectedError",
     "DependencyUnavailableError",
     "ExecutionError",
@@ -308,81 +307,6 @@ class ColumnCountMismatchError(ContractError):
             f"Check the implementation for target '{self.target}' - "
             f"ensure it writes all {self.expected} columns defined in the schema"
         )
-
-
-class ContractViolationError(ContractError):
-    """Target attempted to write outside its declared outputs.
-
-    This error is raised when strict_contracts mode is enabled and a target
-    attempts to write to a table or artifact that is not declared by saver tags.
-
-    Attributes
-    ----------
-    target
-        Target name that violated the contract.
-    table_key
-        Table key that was written to (if applicable).
-    artifact_name
-        Artifact name that was written to (if applicable).
-    allowed_tables
-        Set of table keys allowed by the contract.
-    """
-
-    def __init__(
-        self,
-        target: str,
-        *,
-        table_key: str | None = None,
-        artifact_name: str | None = None,
-        allowed_tables: set[str] | None = None,
-    ) -> None:
-        self.target = target
-        self.table_key = table_key
-        self.artifact_name = artifact_name
-        self.allowed_tables = allowed_tables or set()
-        if table_key:
-            msg = (
-                f"Target '{target}' attempted to write to '{table_key}' "
-                f"which is not declared by saver tags"
-            )
-        elif artifact_name:
-            msg = (
-                f"Target '{target}' attempted to write artifact '{artifact_name}' "
-                f"which is not declared by saver tags"
-            )
-        else:
-            msg = f"Target '{target}' violated its declared outputs"
-        super().__init__(msg)
-
-    @property
-    def user_message(self) -> str:
-        """Return human-readable error message."""
-        if self.table_key:
-            return (
-                f"Target '{self.target}' attempted to write to '{self.table_key}' "
-                f"which is not declared by saver tags"
-            )
-        if self.artifact_name:
-            return (
-                f"Target '{self.target}' attempted to write artifact '{self.artifact_name}' "
-                f"which is not declared by saver tags"
-            )
-        return f"Target '{self.target}' violated its declared outputs"
-
-    @property
-    def actionable_hint(self) -> str:
-        """Return suggestion for fixing the error."""
-        if self.table_key and self.allowed_tables:
-            return (
-                f"Declare '{self.table_key}' via a saver tag for '{self.target}' "
-                f"or remove the write. Allowed tables: {sorted(self.allowed_tables)}"
-            )
-        if self.artifact_name:
-            return (
-                f"Declare '{self.artifact_name}' via a saver tag for '{self.target}' "
-                f"or remove the write"
-            )
-        return f"Review saver tags for '{self.target}' and ensure all writes match declared outputs"
 
 
 class ArtifactNotFoundError(ContractError):

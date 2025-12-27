@@ -157,7 +157,7 @@ class SearchIndexMissingError(CodeIntelDomainError):
 class LineageMetadataMissingError(CodeIntelDomainError):
     """Raised when derived lineage metadata is missing."""
 
-    def __init__(self, *, table: str = "metadata.derived_lineage_columns") -> None:
+    def __init__(self, *, table: str = "meta.metadata.derived_lineage_columns") -> None:
         super().__init__(code="CODEINTEL_LINEAGE_MISSING", params={"table": table})
 
 

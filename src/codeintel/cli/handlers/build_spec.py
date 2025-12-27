@@ -5,9 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.build.spec import BuildSpecCompileOptions, buildspec_to_json, compile_buildspec
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.resolution.errors import ResolutionError
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -37,7 +40,17 @@ def build_spec_compile_handler(ctx: CommandContext) -> CliResult[str]:
             status=400,
         )
 
-    spec = compile_buildspec(options=BuildSpecCompileOptions(include_columns=include_columns))
+    try:
+        runtime = ctx.runtime
+    except ResolutionError as exc:
+        return fail_execution_failed("build", str(exc))
+
+    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    spec = compile_buildspec(
+        catalog=runtime_bundle.catalog,
+        provider=get_schema_provider(),
+        options=BuildSpecCompileOptions(include_columns=include_columns),
+    )
     payload = buildspec_to_json(spec, indent=2)
 
     if output_file and output_file != "-":

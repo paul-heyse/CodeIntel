@@ -54,12 +54,8 @@ def test_metadata_dataflow_tables_populated() -> None:
         bootstrap_metadata_datasets(gateway.con, include_views=True)
         nodes_ref = meta_table_ref("metadata.dataset_dataflow_nodes")
         edges_ref = meta_table_ref("metadata.dataset_dataflow_edges")
-        node_row = gateway.con.execute(
-            f"SELECT COUNT(*) FROM {nodes_ref}"
-        ).fetchone()
-        edge_row = gateway.con.execute(
-            f"SELECT COUNT(*) FROM {edges_ref}"
-        ).fetchone()
+        node_row = gateway.con.execute(f"SELECT COUNT(*) FROM {nodes_ref}").fetchone()
+        edge_row = gateway.con.execute(f"SELECT COUNT(*) FROM {edges_ref}").fetchone()
         if node_row is None or edge_row is None:
             pytest.fail("Failed to count dataflow tables")
         node_count = int(node_row[0])

@@ -95,18 +95,17 @@ def build_module_profile_rows(
     ValueError
         If an unexpected module table name is provided.
     """
-    gateway = inputs.gateway
-    repo = inputs.repo
-    commit = inputs.commit
-
     if module_table not in {DEFAULT_MODULE_TABLE, CATALOG_MODULE_TABLE}:
         msg = f"Unexpected module table: {module_table}"
         raise ValueError(msg)
 
     try:
-        ibis_backend = ibis_facade.backend(gateway)
+        ibis_backend = ibis_facade.backend(inputs.gateway)
         modules_scoped, func_stats, files, imports, roles = _load_module_aggregates(
-            cast("BaseBackend", ibis_backend), module_table, repo, commit
+            cast("BaseBackend", ibis_backend),
+            module_table,
+            inputs.repo,
+            inputs.commit,
         )
     except DuckDBError as exc:
         log.warning("module_profile: failed to access tables: %s", exc)

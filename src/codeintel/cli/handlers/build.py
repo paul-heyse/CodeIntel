@@ -30,8 +30,6 @@ from codeintel.build.hamilton.decision_trace import (
     default_decision_trace_path,
     read_decision_trace,
 )
-from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
@@ -48,7 +46,6 @@ from codeintel.build.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator
-from codeintel.build.target_metadata import get_target_metadata_service, get_target_system
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     BuildAssetsResult,
@@ -72,11 +69,15 @@ from codeintel.cli.errors.results import (
     fail_project_error,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
+from codeintel.cli.handlers.runtime_helpers import (
+    build_execution_context,
+    compose_cli_runtime_bundle,
+    planning_config,
+)
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
-from codeintel.core.execution import ExecutionContext, RunKind, new_run_context
 from codeintel.core.registry.service import RegistryService
-from codeintel.core.runtime.loader import load_execution_context, load_runtime_settings
+from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.runtime import flush_observability
 from codeintel.observability.semconv_keys import BUILD_COMMIT, BUILD_REPO, BUILD_RUN_ID
 from codeintel.observability.teardown import (
@@ -88,21 +89,23 @@ from codeintel.observability.teardown import (
     emit_shutdown_error_event,
     emit_teardown_telemetry,
 )
+from codeintel.runtime.compose import compose_runtime
 from codeintel.storage.tracking.asset_tracking import AssetAliasRecord, AssetDiffRecord
 from codeintel.storage.validation import ContractValidationMode
-from codeintel.runtime.compose import compose_runtime
 
 if TYPE_CHECKING:
     from hamilton.caching.adapter import CachingEvent
 
     from codeintel.build.hamilton import HamiltonBuildResult
     from codeintel.build.hamilton.dag_catalog import DagCatalog
+    from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
     from codeintel.cli.resolution.types import ResolvedRuntime
     from codeintel.core.build_manifest import BuildRunRecord
     from codeintel.core.hamilton.records import ArtifactRefProtocol
     from codeintel.observability.cli import RunContext
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
     from codeintel.storage.gateway import StorageGateway
 
 LOG = logging.getLogger(__name__)
@@ -192,30 +195,6 @@ def _expand_pilot_targets(targets: list[str]) -> list[str]:
     return expanded
 
 
-def _build_execution_context(
-    runtime: ResolvedRuntime,
-    *,
-    kind: RunKind = "full",
-    requested_datasets: tuple[str, ...] = (),
-) -> ExecutionContext:
-    run_context = new_run_context(
-        snapshot=runtime.snapshot,
-        kind=kind,
-        trigger="cli",
-        requested_datasets=requested_datasets,
-    )
-    return load_execution_context(primitives=runtime.primitives, run=run_context)
-
-
-def _planning_config(env: BuildEnv) -> dict[str, Any]:
-    config: dict[str, Any] = {}
-    if env.profile:
-        config["profile"] = env.profile
-    config.update(env.variants.as_hamilton_config())
-    config["variant_fingerprint"] = env.variants.variant_fingerprint
-    return config
-
-
 def _plan_entry_summary(entry: PlanTargetEntry) -> str:
     if entry.predicted_action == "blocked":
         if entry.block_reasons:
@@ -239,7 +218,6 @@ class BuildExecutionArgs:
     force: list[str] | None
     run_mode: RunMode
     validate_outputs: bool
-    strict_contracts: bool
     publish_serving_snapshot: bool
     parallel_backend: str
     max_workers: int | None
@@ -350,13 +328,12 @@ def _resolve_goals(
     raise ValidationError(msg)
 
 
-def _resolve_domain_for_goals(goals: Sequence[str]) -> str | None:
+def _resolve_domain_for_goals(goals: Sequence[str], catalog: DagCatalog) -> str | None:
     if not goals:
         return None
-    service = get_target_metadata_service()
     domains: set[str] = set()
     for target_name in goals:
-        target = service.system.catalog.targets.get(target_name)
+        target = catalog.targets.get(target_name)
         if target is None:
             continue
         domains.add(target.domain)
@@ -493,7 +470,7 @@ def _execute_build_hamilton(
         override = Path(execution.cache_dir).expanduser()
         cache_dir = override if override.is_absolute() else (runtime.root / override)
 
-    execution_context = _build_execution_context(
+    execution_context = build_execution_context(
         runtime,
         requested_datasets=tuple(execution.goals),
     )
@@ -513,7 +490,6 @@ def _execute_build_hamilton(
         execution_options=execution_options,
         force_targets=frozenset(execution.force or ()),
         validate_outputs=execution.validate_outputs,
-        strict_contracts=execution.strict_contracts,
         manifest_index=manifest_index,
     )
     context = BuildRunContext.from_execution_context(
@@ -617,7 +593,7 @@ def _build_cache_report(
     return report
 
 
-def _cache_adapter_from_runtime(runtime: HamiltonRuntime) -> HamiltonCacheAdapter | None:
+def _cache_adapter_from_runtime(runtime: RuntimeBundle) -> HamiltonCacheAdapter | None:
     cache_adapter_raw = getattr(runtime.dr, "cache", None)
     if isinstance(cache_adapter_raw, HamiltonCacheAdapter):
         return cache_adapter_raw
@@ -657,7 +633,7 @@ def _cache_behavior_str(behavior: object) -> str | None:
     return None
 
 
-def _cache_node_tag_fields(runtime: HamiltonRuntime, node_name: str) -> dict[str, object]:
+def _cache_node_tag_fields(runtime: RuntimeBundle, node_name: str) -> dict[str, object]:
     node_obj = runtime.dr.graph.nodes.get(node_name)
     if node_obj is None:
         return {}
@@ -680,7 +656,7 @@ def _cache_node_tag_fields(runtime: HamiltonRuntime, node_name: str) -> dict[str
 
 def _collect_cache_node_rows(
     *,
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     cache_adapter: HamiltonCacheAdapter,
     cache_run_id: str,
 ) -> tuple[list[dict[str, object]], int, int]:
@@ -789,7 +765,8 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    catalog = get_target_system().catalog
+    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    catalog = runtime_bundle.catalog
 
     LOG.info(
         "build.status repo=%s commit=%s",
@@ -835,7 +812,6 @@ class _BuildRunParams:
     dry_run: bool
     force: list[str] | None
     validate_outputs: bool
-    strict_contracts: bool
     publish_serving_snapshot: bool
     parallel_backend: str
     max_workers: int | None
@@ -917,7 +893,6 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         dry_run=ctx.params.get_bool("dry_run"),
         force=force,
         validate_outputs=ctx.params.get_bool("validate_outputs"),
-        strict_contracts=ctx.params.get_bool("strict_contracts"),
         publish_serving_snapshot=ctx.params.get_bool("publish_serving_snapshot"),
         parallel_backend=parallel_backend,
         max_workers=max_workers,
@@ -1050,7 +1025,8 @@ def _build_run_result(
     except ResolutionError as exc:
         return fail_project_error("build", str(exc)), runtime, goals
 
-    catalog = get_target_metadata_service().system.catalog
+    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    catalog = runtime_bundle.catalog
     scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
     try:
         goals = _resolve_goals(params.targets, params.module, scope, catalog)
@@ -1060,7 +1036,7 @@ def _build_run_result(
     if params.publish_serving_snapshot and "serving_artifacts" not in goals:
         goals.append("serving_artifacts")
 
-    domain = _resolve_domain_for_goals(goals)
+    domain = _resolve_domain_for_goals(goals, catalog)
     telemetry_state.domain = domain
 
     LOG.info(
@@ -1076,7 +1052,6 @@ def _build_run_result(
         force=params.force,
         run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
         validate_outputs=params.validate_outputs,
-        strict_contracts=params.strict_contracts,
         publish_serving_snapshot=params.publish_serving_snapshot,
         parallel_backend=params.parallel_backend,
         max_workers=params.max_workers,
@@ -1298,16 +1273,11 @@ def _resolve_decision_trace_artifact(
     return summary, path
 
 
-def _validation_issue_count(result: HamiltonBuildResult) -> int | None:
-    summary = result.validation_summary
-    if summary is None:
-        return None
-    return summary.failed_count
-
-
-def _schema_inference_error_count() -> int:
-    schema_index = get_target_metadata_service().schema_index
-    return sum(1 for _ in schema_index.iter_inference_errors())
+def _schema_inference_error_count(result: HamiltonBuildResult) -> int:
+    runtime_bundle = result.runtime
+    if runtime_bundle is None or runtime_bundle.schema_index is None:
+        return 0
+    return sum(1 for _ in runtime_bundle.schema_index.iter_inference_errors())
 
 
 def _execute_and_format_result(
@@ -1367,8 +1337,9 @@ def _execute_and_format_result(
     if telemetry_state is not None:
         telemetry_state.run_id = outcome.result.run_id
         telemetry_state.validation_mode = execution.validation_mode.value
-        telemetry_state.validation_issue_count = _validation_issue_count(outcome.result)
-        telemetry_state.schema_inference_errors_count = _schema_inference_error_count()
+        telemetry_state.schema_inference_errors_count = _schema_inference_error_count(
+            outcome.result
+        )
         decision_trace_artifact, decision_trace_path = _resolve_decision_trace_artifact(
             runtime,
             outcome.result,
@@ -1529,11 +1500,12 @@ def build_graph_handler(
         Structured result with DAG information.
     """
     try:
-        _ = ctx.runtime
+        runtime = ctx.runtime
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    catalog = get_target_metadata_service().system.catalog
+    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    catalog = runtime_bundle.catalog
 
     targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
@@ -1553,16 +1525,14 @@ def build_graph_handler(
     except ValidationError as e:
         return fail_invalid_target_selection(str(e))
 
-    hamilton_runtime = build_driver()
-
-    dag_info = get_dag_info(hamilton_runtime, goals)
+    dag_info = get_dag_info(runtime_bundle, goals)
 
     if output_format == "mermaid":
-        dag_output = export_dag_mermaid(hamilton_runtime, goals)
+        dag_output = export_dag_mermaid(runtime_bundle, goals)
     elif output_format == "dot":
-        dag_output = export_dag_dot(hamilton_runtime, goals)
+        dag_output = export_dag_dot(runtime_bundle, goals)
     else:
-        dag_output = export_dag_json(hamilton_runtime, goals)
+        dag_output = export_dag_json(runtime_bundle, goals)
 
     if output_file:
         Path(output_file).write_text(dag_output, encoding="utf-8")
@@ -1605,33 +1575,18 @@ def build_plan_handler(
     plan_args = _parse_plan_args(ctx)
 
     with runtime_gateway(runtime, read_only=False) as gateway:
-        providers = create_default_providers(runtime.tools)
-        config = load_build_config(runtime.snapshot.repo_root)
-        execution_context = _build_execution_context(runtime, requested_datasets=tuple())
-        overrides = BuildRunContextOverrides(
-            execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
+        planning_context = _compose_planning_context(
+            runtime=runtime,
+            gateway=gateway,
             force_targets=frozenset(plan_args.force or ()),
         )
-        context = BuildRunContext.from_execution_context(
-            execution_context=execution_context,
-            gateway=gateway,
-            providers=providers,
-            config=config,
-            overrides=overrides,
-        )
-        env = context.build_env()
-        planning_runtime = compose_runtime(
-            env=env,
-            config=_planning_config(env),
-        ).bundle
-        catalog = planning_runtime.catalog
 
         try:
             goals = _resolve_goals(
                 targets=plan_args.targets,
                 module=plan_args.module,
                 target_scope=TargetScope.ALL if plan_args.all_targets else TargetScope.REQUESTED,
-                catalog=catalog,
+                catalog=planning_context.catalog,
             )
         except ValidationError as e:
             return fail_invalid_target_selection(str(e))
@@ -1652,9 +1607,9 @@ def build_plan_handler(
             include_cache_details=True,
         )
         plan = compute_plan(
-            env=env,
+            env=planning_context.env,
             plan_request=plan_request,
-            runtime=planning_runtime,
+            runtime=planning_context.runtime,
             materialize=True,
         )
 
@@ -1729,6 +1684,45 @@ class _BuildExplainParams:
     force_targets: frozenset[str]
 
 
+@dataclass(frozen=True, slots=True)
+class _PlanningRuntimeContext:
+    env: BuildEnv
+    runtime: RuntimeBundle
+    catalog: DagCatalog
+
+
+def _compose_planning_context(
+    *,
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
+    force_targets: frozenset[str],
+) -> _PlanningRuntimeContext:
+    providers = create_default_providers(runtime.tools)
+    config = load_build_config(runtime.snapshot.repo_root)
+    execution_context = build_execution_context(runtime, requested_datasets=())
+    overrides = BuildRunContextOverrides(
+        execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
+        force_targets=force_targets,
+    )
+    context = BuildRunContext.from_execution_context(
+        execution_context=execution_context,
+        gateway=gateway,
+        providers=providers,
+        config=config,
+        overrides=overrides,
+    )
+    env = context.build_env()
+    planning_runtime = compose_runtime(
+        env=env,
+        config=planning_config(env),
+    ).bundle
+    return _PlanningRuntimeContext(
+        env=env,
+        runtime=planning_runtime,
+        catalog=planning_runtime.catalog,
+    )
+
+
 def _resolve_build_explain_params(
     ctx: CommandContext,
     *,
@@ -1775,26 +1769,13 @@ def build_explain_handler(
         return fail_project_error("build", str(e))
 
     with runtime_gateway(runtime, read_only=False) as gateway:
-        providers = create_default_providers(runtime.tools)
-        config = load_build_config(runtime.snapshot.repo_root)
-        execution_context = _build_execution_context(runtime, requested_datasets=tuple())
-        overrides = BuildRunContextOverrides(
-            execution_options=BuildExecutionOptions(profile=runtime.project.default_profile),
-        )
-        context = BuildRunContext.from_execution_context(
-            execution_context=execution_context,
+        force_targets = frozenset(ctx.params.get_list("force") or ())
+        planning_context = _compose_planning_context(
+            runtime=runtime,
             gateway=gateway,
-            providers=providers,
-            config=config,
-            overrides=overrides,
+            force_targets=force_targets,
         )
-        env = context.build_env()
-        planning_runtime = compose_runtime(
-            env=env,
-            config=_planning_config(env),
-        ).bundle
-        catalog = planning_runtime.catalog
-        params = _resolve_build_explain_params(ctx, catalog=catalog)
+        params = _resolve_build_explain_params(ctx, catalog=planning_context.catalog)
         if isinstance(params, CliResult):
             return params
 
@@ -1814,9 +1795,9 @@ def build_explain_handler(
             include_cache_details=True,
         )
         plan = compute_plan(
-            env=env,
+            env=planning_context.env,
             plan_request=plan_request,
-            runtime=planning_runtime,
+            runtime=planning_context.runtime,
             materialize=True,
         )
 
@@ -1826,7 +1807,7 @@ def build_explain_handler(
 
         io_surface: dict[str, object] | None = None
         if ctx.params.get_bool("io_surface"):
-            surface = planning_runtime.catalog.io_surfaces.get(params.target)
+            surface = planning_context.catalog.io_surfaces.get(params.target)
             if surface is not None:
                 io_surface = asdict(surface)
 

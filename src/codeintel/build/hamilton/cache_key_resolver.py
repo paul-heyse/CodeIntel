@@ -68,15 +68,15 @@ class CacheKeyResolver:
         input_versions: dict[str, str | None] = {}
         cache_keys: dict[str, str] = {}
 
+        context = _DependencyResolutionContext(
+            node_set=node_set,
+            node_dependencies=self.node_dependencies,
+            data_versions=data_versions,
+            input_values=input_values,
+            input_versions=input_versions,
+        )
         for node in _topo_sort_nodes(node_set, self.node_dependencies):
-            dep_versions = _resolve_dependency_versions(
-                node,
-                node_set=node_set,
-                node_dependencies=self.node_dependencies,
-                data_versions=data_versions,
-                input_values=input_values,
-                input_versions=input_versions,
-            )
+            dep_versions = _resolve_dependency_versions(node, context=context)
             if dep_versions is None:
                 data_versions[node] = None
                 continue
@@ -133,25 +133,30 @@ def _topo_sort_nodes(
     return tuple(ordered)
 
 
+@dataclass(frozen=True, slots=True)
+class _DependencyResolutionContext:
+    node_set: set[str]
+    node_dependencies: Mapping[str, tuple[str, ...]]
+    data_versions: Mapping[str, str | None]
+    input_values: Mapping[str, object]
+    input_versions: dict[str, str | None]
+
+
 def _resolve_dependency_versions(
     node: str,
     *,
-    node_set: set[str],
-    node_dependencies: Mapping[str, tuple[str, ...]],
-    data_versions: Mapping[str, str | None],
-    input_values: Mapping[str, object],
-    input_versions: dict[str, str | None],
+    context: _DependencyResolutionContext,
 ) -> dict[str, str] | None:
-    dependencies = node_dependencies.get(node, ())
+    dependencies = context.node_dependencies.get(node, ())
     if not dependencies:
         return {}
 
     resolved: dict[str, str] = {}
     for dep in dependencies:
-        if dep in node_set:
-            version = data_versions.get(dep)
+        if dep in context.node_set:
+            version = context.data_versions.get(dep)
         else:
-            version = _input_version(dep, input_values, input_versions)
+            version = _input_version(dep, context.input_values, context.input_versions)
         if version is None:
             return None
         resolved[dep] = version

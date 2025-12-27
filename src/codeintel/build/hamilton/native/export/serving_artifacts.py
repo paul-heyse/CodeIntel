@@ -41,24 +41,26 @@ from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.meta.contract_catalog import persist_contract_catalog
 from codeintel.build.schemas import deferred_columns_for_table_key, get_schema_provider
 from codeintel.build.schemas.compile import (
+    SchemaManifestContext,
     SchemaManifestRequest,
     compile_schema_manifest,
 )
+from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.build.serving.semantic_compile import (
     compile_semantic_registry_from_tag_query,
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from codeintel.storage.views.diff import diff_view_sql_maps
 
 LOG = logging.getLogger(__name__)
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TagQuery, TargetRunRecord)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, SchemaIndex, TagQuery, TargetRunRecord)
 
 SERVING_ARTIFACTS_TARGET_NAME = "serving_artifacts"
 
@@ -88,10 +90,21 @@ def _semantic_registry_json(tag_query: TagQuery) -> str:
     return compiled.to_json() + "\n"
 
 
-def _schema_manifest_json(env: BuildEnv) -> str:
+def _schema_manifest_json(
+    env: BuildEnv,
+    *,
+    catalog: DagCatalog,
+    schema_index: SchemaIndex,
+    tag_query: TagQuery,
+) -> str:
     schema_provider = get_schema_provider()
     manifest = compile_schema_manifest(
         provider=schema_provider,
+        context=SchemaManifestContext(
+            catalog=catalog,
+            schema_index=schema_index,
+            tag_query=tag_query,
+        ),
         request=SchemaManifestRequest(
             all_targets=True,
             stable=True,
@@ -119,8 +132,13 @@ def _schema_manifest_json(env: BuildEnv) -> str:
     return manifest.to_json() + "\n"
 
 
-def _buildspec_json() -> str:
-    spec = compile_buildspec(options=BuildSpecCompileOptions(include_columns=False))
+def _buildspec_json(catalog: DagCatalog) -> str:
+    schema_provider = get_schema_provider()
+    spec = compile_buildspec(
+        catalog=catalog,
+        provider=schema_provider,
+        options=BuildSpecCompileOptions(include_columns=False),
+    )
     return buildspec_to_json(spec, indent=2)
 
 
@@ -277,20 +295,36 @@ def serving_artifacts__semantic_registry(env: BuildEnv, tag_query: TagQuery) -> 
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__schema_manifest",
 )
-def serving_artifacts__schema_manifest(env: BuildEnv) -> str:
+def serving_artifacts__schema_manifest(
+    env: BuildEnv,
+    catalog: DagCatalog,
+    schema_index: SchemaIndex,
+    tag_query: TagQuery,
+) -> str:
     """Compile schema manifest JSON for serving.
 
     Parameters
     ----------
     env
         Build environment (unused; required for Hamilton input binding).
+    catalog
+        DAG catalog used to compute schema manifest contents.
+    schema_index
+        Schema index used for inference and error tracking.
+    tag_query
+        TagQuery helper for view discovery.
 
     Returns
     -------
     str
         Newline-terminated schema manifest JSON payload.
     """
-    return _schema_manifest_json(env)
+    return _schema_manifest_json(
+        env,
+        catalog=catalog,
+        schema_index=schema_index,
+        tag_query=tag_query,
+    )
 
 
 @SaveToObjectMetadataDecorator(
@@ -310,6 +344,7 @@ def serving_artifacts__schema_manifest(env: BuildEnv) -> str:
 def serving_artifacts__schema_inference_errors_rows(
     env: BuildEnv,
     serving_artifacts__schema_manifest: str,
+    schema_index: SchemaIndex,
 ) -> tuple[tuple[object, ...], ...]:
     """Persist schema inference errors recorded during schema compile.
 
@@ -319,7 +354,6 @@ def serving_artifacts__schema_inference_errors_rows(
         Row tuples for the schema inference errors table.
     """
     _ = serving_artifacts__schema_manifest
-    schema_index = get_target_metadata_service().schema_index
     run_context = env.run_context
     run_id = run_context.run_id if run_context is not None else "unknown"
     return tuple(
@@ -349,13 +383,15 @@ def serving_artifacts__schema_inference_errors_rows(
     target=SERVING_ARTIFACTS_TARGET_NAME,
     target_="serving_artifacts__buildspec",
 )
-def serving_artifacts__buildspec(env: BuildEnv) -> str:
+def serving_artifacts__buildspec(env: BuildEnv, catalog: DagCatalog) -> str:
     """Compile BuildSpec JSON for serving.
 
     Parameters
     ----------
     env
         Build environment (unused; required for Hamilton input binding).
+    catalog
+        DAG catalog used to render the buildspec.
 
     Returns
     -------
@@ -363,7 +399,7 @@ def serving_artifacts__buildspec(env: BuildEnv) -> str:
         Newline-terminated BuildSpec JSON payload.
     """
     _ = env
-    return _buildspec_json()
+    return _buildspec_json(catalog)
 
 
 @SaveToObjectMetadataDecorator(

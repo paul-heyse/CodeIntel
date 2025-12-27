@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import types
 import typing
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Literal, cast, get_args, get_origin
@@ -18,7 +18,6 @@ from typing import Literal, cast, get_args, get_origin
 from hamilton.io.data_adapters import DataSaver
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
-from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
@@ -28,11 +27,12 @@ from codeintel.build.hamilton.materializers.base import (
 )
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.schemas.column_resolution import DeferredColumns, resolve_columns
-from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.execution.materialization import (
     failed_table_result,
     succeeded_table_result,
 )
+from codeintel.core.imports.lazy import lazy_getattr
+from codeintel.core.schemas import SchemaService
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 _RECOVERABLE_EXCEPTIONS = (
@@ -42,6 +42,14 @@ _RECOVERABLE_EXCEPTIONS = (
     RuntimeError,
     OSError,
 )
+
+
+def _schema_service() -> SchemaService:
+    get_service = cast(
+        "Callable[[], SchemaService]",
+        lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
+    )
+    return get_service()
 
 
 @dataclass(frozen=True)
@@ -167,13 +175,10 @@ class DuckDBRowsSaver(DataSaver):
                     )
                 else:
                     rows = _coerce_rows(data)
-                    # Validate contract if strict mode is enabled
-                    ContractEnforcer.validate_table_write(self.table_key)
-
                     warehouse = self.env.warehouse
                     resolved_columns = resolve_columns(
                         self.columns,
-                        schema_service=get_schema_service(),
+                        schema_service=_schema_service(),
                     )
                     if not resolved_columns:
                         msg = f"Missing column order for {self.table_key}"

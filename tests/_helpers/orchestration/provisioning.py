@@ -34,6 +34,7 @@ from codeintel.ingestion.compute.typing_ingest import TypingIngestStep
 from codeintel.ingestion.engine.infrastructure import ToolName, ToolRunner, ToolRunOptions
 from codeintel.ingestion.engine.infrastructure.runner import ToolNotFoundError
 from codeintel.ingestion.engine.service import ToolService
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from tests._helpers.assertions import assert_target_ok
@@ -1074,6 +1075,8 @@ def _seed_minimal_subsystems(gateway: StorageGateway, *, repo: str, commit: str)
 def build_callgraph_fixture_repo(
     repo_root: Path,
     options: CallgraphFixtureOptions | None = None,
+    *,
+    runtime: RuntimeBundle,
 ) -> ProvisionedGateway:
     """Create the alias/relative-import callgraph repo and build callgraph via production APIs.
 
@@ -1083,6 +1086,8 @@ def build_callgraph_fixture_repo(
         Root directory for the repository.
     options
         Callgraph fixture options.
+    runtime
+        Runtime bundle providing build configuration.
 
     Returns
     -------
@@ -1143,6 +1148,7 @@ def build_callgraph_fixture_repo(
         providers=providers,
         build_config=BuildConfig.empty(),
     )
+    harness.with_runtime(runtime)
     harness.with_force_targets("modules")
     artifacts = harness.artifacts
     artifacts.write_pytest_report()

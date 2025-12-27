@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import polars as pl
-from hamilton.function_modifiers import inject, source
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.column_ops import risk_features
@@ -19,7 +18,7 @@ from codeintel.build.hamilton.native.patterns import (
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
-from codeintel.build.hamilton.transforms.table_contract import table_contract
+from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.duckdb_relation import relation_to_polars
 from codeintel.storage.gateway import DuckDBRelation
 
@@ -30,6 +29,16 @@ RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
 RISK_FACTORS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=RISK_FACTORS_TARGET_NAME,
+)
+RISK_FACTORS_CONTRACT = TableContractSpec(
+    table_key=RISK_FACTORS_TABLE_KEY,
+    domain="analytics",
+    target=RISK_FACTORS_TARGET_NAME,
+    ops_module=risk_features,
+    columns_to_pass=("risk_score", "cyclomatic_complexity"),
+    required_cols=("risk_score",),
+    clip_column=None,
+    input_name="risk_factors__base",
 )
 
 RISK_LEVEL_HIGH_THRESHOLD = 5
@@ -64,7 +73,7 @@ def risk_factors__base(q__analytics__function_metrics: DuckDBRelation) -> pl.Laz
         risk_level,
         pl.lit(0).cast(pl.Int64).alias("fan_in_count"),
         pl.lit(0).cast(pl.Int64).alias("fan_out_count"),
-        pl.lit(False).alias("has_tests"),
+        pl.lit(value=False).alias("has_tests"),
     )
     return frame.select(
         [
@@ -85,17 +94,8 @@ def risk_factors__base(q__analytics__function_metrics: DuckDBRelation) -> pl.Laz
     context=RISK_FACTORS_SAVE_CONTEXT,
     spec=RelationTableSaveSpec(table_key=RISK_FACTORS_TABLE_KEY),
 )
-@table_contract(
-    table_key=RISK_FACTORS_TABLE_KEY,
-    domain="analytics",
-    target=RISK_FACTORS_TARGET_NAME,
-    ops_module=risk_features,
-    columns_to_pass=("risk_score", "cyclomatic_complexity"),
-    required_cols=("risk_score",),
-    clip_column=None,
-)
-@inject(df=source("risk_factors__base"))
-def risk_factors__table(df: pl.LazyFrame) -> pl.LazyFrame:
+@table_contract(RISK_FACTORS_CONTRACT)
+def risk_factors__table(risk_factors__base: pl.LazyFrame) -> pl.LazyFrame:
     """Return the cleaned/enriched risk factors frame.
 
     Returns
@@ -103,7 +103,7 @@ def risk_factors__table(df: pl.LazyFrame) -> pl.LazyFrame:
     pl.LazyFrame
         Cleaned/enriched risk factors frame.
     """
-    return df
+    return risk_factors__base
 
 
 @codeintel_target(domain="analytics", target=RISK_FACTORS_TARGET_NAME)

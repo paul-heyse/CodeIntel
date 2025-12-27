@@ -6,6 +6,7 @@ import json
 import math
 from typing import TYPE_CHECKING, cast
 
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers import CallgraphFixtureOptions, build_callgraph_fixture_repo
 from tests._helpers.assertions import expect_true
 from tests._helpers.fixtures.rows import insert_symbol_use_edges
@@ -83,7 +84,10 @@ def _assert_unresolved_edge(edge_records: list[dict[str, object]]) -> None:
         )
 
 
-def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
+def test_callgraph_handles_aliases_and_relative_imports(
+    tmp_path: Path,
+    hamilton_runtime: RuntimeBundle,
+) -> None:
     """
     Calls through import aliases and methods on imported classes are resolved.
 
@@ -104,6 +108,7 @@ def test_callgraph_handles_aliases_and_relative_imports(tmp_path: Path) -> None:
     ctx = build_callgraph_fixture_repo(
         repo_root,
         CallgraphFixtureOptions(snapshot_variant=SnapshotVariant(repo=repo, commit=commit)),
+        runtime=hamilton_runtime,
     )
     gateway = ctx.gateway
     con = gateway.con

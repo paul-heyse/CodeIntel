@@ -12,11 +12,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas import configure_schema_service, get_schema_provider
 from codeintel.core.parsing import AstSpanIndex
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.ast_extract import AstVisitor
 from codeintel.ingestion.infrastructure.ast_utils import parse_python_module, timed_parse
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.assertions import (
     expect_equal,
     expect_is_instance,
@@ -36,8 +37,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 AST_NODES_TABLE_KEY = "core.ast_nodes"
-_AST_NODES_SCHEMA = get_schema_provider().get_table_schema(AST_NODES_TABLE_KEY)
-AST_NODES_COLUMNS = _AST_NODES_SCHEMA.column_names() if _AST_NODES_SCHEMA else ()
 
 
 EXPECTED_SOURCE_LINES = 3
@@ -46,6 +45,27 @@ INDEX_CASES = [
     (("classes", (ast.ClassDef,), ast.ClassDef), "class defs"),
     (("both", (ast.FunctionDef, ast.ClassDef), (ast.FunctionDef, ast.ClassDef)), "mixed defs"),
 ]
+
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
+
+
+@pytest.fixture(scope="module")
+def ast_nodes_columns(hamilton_runtime: RuntimeBundle) -> tuple[str, ...]:
+    """Provide column names for the AST nodes schema.
+
+    Returns
+    -------
+    tuple[str, ...]
+        Column names for the AST nodes table.
+    """
+    _ = hamilton_runtime
+    schema = get_schema_provider().get_table_schema(AST_NODES_TABLE_KEY)
+    if schema is None:
+        pytest.fail("AST nodes schema is missing")
+    return tuple(schema.column_names())
 
 
 def _expect_index_has_kind(index: AstSpanIndex, kinds: tuple[type[ast.AST], ...]) -> None:
@@ -325,7 +345,7 @@ def test_multiline_function_span(tmp_path: Path) -> None:
     expect_true(end > start)
 
 
-def test_ast_visitor_records_decorator_span() -> None:
+def test_ast_visitor_records_decorator_span(ast_nodes_columns: tuple[str, ...]) -> None:
     """Decorator spans should include lines above the function definition."""
     source = DECORATED_FUNCTION
     tree = ast.parse(source, filename="mod.py")
@@ -333,7 +353,10 @@ def test_ast_visitor_records_decorator_span() -> None:
     visitor.visit(tree)
 
     serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
-    rows = [dict(zip(AST_NODES_COLUMNS, serializer(row), strict=True)) for row in visitor.ast_rows]
+    rows = [
+        dict(zip(ast_nodes_columns, serializer(row), strict=True))
+        for row in visitor.ast_rows
+    ]
     func_rows = [row for row in rows if row["node_type"] == "FunctionDef"]
 
     expect_equal(len(func_rows), 1)

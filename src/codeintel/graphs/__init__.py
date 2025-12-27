@@ -25,11 +25,12 @@ Callgraph logic is in compute/callgraph/ (pure functions and persistence utiliti
 Example
 -------
 ```python
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.graphs.compute.metrics import centrality
+from codeintel.runtime.compose import compose_runtime
 
 
-catalog = get_target_metadata_service().system.catalog
+runtime = compose_runtime(env=env).bundle
+catalog = runtime.catalog
 graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
 

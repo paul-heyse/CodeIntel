@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pandas as pd
-import polars as pl
-
-Column = pd.Series | pl.Series | pl.Expr
+from codeintel.build.hamilton.column_ops.types import Column
 
 
 def module_loc_density(total_loc: Column, function_count: Column) -> Column:

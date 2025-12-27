@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC
 from typing import TYPE_CHECKING
 
-from codeintel.build.manifest.records import CacheManifestEntry
+from codeintel.build.manifest.records import CacheEventStatus, CacheManifestEntry
+from codeintel.storage.tracking import StepStatus
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
@@ -42,11 +43,14 @@ class CacheManifestReader:
             recorded_at = step.completed_at or step.started_at
             if recorded_at.tzinfo is None:
                 recorded_at = recorded_at.replace(tzinfo=UTC)
+            cache_status = _coerce_cache_status(extra.get("cache_status"))
+            if cache_status is None:
+                cache_status = _status_from_step(step.status)
             entries.append(
                 CacheManifestEntry(
                     run_id=step.run_id,
                     node_name=step.name,
-                    status=step.status,
+                    status=cache_status,
                     recorded_at=recorded_at,
                     cache_key=_coerce_str(extra.get("cache_key")),
                     cache_version=_coerce_str(extra.get("cache_version")),
@@ -69,6 +73,24 @@ def _coerce_int(value: object) -> int | None:
 
 def _coerce_float(value: object) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
+
+
+def _coerce_cache_status(value: object) -> CacheEventStatus | None:
+    if value == "hit":
+        return "hit"
+    if value == "miss":
+        return "miss"
+    if value == "store":
+        return "store"
+    return None
+
+
+def _status_from_step(status: StepStatus) -> CacheEventStatus:
+    if status == "skipped":
+        return "hit"
+    if status == "succeeded":
+        return "store"
+    return "miss"
 
 
 __all__ = ["CacheManifestReader"]

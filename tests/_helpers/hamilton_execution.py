@@ -32,7 +32,6 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import create_default_providers
 from codeintel.build.settings import DEFAULT_PROFILE_NAME
@@ -48,8 +47,8 @@ if TYPE_CHECKING:
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.build.providers import Providers
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -68,7 +67,7 @@ class HamiltonTestContext:
     catalog
         DAG catalog for looking up targets and dependencies.
     runtime
-        Hamilton runtime containing the Driver and node mappings.
+        Runtime bundle containing the Driver and node mappings.
     harness
         Harness used to execute Hamilton targets.
     gateway
@@ -87,7 +86,7 @@ class HamiltonTestContext:
 
     env: BuildEnv
     catalog: DagCatalog
-    runtime: HamiltonRuntime
+    runtime: RuntimeBundle
     harness: HamiltonBuildHarness
     gateway: StorageGateway
     snapshot: SnapshotRef
@@ -152,7 +151,7 @@ class HamiltonTestBuilder:
     profile: str = DEFAULT_PROFILE_NAME
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
-    _runtime: HamiltonRuntime | None = field(default=None, repr=False)
+    _runtime: RuntimeBundle | None = field(default=None, repr=False)
 
     @classmethod
     def create(
@@ -160,7 +159,7 @@ class HamiltonTestBuilder:
         gateway: StorageGateway,
         tmp_path: Path,
         *,
-        runtime: HamiltonRuntime | None = None,
+        runtime: RuntimeBundle | None = None,
     ) -> HamiltonTestBuilder:
         """Create a new builder with required dependencies.
 
@@ -171,7 +170,7 @@ class HamiltonTestBuilder:
         tmp_path
             Temporary directory for test isolation.
         runtime
-            Optional shared Hamilton runtime to reuse across builders.
+            Optional shared runtime bundle to reuse across builders.
 
         Returns
         -------
@@ -310,13 +309,13 @@ class HamiltonTestBuilder:
         self.validate_outputs = enabled
         return self
 
-    def with_runtime(self, runtime: HamiltonRuntime) -> HamiltonTestBuilder:
-        """Reuse a shared Hamilton runtime.
+    def with_runtime(self, runtime: RuntimeBundle) -> HamiltonTestBuilder:
+        """Reuse a shared runtime bundle.
 
         Parameters
         ----------
         runtime
-            Hamilton runtime to reuse across tests.
+            Runtime bundle to reuse across tests.
 
         Returns
         -------
@@ -379,16 +378,22 @@ class HamiltonTestBuilder:
             return self.config
         return BuildConfig.empty()
 
-    def _get_runtime(self) -> HamiltonRuntime:
-        """Get or create the Hamilton runtime.
+    def _require_runtime(self) -> RuntimeBundle:
+        """Return the configured runtime bundle.
 
         Returns
         -------
-        HamiltonRuntime
-            Runtime with Driver, DAG catalog, and node mappings.
+        RuntimeBundle
+            Runtime bundle with driver, catalog, and tag query.
+
+        Raises
+        ------
+        RuntimeError
+            Raised when no runtime bundle was provided.
         """
         if self._runtime is None:
-            self._runtime = build_driver(config={"profile": self.profile})
+            message = "HamiltonTestBuilder requires a RuntimeBundle via with_runtime()."
+            raise RuntimeError(message)
         return self._runtime
 
     def build_env(self) -> BuildEnv:
@@ -449,7 +454,7 @@ class HamiltonTestBuilder:
         """
         harness = self.build_harness()
         env = harness.build_env()
-        runtime = self._get_runtime()
+        runtime = self._require_runtime()
         catalog = runtime.catalog
 
         return HamiltonTestContext(

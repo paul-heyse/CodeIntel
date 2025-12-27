@@ -19,7 +19,8 @@ def _names(variables: Iterable[object]) -> set[str]:
 
 def _build_driver(clean_mode: str) -> h_driver.Driver:
     config = {
-        "df_backend": "polars",
+        "hamilton.enable_power_user_mode": True,
+        "df_backend": "polars_lazy",
         "clean_mode": clean_mode,
         "null_policy": "preserve",
         "max_loc_clip": 10_000,

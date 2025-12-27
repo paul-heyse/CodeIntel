@@ -270,7 +270,7 @@ class SchemaCatalogTracking:
             "  AND r.inference_status IN (?, ?) "
             f"  AND r.table_key IN ({placeholders})"
         )
-        params: list[object] = ["inferred_ibis", "inferred", "override", *allowed_keys]
+        params: list[object] = ["inferred_relation", "inferred", "override", *allowed_keys]
         rows = self._con.execute(sql, params).fetchall()
         if not rows:
             return 0

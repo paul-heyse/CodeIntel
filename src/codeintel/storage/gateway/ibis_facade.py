@@ -7,6 +7,7 @@ sites do not depend on gateway-level Ibis adapters.
 from __future__ import annotations
 
 import ibis
+import ibis.backends.duckdb
 import ibis.expr.types as ir
 
 from codeintel.storage.gateway.protocol import MinimalGateway

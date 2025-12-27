@@ -23,7 +23,6 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyConnection
 
     from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-    from codeintel.storage.ibis_adapter import IbisGateway
 
 
 @dataclass
@@ -44,10 +43,6 @@ class _RecordingGateway:
     @property
     def con(self) -> DuckDBPyConnection:
         return self._base.con
-
-    @property
-    def ibis(self) -> IbisGateway:
-        return self._base.ibis
 
     @property
     def policy(self) -> DuckDBPolicyBackend:
@@ -77,6 +72,6 @@ def test_build_export_relation_uses_storage_export_service() -> None:
     )
 
     last_sql = expect_is_not_none(gateway.exports.last_sql)
-    expect_in('"analytics"."function_metrics"', last_sql)
+    expect_in("analytics.function_metrics", last_sql)
     row = expect_is_not_none(result.fetchone())
     expect_equal(row[0], 1)

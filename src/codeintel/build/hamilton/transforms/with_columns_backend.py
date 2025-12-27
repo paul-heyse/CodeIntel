@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from hamilton.function_modifiers.base import NodeTransformLifecycle
 from hamilton.plugins.h_pandas import with_columns as with_columns_pd
 from hamilton.plugins.h_polars import with_columns as with_columns_pl
 from hamilton.plugins.h_polars_lazyframe import with_columns as with_columns_pl_lazy
 
-WithColumnsFactory = Callable[..., Callable[..., object]]
+WithColumnsFactory = Callable[..., NodeTransformLifecycle]
 
 
 def select_with_columns(df_backend: str) -> WithColumnsFactory:

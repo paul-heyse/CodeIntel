@@ -63,7 +63,7 @@ def _coerce_row_counts(raw: dict[str, object]) -> dict[str, int]:
     return {key: coerce_int(value, ctx=f"row_counts[{key}]") for key, value in raw.items()}
 
 
-ModuleKind = Literal["ingestion", "graphs", "analytics", "export"]
+ModuleKind = Literal["ingestion", "graphs", "analytics", "export", "build"]
 """Classification of pipeline module."""
 
 

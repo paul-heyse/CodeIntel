@@ -15,12 +15,11 @@ from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
-from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import split_table_key
-from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.metadata.bootstrap import (
     replace_dataset_dataflow_edges,
     replace_dataset_dataflow_nodes,
@@ -29,6 +28,7 @@ from codeintel.storage.metadata.bootstrap import (
 )
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 
 if TYPE_CHECKING:

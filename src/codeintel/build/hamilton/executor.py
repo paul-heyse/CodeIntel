@@ -36,12 +36,7 @@ from codeintel.build.hamilton.decision_trace import (
 from codeintel.build.hamilton.driver_factory import target_to_node_name
 from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
-from codeintel.build.hamilton.hooks import (
-    ContractEnforcementHook,
-    NodeTelemetryHook,
-    ValidationSummary,
-    build_hooks,
-)
+from codeintel.build.hamilton.hooks import NodeTelemetryHook, build_hooks
 from codeintel.build.hamilton.optional_inputs import optional_inputs_for_target
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
@@ -52,7 +47,11 @@ from codeintel.build.hamilton.run_records import (
 from codeintel.build.hamilton.run_writer import BuildRunWriter
 from codeintel.build.manifest.writer import CacheManifestWriter
 from codeintel.build.schemas import get_schema_provider
-from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
+from codeintel.build.schemas.compile import (
+    SchemaManifestContext,
+    SchemaManifestRequest,
+    compile_schema_manifest,
+)
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
@@ -246,7 +245,7 @@ def _categorize_outputs(
     failed: list[str] = []
 
     for target in closure:
-        node_name = target_to_node_name(target, runtime=runtime)
+        node_name = target_to_node_name(target, catalog=runtime.catalog)
         if node_name is None:
             failed.append(target)
             continue
@@ -291,7 +290,7 @@ def _skip_record(
         target,
         "skipped",
         None,
-        inputs=RunRecordInputs(env=env, run=run),
+        inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
     if reason:
         return replace(record, error=reason)
@@ -344,7 +343,7 @@ def _ensure_failure_records(
     error: str,
 ) -> None:
     for target in closure:
-        node_name = target_to_node_name(target, runtime=runtime)
+        node_name = target_to_node_name(target, catalog=runtime.catalog)
         existing = outputs.get(node_name) if node_name is not None else None
         if isinstance(existing, TargetRunRecord):
             continue
@@ -401,7 +400,7 @@ def _map_closure_to_nodes(
     missing: list[str] = []
 
     for target in closure:
-        node_name = target_to_node_name(target, runtime=runtime)
+        node_name = target_to_node_name(target, catalog=runtime.catalog)
         if node_name is None:
             missing.append(target)
         else:
@@ -436,6 +435,7 @@ def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
 def _maybe_persist_schema_manifest(
     *,
     env: BuildEnv,
+    runtime: RuntimeBundle,
     run_id: str,
     domain: str | None,
 ) -> None:
@@ -460,9 +460,18 @@ def _maybe_persist_schema_manifest(
         include_artifacts=True,
         include_provenance=True,
     )
+    schema_index = runtime.schema_index
+    if schema_index is None:
+        msg = "RuntimeBundle.schema_index is required to persist schema manifests"
+        raise ValueError(msg)
     provider = get_schema_provider()
     manifest = compile_schema_manifest(
         provider=provider,
+        context=SchemaManifestContext(
+            catalog=runtime.catalog,
+            schema_index=schema_index,
+            tag_query=runtime.tag_query,
+        ),
         request=request,
         con=env.gateway.con,
     )
@@ -595,7 +604,7 @@ def _preflight_blocked_records(
             )
         else:
             continue
-        node_name = target_to_node_name(target, runtime=runtime)
+        node_name = target_to_node_name(target, catalog=runtime.catalog)
         key = node_name or f"__preflight__{target}"
         blocked_records[key] = record
 
@@ -629,7 +638,7 @@ def _apply_preflight(
     for target in closure:
         if target in blocked_targets:
             continue
-        node_name = target_to_node_name(target, runtime=context.runtime)
+        node_name = target_to_node_name(target, catalog=context.runtime.catalog)
         if node_name is None:
             continue
         adjusted.append(node_name)
@@ -639,7 +648,6 @@ def _apply_preflight(
 @dataclass(frozen=True)
 class _FinalizeInputs:
     writer: BuildRunWriter
-    contract_hook: ContractEnforcementHook | None
     closure: tuple[str, ...]
     outputs: dict[str, Any]
     error: str | None
@@ -681,10 +689,6 @@ def _finalize_run(
         duration_ms,
     )
 
-    validation_summary = (
-        inputs.contract_hook.get_validation_summary() if inputs.contract_hook else None
-    )
-
     return HamiltonBuildResult(
         requested=context.targets,
         closure=inputs.closure,
@@ -697,7 +701,6 @@ def _finalize_run(
         error=inputs.error,
         run_id=context.run_id,
         runtime=context.runtime,
-        validation_summary=validation_summary,
     )
 
 
@@ -729,8 +732,6 @@ class HamiltonBuildResult:
         Unique identifier for this build run.
     runtime
         Reference to the RuntimeBundle for mapping lookups.
-    validation_summary
-        Optional validation summary produced by ContractEnforcementHook.
     """
 
     requested: tuple[str, ...]
@@ -744,7 +745,6 @@ class HamiltonBuildResult:
     error: str | None = None
     run_id: str = ""
     runtime: RuntimeBundle | None = None
-    validation_summary: ValidationSummary | None = None
 
     def get_record(self, target_name: str) -> TargetRunRecord | None:
         """Get the execution record for a target.
@@ -754,7 +754,8 @@ class HamiltonBuildResult:
         TargetRunRecord | None
             Execution record for the target, if present.
         """
-        node_name = target_to_node_name(target_name, runtime=self.runtime)
+        catalog = self.runtime.catalog if self.runtime is not None else None
+        node_name = target_to_node_name(target_name, catalog=catalog)
         if node_name is not None:
             value = self.outputs.get(node_name)
             if isinstance(value, TargetRunRecord):
@@ -828,13 +829,13 @@ class HamiltonBuildExecutor:
         """
         run_id = _generate_run_id()
         writer = BuildRunWriter(env.gateway)
-        runtime, telemetry_hook, contract_hook = self._build_runtime(
+        runtime, telemetry_hook = self._build_runtime(
             env=env,
             run_id=run_id,
             writer=writer,
             domain=domain,
         )
-        _maybe_persist_schema_manifest(env=env, run_id=run_id, domain=domain)
+        _maybe_persist_schema_manifest(env=env, runtime=runtime, run_id=run_id, domain=domain)
 
         context = _RunState(
             env=env,
@@ -849,7 +850,6 @@ class HamiltonBuildExecutor:
             context=context,
             writer=writer,
             telemetry_hook=telemetry_hook,
-            contract_hook=contract_hook,
         )
 
     def _run_with_state(
@@ -858,7 +858,6 @@ class HamiltonBuildExecutor:
         context: _RunState,
         writer: BuildRunWriter,
         telemetry_hook: NodeTelemetryHook | None,
-        contract_hook: ContractEnforcementHook | None,
     ) -> HamiltonBuildResult:
         catalog = context.runtime.catalog
         requested_targets = list(context.targets)
@@ -930,7 +929,6 @@ class HamiltonBuildExecutor:
             context=context,
             inputs=_FinalizeInputs(
                 writer=writer,
-                contract_hook=contract_hook,
                 closure=closure,
                 outputs=outputs,
                 error=error,
@@ -947,7 +945,7 @@ class HamiltonBuildExecutor:
         run_id: str,
         writer: BuildRunWriter,
         domain: str | None,
-    ) -> tuple[RuntimeBundle, NodeTelemetryHook | None, ContractEnforcementHook | None]:
+    ) -> tuple[RuntimeBundle, NodeTelemetryHook | None]:
         """Build Hamilton runtime with configured mode and lifecycle adapters.
 
         Returns
@@ -959,9 +957,8 @@ class HamiltonBuildExecutor:
         config.update(env.variants.as_hamilton_config())
         config["variant_fingerprint"] = env.variants.variant_fingerprint
         telemetry_hook: NodeTelemetryHook | None = None
-        contract_hook: ContractEnforcementHook | None = None
 
-        hook_options = self._options.hook_options(env=env)
+        hook_options = self._options.hook_options()
         cache_adapter: ManifestBackedCacheAdapter | None = None
         cache_dir = self._options.resolved_cache_dir(env=env)
         if self._options.enable_hamilton_cache:
@@ -979,7 +976,6 @@ class HamiltonBuildExecutor:
 
         def _adapter_factory(catalog: DagCatalog) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
-            nonlocal contract_hook
             adapters: list[LifecycleAdapter] = []
             effective_max_workers = self._effective_max_workers(catalog)
             parallel_adapter = create_parallel_adapter(
@@ -992,12 +988,10 @@ class HamiltonBuildExecutor:
             else:
                 adapters.append(h_base.DictResult())
 
-            hooks = build_hooks(run_id, writer, catalog, options=hook_options)
+            hooks = build_hooks(run_id, writer, options=hook_options)
             for hook in hooks:
                 if isinstance(hook, NodeTelemetryHook):
                     telemetry_hook = hook
-                if isinstance(hook, ContractEnforcementHook):
-                    contract_hook = hook
                 adapters.append(cast("LifecycleAdapter", hook))
 
             tracker_adapter = _build_hamilton_tracker_adapter(
@@ -1019,7 +1013,7 @@ class HamiltonBuildExecutor:
                 cache_adapter=cache_adapter,
             ),
         )
-        return composition.bundle, telemetry_hook, contract_hook
+        return composition.bundle, telemetry_hook
 
     @staticmethod
     def _compute_closure(

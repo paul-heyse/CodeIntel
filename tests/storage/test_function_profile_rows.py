@@ -5,8 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.build.schemas.service import get_schema_service
+import pytest
+
+from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.factories import blank_function_profile_row
 
 if TYPE_CHECKING:
@@ -17,8 +20,13 @@ if TYPE_CHECKING:
     )
 
 
-get_schema_service()
-FUNCTION_PROFILE_COLUMNS = tuple(load_columns_by_table()["analytics.function_profile"])
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
+
+
+def _function_profile_columns() -> tuple[str, ...]:
+    return tuple(load_columns_by_table()["analytics.function_profile"])
 
 
 def function_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -29,7 +37,7 @@ def function_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ..
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, FUNCTION_PROFILE_COLUMNS)
+    return serialize_row(row, _function_profile_columns())
 
 
 def test_function_profile_tuple_length_matches_columns() -> None:
@@ -75,9 +83,7 @@ def test_function_profile_tuple_length_matches_columns() -> None:
     row["created_at"] = datetime.now(tz=UTC)
 
     values = function_profile_row_to_tuple(row)
-    if len(values) != len(FUNCTION_PROFILE_COLUMNS):
-        message = (
-            "function_profile tuple length "
-            f"{len(values)} != columns {len(FUNCTION_PROFILE_COLUMNS)}"
-        )
+    expected_len = len(_function_profile_columns())
+    if len(values) != expected_len:
+        message = f"function_profile tuple length {len(values)} != columns {expected_len}"
         raise AssertionError(message)

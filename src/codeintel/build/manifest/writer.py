@@ -8,11 +8,9 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 from codeintel.build.manifest.records import CacheManifestEntry
-from codeintel.storage.tracking import PipelineStepRecord
+from codeintel.storage.tracking import ModuleKind, PipelineStepRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -23,7 +21,7 @@ class CacheManifestWriter:
     """Persist cache events to the pipeline_steps table."""
 
     gateway: StorageGateway
-    module: str = "build"
+    module: ModuleKind = "build"
     stage: str = "cache"
     strict: bool = False
 
@@ -41,6 +39,9 @@ class CacheManifestWriter:
 
     def _record(self, entry: CacheManifestEntry) -> None:
         extra = _build_extra(entry)
+        if extra is None:
+            extra = {}
+        extra["cache_status"] = entry.status
         started_at = entry.recorded_at
         if entry.duration_ms is not None:
             started_at = entry.recorded_at - timedelta(milliseconds=entry.duration_ms)
@@ -49,7 +50,7 @@ class CacheManifestWriter:
             module=self.module,
             stage=self.stage,
             name=entry.node_name,
-            status=entry.status,
+            status="succeeded",
             started_at=started_at,
             completed_at=entry.recorded_at,
             row_counts=None,
@@ -68,7 +69,7 @@ class CacheManifestWriter:
             )
 
 
-def _build_extra(entry: CacheManifestEntry) -> Mapping[str, object] | None:
+def _build_extra(entry: CacheManifestEntry) -> dict[str, object] | None:
     extra: dict[str, object] = {}
     if entry.cache_key is not None:
         extra["cache_key"] = entry.cache_key

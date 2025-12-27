@@ -3,7 +3,6 @@
 This module consolidates all Hamilton adapter hooks into a single location:
 - ManifestHook: Skip logic and manifest persistence
 - TelemetryHook: Node-level execution telemetry
-- ContractHook: Schema validation enforcement and result capture
 - LifecycleHooks: Progress bars, timing, and conditional execution
 
 Hooks are composable via Hamilton's Builder.with_adapters() pattern.
@@ -11,12 +10,8 @@ Hooks are composable via Hamilton's Builder.with_adapters() pattern.
 Example
 -------
 >>> from codeintel.build.hamilton.hooks import build_hooks
->>> hooks = build_hooks(run_id, writer, catalog)
+>>> hooks = build_hooks(run_id, writer)
 >>> driver = Builder().with_modules(modules).with_adapters(*hooks).build()
->>> # After execution, get validation summary
->>> contract_hook = next(h for h in hooks if isinstance(h, ContractEnforcementHook))
->>> summary = contract_hook.get_validation_summary()
-
 Using progress bars:
 
 >>> from codeintel.build.hamilton.hooks import create_progress_hook
@@ -28,13 +23,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
-
-# Re-export from contract hook
-from codeintel.build.hamilton.hooks.contract_hook import (
-    ContractEnforcementHook,
-    ValidationResult,
-    ValidationSummary,
-)
 
 # Re-export from lifecycle hooks (progress, timing, conditional)
 from codeintel.build.hamilton.hooks.lifecycle import (
@@ -59,7 +47,6 @@ from codeintel.build.hamilton.run_records import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.run_writer import BuildRunWriter
 
 
@@ -67,8 +54,6 @@ if TYPE_CHECKING:
 class HookOptions:
     """Configuration options for `build_hooks`."""
 
-    strict_contracts: bool = False
-    enable_validation: bool = True
     enable_telemetry: bool = True
     enable_progress: bool = False
     enable_timing: bool = False
@@ -78,7 +63,6 @@ class HookOptions:
 def build_hooks(
     run_id: str,
     writer: BuildRunWriter,
-    catalog: DagCatalog,
     *,
     options: HookOptions | None = None,
 ) -> list[object]:
@@ -93,8 +77,6 @@ def build_hooks(
         Build run identifier for telemetry grouping.
     writer
         Build run writer used for persistence operations.
-    catalog
-        DAG catalog for contract enforcement lookups.
     options
         Hook options. When omitted, uses the defaults from `HookOptions`.
 
@@ -103,25 +85,15 @@ def build_hooks(
     list[object]
         List of configured hook instances.
 
-    Notes
-    -----
-    When enable_validation is True, a ContractEnforcementHook is added to
-    capture validation results from Hamilton's @check_output_custom decorator.
-    Access results via hook.get_validation_summary() after execution.
-
     Examples
     --------
-    >>> hooks = build_hooks("run-123", writer, catalog)
+    >>> hooks = build_hooks("run-123", writer)
     >>> len(hooks)
-    2  # telemetry + validation
+    1  # telemetry
 
-    >>> hooks = build_hooks("run-123", writer, catalog, options=HookOptions(strict_contracts=True))
+    >>> hooks = build_hooks("run-123", writer, options=HookOptions(enable_progress=True))
     >>> len(hooks)
-    2  # telemetry + strict validation
-
-    >>> hooks = build_hooks("run-123", writer, catalog, options=HookOptions(enable_progress=True))
-    >>> len(hooks)
-    3  # telemetry + validation + progress
+    2  # telemetry + progress
     """
     if options is None:
         options = HookOptions()
@@ -129,11 +101,6 @@ def build_hooks(
 
     if options.enable_telemetry:
         hooks.append(NodeTelemetryHook(run_id, writer))
-
-    # Enable validation by default (captures @check_output_custom results)
-    # Use strict mode if strict_contracts is True
-    if options.enable_validation or options.strict_contracts:
-        hooks.append(ContractEnforcementHook(catalog, strict=options.strict_contracts))
 
     if options.enable_progress:
         hooks.append(create_progress_hook(options.progress_desc))
@@ -147,15 +114,12 @@ def build_hooks(
 __all__ = [
     "BuildTimingHook",
     "ConditionalHook",
-    "ContractEnforcementHook",
     "HookOptions",
     "NodeExecutionRecord",
     "NodeTelemetryHook",
     "NodeTimingRecord",
     "ProgressBarHook",
     "TargetRunRecord",
-    "ValidationResult",
-    "ValidationSummary",
     "build_hooks",
     "compute_target_options_hash",
     "create_progress_hook",

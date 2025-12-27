@@ -79,8 +79,6 @@ def _options_hash(env: BuildEnv) -> str | None:
     return compute_options_hash(options)
 
 
-
-
 def _run_codegen(
     env: BuildEnv,
     proto_path: Path,

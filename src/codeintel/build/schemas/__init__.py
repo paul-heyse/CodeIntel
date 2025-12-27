@@ -46,6 +46,7 @@ from codeintel.build.schemas.contract_service import (
     ContractResolutionMode,
     ContractResolutionSettings,
     clear_contract_cache,
+    configure_contract_service,
     get_contract_provider,
 )
 from codeintel.build.schemas.diff import (
@@ -71,7 +72,6 @@ from codeintel.build.schemas.manifest import (
     ExportArtifactKind,
     SchemaManifest,
 )
-from codeintel.build.schemas.provider_unified import declared_schema_provider
 from codeintel.build.schemas.registry import (
     clear_schema_provider_cache,
     get_schema_provider,
@@ -86,6 +86,7 @@ from codeintel.build.schemas.row_registry import (
 )
 from codeintel.build.schemas.service import (
     clear_schema_service_cache,
+    configure_schema_service,
     get_schema_service,
 )
 from codeintel.config.datasets.composites import get_composite_schemas
@@ -104,6 +105,7 @@ if TYPE_CHECKING:
     from codeintel.build.schemas.provider_unified import (
         UnifiedSchemaProvider,
         clear_unified_provider_cache,
+        declared_schema_provider,
         unified_schema_provider,
     )
 
@@ -113,6 +115,7 @@ _LAZY_IMPORTS = {
     "UnifiedSchemaProvider": "codeintel.build.schemas.provider_unified",
     "clear_unified_provider_cache": "codeintel.build.schemas.provider_unified",
     "unified_schema_provider": "codeintel.build.schemas.provider_unified",
+    "declared_schema_provider": "codeintel.build.schemas.provider_unified",
 }
 
 
@@ -167,6 +170,8 @@ __all__ = [
     "compute_json_schema_digest",
     "compute_manifest_diffs",
     "compute_schema_diff",
+    "configure_contract_service",
+    "configure_schema_service",
     "declared_schema_provider",
     "deferred_columns_for_table_key",
     "extract_constraints_from_pandera",

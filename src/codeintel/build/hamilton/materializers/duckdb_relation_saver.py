@@ -14,7 +14,6 @@ import pyarrow as pa
 from hamilton.io.data_adapters import DataSaver
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
-from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
@@ -152,7 +151,6 @@ class DuckDBRelationSaver(DataSaver):
                         data=data,
                         table_key=self.table_key,
                     )
-                    ContractEnforcer.validate_table_write(self.table_key)
                     options = resolve_materialize_options(
                         env=self.env,
                         target_name=self.target_name,

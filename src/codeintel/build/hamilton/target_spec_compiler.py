@@ -141,7 +141,7 @@ def _parse_json_tag(
     return None
 
 
-_VALID_DOMAINS: frozenset[str] = frozenset({"analytics", "export", "graphs", "ingestion"})
+_VALID_DOMAINS: frozenset[str] = frozenset({"analytics", "export", "graphs", "ingestion", "ops"})
 _VALID_ISOLATIONS: frozenset[str] = frozenset({"none", "process", "thread"})
 
 

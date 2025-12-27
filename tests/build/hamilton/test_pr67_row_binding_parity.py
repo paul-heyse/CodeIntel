@@ -14,12 +14,14 @@ import pytest
 from codeintel.build.schemas import (
     clear_row_binding_cache,
     clear_schema_provider_cache,
+    configure_schema_service,
     get_row_binding,
     get_schema_provider,
     iter_row_bindings,
 )
 from codeintel.core.schemas import schema_hash
 from codeintel.core.schemas.row_models import GeneratedRowBinding
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -35,6 +37,11 @@ def _expect_equal(actual: object, expected: object, label: str) -> None:
     """Check equality with clear failure message."""
     if actual != expected:
         pytest.fail(f"{label}: expected {expected!r}, got {actual!r}")
+
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
 
 
 # ---------------------------------------------------------------------------
@@ -270,10 +277,11 @@ def test_generated_serializer_matches_legacy_output() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_row_binding_uses_schema_provider() -> None:
+def test_row_binding_uses_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
     """Verify row binding generation uses the schema provider."""
     clear_schema_provider_cache()
     clear_row_binding_cache()
+    configure_schema_service(runtime=hamilton_runtime)
 
     provider = get_schema_provider()
     schema = provider.require_table_schema("analytics.function_metrics")

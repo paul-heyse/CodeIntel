@@ -6,9 +6,14 @@ from typing import TYPE_CHECKING
 
 from codeintel.build.meta.contract_catalog import persist_contract_catalog
 from codeintel.build.schemas import get_schema_provider
-from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
+from codeintel.build.schemas.compile import (
+    SchemaManifestContext,
+    SchemaManifestRequest,
+    compile_schema_manifest,
+)
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.core.execution.ids import new_run_id
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
@@ -36,6 +41,10 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     if not snapshot.repo or not snapshot.commit:
         return fail_execution_failed("meta", "repo and commit must be set for meta.sync")
 
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    schema_index = runtime_bundle.schema_index
+    if schema_index is None:
+        return fail_execution_failed("meta", "Runtime schema_index is required")
     schema_provider = get_schema_provider()
     request = SchemaManifestRequest(
         all_targets=True,
@@ -49,6 +58,11 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     try:
         manifest = compile_schema_manifest(
             provider=schema_provider,
+            context=SchemaManifestContext(
+                catalog=runtime_bundle.catalog,
+                schema_index=schema_index,
+                tag_query=runtime_bundle.tag_query,
+            ),
             request=request,
             con=ctx.gateway.con,
         )

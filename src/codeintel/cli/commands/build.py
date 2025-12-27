@@ -100,7 +100,6 @@ from codeintel.cli.options.registry import (
     BUILD_RUN_PARALLEL_BACKEND,
     BUILD_RUN_PROGRESS,
     BUILD_RUN_PUBLISH_SNAPSHOT,
-    BUILD_RUN_STRICT_CONTRACTS,
     BUILD_RUN_TARGETS,
     BUILD_RUN_VALIDATE_OUTPUTS,
     BUILD_RUN_VALIDATION_MODE,
@@ -219,10 +218,6 @@ class BuildRunCommand:
     validate_outputs: Annotated[
         bool,
         option_param(BUILD_RUN_VALIDATE_OUTPUTS, command_path=BUILD_RUN_PATH),
-    ] = False
-    strict_contracts: Annotated[
-        bool,
-        option_param(BUILD_RUN_STRICT_CONTRACTS, command_path=BUILD_RUN_PATH),
     ] = False
     validation_mode: Annotated[
         str | None,

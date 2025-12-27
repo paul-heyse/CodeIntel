@@ -85,12 +85,6 @@ BUILD_RUN_VALIDATE_OUTPUTS = OptionSpec(
     help="Validate produced datasets against Pandera schemas after write.",
     negative=(),
 )
-BUILD_RUN_STRICT_CONTRACTS = OptionSpec(
-    arg_name="strict_contracts",
-    names=("--strict-contracts",),
-    help="Fail if target writes outside declared contract.",
-    negative=(),
-)
 BUILD_RUN_VALIDATION_MODE = OptionSpec(
     arg_name="validation_mode",
     names=("--validation-mode",),
@@ -1050,7 +1044,6 @@ __all__ = [
     "BUILD_RUN_PARALLEL_BACKEND",
     "BUILD_RUN_PROGRESS",
     "BUILD_RUN_PUBLISH_SNAPSHOT",
-    "BUILD_RUN_STRICT_CONTRACTS",
     "BUILD_RUN_TARGETS",
     "BUILD_RUN_VALIDATE_OUTPUTS",
     "BUILD_RUN_VALIDATION_MODE",

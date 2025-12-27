@@ -95,8 +95,7 @@ def seed_catalog_modules(
     gateway.register(temp_name, df)
     try:
         gateway.execute(
-            "CREATE OR REPLACE TEMP TABLE catalog_modules AS SELECT * FROM "
-            f"{temp_name}"
+            f"CREATE OR REPLACE TEMP TABLE catalog_modules AS SELECT * FROM {temp_name}"
         )
     finally:
         gateway.unregister(temp_name)

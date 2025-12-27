@@ -44,7 +44,6 @@ class StorageConfig:
         validation_mode: ContractValidationMode = ContractValidationMode.LENIENT,
         validation_summary_path: Path | None = None,
         attach_meta: bool = True,
-        meta_db_path: Path | None = None,
     ) -> StorageConfig:
         """
         Build a write-capable configuration used by ingestion and analytics runs.
@@ -59,6 +58,8 @@ class StorageConfig:
             Contract validation behavior when opening the gateway.
         validation_summary_path
             Optional path to write validation summaries.
+        attach_meta
+            Whether to attach the meta database for metadata tables.
 
         Returns
         -------
@@ -77,7 +78,6 @@ class StorageConfig:
             attach_history=history_db_path is not None,
             history_db_path=history_db_path,
             attach_meta=attach_meta,
-            meta_db_path=meta_db_path,
         )
 
     @classmethod
@@ -88,7 +88,6 @@ class StorageConfig:
         validation_mode: ContractValidationMode = ContractValidationMode.LENIENT,
         validation_summary_path: Path | None = None,
         attach_meta: bool = True,
-        meta_db_path: Path | None = None,
     ) -> StorageConfig:
         """
         Build a read-only configuration for serving/inspection surfaces.
@@ -101,6 +100,8 @@ class StorageConfig:
             Contract validation behavior when opening the gateway.
         validation_summary_path
             Optional path to write validation summaries.
+        attach_meta
+            Whether to attach the meta database for metadata tables.
 
         Returns
         -------
@@ -117,5 +118,4 @@ class StorageConfig:
             validation_summary_path=validation_summary_path
             or _default_validation_summary_path(db_path),
             attach_meta=attach_meta,
-            meta_db_path=meta_db_path,
         )

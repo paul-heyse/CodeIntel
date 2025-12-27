@@ -22,10 +22,7 @@ def empty_relation_for_table(con: DuckDBConnection, table_key: str) -> DuckDBRel
         Empty relation with the table's column names and types.
     """
     schema = get_schema_provider().require_table_schema(table_key)
-    columns = [
-        f"CAST(NULL AS {col.type}) AS {col.name}"
-        for col in schema.columns
-    ]
+    columns = [f"CAST(NULL AS {col.type}) AS {col.name}" for col in schema.columns]
     select_sql = f"SELECT {', '.join(columns)} WHERE 1=0"
     return con.sql(select_sql)
 

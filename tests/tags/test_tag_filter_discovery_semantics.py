@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import types
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import ParamSpec, TypeVar, cast
 
 import hamilton.driver as h_driver
 from hamilton.function_modifiers import tag
@@ -17,6 +18,12 @@ from codeintel.core.hamilton.tag_filters import (
     tf_semantic_views,
 )
 from codeintel.core.hamilton.tag_query import TagQuery
+
+P = ParamSpec("P")
+R = TypeVar("R")
+TagDecorator = Callable[[Callable[P, R]], Callable[P, R]]
+TagFactory = Callable[..., TagDecorator]
+_TAG_ANY = cast("TagFactory", tag)
 
 
 @tag(node_type=ht.NODE_TYPE_DATASET, table_key="core.modules")
@@ -55,7 +62,17 @@ def artifact_semantic_registry() -> int:
     return 1
 
 
-@tag(**{"hamilton.data_saver": True, "output_role": "contract", "hamilton.data_saver.sink": "duckdb"})
+_SAVER_TAGS = cast(
+    "dict[str, object]",
+    {
+        "hamilton.data_saver": True,
+        "output_role": "contract",
+        "hamilton.data_saver.sink": "duckdb",
+    },
+)
+
+
+@_TAG_ANY(**_SAVER_TAGS)
 def saver_duckdb() -> int:
     """Return sentinel value for a duckdb saver node.
 

@@ -15,6 +15,7 @@ from codeintel.build.hamilton.tag_spec import (
     tag_spec_from_tags,
     validate_tag_spec,
 )
+from codeintel.core.hamilton import tags as ht
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -151,8 +152,11 @@ def tag_dataset(
     Decorator[P, R]
         Decorator applying dataset node tags.
     """
+    merged_tags: dict[TagKey, TagValue] = {cast("TagKey", ht.TAG_OUTPUT_KIND): ht.OUTPUT_KIND_TABLE}
+    if extra_tags:
+        merged_tags = {**merged_tags, **extra_tags}
     spec = TagSpec.for_dataset(
-        domain=domain, target=target, table_key=table_key, extra_tags=extra_tags
+        domain=domain, target=target, table_key=table_key, extra_tags=merged_tags
     )
     return tag_from_spec(spec, target_=target_)
 

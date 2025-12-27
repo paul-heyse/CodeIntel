@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.run_records import options_hash_for_target
 from codeintel.core.build_manifest import BuildRunRecord, OutputManifest
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.env import BuildEnv
@@ -26,6 +26,7 @@ class ManifestPriming:
     """Insert manifests and minimal state for build tests."""
 
     harness: _HarnessProtocol
+    runtime: RuntimeBundle
 
     @dataclass(frozen=True)
     class ManifestSpec:
@@ -101,8 +102,7 @@ class ManifestPriming:
             Raised when the modules target is missing from the catalog.
         """
         env = self.harness.build_env()
-        runtime = build_driver(config={"profile": env.profile})
-        target = runtime.catalog.get_target("modules")
+        target = self.runtime.catalog.get_target("modules")
         if target is None:
             message = "Target 'modules' not found in catalog"
             raise RuntimeError(message)
@@ -150,8 +150,7 @@ class ManifestPriming:
             If the target is not found in the catalog.
         """
         env = self.harness.build_env()
-        runtime = build_driver(config={"profile": env.profile})
-        node = runtime.catalog.get_target(target)
+        node = self.runtime.catalog.get_target(target)
         if node is None:
             message = f"Target '{target}' not found in catalog"
             raise RuntimeError(message)

@@ -73,8 +73,9 @@ from codeintel.analytics.profiles.modules import (
 )
 from codeintel.analytics.profiles.utils import DEFAULT_MODULE_TABLE
 from codeintel.analytics.testing.profiles import rows as profile_rows
-from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers import METRICS_PACK, assert_frozen
 from tests._helpers.assertions import (
     assert_coverage_lines,
@@ -137,13 +138,15 @@ if TYPE_CHECKING:
     from tests._helpers.context import TestContext
 
 
-get_schema_service()
-_COLUMNS_BY_TABLE = load_columns_by_table()
-FILE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.file_profile"])
-FUNCTION_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.function_profile"])
-MODULE_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.module_profile"])
-TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
-BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
+
+
+def _columns_by_table() -> dict[str, tuple[str, ...]]:
+    columns = load_columns_by_table()
+    return {key: tuple(value) for key, value in columns.items()}
 
 
 def function_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -159,7 +162,8 @@ def function_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ..
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, FUNCTION_PROFILE_COLUMNS)
+    columns = _columns_by_table()["analytics.function_profile"]
+    return serialize_row(row, columns)
 
 
 def file_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -175,7 +179,8 @@ def file_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, FILE_PROFILE_COLUMNS)
+    columns = _columns_by_table()["analytics.file_profile"]
+    return serialize_row(row, columns)
 
 
 def module_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -191,7 +196,8 @@ def module_profile_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, MODULE_PROFILE_COLUMNS)
+    columns = _columns_by_table()["analytics.module_profile"]
+    return serialize_row(row, columns)
 
 
 def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -207,7 +213,8 @@ def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, TEST_PROFILE_COLUMNS)
+    columns = _columns_by_table()["analytics.test_profile"]
+    return serialize_row(row, columns)
 
 
 def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -223,7 +230,8 @@ def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object,
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
+    columns = _columns_by_table()["analytics.behavioral_coverage"]
+    return serialize_row(row, columns)
 
 
 def _build_function_profile_views(
@@ -526,21 +534,24 @@ def _behavior_rows(repo: str, commit: str) -> list[BehavioralCoverageRowModel]:
 
 def test_profile_tuple_alignment() -> None:
     """Serializer alignment with column constants."""
+    columns = _columns_by_table()
     fn_row = _function_rows("r", "c")[0]
     file_row = _file_rows("r", "c")[0]
     mod_row = _module_rows("r", "c")[1]
     tst_row = _test_rows("r", "c")[0]
     beh_row = _behavior_rows("r", "c")[0]
 
-    if len(function_profile_row_to_tuple(fn_row)) != len(FUNCTION_PROFILE_COLUMNS):
+    if len(function_profile_row_to_tuple(fn_row)) != len(columns["analytics.function_profile"]):
         pytest.fail("Function profile tuple length mismatch with column constants.")
-    if len(file_profile_row_to_tuple(file_row)) != len(FILE_PROFILE_COLUMNS):
+    if len(file_profile_row_to_tuple(file_row)) != len(columns["analytics.file_profile"]):
         pytest.fail("File profile tuple length mismatch with column constants.")
-    if len(module_profile_row_to_tuple(mod_row)) != len(MODULE_PROFILE_COLUMNS):
+    if len(module_profile_row_to_tuple(mod_row)) != len(columns["analytics.module_profile"]):
         pytest.fail("Module profile tuple length mismatch with column constants.")
-    if len(serialize_test_profile_row(tst_row)) != len(TEST_PROFILE_COLUMNS):
+    if len(serialize_test_profile_row(tst_row)) != len(columns["analytics.test_profile"]):
         pytest.fail("Test profile tuple length mismatch with column constants.")
-    if len(behavioral_coverage_row_to_tuple(beh_row)) != len(BEHAVIORAL_COVERAGE_COLUMNS):
+    if len(behavioral_coverage_row_to_tuple(beh_row)) != len(
+        columns["analytics.behavioral_coverage"]
+    ):
         pytest.fail("Behavioral coverage tuple length mismatch with column constants.")
 
 

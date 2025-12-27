@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def test_assets_module_has_dataset_nodes() -> None:
+def test_assets_module_has_dataset_nodes(hamilton_runtime: RuntimeBundle) -> None:
     """Verify driver graph contains dataset nodes."""
-    runtime = build_driver()
-    node_names = set(runtime.dr.graph.nodes)
+    node_names = set(hamilton_runtime.dr.graph.nodes)
 
     # Should have at least one dataset node
     dataset_nodes = [name for name in node_names if name.startswith("d__")]
@@ -24,10 +23,9 @@ def test_assets_module_has_dataset_nodes() -> None:
         pytest.fail("Driver graph should contain dataset nodes (d__*)")
 
 
-def test_assets_module_has_loader_nodes() -> None:
+def test_assets_module_has_loader_nodes(hamilton_runtime: RuntimeBundle) -> None:
     """Verify driver graph contains query loader nodes."""
-    runtime = build_driver()
-    node_names = set(runtime.dr.graph.nodes)
+    node_names = set(hamilton_runtime.dr.graph.nodes)
 
     # Should have query nodes (q__*)
     query_nodes = [name for name in node_names if name.startswith("q__")]
@@ -35,10 +33,9 @@ def test_assets_module_has_loader_nodes() -> None:
         pytest.fail("Driver graph should contain query nodes (q__*)")
 
 
-def test_assets_module_has_artifact_nodes() -> None:
+def test_assets_module_has_artifact_nodes(hamilton_runtime: RuntimeBundle) -> None:
     """Verify driver graph contains artifact nodes for SCIP/exports."""
-    runtime = build_driver()
-    node_names = set(runtime.dr.graph.nodes)
+    node_names = set(hamilton_runtime.dr.graph.nodes)
 
     # Should have artifact nodes (a__*)
     artifact_nodes = [name for name in node_names if name.startswith("a__")]
@@ -46,10 +43,9 @@ def test_assets_module_has_artifact_nodes() -> None:
         pytest.fail("Driver graph should contain artifact nodes (a__*)")
 
 
-def test_assets_module_all_node_types_independent() -> None:
+def test_assets_module_all_node_types_independent(hamilton_runtime: RuntimeBundle) -> None:
     """Verify support nodes are compiled alongside targets."""
-    runtime = build_driver()
-    node_names = set(runtime.dr.graph.nodes)
+    node_names = set(hamilton_runtime.dr.graph.nodes)
 
     # Should have all asset types
     has_datasets = any(name.startswith("d__") for name in node_names)

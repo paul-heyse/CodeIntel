@@ -17,7 +17,7 @@ from codeintel.core.config.settings import (
     ObservabilitySettings,
     ServingSettings,
 )
-from codeintel.core.runtime import RuntimeSettings
+from codeintel.core.runtime import RuntimeSettings, VariantConfig
 from codeintel.observability import cli as cli_observability
 from tests._helpers.env import temporary_env
 
@@ -44,6 +44,7 @@ def test_run_cli_with_telemetry_calls_shutdown_on_parse_error() -> None:
         execution=HamiltonExecutionSettings(),
         serving=ServingSettings(serve_dir=Path("serve")),
         observability=ObservabilitySettings(cli_enabled=False),
+        variants=VariantConfig(),
     )
     deps = cli_observability.RunCliTelemetryDeps(
         load_settings=lambda: runtime_settings,

@@ -21,19 +21,18 @@ def test_maybe_scope_by_repo_commit_adds_filter_when_columns_exist(
         VALUES ('a/repo', 'c1', '[]'), ('b/repo', 'c2', '[]')
         """
     )
-    table = fresh_gateway.ibis.table("core.repo_map")
+    table = fresh_gateway.relation_from_table_key("core.repo_map")
     scoped = maybe_scope_by_repo_commit(table, repo="a/repo", commit="c1")
-    sql = fresh_gateway.ibis.con.compile(scoped)
-    expect_true("WHERE" in sql.upper(), message="scoped SQL contains WHERE")
-    expect_true("repo" in sql, message="scoped SQL references repo")
-    expect_true("commit" in sql, message="scoped SQL references commit")
+    rows = scoped.df()
+    expect_true(len(rows) == 1, message="scoped relation returns one row")
+    expect_true(rows.loc[0, "repo"] == "a/repo", message="scoped repo matches")
+    expect_true(rows.loc[0, "commit"] == "c1", message="scoped commit matches")
 
 
 def test_maybe_scope_by_repo_commit_is_noop_when_columns_missing(
     fresh_gateway: StorageGateway,
 ) -> None:
     """maybe_scope_by_repo_commit is a no-op when repo/commit columns are absent."""
-    table = fresh_gateway.ibis.table("core.ast_nodes")
+    table = fresh_gateway.relation_from_table_key("core.ast_nodes")
     scoped = maybe_scope_by_repo_commit(table, repo="a/repo", commit="c1")
-    sql = fresh_gateway.ibis.con.compile(scoped)
-    expect_true("WHERE" not in sql.upper(), message="unscoped SQL has no WHERE")
+    expect_true(scoped.columns == table.columns, message="unscoped columns unchanged")

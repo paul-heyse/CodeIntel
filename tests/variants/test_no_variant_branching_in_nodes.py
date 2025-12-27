@@ -46,20 +46,29 @@ def _find_variant_accesses(path: Path) -> list[_Violation]:
                         message="cfg.<...> access in node bodies is disallowed",
                     )
                 )
-            if isinstance(child.value, ast.Name) and child.value.id == "env":
-                if child.attr in {"config", "variants"}:
-                    violations.append(
-                        _Violation(
-                            path=path,
-                            lineno=child.lineno,
-                            message=f"env.{child.attr} access in node bodies is disallowed",
-                        )
+            if (
+                isinstance(child.value, ast.Name)
+                and child.value.id == "env"
+                and child.attr in {"config", "variants"}
+            ):
+                violations.append(
+                    _Violation(
+                        path=path,
+                        lineno=child.lineno,
+                        message=f"env.{child.attr} access in node bodies is disallowed",
                     )
+                )
     return violations
 
 
 def test_no_variant_branching_in_nodes() -> None:
-    """Reject variant branching inside native DAG node bodies."""
+    """Reject variant branching inside native DAG node bodies.
+
+    Raises
+    ------
+    AssertionError
+        If forbidden variant access is detected.
+    """
     root = Path(__file__).resolve().parents[2]
     violations: list[_Violation] = []
     for path in _iter_native_modules(root):

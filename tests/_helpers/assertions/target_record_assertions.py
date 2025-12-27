@@ -6,10 +6,7 @@ from typing import TYPE_CHECKING
 
 from pandera.errors import SchemaErrors
 
-from codeintel.build.hamilton.contracts.schemas.validation import (
-    get_pandera_schema,
-    validate_df,
-)
+from codeintel.storage.validation.pandera_df import get_pandera_schema, validate_df
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,

@@ -19,11 +19,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal, Self
 
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.build.hamilton.native.outputs import (
-    expected_artifacts,
-    expected_datasets,
-    expected_table_keys_for_target,
-)
+from codeintel.build.hamilton.native.outputs import expected_artifacts, expected_datasets
 from codeintel.build.hashing import compute_target_options_hash
 from codeintel.core.build_manifest import OutputManifest
 from codeintel.core.hamilton.records import TargetRunRecord
@@ -31,10 +27,11 @@ from codeintel.core.hamilton.records import TargetRunRecord
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.build.hamilton.dag_catalog import TargetDescriptor
+    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
 
 log = logging.getLogger(__name__)
+
 
 def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
     """Compute the current configuration options hash for a target.
@@ -46,48 +43,6 @@ def options_hash_for_target(env: BuildEnv, target_name: str) -> str | None:
     """
     params = env.config.parameters_for(target_name)
     return compute_target_options_hash(params)
-
-
-def _validate_strict_row_counts(
-    *,
-    target: TargetDescriptor,
-    row_counts: dict[str, int] | None,
-) -> None:
-    expected_table_keys = expected_table_keys_for_target(target.name)
-    if not expected_table_keys:
-        if row_counts:
-            msg = (
-                "Strict contracts require empty row_counts for artifact-only targets: "
-                f"target={target.name} row_count_keys={sorted(row_counts)}"
-            )
-            raise ValueError(msg)
-        return
-
-    if row_counts is None:
-        msg = (
-            "Strict contracts require row_counts for table-producing targets: "
-            f"target={target.name} table_keys={expected_table_keys}"
-        )
-        raise ValueError(msg)
-
-    expected_keys = set(expected_table_keys)
-    actual_keys = set(row_counts)
-    if expected_keys != actual_keys:
-        missing = sorted(expected_keys - actual_keys)
-        extra = sorted(actual_keys - expected_keys)
-        msg = (
-            "Strict contracts require row_counts keys to exactly match expected table keys: "
-            f"target={target.name} missing={missing} extra={extra}"
-        )
-        raise ValueError(msg)
-
-    for table_key, count in row_counts.items():
-        if count < 0:
-            msg = (
-                "Strict contracts require non-negative row counts: "
-                f"target={target.name} table_key={table_key} row_count={count}"
-            )
-            raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -107,6 +62,7 @@ class RunRecordInputs:
     env: BuildEnv | None = None
     run: NativeRunInfo | None = None
     error: Exception | None = None
+    catalog: DagCatalog | None = None
 
 
 @dataclass
@@ -119,6 +75,7 @@ class RunRecordBuilder:
     _env: BuildEnv | None = None
     _run: NativeRunInfo | None = None
     _error: Exception | None = None
+    _catalog: DagCatalog | None = None
 
     @classmethod
     def for_success(cls, target: TargetDescriptor, input_hash: str) -> Self:
@@ -186,6 +143,17 @@ class RunRecordBuilder:
         self._error = error
         return self
 
+    def with_catalog(self, catalog: DagCatalog) -> Self:
+        """Set the DAG catalog (required for succeeded/skipped).
+
+        Returns
+        -------
+        Self
+            This builder instance for chaining.
+        """
+        self._catalog = catalog
+        return self
+
     def build(self) -> TargetRunRecord:
         """Build the TargetRunRecord.
 
@@ -203,15 +171,20 @@ class RunRecordBuilder:
             if self._error is None:
                 msg = "error is required for status 'failed'"
                 raise ValueError(msg)
-        elif self._env is None or self._run is None:
-            msg = f"env and run are required for status '{self.status}'"
+        elif self._env is None or self._run is None or self._catalog is None:
+            msg = f"env, run, and catalog are required for status '{self.status}'"
             raise ValueError(msg)
 
         return create_run_record(
             self.target,
             self.status,
             self.input_hash,
-            inputs=RunRecordInputs(env=self._env, run=self._run, error=self._error),
+            inputs=RunRecordInputs(
+                env=self._env,
+                run=self._run,
+                error=self._error,
+                catalog=self._catalog,
+            ),
         )
 
 
@@ -269,13 +242,16 @@ def create_run_record(
         msg = f"env and run are required for status '{status}'"
         raise ValueError(msg)
 
-    if env.strict_contracts and status == "succeeded":
-        _validate_strict_row_counts(target=target, row_counts=run.row_counts)
+    catalog = resolved_inputs.catalog
+    if catalog is None:
+        msg = f"catalog is required for status '{status}'"
+        raise ValueError(msg)
 
-    datasets = expected_datasets(target, env.snapshot)
+    datasets = expected_datasets(target, env.snapshot, outputs=catalog)
     artifacts = expected_artifacts(
         target,
         env.snapshot,
+        outputs=catalog,
         path_formatter={
             "build_dir": str(env.paths.build_dir),
             "scip_dir": str(env.paths.scip_dir),

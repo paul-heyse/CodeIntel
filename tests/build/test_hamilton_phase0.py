@@ -13,17 +13,14 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.driver_factory import (
-    build_driver,
-    list_available_nodes,
-    target_to_node_name,
-)
+from codeintel.build.hamilton.driver_factory import list_available_nodes, target_to_node_name
 from codeintel.build.hamilton.naming import (
     dataset_node,
     node_to_target,
     target_node,
     to_node_name,
 )
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 class TestNamingConventions:
@@ -93,18 +90,17 @@ class TestDriverFactory:
     """Tests for Hamilton Driver construction."""
 
     @staticmethod
-    def test_build_driver_returns_runtime() -> None:
-        """Verify build_driver returns HamiltonRuntime."""
-        runtime = build_driver(config={"profile": "test"})
-        if runtime.dr is None:
-            pytest.fail("Driver runtime missing dr")
-        if runtime.catalog is None:
-            pytest.fail("Driver runtime missing catalog")
+    def test_compose_runtime_returns_bundle(hamilton_runtime: RuntimeBundle) -> None:
+        """Verify runtime bundle contains driver and catalog."""
+        if hamilton_runtime.dr is None:
+            pytest.fail("Runtime bundle missing driver")
+        if hamilton_runtime.catalog is None:
+            pytest.fail("Runtime bundle missing catalog")
 
     @staticmethod
-    def test_driver_has_expected_nodes() -> None:
+    def test_driver_has_expected_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify driver has Phase 0 nodes available."""
-        nodes = list_available_nodes()
+        nodes = list_available_nodes(runtime=hamilton_runtime)
         expected = {
             "t__modules",
             "t__scip",
@@ -119,13 +115,15 @@ class TestDriverFactory:
             pytest.fail(f"Missing expected nodes: {sorted(missing)}")
 
     @staticmethod
-    def test_target_to_node_name_maps_correctly() -> None:
+    def test_target_to_node_name_maps_correctly(hamilton_runtime: RuntimeBundle) -> None:
         """Verify target names map to node names."""
-        if target_to_node_name("modules") != "t__modules":
+        if target_to_node_name("modules", runtime=hamilton_runtime) != "t__modules":
             pytest.fail("modules did not map to t__modules")
-        if target_to_node_name("function_metrics") != "t__function_metrics":
+        if target_to_node_name("function_metrics", runtime=hamilton_runtime) != (
+            "t__function_metrics"
+        ):
             pytest.fail("function_metrics did not map to t__function_metrics")
-        if target_to_node_name("unknown") is not None:
+        if target_to_node_name("unknown", runtime=hamilton_runtime) is not None:
             pytest.fail("unknown target should map to None")
 
 
@@ -133,11 +131,9 @@ class TestDAGVisualization:
     """Tests for DAG introspection and validation."""
 
     @staticmethod
-    def test_driver_can_list_final_vars() -> None:
+    def test_driver_can_list_final_vars(hamilton_runtime: RuntimeBundle) -> None:
         """Verify we can list all nodes from driver."""
-        runtime = build_driver()
-
-        all_nodes = list(runtime.dr.list_available_variables())
+        all_nodes = list(hamilton_runtime.dr.list_available_variables())
         if not all_nodes:
             pytest.fail("No nodes returned from driver")
 
@@ -146,12 +142,10 @@ class TestDAGVisualization:
             pytest.fail("t__modules not returned in node list")
 
     @staticmethod
-    def test_driver_can_display_graph() -> None:
+    def test_driver_can_display_graph(hamilton_runtime: RuntimeBundle) -> None:
         """Verify driver supports DAG visualization."""
-        runtime = build_driver()
-
         try:
-            dag = runtime.dr.display_all_functions()
+            dag = hamilton_runtime.dr.display_all_functions()
             if dag is None:
                 pytest.fail("display_all_functions returned None")
         except ImportError:
@@ -162,10 +156,9 @@ class TestTargetNodeTags:
     """Tests for Hamilton node tags and metadata."""
 
     @staticmethod
-    def test_nodes_have_domain_tags() -> None:
+    def test_nodes_have_domain_tags(hamilton_runtime: RuntimeBundle) -> None:
         """Verify nodes have domain tags for observability."""
-        runtime = build_driver()
-        all_vars = runtime.dr.list_available_variables()
+        all_vars = hamilton_runtime.dr.list_available_variables()
         var_by_name = {v.name: v for v in all_vars}
 
         modules_var = var_by_name.get("t__modules")
@@ -176,10 +169,9 @@ class TestTargetNodeTags:
             pytest.fail("modules node has wrong name")
 
     @staticmethod
-    def test_nodes_have_target_tags() -> None:
+    def test_nodes_have_target_tags(hamilton_runtime: RuntimeBundle) -> None:
         """Verify nodes have target name tags."""
-        runtime = build_driver()
-        all_vars = runtime.dr.list_available_variables()
+        all_vars = hamilton_runtime.dr.list_available_variables()
         var_by_name = {v.name: v for v in all_vars}
 
         modules_var = var_by_name.get("t__modules")
@@ -196,7 +188,7 @@ class TestPhase0NodeRegistry:
     """Tests for Phase 0 node registration."""
 
     @staticmethod
-    def test_all_phase0_targets_mapped() -> None:
+    def test_all_phase0_targets_mapped(hamilton_runtime: RuntimeBundle) -> None:
         """Verify all Phase 0 targets have node mappings."""
         phase0_targets = [
             "modules",
@@ -208,16 +200,16 @@ class TestPhase0NodeRegistry:
             "risk_factors",
         ]
         for target in phase0_targets:
-            node = target_to_node_name(target)
+            node = target_to_node_name(target, runtime=hamilton_runtime)
             if node is None:
                 pytest.fail(f"Target {target} has no node mapping")
             if not node.startswith("t__"):
                 pytest.fail(f"Target {target} node should start with t__")
 
     @staticmethod
-    def test_node_names_are_valid_identifiers() -> None:
+    def test_node_names_are_valid_identifiers(hamilton_runtime: RuntimeBundle) -> None:
         """Verify all node names are valid Python identifiers."""
-        nodes = list_available_nodes()
+        nodes = list_available_nodes(runtime=hamilton_runtime)
         for node in nodes:
             if not node.isidentifier():
                 pytest.fail(f"Node {node} is not a valid identifier")

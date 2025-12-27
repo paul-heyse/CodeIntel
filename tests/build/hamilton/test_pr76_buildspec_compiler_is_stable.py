@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec import compile_buildspec
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def test_buildspec_compiler_is_stable() -> None:
+def test_buildspec_compiler_is_stable(hamilton_runtime: RuntimeBundle) -> None:
     """Compile twice and require identical buildspec_hash."""
-    spec1 = compile_buildspec()
-    spec2 = compile_buildspec()
+    spec1 = compile_buildspec(
+        catalog=hamilton_runtime.catalog,
+        provider=get_schema_provider(),
+    )
+    spec2 = compile_buildspec(
+        catalog=hamilton_runtime.catalog,
+        provider=get_schema_provider(),
+    )
 
     if spec1.buildspec_hash != spec2.buildspec_hash:
         pytest.fail(

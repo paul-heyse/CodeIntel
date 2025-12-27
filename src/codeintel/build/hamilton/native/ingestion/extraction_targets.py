@@ -221,8 +221,6 @@ def _coerce_docstrings_output(
     return DocstringsToolOutput(result=merged, rows=())
 
 
-
-
 @tag_tool(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast__run(
     env: BuildEnv,
@@ -445,8 +443,6 @@ def t__ast(
     )
 
 
-
-
 @tag_tool(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst__run(
     env: BuildEnv,
@@ -612,8 +608,6 @@ def t__cst(
         artifact_materializations=None,
         table_materializations=cst__table_materializations,
     )
-
-
 
 
 @tag_tool(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)

@@ -11,13 +11,11 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.build.hamilton.impl_kind import native_target_names
 from codeintel.build.schemas.contract_service import (
     ContractResolutionMode,
     ContractResolutionSettings,
 )
 from codeintel.build.schemas.infer_duckdb import infer_view_schema
-from codeintel.build.schemas.inference_service import infer_table_schemas
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
     ExportArtifact,
@@ -27,7 +25,8 @@ from codeintel.build.schemas.manifest import (
 from codeintel.build.schemas.provider_unified import (
     UnifiedSchemaProvider,
 )
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.tag_filters import tf_schema_tables
 from codeintel.core.schemas.contract_service import iter_contracts
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.views.inventory import discover_derived_docs_views
@@ -36,7 +35,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.schemas.schema_index import SchemaIndex
     from codeintel.build.targets import TargetModule
     from codeintel.core.hamilton.tag_query import TagQuery
@@ -137,6 +135,25 @@ class TableKeySelection:
         )
 
 
+@dataclass(frozen=True)
+class SchemaManifestContext:
+    """Context required to compile schema manifests.
+
+    Attributes
+    ----------
+    catalog
+        DAG catalog containing target metadata.
+    schema_index
+        Schema index used for inference and provenance.
+    tag_query
+        TagQuery helper used for table discovery.
+    """
+
+    catalog: DagCatalog
+    schema_index: SchemaIndex
+    tag_query: TagQuery
+
+
 class NativeBatchInferer(Protocol):
     """Callable protocol for batch native schema inference."""
 
@@ -166,8 +183,8 @@ class NativeBatchInferer(Protocol):
 def _table_keys_for_selection(
     *,
     catalog: DagCatalog,
-    runtime: HamiltonRuntime,
     selection: TableKeySelection,
+    tag_query: TagQuery,
 ) -> tuple[str, ...]:
     """Return table keys for the selected targets.
 
@@ -175,10 +192,10 @@ def _table_keys_for_selection(
     ----------
     catalog
         DAG catalog containing target definitions.
-    runtime
-        Hamilton runtime for resolving native targets.
     selection
         Normalized selection criteria.
+    tag_query
+        TagQuery helper for tag-filter-based table discovery.
 
     Returns
     -------
@@ -189,8 +206,6 @@ def _table_keys_for_selection(
     ------
     KeyError
         If explicit targets are requested but missing.
-    ValueError
-        If any selected target lacks a native implementation.
     """
     targets = list(selection.targets) if selection.targets else None
     module = selection.module
@@ -208,17 +223,32 @@ def _table_keys_for_selection(
     else:
         selected = list(catalog.all_targets) if all_targets or not (targets or module) else []
 
-    native_names = native_target_names(runtime)
-    missing_native = [t.name for t in selected if t.name not in native_names]
-    if missing_native:
-        msg = "Targets lack native implementations: " + ", ".join(sorted(missing_native))
-        raise ValueError(msg)
+    target_names = {target.name for target in selected}
+    return _table_keys_from_tag_query(
+        tag_query=tag_query,
+        target_names=target_names,
+        stable=stable,
+    )
 
+
+def _table_keys_from_tag_query(
+    *,
+    tag_query: TagQuery,
+    target_names: set[str],
+    stable: bool,
+) -> tuple[str, ...]:
     table_keys: list[str] = []
-    for target in selected:
-        table_keys.extend(
-            output.key for output in catalog.table_outputs_by_target.get(target.name, ())
-        )
+    for variable in tag_query.query(tf_schema_tables()):
+        tags = getattr(variable, "tags", None)
+        if not isinstance(tags, dict):
+            continue
+        table_key = tags.get(ht.TAG_TABLE_KEY)
+        if not isinstance(table_key, str) or not table_key:
+            continue
+        target = tags.get(ht.TAG_TARGET)
+        if not isinstance(target, str) or target not in target_names:
+            continue
+        table_keys.append(table_key)
 
     if stable:
         return tuple(sorted(set(table_keys)))
@@ -233,34 +263,38 @@ def _table_keys_for_selection(
     return tuple(ordered)
 
 
+@dataclass(frozen=True)
+class _InferenceInputs:
+    """Inputs for native schema inference during manifest compilation."""
+
+    provider: SchemaProvider
+    request: SchemaManifestRequest
+    table_keys: Iterable[str]
+    schema_index: SchemaIndex
+
+
 def _apply_native_inference(
+    inputs: _InferenceInputs,
     *,
-    provider: SchemaProvider,
-    request: SchemaManifestRequest,
-    table_keys: Iterable[str],
     batch_inferer: NativeBatchInferer | None,
-    schema_index: SchemaIndex,
 ) -> SchemaProvider:
     """Wrap the schema provider with native inference when requested.
 
     Parameters
     ----------
-    provider
-        Base schema provider used for declared schemas.
-    request
-        Manifest request controlling inference options.
-    table_keys
-        Selected table keys for the manifest.
+    inputs
+        Bundled inputs required for inference decisions.
     batch_inferer
         Optional batch inference implementation.
-    schema_index
-        Schema index used to prioritize DAG-derived outputs.
 
     Returns
     -------
     SchemaProvider
         Provider potentially wrapped with native inference.
     """
+    provider = inputs.provider
+    request = inputs.request
+    schema_index = inputs.schema_index
     if isinstance(provider, UnifiedSchemaProvider):
         declared_provider = provider.declared
         schema_index = provider.schema_index
@@ -276,13 +310,17 @@ def _apply_native_inference(
     if not request.infer_native:
         return unified_provider
 
-    selected_table_keys = tuple(sorted(set(table_keys)))
+    selected_table_keys = tuple(sorted(set(inputs.table_keys)))
     if not selected_table_keys:
         return unified_provider
 
     if request.batch_infer_native:
         try:
-            batch = infer_table_schemas if batch_inferer is None else batch_inferer
+            batch = (
+                _schema_index_batch_inferer(schema_index)
+                if batch_inferer is None
+                else batch_inferer
+            )
             inferred = batch(selected_table_keys, declared_provider=declared_provider)
         except (KeyError, RuntimeError, TypeError, ValueError) as exc:
             _logger.warning(
@@ -293,6 +331,20 @@ def _apply_native_inference(
             schema_index.prefill_cache(inferred)
 
     return unified_provider
+
+
+def _schema_index_batch_inferer(schema_index: SchemaIndex) -> NativeBatchInferer:
+    def _infer(
+        table_keys: Iterable[str],
+        *,
+        declared_provider: SchemaProvider,
+    ) -> dict[str, TableSchema]:
+        return schema_index.inference_service.infer_table_schemas(
+            table_keys,
+            declared_provider=declared_provider,
+        )
+
+    return _infer
 
 
 def _ensure_v2(version: str) -> None:
@@ -641,6 +693,7 @@ def compile_schema_manifest_for_table_keys(
 def compile_schema_manifest(
     *,
     provider: SchemaProvider,
+    context: SchemaManifestContext,
     request: SchemaManifestRequest | None = None,
     con: DuckDBConnection | None = None,
     batch_inferer: NativeBatchInferer | None = None,
@@ -651,6 +704,8 @@ def compile_schema_manifest(
     ----------
     provider
         Base schema provider used for declared schemas.
+    context
+        Manifest compilation context (catalog, schema index, tag query).
     request
         Selection and options for manifest compilation. When None, uses defaults.
     con
@@ -666,24 +721,25 @@ def compile_schema_manifest(
     """
     req = request or SchemaManifestRequest()
     _ensure_v2(req.version)
-    service = get_target_metadata_service()
     selection = TableKeySelection.from_request(req)
     table_keys = _table_keys_for_selection(
-        catalog=service.system.catalog,
-        runtime=service.system.runtime,
+        catalog=context.catalog,
         selection=selection,
+        tag_query=context.tag_query,
     )
     active_provider = _apply_native_inference(
-        provider=provider,
-        request=req,
-        table_keys=table_keys,
+        _InferenceInputs(
+            provider=provider,
+            request=req,
+            table_keys=table_keys,
+            schema_index=context.schema_index,
+        ),
         batch_inferer=batch_inferer,
-        schema_index=service.schema_index,
     )
     extras, version = _resolve_v2_extras(
         request=req,
         con=con,
-        tag_query=service.system.runtime.tag_query,
+        tag_query=context.tag_query,
     )
 
     manifest = compile_schema_manifest_for_table_keys(
@@ -701,7 +757,7 @@ def compile_schema_manifest(
         views=manifest.views,
         artifacts=manifest.artifacts,
         provider=active_provider,
-        schema_index=service.schema_index,
+        schema_index=context.schema_index,
     )
     return SchemaManifest(
         version=manifest.version,
@@ -718,6 +774,7 @@ __all__ = [
     "DEFAULT_SCHEMA_MANIFEST_VERSION",
     "V2_SCHEMA_MANIFEST_VERSION",
     "SchemaManifest",
+    "SchemaManifestContext",
     "SchemaManifestRequest",
     "V2Extras",
     "compile_schema_manifest",

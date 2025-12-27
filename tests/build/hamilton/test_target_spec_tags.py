@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.core.hamilton import tags as ht
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 def _variable_name(variable: object) -> str:
@@ -16,28 +16,25 @@ def _variable_name(variable: object) -> str:
     return str(name) if name is not None else str(variable)
 
 
-def test_all_targets_compile_from_dag() -> None:
+def test_all_targets_compile_from_dag(hamilton_runtime: RuntimeBundle) -> None:
     """Ensure DAG-derived target compilation succeeds and produces targets."""
-    runtime = build_driver()
-    catalog = compile_dag_catalog(runtime.dr, strict=True)
+    catalog = compile_dag_catalog(hamilton_runtime.dr, strict=True)
     if not catalog.all_targets:
         pytest.fail("No build targets compiled from DAG tags")
 
 
-def test_target_anchors_have_docstrings() -> None:
+def test_target_anchors_have_docstrings(hamilton_runtime: RuntimeBundle) -> None:
     """Ensure every target anchor has a docstring summary."""
-    runtime = build_driver()
-    catalog = compile_dag_catalog(runtime.dr, strict=False)
+    catalog = compile_dag_catalog(hamilton_runtime.dr, strict=False)
     missing = [target.name for target in catalog.all_targets if not target.description.strip()]
     if missing:
         pytest.fail("Targets missing docstring summaries:\n" + "\n".join(sorted(missing)))
 
 
-def test_target_anchors_have_spec_version() -> None:
+def test_target_anchors_have_spec_version(hamilton_runtime: RuntimeBundle) -> None:
     """Ensure target anchors carry the canonical spec version tag."""
-    runtime = build_driver()
     missing: list[str] = []
-    variables = runtime.tag_query.query({ht.TAG_NODE_TYPE: ht.NODE_TYPE_MATERIALIZE})
+    variables = hamilton_runtime.tag_query.query({ht.TAG_NODE_TYPE: ht.NODE_TYPE_MATERIALIZE})
     for variable in variables:
         tags = getattr(variable, "tags", None)
         if not isinstance(tags, dict):

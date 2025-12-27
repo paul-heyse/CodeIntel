@@ -37,6 +37,8 @@ from tests._helpers.schemas import ensure_production_schemas
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from codeintel.build.serving.manifest import ServingSnapshotManifest
+
 
 @dataclass(frozen=True)
 class _StubGateway:
@@ -61,47 +63,68 @@ def _seed_modules(con: duckdb.DuckDBPyConnection, *, repo: str, commit: str) -> 
     )
 
 
-def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -> None:
-    """Publisher checkpoints, copies artifacts, and updates current.json atomically."""
+def _publish_snapshot(
+    tmp_path: Path,
+    *,
+    repo: str,
+    commit: str,
+    run_id: str,
+    keep_last: int,
+) -> tuple[ServingSnapshotManifest, ServingSnapshotPointer, Path]:
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
-    con.execute("CREATE TABLE t (id INTEGER)")
-    con.execute("INSERT INTO t VALUES (1)")
-    _seed_modules(con, repo="demo/repo", commit="c1")
+    try:
+        con.execute("CREATE TABLE t (id INTEGER)")
+        con.execute("INSERT INTO t VALUES (1)")
+        _seed_modules(con, repo=repo, commit=commit)
 
-    gateway = _StubGateway(
-        config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
+        gateway = _StubGateway(
+            config=StorageConfig(db_path=db_path, repo=repo, commit=commit),
+            con=con,
+        )
+
+        semantic_registry = tmp_path / "semantic_registry.json"
+        schema_manifest = tmp_path / "schema_manifest.json"
+        buildspec = tmp_path / "buildspec.json"
+        _write_text(semantic_registry, {"version": "v1", "views": []})
+        _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
+        _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+
+        serve_dir = tmp_path / "serve"
+        manifest = publish_serving_snapshot(
+            gateway=gateway,
+            request=PublishServingSnapshotRequest(
+                run_id=run_id,
+                serve_dir=serve_dir,
+                semantic_registry_path=semantic_registry,
+                schema_manifest_path=schema_manifest,
+                buildspec_path=buildspec,
+                keep_last=keep_last,
+            ),
+        )
+    finally:
+        con.close()
+
+    pointer = ServingSnapshotPointer.load(tmp_path / "serve" / "current.json")
+    return manifest, pointer, tmp_path / "serve"
+
+
+def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -> None:
+    """Publisher checkpoints, copies artifacts, and updates current.json atomically."""
+    manifest, pointer, serve_dir = _publish_snapshot(
+        tmp_path,
+        repo="demo/repo",
+        commit="c1",
+        run_id="run-1",
+        keep_last=10,
     )
-
-    semantic_registry = tmp_path / "semantic_registry.json"
-    schema_manifest = tmp_path / "schema_manifest.json"
-    buildspec = tmp_path / "buildspec.json"
-    _write_text(semantic_registry, {"version": "v1", "views": []})
-    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
-    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
-
-    serve_dir = tmp_path / "serve"
-    manifest = publish_serving_snapshot(
-        gateway=gateway,
-        request=PublishServingSnapshotRequest(
-            run_id="run-1",
-            serve_dir=serve_dir,
-            semantic_registry_path=semantic_registry,
-            schema_manifest_path=schema_manifest,
-            buildspec_path=buildspec,
-            keep_last=10,
-        ),
-    )
-    con.close()
-
-    snap_dir = serve_dir / "snapshots" / "run-1"
+    snap_dir = serve_dir / "snapshots" / pointer.run_id
     expect_true((snap_dir / "codeintel.duckdb").exists())
     expect_true((snap_dir / "semantic_registry.json").exists())
     expect_true((snap_dir / "schema_manifest.json").exists())
     expect_true((snap_dir / "buildspec.json").exists())
     expect_true((serve_dir / "current.json").exists())
 
-    pointer = ServingSnapshotPointer.load(serve_dir / "current.json")
     expect_equal(pointer.run_id, "run-1")
     expect_equal(pointer.repo, "demo/repo")
     expect_equal(pointer.commit, "c1")

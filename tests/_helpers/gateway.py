@@ -1,7 +1,7 @@
-"""Shared helpers for isolated gateway/DuckDB test setup (ibis-only).
+"""Shared helpers for isolated gateway/DuckDB test setup (relation-first).
 
-This module now builds gateways without ingest macro registration. Tests should
-exercise ibis/sqlglot paths and avoid DuckDB macros or legacy storage adapters.
+This module builds gateways without ingest macro registration. Tests should
+exercise DuckDB relation and SQLGlot paths and avoid legacy storage adapters.
 """
 
 from __future__ import annotations

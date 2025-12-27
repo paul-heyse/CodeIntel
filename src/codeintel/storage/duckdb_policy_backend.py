@@ -61,7 +61,10 @@ from codeintel.storage.schema.sqlglot_ddl import (
 from codeintel.storage.schema_roundtrip import create_table_ast
 from codeintel.storage.upsert import UpsertSpec
 from codeintel.storage.views.inventory import view_builder_modules
-from codeintel.storage.views.materialization import materialize_registered_views
+from codeintel.storage.views.materialization import (
+    ViewMaterializationOptions,
+    materialize_registered_views,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -1153,9 +1156,11 @@ class DuckDBPolicyBackend:
         materialize_registered_views(
             self.gateway,
             modules=view_builder_modules(),
-            overwrite=overwrite,
-            strict=strict,
-            tag_query=tag_query,
+            options=ViewMaterializationOptions(
+                overwrite=overwrite,
+                strict=strict,
+                tag_query=tag_query,
+            ),
         )
 
     def ensure_schemas_preserve(
@@ -1356,7 +1361,9 @@ class DuckDBPolicyBackend:
         if columns is None:
             if table_schema is not None:
                 columns = [col.name for col in table_schema.columns]
-            elif _duckdb_table_exists(self.con, schema=schema, table=table, catalog=resolved_catalog):
+            elif _duckdb_table_exists(
+                self.con, schema=schema, table=table, catalog=resolved_catalog
+            ):
                 qualified_name = self._qualified_table_ref(
                     schema,
                     table,

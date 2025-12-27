@@ -15,8 +15,7 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     from codeintel.core.schemas.provider import SchemaProvider
-    from codeintel.storage.gateway.protocol import MinimalGateway
-    from codeintel.storage.gateway.protocol import DuckDBRelation
+    from codeintel.storage.gateway.protocol import DuckDBRelation, MinimalGateway
 
 
 def qparam_to_table_key(qparam: str) -> str:

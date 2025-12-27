@@ -90,9 +90,7 @@ def _is_tabular_annotation(annotation: object) -> bool:
     origin = get_origin(annotation)
     if origin in {types.UnionType, typing.Union}:
         return any(
-            _is_tabular_annotation(arg)
-            for arg in get_args(annotation)
-            if arg is not type(None)
+            _is_tabular_annotation(arg) for arg in get_args(annotation) if arg is not type(None)
         )
     if isinstance(annotation, str):
         return "DuckDBPyRelation" in annotation or "TabularInput" in annotation
@@ -127,9 +125,7 @@ def _output_data_node(
     saver_node = context.driver.graph.nodes.get(output.saver_node)
     if saver_node is None:
         return None
-    tabular_deps = [
-        dep.name for dep in saver_node.dependencies if _is_tabular_annotation(dep.type)
-    ]
+    tabular_deps = [dep.name for dep in saver_node.dependencies if _is_tabular_annotation(dep.type)]
     if len(tabular_deps) != 1:
         return None
     return tabular_deps[0]
@@ -180,9 +176,7 @@ def _resolve_inference_job(
     )
 
 
-def _compute_node_for_inference(
-    context: _InferenceContext, *, compute_name: str
-) -> str:
+def _compute_node_for_inference(context: _InferenceContext, *, compute_name: str) -> str:
     raw_name = f"{compute_name}_raw"
     return raw_name if raw_name in context.driver.graph.nodes else compute_name
 
@@ -455,9 +449,7 @@ class HamiltonSchemaProvider(SchemaProvider):
         self._cache.update(schemas)
 
 
-def inferable_native_table_keys(
-    *, driver: h_driver.Driver, catalog: DagCatalog
-) -> frozenset[str]:
+def inferable_native_table_keys(*, driver: h_driver.Driver, catalog: DagCatalog) -> frozenset[str]:
     """Return output table keys that appear inferable from native compute nodes.
 
     Parameters
@@ -490,8 +482,7 @@ def _build_inference_jobs(
     table_keys: list[str],
 ) -> list[_ComputeInferenceJob]:
     return [
-        _resolve_inference_job(context=context, table_key=table_key)
-        for table_key in table_keys
+        _resolve_inference_job(context=context, table_key=table_key) for table_key in table_keys
     ]
 
 
@@ -589,7 +580,9 @@ class SchemaInferenceService:
     driver: h_driver.Driver
     catalog: DagCatalog
 
-    def infer_table_schema(self, table_key: str, *, declared_provider: SchemaProvider) -> TableSchema:
+    def infer_table_schema(
+        self, table_key: str, *, declared_provider: SchemaProvider
+    ) -> TableSchema:
         """Infer schema for a single table key.
 
         Parameters

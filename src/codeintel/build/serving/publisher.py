@@ -17,7 +17,9 @@ from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.serving.manifest import ServingSnapshotManifest
+from codeintel.storage.constants import META_DB_FILENAME
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.metadata.meta_catalog import resolve_meta_db_path
 from codeintel.storage.serving.snapshot_service import (
     LineageMetadataError,
     SearchIndexBuildError,
@@ -72,6 +74,13 @@ class PublishServingSnapshotRequest:
     keep_last: int = 10
 
 
+@dataclass(frozen=True, slots=True)
+class _SnapshotArtifacts:
+    registry_path: Path
+    schema_manifest_path: Path
+    buildspec_path: Path
+
+
 def _atomic_write_text(path: Path, text: str) -> None:
     """Write text atomically using rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,6 +111,87 @@ def _compute_semantic_version(
     return hasher.hexdigest()[:16]
 
 
+def _prepare_snapshot_tables(*, snap_db: Path, run_id: str) -> None:
+    service = ServingSnapshotService()
+    try:
+        service.prepare_snapshot(db_path=snap_db)
+    except SearchIndexBuildError as exc:
+        log.exception(
+            "build.serving.publisher.search_index_failed run_id=%s",
+            run_id,
+        )
+        message = f"Search index build failed for serving snapshot run_id={run_id}"
+        raise RuntimeError(message) from exc
+    except LineageMetadataError as exc:
+        log.exception(
+            "build.serving.publisher.lineage_missing run_id=%s",
+            run_id,
+        )
+        message = f"Lineage metadata missing for serving snapshot run_id={run_id}"
+        raise RuntimeError(message) from exc
+
+
+def _copy_snapshot_database(
+    db_path: Path,
+    *,
+    snap_dir: Path,
+    config: StorageConfig,
+) -> Path:
+    snap_db = snap_dir / "codeintel.duckdb"
+    shutil.copy2(db_path, snap_db)
+    if config.attach_meta:
+        meta_path = resolve_meta_db_path(config)
+        if str(meta_path) != ":memory:" and meta_path.exists():
+            snap_meta_db = snap_dir / META_DB_FILENAME
+            shutil.copy2(meta_path, snap_meta_db)
+    return snap_db
+
+
+def _copy_snapshot_artifacts(
+    request: PublishServingSnapshotRequest,
+    *,
+    snap_dir: Path,
+) -> _SnapshotArtifacts:
+    snap_registry = snap_dir / "semantic_registry.json"
+    shutil.copy2(request.semantic_registry_path, snap_registry)
+
+    snap_manifest = snap_dir / "schema_manifest.json"
+    shutil.copy2(request.schema_manifest_path, snap_manifest)
+
+    snap_buildspec = snap_dir / "buildspec.json"
+    shutil.copy2(request.buildspec_path, snap_buildspec)
+
+    env_artifact = request.buildspec_path.parent / "environment.json"
+    if env_artifact.is_file():
+        shutil.copy2(env_artifact, snap_dir / "environment.json")
+
+    return _SnapshotArtifacts(
+        registry_path=snap_registry,
+        schema_manifest_path=snap_manifest,
+        buildspec_path=snap_buildspec,
+    )
+
+
+def _write_current_pointer(serve_dir: Path, manifest: ServingSnapshotManifest) -> None:
+    current_path = serve_dir / "current.json"
+    _atomic_write_text(current_path, manifest.to_json() + "\n")
+
+
+def _prune_snapshots(*, serve_dir: Path, keep_last: int) -> None:
+    if keep_last <= 0:
+        return
+    snaps_root = serve_dir / "snapshots"
+    if not snaps_root.exists():
+        return
+    dirs = sorted(
+        [p for p in snaps_root.iterdir() if p.is_dir()],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for old in dirs[keep_last:]:
+        shutil.rmtree(old, ignore_errors=True)
+
+
 def publish_serving_snapshot(
     *,
     gateway: SnapshotPublisherGateway,
@@ -125,8 +215,6 @@ def publish_serving_snapshot(
     ------
     FileNotFoundError
         If build database not found.
-    RuntimeError
-        If the search index build fails or lineage metadata is missing.
     """
     db_path = gateway.config.db_path
     if not db_path.is_file():
@@ -139,40 +227,14 @@ def publish_serving_snapshot(
     snap_dir = request.serve_dir / "snapshots" / request.run_id
     snap_dir.mkdir(parents=True, exist_ok=True)
 
-    snap_db = snap_dir / "codeintel.duckdb"
-    shutil.copy2(db_path, snap_db)
-
-    service = ServingSnapshotService()
-    try:
-        service.prepare_snapshot(db_path=snap_db)
-    except SearchIndexBuildError as exc:
-        log.exception(
-            "build.serving.publisher.search_index_failed run_id=%s",
-            request.run_id,
-        )
-        message = f"Search index build failed for serving snapshot run_id={request.run_id}"
-        raise RuntimeError(message) from exc
-    except LineageMetadataError as exc:
-        log.exception(
-            "build.serving.publisher.lineage_missing run_id=%s",
-            request.run_id,
-        )
-        message = f"Lineage metadata missing for serving snapshot run_id={request.run_id}"
-        raise RuntimeError(message) from exc
-    snap_registry = snap_dir / "semantic_registry.json"
-    shutil.copy2(request.semantic_registry_path, snap_registry)
-
-    snap_manifest = snap_dir / "schema_manifest.json"
-    shutil.copy2(request.schema_manifest_path, snap_manifest)
-
-    snap_buildspec = snap_dir / "buildspec.json"
-    shutil.copy2(request.buildspec_path, snap_buildspec)
-
-    env_artifact = request.buildspec_path.parent / "environment.json"
-    if env_artifact.is_file():
-        shutil.copy2(env_artifact, snap_dir / "environment.json")
-
-    version = _compute_semantic_version(snap_registry, snap_manifest, snap_buildspec)
+    snap_db = _copy_snapshot_database(db_path, snap_dir=snap_dir, config=gateway.config)
+    _prepare_snapshot_tables(snap_db=snap_db, run_id=request.run_id)
+    artifacts = _copy_snapshot_artifacts(request, snap_dir=snap_dir)
+    version = _compute_semantic_version(
+        artifacts.registry_path,
+        artifacts.schema_manifest_path,
+        artifacts.buildspec_path,
+    )
 
     manifest = ServingSnapshotManifest(
         run_id=request.run_id,
@@ -180,25 +242,14 @@ def publish_serving_snapshot(
         commit=gateway.config.commit or "unknown",
         published_at=datetime.now(UTC).isoformat(),
         db_path=str(snap_db),
-        semantic_registry_path=str(snap_registry),
-        schema_manifest_path=str(snap_manifest),
-        buildspec_path=str(snap_buildspec),
+        semantic_registry_path=str(artifacts.registry_path),
+        schema_manifest_path=str(artifacts.schema_manifest_path),
+        buildspec_path=str(artifacts.buildspec_path),
         semantic_layer_version=version,
     )
 
-    current_path = request.serve_dir / "current.json"
-    _atomic_write_text(current_path, manifest.to_json() + "\n")
-
-    if request.keep_last > 0:
-        snaps_root = request.serve_dir / "snapshots"
-        if snaps_root.exists():
-            dirs = sorted(
-                [p for p in snaps_root.iterdir() if p.is_dir()],
-                key=lambda p: p.stat().st_mtime,
-                reverse=True,
-            )
-            for old in dirs[request.keep_last :]:
-                shutil.rmtree(old, ignore_errors=True)
+    _write_current_pointer(request.serve_dir, manifest)
+    _prune_snapshots(serve_dir=request.serve_dir, keep_last=request.keep_last)
 
     return manifest
 

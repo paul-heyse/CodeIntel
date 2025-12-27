@@ -10,9 +10,9 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.target_metadata import get_target_system
 from codeintel.cli.core import CliResult
 from codeintel.cli.execution.registry import OperationSpec, register_operation
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -165,7 +165,8 @@ def graph_targets_list_handler(
 
     LOG.info("Listing graph targets (names=%s)", names_set)
 
-    catalog = get_target_system().catalog
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    catalog = runtime_bundle.catalog
     targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
     if names_set:
@@ -210,7 +211,8 @@ def graph_targets_plan_handler(
 
     LOG.info("Planning graph targets (names=%s)", names_set)
 
-    catalog = get_target_system().catalog
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    catalog = runtime_bundle.catalog
     targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
     if names_set:
@@ -241,8 +243,8 @@ register_operation(
         description="List graph build targets",
         handler=graph_targets_list_handler,
         group="graphs",
-        require_runtime=False,
-        require_gateway=False,
+        require_runtime=True,
+        require_gateway=True,
     )
 )
 
@@ -253,8 +255,8 @@ register_operation(
         description="Display an execution plan for graph targets",
         handler=graph_targets_plan_handler,
         group="graphs",
-        require_runtime=False,
-        require_gateway=False,
+        require_runtime=True,
+        require_gateway=True,
     )
 )
 

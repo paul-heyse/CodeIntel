@@ -41,7 +41,7 @@ build_schema_app = App(
     help="Schema product commands (compile, diff, migrate, etc.).",
 )
 
-_SCHEMA_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+_SCHEMA_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 BUILD_SCHEMA_COMPILE_PATH: CommandPath = ("build", "schema", "compile")
 BUILD_SCHEMA_DIFF_PATH: CommandPath = ("build", "schema", "diff")

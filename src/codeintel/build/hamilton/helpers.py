@@ -214,7 +214,7 @@ def get_source_root(
         Absolute path to the source root.
     """
     try:
-        row = gateway.con.execute(
+        row = gateway.execute(
             "SELECT source_root FROM core.snapshots WHERE repo = ? AND commit = ? LIMIT 1",
             [repo, commit],
         ).fetchone()
@@ -244,7 +244,7 @@ def get_module_paths_from_env(env: BuildEnv) -> list[str]:
         Module paths from storage; empty when unavailable.
     """
     try:
-        rows = env.gateway.con.execute(
+        rows = env.gateway.execute(
             "SELECT path FROM core.modules WHERE repo = ? AND commit = ?",
             [env.snapshot.repo, env.snapshot.commit],
         ).fetchall()

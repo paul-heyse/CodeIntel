@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from codeintel.build.schemas.schema_index import SchemaIndex
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.schemas.authority import SchemaAuthority
 from codeintel.core.schemas.declared import source_declared_schema_provider
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -23,8 +22,19 @@ _DECLARED_SOURCE_KIND = "declared_source"
 _DECLARED_SOURCE_NAME = "declared"
 
 
-@lru_cache(maxsize=1)
-def declared_schema_provider() -> SchemaProvider:
+_DECLARED_PROVIDER_CACHE: dict[str, SchemaProvider] = {}
+_PROVIDER_CACHE: dict[tuple[str, bool], UnifiedSchemaProvider] = {}
+
+
+def _schema_index_from_runtime(runtime: RuntimeBundle) -> SchemaIndex:
+    schema_index = runtime.schema_index
+    if schema_index is None:
+        msg = "RuntimeBundle.schema_index is required to build a schema provider"
+        raise ValueError(msg)
+    return schema_index
+
+
+def declared_schema_provider(*, runtime: RuntimeBundle) -> SchemaProvider:
     """Return a source-only declared schema provider for build usage.
 
     Returns
@@ -32,9 +42,14 @@ def declared_schema_provider() -> SchemaProvider:
     SchemaProvider
         Provider exposing only source table schemas (excluding DAG outputs).
     """
-    service = get_target_metadata_service()
-    exclude_table_keys = service.system.all_table_keys
-    return source_declared_schema_provider(exclude_table_keys=exclude_table_keys)
+    cache_key = runtime.fingerprint
+    cached = _DECLARED_PROVIDER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    exclude_table_keys = frozenset(runtime.catalog.table_outputs)
+    provider = source_declared_schema_provider(exclude_table_keys=exclude_table_keys)
+    _DECLARED_PROVIDER_CACHE[cache_key] = provider
+    return provider
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,17 +191,25 @@ class UnifiedSchemaProvider:
         )
 
 
-@lru_cache(maxsize=2)
-def _build_provider(*, allow_inference: bool) -> UnifiedSchemaProvider:
-    service = get_target_metadata_service()
-    return UnifiedSchemaProvider(
-        declared=declared_schema_provider(),
-        schema_index=service.schema_index,
+def _build_provider(
+    *,
+    runtime: RuntimeBundle,
+    allow_inference: bool,
+) -> UnifiedSchemaProvider:
+    cache_key = (runtime.fingerprint, allow_inference)
+    cached = _PROVIDER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    provider = UnifiedSchemaProvider(
+        declared=declared_schema_provider(runtime=runtime),
+        schema_index=_schema_index_from_runtime(runtime),
         allow_inference=allow_inference,
     )
+    _PROVIDER_CACHE[cache_key] = provider
+    return provider
 
 
-def unified_schema_provider() -> UnifiedSchemaProvider:
+def unified_schema_provider(*, runtime: RuntimeBundle) -> UnifiedSchemaProvider:
     """Return the DAG-first schema provider.
 
     Returns
@@ -194,11 +217,10 @@ def unified_schema_provider() -> UnifiedSchemaProvider:
     UnifiedSchemaProvider
         Provider with inference enabled.
     """
-    return _build_provider(allow_inference=True)
+    return _build_provider(runtime=runtime, allow_inference=True)
 
 
-@lru_cache(maxsize=1)
-def non_inferable_schema_provider() -> UnifiedSchemaProvider:
+def non_inferable_schema_provider(*, runtime: RuntimeBundle) -> UnifiedSchemaProvider:
     """Return a schema provider with inference disabled.
 
     Returns
@@ -206,7 +228,7 @@ def non_inferable_schema_provider() -> UnifiedSchemaProvider:
     UnifiedSchemaProvider
         Provider with inference disabled.
     """
-    return _build_provider(allow_inference=False)
+    return _build_provider(runtime=runtime, allow_inference=False)
 
 
 def clear_unified_provider_cache() -> None:
@@ -214,7 +236,8 @@ def clear_unified_provider_cache() -> None:
 
     Useful for testing when schema definitions or targets may change.
     """
-    _build_provider.cache_clear()
+    _DECLARED_PROVIDER_CACHE.clear()
+    _PROVIDER_CACHE.clear()
 
 
 __all__ = [

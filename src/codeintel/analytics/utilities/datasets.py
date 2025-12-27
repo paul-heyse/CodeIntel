@@ -19,7 +19,6 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.storage.gateway import StorageGateway
 
-from codeintel.build.hamilton.contracts.schemas.validation import validate_df
 from codeintel.build.schemas import (
     ContractResolutionMode,
     ContractResolutionSettings,
@@ -28,6 +27,7 @@ from codeintel.build.schemas import (
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
+from codeintel.storage.validation.pandera_df import validate_df
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 

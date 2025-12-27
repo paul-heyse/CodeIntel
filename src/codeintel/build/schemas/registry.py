@@ -21,15 +21,33 @@ Examples
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, cast
 
-from codeintel.build.schemas.service import clear_schema_service_cache, get_schema_service
+from codeintel.core.imports.lazy import lazy_getattr
+from codeintel.core.schemas import SchemaService
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
+
+
+def _schema_service() -> SchemaService:
+    get_service = cast(
+        "Callable[[], SchemaService]",
+        lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
+    )
+    return get_service()
+
+
+def _clear_schema_service_cache() -> None:
+    clear_cache = cast(
+        "Callable[[], None]",
+        lazy_getattr("codeintel.build.schemas.service", "clear_schema_service_cache"),
+    )
+    clear_cache()
 
 
 def get_schema_provider() -> SchemaProvider:
@@ -54,7 +72,7 @@ def get_schema_provider() -> SchemaProvider:
     >>> schema is not None
     True
     """
-    return get_schema_service().table_provider
+    return _schema_service().table_provider
 
 
 def require_table_schema(table_key: str) -> TableSchema:
@@ -78,7 +96,7 @@ def require_table_schema(table_key: str) -> TableSchema:
     >>> schema.table_key
     'analytics.function_metrics'
     """
-    return get_schema_service().require_table_schema(table_key)
+    return _schema_service().require_table_schema(table_key)
 
 
 def iter_table_schemas() -> Iterable[TableSchema]:
@@ -97,7 +115,7 @@ def iter_table_schemas() -> Iterable[TableSchema]:
     >>> len(schemas) > 0
     True
     """
-    return get_schema_service().iter_table_schemas()
+    return _schema_service().iter_table_schemas()
 
 
 def clear_schema_provider_cache() -> None:
@@ -106,7 +124,7 @@ def clear_schema_provider_cache() -> None:
     Clears both the registry cache and the underlying unified provider cache.
     Useful for testing when schema definitions may change between tests.
     """
-    clear_schema_service_cache()
+    _clear_schema_service_cache()
 
 
 __all__ = [

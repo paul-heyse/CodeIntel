@@ -21,6 +21,17 @@ from codeintel.build.hamilton.graph_validation import (
     validate_graph,
     validation_result_to_json,
 )
+from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
+from codeintel.cli.resolution import resolve_from_params
+from codeintel.storage.gateway import (
+    DuckDBConnection,
+    MemoryGatewayOptions,
+    StorageConfig,
+    StorageConnectionError,
+    open_gateway,
+    open_memory_gateway,
+)
 
 BASE_DIRS: tuple[str, ...] = ("src", "tests", "tools", "scripts")
 _SELF_REL_PATH = "tools/guardrails.py"
@@ -200,13 +211,36 @@ def main() -> int:
             sys.stderr.write(f"{line}\n")
         return 1
 
+    runtime = resolve_from_params(
+        {"project_root": repo_root, "repo_root": repo_root},
+        allow_fallback=True,
+    )
+    config = StorageConfig.for_readonly(runtime.db_path)
     try:
-        graph_result = validate_graph()
+        gateway = open_gateway(config)
+    except (FileNotFoundError, StorageConnectionError):
+
+        def _seed_contract_catalog(con: DuckDBConnection) -> None:
+            persist_contract_catalog_to_connection(con, inputs={"source": "guardrails"})
+
+        gateway = open_memory_gateway(
+            options=MemoryGatewayOptions(
+                apply_schema=False,
+                ensure_views=False,
+                validate_schema=False,
+            ),
+            seed_contract_catalog=_seed_contract_catalog,
+        )
+    try:
+        runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
+        graph_result = validate_graph(runtime=runtime_bundle)
     except ImportError as exc:
         sys.stderr.write("Hamilton graph validation could not run due to an import error.\n")
         sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
         sys.stderr.write(traceback.format_exc())
         return 1
+    finally:
+        gateway.close()
     if graph_result.has_errors:
         sys.stderr.write("Hamilton graph validation failed.\n")
         sys.stderr.write(validation_result_to_json(graph_result, indent=2))

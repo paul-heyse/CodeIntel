@@ -7,21 +7,20 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.observability import (
     export_dag_dot,
     export_dag_mermaid,
 )
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 class TestMermaidExport:
     """Tests for Mermaid DAG export."""
 
     @staticmethod
-    def test_export_dag_mermaid_returns_string() -> None:
+    def test_export_dag_mermaid_returns_string(hamilton_runtime: RuntimeBundle) -> None:
         """Verify export_dag_mermaid returns a string."""
-        runtime = build_driver()
-        result = export_dag_mermaid(runtime, ["modules"])
+        result = export_dag_mermaid(hamilton_runtime, ["modules"])
 
         if not isinstance(result, str):
             pytest.fail(f"Expected string, got {type(result).__name__}")
@@ -29,19 +28,17 @@ class TestMermaidExport:
             pytest.fail("Mermaid output should not be empty")
 
     @staticmethod
-    def test_mermaid_output_starts_with_graph() -> None:
+    def test_mermaid_output_starts_with_graph(hamilton_runtime: RuntimeBundle) -> None:
         """Verify Mermaid output starts with graph directive."""
-        runtime = build_driver()
-        result = export_dag_mermaid(runtime, ["modules"])
+        result = export_dag_mermaid(hamilton_runtime, ["modules"])
 
         if not result.strip().startswith(("graph", "flowchart")):
             pytest.fail(f"Mermaid should start with graph/flowchart: {result[:50]}")
 
     @staticmethod
-    def test_mermaid_output_contains_target_nodes() -> None:
+    def test_mermaid_output_contains_target_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify Mermaid output contains target node references."""
-        runtime = build_driver()
-        result = export_dag_mermaid(runtime, ["modules"])
+        result = export_dag_mermaid(hamilton_runtime, ["modules"])
 
         if "modules" not in result.lower():
             pytest.fail("Mermaid output should reference modules target")
@@ -51,10 +48,9 @@ class TestDotExport:
     """Tests for Graphviz DOT export."""
 
     @staticmethod
-    def test_export_dag_dot_returns_string() -> None:
+    def test_export_dag_dot_returns_string(hamilton_runtime: RuntimeBundle) -> None:
         """Verify export_dag_dot returns a string."""
-        runtime = build_driver()
-        result = export_dag_dot(runtime, ["modules"])
+        result = export_dag_dot(hamilton_runtime, ["modules"])
 
         if not isinstance(result, str):
             pytest.fail(f"Expected string, got {type(result).__name__}")
@@ -62,10 +58,9 @@ class TestDotExport:
             pytest.fail("DOT output should not be empty")
 
     @staticmethod
-    def test_dot_output_is_valid_digraph() -> None:
+    def test_dot_output_is_valid_digraph(hamilton_runtime: RuntimeBundle) -> None:
         """Verify DOT output is a valid digraph structure."""
-        runtime = build_driver()
-        result = export_dag_dot(runtime, ["modules"])
+        result = export_dag_dot(hamilton_runtime, ["modules"])
 
         if not result.strip().startswith("digraph"):
             pytest.fail(f"DOT should start with digraph: {result[:50]}")
@@ -74,10 +69,9 @@ class TestDotExport:
             pytest.fail("DOT output should contain braces")
 
     @staticmethod
-    def test_dot_output_contains_target_nodes() -> None:
+    def test_dot_output_contains_target_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify DOT output contains target node references."""
-        runtime = build_driver()
-        result = export_dag_dot(runtime, ["modules"])
+        result = export_dag_dot(hamilton_runtime, ["modules"])
 
         if "modules" not in result.lower():
             pytest.fail("DOT output should reference modules target")
@@ -87,12 +81,10 @@ class TestGraphExportConsistency:
     """Tests for consistency between export formats."""
 
     @staticmethod
-    def test_mermaid_and_dot_have_same_nodes() -> None:
+    def test_mermaid_and_dot_have_same_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify Mermaid and DOT exports reference same targets."""
-        runtime = build_driver()
-
-        mermaid = export_dag_mermaid(runtime, ["modules", "scip"])
-        dot = export_dag_dot(runtime, ["modules", "scip"])
+        mermaid = export_dag_mermaid(hamilton_runtime, ["modules", "scip"])
+        dot = export_dag_dot(hamilton_runtime, ["modules", "scip"])
 
         for target in ["modules", "scip"]:
             if target not in mermaid.lower():

@@ -8,8 +8,10 @@ import pytest
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.impl_kind import target_impl_kind
 from codeintel.build.hamilton.planner import compute_plan
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.planning.model import PlanRequest
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 
@@ -28,20 +30,28 @@ def _make_env(harness: HamiltonBuildHarness, config: BuildConfig) -> BuildEnv:
     )
 
 
-def test_native_analytics_marked_in_plan(build_harness: HamiltonBuildHarness) -> None:
+def test_native_analytics_marked_in_plan(
+    build_harness: HamiltonBuildHarness,
+    hamilton_runtime: RuntimeBundle,
+) -> None:
     """Verify plan marks migrated analytics targets as native."""
     # Build driver in auto mode
     # Create minimal config and snapshot for planning
     config = BuildConfig()
     env = _make_env(build_harness, config)
 
-    catalog = get_target_metadata_service().system.catalog
-
     # Compute plan for each migrated target
-    native_targets = ["coverage_functions", "hotspots", "subsystems"]
+    native_targets = ["coverage_functions", "external_deps", "module_profile"]
 
     for target_name in native_targets:
-        plan = compute_plan(env=env, catalog=catalog, requested=(target_name,))
+        request = PlanRequest(
+            requested_targets=(target_name,),
+            mode="predict",
+            include_node_details=False,
+            include_io_details=False,
+            include_cache_details=False,
+        )
+        plan = compute_plan(env=env, plan_request=request, runtime=hamilton_runtime)
 
         # Find the entry for this target in the plan
         target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -49,15 +59,14 @@ def test_native_analytics_marked_in_plan(build_harness: HamiltonBuildHarness) ->
         if target_entry is None:
             pytest.fail(f"Target '{target_name}' not found in plan")
 
-        # Assert impl_kind is "native"
-        if target_entry.impl_kind != "native":
-            pytest.fail(
-                f"Expected impl_kind='native' for {target_name}, got '{target_entry.impl_kind}'"
-            )
+        impl_kind = target_impl_kind(hamilton_runtime, target_name=target_name)
+        if impl_kind != "native":
+            pytest.fail(f"Expected impl_kind='native' for {target_name}, got '{impl_kind}'")
 
 
 def test_function_metrics_now_native_after_phase4(
     build_harness: HamiltonBuildHarness,
+    hamilton_runtime: RuntimeBundle,
 ) -> None:
     """Verify function_metrics is now native after Phase 4 migration.
 
@@ -69,16 +78,21 @@ def test_function_metrics_now_native_after_phase4(
     config = BuildConfig()
     env = _make_env(build_harness, config)
 
-    catalog = get_target_metadata_service().system.catalog
-
     # function_metrics was migrated in Phase 4
     target_name = "function_metrics"
 
     # Check if target exists in catalog
-    if catalog.get_target(target_name) is None:
+    if hamilton_runtime.catalog.get_target(target_name) is None:
         pytest.skip(f"Target '{target_name}' not in catalog")
 
-    plan = compute_plan(env=env, catalog=catalog, requested=(target_name,))
+    request = PlanRequest(
+        requested_targets=(target_name,),
+        mode="predict",
+        include_node_details=False,
+        include_io_details=False,
+        include_cache_details=False,
+    )
+    plan = compute_plan(env=env, plan_request=request, runtime=hamilton_runtime)
 
     # Find the entry for this target in the plan
     target_entry = next((e for e in plan.entries if e.target == target_name), None)
@@ -86,23 +100,29 @@ def test_function_metrics_now_native_after_phase4(
     if target_entry is None:
         pytest.fail(f"Target '{target_name}' not found in plan")
 
-    # Assert impl_kind is now "native" after Phase 4 migration
-    if target_entry.impl_kind != "native":
-        pytest.fail(
-            f"Expected impl_kind='native' for {target_name}, got '{target_entry.impl_kind}'"
-        )
+    impl_kind = target_impl_kind(hamilton_runtime, target_name=target_name)
+    if impl_kind != "native":
+        pytest.fail(f"Expected impl_kind='native' for {target_name}, got '{impl_kind}'")
 
 
-def test_risk_factors_still_native_after_wave2(build_harness: HamiltonBuildHarness) -> None:
+def test_risk_factors_still_native_after_wave2(
+    build_harness: HamiltonBuildHarness,
+    hamilton_runtime: RuntimeBundle,
+) -> None:
     """Verify Wave 1 native target (risk_factors) remains native."""
     # Build driver in auto mode
     # Create minimal config and snapshot for planning
     config = BuildConfig()
     env = _make_env(build_harness, config)
 
-    catalog = get_target_metadata_service().system.catalog
-
-    plan = compute_plan(env=env, catalog=catalog, requested=("risk_factors",))
+    request = PlanRequest(
+        requested_targets=("risk_factors",),
+        mode="predict",
+        include_node_details=False,
+        include_io_details=False,
+        include_cache_details=False,
+    )
+    plan = compute_plan(env=env, plan_request=request, runtime=hamilton_runtime)
 
     # Find the entry for risk_factors
     target_entry = next((e for e in plan.entries if e.target == "risk_factors"), None)
@@ -110,6 +130,6 @@ def test_risk_factors_still_native_after_wave2(build_harness: HamiltonBuildHarne
     if target_entry is None:
         pytest.fail("Target 'risk_factors' not found in plan")
 
-    # Assert impl_kind is "native"
-    if target_entry.impl_kind != "native":
-        pytest.fail(f"Expected impl_kind='native' for risk_factors, got '{target_entry.impl_kind}'")
+    impl_kind = target_impl_kind(hamilton_runtime, target_name="risk_factors")
+    if impl_kind != "native":
+        pytest.fail(f"Expected impl_kind='native' for risk_factors, got '{impl_kind}'")

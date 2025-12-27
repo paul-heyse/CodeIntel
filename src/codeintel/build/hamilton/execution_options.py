@@ -70,25 +70,17 @@ class BuildExecutionOptions:
             return Path(self.cache_dir)
         return env.paths.build_dir / ".hamilton_cache"
 
-    def hook_options(self, *, env: BuildEnv) -> HookOptions:
+    def hook_options(self) -> HookOptions:
         """Construct HookOptions for this run.
 
-        Parameters
-        ----------
-        env
-            Build environment for the run.
-
-        Validation is kept strict-only by default; telemetry/progress/timing follow the execution
-        options toggles.
+        Telemetry/progress/timing follow the execution options toggles.
 
         Returns
         -------
         HookOptions
-            Hook configuration derived from env and execution options.
+            Hook configuration derived from execution options.
         """
         return HookOptions(
-            strict_contracts=env.strict_contracts,
-            enable_validation=env.strict_contracts,
             enable_telemetry=self.enable_telemetry,
             enable_progress=self.enable_progress,
             enable_timing=self.enable_timing,

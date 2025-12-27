@@ -184,6 +184,7 @@ class TargetState:
         """
         return self.needs_computation and not self.is_blocked
 
+
 @dataclass(frozen=True)
 class BuildState:
     """Complete state for all targets in a snapshot.
