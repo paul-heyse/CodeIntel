@@ -52,7 +52,6 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord, options_hash_for_target
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.hamilton.validators import build_table_contract
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -79,17 +78,14 @@ BEHAVIORAL_COVERAGE_TABLE_KEYS = (BEHAVIORAL_COVERAGE_TABLE_KEY,)
 COVERAGE_FUNCTIONS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=COVERAGE_FUNCTIONS_TARGET_NAME,
-    hash_options_node="coverage_functions__hash_options",
 )
 COVERAGE_TEST_EDGES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=COVERAGE_TEST_EDGES_TARGET_NAME,
-    hash_options_node="coverage_test_edges__hash_options",
 )
 BEHAVIORAL_COVERAGE_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=BEHAVIORAL_COVERAGE_TARGET_NAME,
-    hash_options_node="behavioral_coverage__hash_options",
 )
 
 
@@ -105,93 +101,14 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=COVERAGE_FUNCTIONS_TARGET_NAME)
-def coverage_functions__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for coverage_functions execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, COVERAGE_FUNCTIONS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
-def coverage_test_edges__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for coverage_test_edges execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, COVERAGE_TEST_EDGES_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=COVERAGE_TEST_EDGES_TARGET_NAME)
-def coverage_test_edges__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    coverage_test_edges__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when coverage_test_edges should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        COVERAGE_TEST_EDGES_TARGET_NAME,
-        hash_options=coverage_test_edges__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
-def behavioral_coverage__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for behavioral_coverage execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, BEHAVIORAL_COVERAGE_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=BEHAVIORAL_COVERAGE_TARGET_NAME)
-def behavioral_coverage__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    behavioral_coverage__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when behavioral_coverage should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        BEHAVIORAL_COVERAGE_TARGET_NAME,
-        hash_options=behavioral_coverage__hash_options,
-    )
-    return executor.should_skip()
 
 
 # -----------------------------------------------------------------------------
@@ -410,8 +327,6 @@ def t__coverage_test_edges__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__goids: TargetRunRecord,
-    *,
-    coverage_test_edges__skip: bool,
 ) -> CoverageTestEdgesComputeResult:
     """Compute test-to-function coverage edges.
 
@@ -423,9 +338,7 @@ def t__coverage_test_edges__compute(
         Storage gateway for analytics queries.
     t__goids
         Upstream goids target result (for dependency).
-    coverage_test_edges__skip
         Skip flag derived from manifest-based input hash evaluation.
-    coverage_test_edges__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -438,8 +351,6 @@ def t__coverage_test_edges__compute(
             rows=None,
             error=f"Upstream goids target failed: {t__goids.error}",
         )
-    if coverage_test_edges__skip:
-        return CoverageTestEdgesComputeResult(rows=None)
 
     registry = build_registry(
         gateway=gateway,
@@ -570,8 +481,6 @@ def t__behavioral_coverage__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__test_profile: TargetRunRecord,
-    *,
-    behavioral_coverage__skip: bool,
 ) -> BehavioralCoverageComputeResult:
     """Assign heuristic behavior tags to tests.
 
@@ -583,7 +492,6 @@ def t__behavioral_coverage__compute(
         Storage gateway for analytics queries.
     t__test_profile
         Upstream test_profile target result (for dependency).
-    behavioral_coverage__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -596,8 +504,6 @@ def t__behavioral_coverage__compute(
             rows=None,
             error=f"Upstream test_profile target failed: {t__test_profile.error}",
         )
-    if behavioral_coverage__skip:
-        return BehavioralCoverageComputeResult(rows=None)
 
     try:
         rows = build_behavior_rows(
@@ -697,15 +603,10 @@ behavioral_coverage__table_materializations = make_table_materializations_collec
 __all__ = [
     "BehavioralCoverageComputeResult",
     "CoverageTestEdgesComputeResult",
-    "behavioral_coverage__hash_options",
     "behavioral_coverage__rows",
-    "behavioral_coverage__skip",
     "behavioral_coverage__table_materializations",
-    "coverage_functions__hash_options",
     "coverage_functions__table_materializations",
-    "coverage_test_edges__hash_options",
     "coverage_test_edges__rows",
-    "coverage_test_edges__skip",
     "coverage_test_edges__table_materializations",
     "t__behavioral_coverage",
     "t__behavioral_coverage__compute",

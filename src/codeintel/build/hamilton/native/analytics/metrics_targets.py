@@ -62,7 +62,6 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions
 from codeintel.graphs.runtime import GraphRuntime, resolve_graph_runtime
 from codeintel.storage.gateway import StorageGateway
 
@@ -105,32 +104,26 @@ TEST_GRAPH_METRICS_TABLE_KEYS = (
 FUNCTION_HISTORY_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=FUNCTION_HISTORY_TARGET_NAME,
-    hash_options_node="function_history__hash_options",
 )
 HISTORY_TIMESERIES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=HISTORY_TIMESERIES_TARGET_NAME,
-    hash_options_node="history_timeseries__hash_options",
 )
 SUBSYSTEM_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-    hash_options_node="subsystem_graph_metrics__hash_options",
 )
 SYMBOL_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SYMBOL_GRAPH_METRICS_TARGET_NAME,
-    hash_options_node="symbol_graph_metrics__hash_options",
 )
 SUBSYSTEM_AGREEMENT_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SUBSYSTEM_AGREEMENT_TARGET_NAME,
-    hash_options_node="subsystem_agreement__hash_options",
 )
 TEST_GRAPH_METRICS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=TEST_GRAPH_METRICS_TARGET_NAME,
-    hash_options_node="test_graph_metrics__hash_options",
 )
 
 
@@ -151,226 +144,28 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
-def function_history__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for function_history execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, FUNCTION_HISTORY_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=FUNCTION_HISTORY_TARGET_NAME)
-def function_history__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    function_history__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when function_history should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        FUNCTION_HISTORY_TARGET_NAME,
-        hash_options=function_history__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
-def history_timeseries__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for history_timeseries execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, HISTORY_TIMESERIES_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=HISTORY_TIMESERIES_TARGET_NAME)
-def history_timeseries__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    history_timeseries__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when history_timeseries should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        HISTORY_TIMESERIES_TARGET_NAME,
-        hash_options=history_timeseries__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
-def subsystem_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for subsystem_graph_metrics execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, SUBSYSTEM_GRAPH_METRICS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEM_GRAPH_METRICS_TARGET_NAME)
-def subsystem_graph_metrics__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    subsystem_graph_metrics__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when subsystem_graph_metrics should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        SUBSYSTEM_GRAPH_METRICS_TARGET_NAME,
-        hash_options=subsystem_graph_metrics__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
-def symbol_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for symbol_graph_metrics execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, SYMBOL_GRAPH_METRICS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=SYMBOL_GRAPH_METRICS_TARGET_NAME)
-def symbol_graph_metrics__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    symbol_graph_metrics__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when symbol_graph_metrics should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        SYMBOL_GRAPH_METRICS_TARGET_NAME,
-        hash_options=symbol_graph_metrics__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
-def subsystem_agreement__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for subsystem_agreement execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, SUBSYSTEM_AGREEMENT_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEM_AGREEMENT_TARGET_NAME)
-def subsystem_agreement__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    subsystem_agreement__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when subsystem_agreement should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        SUBSYSTEM_AGREEMENT_TARGET_NAME,
-        hash_options=subsystem_agreement__hash_options,
-    )
-    return executor.should_skip()
 
 
-@tag_helper(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
-def test_graph_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for test_graph_metrics execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, TEST_GRAPH_METRICS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=TEST_GRAPH_METRICS_TARGET_NAME)
-def test_graph_metrics__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    test_graph_metrics__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when test_graph_metrics should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        TEST_GRAPH_METRICS_TARGET_NAME,
-        hash_options=test_graph_metrics__hash_options,
-    )
-    return executor.should_skip()
 
 
 def _get_graph_runtime(
@@ -420,8 +215,6 @@ def _get_graph_runtime(
 def t__function_history__compute(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    function_history__skip: bool,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute function history metrics for all functions.
 
@@ -434,7 +227,6 @@ def t__function_history__compute(
         Build environment with gateway and snapshot info.
     gateway
         Storage gateway for analytics queries.
-    function_history__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -450,8 +242,6 @@ def t__function_history__compute(
     - Lines added and deleted (churn)
     - Stability bucket classification
     """
-    if function_history__skip:
-        return None
 
     rows = build_function_history_rows(
         gateway,
@@ -517,8 +307,6 @@ function_history__table_materializations = make_table_materializations_collector
 )
 def t__history_timeseries__compute(
     env: BuildEnv,
-    *,
-    history_timeseries__skip: bool,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Compute history timeseries metrics across commits.
 
@@ -526,7 +314,6 @@ def t__history_timeseries__compute(
     ----------
     env
         Build environment with gateway and snapshot info.
-    history_timeseries__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -534,8 +321,6 @@ def t__history_timeseries__compute(
     tuple[tuple[object, ...], ...] | None
         Row tuples matching the history_timeseries schema, or None when skipped.
     """
-    if history_timeseries__skip:
-        return None
 
     options = env.history_options
     gateway_resolver = env.history_db_resolver
@@ -629,8 +414,6 @@ def t__subsystem_graph_metrics__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
-    *,
-    subsystem_graph_metrics__skip: bool,
 ) -> SubsystemGraphMetricsComputeResult:
     """Compute graph metrics for subsystems.
 
@@ -642,7 +425,6 @@ def t__subsystem_graph_metrics__compute(
         Storage gateway for analytics queries.
     t__subsystems
         Upstream subsystems target result (for dependency).
-    subsystem_graph_metrics__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -656,8 +438,6 @@ def t__subsystem_graph_metrics__compute(
             error=f"Upstream subsystems target failed: {t__subsystems.error}",
         )
 
-    if subsystem_graph_metrics__skip:
-        return SubsystemGraphMetricsComputeResult(rows=None)
 
     try:
         graph_runtime = _get_graph_runtime(
@@ -775,8 +555,6 @@ def t__symbol_graph_metrics__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__symbol_uses: TargetRunRecord,
-    *,
-    symbol_graph_metrics__skip: bool,
 ) -> SymbolGraphMetricsComputeResult:
     """Compute graph metrics from symbol usage patterns.
 
@@ -788,7 +566,6 @@ def t__symbol_graph_metrics__compute(
         Storage gateway for analytics queries.
     t__symbol_uses
         Upstream symbol_uses target result (for dependency).
-    symbol_graph_metrics__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -803,8 +580,6 @@ def t__symbol_graph_metrics__compute(
             error=f"Upstream symbol_uses target failed: {t__symbol_uses.error}",
         )
 
-    if symbol_graph_metrics__skip:
-        return SymbolGraphMetricsComputeResult(module_rows=None, function_rows=None)
 
     module_rows: list[tuple[object, ...]] | None = None
     function_rows: list[tuple[object, ...]] | None = None
@@ -983,8 +758,6 @@ def t__subsystem_agreement__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__subsystems: TargetRunRecord,
-    *,
-    subsystem_agreement__skip: bool,
 ) -> SubsystemAgreementComputeResult:
     """Compare subsystem assignments with import community labels.
 
@@ -996,7 +769,6 @@ def t__subsystem_agreement__compute(
         Storage gateway for analytics queries.
     t__subsystems
         Upstream subsystems target result (for dependency).
-    subsystem_agreement__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -1010,8 +782,6 @@ def t__subsystem_agreement__compute(
             error=f"Upstream subsystems target failed: {t__subsystems.error}",
         )
 
-    if subsystem_agreement__skip:
-        return SubsystemAgreementComputeResult(rows=None)
 
     try:
         log.info(
@@ -1121,8 +891,6 @@ subsystem_agreement__table_materializations = make_table_materializations_collec
 def t__test_graph_metrics__compute(
     env: BuildEnv,
     gateway: StorageGateway,
-    *,
-    test_graph_metrics__skip: bool,
 ) -> TestGraphMetricsResult | None:
     """Compute test graph metrics for all tests and functions.
 
@@ -1132,7 +900,6 @@ def t__test_graph_metrics__compute(
         Build environment with gateway and snapshot info.
     gateway
         Storage gateway for analytics queries.
-    test_graph_metrics__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -1140,8 +907,6 @@ def t__test_graph_metrics__compute(
     TestGraphMetricsResult | None
         Container with rows for test and function metrics tables, or None if skipped.
     """
-    if test_graph_metrics__skip:
-        return None
 
     runtime = _get_graph_runtime(
         env,
@@ -1255,24 +1020,14 @@ __all__ = [
     "SubsystemAgreementComputeResult",
     "SubsystemGraphMetricsComputeResult",
     "SymbolGraphMetricsComputeResult",
-    "function_history__hash_options",
-    "function_history__skip",
     "function_history__table_materializations",
-    "history_timeseries__hash_options",
-    "history_timeseries__skip",
     "history_timeseries__table_materializations",
-    "subsystem_agreement__hash_options",
     "subsystem_agreement__rows",
-    "subsystem_agreement__skip",
     "subsystem_agreement__table_materializations",
-    "subsystem_graph_metrics__hash_options",
     "subsystem_graph_metrics__rows",
-    "subsystem_graph_metrics__skip",
     "subsystem_graph_metrics__table_materializations",
     "symbol_graph_metrics__functions_rows",
-    "symbol_graph_metrics__hash_options",
     "symbol_graph_metrics__modules_rows",
-    "symbol_graph_metrics__skip",
     "symbol_graph_metrics__table_materializations",
     "t__function_history",
     "t__function_history__compute",
@@ -1287,8 +1042,6 @@ __all__ = [
     "t__test_graph_metrics",
     "t__test_graph_metrics__compute",
     "test_graph_metrics__functions_rows",
-    "test_graph_metrics__hash_options",
-    "test_graph_metrics__skip",
     "test_graph_metrics__table_materializations",
     "test_graph_metrics__tests_rows",
 ]

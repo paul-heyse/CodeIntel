@@ -40,7 +40,6 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
@@ -68,50 +67,15 @@ TEST_PROFILE_TABLE_KEYS = (TEST_PROFILE_TABLE_KEY,)
 SEMANTIC_ROLES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SEMANTIC_ROLES_TARGET_NAME,
-    hash_options_node="semantic_roles__hash_options",
 )
 TEST_PROFILE_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=TEST_PROFILE_TARGET_NAME,
-    hash_options_node="test_profile__hash_options",
 )
 
 
-@tag_helper(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
-def semantic_roles__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for semantic_roles execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, SEMANTIC_ROLES_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=SEMANTIC_ROLES_TARGET_NAME)
-def semantic_roles__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    semantic_roles__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when semantic_roles should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        SEMANTIC_ROLES_TARGET_NAME,
-        hash_options=semantic_roles__hash_options,
-    )
-    return executor.should_skip()
 
 
 @tag_helper(domain="analytics")
@@ -132,8 +96,6 @@ def t__semantic_roles__compute(
     gateway: StorageGateway,
     t__modules: TargetRunRecord,
     t__function_ast_features: TargetRunRecord,
-    *,
-    semantic_roles__skip: bool,
 ) -> SemanticRolesResult | None:
     """Compute semantic roles for functions and modules.
 
@@ -150,9 +112,7 @@ def t__semantic_roles__compute(
         Upstream modules target result (for dependency).
     t__function_ast_features
         Upstream function_ast_features target result (for dependency).
-    semantic_roles__skip
         Skip flag derived from manifest-based input hash evaluation.
-    semantic_roles__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -177,8 +137,6 @@ def t__semantic_roles__compute(
         )
         return None
 
-    if semantic_roles__skip:
-        return None
 
     registry = build_registry(
         gateway=gateway,
@@ -319,17 +277,13 @@ __all__ = [
     "SemanticRolesResult",
     "TestProfileComputeResult",
     "semantic_roles__functions_rows",
-    "semantic_roles__hash_options",
     "semantic_roles__modules_rows",
-    "semantic_roles__skip",
     "semantic_roles__table_materializations",
     "t__semantic_roles",
     "t__semantic_roles__compute",
     "t__test_profile",
     "t__test_profile__compute",
-    "test_profile__hash_options",
     "test_profile__rows",
-    "test_profile__skip",
     "test_profile__table_materializations",
 ]
 
@@ -347,41 +301,8 @@ class TestProfileComputeResult:
     error: str | None = None
 
 
-@tag_helper(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
-def test_profile__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for test_profile execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, TEST_PROFILE_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
-def test_profile__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    test_profile__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when test_profile should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        TEST_PROFILE_TARGET_NAME,
-        hash_options=test_profile__hash_options,
-    )
-    return executor.should_skip()
 
 
 @tag_compute(domain="analytics", target=TEST_PROFILE_TARGET_NAME)
@@ -389,8 +310,6 @@ def t__test_profile__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__coverage_test_edges: TargetRunRecord,
-    *,
-    test_profile__skip: bool,
 ) -> TestProfileComputeResult:
     """Build per-test profiles with coverage and subsystem context.
 
@@ -405,8 +324,6 @@ def t__test_profile__compute(
             error=(f"Upstream coverage_test_edges target failed: {t__coverage_test_edges.error}"),
         )
 
-    if test_profile__skip:
-        return TestProfileComputeResult(result=None)
 
     try:
         build_result = build_test_profile_result(gateway, env.snapshot)

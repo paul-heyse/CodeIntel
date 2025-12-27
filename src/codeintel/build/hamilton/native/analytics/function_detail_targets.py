@@ -53,7 +53,6 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.resources import ResourceNotFoundError
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.graphs.runtime import resolve_graph_runtime
@@ -72,50 +71,15 @@ FUNCTION_EFFECTS_TABLE_KEYS = (FUNCTION_EFFECTS_TABLE_KEY,)
 FUNCTION_CONTRACTS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=FUNCTION_CONTRACTS_TARGET_NAME,
-    hash_options_node="function_contracts__hash_options",
 )
 FUNCTION_EFFECTS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=FUNCTION_EFFECTS_TARGET_NAME,
-    hash_options_node="function_effects__hash_options",
 )
 
 
-@tag_helper(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
-def function_contracts__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for function_contracts execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, FUNCTION_CONTRACTS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=FUNCTION_CONTRACTS_TARGET_NAME)
-def function_contracts__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    function_contracts__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when function_contracts should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        FUNCTION_CONTRACTS_TARGET_NAME,
-        hash_options=function_contracts__hash_options,
-    )
-    return executor.should_skip()
 
 
 @tag_helper(domain="analytics")
@@ -162,8 +126,6 @@ def t__function_contracts__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__goids: TargetRunRecord,
-    *,
-    function_contracts__skip: bool,
 ) -> FunctionContractsResult:
     """Compute pre/postconditions and nullability contracts for functions.
 
@@ -178,7 +140,6 @@ def t__function_contracts__compute(
         Storage gateway for analytics queries.
     t__goids
         Upstream goids target result (for dependency).
-    function_contracts__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -199,8 +160,6 @@ def t__function_contracts__compute(
             error=f"Upstream goids target failed: {t__goids.error}",
         )
 
-    if function_contracts__skip:
-        return FunctionContractsResult(rows=None)
 
     try:
         registry = build_registry(
@@ -348,8 +307,6 @@ def t__function_effects__compute(
     env: BuildEnv,
     gateway: StorageGateway,
     t__call_graph: TargetRunRecord,
-    *,
-    function_effects__skip: bool,
 ) -> FunctionEffectsResult:
     """Compute side effects classification for functions.
 
@@ -364,8 +321,6 @@ def t__function_effects__compute(
             error=f"Upstream call_graph target failed: {t__call_graph.error}",
         )
 
-    if function_effects__skip:
-        return FunctionEffectsResult(rows=None)
 
     registry = build_registry(
         gateway=gateway,
@@ -475,13 +430,9 @@ function_effects__table_materializations = make_table_materializations_collector
 __all__ = [
     "FunctionContractsResult",
     "FunctionEffectsResult",
-    "function_contracts__hash_options",
     "function_contracts__rows",
-    "function_contracts__skip",
     "function_contracts__table_materializations",
-    "function_effects__hash_options",
     "function_effects__rows",
-    "function_effects__skip",
     "function_effects__table_materializations",
     "t__function_contracts",
     "t__function_contracts__compute",
@@ -500,38 +451,5 @@ function_contracts__table_materializations = make_table_materializations_collect
 # ---------------------------------------------------------------------------
 
 
-@tag_helper(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
-def function_effects__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for function_effects execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, FUNCTION_EFFECTS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=FUNCTION_EFFECTS_TARGET_NAME)
-def function_effects__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    function_effects__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when function_effects should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        FUNCTION_EFFECTS_TARGET_NAME,
-        hash_options=function_effects__hash_options,
-    )
-    return executor.should_skip()

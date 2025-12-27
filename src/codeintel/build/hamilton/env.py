@@ -21,6 +21,7 @@ from codeintel.build.assets.fingerprinting import (
     DEFAULT_FINGERPRINT_POLICY,
 )
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
+from codeintel.core.runtime.variants import VariantConfig
 from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
@@ -66,6 +67,8 @@ class BuildEnv:
         Build settings injected by the CLI/runtime boundary.
     execution_settings
         Hamilton execution settings (parallelism + DuckDB options).
+    variants
+        Variant configuration used for DAG composition decisions.
     profile
         Optional policy profile name (e.g., "fast", "full", "ci").
         Used to select execution variants in later phases.
@@ -116,6 +119,7 @@ class BuildEnv:
     settings: BuildSettings
     storage: StorageFacade | None = None
     execution_settings: HamiltonExecutionSettings = field(default_factory=HamiltonExecutionSettings)
+    variants: VariantConfig = field(default_factory=VariantConfig)
     profile: str | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None

@@ -5,7 +5,7 @@ source of truth for computing target state. It replaces the duplicated
 computation logic previously spread across state.py and readiness.py.
 
 The StateComputer:
-1. Computes individual target states from manifests and hashes
+1. Computes individual target states from manifest presence
 2. Propagates blocking status through the dependency graph
 3. Uses session-scoped caching for efficiency
 
@@ -14,7 +14,7 @@ rather than implementing their own state computation.
 
 Example
 -------
->>> session = BuildSession(snapshot, gateway, settings)
+>>> session = BuildSession(snapshot, gateway)
 >>> computer = StateComputer(catalog, session)
 >>> build_state = computer.compute_all()
 >>> build_state.runnable_targets()
@@ -26,15 +26,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.config import BuildConfig
-from codeintel.build.hash_evaluator import evaluate_hash_state
-from codeintel.build.hashing import compute_target_options_hash
 from codeintel.build.session import BuildSession
 from codeintel.build.state_types import (
     BuildState,
     TargetState,
 )
-from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
@@ -58,11 +54,10 @@ class StateComputer:
 
     Computes the BuildState for all targets in a snapshot by:
     1. Bulk-loading manifests (single DB query)
-    2. Computing individual states from manifests and hashes
+    2. Computing individual states from manifest presence
     3. Propagating blocking status through the dependency graph
 
-    The session provides caching to avoid redundant hash computations
-    when the same target's state is queried multiple times.
+    The session provides caching to avoid redundant manifest fetches.
 
     Parameters
     ----------
@@ -73,7 +68,7 @@ class StateComputer:
 
     Examples
     --------
-    >>> session = BuildSession(snapshot, gateway, settings)
+    >>> session = BuildSession(snapshot, gateway)
     >>> computer = StateComputer(catalog, session)
     >>> state = computer.compute_all()
     >>> state.by_status("current")
@@ -84,8 +79,6 @@ class StateComputer:
         self,
         catalog: DagCatalog,
         session: BuildSession,
-        *,
-        config: BuildConfig | None = None,
     ) -> None:
         """Initialize the state computer.
 
@@ -95,12 +88,9 @@ class StateComputer:
             DAG catalog with all registered targets.
         session
             Build session for caching and storage access.
-        config
-            Build configuration used to compute per-target options hashes.
         """
         self._catalog = catalog
         self._session = session
-        self._config = config or BuildConfig.empty()
 
     @classmethod
     def create(
@@ -108,7 +98,6 @@ class StateComputer:
         catalog: DagCatalog,
         gateway: StorageGateway,
         snapshot: SnapshotRef,
-        settings: BuildSettings,
     ) -> StateComputer:
         """Create a StateComputer with a new session.
 
@@ -122,26 +111,19 @@ class StateComputer:
             Storage gateway for database access.
         snapshot
             Repository snapshot reference.
-        settings
-            Build settings for input hash computation.
-
         Returns
         -------
         StateComputer
             New state computer instance.
         """
-        session = BuildSession(snapshot=snapshot, gateway=gateway, settings=settings)
+        session = BuildSession(snapshot=snapshot, gateway=gateway)
         return cls(catalog=catalog, session=session)
-
-    def _options_hash_for_target(self, target: TargetDescriptor) -> str | None:
-        params = self._config.parameters_for(target.name)
-        return compute_target_options_hash(params)
 
     def compute_all(self) -> BuildState:
         """Compute state for all targets in topological order.
 
         Performs two-pass computation:
-        1. Individual states from manifests and hashes
+        1. Individual states from manifest presence
         2. Blocking propagation from dependencies
 
         Returns

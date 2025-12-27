@@ -45,7 +45,7 @@ from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.options_loading import load_target_options
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions, compute_options_hash
+from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
@@ -133,7 +133,6 @@ _FILE_STATE_ROW_MIN_COLUMNS = 7
 SCIP_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=SCIP_TARGET_NAME,
-    hash_options_node="scip__hash_options",
 )
 
 
@@ -171,7 +170,6 @@ class ScipRunConfig:
 
     proto_module_path: Path | None
     options: ScipIngestOptions
-    hash_options: InputHashOptions
 
 
 @dataclass(frozen=True)
@@ -245,30 +243,6 @@ def _scip_options_hash(
     return compute_options_hash(payload)
 
 
-@tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
-def scip__hash_options(
-    env: BuildEnv,
-    t__modules__run: ModuleToolOutput,
-    scip__options: ScipIngestOptions,
-) -> InputHashOptions:
-    """Build input hash options for SCIP execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs used to gate SCIP execution.
-    """
-    tool_version = _scip_tool_version(env)
-    options_hash = _scip_options_hash(
-        scip__options,
-        env.providers.tool_runner.tools_config,
-        tool_version,
-    )
-    return InputHashOptions(
-        options_hash=options_hash,
-        manifests=env.manifest_index,
-        file_state_hash=t__modules__run.file_state_hash,
-    )
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -290,7 +264,6 @@ def scip__module_inputs(
 def scip__run_config(
     scip__proto_module_path: Path | None,
     scip__options: ScipIngestOptions,
-    scip__hash_options: InputHashOptions,
     t__scip_proto: TargetRunRecord,
 ) -> ScipRunConfig:
     """Bundle configuration inputs for SCIP execution.
@@ -304,7 +277,6 @@ def scip__run_config(
     return ScipRunConfig(
         proto_module_path=scip__proto_module_path,
         options=scip__options,
-        hash_options=scip__hash_options,
     )
 
 
@@ -519,11 +491,16 @@ def _execute_scip_incremental(
         )
 
     change_set, force_full_rebuild = _resolve_change_set(module_inputs.scan)
+    options_hash = _scip_options_hash(
+        run_config.options,
+        env.providers.tool_runner.tools_config,
+        _scip_tool_version(env),
+    )
     telemetry = ScipRunTelemetry.create(
         repo=env.snapshot.repo,
         commit=env.snapshot.commit,
         run_id=run_id,
-        options_hash=run_config.hash_options.options_hash,
+        options_hash=options_hash,
     )
     file_state_rows = module_inputs.scan.file_state_rows or tuple(change_set.state_rows)
     file_state_by_path = _build_file_state_map(file_state_rows)
@@ -534,7 +511,7 @@ def _execute_scip_incremental(
             proto_module_path=run_config.proto_module_path,
             change_set=change_set,
             modules=module_inputs.scan.modules,
-            options_hash=run_config.hash_options.options_hash,
+            options_hash=options_hash,
             tools_config=env.providers.tool_runner.tools_config,
             tool_runner=env.providers.tool_runner,
             scope_paths=run_config.options.scope_paths,
@@ -626,8 +603,6 @@ def t__scip__run(
         env=env,
         catalog=catalog,
         target_name=SCIP_TARGET_NAME,
-        hash_options=scip__run_config.hash_options,
-        skip_reason="SCIP target skipped",
     )
 
     def _execute() -> ScipRunResult:
@@ -1093,7 +1068,6 @@ def scip__table_materializations(
 def scip__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    scip__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for the SCIP target.
 
@@ -1106,7 +1080,6 @@ def scip__finalize_context(
         env=env,
         catalog=catalog,
         target_name=SCIP_TARGET_NAME,
-        hash_options=scip__hash_options,
     )
 
 

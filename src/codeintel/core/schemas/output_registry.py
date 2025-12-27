@@ -623,38 +623,6 @@ SYMBOL_USES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
-CALL_GRAPH_VIEWS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
-    TableSchema(
-        schema="graph",
-        name="v_function_call_counts",
-        columns=[
-            Column("repo", "VARCHAR", nullable=False),
-            Column("commit", "VARCHAR", nullable=False),
-            Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
-            Column("num_callees", "INTEGER", nullable=False),
-            Column("num_unique_callees", "INTEGER", nullable=False),
-            Column("num_callers", "INTEGER", nullable=False),
-        ],
-        primary_key=("repo", "commit", "function_goid_h128"),
-        indexes=(Index("idx_graph_v_function_call_counts_goid", ("function_goid_h128",)),),
-        description="Derived call graph aggregates: callers/callees per function for a snapshot",
-    ),
-    TableSchema(
-        schema="graph",
-        name="v_call_depth_stats",
-        columns=[
-            Column("repo", "VARCHAR", nullable=False),
-            Column("commit", "VARCHAR", nullable=False),
-            Column("function_goid_h128", "DECIMAL(38,0)", nullable=False),
-            Column("max_call_depth", "INTEGER", nullable=False),
-            Column("is_leaf", "BOOLEAN", nullable=False),
-        ],
-        primary_key=("repo", "commit", "function_goid_h128"),
-        indexes=(Index("idx_graph_v_call_depth_stats_goid", ("function_goid_h128",)),),
-        description="Derived call graph depth stats per function for a snapshot",
-    ),
-)
-
 ENTRYPOINTS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
@@ -2087,7 +2055,6 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *AST_OVERRIDE_TABLES,
         *BEHAVIORAL_COVERAGE_OVERRIDE_TABLES,
         *CALL_GRAPH_OVERRIDE_TABLES,
-        *CALL_GRAPH_VIEWS_OVERRIDE_TABLES,
         *CFG_DFG_METRICS_OVERRIDE_TABLES,
         *CFG_OVERRIDE_TABLES,
         *CONFIG_DATA_FLOW_OVERRIDE_TABLES,
@@ -2147,7 +2114,6 @@ __all__ = [
     "AST_OVERRIDE_TABLES",
     "BEHAVIORAL_COVERAGE_OVERRIDE_TABLES",
     "CALL_GRAPH_OVERRIDE_TABLES",
-    "CALL_GRAPH_VIEWS_OVERRIDE_TABLES",
     "CFG_DFG_METRICS_OVERRIDE_TABLES",
     "CFG_OVERRIDE_TABLES",
     "CONFIG_DATA_FLOW_OVERRIDE_TABLES",

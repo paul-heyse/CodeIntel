@@ -1,8 +1,7 @@
 """State validation for the build system.
 
 This module provides the StateValidator class that determines the current
-state of all build targets by examining stored manifests and comparing
-input hashes.
+state of all build targets by examining stored manifests.
 
 Note: This module uses unified types from `codeintel.build.state_types`.
 Import the unified types directly for new code.
@@ -24,7 +23,6 @@ from codeintel.build.config import BuildConfig, load_build_config
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
-from codeintel.core.config.settings import BuildSettings
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -38,21 +36,18 @@ log = logging.getLogger(__name__)
 class StateValidationOptions:
     """Inputs required to compute target state."""
 
-    settings: BuildSettings
     config: BuildConfig | None = None
 
 
 class StateValidator:
     """Validate database state against the DAG catalog.
 
-    Examines stored manifests and computes current input hashes to determine
-    which targets are missing, stale, current, or blocked. This is the
-    foundation for computing minimal execution plans.
+    Examines stored manifests to determine which targets are missing,
+    current, or blocked. This is the foundation for inspecting readiness.
 
     The validation proceeds in two passes:
 
-    1. **Pass 1**: Compute individual target states by comparing manifests
-       against current input hashes.
+    1. **Pass 1**: Compute individual target states from manifest presence.
     2. **Pass 2**: Propagate blocking status from dependencies to dependents.
 
     This class delegates to StateComputer for the actual computation.
@@ -66,7 +61,7 @@ class StateValidator:
     snapshot
         Repository snapshot reference (repo, commit, repo_root).
     options
-        State validation options (build settings + config).
+        State validation options (optional config overrides).
 
     Examples
     --------
@@ -118,7 +113,6 @@ class StateValidator:
         self._session = BuildSession(
             snapshot=snapshot,
             gateway=gateway,
-            settings=options.settings,
         )
         base_config = options.config or load_build_config(snapshot.repo_root)
         self._computer = StateComputer(

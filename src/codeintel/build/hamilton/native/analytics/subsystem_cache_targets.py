@@ -32,7 +32,6 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.gateway import StorageGateway
 
@@ -59,7 +58,6 @@ SUBSYSTEM_CACHE_TABLE_KEYS = (
 SUBSYSTEM_CACHES_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=SUBSYSTEM_CACHES_TARGET_NAME,
-    hash_options_node="subsystem_caches__hash_options",
 )
 
 
@@ -75,41 +73,8 @@ def gateway(env: BuildEnv) -> StorageGateway:
     return env.gateway
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
-def subsystem_caches__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for subsystem_caches execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, SUBSYSTEM_CACHES_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
 
 
-@tag_helper(domain="analytics", target=SUBSYSTEM_CACHES_TARGET_NAME)
-def subsystem_caches__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    subsystem_caches__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when subsystem_caches should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        SUBSYSTEM_CACHES_TARGET_NAME,
-        hash_options=subsystem_caches__hash_options,
-    )
-    return executor.should_skip()
 
 
 @dataclass(frozen=True)
@@ -157,8 +122,6 @@ def subsystem_caches__inputs(
 def t__subsystem_caches__compute(
     env: BuildEnv,
     subsystem_caches__inputs: SubsystemCacheInputs,
-    *,
-    subsystem_caches__skip: bool,
 ) -> SubsystemCachesComputeResult | None:
     """Compute subsystem cache rows from base subsystem tables.
 
@@ -168,7 +131,6 @@ def t__subsystem_caches__compute(
         Build environment with gateway and snapshot info.
     subsystem_caches__inputs
         Bundled inputs including gateway and upstream target results.
-    subsystem_caches__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
@@ -176,8 +138,6 @@ def t__subsystem_caches__compute(
     SubsystemCachesComputeResult | None
         Computed cache rows or None when skipped.
     """
-    if subsystem_caches__skip:
-        return None
 
     gateway = subsystem_caches__inputs.gateway
 
@@ -338,8 +298,6 @@ subsystem_caches__table_materializations = make_table_materializations_collector
 
 __all__ = [
     "SubsystemCachesComputeResult",
-    "subsystem_caches__hash_options",
-    "subsystem_caches__skip",
     "subsystem_caches__table_materializations",
     "subsystem_coverage_cache__rows",
     "subsystem_profile_cache__rows",

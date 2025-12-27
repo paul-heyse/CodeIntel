@@ -42,7 +42,7 @@ from codeintel.core.env import (
     split_csv,
 )
 from codeintel.core.execution.context import ExecutionContext, RunContext
-from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
+from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings, VariantConfig
 from codeintel.core.tools import ToolBinaries
 from codeintel.observability.semconv_keys import CODEINTEL_COMMIT, CODEINTEL_REPO
 from codeintel.observability.test_mode import apply_test_telemetry_settings
@@ -254,6 +254,17 @@ def _load_serving_settings() -> ServingSettings:
         mcp_enable_meta=get_required_bool("CODEINTEL_MCP_ENABLE_META", default=True),
         mcp_enable_export=get_required_bool("CODEINTEL_MCP_ENABLE_EXPORT", default=True),
     )
+
+
+def _load_variant_settings() -> VariantConfig:
+    raw_json = os.environ.get("CODEINTEL_VARIANTS_JSON", "").strip()
+    if raw_json:
+        payload = json.loads(raw_json)
+        if not isinstance(payload, dict):
+            msg = "CODEINTEL_VARIANTS_JSON must decode to an object"
+            raise ValueError(msg)
+        return VariantConfig.from_mapping(payload).validate()
+    return VariantConfig().validate()
 
 
 def _obs_opt_str(name: str) -> str | None:
@@ -853,6 +864,7 @@ def load_runtime_settings() -> RuntimeSettings:
         execution=_load_execution_settings(),
         serving=_load_serving_settings(),
         observability=_load_observability_settings(),
+        variants=_load_variant_settings(),
     )
 
 

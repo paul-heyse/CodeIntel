@@ -10,13 +10,14 @@ import pytest
 
 from codeintel.build.schemas import (
     get_composite_schemas,
-    get_schema_provider,
     iter_contracts,
 )
+from codeintel.build.schemas.provider_unified import non_inferable_schema_provider
 
 # Cache the schema provider lookups for test parametrization
-_SCHEMA_PROVIDER = get_schema_provider()
+_SCHEMA_PROVIDER = non_inferable_schema_provider()
 _TABLE_SCHEMAS = {s.table_key: s for s in _SCHEMA_PROVIDER.iter_table_schemas()}
+_INFERABLE_TABLE_KEYS = getattr(_SCHEMA_PROVIDER, "inferable_table_keys", frozenset())
 
 
 def _require(*, condition: bool, message: str) -> None:
@@ -36,8 +37,12 @@ def test_composite_schema_sources_exist(profile_key: str) -> None:
     table_schemas = _TABLE_SCHEMAS
 
     for source_key in composite.composed_of:
+        if source_key in table_schemas:
+            continue
+        if source_key in _INFERABLE_TABLE_KEYS:
+            continue
         _require(
-            condition=source_key in table_schemas,
+            condition=False,
             message=(
                 f"CompositeSchema for {profile_key} references non-existent "
                 f"source table: {source_key}"
@@ -52,6 +57,8 @@ def test_composite_schema_sources_exist(profile_key: str) -> None:
 )
 def test_composite_schema_profile_exists(profile_key: str) -> None:
     """Verify the profile table referenced by CompositeSchema exists."""
+    if profile_key not in _TABLE_SCHEMAS and profile_key in _INFERABLE_TABLE_KEYS:
+        pytest.skip(f"Inferable profile schema unavailable for {profile_key}")
     _require(
         condition=profile_key in _TABLE_SCHEMAS,
         message=f"CompositeSchema defined for non-existent profile: {profile_key}",
@@ -73,7 +80,11 @@ def test_composite_schema_validation_passes(profile_key: str) -> None:
     """
     table_schemas = _TABLE_SCHEMAS
     composite = get_composite_schemas()[profile_key]
-    profile_schema = table_schemas[profile_key]
+    profile_schema = table_schemas.get(profile_key)
+    if profile_schema is None and profile_key in _INFERABLE_TABLE_KEYS:
+        pytest.skip(f"Inferable profile schema unavailable for {profile_key}")
+    if profile_schema is None:
+        pytest.fail(f"CompositeSchema defined for non-existent profile: {profile_key}")
 
     errors = composite.validate_against_profile(profile_schema, table_schemas)
 

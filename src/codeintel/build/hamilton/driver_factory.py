@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+import hamilton
 import hamilton.driver as h_driver
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -32,13 +33,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _DEFAULT_HAMILTON_CACHE_DIR = Path.cwd() / "build" / ".hamilton_cache"
-_POWER_USER_CONFIG_KEY = "hamilton.enable_power_user_mode"
+hamilton.enable_power_user_mode = True
 
 
 def _normalize_config(config: dict[str, Any] | None) -> dict[str, Any]:
-    normalized = dict(config or {})
-    normalized[_POWER_USER_CONFIG_KEY] = True
-    return normalized
+    return dict(config or {})
 
 
 def _all_target_nodes() -> Mapping[str, str]:

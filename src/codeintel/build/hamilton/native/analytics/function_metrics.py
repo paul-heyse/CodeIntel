@@ -48,13 +48,11 @@ from codeintel.build.hamilton.run_records import (
     options_hash_for_target,
 )
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
-from codeintel.build.hashing import InputHashOptions
 from codeintel.config.primitives import SnapshotRef
 from codeintel.core.schemas.row_serialization import row_to_tuple
 
 _HAMILTON_TYPE_HINTS = (
     BuildEnv,
-    InputHashOptions,
     SnapshotRef,
     DagCatalog,
     TargetRunRecord,
@@ -76,46 +74,7 @@ FUNCTION_METRICS_TABLE_KEYS = (
 FUNCTION_METRICS_SAVE_CONTEXT = SaverContext(
     domain="analytics",
     target=FUNCTION_METRICS_TARGET_NAME,
-    hash_options_node="function_metrics__hash_options",
 )
-
-
-@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
-def function_metrics__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build hash inputs for function_metrics execution.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs for manifest-based skip evaluation.
-    """
-    return InputHashOptions(
-        options_hash=options_hash_for_target(env, FUNCTION_METRICS_TARGET_NAME),
-        manifests=env.manifest_index,
-    )
-
-
-@tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
-def function_metrics__skip(
-    env: BuildEnv,
-    catalog: DagCatalog,
-    function_metrics__hash_options: InputHashOptions,
-) -> bool:
-    """Return True when function_metrics should be skipped.
-
-    Returns
-    -------
-    bool
-        True when the target should be skipped.
-    """
-    executor = NativeTargetExecutor.for_target(
-        env,
-        catalog,
-        FUNCTION_METRICS_TARGET_NAME,
-        hash_options=function_metrics__hash_options,
-    )
-    return executor.should_skip()
-
 
 @tag_helper(domain="analytics", target=FUNCTION_METRICS_TARGET_NAME)
 def function_metrics__snapshot(env: BuildEnv) -> SnapshotRef:
@@ -150,8 +109,6 @@ def t__function_metrics__compute(
     function_metrics__snapshot: SnapshotRef,
     q__core__goids: ir.Table,
     function_metrics__options: FunctionAnalyticsOptions,
-    *,
-    function_metrics__skip: bool,
 ) -> FunctionAnalyticsResult | None:
     """Compute function metrics and type coverage for all functions.
 
@@ -166,13 +123,12 @@ def t__function_metrics__compute(
         Ibis table expression for core.goids.
     function_metrics__options
         Function metrics options loaded from configuration.
-    function_metrics__skip
         Skip flag derived from manifest-based input hash evaluation.
 
     Returns
     -------
     FunctionAnalyticsResult | None
-        Result containing metrics and types rows, or None if skipped.
+        Result containing metrics and types rows, or None when inputs are unavailable.
 
     Notes
     -----
@@ -182,8 +138,6 @@ def t__function_metrics__compute(
     - Nesting depth
     - Type annotation coverage
     """
-    if function_metrics__skip:
-        return None
 
     return compute_function_analytics_result_from_table(
         q__core__goids,
@@ -337,10 +291,8 @@ def t__function_metrics(
 
 __all__ = [
     "FunctionAnalyticsResult",
-    "function_metrics__hash_options",
     "function_metrics__metrics_rows",
     "function_metrics__options",
-    "function_metrics__skip",
     "function_metrics__snapshot",
     "function_metrics__table_materializations",
     "function_metrics__types_rows",

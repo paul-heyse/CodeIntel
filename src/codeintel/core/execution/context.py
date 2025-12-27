@@ -24,7 +24,7 @@ if TYPE_CHECKING:
         ObservabilitySettings,
         ServingSettings,
     )
-    from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings
+    from codeintel.core.runtime import RuntimeBundle, RuntimePrimitives, RuntimeSettings, VariantConfig
     from codeintel.core.tools import ToolBinaries
 
 
@@ -190,6 +190,11 @@ class ExecutionContext:
     def cli_settings(self) -> CliSettings:
         """CLI settings for the execution."""
         return self.settings.cli
+
+    @property
+    def variants(self) -> VariantConfig:
+        """Variant configuration for DAG composition."""
+        return self.settings.variants
 
     @classmethod
     def from_runtime_bundle(cls, *, bundle: RuntimeBundle, run: RunContext) -> ExecutionContext:

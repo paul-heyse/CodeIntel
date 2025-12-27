@@ -29,7 +29,7 @@ from codeintel.build.hamilton.native.target_decorators import (
 from codeintel.build.hamilton.native.tool_results import ToolStepOutput
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
-from codeintel.build.hashing import InputHashOptions, compute_options_hash
+from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
 from codeintel.core.hashing import file_hash
 from codeintel.core.tools import ToolName
@@ -52,7 +52,6 @@ ScipProtoRunResult = ToolStepOutput
 SCIP_PROTO_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=SCIP_PROTO_TARGET,
-    hash_options_node="scip_proto__hash_options",
 )
 
 
@@ -81,27 +80,6 @@ def _options_hash(env: BuildEnv) -> str | None:
     return compute_options_hash(options)
 
 
-@tag_helper(domain="ingestion", target=SCIP_PROTO_TARGET)
-def scip_proto__hash_options(env: BuildEnv) -> InputHashOptions:
-    """Build input hash options for SCIP proto codegen.
-
-    Returns
-    -------
-    InputHashOptions
-        Hash inputs used to gate SCIP proto execution.
-    """
-    repo_root = env.snapshot.repo_root
-    if repo_root is None:
-        return InputHashOptions(
-            file_state_hash=None,
-            options_hash=_options_hash(env),
-        )
-    proto_path = _proto_path(repo_root)
-    file_state_hash = file_hash(proto_path) if proto_path.is_file() else None
-    return InputHashOptions(
-        file_state_hash=file_state_hash,
-        options_hash=_options_hash(env),
-    )
 
 
 def _run_codegen(
@@ -136,7 +114,6 @@ def _run_codegen(
 def t__scip_proto__run(
     env: BuildEnv,
     catalog: DagCatalog,
-    scip_proto__hash_options: InputHashOptions,
 ) -> ScipProtoRunResult:
     """Generate scip_pb2.py using grpc_tools.protoc.
 
@@ -153,8 +130,6 @@ def t__scip_proto__run(
         env=env,
         catalog=catalog,
         target_name=SCIP_PROTO_TARGET,
-        hash_options=scip_proto__hash_options,
-        skip_reason="SCIP proto target skipped",
     )
 
     def _execute() -> ScipProtoRunResult:
@@ -234,7 +209,6 @@ def scip_proto__materializations(
 def scip_proto__finalize_context(
     env: BuildEnv,
     catalog: DagCatalog,
-    scip_proto__hash_options: InputHashOptions,
 ) -> ToolFinalizeContext:
     """Build finalization context for SCIP proto codegen.
 
@@ -247,7 +221,6 @@ def scip_proto__finalize_context(
         env=env,
         catalog=catalog,
         target_name=SCIP_PROTO_TARGET,
-        hash_options=scip_proto__hash_options,
     )
 
 

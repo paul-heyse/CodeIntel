@@ -37,7 +37,6 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
-from codeintel.build.hashing import InputHashOptions
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
@@ -62,8 +61,6 @@ class ToolRunContext:
     env: BuildEnv
     catalog: DagCatalog
     target_name: str
-    hash_options: InputHashOptions | None = None
-    skip_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,7 +70,6 @@ class ToolFinalizeContext:
     env: BuildEnv
     catalog: DagCatalog
     target_name: str
-    hash_options: InputHashOptions | None = None
     change_delta: Mapping[str, object] | None = None
 
 
@@ -100,7 +96,6 @@ class _AnchorInputs:
     ingest_node: str | None
     artifact_collector_node: str
     table_collector_node: str
-    hash_options_node: str | None
 
 
 def run_tool_step(
@@ -108,7 +103,7 @@ def run_tool_step(
     context: ToolRunContext,
     run: Callable[[], ToolStepOutput],
 ) -> ToolStepOutput:
-    """Execute a tool step with manifest-based skip handling.
+    """Execute a tool step with consistent error handling.
 
     Parameters
     ----------
@@ -122,18 +117,6 @@ def run_tool_step(
     ToolStepOutput
         Output of the tool step, including skip or failure metadata.
     """
-    executor = NativeTargetExecutor.for_target(
-        context.env,
-        context.catalog,
-        context.target_name,
-        hash_options=context.hash_options,
-    )
-    if executor.should_skip():
-        return ToolStepOutput(
-            result=ExecutionResult.skip(
-                context.skip_reason or f"{context.target_name} target skipped"
-            ),
-        )
     try:
         output = run()
     except _RECOVERABLE_EXCEPTIONS as exc:
@@ -217,7 +200,6 @@ def finalize_target_from_materializations(
         context.env,
         context.catalog,
         context.target_name,
-        hash_options=context.hash_options,
     )
     if tool_step is not None and not tool_step.result.success:
         message = tool_step.result.error or f"{context.target_name} tool step failed"
@@ -249,7 +231,6 @@ def attach_tool_target_template(
     spec: ToolTargetSpec,
     run_fn: Callable[..., ToolStepOutput],
     ingest_fn: Callable[..., IngestStep[TRowsByTable]] | None = None,
-    hash_options_node: str | None = None,
 ) -> None:
     """Attach a tool-backed target scaffold to a module.
 
@@ -298,7 +279,6 @@ def attach_tool_target_template(
     saver_context = SaverContext(
         domain=spec.domain,
         target=spec.target_name,
-        hash_options_node=hash_options_node,
     )
     template_context = _TemplateContext(
         module=module,
@@ -355,7 +335,6 @@ def attach_tool_target_template(
             ingest_node=ingest_node if ingest_fn is not None else None,
             artifact_collector_node=artifact_collector_node,
             table_collector_node=table_collector_node,
-            hash_options_node=hash_options_node,
         ),
     )
     tagged_attach_node(
@@ -481,15 +460,11 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
             "Mapping[str, MaterializationResult]",
             kwargs.get(inputs.table_collector_node),
         )
-        hash_options = None
-        if inputs.hash_options_node is not None:
-            hash_options = cast("InputHashOptions | None", kwargs.get(inputs.hash_options_node))
         return finalize_target_from_materializations(
             context=ToolFinalizeContext(
                 env=env,
                 catalog=catalog,
                 target_name=inputs.spec.target_name,
-                hash_options=hash_options,
             ),
             tool_step=cast("HasExecutionResult | None", tool_step),
             ingest_step=cast("HasExecutionResult | None", ingest_step),
@@ -536,14 +511,6 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
             annotation=dict[str, MaterializationResult],
         )
     )
-    if inputs.hash_options_node is not None:
-        params.append(
-            inspect.Parameter(
-                inputs.hash_options_node,
-                inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=InputHashOptions,
-            )
-        )
 
     anchor_fn = set_signature(
         anchor_fn,
