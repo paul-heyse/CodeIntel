@@ -20,7 +20,6 @@ if TYPE_CHECKING:
         NativeRunInfo,
         create_run_record,
         save_manifest,
-        should_skip_native_target,
     )
 
     def _typecheck_exports() -> tuple[object, ...]:
@@ -32,7 +31,6 @@ if TYPE_CHECKING:
             filter_tables_for_snapshot,
             save_manifest,
             select_snapshot_columns,
-            should_skip_native_target,
         )
 
 
@@ -40,10 +38,6 @@ _EXPORTS: dict[str, tuple[str, str]] = {
     "NativeRunInfo": ("codeintel.build.hamilton.run_records", "NativeRunInfo"),
     "create_run_record": ("codeintel.build.hamilton.run_records", "create_run_record"),
     "save_manifest": ("codeintel.build.hamilton.run_records", "save_manifest"),
-    "should_skip_native_target": (
-        "codeintel.build.hamilton.run_records",
-        "should_skip_native_target",
-    ),
     "NativeTargetExecutor": (
         "codeintel.build.hamilton.native.executor",
         "NativeTargetExecutor",
@@ -70,7 +64,6 @@ __all__ = [
     "filter_tables_for_snapshot",
     "save_manifest",
     "select_snapshot_columns",
-    "should_skip_native_target",
 ]
 
 

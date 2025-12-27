@@ -186,8 +186,7 @@ class ContractEnforcementHook(
                 ContractEnforcer.deactivate()
                 return
             allowed_tables = frozenset(
-                output.key
-                for output in self._catalog.table_outputs_by_target.get(target_raw, ())
+                output.key for output in self._catalog.table_outputs_by_target.get(target_raw, ())
             )
             allowed_artifacts = frozenset(
                 output.key

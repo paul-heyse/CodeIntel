@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, get_type_hints
 
@@ -41,7 +42,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from tests._helpers import TestScenario
 from tests._helpers.analytics_domain import make_graph_metric_function_row
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.contracts import ContractCtx, count_rows
+from tests._helpers.db import count_rows
 from tests._helpers.fixtures.rows import function_meta
 
 if TYPE_CHECKING:
@@ -50,7 +51,17 @@ if TYPE_CHECKING:
 
     from duckdb import DuckDBPyConnection
 
+    from codeintel.storage.gateway import StorageGateway
     from tests._helpers import TestContext
+
+
+@dataclass
+class ContractCtx:
+    """Context for contract validation tests."""
+
+    gateway: StorageGateway
+    repo: str
+    commit: str
 
 
 def _function_metrics_row(ctx: ContractCtx) -> FunctionMetricsRow:

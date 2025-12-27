@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from codeintel.build.contracts import OutputContract
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hashing import compute_input_hash
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator, TargetState
@@ -23,7 +22,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import contract_for_keys, table_output_for_key
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -47,14 +45,12 @@ def _create_test_graph() -> DagCatalog:
     modules_target = make_target_descriptor(
         name="modules",
         module="ingestion",
-        contract=contract_for_keys(("core.modules",)),
         description="Repository module index",
     )
 
     ast_target = make_target_descriptor(
         name="ast",
         module="ingestion",
-        contract=contract_for_keys(("core.ast_nodes",)),
         dependencies=("modules",),
         description="AST extraction",
     )
@@ -62,7 +58,6 @@ def _create_test_graph() -> DagCatalog:
     goids_target = make_target_descriptor(
         name="goids",
         module="graphs",
-        contract=contract_for_keys(("core.goids",)),
         dependencies=("ast",),
         description="GOID construction",
     )
@@ -70,7 +65,6 @@ def _create_test_graph() -> DagCatalog:
     typing_target = make_target_descriptor(
         name="typing",
         module="ingestion",
-        contract=contract_for_keys(("analytics.typedness",)),
         dependencies=("modules",),
         description="Type analysis",
     )
@@ -78,7 +72,6 @@ def _create_test_graph() -> DagCatalog:
     metrics_target = make_target_descriptor(
         name="function_metrics",
         module="analytics",
-        contract=contract_for_keys(("analytics.function_metrics",)),
         dependencies=("goids", "ast"),
         description="Function metrics",
     )
@@ -90,7 +83,14 @@ def _create_test_graph() -> DagCatalog:
             goids_target,
             typing_target,
             metrics_target,
-        )
+        ),
+        table_keys_by_target={
+            "modules": ("core.modules",),
+            "ast": ("core.ast_nodes",),
+            "goids": ("core.goids",),
+            "typing": ("analytics.typedness",),
+            "function_metrics": ("analytics.function_metrics",),
+        },
     )
 
 
@@ -438,10 +438,12 @@ class TestStateValidatorInit:
         target = make_target_descriptor(
             name="target",
             module="ingestion",
-            contract=OutputContract(tables=(table_output_for_key("core.table"),)),
             dependencies=("nonexistent",),
         )
-        catalog = build_catalog(targets=(target,))
+        catalog = build_catalog(
+            targets=(target,),
+            table_keys_by_target={"target": ("core.table",)},
+        )
 
         with pytest.raises(ValueError, match="validation failed"):
             StateValidator(

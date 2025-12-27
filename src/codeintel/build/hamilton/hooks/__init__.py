@@ -53,13 +53,11 @@ from codeintel.build.hamilton.hooks.telemetry_hook import (
 
 # Re-export from manifest hook
 from codeintel.build.hamilton.run_records import (
-    SkipCheckRequest,
     TargetRunRecord,
     compute_target_input_hash,
     compute_target_input_hash_with_deps,
     compute_target_options_hash,
     save_manifest,
-    should_skip,
 )
 
 if TYPE_CHECKING:
@@ -157,7 +155,6 @@ __all__ = [
     "NodeTelemetryHook",
     "NodeTimingRecord",
     "ProgressBarHook",
-    "SkipCheckRequest",
     "TargetRunRecord",
     "ValidationResult",
     "ValidationSummary",
@@ -167,5 +164,4 @@ __all__ = [
     "compute_target_options_hash",
     "create_progress_hook",
     "save_manifest",
-    "should_skip",
 ]

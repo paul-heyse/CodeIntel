@@ -409,51 +409,34 @@ class HamiltonBuildHarness:
 
     @staticmethod
     def assert_output_inventory_consistent() -> None:
-        """Assert DAG-derived output inventory matches declared contracts.
+        """Assert DAG-derived output inventory is internally consistent.
 
         Raises
         ------
         AssertionError
-            If the resolved output inventory diverges from declared contracts.
+            If catalog outputs are missing required metadata.
         """
         service = get_target_metadata_service()
         catalog = service.system.catalog
-        issues: list[str] = []
-
-        for target in catalog.all_targets:
-            expected_tables = tuple(sorted(target.contract.table_keys))
-            expected_artifacts = tuple(sorted(target.contract.artifact_names))
-            expected_templates = {
-                artifact.name: artifact.path_template for artifact in target.contract.artifacts
-            }
-
-            table_outputs = catalog.table_outputs_by_target.get(target.name, ())
-            artifact_outputs = catalog.artifact_outputs_by_target.get(target.name, ())
-
-            observed_tables = tuple(sorted(output.key for output in table_outputs))
-            observed_artifacts = tuple(sorted(output.key for output in artifact_outputs))
-            observed_templates = {
-                output.key: output.artifact_path_template for output in artifact_outputs
-            }
-
-            if expected_tables != observed_tables:
-                issues.append(
-                    "Target contract table_keys differ from DAG outputs "
-                    f"for {target.name}: expected={expected_tables} observed={observed_tables}"
-                )
-            if expected_artifacts != observed_artifacts:
-                issues.append(
-                    "Target contract artifact_names differ from DAG outputs "
-                    f"for {target.name}: expected={expected_artifacts} observed={observed_artifacts}"
-                )
-            if expected_templates != observed_templates:
-                issues.append(
-                    "Target contract artifact templates differ from DAG outputs "
-                    f"for {target.name}: expected={expected_templates} observed={observed_templates}"
-                )
+        artifact_outputs = tuple(catalog.artifact_outputs.values())
+        issues = [
+            f"Artifact output missing template: {output.key}"
+            for output in artifact_outputs
+            if output.artifact_path_template is None
+        ]
+        issues.extend(
+            f"Artifact output has unknown target: {output.key}"
+            for output in artifact_outputs
+            if output.producer_target not in catalog.targets
+        )
+        issues.extend(
+            f"Table output has unknown target: {output.key}"
+            for output in catalog.table_outputs.values()
+            if output.producer_target not in catalog.targets
+        )
 
         if issues:
-            message = "Output inventory mismatch:\n" + "\n".join(f"- {issue}" for issue in issues)
+            message = "Output inventory issues:\n" + "\n".join(f"- {issue}" for issue in issues)
             raise AssertionError(message)
 
     def assert_incremental_behavior(

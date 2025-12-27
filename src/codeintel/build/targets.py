@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.hamilton.dag_catalog import TargetDescriptor
 

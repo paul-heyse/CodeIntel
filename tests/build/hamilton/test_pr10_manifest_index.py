@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.planner import compute_plan
 from codeintel.build.hamilton.run_records import SkipCheckRequest, should_skip
 from codeintel.build.hashing import InputHashOptions, compute_input_hash
@@ -126,7 +125,6 @@ class TestHashComputation:
         target = make_target_descriptor(
             name="main",
             module="analytics",
-            contract=EMPTY_CONTRACT,
             dependencies=("dep",),
         )
 
@@ -161,7 +159,6 @@ class TestHashComputation:
         target = make_target_descriptor(
             name="downstream",
             module="analytics",
-            contract=EMPTY_CONTRACT,
             dependencies=("upstream",),
         )
 
@@ -316,12 +313,10 @@ class TestManifestPrefetch:
                 make_target_descriptor(
                     name="a",
                     module="ingestion",
-                    contract=EMPTY_CONTRACT,
                 ),
                 make_target_descriptor(
                     name="b",
                     module="graphs",
-                    contract=EMPTY_CONTRACT,
                     dependencies=("a",),
                 ),
             )
@@ -372,13 +367,11 @@ class TestHashCascadeComplete:
         target_b = make_target_descriptor(
             name="b",
             module="graphs",
-            contract=EMPTY_CONTRACT,
             dependencies=("a",),
         )
         target_c = make_target_descriptor(
             name="c",
             module="analytics",
-            contract=EMPTY_CONTRACT,
             dependencies=("b",),
         )
 
@@ -477,7 +470,6 @@ class TestHashCascadeComplete:
         target = make_target_descriptor(
             name="target",
             module="analytics",
-            contract=EMPTY_CONTRACT,
         )
 
         hash_options_v1 = InputHashOptions(options_hash="opts_v1", manifests={})

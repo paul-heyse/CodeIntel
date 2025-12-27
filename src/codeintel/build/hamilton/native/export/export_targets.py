@@ -30,14 +30,9 @@ from codeintel.build.hamilton.native.materialization_records import (
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.options_loading import load_target_options
-from codeintel.build.hamilton.run_records import (
-    TargetRunRecord,
-    options_hash_for_target,
-    should_skip_native_target,
-)
+from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
-from codeintel.build.hashing import InputHashOptions, compute_input_hash
 
 _HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, Path)
 
@@ -68,20 +63,7 @@ def _export_manifest_plan(
     request: ExportManifestRequest,
 ) -> ArtifactWritePlan | None:
     target_name = request.target_name
-    target = catalog.get_target(target_name)
-    if target is not None:
-        options_hash = options_hash_for_target(env, target_name)
-        hash_options = InputHashOptions(options_hash=options_hash, manifests=env.manifest_index)
-        input_hash = compute_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            settings=env.settings,
-            options=hash_options,
-        )
-        if should_skip_native_target(env, target, input_hash):
-            return None
-
+    _ = catalog
     export_options = load_target_options(
         env,
         target_name=target_name,

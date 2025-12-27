@@ -26,6 +26,7 @@ from codeintel.build.hamilton.runtime import HamiltonRuntime
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
+    from hamilton.caching.adapter import HamiltonCacheAdapter
     from hamilton.lifecycle.base import LifecycleAdapter
 
 log = logging.getLogger(__name__)
@@ -100,6 +101,7 @@ def build_driver(
     adapter_factory: Callable[[DagCatalog], Sequence[LifecycleAdapter]] | None = None,
     enable_cache: bool = False,
     cache_dir: str | Path | None = None,
+    cache_adapter: HamiltonCacheAdapter | None = None,
 ) -> HamiltonRuntime:
     """Build a Hamilton Driver for build execution.
 
@@ -119,12 +121,13 @@ def build_driver(
         Optional factory invoked with the pre-support DagCatalog to produce additional
         adapters. This allows callers to build adapters without re-loading specs.
     enable_cache
-        When True, enable Hamilton's caching adapter for nodes decorated with
-        ``@cache``. Disable this for schema inference and other workflows that
-        pass unhashable inputs like Ibis expressions.
+        When True, enable Hamilton's caching adapter. Disable this for schema
+        inference and other workflows that pass unhashable inputs like Ibis expressions.
     cache_dir
         Directory for Hamilton's on-disk cache. When omitted, defaults to
         ``build/.hamilton_cache`` under the current working directory.
+    cache_adapter
+        Optional pre-configured cache adapter instance to attach to the driver.
 
     Returns
     -------
@@ -146,6 +149,8 @@ def build_driver(
     adapter_list = list(adapters) if adapters else []
     if adapter_factory is not None:
         adapter_list.extend(adapter_factory(base_catalog))
+    if cache_adapter is not None:
+        adapter_list.append(cache_adapter)
 
     merged_config = _merge_support_config(config=config, support_spec=support_spec)
     native_mods = load_native_modules()
@@ -158,11 +163,11 @@ def build_driver(
         )
         .allow_module_overrides()
     )
-    if enable_cache:
+    if enable_cache and cache_adapter is None:
         cache_path = _DEFAULT_HAMILTON_CACHE_DIR if cache_dir is None else Path(cache_dir)
         builder = builder.with_cache(
             path=cache_path,
-            default_behavior="disable",
+            default_behavior="default",
             default_loader_behavior="disable",
             default_saver_behavior="disable",
         )

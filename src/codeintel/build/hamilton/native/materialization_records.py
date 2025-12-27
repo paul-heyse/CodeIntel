@@ -881,10 +881,7 @@ def _parse_expected_table_materializations(
                 table_key=expected_table_key,
                 duration_ms=result.duration_ms,
                 input_hash=result.input_hash,
-                error=(
-                    "DuckDB materialization missing table_key: "
-                    f"expected={expected_table_key}"
-                ),
+                error=(f"DuckDB materialization missing table_key: expected={expected_table_key}"),
             )
             continue
 

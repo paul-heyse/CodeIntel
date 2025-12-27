@@ -31,6 +31,7 @@ def _coerce_int(value: object) -> int | None:
 def _coerce_duration(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) else 0.0
 
+
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
@@ -117,9 +118,7 @@ class MaterializationResult:
         """
         status = _coerce_status(materialization.get("status"))
         table_key = _coerce_str(materialization.get("table_key")) or default_table_key
-        artifact_name = (
-            _coerce_str(materialization.get("artifact_name")) or default_artifact_name
-        )
+        artifact_name = _coerce_str(materialization.get("artifact_name")) or default_artifact_name
         input_hash = _coerce_str(materialization.get("input_hash")) or ""
 
         return cls(

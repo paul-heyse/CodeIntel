@@ -9,54 +9,22 @@ from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
+from codeintel.storage.tracking.schema_catalog_compile import compile_schema_catalog_batches
+from codeintel.storage.tracking.schema_catalog_models import (
+    SchemaCatalogRequest,
+    SchemaManifestRunRecord,
+    SchemaVersionRecord,
+    TableSchemaRegistryRecord,
+)
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-    from datetime import datetime
+    from collections.abc import Sequence
 
     from codeintel.build.schemas.manifest import SchemaManifest
     from codeintel.build.schemas.schema_index import SchemaIndex
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import StorageGateway
-
-
-@dataclass(frozen=True)
-class SchemaVersionRecord:
-    """Record of a content-addressed schema version."""
-
-    schema_digest: str
-    schema_hash: str
-    schema_json: dict[str, object]
-    renderer_cache: dict[str, object] | None = None
-    created_at: datetime | None = None
-
-
-@dataclass(frozen=True)
-class TableSchemaRegistryRecord:
-    """Current schema pointer for a table key."""
-
-    table_key: str
-    schema_digest: str
-    schema_hash: str
-    derivation_kind: str
-    derivation_source: str
-    inference_status: str | None = None
-    inference_error: str | None = None
-    catalog_hash: str | None = None
-    updated_at: datetime | None = None
-
-
-@dataclass(frozen=True)
-class SchemaManifestRunRecord:
-    """Schema manifest catalog linkage for a build run."""
-
-    run_id: str
-    repo: str
-    commit: str
-    manifest_kind: str
-    catalog_hash: str
-    created_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -313,16 +281,7 @@ class SchemaCatalogTracking:
         self,
         manifest: SchemaManifest,
         *,
-        run_id: str,
-        repo: str,
-        commit: str,
-        catalog_inputs: Mapping[str, object] | None = None,
-        include_views: bool = True,
-        strict_provenance: bool = True,
-        strict_hash_match: bool = True,
-        now: datetime | None = None,
-        catalog_kind: str = "schema_manifest_v2",
-        manifest_kind: str = "schema_manifest_v2",
+        request: SchemaCatalogRequest,
     ) -> PersistSchemaManifestResult:
         """Persist SchemaManifest into canonical catalogs + schema registry tables atomically.
 
@@ -335,28 +294,12 @@ class SchemaCatalogTracking:
         ------
         RuntimeError
             If the gateway is read-only.
-        ValueError
-            If strict checks fail in batch compilation.
         """
         if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
             msg = "Cannot persist schema manifest into a read-only storage gateway"
             raise RuntimeError(msg)
 
-        from codeintel.storage.tracking.schema_catalog_compile import compile_schema_catalog_batches
-
-        batches = compile_schema_catalog_batches(
-            manifest,
-            run_id=run_id,
-            repo=repo,
-            commit=commit,
-            now=now,
-            catalog_kind=catalog_kind,
-            manifest_kind=manifest_kind,
-            include_views=include_views,
-            strict_provenance=strict_provenance,
-            strict_hash_match=strict_hash_match,
-            catalog_inputs=dict(catalog_inputs) if catalog_inputs is not None else None,
-        )
+        batches = compile_schema_catalog_batches(manifest, request=request)
 
         entry = build_catalog_entry(
             catalog_kind=batches.catalog_kind,
@@ -375,7 +318,7 @@ class SchemaCatalogTracking:
             catalog_kind=batches.catalog_kind,
             catalog_hash=batches.catalog_hash,
             tables=len(manifest.tables),
-            views=len(manifest.views) if include_views else 0,
+            views=len(manifest.views) if request.include_views else 0,
             schema_versions_rows=n_versions,
             table_schema_registry_rows=n_registry,
             schema_manifest_runs_rows=n_runs,
@@ -384,6 +327,7 @@ class SchemaCatalogTracking:
 
 __all__ = [
     "PersistSchemaManifestResult",
+    "SchemaCatalogRequest",
     "SchemaCatalogTracking",
     "SchemaManifestRunRecord",
     "SchemaVersionRecord",

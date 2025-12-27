@@ -22,6 +22,7 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
+from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
 from tests._helpers.schemas import ensure_production_schemas
 
@@ -362,7 +363,7 @@ def _publish_snapshot(snapshot: ServingSnapshot) -> None:
         repo=snapshot.repo,
         commit=snapshot.commit,
     )
-    gateway = open_gateway(config)
+    gateway = open_gateway(config, seed_contract_catalog=seed_contract_catalog)
     try:
         request = PublishServingSnapshotRequest(
             run_id=snapshot.run_id,

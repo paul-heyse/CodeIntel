@@ -1,12 +1,14 @@
-"""Contract service for dataset and output contract resolution."""
+"""Contract service for dataset contract resolution."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
+from codeintel.build.hamilton.dag_catalog import OutputDescriptor
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.target_metadata import TargetMetadataProvider, get_target_metadata_provider
 from codeintel.config.datasets.composites import get_composite_schemas
@@ -80,22 +82,44 @@ def _optional_tag(tags: Mapping[str, object], key: str) -> str | None:
 
 
 def overrides_from_output_descriptor(output: OutputDescriptor) -> DatasetContractOverrides:
-    """Build dataset contract overrides from saver output tags."""
+    """Build dataset contract overrides from saver output tags.
+
+    Parameters
+    ----------
+    output
+        Output descriptor carrying saver tags.
+
+    Returns
+    -------
+    DatasetContractOverrides
+        Parsed overrides derived from output tags.
+
+    Raises
+    ------
+    ValueError
+        If a tag has an invalid value or an unknown validation profile is provided.
+    """
     tags = output.tags
     json_schema_id = _optional_tag(tags, "ci.json_schema_id")
     jsonl_filename = _optional_tag(tags, "ci.jsonl_filename")
     parquet_filename = _optional_tag(tags, "ci.parquet_filename")
     owner = _optional_tag(tags, "ci.dataset_owner")
-    validation_profile = _optional_tag(tags, "ci.validation_profile")
-    if validation_profile is not None and validation_profile not in {"strict", "lenient"}:
-        msg = f"Invalid validation profile tag: {validation_profile!r}"
+    validation_profile_raw = _optional_tag(tags, "ci.validation_profile")
+    if validation_profile_raw is None:
+        validation_profile: Literal["strict", "lenient"] = "strict"
+    elif validation_profile_raw == "strict":
+        validation_profile = "strict"
+    elif validation_profile_raw == "lenient":
+        validation_profile = "lenient"
+    else:
+        msg = f"Invalid validation profile tag: {validation_profile_raw!r}"
         raise ValueError(msg)
     return DatasetContractOverrides(
         json_schema_id=json_schema_id,
         jsonl_filename=jsonl_filename,
         parquet_filename=parquet_filename,
         owner=owner,
-        validation_profile="strict" if validation_profile is None else validation_profile,
+        validation_profile=validation_profile,
     )
 
 
@@ -131,7 +155,7 @@ class ContractResolutionSettings:
 
 @dataclass(frozen=True, slots=True)
 class ContractService:
-    """Resolve dataset and output contracts with target metadata."""
+    """Resolve dataset contracts with target metadata."""
 
     schema_service: SchemaService
     target_metadata: TargetMetadataProvider

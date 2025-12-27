@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import EMPTY_CONTRACT, OutputContract
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.planner import (
     HamiltonBuildPlan,
@@ -25,7 +24,6 @@ from tests._helpers.build import (
     make_snapshot,
 )
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import table_output_for_key
 from tests._helpers.fakes.fake_providers import FakeProviders
 from tests._helpers.harnesses.hamilton_build import BuildEnvSpec, build_test_env
 
@@ -285,11 +283,11 @@ class TestPlanStatusMatrix:
                 make_target_descriptor(
                     name="downstream",
                     module="analytics",
-                    contract=EMPTY_CONTRACT,
                     dependencies=("nonexistent",),
                     description="Has missing dep",
                 ),
-            )
+            ),
+            table_keys_by_target={"downstream": ()},
         )
 
         env = make_test_build_env(fake_gateway, tmp_path, {})
@@ -345,18 +343,16 @@ class TestPlanClosure:
         fake_gateway: FakeGateway,
         tmp_path: Path,
     ) -> None:
-        """Verify plan entries include table_keys from target contract."""
+        """Verify plan entries include table_keys from catalog outputs."""
         graph = build_catalog(
             targets=(
                 make_target_descriptor(
                     name="with_tables",
                     module="analytics",
                     description="Has contract",
-                    contract=OutputContract(
-                        tables=(table_output_for_key("analytics.output_table"),),
-                    ),
                 ),
-            )
+            ),
+            table_keys_by_target={"with_tables": ("analytics.output_table",)},
         )
 
         env = make_test_build_env(fake_gateway, tmp_path, {})

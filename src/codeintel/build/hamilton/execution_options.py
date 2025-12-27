@@ -24,7 +24,7 @@ class BuildExecutionOptions:
     profile: str | None = None
     parallel_backend: str = "sequential"
     max_workers: int | None = None
-    enable_hamilton_cache: bool = False
+    enable_hamilton_cache: bool = True
     cache_dir: str | None = None
     enable_telemetry: bool = True
     enable_progress: bool = False

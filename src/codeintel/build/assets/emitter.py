@@ -346,9 +346,7 @@ def _collect_versions_for_run(
     # Get topological order for targets we have records for
     try:
         ordered_targets = [
-            name
-            for name in catalog.closure(tuple(target_to_record))
-            if name in target_to_record
+            name for name in catalog.closure(tuple(target_to_record)) if name in target_to_record
         ]
     except ValueError:
         ordered_targets = list(target_to_record.keys())
@@ -429,9 +427,7 @@ def persist_asset_catalog_for_run(
 ) -> None:
     """Persist asset versions, run mappings, and lineage edges for a build run."""
     ctx = _VersionState(env=env, run_id=run_id, policy=env.fingerprint_policy)
-    versions, events, run_maps, target_outputs = _collect_versions_for_run(
-        ctx, catalog, records
-    )
+    versions, events, run_maps, target_outputs = _collect_versions_for_run(ctx, catalog, records)
     edges = _collect_lineage_edges(catalog=catalog, target_outputs=target_outputs)
 
     try:

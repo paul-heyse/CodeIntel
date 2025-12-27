@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codeintel.build.contracts import EMPTY_CONTRACT
 from codeintel.build.hamilton.materializers import FileArtifactSaver
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.catalog import build_catalog, make_target_descriptor
@@ -24,7 +23,6 @@ def test_file_artifact_saver_resolves_path_from_template(
             make_target_descriptor(
                 name="tool_target",
                 module="ingestion",
-                contract=EMPTY_CONTRACT,
             ),
         )
     )
@@ -57,7 +55,6 @@ def test_file_artifact_saver_requires_template(
             make_target_descriptor(
                 name="tool_target",
                 module="ingestion",
-                contract=EMPTY_CONTRACT,
             ),
         )
     )

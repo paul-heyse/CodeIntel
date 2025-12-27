@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from codeintel.build.contracts import OutputContract, TableOutputDescriptor
 from codeintel.build.schemas.inference_service import (
     SchemaInferenceService,
     get_schema_inference_service,
@@ -24,18 +24,24 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.provider import SchemaProvider
 
 
-def _build_target_system(targets: tuple[TargetDescriptor, ...]) -> TargetSystem:
-    catalog = build_catalog(targets=targets)
+def _build_target_system(
+    targets: tuple[TargetDescriptor, ...],
+    *,
+    table_keys_by_target: Mapping[str, Sequence[str]] | None = None,
+) -> TargetSystem:
+    catalog = build_catalog(targets=targets, table_keys_by_target=table_keys_by_target)
     by_name: dict[str, TargetDescriptor] = {}
-    by_table_key: dict[str, TargetDescriptor] = {}
-    by_artifact_name: dict[str, TargetDescriptor] = {}
+    by_table_key = {
+        table_key: catalog.targets[output.producer_target]
+        for table_key, output in catalog.table_outputs.items()
+    }
+    by_artifact_name = {
+        artifact_name: catalog.targets[output.producer_target]
+        for artifact_name, output in catalog.artifact_outputs.items()
+    }
 
     for target in targets:
         by_name[target.name] = target
-        for table_key in target.contract.table_keys:
-            by_table_key[table_key] = target
-        for artifact_name in target.contract.artifact_names:
-            by_artifact_name[artifact_name] = target
 
     runtime = get_target_metadata_service().system.runtime
     return TargetSystem(
@@ -58,11 +64,13 @@ def test_schema_index_accepts_explicit_override_for_non_inferable_outputs() -> N
     target = make_target_descriptor(
         name="override_ok_target",
         module="analytics",
-        contract=OutputContract(tables=(TableOutputDescriptor(table_key=table_key),)),
         description="Test target with explicit override.",
     )
     declared_provider = MappingSchemaProvider({table_key: override_schema})
-    system = _build_target_system((target,))
+    system = _build_target_system(
+        (target,),
+        table_keys_by_target={"override_ok_target": (table_key,)},
+    )
     schema_index = build_schema_index(
         system=system,
         declared_provider=declared_provider,

@@ -22,11 +22,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import hamilton.base as h_base
+from hamilton.caching.adapter import HamiltonCacheAdapter
 from opentelemetry import trace as otel_trace
 
 from codeintel.build.errors import BuildError
 from codeintel.build.execution_policy import effective_max_workers_for_graph
 from codeintel.build.hamilton.adapters.parallel import create_parallel_adapter
+from codeintel.build.hamilton.cache_adapter import ManifestBackedCacheAdapter
+from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 from codeintel.build.hamilton.contracts.enforced_gateway import ContractEnforcingStorageGateway
 from codeintel.build.hamilton.decision_trace import (
     DECISION_TRACE_ARTIFACT_NAME,
@@ -49,7 +52,11 @@ from codeintel.build.hamilton.run_records import (
     create_run_record,
 )
 from codeintel.build.hamilton.run_writer import BuildRunWriter
+from codeintel.build.manifest.writer import CacheManifestWriter
+from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schema_manifest
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.telemetry_context import (
     RepoCommitContext,
@@ -57,6 +64,9 @@ from codeintel.observability.telemetry_context import (
 )
 from codeintel.storage.gateway import StorageError
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
+from codeintel.storage.tracking.schema_catalog_models import DEFAULT_SCHEMA_MANIFEST_KIND
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -353,6 +363,32 @@ def _ensure_failure_records(
         outputs[key] = record
 
 
+def _apply_cache_keys(
+    *,
+    outputs: dict[str, Any],
+    runtime: HamiltonRuntime,
+) -> None:
+    cache_adapter = getattr(runtime.dr, "cache", None)
+    if not isinstance(cache_adapter, HamiltonCacheAdapter):
+        return
+    if not cache_adapter.run_ids:
+        return
+    cache_run_id = cache_adapter.last_run_id
+    resolver = CacheKeyResolver()
+    for target_name, node_name in runtime.catalog.target_nodes.items():
+        record = outputs.get(node_name)
+        if not isinstance(record, TargetRunRecord):
+            continue
+        snapshot = resolver.resolve(
+            cache_adapter,
+            run_id=cache_run_id,
+            node_name=node_name,
+        )
+        if snapshot.cache_key is None:
+            continue
+        outputs[node_name] = replace(record, input_hash=snapshot.cache_key)
+
+
 def _map_closure_to_nodes(
     closure: tuple[str, ...],
     runtime: HamiltonRuntime,
@@ -382,6 +418,69 @@ def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
     return env.gateway.policy.table_exists(schema=schema, table=table)
 
 
+def _maybe_persist_schema_manifest(
+    *,
+    env: BuildEnv,
+    run_id: str,
+    domain: str | None,
+) -> None:
+    """Persist the latest schema manifest before executing targets.
+
+    Raises
+    ------
+    ValueError
+        If repo or commit metadata is missing.
+    """
+    if env.gateway.config.read_only:
+        return
+    if not env.repo or not env.commit:
+        msg = "Schema manifest persistence requires repo and commit metadata"
+        raise ValueError(msg)
+
+    request = SchemaManifestRequest(
+        all_targets=True,
+        stable=True,
+        version="v2",
+        include_views=True,
+        include_artifacts=True,
+        include_provenance=True,
+    )
+    provider = get_schema_provider()
+    manifest = compile_schema_manifest(
+        provider=provider,
+        request=request,
+        con=env.gateway.con,
+    )
+    catalog_hash = fingerprint(manifest.to_json_obj())
+    latest = load_latest_canonical_catalog_from_connection(
+        env.gateway.con,
+        catalog_kind=DEFAULT_SCHEMA_MANIFEST_KIND,
+    )
+    if latest is not None and latest.catalog_hash == catalog_hash:
+        log.info("build.hamilton.executor.schema_manifest.skip hash=%s", catalog_hash)
+        return
+
+    catalog_inputs: dict[str, object] = {"source": "build.execute"}
+    if domain is not None:
+        catalog_inputs["domain"] = domain
+
+    result = env.gateway.schemas.persist_schema_manifest(
+        manifest,
+        request=SchemaCatalogRequest(
+            run_id=run_id,
+            repo=env.repo,
+            commit=env.commit,
+            catalog_inputs=catalog_inputs,
+        ),
+    )
+    log.info(
+        "build.hamilton.executor.schema_manifest.persisted hash=%s tables=%d views=%d",
+        result.catalog_hash,
+        result.tables,
+        result.views,
+    )
+
+
 def _preflight_missing_inputs(
     *,
     env: BuildEnv,
@@ -390,7 +489,9 @@ def _preflight_missing_inputs(
 ) -> dict[str, _MissingInputs]:
     catalog = runtime.catalog
     produced_table_keys = {
-        table_key for target in closure for table_key in catalog.get(target).table_keys
+        output.key
+        for target in closure
+        for output in catalog.table_outputs_by_target.get(target, ())
     }
     surfaces = runtime.catalog.io_surfaces
     missing_by_target: dict[str, _MissingInputs] = {}
@@ -718,6 +819,7 @@ class HamiltonBuildExecutor:
             writer=writer,
             domain=domain,
         )
+        _maybe_persist_schema_manifest(env=env, run_id=run_id, domain=domain)
 
         context = _RunState(
             env=env,
@@ -807,6 +909,8 @@ class HamiltonBuildExecutor:
                 error=error,
             )
 
+        _apply_cache_keys(outputs=outputs, runtime=context.runtime)
+
         return _finalize_run(
             context=context,
             inputs=_FinalizeInputs(
@@ -841,6 +945,17 @@ class HamiltonBuildExecutor:
         contract_hook: ContractEnforcementHook | None = None
 
         hook_options = self._options.hook_options(env=env)
+        cache_adapter: ManifestBackedCacheAdapter | None = None
+        cache_dir = self._options.resolved_cache_dir(env=env)
+        if self._options.enable_hamilton_cache:
+            cache_adapter = ManifestBackedCacheAdapter(
+                path=cache_dir,
+                manifest_writer=CacheManifestWriter(env.gateway),
+                manifest_run_id=run_id,
+                default_behavior="default",
+                default_loader_behavior="disable",
+                default_saver_behavior="disable",
+            )
 
         def _adapter_factory(catalog: DagCatalog) -> list[LifecycleAdapter]:
             nonlocal telemetry_hook
@@ -878,7 +993,8 @@ class HamiltonBuildExecutor:
             config=config,
             adapter_factory=_adapter_factory,
             enable_cache=self._options.enable_hamilton_cache,
-            cache_dir=str(self._options.resolved_cache_dir(env=env)),
+            cache_dir=str(cache_dir),
+            cache_adapter=cache_adapter,
         )
         return runtime, telemetry_hook, contract_hook
 

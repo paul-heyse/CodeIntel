@@ -35,7 +35,6 @@ class SaverContext:
 
     domain: str
     target: str
-    hash_options_node: str | None = None
     extra_tags: Mapping[TagKey, TagValue] | None = None
 
 
@@ -72,12 +71,6 @@ def _dep(value: object) -> ParametrizedDependency:
     return cast("ParametrizedDependency", value)
 
 
-def _hash_options_dep(context: SaverContext) -> ParametrizedDependency:
-    if context.hash_options_node is None:
-        return _dep(value(None))
-    return _dep(source(context.hash_options_node))
-
-
 def save_artifact(
     *,
     context: SaverContext,
@@ -106,7 +99,6 @@ def save_artifact(
         artifact_name=_dep(value(spec.artifact_name)),
         path_template=_dep(value(spec.path_template)),
         output_role=_dep(value(spec.output_role)),
-        hash_options=_hash_options_dep(context),
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
@@ -151,7 +143,6 @@ def save_rows(
         table_key=_dep(value(spec.table_key)),
         columns=_dep(value(resolved_columns)),
         output_role=_dep(value(spec.output_role)),
-        hash_options=_hash_options_dep(context),
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
@@ -192,7 +183,6 @@ def save_ibis_table(
         target_name=_dep(value(context.target)),
         table_key=_dep(value(spec.table_key)),
         output_role=_dep(value(spec.output_role)),
-        hash_options=_hash_options_dep(context),
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:

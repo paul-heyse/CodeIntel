@@ -2,8 +2,6 @@
 
 This module provides NativeTargetExecutor, which consolidates the boilerplate
 patterns found across native Hamilton targets:
-- Input hash computation
-- Skip check logic
 - Timing and error handling
 - Record creation and manifest persistence
 - Async execution support
@@ -11,15 +9,11 @@ patterns found across native Hamilton targets:
 Example
 -------
 >>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
->>> if executor.should_skip():
-...     return executor.skip()
 >>> return executor.execute(lambda: compute_and_materialize())
 
 For async targets:
 >>> async def async_example():
 ...     executor = NativeTargetExecutor.for_target(env, catalog, "scip")
-...     if executor.should_skip():
-...         return executor.skip()
 ...     return await executor.execute_async(async_compute)
 """
 
@@ -30,16 +24,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from codeintel.build.errors import TargetNotFoundError
+from codeintel.build.hamilton.native.outputs import expected_table_keys_for_target
 from codeintel.build.hamilton.run_records import (
     NativeRunInfo,
     RunRecordInputs,
-    compute_target_input_hash,
     create_run_record,
     options_hash_for_target,
-    save_manifest,
-    should_skip_native_target,
 )
-from codeintel.build.hamilton.native.outputs import expected_table_keys_for_target
 from codeintel.build.hashing import InputHashOptions
 from codeintel.core.errors import CodeIntelError
 
@@ -76,8 +67,6 @@ class NativeTargetExecutor:
         Build environment with gateway, snapshot, and configuration.
     target
         The target being executed.
-    input_hash
-        Computed input hash for cache invalidation.
     options_hash
         Optional configuration options hash.
 
@@ -86,23 +75,19 @@ class NativeTargetExecutor:
     Synchronous execution:
 
     >>> executor = NativeTargetExecutor.for_target(env, catalog, "risk_factors")
-    >>> if executor.should_skip():
-    ...     return executor.skip()
     >>> return executor.execute(lambda: {"analytics.table": 100})
 
     Asynchronous execution:
 
     >>> async def run_async():
     ...     executor = NativeTargetExecutor.for_target(env, catalog, "scip")
-    ...     if executor.should_skip():
-    ...         return executor.skip()
     ...     return await executor.execute_async(async_index_fn)
     """
 
     env: BuildEnv
     catalog: DagCatalog
     target: TargetDescriptor
-    input_hash: str
+    input_hash: str | None
     options_hash: str | None = None
     _start_time: float = field(default=0.0, repr=False)
 
@@ -151,79 +136,30 @@ class NativeTargetExecutor:
         if target is None:
             raise TargetNotFoundError(target_name, list(catalog))
 
+        _ = hash_options
         resolved_options_hash = options_hash
         if resolved_options_hash is None:
             resolved_options_hash = options_hash_for_target(env, target_name)
-
-        resolved_hash_options = hash_options
-        if resolved_hash_options is None:
-            resolved_hash_options = InputHashOptions(
-                options_hash=resolved_options_hash,
-                manifests=env.manifest_index,
-            )
-        else:
-            if resolved_hash_options.options_hash is None:
-                resolved_hash_options = InputHashOptions(
-                    options_hash=resolved_options_hash,
-                    manifests=resolved_hash_options.manifests,
-                    file_state_hash=resolved_hash_options.file_state_hash,
-                )
-            if resolved_hash_options.manifests is None:
-                resolved_hash_options = InputHashOptions(
-                    options_hash=resolved_hash_options.options_hash,
-                    manifests=env.manifest_index,
-                    file_state_hash=resolved_hash_options.file_state_hash,
-                )
-        input_hash = compute_target_input_hash(
-            target=target,
-            snapshot=env.snapshot,
-            gateway=env.gateway,
-            settings=env.settings,
-            options=resolved_hash_options,
-        )
 
         return cls(
             env=env,
             catalog=catalog,
             target=target,
-            input_hash=input_hash,
+            input_hash=None,
             options_hash=resolved_options_hash,
         )
 
     def should_skip(self) -> bool:
-        """Check if the target can be skipped based on manifest.
-
-        Returns
-        -------
-        bool
-            True if target can be skipped (manifest matches), False otherwise.
-
-        Examples
-        --------
-        >>> if executor.should_skip():
-        ...     return executor.skip()
-        """
-        return should_skip_native_target(
-            self.env,
-            self.target,
-            self.input_hash,
-            options_hash=self.options_hash,
-        )
+        """Return False; skip decisions are delegated to Hamilton caching."""
+        return False
 
     def skip(self) -> TargetRunRecord:
         """Create a skipped record for this target.
-
-        Call this when `should_skip()` returns True.
 
         Returns
         -------
         TargetRunRecord
             Record with status="skipped".
-
-        Examples
-        --------
-        >>> if executor.should_skip():
-        ...     return executor.skip()
         """
         run = NativeRunInfo(
             input_hash=self.input_hash,
@@ -243,14 +179,13 @@ class NativeTargetExecutor:
         *,
         change_delta: dict[str, object] | None = None,
     ) -> TargetRunRecord:
-        """Execute with timing, error handling, and manifest persistence.
+        """Execute with timing and error handling.
 
         This method:
         1. Records the start time
         2. Calls the compute function
         3. Handles any exceptions
         4. Creates the appropriate record (success or failed)
-        5. Persists the manifest on success
 
         Parameters
         ----------
@@ -305,7 +240,7 @@ class NativeTargetExecutor:
 
         Hamilton supports async execution via AsyncGraphAdapter. This method
         allows native targets to leverage async patterns while maintaining
-        the same skip-check, timing, and manifest persistence behavior.
+        the same timing and record creation behavior.
 
         Parameters
         ----------
@@ -421,7 +356,7 @@ class NativeTargetExecutor:
         *,
         change_delta: dict[str, object] | None = None,
     ) -> TargetRunRecord:
-        """Create a success record and persist manifest.
+        """Create a success record.
 
         Parameters
         ----------
@@ -475,8 +410,6 @@ class NativeTargetExecutor:
             self.input_hash,
             inputs=RunRecordInputs(env=self.env, run=run),
         )
-
-        save_manifest(self.env, record, change_delta=change_delta)
         return record
 
 

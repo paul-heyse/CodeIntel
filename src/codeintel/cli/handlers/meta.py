@@ -10,6 +10,7 @@ from codeintel.build.schemas.compile import SchemaManifestRequest, compile_schem
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
 from codeintel.core.execution.ids import new_run_id
+from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -54,12 +55,12 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
         run_id = new_run_id("meta")
         schema_result = ctx.gateway.schemas.persist_schema_manifest(
             manifest,
-            run_id=run_id,
-            repo=snapshot.repo,
-            commit=snapshot.commit,
-            catalog_inputs={"source": "meta.sync"},
-            include_views=True,
-            strict_provenance=True,
+            request=SchemaCatalogRequest(
+                run_id=run_id,
+                repo=snapshot.repo,
+                commit=snapshot.commit,
+                catalog_inputs={"source": "meta.sync"},
+            ),
         )
         contract_result = persist_contract_catalog(
             ctx.gateway,
@@ -68,7 +69,7 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         return fail_execution_failed("meta", str(exc), status=500)
 
-    payload = {
+    payload: dict[str, object] = {
         "run_id": run_id,
         "repo": snapshot.repo,
         "commit": snapshot.commit,

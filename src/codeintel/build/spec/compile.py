@@ -49,6 +49,11 @@ def _artifact_specs_for_target(
     -------
     tuple[ArtifactOutSpec, ...]
         Artifact output specifications for the target.
+
+    Raises
+    ------
+    ValueError
+        If a referenced artifact is missing its path template.
     """
     specs: list[ArtifactOutSpec] = []
     templates = {output.key: output.artifact_path_template for output in outputs}

@@ -51,7 +51,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.graph_harness import GraphTargetHarness
 
 # Test constants to avoid magic numbers
@@ -94,29 +93,29 @@ def _make_graph() -> DagCatalog:
             make_target_descriptor(
                 name="goids",
                 module="graphs",
-                contract=contract_for_keys(("core.goids", "core.goid_crosswalk")),
             ),
             make_target_descriptor(
                 name="symbol_uses",
                 module="graphs",
-                contract=contract_for_keys(("graph.symbol_use_edges",)),
             ),
             make_target_descriptor(
                 name="graph_metrics",
                 module="graphs",
-                contract=contract_for_keys(
-                    (
-                        "analytics.graph_metrics_functions",
-                        "analytics.graph_metrics_modules",
-                    )
-                ),
             ),
             make_target_descriptor(
                 name="graph_validation",
                 module="graphs",
-                contract=contract_for_keys(("analytics.graph_validation",)),
             ),
-        )
+        ),
+        table_keys_by_target={
+            "goids": ("core.goids", "core.goid_crosswalk"),
+            "symbol_uses": ("graph.symbol_use_edges",),
+            "graph_metrics": (
+                "analytics.graph_metrics_functions",
+                "analytics.graph_metrics_modules",
+            ),
+            "graph_validation": ("analytics.graph_validation",),
+        },
     )
 
 

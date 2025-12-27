@@ -13,6 +13,7 @@ import pytest
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.factory import (
+    MemoryGatewayOptions,
     build_snapshot_gateway_resolver,
     open_gateway,
     open_memory_gateway,
@@ -25,6 +26,7 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.fixtures.rows import ModuleRow, insert_rows
+from tests._helpers.gateway import seed_contract_catalog
 
 
 def test_storage_config_creates_with_defaults() -> None:
@@ -110,7 +112,10 @@ def test_storage_config_is_frozen() -> None:
 
 def test_open_memory_gateway_returns_gateway() -> None:
     """Verify open_memory_gateway returns a DuckDBGateway."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         expect_is_instance(gateway, DuckDBGateway, label="gateway type")
         expect_is_not_none(gateway.config, label="gateway config")
@@ -121,7 +126,10 @@ def test_open_memory_gateway_returns_gateway() -> None:
 
 def test_open_memory_gateway_with_defaults() -> None:
     """Verify open_memory_gateway applies schema by default."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         result = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         if result is None:
@@ -134,7 +142,13 @@ def test_open_memory_gateway_with_defaults() -> None:
 
 def test_open_memory_gateway_without_views() -> None:
     """Verify open_memory_gateway can skip view creation."""
-    gateway = open_memory_gateway(ensure_views=False, validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(
+            ensure_views=False,
+            validate_schema=False,
+        ),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         result = gateway.con.execute(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'modules'"
@@ -149,7 +163,13 @@ def test_open_memory_gateway_without_views() -> None:
 
 def test_open_memory_gateway_with_views() -> None:
     """Verify open_memory_gateway can create views."""
-    gateway = open_memory_gateway(ensure_views=True, validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(
+            ensure_views=True,
+            validate_schema=False,
+        ),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         result = gateway.con.execute(
             "SELECT COUNT(*) FROM information_schema.tables "
@@ -170,7 +190,14 @@ def test_open_memory_gateway_with_views() -> None:
 
 def test_open_memory_gateway_with_repo_and_commit() -> None:
     """Verify open_memory_gateway stores repo and commit in config."""
-    gateway = open_memory_gateway(repo="test/repo", commit="abc123", validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(
+            repo="test/repo",
+            commit="abc123",
+            validate_schema=False,
+        ),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         expect_equal(gateway.config.repo, "test/repo", label="repo")
         expect_equal(gateway.config.commit, "abc123", label="commit")
@@ -180,7 +207,10 @@ def test_open_memory_gateway_with_repo_and_commit() -> None:
 
 def test_open_memory_gateway_creates_accessors() -> None:
     """Verify gateway has all accessor properties."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         expect_true(hasattr(gateway, "core"), message="core accessor present")
         expect_true(hasattr(gateway, "graph"), message="graph accessor present")
@@ -192,7 +222,10 @@ def test_open_memory_gateway_creates_accessors() -> None:
 
 def test_open_memory_gateway_exposes_ibis_backend() -> None:
     """Verify gateway exposes an Ibis backend bound to the DuckDB connection."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         table = gateway.ibis.table("core.modules")
         row_count = table.count().execute()
@@ -203,7 +236,10 @@ def test_open_memory_gateway_exposes_ibis_backend() -> None:
 
 def test_open_memory_gateway_supports_insert_and_query() -> None:
     """Verify gateway supports data operations."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         insert_rows(
             gateway,
@@ -224,7 +260,10 @@ def test_open_memory_gateway_supports_insert_and_query() -> None:
 
 def test_open_memory_gateway_has_dataset_registry() -> None:
     """Verify gateway has loaded dataset registry."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     try:
         expect_is_not_none(gateway.datasets, label="datasets registry")
 
@@ -243,12 +282,26 @@ def test_open_gateway_creates_file_database(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gateway = open_gateway(cfg)
+    gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     try:
         expect_true(db_path.exists(), message="db_path created")
         expect_is_instance(gateway, DuckDBGateway, label="gateway type")
     finally:
         gateway.close()
+
+
+def test_open_gateway_requires_contract_catalog(tmp_path: Path) -> None:
+    """Verify open_gateway errors when contract catalog is missing."""
+    db_path = tmp_path / "missing_contracts.duckdb"
+    cfg = StorageConfig(
+        db_path=db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+    )
+    with pytest.raises(RuntimeError, match="Contract catalog missing"):
+        open_gateway(cfg)
 
 
 def test_open_gateway_creates_tables(tmp_path: Path) -> None:
@@ -261,7 +314,7 @@ def test_open_gateway_creates_tables(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gateway = open_gateway(cfg)
+    gateway = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     try:
         result = gateway.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         expect_is_not_none(result, label="modules count")
@@ -280,7 +333,7 @@ def test_open_gateway_persists_data(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gateway1 = open_gateway(cfg1)
+    gateway1 = open_gateway(cfg1, seed_contract_catalog=seed_contract_catalog)
     try:
         insert_rows(
             gateway1,
@@ -296,7 +349,7 @@ def test_open_gateway_persists_data(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gateway2 = open_gateway(cfg2)
+    gateway2 = open_gateway(cfg2, seed_contract_catalog=seed_contract_catalog)
     try:
         result = gateway2.con.execute(
             "SELECT module FROM core.modules WHERE repo = ?", ["repo"]
@@ -320,7 +373,7 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gateway_write = open_gateway(cfg_write)
+    gateway_write = open_gateway(cfg_write, seed_contract_catalog=seed_contract_catalog)
     gateway_write.close()
 
     cfg_read = StorageConfig(
@@ -330,7 +383,7 @@ def test_open_gateway_read_only_mode(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gateway_read = open_gateway(cfg_read)
+    gateway_read = open_gateway(cfg_read, seed_contract_catalog=seed_contract_catalog)
     try:
         result = gateway_read.con.execute("SELECT COUNT(*) FROM core.modules").fetchone()
         expect_is_not_none(result, label="read count")
@@ -363,7 +416,7 @@ def test_snapshot_resolver_opens_existing_snapshot(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    setup_gw = open_gateway(cfg)
+    setup_gw = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
     setup_gw.close()
 
     resolver = build_snapshot_gateway_resolver(db_dir=tmp_path, repo="test/repo")
@@ -389,7 +442,7 @@ def test_snapshot_resolver_reuses_primary_gateway(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    primary = open_gateway(cfg)
+    primary = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
 
     try:
         resolver = build_snapshot_gateway_resolver(
@@ -416,7 +469,7 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
             ensure_views=False,
             validate_schema=False,
         )
-        gw = open_gateway(cfg)
+        gw = open_gateway(cfg, seed_contract_catalog=seed_contract_catalog)
 
         insert_rows(
             gw,
@@ -443,14 +496,20 @@ def test_snapshot_resolver_opens_different_commits(tmp_path: Path) -> None:
 
 def test_gateway_close_releases_connection() -> None:
     """Verify close() releases the database connection."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
     expect_is_not_none(gateway.con, label="connection before close")
     gateway.close()
 
 
 def test_gateway_supports_context_manager() -> None:
     """Verify gateway can be used as context manager if supported."""
-    gateway = open_memory_gateway(validate_schema=False)
+    gateway = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
 
     try:
         expect_is_not_none(gateway.con, label="connection available")
@@ -469,7 +528,7 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
         ensure_views=False,
         validate_schema=False,
     )
-    gw_write = open_gateway(cfg_write)
+    gw_write = open_gateway(cfg_write, seed_contract_catalog=seed_contract_catalog)
     insert_rows(
         gw_write,
         [
@@ -480,7 +539,7 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
     gw_write.close()
 
     cfg_read = StorageConfig.for_readonly(db_path)
-    gw_read = open_gateway(cfg_read)
+    gw_read = open_gateway(cfg_read, seed_contract_catalog=seed_contract_catalog)
     try:
         count = gw_read.con.execute(
             "SELECT COUNT(*) FROM core.modules WHERE repo = ?",
@@ -496,8 +555,14 @@ def test_full_gateway_lifecycle(tmp_path: Path) -> None:
 
 def test_multiple_memory_gateways_are_independent() -> None:
     """Verify multiple memory gateways don't share state."""
-    gw1 = open_memory_gateway(validate_schema=False)
-    gw2 = open_memory_gateway(validate_schema=False)
+    gw1 = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
+    gw2 = open_memory_gateway(
+        options=MemoryGatewayOptions(validate_schema=False),
+        seed_contract_catalog=seed_contract_catalog,
+    )
 
     try:
         insert_rows(gw1, [ModuleRow(module="mod1", path="m1.py", repo="repo1", commit="c1")])

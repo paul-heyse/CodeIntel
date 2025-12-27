@@ -71,7 +71,10 @@ def build_coverage_functions_expr(
     Examples
     --------
     >>> from codeintel.storage.gateway import open_memory_gateway
-    >>> gateway = open_memory_gateway()
+    >>> from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
+    >>> def _seed(con):
+    ...     persist_contract_catalog_to_connection(con, inputs={"source": "coverage_example"})
+    >>> gateway = open_memory_gateway(seed_contract_catalog=_seed)
     >>> # ... setup tables ...
     >>> expr = build_coverage_functions_expr(gateway, snapshot)
     >>> # expr is an Ibis Table expression ready for materialization

@@ -208,13 +208,10 @@ def _validate_macros(
     if missing_registry or missing_versions:
         parts: list[str] = []
         if missing_registry:
-            parts.append(
-                f"Missing table schema registry entries: {', '.join(missing_registry)}"
-            )
+            parts.append(f"Missing table schema registry entries: {', '.join(missing_registry)}")
         if missing_versions:
             parts.append(
-                "Missing schema versions for table keys: "
-                + ", ".join(sorted(missing_versions))
+                "Missing schema versions for table keys: " + ", ".join(sorted(missing_versions))
             )
         return fail_macro_validation("; ".join(parts))
 

@@ -17,9 +17,7 @@ class TestRegistryConsistency:
         runtime = target_system.runtime
         catalog = target_system.catalog
         missing = {
-            t.name
-            for t in catalog.all_targets
-            if target_node(t.name) not in runtime.dr.graph.nodes
+            t.name for t in catalog.all_targets if target_node(t.name) not in runtime.dr.graph.nodes
         }
         expect_true(
             len(missing) == 0,

@@ -26,16 +26,13 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
     MaterializationContextError,
     duration_ms,
-    manifest_row_count,
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
-from codeintel.build.hashing import InputHashOptions
 from codeintel.build.schemas.column_resolution import DeferredColumns, resolve_columns
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.execution.materialization import (
     failed_table_result,
-    skipped_table_result,
     succeeded_table_result,
 )
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
@@ -65,8 +62,7 @@ class DuckDBRowsSaver(DataSaver):
     """Persist row tuples to DuckDB for a specific snapshot.
 
     This adapter:
-    - Computes the target input hash (manifest key) from the catalog + env.
-    - Applies manifest-based skip (authoritative for artifact writes).
+    - Resolves target metadata from the DAG catalog.
     - Writes rows for the current snapshot using ``Warehouse``.
     - Optionally validates the produced dataframe against Pandera schema.
     - Returns metadata convertible to a MaterializationResult describing the write outcome.
@@ -77,7 +73,6 @@ class DuckDBRowsSaver(DataSaver):
     target_name: str
     table_key: str
     columns: tuple[str, ...] | DeferredColumns
-    hash_options: InputHashOptions | None = None
     output_role: Literal["contract", "internal"] | None = None
 
     @classmethod
@@ -139,8 +134,7 @@ class DuckDBRowsSaver(DataSaver):
         Returns
         -------
         dict[str, object]
-            Metadata describing the write, including status and input hash for
-            manifest-based incremental builds.
+            Metadata describing the write and materialization outcome.
 
         Raises
         ------
@@ -156,7 +150,6 @@ class DuckDBRowsSaver(DataSaver):
                 env=self.env,
                 catalog=self.catalog,
                 target_name=self.target_name,
-                hash_options=self.hash_options,
             )
             if isinstance(prepared, MaterializationContextError):
                 result = failed_table_result(
@@ -168,19 +161,12 @@ class DuckDBRowsSaver(DataSaver):
             else:
                 context = prepared
                 input_hash = context.input_hash
-                if context.should_skip:
-                    result = skipped_table_result(
+                if data is None:
+                    result = failed_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
-                        input_hash=input_hash,
-                        row_count=manifest_row_count(self.env, target_name=self.target_name),
-                    )
-                elif data is None:
-                    result = skipped_table_result(
-                        table_key=self.table_key,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash,
-                        row_count=None,
+                        input_hash=input_hash or "",
+                        error="Expected row data but received None",
                     )
                 else:
                     rows = _coerce_rows(data)
@@ -216,7 +202,7 @@ class DuckDBRowsSaver(DataSaver):
                     result = succeeded_table_result(
                         table_key=self.table_key,
                         duration_ms=duration_ms(start),
-                        input_hash=input_hash,
+                        input_hash=input_hash or "",
                         row_count=row_count,
                     )
 

@@ -22,7 +22,6 @@ from tests._helpers.assertions.expectation_assertions import (
     expect_true,
 )
 from tests._helpers.catalog import build_catalog, make_target_descriptor
-from tests._helpers.contracts import contract_for_keys
 from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
 if TYPE_CHECKING:
@@ -59,9 +58,9 @@ def _make_graph() -> DagCatalog:
             make_target_descriptor(
                 name="modules",
                 module="ingestion",
-                contract=contract_for_keys(("core.modules",)),
             ),
-        )
+        ),
+        table_keys_by_target={"modules": ("core.modules",)},
     )
 
 
@@ -168,9 +167,8 @@ def test_rows_saver_resolves_deferred_columns(
     """DuckDBRowsSaver should resolve deferred columns at execution time."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
-    snapshot = env.snapshot
-    repo = snapshot.repo
-    commit = snapshot.commit
+    repo = env.snapshot.repo
+    commit = env.snapshot.commit
     graph = _make_graph()
     table_key = "core.modules"
     target = graph.get("modules")
@@ -190,7 +188,18 @@ def test_rows_saver_resolves_deferred_columns(
         columns=deferred_columns_for_table_key(table_key),
     )
 
-    with ContractEnforcer.for_target(target, strict=True):
+    allowed_tables = frozenset(
+        output.key for output in graph.table_outputs_by_target.get(target.name, ())
+    )
+    allowed_artifacts = frozenset(
+        output.key for output in graph.artifact_outputs_by_target.get(target.name, ())
+    )
+    with ContractEnforcer.for_target(
+        target.name,
+        strict=True,
+        allowed_tables=allowed_tables,
+        allowed_artifacts=allowed_artifacts,
+    ):
         meta = saver.save_data((row,))
 
     expect_equal(meta["status"], expected="succeeded")
