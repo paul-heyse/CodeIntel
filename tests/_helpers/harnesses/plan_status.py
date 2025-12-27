@@ -68,10 +68,9 @@ def compute_status_summary(
         Mapping of target -> (status, reason).
     """
     env = harness.build_env()
-    validator = StateValidator(
-        runtime.catalog,
-        env.gateway,
-        env.snapshot,
+    validator = StateValidator.from_runtime(
+        runtime=runtime,
+        env=env,
         options=StateValidationOptions(),
     )
     state = validator.validate()

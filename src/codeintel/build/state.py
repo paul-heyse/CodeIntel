@@ -1,7 +1,7 @@
 """State validation for the build system.
 
 This module provides the StateValidator class that determines the current
-state of all build targets by examining stored manifests.
+state of all build targets by examining cache presence.
 
 Note: This module uses unified types from `codeintel.build.state_types`.
 Import the unified types directly for new code.
@@ -9,27 +9,26 @@ Import the unified types directly for new code.
 Integration Points
 ------------------
 - Uses `DagCatalog` from the Hamilton compiler for dependency traversal
-- Uses `BuildTracking` from Phase 7 for manifest storage
+- Uses the Hamilton cache index for cache presence
 - Delegates to `StateComputer` for unified state computation
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.build.state_types import BuildState, TargetState
+from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from codeintel.build.hamilton.dag_catalog import DagCatalog
-    from codeintel.config.primitives import SnapshotRef
-    from codeintel.storage.gateway import StorageGateway
-
-log = logging.getLogger(__name__)
-
+    from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 @dataclass(frozen=True, slots=True)
 class StateValidationOptions:
@@ -37,14 +36,14 @@ class StateValidationOptions:
 
 
 class StateValidator:
-    """Validate database state against the DAG catalog.
+    """Validate cache state against the DAG catalog.
 
-    Examines stored manifests to determine which targets are missing,
-    current, or blocked. This is the foundation for inspecting readiness.
+    Examines cache entries to determine which targets are missing, current,
+    or blocked. This is the foundation for inspecting readiness.
 
     The validation proceeds in two passes:
 
-    1. **Pass 1**: Compute individual target states from manifest presence.
+    1. **Pass 1**: Compute individual target states from cache presence.
     2. **Pass 2**: Propagate blocking status from dependencies to dependents.
 
     This class delegates to StateComputer for the actual computation.
@@ -53,17 +52,15 @@ class StateValidator:
     ----------
     catalog
         DAG catalog defining all outputs and their dependencies.
-    gateway
-        Storage gateway for accessing manifests.
-    snapshot
-        Repository snapshot reference (repo, commit, repo_root).
+    session
+        Build session for cache probing and snapshot identity.
     options
         State validation options.
 
     Examples
     --------
     >>> options = StateValidationOptions()
-    >>> validator = StateValidator(catalog, gateway, snapshot, options=options)
+    >>> validator = StateValidator(catalog, session, options=options)
     >>> state = validator.validate()
     >>> state.by_status("missing")
     ('ast', 'modules', ...)
@@ -72,8 +69,7 @@ class StateValidator:
     def __init__(
         self,
         catalog: DagCatalog,
-        gateway: StorageGateway,
-        snapshot: SnapshotRef,
+        session: BuildSession,
         *,
         options: StateValidationOptions,
     ) -> None:
@@ -83,10 +79,8 @@ class StateValidator:
         ----------
         catalog
             DAG catalog with all registered targets.
-        gateway
-            Storage gateway for manifest access.
-        snapshot
-            Repository snapshot reference.
+        session
+            Build session for cache access and snapshot metadata.
         options
             State validation options.
 
@@ -96,8 +90,7 @@ class StateValidator:
             If the DAG catalog has validation errors.
         """
         self._catalog = catalog
-        self._gateway = gateway
-        self._snapshot = snapshot
+        self._session = session
         self._options = options
 
         # Validate catalog
@@ -107,15 +100,60 @@ class StateValidator:
             msg = f"DAG catalog validation failed:\n{error_msg}"
             raise ValueError(msg)
 
-        # Create session and computer for delegation
-        self._session = BuildSession(
-            snapshot=snapshot,
-            gateway=gateway,
-        )
         self._computer = StateComputer(
             catalog=catalog,
-            session=self._session,
+            session=session,
         )
+
+    @classmethod
+    def from_runtime(
+        cls,
+        *,
+        runtime: RuntimeBundle,
+        env: BuildEnv,
+        options: StateValidationOptions | None = None,
+    ) -> StateValidator:
+        """Create a StateValidator from a runtime bundle and environment.
+
+        Parameters
+        ----------
+        runtime
+            Runtime bundle providing cache index and catalog.
+        env
+            Build environment providing snapshot identity.
+        options
+            Optional state validation options.
+
+        Returns
+        -------
+        StateValidator
+            Validator wired to runtime cache inputs.
+        """
+        session = BuildSession(
+            snapshot=env.snapshot,
+            cache_index=runtime.cache_index,
+            cache_key_resolver=runtime.cache_key_resolver,
+            input_values=_state_input_values(runtime=runtime, env=env),
+        )
+        return cls(
+            runtime.catalog,
+            session,
+            options=options or StateValidationOptions(),
+        )
+
+
+def _state_input_values(*, runtime: RuntimeBundle, env: BuildEnv) -> Mapping[str, object]:
+    inputs = ExecutionInputs(
+        env=env,
+        catalog=runtime.catalog,
+        tag_query=runtime.tag_query,
+        cache_index=runtime.cache_index,
+        cache_key_resolver=runtime.cache_key_resolver,
+        schema_index=runtime.schema_index,
+        semantic_registry=runtime.semantic_registry,
+        runtime_fingerprint=runtime.fingerprint,
+    )
+    return execution_input_mapping(inputs)
 
     def validate(self) -> BuildState:
         """Validate state of all targets in the catalog.

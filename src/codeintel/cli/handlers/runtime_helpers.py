@@ -59,20 +59,20 @@ def planning_config(env: BuildEnv) -> dict[str, Any]:
     return config
 
 
-def compose_cli_runtime_bundle(
+def compose_cli_runtime_bundle_with_env(
     *,
     runtime: ResolvedRuntime,
     gateway: StorageGateway,
     config_overrides: Mapping[str, object] | None = None,
     include_planning: bool = False,
     requested_datasets: tuple[str, ...] = (),
-) -> RuntimeBundle:
-    """Compose a RuntimeBundle for CLI handlers.
+) -> tuple[RuntimeBundle, BuildEnv]:
+    """Compose a RuntimeBundle and BuildEnv for CLI handlers.
 
     Returns
     -------
-    RuntimeBundle
-        Composed runtime bundle for CLI usage.
+    tuple[RuntimeBundle, BuildEnv]
+        Runtime bundle and build environment for CLI usage.
     """
     providers = create_default_providers(runtime.tools)
     config = load_build_config(runtime.snapshot.repo_root)
@@ -95,11 +95,38 @@ def compose_cli_runtime_bundle(
     if include_planning:
         compose_config["ci.enable_planning_nodes"] = True
     compose_config.update(dict(config_overrides or {}))
-    return compose_runtime(env=env, config=compose_config).bundle
+    bundle = compose_runtime(env=env, config=compose_config).bundle
+    return bundle, env
+
+
+def compose_cli_runtime_bundle(
+    *,
+    runtime: ResolvedRuntime,
+    gateway: StorageGateway,
+    config_overrides: Mapping[str, object] | None = None,
+    include_planning: bool = False,
+    requested_datasets: tuple[str, ...] = (),
+) -> RuntimeBundle:
+    """Compose a RuntimeBundle for CLI handlers.
+
+    Returns
+    -------
+    RuntimeBundle
+        Composed runtime bundle for CLI usage.
+    """
+    bundle, _ = compose_cli_runtime_bundle_with_env(
+        runtime=runtime,
+        gateway=gateway,
+        config_overrides=config_overrides,
+        include_planning=include_planning,
+        requested_datasets=requested_datasets,
+    )
+    return bundle
 
 
 __all__ = [
     "build_execution_context",
     "compose_cli_runtime_bundle",
+    "compose_cli_runtime_bundle_with_env",
     "planning_config",
 ]

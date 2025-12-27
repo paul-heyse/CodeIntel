@@ -2,22 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.session import BuildSession
 from codeintel.build.state import BuildState, StateValidationOptions, StateValidator, TargetState
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions import expect_equal, expect_false, expect_true
+from tests._helpers.cache import make_cache_key_resolver, make_cache_store, seed_cache_store
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from codeintel.storage.gateway import StorageGateway
+    from codeintel.build.hamilton.cache_adapter import CacheStore
+    from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
 
 
 def _create_test_graph() -> DagCatalog:
@@ -66,24 +67,14 @@ def _create_test_graph() -> DagCatalog:
     )
 
 
-def _save_manifest(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    target: str,
-    input_hash: str,
-) -> OutputManifest:
-    manifest = OutputManifest(
-        target=target,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        impl_kind="native",
-        computed_at=datetime.now(tz=UTC),
-        duration_ms=0.0,
-        input_hash=input_hash,
-    )
-    gateway.build.save_manifest(manifest)
-    return manifest
+def _node_dependencies(catalog: DagCatalog) -> dict[str, tuple[str, ...]]:
+    dependencies: dict[str, tuple[str, ...]] = {}
+    for target in catalog.all_targets:
+        node_name = catalog.target_nodes[target.name]
+        dependencies[node_name] = tuple(
+            catalog.target_nodes[dep] for dep in target.dependencies
+        )
+    return dependencies
 
 
 @pytest.fixture
@@ -117,10 +108,27 @@ def snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 @pytest.fixture
+def cache_store(tmp_path: Path) -> CacheStore:
+    return make_cache_store(tmp_path / "cache")
+
+
+@pytest.fixture
+def cache_key_resolver(
+    test_graph: DagCatalog,
+    cache_store: CacheStore,
+) -> CacheKeyResolver:
+    return make_cache_key_resolver(
+        node_dependencies=_node_dependencies(test_graph),
+        cache_store=cache_store,
+    )
+
+
+@pytest.fixture
 def validator(
     test_graph: DagCatalog,
-    fresh_gateway: StorageGateway,
     snapshot: SnapshotRef,
+    cache_store: CacheStore,
+    cache_key_resolver: CacheKeyResolver,
 ) -> StateValidator:
     """Provide a StateValidator for tests.
 
@@ -129,10 +137,15 @@ def validator(
     StateValidator
         Validator for state validation tests.
     """
+    session = BuildSession(
+        snapshot=snapshot,
+        cache_index=cache_store,
+        cache_key_resolver=cache_key_resolver,
+        input_values={},
+    )
     return StateValidator(
         test_graph,
-        fresh_gateway,
-        snapshot,
+        session,
         options=StateValidationOptions(),
     )
 
@@ -146,11 +159,9 @@ class TestTargetState:
         state = TargetState(
             name="test_target",
             status="missing",
-            manifest=None,
         )
         expect_equal(state.name, "test_target")
         expect_equal(state.status, "missing")
-        expect_true(state.manifest is None)
         expect_true(state.is_missing)
         expect_false(state.is_current)
         expect_true(state.needs_computation)
@@ -158,22 +169,12 @@ class TestTargetState:
     @staticmethod
     def test_create_current_state() -> None:
         """Create a target state for current target."""
-        manifest = OutputManifest(
-            target="test_target",
-            repo="test/repo",
-            commit="abc123",
-            impl_kind="native",
-            computed_at=datetime.now(tz=UTC),
-            duration_ms=100.0,
-            input_hash="cache-key",
-        )
         state = TargetState(
             name="test_target",
             status="current",
-            manifest=manifest,
+            current_hash="cache-key",
         )
         expect_equal(state.status, "current")
-        expect_true(state.manifest is manifest)
         expect_true(state.is_current)
         expect_equal(state.stored_hash, "cache-key")
 
@@ -183,7 +184,6 @@ class TestTargetState:
         state = TargetState(
             name="blocked_target",
             status="blocked",
-            manifest=None,
             blocking_reason="dependency_missing",
             blocking_deps=("modules",),
         )
@@ -197,15 +197,6 @@ class TestBuildState:
     @staticmethod
     def test_build_state_filters() -> None:
         """BuildState should expose status-based filters."""
-        manifest = OutputManifest(
-            target="modules",
-            repo="test/repo",
-            commit="abc123",
-            impl_kind="native",
-            computed_at=datetime.now(tz=UTC),
-            duration_ms=10.0,
-            input_hash="modules",
-        )
         state = BuildState(
             repo="test/repo",
             commit="abc123",
@@ -213,17 +204,15 @@ class TestBuildState:
                 "modules": TargetState(
                     name="modules",
                     status="current",
-                    manifest=manifest,
+                    current_hash="modules",
                 ),
                 "ast": TargetState(
                     name="ast",
                     status="missing",
-                    manifest=None,
                 ),
                 "goids": TargetState(
                     name="goids",
                     status="blocked",
-                    manifest=None,
                     blocking_reason="dependency_missing",
                     blocking_deps=("ast",),
                 ),
@@ -244,20 +233,24 @@ class TestStateValidator:
 
     @staticmethod
     def test_empty_state_is_missing(validator: StateValidator) -> None:
-        """When no manifests exist, all targets are missing."""
+        """When no cache entries exist, all targets are missing."""
         state = validator.validate()
         expect_equal(state.missing_targets(), tuple(state.targets))
         expect_equal(state.current_targets(), ())
         expect_equal(state.blocked_targets(), ())
 
     @staticmethod
-    def test_manifest_presence_marks_current(
+    def test_cache_presence_marks_current(
         validator: StateValidator,
-        fresh_gateway: StorageGateway,
-        snapshot: SnapshotRef,
+        cache_store: CacheStore,
+        cache_key_resolver: CacheKeyResolver,
     ) -> None:
-        """Targets with manifests should be current."""
-        _save_manifest(fresh_gateway, snapshot, target="modules", input_hash="modules")
+        """Targets with cache entries should be current."""
+        seed_cache_store(
+            cache_store,
+            cache_key_resolver,
+            nodes=("t__modules",),
+        )
         state = validator.validate()
         expect_equal(state.current_targets(), ("modules",))
         expect_true("ast" in state.missing_targets())
@@ -265,25 +258,18 @@ class TestStateValidator:
     @staticmethod
     def test_blocked_when_dependency_missing(
         validator: StateValidator,
-        fresh_gateway: StorageGateway,
-        snapshot: SnapshotRef,
     ) -> None:
         """Targets with missing dependencies should be blocked."""
-        _save_manifest(fresh_gateway, snapshot, target="goids", input_hash="goids")
         state = validator.validate()
-        goids_state = state.get("goids")
-        expect_equal(goids_state.status, "blocked")
-        expect_equal(goids_state.blocking_reason, "dependency_missing")
+        ast_state = state.get("ast")
+        expect_equal(ast_state.status, "blocked")
+        expect_equal(ast_state.blocking_reason, "dependency_missing")
 
     @staticmethod
     def test_blocked_when_dependency_blocked(
         validator: StateValidator,
-        fresh_gateway: StorageGateway,
-        snapshot: SnapshotRef,
     ) -> None:
         """Targets should surface dependency_blocked when deps are blocked."""
-        _save_manifest(fresh_gateway, snapshot, target="ast", input_hash="ast")
-        _save_manifest(fresh_gateway, snapshot, target="goids", input_hash="goids")
         state = validator.validate()
         ast_state = state.get("ast")
         goids_state = state.get("goids")

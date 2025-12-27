@@ -16,6 +16,8 @@ __all__ = [
     "SCHEMA_MANIFEST_RUNS_TABLE",
     "SCHEMA_VALIDATION_RUNS_TABLE",
     "SCHEMA_VERSIONS_TABLE",
+    "TABLE_SCHEMA_OVERRIDE_REGISTRY_TABLE",
+    "TABLE_SCHEMA_OVERRIDE_VERSIONS_TABLE",
     "TABLE_SCHEMA_REGISTRY_TABLE",
 ]
 
@@ -85,6 +87,42 @@ TABLE_SCHEMA_REGISTRY_TABLE = TableSchema(
     ),
 )
 
+TABLE_SCHEMA_OVERRIDE_VERSIONS_TABLE = TableSchema(
+    schema="metadata",
+    name="table_schema_override_versions",
+    columns=[
+        Column("version_id", "VARCHAR", nullable=False),
+        Column("table_key", "VARCHAR", nullable=False),
+        Column("schema_digest", "VARCHAR", nullable=False),
+        Column("schema_hash", "VARCHAR", nullable=False),
+        Column("catalog_hash", "VARCHAR"),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("version_id", "table_key"),
+    indexes=(
+        Index("idx_override_versions_table_key", ("table_key", "created_at")),
+        Index("idx_override_versions_schema_digest", ("schema_digest",)),
+        Index("idx_override_versions_version_id", ("version_id",)),
+    ),
+)
+
+TABLE_SCHEMA_OVERRIDE_REGISTRY_TABLE = TableSchema(
+    schema="metadata",
+    name="table_schema_override_registry",
+    columns=[
+        Column("table_key", "VARCHAR", nullable=False),
+        Column("schema_digest", "VARCHAR", nullable=False),
+        Column("schema_hash", "VARCHAR", nullable=False),
+        Column("version_id", "VARCHAR", nullable=False),
+        Column("updated_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("table_key",),
+    indexes=(
+        Index("idx_override_registry_schema_digest", ("schema_digest",)),
+        Index("idx_override_registry_version_id", ("version_id",)),
+    ),
+)
+
 SCHEMA_MANIFEST_RUNS_TABLE = TableSchema(
     schema="metadata",
     name="schema_manifest_runs",
@@ -130,6 +168,8 @@ METADATA_TABLES: tuple[TableSchema, ...] = (
     CANONICAL_CATALOGS_TABLE,
     SCHEMA_VERSIONS_TABLE,
     TABLE_SCHEMA_REGISTRY_TABLE,
+    TABLE_SCHEMA_OVERRIDE_VERSIONS_TABLE,
+    TABLE_SCHEMA_OVERRIDE_REGISTRY_TABLE,
     SCHEMA_MANIFEST_RUNS_TABLE,
     SCHEMA_VALIDATION_RUNS_TABLE,
     TableSchema(

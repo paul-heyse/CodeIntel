@@ -35,8 +35,11 @@ from codeintel.build.serving.semantic_compile import compile_semantic_registry_f
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.declared import source_declared_schema_provider
+from codeintel.core.schemas.output_registry import OUTPUT_TABLE_SCHEMAS
+from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.runtime.module_resolver import resolve_module_paths, resolve_modules
 from codeintel.runtime.runtime_bundle import RuntimeBundle, RuntimeKey
+from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping, Sequence
@@ -246,7 +249,7 @@ def _build_runtime_bundle(
         _build_cache_key_resolver(driver, cache_store) if cache_store is not None else None
     )
 
-    schema_index = _build_schema_index(driver=driver, catalog=catalog)
+    schema_index = _build_schema_index(driver=driver, catalog=catalog, env=identity.env)
     semantic_registry = compile_semantic_registry_from_tag_query(
         schema_provider=schema_index.schema_provider(),
         tag_query=tag_query,
@@ -359,17 +362,40 @@ def _build_schema_index(
     *,
     driver: h_driver.Driver,
     catalog: DagCatalog,
+    env: BuildEnv,
 ) -> SchemaIndex:
     inference_service = get_schema_inference_service(driver=driver, catalog=catalog)
-    inferable_table_keys = inference_service.inferable_table_keys()
     declared_provider = source_declared_schema_provider(
-        exclude_table_keys=inferable_table_keys,
+        exclude_table_keys=catalog.table_outputs,
     )
-    return build_schema_index(
+    override_provider = _override_schema_provider(env=env)
+    schema_index = build_schema_index(
         system=catalog,
         declared_provider=declared_provider,
+        override_provider=override_provider,
         inference_service=inference_service,
     )
+    _prefill_schema_index(env=env, schema_index=schema_index)
+    return schema_index
+
+
+def _override_schema_provider(*, env: BuildEnv) -> SchemaProvider:
+    override_schemas = dict(OUTPUT_TABLE_SCHEMAS)
+    try:
+        override_schemas.update(env.gateway.schemas.load_override_registry())
+    except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
+        log.warning("schema.override_registry.load failed: %s", exc)
+    return MappingSchemaProvider(override_schemas)
+
+
+def _prefill_schema_index(*, env: BuildEnv, schema_index: SchemaIndex) -> None:
+    try:
+        prefetched = env.gateway.schemas.prefill_schema_index(schema_index)
+    except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
+        log.warning("schema.index.prefill failed: %s", exc)
+        return
+    if prefetched:
+        log.info("schema.index.prefill loaded %d schemas", prefetched)
 
 
 def _runtime_key(

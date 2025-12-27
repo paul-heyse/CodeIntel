@@ -16,8 +16,6 @@ from codeintel.core.schemas.primitives import TableSchema
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 EXPECTED_DATASET_CONTRACTS_COUNT = 99
-EXPECTED_TABLE_SCHEMAS_COUNT = 101
-EXPECTED_ROW_BINDINGS_COUNT = 99
 
 
 @pytest.fixture(autouse=True)
@@ -73,20 +71,18 @@ def test_dataset_contracts_by_table_key_count_snapshot() -> None:
         )
 
 
-def test_table_schemas_count_snapshot(non_inferable_table_schemas: tuple[object, ...]) -> None:
-    """Lock in the current TABLE_SCHEMAS count to detect accidental removal."""
-    actual = len(non_inferable_table_schemas)
-    if actual != EXPECTED_TABLE_SCHEMAS_COUNT:
-        pytest.fail(f"Expected {EXPECTED_TABLE_SCHEMAS_COUNT} TABLE_SCHEMAS, got {actual}")
-
-
-def test_row_bindings_count_snapshot() -> None:
-    """Lock in the current ROW_BINDINGS_BY_TABLE_KEY count."""
-    actual = len(list(iter_row_bindings()))
-    if actual < EXPECTED_ROW_BINDINGS_COUNT:
-        pytest.fail(
-            f"Expected {EXPECTED_ROW_BINDINGS_COUNT} ROW_BINDINGS_BY_TABLE_KEY, got {actual}"
-        )
+def test_non_inferable_outputs_have_overrides(
+    hamilton_runtime: RuntimeBundle,
+    non_inferable_table_schemas: tuple[TableSchema, ...],
+    inferable_table_keys: frozenset[str],
+) -> None:
+    """Non-inferable outputs should always have explicit override schemas."""
+    output_table_keys = set(hamilton_runtime.catalog.table_outputs)
+    non_inferable = output_table_keys - inferable_table_keys
+    override_keys = {schema.table_key for schema in non_inferable_table_schemas}
+    missing = sorted(non_inferable - override_keys)
+    if missing:
+        pytest.fail(f"Missing override schemas for non-inferable outputs: {missing}")
 
 
 def test_all_tables_have_schemas(inferable_table_keys: frozenset[str]) -> None:

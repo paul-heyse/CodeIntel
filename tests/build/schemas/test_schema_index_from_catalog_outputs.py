@@ -86,10 +86,12 @@ def test_schema_index_requires_explicit_schema_for_non_inferable(
     """Non-inferable outputs must have explicit registry schemas."""
     system = _build_target_system(hamilton_runtime)
     declared_provider = MappingSchemaProvider({})
+    override_provider = MappingSchemaProvider({})
     with pytest.raises(ValueError, match="Missing explicit schema overrides"):
         build_schema_index(
             system=system,
             declared_provider=declared_provider,
+            override_provider=override_provider,
             inference_service=cast("SchemaInferenceService", _FakeInferenceService()),
         )
 
@@ -98,6 +100,9 @@ def test_schema_index_uses_catalog_outputs(hamilton_runtime: RuntimeBundle) -> N
     """Schema index derivations should come from catalog outputs."""
     system = _build_target_system(hamilton_runtime)
     declared_provider = MappingSchemaProvider(
+        {}
+    )
+    override_provider = MappingSchemaProvider(
         {
             "analytics.explicit": TableSchema(
                 schema="analytics",
@@ -109,6 +114,7 @@ def test_schema_index_uses_catalog_outputs(hamilton_runtime: RuntimeBundle) -> N
     schema_index = build_schema_index(
         system=system,
         declared_provider=declared_provider,
+        override_provider=override_provider,
         inference_service=cast("SchemaInferenceService", _FakeInferenceService()),
     )
 

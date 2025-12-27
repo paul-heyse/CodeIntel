@@ -43,7 +43,9 @@ def test_get_table_schemas_returns_dict() -> None:
 
 def test_get_table_schemas_contains_expected_keys() -> None:
     """Verify schema provider contains known table keys."""
-    schemas = {s.table_key: s for s in get_schema_provider().iter_table_schemas()}
+    provider = get_schema_provider()
+    schemas = {s.table_key: s for s in provider.iter_table_schemas()}
+    inferable = getattr(provider, "inferable_table_keys", frozenset())
 
     require(condition="core.goids" in schemas, message="core.goids table schema missing")
     require(
@@ -51,8 +53,9 @@ def test_get_table_schemas_contains_expected_keys() -> None:
         message="analytics.function_metrics table schema missing",
     )
     require(
-        condition="graph.call_graph_edges" in schemas,
-        message="graph.call_graph_edges schema missing",
+        condition="graph.call_graph_edges" in schemas
+        or "graph.call_graph_edges" in inferable,
+        message="graph.call_graph_edges should be inferable or declared",
     )
 
 
