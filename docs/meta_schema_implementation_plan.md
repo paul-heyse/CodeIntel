@@ -162,37 +162,49 @@ Acceptance:
 
 ---
 
-### Phase 4: Inference and Planning Refactor (Remove Early Registry Dependence)
+### Phase 4: Inference and Planning Refactor (Infer-by-default + Override Fallback)
 
-Objective: decouple compilation from static schema registries.
+Objective: decouple compilation from static schema registries while making outputs inferable by
+default and retaining safe overrides.
 
 Tasks:
+- Expand inference eligibility beyond q__-only nodes:
+  - allow relation-first compute nodes that return `TabularInput` even without q__ params
+  - allow `env` / `catalog` dependencies; continue rejecting non-tabular dependencies
 - Replace target compilation logic to use `TableOutputDescriptor` (table_key only).
 - Prefill schema inference cache from meta prior to inference.
-- Limit overrides to declared sources + non-inferable outputs only.
+- Add override fallback for inferable outputs when inference fails:
+  - resolve overrides from a dedicated overrides provider (meta-backed)
+- Add an inference success gate ("all inferable outputs inferred") to drive auto-refresh.
 
 Deliverables:
 - Target compilation no longer imports table registry.
-- Schema inference uses meta cache as first choice.
+- Inference covers relation-first outputs and prefers meta cache.
+- Override fallback exists for inferable outputs on inference failure.
 
 Acceptance:
-- Removing a registry schema for inferable outputs does not break compile.
+- All relation-first DAG outputs are inferable by default.
+- Inference failures fall back to overrides without compile-time failures.
 - Inference is skipped when meta provides schema.
 
 ---
 
 ### Phase 5: Decommission Legacy Registries (Delete, Not Migrate)
 
-Objective: remove duplicate, legacy, or transitional schema code.
+Objective: remove duplicate, legacy, or transitional schema code once inference + overrides are
+meta-backed.
 
 Decommission Steps:
 - Remove inferable schemas from:
   - `core.schemas.table_registry.TABLE_SCHEMAS`
   - `core.schemas.output_registry.OUTPUT_TABLE_SCHEMAS`
+- Collapse `output_registry` to non-inferable outputs + metadata tables only.
 - Delete bootstrap paths that import build-time contracts:
   - Remove storage bootstrapping of contract catalogs.
 - Remove unused helpers that enforce schema at compile time.
 - Remove legacy schema views and catalogs not backed by meta.
+- Update tests that snapshot registry counts or table_registry parity to use the unified schema
+  provider + non-inferable overrides provider.
 
 Deliverables:
 - All inferable schemas removed from python registries.
@@ -200,29 +212,36 @@ Deliverables:
 - Dead helper functions removed.
 
 Acceptance:
-- No code path references legacy registries.
+- No code path references legacy registries for inferable outputs.
 - All schema resolution occurs via meta catalog or declared sources.
 
 ---
 
 ### Phase 6: Deployment, Observability, and Hardening
 
-Objective: reliable production rollout with monitoring and guardrails.
+Objective: reliable production rollout with monitoring, override versioning, and guardrails.
 
 Tasks:
-- Add operational dashboards:
-  - schema drift rate, validation failures, latest good version.
+- Add override backup versioning:
+  - `metadata.table_schema_override_versions` (history)
+  - `metadata.table_schema_override_registry` (active pointer)
+- Add automatic override refresh:
+  - on successful inference of all inferable outputs, write new override versions
+  - keep prior versions for rollback
+- Add rollback tooling:
+  - CLI command to pin override registry to a prior schema_digest
 - Add registry health checks:
-  - missing manifest, stale registry detection.
-- Configure read-only `meta.duckdb` for serving deployments.
-- Add regression tests for schema round-trip + registry correctness.
+  - missing manifest, stale registry detection
+  - override registry present + inference success rate
+- Configure read-only `meta.duckdb` for serving deployments (attach when present; warn if missing).
+- Add regression tests for schema round-trip, override refresh, rollback, registry alignment.
 
 Deliverables:
 - Production health checks and alerts.
-- CI tests for manifest round-trip and registry alignment.
+- CI tests for manifest round-trip + registry alignment + override history/rollback.
 
 Acceptance:
-- Stable deployment with live registry updates and zero legacy code usage.
+- Stable deployment with live registry updates, override rollback, and zero legacy code usage.
 
 ## Decommissioning Checklist (Explicit Deletes)
 

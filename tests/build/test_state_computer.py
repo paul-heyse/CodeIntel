@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
@@ -10,15 +9,16 @@ import pytest
 from codeintel.build.session import BuildSession
 from codeintel.build.state_computer import StateComputer
 from codeintel.config.primitives import SnapshotRef
-from codeintel.core.build_manifest import OutputManifest
 from tests._helpers.assertions import expect_equal
+from tests._helpers.cache import make_cache_key_resolver, make_cache_store, seed_cache_store
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.build.hamilton.cache_adapter import CacheStore
+    from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
     from codeintel.build.hamilton.dag_catalog import DagCatalog
-    from codeintel.storage.gateway import StorageGateway
 
 
 def _create_test_graph() -> DagCatalog:
@@ -49,24 +49,14 @@ def _create_test_graph() -> DagCatalog:
     )
 
 
-def _save_manifest(
-    gateway: StorageGateway,
-    snapshot: SnapshotRef,
-    *,
-    target: str,
-    input_hash: str,
-) -> OutputManifest:
-    manifest = OutputManifest(
-        target=target,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-        impl_kind="native",
-        computed_at=datetime.now(tz=UTC),
-        duration_ms=0.0,
-        input_hash=input_hash,
-    )
-    gateway.build.save_manifest(manifest)
-    return manifest
+def _node_dependencies(catalog: DagCatalog) -> dict[str, tuple[str, ...]]:
+    dependencies: dict[str, tuple[str, ...]] = {}
+    for target in catalog.all_targets:
+        node_name = catalog.target_nodes[target.name]
+        dependencies[node_name] = tuple(
+            catalog.target_nodes[dep] for dep in target.dependencies
+        )
+    return dependencies
 
 
 @pytest.fixture
@@ -88,6 +78,22 @@ def snapshot(tmp_path: Path) -> SnapshotRef:
 
 
 @pytest.fixture
+def cache_store(tmp_path: Path) -> CacheStore:
+    return make_cache_store(tmp_path / "cache")
+
+
+@pytest.fixture
+def cache_key_resolver(
+    test_graph: DagCatalog,
+    cache_store: CacheStore,
+) -> CacheKeyResolver:
+    return make_cache_key_resolver(
+        node_dependencies=_node_dependencies(test_graph),
+        cache_store=cache_store,
+    )
+
+
+@pytest.fixture
 def test_graph() -> DagCatalog:
     """Provide a minimal test catalog for state computer tests.
 
@@ -100,7 +106,11 @@ def test_graph() -> DagCatalog:
 
 
 @pytest.fixture
-def session(snapshot: SnapshotRef, fresh_gateway: StorageGateway) -> BuildSession:
+def session(
+    snapshot: SnapshotRef,
+    cache_store: CacheStore,
+    cache_key_resolver: CacheKeyResolver,
+) -> BuildSession:
     """Provide a BuildSession for state computer tests.
 
     Returns
@@ -108,7 +118,12 @@ def session(snapshot: SnapshotRef, fresh_gateway: StorageGateway) -> BuildSessio
     BuildSession
         Build session for state computer tests.
     """
-    return BuildSession(snapshot=snapshot, gateway=fresh_gateway)
+    return BuildSession(
+        snapshot=snapshot,
+        cache_index=cache_store,
+        cache_key_resolver=cache_key_resolver,
+        input_values={},
+    )
 
 
 @pytest.fixture
@@ -128,7 +143,7 @@ class TestStateComputer:
 
     @staticmethod
     def test_compute_all_missing(computer: StateComputer) -> None:
-        """When no manifests exist, all targets are missing."""
+        """When no cache entries exist, all targets are missing."""
         state = computer.compute_all()
         expect_equal(state.current_targets(), ())
         expect_equal(state.blocked_targets(), ())
@@ -137,46 +152,44 @@ class TestStateComputer:
     @staticmethod
     def test_blocked_when_dependency_missing(
         computer: StateComputer,
-        fresh_gateway: StorageGateway,
-        snapshot: SnapshotRef,
     ) -> None:
         """Targets with missing dependencies should be blocked."""
-        _save_manifest(fresh_gateway, snapshot, target="goids", input_hash="goids")
         state = computer.compute_all()
-        goids_state = state.get("goids")
-        expect_equal(goids_state.status, "blocked")
-        expect_equal(goids_state.blocking_reason, "dependency_missing")
+        ast_state = state.get("ast")
+        expect_equal(ast_state.status, "blocked")
+        expect_equal(ast_state.blocking_reason, "dependency_missing")
 
     @staticmethod
     def test_compute_single_missing(computer: StateComputer) -> None:
-        """compute_single should return missing state when no manifest exists."""
+        """compute_single should return missing state when no cache entry exists."""
         state = computer.compute_single("modules")
         expect_equal(state.status, "missing")
 
     @staticmethod
     def test_compute_single_blocked(
         computer: StateComputer,
-        fresh_gateway: StorageGateway,
-        snapshot: SnapshotRef,
     ) -> None:
         """compute_single should return blocked state when deps are missing."""
-        _save_manifest(fresh_gateway, snapshot, target="goids", input_hash="goids")
-        state = computer.compute_single("goids")
+        state = computer.compute_single("ast")
         expect_equal(state.status, "blocked")
         expect_equal(state.blocking_reason, "dependency_missing")
 
 
 class TestTargetStateEquivalence:
-    """Ensure compute_all and compute_single align for present manifests."""
+    """Ensure compute_all and compute_single align for cached targets."""
 
     @staticmethod
     def test_current_state_consistency(
         computer: StateComputer,
-        fresh_gateway: StorageGateway,
-        snapshot: SnapshotRef,
+        cache_store: CacheStore,
+        cache_key_resolver: CacheKeyResolver,
     ) -> None:
         """Compute_all and compute_single should agree on current state."""
-        _save_manifest(fresh_gateway, snapshot, target="modules", input_hash="modules")
+        seed_cache_store(
+            cache_store,
+            cache_key_resolver,
+            nodes=("t__modules",),
+        )
         state_all = computer.compute_all().get("modules")
         state_single = computer.compute_single("modules")
         expect_equal(state_all.status, "current")

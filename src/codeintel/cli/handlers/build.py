@@ -72,6 +72,7 @@ from codeintel.cli.handlers._utilities import runtime_gateway
 from codeintel.cli.handlers.runtime_helpers import (
     build_execution_context,
     compose_cli_runtime_bundle,
+    compose_cli_runtime_bundle_with_env,
     planning_config,
 )
 from codeintel.cli.rendering.types import OutputFormat
@@ -765,7 +766,10 @@ def build_status_handler(
     except ResolutionError as e:
         return fail_project_error("build", str(e))
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
+    runtime_bundle, env = compose_cli_runtime_bundle_with_env(
+        runtime=runtime,
+        gateway=ctx.gateway,
+    )
     catalog = runtime_bundle.catalog
 
     LOG.info(
@@ -774,11 +778,9 @@ def build_status_handler(
         runtime.snapshot.commit,
     )
 
-    gateway = ctx.gateway
-    validator = StateValidator(
-        catalog,
-        gateway,
-        runtime.snapshot,
+    validator = StateValidator.from_runtime(
+        runtime=runtime_bundle,
+        env=env,
         options=StateValidationOptions(),
     )
     state = validator.validate()

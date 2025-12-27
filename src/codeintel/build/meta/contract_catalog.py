@@ -5,11 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.dag_catalog import OutputDescriptor
-from codeintel.build.schemas.contract_service import ContractService as BuildContractService
-from codeintel.build.targets import TargetDescriptor
 from codeintel.core.hashing.fingerprint import fingerprint
-from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.contract_serde import contract_to_json_obj
 from codeintel.core.schemas.contract_service import (
     ContractService as ContractServiceProtocol,
@@ -17,7 +13,6 @@ from codeintel.core.schemas.contract_service import (
 from codeintel.core.schemas.contract_service import (
     get_enriched_contract_service,
 )
-from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 
@@ -46,40 +41,8 @@ class _CatalogConnectionGateway:
     con: DuckDBPyConnection
 
 
-@dataclass(frozen=True, slots=True)
-class _NullTargetMetadataProvider:
-    """Fallback metadata provider that yields no targets."""
-
-    def get_target(self, name: str) -> TargetDescriptor | None:
-        _ = (self, name)
-        return None
-
-    def target_for_table_key(self, table_key: str) -> TargetDescriptor | None:
-        _ = (self, table_key)
-        return None
-
-    def output_for_table_key(self, table_key: str) -> OutputDescriptor | None:
-        _ = (self, table_key)
-        return None
-
-    def target_for_artifact(self, artifact_name: str) -> TargetDescriptor | None:
-        _ = (self, artifact_name)
-        return None
-
-
-def _fallback_contract_service() -> ContractServiceProtocol:
-    schema_service = SchemaService(table_provider=MappingSchemaProvider(TABLE_SCHEMAS))
-    return BuildContractService(
-        schema_service=schema_service,
-        target_metadata=_NullTargetMetadataProvider(),
-    )
-
-
 def _resolve_contract_service() -> ContractServiceProtocol:
-    try:
-        return get_enriched_contract_service()
-    except RuntimeError:
-        return _fallback_contract_service()
+    return get_enriched_contract_service()
 
 
 def build_contract_catalog_payload() -> dict[str, object]:

@@ -228,6 +228,29 @@ class SchemaIndex:
             msg = f"Recursive schema inference detected for {table_key}"
             raise RuntimeError(msg)
 
+    def is_inference_active(self, table_key: str) -> bool:
+        """Return True when inference is already active for the table key.
+
+        Returns
+        -------
+        bool
+            True when inference is already active.
+        """
+        return table_key in self._inference_stack
+
+    def override_schema_for(self, table_key: str) -> TableSchema | None:
+        """Return the override schema for a table key, if configured.
+
+        Returns
+        -------
+        TableSchema | None
+            Override schema when configured, otherwise None.
+        """
+        derivation = self.derivations.get(table_key)
+        if derivation is None:
+            return None
+        return derivation.override_schema
+
     def _resolve_inferred_schema(
         self,
         table_key: str,
@@ -319,7 +342,14 @@ class _SchemaIndexSeedProvider:
     schema_index: SchemaIndex
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
-        self.schema_index.raise_if_inference_recursive(table_key)
+        if self.schema_index.is_inference_active(table_key):
+            cached = self.schema_index._cache.get(table_key)
+            if cached is not None:
+                return cached
+            override_schema = self.schema_index.override_schema_for(table_key)
+            if override_schema is not None:
+                return override_schema
+            self.schema_index.raise_if_inference_recursive(table_key)
         schema = self.declared_provider.get_table_schema(table_key)
         if schema is not None:
             return schema
@@ -344,6 +374,7 @@ def build_schema_index(
     *,
     system: TargetSystem | DagCatalog,
     declared_provider: SchemaProvider,
+    override_provider: SchemaProvider,
     inference_service: SchemaInferenceService,
 ) -> SchemaIndex:
     """Build a SchemaIndex from the global target system.
@@ -364,7 +395,7 @@ def build_schema_index(
     missing_overrides: list[tuple[str, str]] = []
 
     for table_key, output in sorted(catalog.table_outputs.items()):
-        override_schema = declared_provider.get_table_schema(table_key)
+        override_schema = override_provider.get_table_schema(table_key)
         if table_key in inferable:
             kind: SchemaDerivationKind = "inferred_relation"
         else:

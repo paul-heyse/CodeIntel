@@ -12,7 +12,11 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.cli.core import CliResult
-from codeintel.cli.errors.results import fail_execution_failed
+from codeintel.cli.errors.results import (
+    fail_execution_failed,
+    fail_invalid_value,
+    fail_not_found,
+)
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.core.execution.ids import new_run_id
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
@@ -67,14 +71,20 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
             con=ctx.gateway.con,
         )
         run_id = new_run_id("meta")
+        catalog_request = SchemaCatalogRequest(
+            run_id=run_id,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+            catalog_inputs={"source": "meta.sync"},
+        )
         schema_result = ctx.gateway.schemas.persist_schema_manifest(
             manifest,
-            request=SchemaCatalogRequest(
-                run_id=run_id,
-                repo=snapshot.repo,
-                commit=snapshot.commit,
-                catalog_inputs={"source": "meta.sync"},
-            ),
+            request=catalog_request,
+        )
+        override_result = ctx.gateway.schemas.refresh_override_registry_from_manifest(
+            manifest,
+            request=catalog_request,
+            catalog_hash=schema_result.catalog_hash,
         )
         contract_result = persist_contract_catalog(
             ctx.gateway,
@@ -93,7 +103,68 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
         "schema_versions_rows": schema_result.schema_versions_rows,
         "table_schema_registry_rows": schema_result.table_schema_registry_rows,
         "schema_manifest_runs_rows": schema_result.schema_manifest_runs_rows,
+        "override_refresh_status": override_result.status,
+        "override_refresh_reason": override_result.reason,
+        "override_refresh_version_id": override_result.version_id,
+        "override_refresh_tables": override_result.tables,
+        "override_refresh_schema_versions_rows": override_result.schema_versions_rows,
+        "override_refresh_versions_rows": override_result.override_versions_rows,
+        "override_refresh_registry_rows": override_result.override_registry_rows,
         "contract_catalog_hash": contract_result.catalog_hash,
         "contract_count": contract_result.contract_count,
     }
+    return CliResult.ok(payload)
+
+
+def meta_override_pin_handler(
+    ctx: CommandContext,
+    *,
+    table_key: str,
+    schema_digest: str | None,
+    version_id: str | None,
+) -> CliResult[dict[str, object]]:
+    """Pin the override registry to a specific schema version."""
+    if not ctx.has_storage:
+        return fail_execution_failed("meta", "meta.override-pin requires storage access")
+    if schema_digest is None and version_id is None:
+        return fail_invalid_value(
+            "schema_digest",
+            None,
+            "schema_digest or version_id must be provided",
+            suggestion="Provide --schema-digest or --version-id",
+        )
+
+    try:
+        record = ctx.gateway.schemas.set_override_registry_version(
+            table_key=table_key,
+            schema_digest=schema_digest,
+            version_id=version_id,
+        )
+    except KeyError:
+        return fail_not_found(
+            "override_version",
+            table_key,
+            suggestion="Verify table_key and schema_digest/version_id",
+        )
+    except (RuntimeError, ValueError) as exc:
+        return fail_execution_failed("meta", str(exc), status=500)
+
+    payload = {
+        "table_key": record.table_key,
+        "schema_digest": record.schema_digest,
+        "schema_hash": record.schema_hash,
+        "version_id": record.version_id,
+        "updated_at": record.updated_at.isoformat() if record.updated_at is not None else None,
+    }
+    return CliResult.ok(payload)
+
+
+def meta_registry_health_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
+    """Return schema registry health diagnostics for the connected gateway."""
+    if not ctx.has_storage:
+        return fail_execution_failed("meta", "meta.health requires storage access")
+    try:
+        payload = ctx.gateway.schemas.registry_health_snapshot()
+    except (RuntimeError, TypeError, ValueError) as exc:
+        return fail_execution_failed("meta", str(exc), status=500)
     return CliResult.ok(payload)

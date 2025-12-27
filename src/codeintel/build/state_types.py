@@ -29,8 +29,6 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from codeintel.core.build_manifest import OutputManifest
-
 __all__ = [
     "BlockingReason",
     "BuildState",
@@ -42,12 +40,12 @@ __all__ = [
 TargetStatus = Literal["current", "missing", "blocked"]
 """Unified status for a build target.
 
-- ``current``: Manifest exists for this target
-- ``missing``: No manifest exists for this target
+- ``current``: Cache entry exists for this target's current inputs
+- ``missing``: No cache entry exists for this target
 - ``blocked``: Dependencies are not ready (missing or blocked)
 
 The status is computed purely from observable facts:
-1. Does a manifest exist?
+1. Does a cache entry exist?
 2. Are all dependencies in "current" status?
 """
 
@@ -76,23 +74,20 @@ class TargetState:
         Target identifier matching TargetDescriptor.name.
     status
         Computed status: current, missing, or blocked.
-    manifest
-        Stored manifest if one exists, None otherwise.
     current_hash
-        Cache key for the current snapshot (None if not computed).
+        Cache key for the current inputs (None if not computed).
     blocking_reason
         Primary reason for non-current status (None if current).
     blocking_deps
         Dependencies causing blocked status (empty if not blocked).
     stored_hash
-        Cache key from manifest (None if no manifest).
+        Cache key known to exist in cache (None if not cached).
 
     Examples
     --------
     >>> state = TargetState(
     ...     name="ast",
     ...     status="current",
-    ...     manifest=manifest,
     ...     current_hash="abc123def456",
     ... )
     >>> state.is_current
@@ -101,7 +96,6 @@ class TargetState:
     >>> state = TargetState(
     ...     name="call_graph",
     ...     status="blocked",
-    ...     manifest=None,
     ...     current_hash=None,
     ...     blocking_reason="dependency_missing",
     ...     blocking_deps=("ast",),
@@ -112,7 +106,6 @@ class TargetState:
 
     name: str
     status: TargetStatus
-    manifest: OutputManifest | None
     current_hash: str | None = None
     blocking_reason: BlockingReason | None = None
     blocking_deps: tuple[str, ...] = ()
@@ -120,9 +113,8 @@ class TargetState:
 
     def __post_init__(self) -> None:
         """Validate state consistency."""
-        # If we have a manifest, extract stored_hash if not provided
-        if self.manifest is not None and self.stored_hash is None:
-            object.__setattr__(self, "stored_hash", self.manifest.input_hash)
+        if self.status == "current" and self.stored_hash is None and self.current_hash is not None:
+            object.__setattr__(self, "stored_hash", self.current_hash)
 
     @property
     def is_current(self) -> bool:
@@ -161,7 +153,7 @@ class TargetState:
     def needs_computation(self) -> bool:
         """Check if target needs to be computed.
 
-        A target needs computation if it's missing.
+        A target needs computation if it's missing (no cache entry for current inputs).
         Blocked targets cannot be computed until deps are ready.
 
         Returns

@@ -76,9 +76,9 @@ class BuildEnv:
         Set of target names that should bypass skip checks and always
         recompute. Used to implement --force CLI flag.
     manifest_index
-        Pre-loaded mapping of target names to their manifests for this
-        repo/commit. Used to avoid per-target DB round trips during
-        hash computation.
+        Optional mapping of target names to their manifests for this
+        repo/commit. Retained for audit/reporting workflows; cache-based
+        execution should not depend on it.
     validate_outputs
         When True, validate produced datasets against their Pandera schemas
         after write. Validation failures will mark the target as failed and

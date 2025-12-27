@@ -615,6 +615,22 @@ DATASETS_SCAFFOLD_DRY_RUN = OptionSpec(
 
 
 # ---------------------------------------------------------------------------
+# Meta command options
+# ---------------------------------------------------------------------------
+
+META_OVERRIDE_SCHEMA_DIGEST = OptionSpec(
+    arg_name="schema_digest",
+    names=("--schema-digest",),
+    help="Schema digest to pin for the override registry.",
+)
+META_OVERRIDE_VERSION_ID = OptionSpec(
+    arg_name="version_id",
+    names=("--version-id",),
+    help="Override version id to pin for the override registry.",
+)
+
+
+# ---------------------------------------------------------------------------
 # Docs command options
 # ---------------------------------------------------------------------------
 
@@ -1120,6 +1136,8 @@ __all__ = [
     "JOBS_MAX_AGE_DAYS",
     "JOBS_STATUS_FILTER",
     "JSON_FLAG",
+    "META_OVERRIDE_SCHEMA_DIGEST",
+    "META_OVERRIDE_VERSION_ID",
     "OUTPUT_FORMAT",
     "PLUGINS_NAME",
     "PLUGINS_OUTPUT_DIR",

@@ -70,6 +70,7 @@ def test_schema_index_accepts_explicit_override_for_non_inferable_outputs(
         description="Test target with explicit override.",
     )
     declared_provider = MappingSchemaProvider({table_key: override_schema})
+    override_provider = MappingSchemaProvider({table_key: override_schema})
     system = _build_target_system(
         (target,),
         table_keys_by_target={"override_ok_target": (table_key,)},
@@ -78,6 +79,7 @@ def test_schema_index_accepts_explicit_override_for_non_inferable_outputs(
     schema_index = build_schema_index(
         system=system,
         declared_provider=declared_provider,
+        override_provider=override_provider,
         inference_service=get_schema_inference_service(
             driver=hamilton_runtime.driver,
             catalog=hamilton_runtime.catalog,

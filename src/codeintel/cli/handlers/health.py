@@ -15,12 +15,11 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
 from codeintel.cli.config import TOML_CONFIG_PATHS
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import HealthCheckResult
 from codeintel.cli.introspection import get_registry
-from codeintel.core.errors.storage import StorageConnectionError
+from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.core.runtime.loader import load_runtime_settings
 from codeintel.observability.attribute_schema import build_attribute_normalizer
 from codeintel.observability.runtime import (
@@ -30,11 +29,10 @@ from codeintel.observability.runtime import (
     resolve_observability_config,
 )
 from codeintel.observability.semconv_keys import CODEINTEL_HEALTH_CHECK, CODEINTEL_SUCCESS
-from codeintel.storage.gateway import MemoryGatewayOptions, open_memory_gateway
+from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
-    from duckdb import DuckDBPyConnection
-
     from codeintel.cli.context import CommandContext
 
 LOG = logging.getLogger(__name__)
@@ -193,24 +191,10 @@ def _check_storage() -> CheckResult:
         Check result.
     """
     try:
-
-        def _seed_contract_catalog(con: DuckDBPyConnection) -> None:
-            persist_contract_catalog_to_connection(
-                con,
-                inputs={"source": "health_check"},
-            )
-
-        gateway = open_memory_gateway(
-            options=MemoryGatewayOptions(
-                apply_schema=False,
-                ensure_views=False,
-                validate_schema=False,
-            ),
-            seed_contract_catalog=_seed_contract_catalog,
-        )
+        gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
         gateway.execute("SELECT 1").fetchone()
         gateway.close()
-    except StorageConnectionError as exc:
+    except (DuckDBError, RuntimeError, TypeError, ValueError) as exc:
         return CheckResult(
             name="storage_connection",
             status=CheckStatus.FAIL,

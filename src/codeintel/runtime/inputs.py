@@ -29,4 +29,34 @@ class ExecutionInputs:
     plan_request: PlanRequest | None = None
 
 
-__all__ = ["ExecutionInputs"]
+def execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
+    """Return Hamilton execution inputs as a dict for cache hashing.
+
+    Parameters
+    ----------
+    inputs
+        Execution inputs to convert into a mapping.
+
+    Returns
+    -------
+    dict[str, object]
+        Mapping of input names to values for execution/caching.
+    """
+    mapping: dict[str, object] = {
+        "env": inputs.env,
+        "catalog": inputs.catalog,
+    }
+    optional: dict[str, object | None] = {
+        "tag_query": inputs.tag_query,
+        "cache_index": inputs.cache_index,
+        "cache_key_resolver": inputs.cache_key_resolver,
+        "schema_index": inputs.schema_index,
+        "semantic_registry": inputs.semantic_registry,
+        "runtime_fingerprint": inputs.runtime_fingerprint,
+        "plan_request": inputs.plan_request,
+    }
+    mapping.update({key: value for key, value in optional.items() if value is not None})
+    return mapping
+
+
+__all__ = ["ExecutionInputs", "execution_input_mapping"]

@@ -5,7 +5,7 @@ source of truth for computing target state. It replaces the duplicated
 computation logic previously spread across state.py and readiness.py.
 
 The StateComputer:
-1. Computes individual target states from manifest presence
+1. Computes individual target states from cache presence
 2. Propagates blocking status through the dependency graph
 3. Uses session-scoped caching for efficiency
 
@@ -14,7 +14,7 @@ rather than implementing their own state computation.
 
 Example
 -------
->>> session = BuildSession(snapshot, gateway)
+>>> session = BuildSession(snapshot, cache_index, cache_key_resolver, {})
 >>> computer = StateComputer(catalog, session)
 >>> build_state = computer.compute_all()
 >>> build_state.runnable_targets()
@@ -23,7 +23,6 @@ Example
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, cast
 
 from codeintel.build.session import BuildSession
@@ -33,16 +32,13 @@ from codeintel.build.state_types import (
 )
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
-    from codeintel.build.state_types import (
-        BlockingReason,
-        TargetStatus,
-    )
-    from codeintel.config.primitives import SnapshotRef
-    from codeintel.core.build_manifest import OutputManifest
-    from codeintel.storage.gateway import StorageGateway
+    from collections.abc import Mapping
 
-log = logging.getLogger(__name__)
+    from codeintel.build.hamilton.cache_index import CacheIndex
+    from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
+    from codeintel.build.state_types import BlockingReason, TargetStatus
+    from codeintel.config.primitives import SnapshotRef
 
 __all__ = [
     "StateComputer",
@@ -53,22 +49,22 @@ class StateComputer:
     """Single source of truth for target state computation.
 
     Computes the BuildState for all targets in a snapshot by:
-    1. Bulk-loading manifests (single DB query)
-    2. Computing individual states from manifest presence
+    1. Computing cache keys for nodes
+    2. Computing individual states from cache presence
     3. Propagating blocking status through the dependency graph
 
-    The session provides caching to avoid redundant manifest fetches.
+    The session provides caching to avoid redundant cache key resolution.
 
     Parameters
     ----------
     catalog
         DAG catalog defining all outputs and their dependencies.
     session
-        Build session providing caching and gateway access.
+        Build session providing cache index and cache key resolution.
 
     Examples
     --------
-    >>> session = BuildSession(snapshot, gateway)
+    >>> session = BuildSession(snapshot, cache_index, cache_key_resolver, {})
     >>> computer = StateComputer(catalog, session)
     >>> state = computer.compute_all()
     >>> state.by_status("current")
@@ -96,8 +92,10 @@ class StateComputer:
     def create(
         cls,
         catalog: DagCatalog,
-        gateway: StorageGateway,
         snapshot: SnapshotRef,
+        cache_index: CacheIndex | None,
+        cache_key_resolver: CacheKeyResolver | None,
+        input_values: Mapping[str, object],
     ) -> StateComputer:
         """Create a StateComputer with a new session.
 
@@ -107,24 +105,33 @@ class StateComputer:
         ----------
         catalog
             DAG catalog with all registered targets.
-        gateway
-            Storage gateway for database access.
         snapshot
             Repository snapshot reference.
+        cache_index
+            Cache index used for cache probes.
+        cache_key_resolver
+            Cache key resolver for computing cache keys.
+        input_values
+            External input values used for cache hashing.
 
         Returns
         -------
         StateComputer
             New state computer instance.
         """
-        session = BuildSession(snapshot=snapshot, gateway=gateway)
+        session = BuildSession(
+            snapshot=snapshot,
+            cache_index=cache_index,
+            cache_key_resolver=cache_key_resolver,
+            input_values=input_values,
+        )
         return cls(catalog=catalog, session=session)
 
     def compute_all(self) -> BuildState:
         """Compute state for all targets in topological order.
 
         Performs two-pass computation:
-        1. Individual states from manifest presence
+        1. Individual states from cache presence
         2. Blocking propagation from dependencies
 
         Returns
@@ -169,89 +176,84 @@ class StateComputer:
             msg = f"Target '{name}' not found in catalog"
             raise KeyError(msg)
 
-        # Get the target and its manifest
+        # Get the target and its cache state
         target = self._catalog.targets[name]
-        manifest = self._session.get_manifest(name)
+        node_name = self._catalog.target_nodes.get(name)
+        if node_name is None:
+            msg = f"Target '{name}' missing anchor node in catalog"
+            raise KeyError(msg)
 
         # Compute preliminary state
-        state = self._state_from_manifest(target, manifest)
+        state = self._state_from_cache(node_name)
 
         # Check for blocking dependencies
-        if state.status != "missing":
-            blocking_deps, blocking_reason = self._find_blocking_deps(target.dependencies)
-            if blocking_deps:
-                state = TargetState(
-                    name=name,
-                    status="blocked",
-                    manifest=state.manifest,
-                    current_hash=state.current_hash,
-                    blocking_reason=blocking_reason,
-                    blocking_deps=tuple(sorted(blocking_deps)),
-                    stored_hash=state.stored_hash,
-                )
+        blocking_deps, blocking_reason = self._find_blocking_deps(target.dependencies)
+        if blocking_deps:
+            state = TargetState(
+                name=name,
+                status="blocked",
+                current_hash=state.current_hash,
+                blocking_reason=blocking_reason,
+                blocking_deps=tuple(sorted(blocking_deps)),
+                stored_hash=state.stored_hash,
+            )
 
         return state
 
     def _compute_preliminary_states(self) -> dict[str, TargetState]:
         """Compute individual states ignoring dependency blocking.
 
-        Bulk-loads all manifests for efficiency, then computes state
-        for each target based on manifest existence.
+        Computes cache keys and then computes state for each target
+        based on cache presence.
 
         Returns
         -------
         dict[str, TargetState]
             Mapping of target names to preliminary states.
         """
-        # Bulk-load manifests in a single query
-        self._session.preload_manifests()
-
-        unknown_targets = sorted(
-            name for name in self._session.cached_manifest_targets() if name not in self._catalog
-        )
-        for name in unknown_targets:
-            log.warning("Ignoring manifest for unknown target: %s", name)
+        self._session.preload_cache_keys()
 
         states: dict[str, TargetState] = {}
         for target_name in self._catalog:
-            target = self._catalog.targets[target_name]
-            manifest = self._session.get_manifest(target_name)
-            states[target_name] = self._state_from_manifest(target, manifest)
+            node_name = self._catalog.target_nodes.get(target_name)
+            if node_name is None:
+                msg = f"Target '{target_name}' missing anchor node in catalog"
+                raise KeyError(msg)
+            states[target_name] = self._state_from_cache(node_name)
 
         return states
 
     @staticmethod
-    def _state_from_manifest(
-        target: TargetDescriptor,
-        manifest: OutputManifest | None,
+    def _state_from_cache(
+        self,
+        node_name: str,
     ) -> TargetState:
-        """Determine state for a target based on its manifest.
+        """Determine state for a target based on cache presence.
 
         Parameters
         ----------
-        target
-            Target to compute state for.
-        manifest
-            Stored manifest if one exists, None otherwise.
+        node_name
+            Anchor node name for the target.
 
         Returns
         -------
         TargetState
             Preliminary state (may be upgraded to blocked in pass 2).
         """
-        if manifest is None:
+        cache_key = self._session.cache_key_for_node(node_name)
+        is_cached = self._session.cache_hit(node_name)
+        if not is_cached:
             return TargetState(
-                name=target.name,
+                name=self._catalog.node_to_target[node_name],
                 status="missing",
-                manifest=None,
+                current_hash=cache_key,
                 blocking_reason=None,
                 blocking_deps=(),
             )
         return TargetState(
-            name=target.name,
+            name=self._catalog.node_to_target[node_name],
             status="current",
-            manifest=manifest,
-            current_hash=None,
+            current_hash=cache_key,
             blocking_reason=None,
             blocking_deps=(),
         )
@@ -283,10 +285,6 @@ class StateComputer:
         for target_name in topo_order:
             current_state = final[target_name]
 
-            # Missing targets stay missing (no deps to check)
-            if current_state.status == "missing":
-                continue
-
             target = self._catalog.targets[target_name]
             blocking_deps, blocking_reason = self._find_blocking_deps_from_states(
                 target.dependencies, final
@@ -296,7 +294,6 @@ class StateComputer:
                 final[target_name] = TargetState(
                     name=target_name,
                     status="blocked",
-                    manifest=current_state.manifest,
                     current_hash=current_state.current_hash,
                     blocking_reason=blocking_reason,
                     blocking_deps=tuple(sorted(blocking_deps)),
@@ -327,9 +324,11 @@ class StateComputer:
         first_reason: BlockingReason | None = None
 
         for dep_name in dependencies:
-            dep_target = self._catalog.targets[dep_name]
-            dep_manifest = self._session.get_manifest(dep_name)
-            dep_state = self._state_from_manifest(dep_target, dep_manifest)
+            node_name = self._catalog.target_nodes.get(dep_name)
+            if node_name is None:
+                msg = f"Target '{dep_name}' missing anchor node in catalog"
+                raise KeyError(msg)
+            dep_state = self._state_from_cache(node_name)
             reason = self._check_dep_blocking(dep_state)
             if reason is not None:
                 blocking_deps.append(dep_name)

@@ -72,9 +72,6 @@ class _InferenceContext:
 
 def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
     sig = inspect.signature(fn)
-    qparams = [name for name in sig.parameters if name.startswith("q__")]
-    if not qparams:
-        return False
     return_annotation = sig.return_annotation
     if return_annotation is inspect.Signature.empty:
         return False
@@ -93,8 +90,26 @@ def _is_tabular_annotation(annotation: object) -> bool:
             _is_tabular_annotation(arg) for arg in get_args(annotation) if arg is not type(None)
         )
     if isinstance(annotation, str):
-        return "DuckDBPyRelation" in annotation or "TabularInput" in annotation
-    return "DuckDBPyRelation" in str(annotation)
+        return any(
+            token in annotation
+            for token in (
+                "DuckDBPyRelation",
+                "DuckDBRelation",
+                "TabularInput",
+                "pa.Table",
+                "pyarrow.Table",
+                "pa.RecordBatchReader",
+                "pyarrow.RecordBatchReader",
+                "pl.DataFrame",
+                "pl.LazyFrame",
+                "polars.DataFrame",
+                "polars.LazyFrame",
+            )
+        )
+    return any(
+        token in str(annotation)
+        for token in ("DuckDBPyRelation", "DuckDBRelation", "TabularInput")
+    )
 
 
 @contextmanager
@@ -462,8 +477,8 @@ def inferable_native_table_keys(*, driver: h_driver.Driver, catalog: DagCatalog)
     Returns
     -------
     frozenset[str]
-        Output table keys inferred from q__-driven tabular compute nodes or
-        outputs tagged with inferable saver sinks.
+        Output table keys inferred from tabular compute nodes, including
+        relation-first outputs with no q__ dependencies.
     """
     context = _InferenceContext(driver=driver, catalog=catalog)
     inferable: set[str] = set()

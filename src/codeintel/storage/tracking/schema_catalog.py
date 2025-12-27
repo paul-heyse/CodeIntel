@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from codeintel.core.execution.ids import new_uuid_str
+from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.constants import META_CATALOG_NAME
@@ -13,9 +16,12 @@ from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_cano
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.tracking.schema_catalog_compile import compile_schema_catalog_batches
 from codeintel.storage.tracking.schema_catalog_models import (
+    OverrideRegistryRefreshResult,
     SchemaCatalogRequest,
     SchemaManifestRunRecord,
     SchemaVersionRecord,
+    TableSchemaOverrideRegistryRecord,
+    TableSchemaOverrideVersionRecord,
     TableSchemaRegistryRecord,
 )
 from codeintel.storage.upsert import UpsertSpec
@@ -25,6 +31,7 @@ if TYPE_CHECKING:
 
     from codeintel.build.schemas.manifest import SchemaManifest
     from codeintel.build.schemas.schema_index import SchemaIndex
+    from codeintel.core.manifests import TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -96,6 +103,94 @@ class SchemaCatalogTracking:
             upsert=UpsertSpec(
                 conflict_columns=("schema_digest",),
                 update_columns=(),
+            ),
+        )
+
+    def record_override_versions_batch(
+        self,
+        records: Sequence[TableSchemaOverrideVersionRecord],
+    ) -> int:
+        """Insert override version rows for inferable table schemas.
+
+        Returns
+        -------
+        int
+            Number of rows processed.
+        """
+        if not records:
+            return 0
+
+        now = utc_now()
+        rows = [
+            (
+                record.version_id,
+                record.table_key,
+                record.schema_digest,
+                record.schema_hash,
+                record.catalog_hash,
+                record.created_at or now,
+            )
+            for record in records
+        ]
+
+        return self._backend.upsert(
+            "metadata.table_schema_override_versions",
+            rows,
+            columns=(
+                "version_id",
+                "table_key",
+                "schema_digest",
+                "schema_hash",
+                "catalog_hash",
+                "created_at",
+            ),
+            catalog=META_CATALOG_NAME,
+            upsert=UpsertSpec(
+                conflict_columns=("version_id", "table_key"),
+                update_columns=(),
+            ),
+        )
+
+    def record_override_registry_batch(
+        self,
+        records: Sequence[TableSchemaOverrideRegistryRecord],
+    ) -> int:
+        """Upsert override registry pointers for inferable tables.
+
+        Returns
+        -------
+        int
+            Number of rows processed.
+        """
+        if not records:
+            return 0
+
+        now = utc_now()
+        rows = [
+            (
+                record.table_key,
+                record.schema_digest,
+                record.schema_hash,
+                record.version_id,
+                record.updated_at or now,
+            )
+            for record in records
+        ]
+
+        return self._backend.upsert(
+            "metadata.table_schema_override_registry",
+            rows,
+            columns=(
+                "table_key",
+                "schema_digest",
+                "schema_hash",
+                "version_id",
+                "updated_at",
+            ),
+            catalog=META_CATALOG_NAME,
+            upsert=UpsertSpec(
+                conflict_columns=("table_key",),
+                update_columns=("schema_digest", "schema_hash", "version_id", "updated_at"),
             ),
         )
 
@@ -226,6 +321,144 @@ class SchemaCatalogTracking:
             return None
         return table_schema_from_json_obj(schema_json)
 
+    def load_override_registry(self) -> dict[str, TableSchema]:
+        """Load active override schemas for inferable outputs.
+
+        Returns
+        -------
+        dict[str, TableSchema]
+            Mapping of table_key to override TableSchema entries.
+        """
+        registry_ref = meta_table_ref("metadata.table_schema_override_registry")
+        versions_ref = meta_table_ref("metadata.schema_versions")
+        rows = self._con.execute(
+            f"""
+            SELECT r.table_key, v.schema_json
+            FROM {registry_ref} AS r
+            JOIN {versions_ref} AS v
+              ON r.schema_digest = v.schema_digest
+            ORDER BY r.table_key
+            """
+        ).fetchall()
+        if not rows:
+            return {}
+
+        schemas: dict[str, TableSchema] = {}
+        for table_key, schema_json_raw in rows:
+            schema_json = decode_json_dict(schema_json_raw)
+            if not schema_json:
+                continue
+            schemas[str(table_key)] = table_schema_from_json_obj(schema_json)
+        return schemas
+
+    def registry_health_snapshot(self) -> dict[str, object]:
+        """Return health metadata for the latest schema registry state."""
+        manifest_runs_ref = meta_table_ref("metadata.schema_manifest_runs")
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        override_ref = meta_table_ref("metadata.table_schema_override_registry")
+
+        latest = self._con.execute(
+            f"""
+            SELECT catalog_hash, repo, commit, manifest_kind, created_at
+            FROM {manifest_runs_ref}
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+        if latest is None:
+            return {
+                "status": "missing_manifest",
+                "latest_manifest": None,
+                "registry_rows": 0,
+                "registry_updated_at": None,
+                "registry_stale": True,
+                "override_registry_rows": 0,
+                "inferable_total": 0,
+                "inferred_count": 0,
+                "inference_error_count": 0,
+                "inference_success_rate": None,
+            }
+
+        catalog_hash, repo, commit, manifest_kind, created_at = latest
+        registry_rows = self._con.execute(
+            f"""
+            SELECT COUNT(*), MAX(updated_at)
+            FROM {registry_ref}
+            WHERE catalog_hash = ?
+            """,
+            [catalog_hash],
+        ).fetchone()
+
+        registry_count = int(registry_rows[0]) if registry_rows is not None else 0
+        registry_updated_at = registry_rows[1] if registry_rows is not None else None
+        registry_stale = registry_updated_at is None or registry_updated_at < created_at
+
+        inferable_row = self._con.execute(
+            f"""
+            SELECT
+                SUM(CASE WHEN derivation_kind = 'inferred_relation' THEN 1 ELSE 0 END) AS total,
+                SUM(
+                    CASE
+                        WHEN derivation_kind = 'inferred_relation'
+                         AND inference_status = 'inferred'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS inferred_count,
+                SUM(
+                    CASE
+                        WHEN derivation_kind = 'inferred_relation'
+                         AND inference_status = 'error'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS error_count
+            FROM {registry_ref}
+            WHERE catalog_hash = ?
+            """,
+            [catalog_hash],
+        ).fetchone()
+
+        inferable_total = int(inferable_row[0] or 0) if inferable_row is not None else 0
+        inferred_count = int(inferable_row[1] or 0) if inferable_row is not None else 0
+        inference_error_count = int(inferable_row[2] or 0) if inferable_row is not None else 0
+        inference_success_rate = (
+            inferred_count / inferable_total if inferable_total else None
+        )
+
+        override_rows = self._con.execute(
+            f"SELECT COUNT(*) FROM {override_ref}"
+        ).fetchone()
+        override_registry_rows = int(override_rows[0]) if override_rows is not None else 0
+
+        status = "ok"
+        if registry_stale or override_registry_rows == 0:
+            status = "warn"
+        if inference_error_count:
+            status = "warn"
+
+        return {
+            "status": status,
+            "latest_manifest": {
+                "catalog_hash": str(catalog_hash),
+                "repo": str(repo),
+                "commit": str(commit),
+                "manifest_kind": str(manifest_kind),
+                "created_at": created_at.isoformat() if created_at is not None else None,
+            },
+            "registry_rows": registry_count,
+            "registry_updated_at": (
+                registry_updated_at.isoformat() if registry_updated_at is not None else None
+            ),
+            "registry_stale": registry_stale,
+            "override_registry_rows": override_registry_rows,
+            "inferable_total": inferable_total,
+            "inferred_count": inferred_count,
+            "inference_error_count": inference_error_count,
+            "inference_success_rate": inference_success_rate,
+        }
+
     def prefill_schema_index(
         self,
         schema_index: SchemaIndex,
@@ -335,12 +568,222 @@ class SchemaCatalogTracking:
             schema_manifest_runs_rows=n_runs,
         )
 
+    def refresh_override_registry_from_manifest(
+        self,
+        manifest: SchemaManifest,
+        *,
+        request: SchemaCatalogRequest,
+        catalog_hash: str | None = None,
+    ) -> OverrideRegistryRefreshResult:
+        """Update override registry when all inferable outputs are inferred.
+
+        Returns
+        -------
+        OverrideRegistryRefreshResult
+            Summary of the refresh attempt.
+
+        Raises
+        ------
+        RuntimeError
+            If the gateway is read-only.
+        """
+        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+            msg = "Cannot refresh override registry in a read-only storage gateway"
+            raise RuntimeError(msg)
+
+        now = request.now or utc_now()
+        inferable_tables: list[TableSchema] = []
+        blocked_tables: list[str] = []
+
+        for table in manifest.tables:
+            provenance = manifest.table_provenance.get(table.table_key)
+            if provenance is None:
+                if request.strict_provenance:
+                    msg = f"Missing table provenance for override refresh: {table.table_key}"
+                    raise ValueError(msg)
+                blocked_tables.append(table.table_key)
+                continue
+            if provenance.derivation_kind != "inferred_relation":
+                continue
+            if provenance.inference_status != "inferred":
+                blocked_tables.append(table.table_key)
+                continue
+            inferable_tables.append(table)
+
+        if blocked_tables:
+            reason = (
+                f"inference incomplete for {len(blocked_tables)} table(s): "
+                f"{', '.join(sorted(blocked_tables))}"
+            )
+            return OverrideRegistryRefreshResult(
+                status="skipped",
+                reason=reason,
+                version_id=None,
+                tables=len(inferable_tables),
+                schema_versions_rows=0,
+                override_versions_rows=0,
+                override_registry_rows=0,
+            )
+
+        if not inferable_tables:
+            return OverrideRegistryRefreshResult(
+                status="skipped",
+                reason="no inferable tables in manifest",
+                version_id=None,
+                tables=0,
+                schema_versions_rows=0,
+                override_versions_rows=0,
+                override_registry_rows=0,
+            )
+
+        version_id = new_uuid_str()
+        schema_versions: dict[str, SchemaVersionRecord] = {}
+        override_versions: list[TableSchemaOverrideVersionRecord] = []
+        override_registry: list[TableSchemaOverrideRegistryRecord] = []
+
+        for table in inferable_tables:
+            provenance = manifest.table_provenance.get(table.table_key)
+            if provenance is None:
+                msg = f"Missing table provenance for override refresh: {table.table_key}"
+                raise ValueError(msg)
+            schema_json = table.to_json_obj()
+            schema_digest = fingerprint(schema_json)
+            schema_hash = _schema_hash_for_override(
+                table=table,
+                provenance=provenance,
+                strict_hash_match=request.strict_hash_match,
+            )
+            if schema_digest not in schema_versions:
+                schema_versions[schema_digest] = SchemaVersionRecord(
+                    schema_digest=schema_digest,
+                    schema_hash=schema_hash,
+                    schema_json=schema_json,
+                    renderer_cache=None,
+                    created_at=now,
+                )
+            override_versions.append(
+                TableSchemaOverrideVersionRecord(
+                    version_id=version_id,
+                    table_key=table.table_key,
+                    schema_digest=schema_digest,
+                    schema_hash=schema_hash,
+                    catalog_hash=catalog_hash,
+                    created_at=now,
+                )
+            )
+            override_registry.append(
+                TableSchemaOverrideRegistryRecord(
+                    table_key=table.table_key,
+                    schema_digest=schema_digest,
+                    schema_hash=schema_hash,
+                    version_id=version_id,
+                    updated_at=now,
+                )
+            )
+
+        with self._backend.transaction():
+            schema_versions_rows = self.record_schema_versions_batch(
+                tuple(schema_versions.values())
+            )
+            override_versions_rows = self.record_override_versions_batch(override_versions)
+            override_registry_rows = self.record_override_registry_batch(override_registry)
+
+        return OverrideRegistryRefreshResult(
+            status="updated",
+            reason=None,
+            version_id=version_id,
+            tables=len(inferable_tables),
+            schema_versions_rows=schema_versions_rows,
+            override_versions_rows=override_versions_rows,
+            override_registry_rows=override_registry_rows,
+        )
+
+    def set_override_registry_version(
+        self,
+        *,
+        table_key: str,
+        schema_digest: str | None = None,
+        version_id: str | None = None,
+    ) -> TableSchemaOverrideRegistryRecord:
+        """Pin the override registry for a table key to a prior version.
+
+        Returns
+        -------
+        TableSchemaOverrideRegistryRecord
+            Updated override registry record.
+        """
+        if schema_digest is None and version_id is None:
+            msg = "schema_digest or version_id is required to update override registry"
+            raise ValueError(msg)
+
+        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+            msg = "Cannot update override registry in a read-only storage gateway"
+            raise RuntimeError(msg)
+
+        now = utc_now()
+        versions_ref = meta_table_ref("metadata.table_schema_override_versions")
+        params: list[object] = [table_key]
+        filters: list[str] = ["table_key = ?"]
+
+        if schema_digest is not None:
+            filters.append("schema_digest = ?")
+            params.append(schema_digest)
+        if version_id is not None:
+            filters.append("version_id = ?")
+            params.append(version_id)
+
+        where_clause = " AND ".join(filters)
+        row = self._con.execute(
+            f"""
+            SELECT table_key, schema_digest, schema_hash, version_id
+            FROM {versions_ref}
+            WHERE {where_clause}
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+
+        if row is None:
+            msg = f"Override version not found for {table_key}"
+            raise KeyError(msg)
+
+        record = TableSchemaOverrideRegistryRecord(
+            table_key=str(row[0]),
+            schema_digest=str(row[1]),
+            schema_hash=str(row[2]),
+            version_id=str(row[3]),
+            updated_at=now,
+        )
+        self.record_override_registry_batch([record])
+        return record
+
+
+def _schema_hash_for_override(
+    *,
+    table: TableSchema,
+    provenance: TableProvenance,
+    strict_hash_match: bool,
+) -> str:
+    computed_hash = compute_schema_hash(table)
+    provenance_hash = provenance.schema_hash
+    if strict_hash_match and provenance_hash != computed_hash:
+        msg = (
+            f"Schema hash mismatch for {table.table_key}: "
+            f"provenance={provenance_hash} computed={computed_hash}"
+        )
+        raise ValueError(msg)
+    return provenance_hash
+
 
 __all__ = [
+    "OverrideRegistryRefreshResult",
     "PersistSchemaManifestResult",
     "SchemaCatalogRequest",
     "SchemaCatalogTracking",
     "SchemaManifestRunRecord",
     "SchemaVersionRecord",
+    "TableSchemaOverrideRegistryRecord",
+    "TableSchemaOverrideVersionRecord",
     "TableSchemaRegistryRecord",
 ]

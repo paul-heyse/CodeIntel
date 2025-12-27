@@ -51,6 +51,42 @@ class SchemaManifestRunRecord:
 
 
 @dataclass(frozen=True)
+class TableSchemaOverrideVersionRecord:
+    """Record of a schema override version for an inferable table."""
+
+    version_id: str
+    table_key: str
+    schema_digest: str
+    schema_hash: str
+    catalog_hash: str | None = None
+    created_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class TableSchemaOverrideRegistryRecord:
+    """Current override pointer for an inferable table."""
+
+    table_key: str
+    schema_digest: str
+    schema_hash: str
+    version_id: str
+    updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class OverrideRegistryRefreshResult:
+    """Summary of an override registry refresh attempt."""
+
+    status: str
+    reason: str | None
+    version_id: str | None
+    tables: int
+    schema_versions_rows: int
+    override_versions_rows: int
+    override_registry_rows: int
+
+
+@dataclass(frozen=True)
 class SchemaCatalogRequest:
     """Inputs for compiling or persisting a schema catalog."""
 
@@ -68,8 +104,11 @@ class SchemaCatalogRequest:
 
 __all__ = [
     "DEFAULT_SCHEMA_MANIFEST_KIND",
+    "OverrideRegistryRefreshResult",
     "SchemaCatalogRequest",
     "SchemaManifestRunRecord",
     "SchemaVersionRecord",
+    "TableSchemaOverrideRegistryRecord",
+    "TableSchemaOverrideVersionRecord",
     "TableSchemaRegistryRecord",
 ]

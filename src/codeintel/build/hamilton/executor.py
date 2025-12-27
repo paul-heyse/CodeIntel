@@ -60,7 +60,7 @@ from codeintel.observability.telemetry_context import (
     telemetry_context,
 )
 from codeintel.runtime.compose import compose_runtime, set_execution_active
-from codeintel.runtime.inputs import ExecutionInputs
+from codeintel.runtime.inputs import ExecutionInputs, execution_input_mapping
 from codeintel.runtime.runtime_bundle import RuntimeBundle
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.metadata.catalogs import load_latest_canonical_catalog_from_connection
@@ -300,13 +300,13 @@ def _skip_record(
 def _failure_record(
     *,
     target_name: str,
-    env: BuildEnv,
-    catalog: DagCatalog,
+    runtime: RuntimeBundle,
+    cache_keys: Mapping[str, str],
     error: str,
 ) -> TargetRunRecord:
     exc = RuntimeError(error)
     try:
-        target = catalog.get(target_name)
+        target = runtime.catalog.get(target_name)
     except KeyError:
         return TargetRunRecord(
             target=target_name,
@@ -315,7 +315,7 @@ def _failure_record(
             input_hash=None,
             error=str(exc),
         )
-    input_hash = _safe_input_hash(target, env)
+    input_hash = _safe_input_hash(target, cache_keys=cache_keys, runtime=runtime)
     return create_run_record(
         target,
         "failed",
@@ -324,14 +324,16 @@ def _failure_record(
     )
 
 
-def _safe_input_hash(target: TargetDescriptor, env: BuildEnv) -> str | None:
-    manifest_index = env.manifest_index
-    if manifest_index is None:
+def _safe_input_hash(
+    target: TargetDescriptor,
+    *,
+    cache_keys: Mapping[str, str],
+    runtime: RuntimeBundle,
+) -> str | None:
+    node_name = runtime.catalog.target_nodes.get(target.name)
+    if node_name is None:
         return None
-    manifest = manifest_index.get(target.name)
-    if manifest is None:
-        return None
-    return manifest.input_hash
+    return cache_keys.get(node_name)
 
 
 def _ensure_failure_records(
@@ -342,6 +344,7 @@ def _ensure_failure_records(
     outputs: dict[str, Any],
     error: str,
 ) -> None:
+    cache_keys = _resolve_cache_keys(env=env, runtime=runtime)
     for target in closure:
         node_name = target_to_node_name(target, catalog=runtime.catalog)
         existing = outputs.get(node_name) if node_name is not None else None
@@ -349,12 +352,35 @@ def _ensure_failure_records(
             continue
         record = _failure_record(
             target_name=target,
-            env=env,
-            catalog=runtime.catalog,
+            runtime=runtime,
+            cache_keys=cache_keys,
             error=error,
         )
         key = node_name or f"__failed__{target}"
         outputs[key] = record
+
+
+def _resolve_cache_keys(*, env: BuildEnv, runtime: RuntimeBundle) -> dict[str, str]:
+    resolver = runtime.cache_key_resolver
+    if resolver is None:
+        return {}
+    inputs = ExecutionInputs(
+        env=env,
+        catalog=runtime.catalog,
+        tag_query=runtime.tag_query,
+        cache_index=runtime.cache_index,
+        cache_key_resolver=runtime.cache_key_resolver,
+        schema_index=runtime.schema_index,
+        semantic_registry=runtime.semantic_registry,
+        runtime_fingerprint=runtime.fingerprint,
+    )
+    input_values = _execution_input_mapping(inputs)
+    node_set = set(resolver.node_dependencies)
+    node_set.difference_update(input_values)
+    return resolver.resolve_node_versions(
+        nodes=node_set,
+        input_values=input_values,
+    )
 
 
 def _apply_cache_keys(
@@ -410,21 +436,7 @@ def _map_closure_to_nodes(
 
 
 def _execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
-    mapping: dict[str, object] = {
-        "env": inputs.env,
-        "catalog": inputs.catalog,
-    }
-    optional: dict[str, object | None] = {
-        "tag_query": inputs.tag_query,
-        "cache_index": inputs.cache_index,
-        "cache_key_resolver": inputs.cache_key_resolver,
-        "schema_index": inputs.schema_index,
-        "semantic_registry": inputs.semantic_registry,
-        "runtime_fingerprint": inputs.runtime_fingerprint,
-        "plan_request": inputs.plan_request,
-    }
-    mapping.update({key: value for key, value in optional.items() if value is not None})
-    return mapping
+    return execution_input_mapping(inputs)
 
 
 def _table_key_exists(env: BuildEnv, table_key: str) -> bool:
