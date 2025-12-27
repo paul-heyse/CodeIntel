@@ -16,9 +16,11 @@ from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.serde import table_schema_from_json_obj
 from codeintel.core.time import utc_now
 from codeintel.storage.contracts.dataflow import build_contract_dataflow_graph
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.provider import is_view, iter_contracts
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.metadata.bootstrap import (
     replace_dataset_dataflow_edges,
     replace_dataset_dataflow_nodes,
@@ -63,9 +65,10 @@ class _SchemaSyncContext:
 
 
 def _upsert_dataset_row(con: DuckDBPyConnection, payload: _DatasetUpsert) -> None:
+    table_ref = meta_table_ref("metadata.datasets")
     con.execute(
-        """
-        INSERT INTO metadata.datasets (
+        f"""
+        INSERT INTO {table_ref} (
             table_key,
             name,
             is_view,
@@ -123,7 +126,7 @@ def bootstrap_metadata_datasets(
     include_views: bool = True,
 ) -> None:
     """Populate metadata.datasets from DatasetContracts and default filename mappings."""
-    apply_metadata_ddl(con)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
 
     jsonl_mapping = dict(jsonl_filenames or {})
     parquet_mapping = dict(parquet_filenames or {})
@@ -232,10 +235,11 @@ def load_derived_lineage_columns(
     dict[str, list[tuple[str, str]]]
         Mapping of downstream column to upstream (table_key, column) references.
     """
+    table_ref = meta_table_ref("metadata.derived_lineage_columns")
     rows = con.execute(
-        """
+        f"""
         SELECT downstream_column, upstream_table, upstream_column
-        FROM metadata.derived_lineage_columns
+        FROM {table_ref}
         WHERE repo = ? AND commit = ? AND downstream_table = ?
         ORDER BY downstream_column, upstream_table, upstream_column
         """,
@@ -320,7 +324,7 @@ def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> 
     TypeError
         If the stored manifest payload is not a JSON object with list sections.
     """
-    apply_metadata_ddl(con)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
 
     entry = load_latest_canonical_catalog_from_connection(
         con,
@@ -358,9 +362,10 @@ def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> 
     if not registry_rows:
         return 0
 
+    schema_versions_ref = meta_table_ref("metadata.schema_versions")
     con.executemany(
-        """
-        INSERT INTO metadata.schema_versions (
+        f"""
+        INSERT INTO {schema_versions_ref} (
             schema_digest,
             schema_hash,
             schema_json,
@@ -373,9 +378,10 @@ def sync_table_schema_registry_from_latest_manifest(con: DuckDBPyConnection) -> 
         list(context.schema_versions.values()),
     )
 
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
     con.executemany(
-        """
-        INSERT INTO metadata.table_schema_registry (
+        f"""
+        INSERT INTO {registry_ref} (
             table_key,
             schema_digest,
             schema_hash,

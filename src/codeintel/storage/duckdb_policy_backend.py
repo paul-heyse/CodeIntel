@@ -169,11 +169,33 @@ def _inject_row_hash_for_mappings(
     return updated_rows
 
 
-def _duckdb_table_exists(con: DuckDBPyConnection, *, schema: str, table: str) -> bool:
-    row = con.execute(
-        "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ? LIMIT 1",
-        [schema, table],
-    ).fetchone()
+def _duckdb_table_exists(
+    con: DuckDBPyConnection,
+    *,
+    schema: str,
+    table: str,
+    catalog: str | None = None,
+) -> bool:
+    if catalog is None:
+        row = con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [schema, table],
+        ).fetchone()
+    else:
+        row = con.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_catalog = ? AND table_schema = ? AND table_name = ?
+            LIMIT 1
+            """,
+            [catalog, schema, table],
+        ).fetchone()
     return row is not None
 
 
@@ -561,7 +583,13 @@ class DuckDBPolicyBackend:
         self._catalog = catalog
         return catalog
 
-    def _qualified_table_ref(self, schema: str, table: str) -> str:
+    def _qualified_table_ref(
+        self,
+        schema: str,
+        table: str,
+        *,
+        catalog: str | None = None,
+    ) -> str:
         """Return a catalog-qualified table reference for SQL string contexts.
 
         Returns
@@ -571,10 +599,16 @@ class DuckDBPolicyBackend:
         """
         return fully_qualified_table_ref(
             f"{schema}.{table}",
-            catalog=self._default_catalog(),
+            catalog=self._resolve_catalog(catalog),
         )
 
-    def _quoted_table_ref(self, schema: str, table: str) -> str:
+    def _quoted_table_ref(
+        self,
+        schema: str,
+        table: str,
+        *,
+        catalog: str | None = None,
+    ) -> str:
         """Return a quoted table reference with optional catalog qualification.
 
         Returns
@@ -582,10 +616,15 @@ class DuckDBPolicyBackend:
         str
             Quoted table reference with catalog prefix when available.
         """
-        catalog = self._default_catalog()
-        if catalog is None:
+        resolved = self._resolve_catalog(catalog)
+        if resolved is None:
             return f'"{schema}"."{table}"'
-        return f'"{catalog}"."{schema}"."{table}"'
+        return f'"{resolved}"."{schema}"."{table}"'
+
+    def _resolve_catalog(self, catalog: str | None) -> str | None:
+        if catalog is not None:
+            return catalog
+        return self._default_catalog()
 
     def _run(self, expr: exp.Expression) -> None:
         """Execute a single SQLGlot expression.
@@ -672,7 +711,7 @@ class DuckDBPolicyBackend:
             return self.con.execute(sql)
         return self.con.execute(sql, params)
 
-    def table_exists(self, *, schema: str, table: str) -> bool:
+    def table_exists(self, *, schema: str, table: str, catalog: str | None = None) -> bool:
         """Return True when a DuckDB table exists.
 
         Parameters
@@ -681,13 +720,15 @@ class DuckDBPolicyBackend:
             Schema name to check.
         table
             Table name to check.
+        catalog
+            Optional catalog name to scope the lookup.
 
         Returns
         -------
         bool
             True when the table exists.
         """
-        return _duckdb_table_exists(self.con, schema=schema, table=table)
+        return _duckdb_table_exists(self.con, schema=schema, table=table, catalog=catalog)
 
     def insert_select(
         self,
@@ -831,15 +872,22 @@ class DuckDBPolicyBackend:
         delete_expr = exp.Delete(this=table_expr, where=where)
         self._run(delete_expr)
 
-    def create_schema_if_not_exists(self, schema_name: str) -> None:
+    def create_schema_if_not_exists(self, schema_name: str, *, catalog: str | None = None) -> None:
         """Create a schema if it does not exist.
 
         Parameters
         ----------
         schema_name
             Name of the schema to create.
+        catalog
+            Optional catalog override for the schema.
         """
-        self._run(create_schema_if_not_exists_ast(schema_name, catalog=self._default_catalog()))
+        self._run(
+            create_schema_if_not_exists_ast(
+                schema_name,
+                catalog=self._resolve_catalog(catalog),
+            )
+        )
 
     def create_table_from_schema(
         self,
@@ -847,6 +895,7 @@ class DuckDBPolicyBackend:
         *,
         drop_existing: bool = True,
         if_not_exists: bool = False,
+        catalog: str | None = None,
     ) -> None:
         """Create a table from a TableSchema definition.
 
@@ -858,21 +907,31 @@ class DuckDBPolicyBackend:
             When True and if_not_exists is False, drops the table first.
         if_not_exists
             When True, uses CREATE TABLE IF NOT EXISTS.
+        catalog
+            Optional catalog override for the table.
         """
-        catalog = self._default_catalog()
+        resolved_catalog = self._resolve_catalog(catalog)
         if drop_existing and not if_not_exists:
-            self._run(_build_drop_table(table, catalog=catalog))
-        self._run(_build_create_table(table, if_not_exists=if_not_exists, catalog=catalog))
+            self._run(_build_drop_table(table, catalog=resolved_catalog))
+        self._run(
+            _build_create_table(
+                table,
+                if_not_exists=if_not_exists,
+                catalog=resolved_catalog,
+            )
+        )
 
-    def create_indexes_from_schema(self, table: TableSchema) -> None:
+    def create_indexes_from_schema(self, table: TableSchema, *, catalog: str | None = None) -> None:
         """Create all indexes defined in a TableSchema.
 
         Parameters
         ----------
         table
             Table schema definition with indexes.
+        catalog
+            Optional catalog override for the table.
         """
-        catalog = self._default_catalog()
+        resolved_catalog = self._resolve_catalog(catalog)
         for index in table.indexes:
             self._run(
                 create_index_if_not_exists_ast(
@@ -880,7 +939,7 @@ class DuckDBPolicyBackend:
                     table_key=table.table_key,
                     columns=index.columns,
                     unique=index.unique,
-                    catalog=catalog,
+                    catalog=resolved_catalog,
                 )
             )
 
@@ -1116,11 +1175,16 @@ class DuckDBPolicyBackend:
         """
         self.ensure_all_schemas(drop_existing=False, extra_ddl=extra_ddl)
 
-    def ensure_export_audit_table(self) -> None:
+    def ensure_export_audit_table(self, *, catalog: str | None = None) -> None:
         """Ensure the metadata.export_audit table exists."""
-        self.create_schema_if_not_exists(EXPORT_AUDIT_TABLE.schema)
-        self.create_table_from_schema(EXPORT_AUDIT_TABLE, drop_existing=False, if_not_exists=True)
-        self.create_indexes_from_schema(EXPORT_AUDIT_TABLE)
+        self.create_schema_if_not_exists(EXPORT_AUDIT_TABLE.schema, catalog=catalog)
+        self.create_table_from_schema(
+            EXPORT_AUDIT_TABLE,
+            drop_existing=False,
+            if_not_exists=True,
+            catalog=catalog,
+        )
+        self.create_indexes_from_schema(EXPORT_AUDIT_TABLE, catalog=catalog)
 
     def ensure_table(self, table_key: str, *, create_if_missing: bool = True) -> None:
         """
@@ -1242,6 +1306,7 @@ class DuckDBPolicyBackend:
         rows: Sequence[tuple[object, ...]],
         *,
         columns: Sequence[str] | None = None,
+        catalog: str | None = None,
     ) -> int:
         """Bulk insert rows using executemany with SQLGlot-generated SQL.
 
@@ -1258,6 +1323,8 @@ class DuckDBPolicyBackend:
         columns
             Optional column names. If not provided, columns are derived from
             the table's TableSchema contract.
+        catalog
+            Optional catalog override for the target table.
 
         Returns
         -------
@@ -1280,6 +1347,7 @@ class DuckDBPolicyBackend:
             raise ValueError(message)
 
         schema, table = split_table_key(table_key)
+        resolved_catalog = self._resolve_catalog(catalog)
 
         table_schema = (
             self.schema_provider.get_table_schema(table_key) if self.schema_provider else None
@@ -1288,8 +1356,12 @@ class DuckDBPolicyBackend:
         if columns is None:
             if table_schema is not None:
                 columns = [col.name for col in table_schema.columns]
-            elif _duckdb_table_exists(self.con, schema=schema, table=table):
-                qualified_name = self._qualified_table_ref(schema, table)
+            elif _duckdb_table_exists(self.con, schema=schema, table=table, catalog=resolved_catalog):
+                qualified_name = self._qualified_table_ref(
+                    schema,
+                    table,
+                    catalog=resolved_catalog,
+                )
                 info = self.con.execute(
                     "SELECT * FROM pragma_table_info(?)",
                     [qualified_name],
@@ -1299,7 +1371,7 @@ class DuckDBPolicyBackend:
                 message = f"Missing table {table_key}"
                 raise RuntimeError(message)
 
-        insert_expr = _build_insert(schema, table, columns, catalog=self._default_catalog())
+        insert_expr = _build_insert(schema, table, columns, catalog=resolved_catalog)
         sql = insert_expr.sql(dialect=DUCKDB_DIALECT)
         columns_tuple = tuple(columns)
         column_type_by_name: dict[str, ColumnType] = (
@@ -1346,6 +1418,7 @@ class DuckDBPolicyBackend:
         rows: Iterable[Mapping[str, object]],
         *,
         columns: Sequence[str] | None = None,
+        catalog: str | None = None,
     ) -> int:
         """Bulk insert mapping rows with stable column order.
 
@@ -1362,6 +1435,8 @@ class DuckDBPolicyBackend:
         columns
             Optional column order override. When omitted, columns are derived from
             the table's DatasetContract schema.
+        catalog
+            Optional catalog override for the target table.
 
         Returns
         -------
@@ -1414,7 +1489,12 @@ class DuckDBPolicyBackend:
             message = f"Invalid row data for {table_key}: {exc}"
             raise ValueError(message) from exc
 
-        return self.bulk_insert(table_key, tuple_rows, columns=resolved_columns)
+        return self.bulk_insert(
+            table_key,
+            tuple_rows,
+            columns=resolved_columns,
+            catalog=catalog,
+        )
 
     def _coerce_mapping_rows(
         self,
@@ -1486,6 +1566,7 @@ class DuckDBPolicyBackend:
         *,
         columns: Sequence[str],
         upsert: UpsertSpec,
+        catalog: str | None = None,
     ) -> int:
         """Insert rows with ON CONFLICT UPDATE semantics.
 
@@ -1503,6 +1584,8 @@ class DuckDBPolicyBackend:
             Column names for the INSERT (required for upsert).
         upsert
             Upsert specification defining conflict columns and update behavior.
+        catalog
+            Optional catalog override for the target table.
 
         Returns
         -------
@@ -1551,7 +1634,7 @@ class DuckDBPolicyBackend:
             for row in rows_list
         ]
 
-        sql = _build_upsert(schema, table, columns, upsert, catalog=self._default_catalog())
+        sql = _build_upsert(schema, table, columns, upsert, catalog=self._resolve_catalog(catalog))
 
         log.debug("Upsert into %s: %d rows", table_key, len(rows_list))
         self.con.executemany(sql, normalized_rows)

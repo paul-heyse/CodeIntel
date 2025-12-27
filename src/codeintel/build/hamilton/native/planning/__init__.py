@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from codeintel.build.hamilton.native.planning.plan_nodes import (
-    plan_entries,
+    plan,
     plan_request,
     plan_target_closure,
     plan_target_subgraph_nodes,
@@ -23,7 +23,7 @@ __all__ = [
     "m__ci_plan_entries",
     "m__ci_plan_explain_md",
     "m__ci_plan_json",
-    "plan_entries",
+    "plan",
     "plan_request",
     "plan_target_closure",
     "plan_target_subgraph_nodes",

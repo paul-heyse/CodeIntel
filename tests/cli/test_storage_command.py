@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from tests._helpers.assertions import expect_equal, expect_is_not_none
 from tests._helpers.cli import assert_exit, assert_success
 
@@ -34,8 +35,9 @@ def test_storage_validate_macros_failure(cli_project_harness: CLIProjectHarness)
     db_path = cli_project_harness.ctx.db_path
     gateway = cli_project_harness.ctx.gateway
     con = expect_is_not_none(gateway, message="Expected gateway to be provisioned").con
-    con.execute("DELETE FROM metadata.table_schema_registry")
-    row = con.execute("SELECT COUNT(*) FROM metadata.table_schema_registry").fetchone()
+    table_ref = meta_table_ref("metadata.table_schema_registry")
+    con.execute(f"DELETE FROM {table_ref}")
+    row = con.execute(f"SELECT COUNT(*) FROM {table_ref}").fetchone()
     row = expect_is_not_none(row, message="Expected table_schema_registry count row")
     expect_equal(row[0], 0)
 

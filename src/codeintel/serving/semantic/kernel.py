@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
 from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
@@ -44,6 +45,7 @@ from codeintel.serving.semantic.planner import (
 )
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
@@ -191,14 +193,14 @@ class SemanticQueryKernel:
         plan: SemanticQueryPlan,
         column_types: dict[str, ColumnType] | None,
     ) -> tuple[list[dict[str, object]], str]:
-        ibis_con = warehouse.gateway.ibis.con
+        ibis_con = ibis_facade.backend(warehouse.gateway)
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
         return self._execute_bound_query(warehouse=warehouse, query=built)
 
     def _execute_bound_query(
         self, *, warehouse: Warehouse, query: BoundQuery
     ) -> tuple[list[dict[str, object]], str]:
-        ibis_con = warehouse.gateway.ibis.con
+        ibis_con = ibis_facade.backend(warehouse.gateway)
         try:
             sql = query.compile_sql(ibis_con)
             assert_select_perimeter(sql, policy=SqlIngressPolicy())
@@ -295,8 +297,11 @@ class SemanticQueryKernel:
             if not warehouse.gateway.policy.table_exists(
                 schema="metadata",
                 table="derived_lineage_columns",
+                catalog=META_CATALOG_NAME,
             ):
-                raise LineageMetadataMissingError(table="metadata.derived_lineage_columns")
+                raise LineageMetadataMissingError(
+                    table=f"{META_CATALOG_NAME}.metadata.derived_lineage_columns"
+                )
             raw_lineage = load_derived_lineage_columns(
                 warehouse.gateway.con,
                 repo=pointer.repo,

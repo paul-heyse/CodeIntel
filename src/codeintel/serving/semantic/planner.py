@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.serving.errors import SemanticColumnNotFoundError
 from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
+from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
     UnsafeSqlError,
@@ -235,7 +236,7 @@ class SemanticQueryPlanner:
         ValueError
             If the compiled SQL is unsafe.
         """
-        ibis_con = warehouse.gateway.ibis.con
+        ibis_con = ibis_facade.backend(warehouse.gateway)
         built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
         try:
             compiled = built.compile_sql(ibis_con)

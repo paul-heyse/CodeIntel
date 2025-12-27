@@ -575,8 +575,8 @@ class BuildPlanResult:
         List of plan entry dictionaries with status/reason.
     to_compute
         List of target names that will be computed.
-    to_skip
-        List of target names that will be skipped.
+    to_reuse
+        List of target names predicted to reuse cached results.
     blocked
         List of target names that are blocked.
     """
@@ -585,7 +585,7 @@ class BuildPlanResult:
     closure: list[str]
     entries: list[dict[str, object]]
     to_compute: list[str]
-    to_skip: list[str]
+    to_reuse: list[str]
     blocked: list[str]
 
     def to_dict(self) -> dict[str, object]:
@@ -601,10 +601,10 @@ class BuildPlanResult:
             "closure": self.closure,
             "entries": self.entries,
             "to_compute": self.to_compute,
-            "to_skip": self.to_skip,
+            "to_reuse": self.to_reuse,
             "blocked": self.blocked,
             "compute_count": len(self.to_compute),
-            "skip_count": len(self.to_skip),
+            "reuse_count": len(self.to_reuse),
             "blocked_count": len(self.blocked),
         }
 
@@ -617,28 +617,35 @@ class BuildExplainResult:
     ----------
     target
         Target name being explained.
-    status
-        Plan status (compute, blocked, missing).
-    reason
-        Reason for the status.
+    predicted_action
+        Predicted plan action (compute, reuse, blocked).
+    block_reasons
+        Reasons for blocking, if any.
     dependencies
         List of dependencies for the target.
-    table_keys
-        Table keys produced by the target.
-    artifact_keys
-        Artifact keys produced by the target.
+    reads
+        Table keys read by the target.
+    writes_tables
+        Table keys written by the target.
+    writes_artifacts
+        Artifact names written by the target.
+    cache_hit_ratio
+        Cache hit ratio for the target's node cone, if available.
+    miss_nodes
+        Cache miss node list when node details are enabled.
     summary
         Human-readable summary of the plan entry.
-    io_surface
-        Optional per-target IO surface (reads/writes).
     """
 
     target: str
-    status: str
-    reason: str
+    predicted_action: str
+    block_reasons: list[str]
     dependencies: list[str]
-    table_keys: list[str]
-    artifact_keys: list[str]
+    reads: list[str]
+    writes_tables: list[str]
+    writes_artifacts: list[str]
+    cache_hit_ratio: float | None
+    miss_nodes: list[str]
     summary: str
     io_surface: dict[str, object] | None = None
 
@@ -650,16 +657,21 @@ class BuildExplainResult:
         dict[str, object]
             Dictionary representation.
         """
-        return {
+        payload: dict[str, object] = {
             "target": self.target,
-            "status": self.status,
-            "reason": self.reason,
+            "predicted_action": self.predicted_action,
+            "block_reasons": self.block_reasons,
             "dependencies": self.dependencies,
-            "table_keys": self.table_keys,
-            "artifact_keys": self.artifact_keys,
+            "reads": self.reads,
+            "writes_tables": self.writes_tables,
+            "writes_artifacts": self.writes_artifacts,
+            "cache_hit_ratio": self.cache_hit_ratio,
+            "miss_nodes": self.miss_nodes,
             "summary": self.summary,
-            **({"io_surface": self.io_surface} if self.io_surface is not None else {}),
         }
+        if self.io_surface is not None:
+            payload["io_surface"] = self.io_surface
+        return payload
 
 
 @dataclass(frozen=True)

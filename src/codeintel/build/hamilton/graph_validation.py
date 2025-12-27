@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.validate import (
     GraphValidationResult,
     validate_nodes,
     validation_result_to_json,
 )
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def validate_graph() -> GraphValidationResult:
+def validate_graph(*, runtime: RuntimeBundle) -> GraphValidationResult:
     """Validate the Hamilton graph for build invariants.
 
     Returns
@@ -18,7 +18,6 @@ def validate_graph() -> GraphValidationResult:
     GraphValidationResult
         Validation result for the constructed graph.
     """
-    runtime = build_driver()
     return validate_nodes(
         runtime.dr.graph.nodes,
         enforce_compute_io_purity=True,

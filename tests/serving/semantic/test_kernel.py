@@ -17,6 +17,7 @@ from codeintel.serving.semantic.models import (
 )
 from codeintel.serving.settings import ServingSettings
 from codeintel.storage.gateway.pool import PoolConfig
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.schemas import ensure_production_schemas
@@ -155,9 +156,10 @@ async def test_kernel_describe_includes_lineage(tmp_path: Path) -> None:
     con = duckdb.connect(str(snapshot.db_path))
     try:
         ensure_production_schemas(con)
+        table_ref = meta_table_ref("metadata.derived_lineage_columns")
         con.execute(
-            """
-            INSERT INTO metadata.derived_lineage_columns (
+            f"""
+            INSERT INTO {table_ref} (
                 repo,
                 commit,
                 downstream_table,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.tracking import (
     PipelineRunRecord,
     PipelineRunTracking,
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.run_tracking import RunTrackingHarness
+
+PIPELINE_STEPS_TABLE = meta_table_ref("metadata.pipeline_steps")
 
 
 def test_pipeline_run_record_stores_fields() -> None:
@@ -170,9 +173,9 @@ def test_record_step_inserts_step(fresh_gateway: StorageGateway) -> None:
     tracking.record_step(step)
 
     result = con.execute(
-        """
+        f"""
         SELECT run_id, module, name, status
-        FROM metadata.pipeline_steps
+        FROM {PIPELINE_STEPS_TABLE}
         WHERE run_id = ? AND name = ?
         """,
         ["run-step-1", "file_scanner"],
@@ -288,9 +291,9 @@ def test_complete_step_updates_step(fresh_gateway: StorageGateway) -> None:
     tracking.complete_step(params)
 
     result = con.execute(
-        """
+        f"""
         SELECT status, row_counts
-        FROM metadata.pipeline_steps
+        FROM {PIPELINE_STEPS_TABLE}
         WHERE run_id = ? AND name = ?
         """,
         ["run-complete-step", "test_plugin"],
@@ -322,7 +325,7 @@ def test_record_step_with_none_row_counts(
     tracking.record_step(step)
 
     result = con.execute(
-        "SELECT row_counts FROM metadata.pipeline_steps WHERE run_id = ?",
+        f"SELECT row_counts FROM {PIPELINE_STEPS_TABLE} WHERE run_id = ?",
         ["run-none-counts"],
     ).fetchone()
 

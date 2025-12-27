@@ -56,7 +56,7 @@ from codeintel.build.schemas.diff import (
     compute_schema_diff,
 )
 from codeintel.build.schemas.infer_duckdb import (
-    infer_table_schema_from_ibis,
+    infer_table_schema_from_relation,
     infer_view_schema,
     normalize_duckdb_type,
 )
@@ -180,7 +180,7 @@ __all__ = [
     "get_row_binding",
     "get_schema_provider",
     "get_schema_service",
-    "infer_table_schema_from_ibis",
+    "infer_table_schema_from_relation",
     "infer_view_schema",
     "is_view",
     "iter_contracts",

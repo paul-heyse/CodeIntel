@@ -76,7 +76,6 @@ if TYPE_CHECKING:
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.core.config.settings import HamiltonTrackerSettings
-    from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
 

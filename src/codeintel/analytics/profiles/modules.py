@@ -35,7 +35,7 @@ from codeintel.core.ibis_typing import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsModuleProfileRow as ModuleProfileRowModel,
 )
-from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.gateway import DuckDBError, ibis_facade
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -104,8 +104,9 @@ def build_module_profile_rows(
         raise ValueError(msg)
 
     try:
+        ibis_backend = ibis_facade.backend(gateway)
         modules_scoped, func_stats, files, imports, roles = _load_module_aggregates(
-            cast("BaseBackend", gateway.ibis), module_table, repo, commit
+            cast("BaseBackend", ibis_backend), module_table, repo, commit
         )
     except DuckDBError as exc:
         log.warning("module_profile: failed to access tables: %s", exc)

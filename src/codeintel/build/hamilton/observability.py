@@ -16,12 +16,12 @@ import json
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 def list_execution_order(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     targets: list[str],
 ) -> list[str]:
     """Return the execution order for targets.
@@ -43,7 +43,7 @@ def list_execution_order(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> order = list_execution_order(runtime, ["risk_factors"])
     >>> "t__modules" in order
     True
@@ -58,7 +58,7 @@ def list_execution_order(
 
 
 def list_execution_targets(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     targets: list[str],
 ) -> list[str]:
     """Return the execution order as target names.
@@ -77,7 +77,7 @@ def list_execution_targets(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> order = list_execution_targets(runtime, ["risk_factors"])
     >>> "modules" in order
     True
@@ -86,7 +86,7 @@ def list_execution_targets(
 
 
 def get_dag_info(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     targets: list[str],
 ) -> dict[str, Any]:
     """Get detailed DAG information for targets.
@@ -105,7 +105,7 @@ def get_dag_info(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> info = get_dag_info(runtime, ["risk_factors"])
     >>> "nodes" in info
     True
@@ -163,7 +163,7 @@ def get_dag_info(
 
 
 def export_dag_json(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     targets: list[str],
     *,
     indent: int | None = 2,
@@ -186,7 +186,7 @@ def export_dag_json(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> json_str = export_dag_json(runtime, ["risk_factors"])
     >>> import json
     >>> data = json.loads(json_str)
@@ -198,7 +198,7 @@ def export_dag_json(
 
 
 def export_execution_json(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     *,
     targets: list[str],
     env: BuildEnv,
@@ -224,7 +224,7 @@ def export_execution_json(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> json_str = export_execution_json(runtime, targets=["modules"], env=env)
     >>> import json
     >>> data = json.loads(json_str)
@@ -250,7 +250,7 @@ def export_execution_json(
 
 
 def export_dag_mermaid(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     targets: list[str],
 ) -> str:
     """Export DAG as Mermaid graph definition.
@@ -272,7 +272,7 @@ def export_dag_mermaid(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> mermaid = export_dag_mermaid(runtime, ["risk_factors"])
     >>> mermaid.startswith("graph TD")
     True
@@ -296,7 +296,7 @@ def export_dag_mermaid(
 
 
 def export_dag_dot(
-    runtime: HamiltonRuntime,
+    runtime: RuntimeBundle,
     targets: list[str],
 ) -> str:
     """Export DAG as Graphviz DOT definition.
@@ -318,7 +318,7 @@ def export_dag_dot(
 
     Examples
     --------
-    >>> runtime = build_driver()
+    >>> runtime = compose_runtime(env=env, config={}).bundle
     >>> dot = export_dag_dot(runtime, ["risk_factors"])
     >>> dot.startswith("digraph G {")
     True

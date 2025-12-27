@@ -629,16 +629,6 @@ def _validate_materialize_options(
         raise ValueError(upsert_unsupported_message)
 
 
-def _resolve_on_conflict(options: MaterializeOptions) -> OnConflict | None:
-    if options.mode != "upsert" or options.upsert is None:
-        return None
-    return OnConflict(
-        conflict_columns=options.upsert.conflict_columns,
-        update_columns=options.upsert.update_columns,
-        update_condition=options.upsert.update_condition,
-    )
-
-
 def _resolve_fallback_upsert(
     gateway: StorageGateway,
     *,

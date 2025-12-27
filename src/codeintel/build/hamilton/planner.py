@@ -1,394 +1,130 @@
-"""Hamilton build planner for actionable dry-run output.
-
-This module provides planning infrastructure for the Hamilton build system,
-showing the dependency closure and structural execution order.
-
-Design Principles
------------------
-1. PlanEntry captures structural information about the target closure.
-2. HamiltonBuildPlan provides structured access to the full build plan.
-3. compute_plan() computes the plan without executing anything.
-4. Plans are useful for dry-run output and dependency inspection.
-"""
+"""Hamilton build planner wrapper for DAG-native plan execution."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Mapping, Sequence
+from typing import Any
 
-from codeintel.build.hamilton.driver_factory import build_driver
-from codeintel.build.hamilton.impl_kind import ImplKind, native_target_names
-from codeintel.build.hamilton.naming import target_node
-from codeintel.build.hamilton.native.outputs import (
-    expected_artifact_names_for_target,
-    expected_table_keys_for_target,
-)
-
-if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
-    from codeintel.build.hamilton.env import BuildEnv
-    from codeintel.build.targets import TargetModule
-
-
-PlanStatus = Literal["compute", "missing", "blocked"]
-
-
-PlanReason = Literal[
-    "scheduled",
-    "upstream_missing",
-    "no_impl",
-]
-
-
-@dataclass(frozen=True)
-class PlanEntry:
-    """Plan entry describing why a target will or won't run.
-
-    Each PlanEntry captures the structural planning context for a target:
-    where it sits in the closure and why it may be blocked or missing.
-
-    Attributes
-    ----------
-    target
-        Target name being planned.
-    node
-        Hamilton node name (e.g., "t__function_metrics").
-    module
-        Target module (ingestion, graphs, analytics, export).
-        May be ``"unknown"`` for missing targets.
-    status
-        Plan status: "compute", "missing", or "blocked".
-    reason
-        Reason for the status:
-        - "scheduled": Target is scheduled for execution
-        - "upstream_missing": An upstream dependency is missing
-        - "no_impl": No implementation registered for this target
-    dependencies
-        Tuple of target names this target depends on.
-    table_keys
-        Tuple of table keys this target produces.
-    artifact_keys
-        Tuple of artifact keys this target produces (future use).
-    impl_kind
-        Implementation kind. Native Hamilton pipelines are required.
-
-    Examples
-    --------
-    >>> entry = PlanEntry(
-    ...     target="function_metrics",
-    ...     node="t__function_metrics",
-    ...     module="analytics",
-    ...     status="compute",
-    ...     reason="scheduled",
-    ...     dependencies=("goids", "ast"),
-    ...     table_keys=("analytics.function_metrics",),
-    ...     artifact_keys=(),
-    ... )
-    """
-
-    target: str
-    node: str
-    module: TargetModule | Literal["unknown"]
-    status: PlanStatus
-    reason: PlanReason
-    dependencies: tuple[str, ...]
-    table_keys: tuple[str, ...]
-    artifact_keys: tuple[str, ...] = ()
-    impl_kind: ImplKind = "native"
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation of the plan entry.
-        """
-        return {
-            "target": self.target,
-            "node": self.node,
-            "module": self.module,
-            "status": self.status,
-            "reason": self.reason,
-            "dependencies": list(self.dependencies),
-            "table_keys": list(self.table_keys),
-            "artifact_keys": list(self.artifact_keys),
-            "impl_kind": self.impl_kind,
-        }
-
-
-@dataclass(frozen=True)
-class HamiltonBuildPlan:
-    """Complete build plan for Hamilton execution.
-
-    The plan contains all information needed to understand what will happen
-    during a build, without actually executing anything.
-
-    Attributes
-    ----------
-    requested
-        Tuple of target names originally requested by the user.
-    closure
-        Tuple of target names in dependency closure (topological order).
-    entries
-        Tuple of PlanEntry objects, one per target in closure.
-
-    Examples
-    --------
-    >>> plan = compute_plan(env=env, requested=("risk_factors",))
-    >>> plan.to_compute
-    ('modules', 'scip', 'ast', 'goids', 'function_metrics', 'risk_factors')
-    >>> plan.to_skip
-    ()
-    """
-
-    requested: tuple[str, ...]
-    closure: tuple[str, ...]
-    entries: tuple[PlanEntry, ...] = field(default_factory=tuple)
-
-    @property
-    def to_compute(self) -> tuple[str, ...]:
-        """Return targets that will be computed.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Target names with status="compute".
-        """
-        return tuple(e.target for e in self.entries if e.status == "compute")
-
-    @property
-    def to_skip(self) -> tuple[str, ...]:
-        """Return targets that will be skipped.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Always empty for cache-driven planning.
-        """
-        return ()
-
-    @property
-    def blocked(self) -> tuple[str, ...]:
-        """Return targets that are blocked.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Target names with status="blocked".
-        """
-        return tuple(e.target for e in self.entries if e.status == "blocked")
-
-    @property
-    def missing(self) -> tuple[str, ...]:
-        """Return targets that are missing.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Target names with status="missing".
-        """
-        return tuple(e.target for e in self.entries if e.status == "missing")
-
-    def get_entry(self, target_name: str) -> PlanEntry | None:
-        """Get plan entry for a specific target.
-
-        Parameters
-        ----------
-        target_name
-            Target name to look up.
-
-        Returns
-        -------
-        PlanEntry | None
-            The plan entry if found, None otherwise.
-        """
-        for entry in self.entries:
-            if entry.target == target_name:
-                return entry
-        return None
-
-    def to_dict(self) -> dict[str, object]:
-        """Convert to dictionary for JSON serialization.
-
-        Returns
-        -------
-        dict[str, object]
-            Dictionary representation of the build plan.
-        """
-        return {
-            "requested": list(self.requested),
-            "closure": list(self.closure),
-            "entries": [e.to_dict() for e in self.entries],
-            "to_compute": list(self.to_compute),
-            "to_skip": list(self.to_skip),
-            "blocked": list(self.blocked),
-            "missing": list(self.missing),
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class _PlanEntryInputs:
-    upstream_status: Mapping[str, PlanStatus]
-    native_names: frozenset[str]
-    catalog: DagCatalog
-
-
-def _compute_entry_for_target(
-    target: TargetDescriptor,
-    *,
-    inputs: _PlanEntryInputs,
-) -> PlanEntry:
-    """Compute plan entry for a single target.
-
-    Parameters
-    ----------
-    target
-        Target metadata from the graph.
-    inputs
-        Shared planning inputs for upstream status and catalog access.
-
-    Returns
-    -------
-    PlanEntry
-        Computed plan entry for this target.
-
-    """
-    target_name = target.name
-    node = target_node(target_name)
-    module = target.module
-
-    table_keys = expected_table_keys_for_target(target.name, outputs=inputs.catalog)
-    artifact_keys = expected_artifact_names_for_target(target.name, outputs=inputs.catalog)
-    blocked_deps = [
-        dep
-        for dep in target.dependencies
-        if inputs.upstream_status.get(dep) in {"missing", "blocked"}
-    ]
-    if target_name not in inputs.native_names:
-        return PlanEntry(
-            target=target_name,
-            node=node,
-            module=module,
-            status="missing",
-            reason="no_impl",
-            dependencies=tuple(target.dependencies),
-            table_keys=tuple(table_keys),
-            artifact_keys=tuple(artifact_keys),
-            impl_kind="native",
-        )
-    impl_kind: ImplKind = "native"
-
-    if blocked_deps:
-        return PlanEntry(
-            target=target_name,
-            node=node,
-            module=module,
-            status="blocked",
-            reason="upstream_missing",
-            dependencies=tuple(target.dependencies),
-            table_keys=tuple(table_keys),
-            artifact_keys=tuple(artifact_keys),
-            impl_kind=impl_kind,
-        )
-
-    return PlanEntry(
-        target=target_name,
-        node=node,
-        module=module,
-        status="compute",
-        reason="scheduled",
-        dependencies=tuple(target.dependencies),
-        table_keys=tuple(table_keys),
-        artifact_keys=tuple(artifact_keys),
-        impl_kind=impl_kind,
-    )
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.planning.plan_targets import CI_PLAN_TARGET_NAME
+from codeintel.build.planning.model import BuildPlan, PlanRequest
+from codeintel.runtime.compose import compose_runtime, set_execution_active
+from codeintel.runtime.inputs import ExecutionInputs
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 def compute_plan(
     *,
     env: BuildEnv,
-    catalog: DagCatalog | None = None,
-    requested: tuple[str, ...],
-) -> HamiltonBuildPlan:
-    """Compute build plan for requested targets.
-
-    Analyzes the target graph to produce a structural plan for the closure.
+    plan_request: PlanRequest,
+    runtime: RuntimeBundle | None = None,
+    config: Mapping[str, Any] | None = None,
+    materialize: bool = True,
+) -> BuildPlan:
+    """Execute the planning DAG and return the BuildPlan object.
 
     Parameters
     ----------
     env
-        Build environment with gateway, snapshot, and configuration.
-    catalog
-        DAG catalog to use. If None, uses the catalog from the Hamilton runtime.
-    requested
-        Tuple of target names requested by the user.
+        Build environment to inject into the planning DAG.
+    plan_request
+        Plan request parameters for the planning DAG.
+    runtime
+        Optional pre-composed runtime bundle to reuse.
+    config
+        Optional Hamilton config when composing a runtime.
+    materialize
+        When True, execute the ci_plan target to emit plan artifacts.
 
     Returns
     -------
-    HamiltonBuildPlan
-        Complete build plan with entries for all targets in closure.
-
-    Examples
-    --------
-    >>> plan = compute_plan(
-    ...     env=env,
-    ...     requested=("risk_factors",),
-    ... )
-    >>> len(plan.to_compute)
-    7
+    BuildPlan
+        DAG-native build plan output.
     """
-    _ = env
-    runtime = build_driver()
-    if catalog is None:
-        catalog = runtime.catalog
-    native_names = native_target_names(runtime)
-
-    closure = catalog.closure(requested)
-
-    entries: list[PlanEntry] = []
-    upstream_status: dict[str, PlanStatus] = {}
-    inputs = _PlanEntryInputs(
-        upstream_status=upstream_status,
-        native_names=native_names,
-        catalog=catalog,
+    resolved_runtime = runtime or _compose_planning_runtime(env=env, config=config)
+    final_vars = _plan_final_vars(runtime=resolved_runtime, materialize=materialize)
+    inputs = ExecutionInputs(
+        env=env,
+        catalog=resolved_runtime.catalog,
+        tag_query=resolved_runtime.tag_query,
+        cache_index=resolved_runtime.cache_index,
+        cache_key_resolver=resolved_runtime.cache_key_resolver,
+        schema_index=resolved_runtime.schema_index,
+        semantic_registry=resolved_runtime.semantic_registry,
+        runtime_fingerprint=resolved_runtime.fingerprint,
+        plan_request=plan_request,
     )
-
-    for target_name in closure:
-        try:
-            target = catalog.get(target_name)
-        except KeyError:
-            entry = PlanEntry(
-                target=target_name,
-                node=target_node(target_name),
-                module="unknown",
-                status="missing",
-                reason="no_impl",
-                dependencies=(),
-                table_keys=(),
-            )
-            entries.append(entry)
-            upstream_status[target_name] = "missing"
-            continue
-
-        entry = _compute_entry_for_target(target, inputs=inputs)
-        entries.append(entry)
-        upstream_status[target_name] = entry.status
-
-    return HamiltonBuildPlan(
-        requested=requested,
-        closure=closure,
-        entries=tuple(entries),
-    )
+    outputs = _execute_plan(runtime=resolved_runtime, inputs=inputs, final_vars=final_vars)
+    plan = outputs.get("plan")
+    if not isinstance(plan, BuildPlan):
+        msg = "Planning DAG did not return a BuildPlan"
+        raise TypeError(msg)
+    return plan
 
 
-__all__ = [
-    "HamiltonBuildPlan",
-    "ImplKind",
-    "PlanEntry",
-    "PlanReason",
-    "PlanStatus",
-    "compute_plan",
-]
+def _compose_planning_runtime(
+    *,
+    env: BuildEnv,
+    config: Mapping[str, Any] | None,
+) -> RuntimeBundle:
+    resolved_config = _planning_config(env=env, config=config)
+    return compose_runtime(env=env, config=resolved_config).bundle
+
+
+def _planning_config(
+    *,
+    env: BuildEnv,
+    config: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    resolved = dict(config or {})
+    if env.profile and "profile" not in resolved:
+        resolved["profile"] = env.profile
+    resolved.update(env.variants.as_hamilton_config())
+    resolved["variant_fingerprint"] = env.variants.variant_fingerprint
+    return resolved
+
+
+def _plan_final_vars(*, runtime: RuntimeBundle, materialize: bool) -> list[str]:
+    final_vars = ["plan"]
+    if materialize:
+        target_node = runtime.catalog.target_nodes.get(CI_PLAN_TARGET_NAME)
+        if target_node is None:
+            msg = "Planning target node is missing from the catalog"
+            raise ValueError(msg)
+        final_vars.append(target_node)
+    return final_vars
+
+
+def _execute_plan(
+    *,
+    runtime: RuntimeBundle,
+    inputs: ExecutionInputs,
+    final_vars: Sequence[str],
+) -> dict[str, object]:
+    input_mapping = _execution_input_mapping(inputs)
+    set_execution_active(active=True)
+    try:
+        return runtime.driver.execute(list(final_vars), inputs=input_mapping)
+    finally:
+        set_execution_active(active=False)
+
+
+def _execution_input_mapping(inputs: ExecutionInputs) -> dict[str, object]:
+    mapping: dict[str, object] = {
+        "env": inputs.env,
+        "catalog": inputs.catalog,
+    }
+    optional: dict[str, object | None] = {
+        "tag_query": inputs.tag_query,
+        "cache_index": inputs.cache_index,
+        "cache_key_resolver": inputs.cache_key_resolver,
+        "schema_index": inputs.schema_index,
+        "semantic_registry": inputs.semantic_registry,
+        "runtime_fingerprint": inputs.runtime_fingerprint,
+        "plan_request": inputs.plan_request,
+    }
+    mapping.update({key: value for key, value in optional.items() if value is not None})
+    return mapping
+
+
+__all__ = ["compute_plan"]

@@ -318,8 +318,11 @@ def get_target_metadata_service(*, runtime: RuntimeBundle) -> TargetMetadataServ
     """
     schema_index = runtime.schema_index
     if schema_index is None:
-        inference_service = get_schema_inference_service()
-        inferable_table_keys = inference_service.inferable_table_keys(catalog=runtime.catalog)
+        inference_service = get_schema_inference_service(
+            driver=runtime.driver,
+            catalog=runtime.catalog,
+        )
+        inferable_table_keys = inference_service.inferable_table_keys()
         schema_index = build_schema_index(
             system=runtime.catalog,
             declared_provider=source_declared_schema_provider(

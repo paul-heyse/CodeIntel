@@ -6,11 +6,12 @@ that Warehouse and repositories cannot drift in semantics.
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-import ibis.expr.types as it
+from duckdb import ColumnExpression, ConstantExpression
 
-from codeintel.core.ibis_typing import filter_by
+if TYPE_CHECKING:
+    from codeintel.storage.gateway.protocol import DuckDBRelation
 
 __all__ = ["RepoCommitScope", "maybe_scope_by_repo_commit", "maybe_scope_by_snapshot"]
 
@@ -29,12 +30,12 @@ class RepoCommitScope(Protocol):
         ...
 
 
-def maybe_scope_by_repo_commit[TableT: it.Table](
-    table: TableT,
+def maybe_scope_by_repo_commit(
+    table: "DuckDBRelation",
     *,
     repo: str,
     commit: str,
-) -> TableT:
+) -> "DuckDBRelation":
     """Apply repo/commit filtering when the table contains snapshot columns.
 
     Parameters
@@ -52,18 +53,20 @@ def maybe_scope_by_repo_commit[TableT: it.Table](
         Filtered table when `repo` and `commit` columns exist, otherwise the
         original table expression.
     """
-    schema = table.schema()
-    names = set(schema.keys())
+    names = set(table.columns)
     if "repo" in names and "commit" in names:
-        return filter_by(table, table["repo"] == repo, table["commit"] == commit)
+        return table.filter(
+            (ColumnExpression("repo") == ConstantExpression(repo))
+            & (ColumnExpression("commit") == ConstantExpression(commit))
+        )
     return table
 
 
-def maybe_scope_by_snapshot[TableT: it.Table](
-    table: TableT,
+def maybe_scope_by_snapshot(
+    table: "DuckDBRelation",
     *,
     snapshot: RepoCommitScope,
-) -> TableT:
+) -> "DuckDBRelation":
     """Apply snapshot scoping based on a structural repo/commit identity.
 
     Parameters

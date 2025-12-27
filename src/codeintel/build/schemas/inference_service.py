@@ -13,9 +13,9 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_args, get_origin
 
+import hamilton.driver as h_driver
 
 from codeintel.build.config import BuildConfig
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
@@ -32,14 +32,12 @@ from codeintel.core.config.settings import (
 )
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
-from codeintel.core.singleton import SingletonHolder
 from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
-    from codeintel.build.hamilton.driver_factory import HamiltonRuntime
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
     from codeintel.storage.gateway import StorageGateway
@@ -64,6 +62,12 @@ class _ComputeInferenceJob:
     qparams: frozenset[str]
     requires_env: bool
     requires_catalog: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _InferenceContext:
+    driver: h_driver.Driver
+    catalog: DagCatalog
 
 
 def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
@@ -95,11 +99,6 @@ def _is_tabular_annotation(annotation: object) -> bool:
     return "DuckDBPyRelation" in str(annotation)
 
 
-@lru_cache(maxsize=1)
-def _runtime_auto() -> HamiltonRuntime:
-    return build_driver()
-
-
 @contextmanager
 def _schema_inference_gateway(
     *,
@@ -119,13 +118,13 @@ def _schema_inference_providers() -> Providers:
 
 def _output_data_node(
     *,
-    runtime: HamiltonRuntime,
+    context: _InferenceContext,
     table_key: str,
 ) -> str | None:
-    output = runtime.catalog.table_outputs.get(table_key)
+    output = context.catalog.table_outputs.get(table_key)
     if output is None:
         return None
-    saver_node = runtime.dr.graph.nodes.get(output.saver_node)
+    saver_node = context.driver.graph.nodes.get(output.saver_node)
     if saver_node is None:
         return None
     tabular_deps = [
@@ -138,20 +137,20 @@ def _output_data_node(
 
 def _resolve_inference_job(
     *,
-    runtime: HamiltonRuntime,
+    context: _InferenceContext,
     table_key: str,
 ) -> _ComputeInferenceJob:
-    output = runtime.catalog.table_outputs.get(table_key)
+    output = context.catalog.table_outputs.get(table_key)
     if output is None:
         msg = f"Unknown table_key (no producing target): {table_key}"
         raise KeyError(msg)
 
-    compute_name = _output_data_node(runtime=runtime, table_key=table_key)
+    compute_name = _output_data_node(context=context, table_key=table_key)
     if compute_name is None:
         msg = f"Table {table_key} is not inferable from any tabular output node"
         raise ValueError(msg)
 
-    node = runtime.dr.graph.nodes.get(compute_name)
+    node = context.driver.graph.nodes.get(compute_name)
     if node is None or not node.originating_functions:
         msg = f"Missing compute node for {table_key}: {compute_name}"
         raise ValueError(msg)
@@ -159,17 +158,17 @@ def _resolve_inference_job(
     compute_fn_obj = node.originating_functions[0]
     if not isinstance(compute_fn_obj, Callable):
         msg = f"Compute node {compute_name} for {table_key} is not callable"
-        raise ValueError(msg)
+        raise TypeError(msg)
     compute_fn: Callable[..., object] = compute_fn_obj
     if not _looks_inferable_compute(compute_fn):
         msg = f"Compute node {compute_name} for {table_key} is not inferable"
         raise ValueError(msg)
 
     qparams, requires_env, requires_catalog = _inference_requirements(
-        runtime=runtime,
+        context=context,
         compute_name=compute_name,
     )
-    exec_name = _compute_node_for_inference(runtime, compute_name=compute_name)
+    exec_name = _compute_node_for_inference(context, compute_name=compute_name)
     return _ComputeInferenceJob(
         target_name=output.producer_target,
         compute_name=compute_name,
@@ -181,18 +180,20 @@ def _resolve_inference_job(
     )
 
 
-def _compute_node_for_inference(runtime: HamiltonRuntime, *, compute_name: str) -> str:
+def _compute_node_for_inference(
+    context: _InferenceContext, *, compute_name: str
+) -> str:
     raw_name = f"{compute_name}_raw"
-    return raw_name if raw_name in runtime.dr.graph.nodes else compute_name
+    return raw_name if raw_name in context.driver.graph.nodes else compute_name
 
 
 def _inference_requirements(
     *,
-    runtime: HamiltonRuntime,
+    context: _InferenceContext,
     compute_name: str,
 ) -> tuple[set[str], bool, bool]:
-    effective_compute_name = _compute_node_for_inference(runtime, compute_name=compute_name)
-    node = runtime.dr.graph.nodes.get(effective_compute_name)
+    effective_compute_name = _compute_node_for_inference(context, compute_name=compute_name)
+    node = context.driver.graph.nodes.get(effective_compute_name)
     if node is None:
         msg = f"Compute node not found in Hamilton DAG: {effective_compute_name}"
         raise ValueError(msg)
@@ -282,7 +283,7 @@ def _inference_env(*, gateway: StorageGateway, force_targets: frozenset[str]) ->
 
 def _infer_table_schema_for_compute(
     *,
-    runtime: HamiltonRuntime,
+    context: _InferenceContext,
     declared_provider: SchemaProvider,
     job: _ComputeInferenceJob,
 ) -> TableSchema:
@@ -296,9 +297,9 @@ def _infer_table_schema_for_compute(
                 force_targets=frozenset({job.target_name}),
             )
         if job.requires_catalog:
-            inputs["catalog"] = runtime.catalog
+            inputs["catalog"] = context.catalog
 
-        out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
+        out = context.driver.execute([job.exec_name], inputs=inputs, overrides=overrides)
         expr_obj = out[job.exec_name]
         if expr_obj is None:
             msg = f"{job.exec_name} returned None; expected tabular output"
@@ -313,6 +314,8 @@ def _infer_table_schema_for_compute(
 
 def infer_schema_for_table_key(
     *,
+    driver: h_driver.Driver,
+    catalog: DagCatalog,
     table_key: str,
     declared_provider: SchemaProvider,
 ) -> TableSchema:
@@ -320,6 +323,10 @@ def infer_schema_for_table_key(
 
     Parameters
     ----------
+    driver
+        Hamilton driver used to execute compute nodes.
+    catalog
+        DAG catalog defining outputs for each build target.
     table_key
         Output table key to infer (schema.table).
     declared_provider
@@ -339,12 +346,12 @@ def infer_schema_for_table_key(
     ValueError
         If the table_key is not inferable from any native compute node.
     """
-    runtime = _runtime_auto()
+    context = _InferenceContext(driver=driver, catalog=catalog)
 
     try:
-        job = _resolve_inference_job(runtime=runtime, table_key=table_key)
+        job = _resolve_inference_job(context=context, table_key=table_key)
         return _infer_table_schema_for_compute(
-            runtime=runtime,
+            context=context,
             declared_provider=declared_provider,
             job=job,
         )
@@ -448,11 +455,15 @@ class HamiltonSchemaProvider(SchemaProvider):
         self._cache.update(schemas)
 
 
-def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
+def inferable_native_table_keys(
+    *, driver: h_driver.Driver, catalog: DagCatalog
+) -> frozenset[str]:
     """Return output table keys that appear inferable from native compute nodes.
 
     Parameters
     ----------
+    driver
+        Hamilton driver used to inspect native compute nodes.
     catalog
         DAG catalog defining outputs for each build target.
 
@@ -462,11 +473,11 @@ def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
         Output table keys inferred from q__-driven tabular compute nodes or
         outputs tagged with inferable saver sinks.
     """
-    runtime = _runtime_auto()
+    context = _InferenceContext(driver=driver, catalog=catalog)
     inferable: set[str] = set()
     for table_key in catalog.table_outputs:
         try:
-            _resolve_inference_job(runtime=runtime, table_key=table_key)
+            _resolve_inference_job(context=context, table_key=table_key)
         except (KeyError, ValueError):
             continue
         inferable.add(table_key)
@@ -475,13 +486,13 @@ def inferable_native_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
 
 def _build_inference_jobs(
     *,
-    runtime: HamiltonRuntime,
+    context: _InferenceContext,
     table_keys: list[str],
 ) -> list[_ComputeInferenceJob]:
-    jobs: list[_ComputeInferenceJob] = []
-    for table_key in table_keys:
-        jobs.append(_resolve_inference_job(runtime=runtime, table_key=table_key))
-    return jobs
+    return [
+        _resolve_inference_job(context=context, table_key=table_key)
+        for table_key in table_keys
+    ]
 
 
 def _union_qparams(jobs: Iterable[_ComputeInferenceJob]) -> frozenset[str]:
@@ -490,7 +501,7 @@ def _union_qparams(jobs: Iterable[_ComputeInferenceJob]) -> frozenset[str]:
 
 def _infer_job_schema(
     *,
-    runtime: HamiltonRuntime,
+    context: _InferenceContext,
     job: _ComputeInferenceJob,
     base_overrides: Mapping[str, object],
     env: BuildEnv,
@@ -501,9 +512,9 @@ def _infer_job_schema(
     if job.requires_env:
         inputs["env"] = env
     if job.requires_catalog:
-        inputs["catalog"] = runtime.catalog
+        inputs["catalog"] = context.catalog
 
-    out = runtime.dr.execute([job.exec_name], inputs=inputs, overrides=overrides)
+    out = context.driver.execute([job.exec_name], inputs=inputs, overrides=overrides)
     expr_obj = out[job.exec_name]
     if expr_obj is None:
         msg = f"{job.exec_name} returned None; expected tabular output"
@@ -520,6 +531,8 @@ def _infer_job_schema(
 def infer_table_schemas(
     table_keys: Iterable[str],
     *,
+    driver: h_driver.Driver,
+    catalog: DagCatalog,
     declared_provider: SchemaProvider,
 ) -> dict[str, TableSchema]:
     """Infer schemas for multiple output tables in a single session.
@@ -528,6 +541,10 @@ def infer_table_schemas(
     ----------
     table_keys
         Output table keys to infer (schema.table).
+    driver
+        Hamilton driver used to execute compute nodes.
+    catalog
+        DAG catalog defining outputs for each build target.
     declared_provider
         Provider used to seed upstream input tables.
 
@@ -540,8 +557,8 @@ def infer_table_schemas(
     if not unique_keys:
         return {}
 
-    runtime = _runtime_auto()
-    jobs = _build_inference_jobs(runtime=runtime, table_keys=unique_keys)
+    context = _InferenceContext(driver=driver, catalog=catalog)
+    jobs = _build_inference_jobs(context=context, table_keys=unique_keys)
     union_qparams = _union_qparams(jobs)
 
     with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
@@ -555,7 +572,7 @@ def infer_table_schemas(
         inferred: dict[str, TableSchema] = {}
         for job in jobs:
             inferred[job.table_key] = _infer_job_schema(
-                runtime=runtime,
+                context=context,
                 job=job,
                 base_overrides=base_overrides,
                 env=env,
@@ -569,8 +586,10 @@ def infer_table_schemas(
 class SchemaInferenceService:
     """Service for schema inference using native Hamilton compute nodes."""
 
-    @staticmethod
-    def infer_table_schema(table_key: str, *, declared_provider: SchemaProvider) -> TableSchema:
+    driver: h_driver.Driver
+    catalog: DagCatalog
+
+    def infer_table_schema(self, table_key: str, *, declared_provider: SchemaProvider) -> TableSchema:
         """Infer schema for a single table key.
 
         Parameters
@@ -585,10 +604,15 @@ class SchemaInferenceService:
         TableSchema
             Inferred table schema.
         """
-        return infer_schema_for_table_key(table_key=table_key, declared_provider=declared_provider)
+        return infer_schema_for_table_key(
+            driver=self.driver,
+            catalog=self.catalog,
+            table_key=table_key,
+            declared_provider=declared_provider,
+        )
 
-    @staticmethod
     def infer_table_schemas(
+        self,
         table_keys: Iterable[str],
         *,
         declared_provider: SchemaProvider,
@@ -607,35 +631,41 @@ class SchemaInferenceService:
         dict[str, TableSchema]
             Mapping of table_key to inferred TableSchema.
         """
-        return infer_table_schemas(table_keys, declared_provider=declared_provider)
+        return infer_table_schemas(
+            table_keys,
+            driver=self.driver,
+            catalog=self.catalog,
+            declared_provider=declared_provider,
+        )
 
-    @staticmethod
-    def inferable_table_keys(*, catalog: DagCatalog) -> frozenset[str]:
-        """Return inferable table keys for a DAG catalog.
-
-        Parameters
-        ----------
-        catalog
-            DAG catalog defining outputs for each build target.
+    def inferable_table_keys(self) -> frozenset[str]:
+        """Return inferable table keys for the bound DAG catalog.
 
         Returns
         -------
         frozenset[str]
             Output table keys inferred from native compute nodes.
         """
-        return inferable_native_table_keys(catalog=catalog)
+        return inferable_native_table_keys(driver=self.driver, catalog=self.catalog)
 
 
-class _SchemaInferenceServiceHolder(SingletonHolder["SchemaInferenceService"]):
-    """Singleton holder for SchemaInferenceService."""
+def get_schema_inference_service(
+    *,
+    driver: h_driver.Driver,
+    catalog: DagCatalog,
+) -> SchemaInferenceService:
+    """Return a runtime-bound SchemaInferenceService.
 
-
-def get_schema_inference_service() -> SchemaInferenceService:
-    """Return the singleton SchemaInferenceService.
+    Parameters
+    ----------
+    driver
+        Hamilton driver used for inference execution.
+    catalog
+        DAG catalog defining outputs for each build target.
 
     Returns
     -------
     SchemaInferenceService
-        Inference service instance.
+        Service bound to the provided driver and catalog.
     """
-    return _SchemaInferenceServiceHolder.get(SchemaInferenceService)
+    return SchemaInferenceService(driver=driver, catalog=catalog)

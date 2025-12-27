@@ -244,7 +244,7 @@ def _build_runtime_bundle(
         else None
     )
 
-    schema_index = _build_schema_index(catalog=catalog)
+    schema_index = _build_schema_index(driver=driver, catalog=catalog)
     semantic_registry = compile_semantic_registry_from_tag_query(
         schema_provider=schema_index.schema_provider(),
         tag_query=tag_query,
@@ -353,9 +353,13 @@ def _build_cache_key_resolver(
     )
 
 
-def _build_schema_index(*, catalog: DagCatalog) -> SchemaIndex:
-    inference_service = get_schema_inference_service()
-    inferable_table_keys = inference_service.inferable_table_keys(catalog=catalog)
+def _build_schema_index(
+    *,
+    driver: h_driver.Driver,
+    catalog: DagCatalog,
+) -> SchemaIndex:
+    inference_service = get_schema_inference_service(driver=driver, catalog=catalog)
+    inferable_table_keys = inference_service.inferable_table_keys()
     declared_provider = source_declared_schema_provider(
         exclude_table_keys=inferable_table_keys,
     )

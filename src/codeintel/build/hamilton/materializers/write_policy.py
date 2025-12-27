@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, cast
 
 from sqlglot import exp
 
@@ -11,11 +12,24 @@ from codeintel.build.hamilton.materialize_options import (
     MaterializeOptionsConfig,
     materialize_options,
 )
-from codeintel.build.schemas.service import get_schema_service
+from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.primitives import TableSchema, TableWritePolicy
 from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig
 
 _FILE_STATE_TABLE_KEY = "core.file_state"
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from codeintel.core.schemas import SchemaService
+
+
+def _schema_service() -> SchemaService:
+    get_service = cast(
+        "Callable[[], SchemaService]",
+        lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
+    )
+    return get_service()
 
 
 def resolve_materialize_options(
@@ -46,7 +60,7 @@ def resolve_materialize_options(
     MaterializeOptions
         Resolved options with write policy and upsert configuration applied.
     """
-    schema = get_schema_service().get_table_schema(table_key)
+    schema = _schema_service().get_table_schema(table_key)
     policy = (
         schema.write_policy if schema and schema.write_policy is not None else TableWritePolicy()
     )

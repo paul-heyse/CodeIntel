@@ -21,7 +21,10 @@ from codeintel.build.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
+from codeintel.storage.helpers.table_key import fully_qualified_table_ref
+from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
     assert_target_ok,
@@ -107,6 +110,18 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
 
     snap_con = duckdb.connect(pointer.db_path, read_only=True)
     try:
+        config = StorageConfig(
+            db_path=Path(pointer.db_path),
+            read_only=True,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+        )
+        attach_meta_database(snap_con, config=config)
+        info_schema_ref = fully_qualified_table_ref(
+            "information_schema.tables",
+            catalog=META_CATALOG_NAME,
+        )
         present = snap_con.execute(
             """
             SELECT 1
@@ -117,18 +132,18 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
         ).fetchone()
         expect_true(present is not None)
         lineage_edges = snap_con.execute(
-            """
+            f"""
             SELECT 1
-            FROM information_schema.tables
+            FROM {info_schema_ref}
             WHERE table_schema = 'metadata' AND table_name = 'derived_lineage_edges'
             LIMIT 1
             """
         ).fetchone()
         expect_true(lineage_edges is not None)
         lineage_columns = snap_con.execute(
-            """
+            f"""
             SELECT 1
-            FROM information_schema.tables
+            FROM {info_schema_ref}
             WHERE table_schema = 'metadata' AND table_name = 'derived_lineage_columns'
             LIMIT 1
             """
@@ -234,8 +249,10 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     _seed_modules(con, repo="demo/repo", commit="c1")
-    con.execute("DROP TABLE IF EXISTS metadata.derived_lineage_edges")
-    con.execute("DROP TABLE IF EXISTS metadata.derived_lineage_columns")
+    edges_ref = meta_table_ref("metadata.derived_lineage_edges")
+    columns_ref = meta_table_ref("metadata.derived_lineage_columns")
+    con.execute(f"DROP TABLE IF EXISTS {edges_ref}")
+    con.execute(f"DROP TABLE IF EXISTS {columns_ref}")
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con

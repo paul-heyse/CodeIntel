@@ -18,6 +18,7 @@ from codeintel.storage.helpers.json import (
     deserialize_str_tuple,
     serialize_str_sequence,
 )
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:
@@ -46,6 +47,9 @@ StepStatus = Literal["pending", "running", "succeeded", "failed", "skipped"]
 - ``failed``: Step failed with an error
 - ``skipped``: Step was skipped (e.g., unchanged inputs)
 """
+
+_PIPELINE_RUNS_TABLE = meta_table_ref("metadata.pipeline_runs")
+_PIPELINE_STEPS_TABLE = meta_table_ref("metadata.pipeline_steps")
 
 
 def _coerce_row_counts(raw: dict[str, object]) -> dict[str, int]:
@@ -235,8 +239,8 @@ class PipelineRunTracking:
         """
         datasets_json = serialize_str_sequence(ctx.requested_datasets)
         self.con.execute(
-            """
-            INSERT OR REPLACE INTO metadata.pipeline_runs (
+            f"""
+            INSERT OR REPLACE INTO {_PIPELINE_RUNS_TABLE} (
                 run_id,
                 repo,
                 commit,
@@ -289,8 +293,8 @@ class PipelineRunTracking:
             Optional summary of errors if failed.
         """
         self.con.execute(
-            """
-            UPDATE metadata.pipeline_runs
+            f"""
+            UPDATE {_PIPELINE_RUNS_TABLE}
             SET status = ?,
                 error_summary = ?,
                 completed_at = ?
@@ -313,7 +317,7 @@ class PipelineRunTracking:
             The run record if found, None otherwise.
         """
         cur = self.con.execute(
-            """
+            f"""
             SELECT
                 run_id,
                 repo,
@@ -327,7 +331,7 @@ class PipelineRunTracking:
                 status,
                 error_summary,
                 pipeline_name
-            FROM metadata.pipeline_runs
+            FROM {_PIPELINE_RUNS_TABLE}
             WHERE run_id = ?
             """,
             [run_id],
@@ -381,8 +385,8 @@ class PipelineRunTracking:
         extra_json = dict(record.extra) if record.extra else None
 
         self.con.execute(
-            """
-            INSERT OR REPLACE INTO metadata.pipeline_steps (
+            f"""
+            INSERT OR REPLACE INTO {_PIPELINE_STEPS_TABLE} (
                 run_id,
                 module,
                 stage,
@@ -422,7 +426,7 @@ class PipelineRunTracking:
             List of step records ordered by module, stage, and name.
         """
         cur = self.con.execute(
-            """
+            f"""
             SELECT
                 run_id,
                 module,
@@ -433,7 +437,7 @@ class PipelineRunTracking:
                 status,
                 row_counts,
                 extra
-            FROM metadata.pipeline_steps
+            FROM {_PIPELINE_STEPS_TABLE}
             WHERE run_id = ?
             ORDER BY module, stage, name
             """,
@@ -541,7 +545,7 @@ class PipelineRunTracking:
             List of run records ordered by started_at descending.
         """
         cur = self.con.execute(
-            """
+            f"""
             SELECT
                 run_id,
                 repo,
@@ -555,7 +559,7 @@ class PipelineRunTracking:
                 status,
                 error_summary,
                 pipeline_name
-            FROM metadata.pipeline_runs
+            FROM {_PIPELINE_RUNS_TABLE}
             ORDER BY started_at DESC
             LIMIT ?
             """,

@@ -13,7 +13,6 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.variants import variant_config_from_build_config
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
 from codeintel.core.registry import RegistryService
@@ -121,8 +120,6 @@ class BuildRunContext:
             )
         if load_schema_service:
             get_schema_service()
-            metadata_service = get_target_metadata_service()
-            self.gateway.schemas.prefill_schema_index(metadata_service.schema_index)
         storage_facade = StorageFacade.from_gateway(self.gateway)
         return BuildEnv(
             gateway=self.gateway,

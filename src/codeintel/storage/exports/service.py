@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.core.config.settings import ExportAuditSettings
+from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.protocols import ExportRelation
 from codeintel.storage.protocols.duckdb_export import adapt_duckdb_relation
 
@@ -102,7 +104,9 @@ class ExportService:
             context=ExportAuditContext(
                 con=self.gateway.con,
                 settings=settings,
-                ensure_table=self.gateway.policy.ensure_export_audit_table,
+                ensure_table=lambda: self.gateway.policy.ensure_export_audit_table(
+                    catalog=META_CATALOG_NAME
+                ),
             ),
             sql=sql,
             plan=plan,
@@ -186,10 +190,11 @@ def write_export_audit(
     if context.settings.table_enabled:
         if context.ensure_table is not None:
             context.ensure_table()
+        table_ref = meta_table_ref("metadata.export_audit")
         created_at = datetime.now(tz=UTC)
         context.con.execute(
-            """
-            INSERT INTO metadata.export_audit
+            f"""
+            INSERT INTO {table_ref}
                 (dataset, macro, rows, duration_s, output_path, sql, plan, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
