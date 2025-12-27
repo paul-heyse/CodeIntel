@@ -22,24 +22,55 @@ __all__ = [
 
 
 def default_meta_db_path(db_path: Path) -> Path:
-    """Return the default meta database path for a primary database."""
+    """Return the default meta database path for a primary database.
+
+    Returns
+    -------
+    Path
+        Resolved meta database path for the primary database.
+    """
     if str(db_path) == ":memory:":
         return Path(":memory:")
     return db_path.with_name(META_DB_FILENAME)
 
 
 def resolve_meta_db_path(config: StorageConfig) -> Path:
-    """Resolve the meta database path from config."""
+    """Resolve the meta database path from config.
+
+    Returns
+    -------
+    Path
+        Meta database path derived from configuration.
+    """
     return config.meta_db_path or default_meta_db_path(config.db_path)
 
 
 def meta_table_ref(table_key: str, *, catalog: str = META_CATALOG_NAME) -> str:
-    """Return a catalog-qualified table reference for meta tables."""
+    """Return a catalog-qualified table reference for meta tables.
+
+    Returns
+    -------
+    str
+        Fully qualified table reference for the meta catalog.
+    """
     return fully_qualified_table_ref(table_key, catalog=catalog)
 
 
 def attach_meta_database(con: DuckDBPyConnection, *, config: StorageConfig) -> None:
-    """Attach the meta database to a connection if configured."""
+    """Attach the meta database to a connection if configured.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection to attach the meta catalog.
+    config
+        Storage configuration containing meta catalog settings.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the meta database is missing and the connection is read-only.
+    """
     if not config.attach_meta:
         return
 

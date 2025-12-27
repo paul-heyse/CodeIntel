@@ -14,15 +14,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from codeintel.analytics.hotspots import FileChurn, compute_hotspot_rows, parse_git_log_lines
-from codeintel.build.hamilton.native.analytics.hotspots import collect_git_file_stats
-from codeintel.ingestion.engine.infrastructure import (
-    ToolName,
-    ToolRunner,
-    ToolRunOptions,
-    ToolRunResult,
-)
 from tests._helpers.assertions import (
-    assert_logged,
     expect_equal,
     expect_false,
     expect_in,
@@ -32,7 +24,6 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.catalogs import ensure_catalog_with_goids
-from tests._helpers.factories import make_snapshot
 from tests._helpers.fixtures.repos import (
     GOID_FUNC_A,
     GOID_FUNC_B,
@@ -49,7 +40,7 @@ from tests._helpers.scenarios import TestScenario
 from tests._helpers.seeds.ast_metrics import MEDIUM_COMPLEXITY
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
+    from collections.abc import Iterator
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.storage.gateway import StorageGateway
@@ -397,57 +388,6 @@ def test_compute_hotspots_from_seeded_ast_metrics(ast_metrics_ctx: TestContext) 
     expect_equal(row["author_count"], 0)
     expect_equal(_as_float(row["complexity"]), MEDIUM_COMPLEXITY)
     expect_true(_as_float(row["score"]) > HOTSPOT_SCORE_THRESHOLD)
-
-
-def test_collect_git_file_stats_logs_git_failure(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Git failures warn but return empty churn stats."""
-
-    class _FailingRunner(ToolRunner):
-        def __init__(self) -> None:
-            super().__init__(cache_dir=Path.cwd())
-            self.invocations = 0
-
-        def run(
-            self,
-            tool: ToolName | str,
-            args: Sequence[str],
-            *,
-            options: ToolRunOptions | None = None,
-        ) -> ToolRunResult:
-            _ = options
-            self.invocations += 1
-            resolved_tool = tool if isinstance(tool, ToolName) else ToolName(tool)
-            return ToolRunResult(
-                tool=resolved_tool,
-                args=tuple(args),
-                returncode=2,
-                stdout="ok",
-                stderr="fatal: not a git repo",
-                duration_s=0.0,
-            )
-
-    snapshot = make_snapshot(repo_root=tmp_path)
-    caplog.set_level("WARNING", logger="codeintel.build.hamilton.native.analytics.hotspots")
-
-    stats = collect_git_file_stats(
-        snapshot.repo_root,
-        max_commits=5,
-        runner=_FailingRunner(),
-    )
-    rows = compute_hotspot_rows(
-        _ast_metrics_from_seeds([AstMetricSeed(rel_path="sample.py", complexity=2.0)]),
-        stats,
-    )
-    expect_equal(rows[0]["commit_count"], 0)
-    expect_equal(rows[0]["author_count"], 0)
-    assert_logged(
-        caplog.records,
-        level="WARNING",
-        containing="git log exited with code 2",
-    )
 
 
 @pytest.mark.parametrize(

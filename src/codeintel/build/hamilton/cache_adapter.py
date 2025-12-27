@@ -129,7 +129,9 @@ class ManifestBackedCacheAdapter(HamiltonCacheAdapter):
         metadata_store = (
             cache_store.metadata_store if cache_store is not None else resolved.metadata_store
         )
-        result_store = cache_store.result_store if cache_store is not None else resolved.result_store
+        result_store = (
+            cache_store.result_store if cache_store is not None else resolved.result_store
+        )
         super().__init__(
             path=str(path),
             metadata_store=metadata_store,

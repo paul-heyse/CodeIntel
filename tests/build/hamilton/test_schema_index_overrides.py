@@ -14,10 +14,11 @@ from codeintel.build.schemas.inference_service import (
     get_schema_inference_service,
 )
 from codeintel.build.schemas.schema_index import SchemaDerivation, SchemaIndex, build_schema_index
-from codeintel.build.target_metadata import TargetSystem, get_target_metadata_service
+from codeintel.build.target_metadata import TargetSystem
 from codeintel.build.targets import TargetDescriptor
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ def _build_target_system(
     targets: tuple[TargetDescriptor, ...],
     *,
     table_keys_by_target: Mapping[str, Sequence[str]] | None = None,
+    runtime: RuntimeBundle,
 ) -> TargetSystem:
     catalog = build_catalog(targets=targets, table_keys_by_target=table_keys_by_target)
     by_name: dict[str, TargetDescriptor] = {}
@@ -43,7 +45,6 @@ def _build_target_system(
     for target in targets:
         by_name[target.name] = target
 
-    runtime = get_target_metadata_service().system.runtime
     return TargetSystem(
         runtime=runtime,
         catalog=catalog,
@@ -53,7 +54,9 @@ def _build_target_system(
     )
 
 
-def test_schema_index_accepts_explicit_override_for_non_inferable_outputs() -> None:
+def test_schema_index_accepts_explicit_override_for_non_inferable_outputs(
+    hamilton_runtime: RuntimeBundle,
+) -> None:
     """Explicit overrides resolve schemas for non-inferable outputs."""
     table_key = "analytics.override_ok"
     override_schema = TableSchema(
@@ -70,11 +73,15 @@ def test_schema_index_accepts_explicit_override_for_non_inferable_outputs() -> N
     system = _build_target_system(
         (target,),
         table_keys_by_target={"override_ok_target": (table_key,)},
+        runtime=hamilton_runtime,
     )
     schema_index = build_schema_index(
         system=system,
         declared_provider=declared_provider,
-        inference_service=get_schema_inference_service(),
+        inference_service=get_schema_inference_service(
+            driver=hamilton_runtime.driver,
+            catalog=hamilton_runtime.catalog,
+        ),
     )
 
     resolved = schema_index.get_table_schema(table_key, allow_inference=False)
@@ -103,7 +110,7 @@ def test_schema_index_records_inference_errors() -> None:
         derivations={
             table_key: SchemaDerivation(
                 table_key=table_key,
-                kind="inferred_ibis",
+                kind="inferred_relation",
                 source="test",
                 override_schema=None,
             )
@@ -141,7 +148,7 @@ def test_schema_index_inference_error_rows() -> None:
         derivations={
             table_key: SchemaDerivation(
                 table_key=table_key,
-                kind="inferred_ibis",
+                kind="inferred_relation",
                 source="test",
                 override_schema=None,
             )

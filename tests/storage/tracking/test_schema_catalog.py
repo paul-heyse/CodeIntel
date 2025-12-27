@@ -100,7 +100,7 @@ def test_schema_index_prefill_avoids_inference(fresh_gateway: StorageGateway) ->
         table_provenance={
             table_key: TableProvenance(
                 schema_hash=schema_hash(table_schema),
-                derivation_kind="inferred_ibis",
+                derivation_kind="inferred_relation",
                 derivation_source="test",
                 inference_status="inferred",
             )
@@ -120,7 +120,7 @@ def test_schema_index_prefill_avoids_inference(fresh_gateway: StorageGateway) ->
         derivations={
             table_key: SchemaDerivation(
                 table_key=table_key,
-                kind="inferred_ibis",
+                kind="inferred_relation",
                 source="test",
                 override_schema=None,
             )

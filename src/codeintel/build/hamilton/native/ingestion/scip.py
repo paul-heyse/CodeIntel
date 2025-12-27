@@ -98,7 +98,6 @@ from codeintel.observability.teardown import (
 from codeintel.storage.tracking.build_tracking import ScipRunRecord
 
 if TYPE_CHECKING:
-
     from codeintel.config.models import ToolsConfig
 
 log = logging.getLogger(__name__)
@@ -241,8 +240,6 @@ def _scip_options_hash(
     return compute_options_hash(payload)
 
 
-
-
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
 def scip__module_inputs(
     t__modules: TargetRunRecord,
@@ -313,7 +310,7 @@ def _resolve_change_set(scan: ModuleToolOutput) -> tuple[ChangeSet, bool]:
 
 
 def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
-    relation = env.gateway.con.sql(
+    relation = env.gateway.execute(
         "SELECT * FROM core.scip_module_state WHERE repo = ? AND commit = ?",
         [env.snapshot.repo, env.snapshot.commit],
     )

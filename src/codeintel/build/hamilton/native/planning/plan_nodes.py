@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 
 from codeintel.build.hamilton.cache_index import CacheIndex
 from codeintel.build.hamilton.cache_key_resolver import CacheKeyResolver
@@ -17,6 +19,28 @@ from codeintel.build.planning.model import (
     PlanTargetEntry,
 )
 
+UNKNOWN_CACHE_STATUS: PlanCacheStatus = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class PlanContext:
+    """Bundled plan inputs shared across planning nodes."""
+
+    catalog: DagCatalog
+    env: BuildEnv
+    plan_request: PlanRequest
+    runtime_fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class PlanGraphInputs:
+    """Bundled graph inputs for plan entry construction."""
+
+    plan_target_closure: tuple[str, ...]
+    plan_target_subgraph_nodes: Mapping[str, tuple[str, ...]]
+    plan_cache_probe: Mapping[str, PlanCacheStatus]
+    preflight_block_map: Mapping[str, tuple[str, ...]]
+
 
 def plan_request(plan_request: PlanRequest) -> PlanRequest:
     """Identity node for injected plan requests.
@@ -27,6 +51,27 @@ def plan_request(plan_request: PlanRequest) -> PlanRequest:
         Plan request payload.
     """
     return plan_request
+
+
+def plan_context(
+    catalog: DagCatalog,
+    env: BuildEnv,
+    plan_request: PlanRequest,
+    runtime_fingerprint: str,
+) -> PlanContext:
+    """Bundle plan inputs shared across nodes.
+
+    Returns
+    -------
+    PlanContext
+        Bundled planning inputs for downstream nodes.
+    """
+    return PlanContext(
+        catalog=catalog,
+        env=env,
+        plan_request=plan_request,
+        runtime_fingerprint=runtime_fingerprint,
+    )
 
 
 def plan_target_closure(
@@ -69,11 +114,8 @@ def plan_target_subgraph_nodes(
 
 def plan_node_versions(
     cache_key_resolver: CacheKeyResolver | None,
-    catalog: DagCatalog,
-    env: BuildEnv,
+    plan_context: PlanContext,
     plan_target_subgraph_nodes: Mapping[str, tuple[str, ...]],
-    plan_request: PlanRequest,
-    runtime_fingerprint: str,
 ) -> dict[str, str]:
     """Compute cache key versions for nodes in the planning subgraph.
 
@@ -90,10 +132,10 @@ def plan_node_versions(
         return {}
 
     input_values: dict[str, object] = {
-        "env": env,
-        "catalog": catalog,
-        "plan_request": plan_request,
-        "runtime_fingerprint": runtime_fingerprint,
+        "env": plan_context.env,
+        "catalog": plan_context.catalog,
+        "plan_request": plan_context.plan_request,
+        "runtime_fingerprint": plan_context.runtime_fingerprint,
     }
     return cache_key_resolver.resolve_node_versions(nodes=nodes, input_values=input_values)
 
@@ -126,14 +168,30 @@ def plan_cache_probe(
     return statuses
 
 
-def plan(
-    catalog: DagCatalog,
+def plan_graph_inputs(
     plan_target_closure: tuple[str, ...],
     plan_target_subgraph_nodes: Mapping[str, tuple[str, ...]],
     plan_cache_probe: Mapping[str, PlanCacheStatus],
     preflight_block_map: Mapping[str, tuple[str, ...]],
-    plan_request: PlanRequest,
-    runtime_fingerprint: str,
+) -> PlanGraphInputs:
+    """Bundle graph inputs for plan entry construction.
+
+    Returns
+    -------
+    PlanGraphInputs
+        Bundled graph inputs for plan entries.
+    """
+    return PlanGraphInputs(
+        plan_target_closure=plan_target_closure,
+        plan_target_subgraph_nodes=plan_target_subgraph_nodes,
+        plan_cache_probe=plan_cache_probe,
+        preflight_block_map=preflight_block_map,
+    )
+
+
+def plan(
+    plan_context: PlanContext,
+    plan_graph_inputs: PlanGraphInputs,
 ) -> BuildPlan:
     """Build a deterministic plan from catalog structure and cache probes.
 
@@ -145,7 +203,10 @@ def plan(
     created_at = datetime.now(tz=UTC).isoformat()
     entries: list[PlanTargetEntry] = []
 
-    for target in plan_target_closure:
+    catalog = plan_context.catalog
+    plan_request = plan_context.plan_request
+
+    for target in plan_graph_inputs.plan_target_closure:
         target_desc = catalog.get_target(target)
         if target_desc is None:
             entries.append(
@@ -169,9 +230,15 @@ def plan(
             target=target,
             include_io_details=plan_request.include_io_details,
         )
-        block_reasons = preflight_block_map.get(target, ())
-        nodes = plan_target_subgraph_nodes.get(target, ())
-        node_statuses = [plan_cache_probe.get(node, "unknown") for node in nodes]
+        block_reasons = plan_graph_inputs.preflight_block_map.get(target, ())
+        nodes = plan_graph_inputs.plan_target_subgraph_nodes.get(target, ())
+        node_statuses = cast(
+            "list[PlanCacheStatus]",
+            [
+                plan_graph_inputs.plan_cache_probe.get(node, UNKNOWN_CACHE_STATUS)
+                for node in nodes
+            ],
+        )
         cache_hit_ratio = _cache_hit_ratio(
             statuses=node_statuses,
             include_cache_details=plan_request.include_cache_details,
@@ -200,10 +267,10 @@ def plan(
 
     return BuildPlan(
         request=plan_request,
-        closure=plan_target_closure,
+        closure=plan_graph_inputs.plan_target_closure,
         entries=tuple(entries),
         created_at_utc=created_at,
-        build_fingerprint=runtime_fingerprint,
+        build_fingerprint=plan_context.runtime_fingerprint,
     )
 
 
@@ -321,8 +388,8 @@ def _topo_sort_nodes(*, catalog: DagCatalog, nodes: Sequence[str]) -> tuple[str,
 
 
 __all__ = [
-    "plan_cache_probe",
     "plan",
+    "plan_cache_probe",
     "plan_node_versions",
     "plan_request",
     "plan_target_closure",

@@ -21,9 +21,11 @@ class CacheIndex(Protocol):
 
     def has(self, *, node: str, version: str) -> bool:
         """Return True if the node/version pair is cached."""
+        ...
 
     def batch_has(self, pairs: Iterable[tuple[str, str]]) -> tuple[CacheProbeResult, ...]:
         """Probe multiple node/version pairs in one call."""
+        ...
 
 
 __all__ = ["CacheIndex", "CacheProbeResult"]

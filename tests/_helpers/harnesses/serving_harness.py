@@ -58,7 +58,6 @@ class ServingTargetHarness:
             commit=config.commit,
             profile=config.profile,
             file_backed_db=True,
-            strict_contracts=config.strict_contracts,
             validate_outputs=config.validate_outputs,
             parallel_backend=config.parallel_backend,
             max_workers=config.max_workers,

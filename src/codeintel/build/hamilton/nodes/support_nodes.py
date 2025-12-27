@@ -31,7 +31,6 @@ if TYPE_CHECKING:
     from hamilton.node import Node
 
 
-
 class _ParameterizeWithTags(parameterize):
     def __init__(
         self,

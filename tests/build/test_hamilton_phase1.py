@@ -16,19 +16,13 @@ production-parity execution paths.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
+import hamilton.driver as h_driver
 import pytest
 
-from codeintel.build.hamilton.contracts.pandera_hook import (
-    contract_status_for_table,
-    get_pandera_schema,
-    with_contract,
-)
-from codeintel.build.hamilton.driver_factory import (
-    build_driver,
-    list_available_nodes,
-    target_to_node_name,
-)
+from codeintel.build.hamilton.dag_catalog import DagCatalog
+from codeintel.build.hamilton.driver_factory import list_available_nodes, target_to_node_name
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.executor import HamiltonBuildResult
 from codeintel.build.hamilton.io.dataset_ref import (
@@ -36,7 +30,6 @@ from codeintel.build.hamilton.io.dataset_ref import (
     refs_from_target_result,
     refs_to_tuple,
 )
-from codeintel.build.hamilton.io.ibis_adapter import IbisIOConfig
 from codeintel.build.hamilton.naming import dataset_node, target_node
 from codeintel.build.hamilton.observability import (
     export_dag_json,
@@ -45,6 +38,7 @@ from codeintel.build.hamilton.observability import (
     list_execution_targets,
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers import assert_frozen
 from tests._helpers.assertions import assert_target_ok
 
@@ -55,46 +49,52 @@ CLOSURE_LENGTH_PHASE0 = 5
 SAMPLE_DURATION_MS = 1234.5
 
 
+@dataclass
+class _RuntimeProxy:
+    dr: h_driver.Driver
+    catalog: DagCatalog
+
+
 class TestHamiltonDriverMappings:
     """Tests for PR-01: target/node mappings remain stable."""
 
     @staticmethod
-    def test_runtime_has_target_to_node_mapping() -> None:
+    def test_runtime_has_target_to_node_mapping(hamilton_runtime: RuntimeBundle) -> None:
         """Verify runtime carries target-to-node mapping in the catalog."""
-        runtime = build_driver()
-        if not runtime.catalog.target_nodes:
+        if not hamilton_runtime.catalog.target_nodes:
             pytest.fail("Runtime catalog missing target_nodes mapping")
-        if "modules" not in runtime.catalog.target_nodes:
+        if "modules" not in hamilton_runtime.catalog.target_nodes:
             pytest.fail("Catalog missing 'modules' target")
 
     @staticmethod
-    def test_runtime_has_node_to_target_mapping() -> None:
+    def test_runtime_has_node_to_target_mapping(hamilton_runtime: RuntimeBundle) -> None:
         """Verify runtime carries node-to-target mapping in the catalog."""
-        runtime = build_driver()
-        if not runtime.catalog.node_to_target:
+        if not hamilton_runtime.catalog.node_to_target:
             pytest.fail("Runtime catalog missing node_to_target mapping")
-        if "t__modules" not in runtime.catalog.node_to_target:
+        if "t__modules" not in hamilton_runtime.catalog.node_to_target:
             pytest.fail("Catalog missing 't__modules' node")
 
     @staticmethod
-    def test_target_to_node_name_with_runtime() -> None:
+    def test_target_to_node_name_with_runtime(hamilton_runtime: RuntimeBundle) -> None:
         """Verify target_to_node_name uses runtime mapping when provided."""
-        runtime = build_driver()
-        node_name = target_to_node_name("modules", runtime=runtime)
+        node_name = target_to_node_name("modules", catalog=hamilton_runtime.catalog)
         if node_name != "t__modules":
             pytest.fail(f"Expected 't__modules', got '{node_name}'")
 
     @staticmethod
-    def test_target_to_node_name_without_runtime() -> None:
-        """Verify target_to_node_name works without runtime."""
-        node_name = target_to_node_name("modules")
-        if node_name != "t__modules":
-            pytest.fail(f"Expected 't__modules', got '{node_name}'")
+    def test_target_to_node_name_requires_runtime() -> None:
+        """Verify target_to_node_name raises when runtime is missing."""
+        with pytest.raises(ValueError, match="requires runtime or catalog"):
+            target_to_node_name("modules")
 
     @staticmethod
-    def test_list_available_nodes() -> None:
+    def test_list_available_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify list_available_nodes returns nodes."""
-        nodes = list_available_nodes()
+        runtime_proxy = _RuntimeProxy(
+            dr=hamilton_runtime.driver,
+            catalog=hamilton_runtime.catalog,
+        )
+        nodes = list_available_nodes(runtime=runtime_proxy)
         if "t__modules" not in nodes:
             pytest.fail("Expected nodes to include t__modules")
 
@@ -343,26 +343,23 @@ class TestObservability:
     """Tests for PR-07: Observability functions."""
 
     @staticmethod
-    def test_list_execution_targets() -> None:
+    def test_list_execution_targets(hamilton_runtime: RuntimeBundle) -> None:
         """Verify list_execution_targets returns target names."""
-        runtime = build_driver()
-        targets = list_execution_targets(runtime, ["modules"])
+        targets = list_execution_targets(hamilton_runtime, ["modules"])
         if "modules" not in targets:
             pytest.fail("modules should be in execution targets")
 
     @staticmethod
-    def test_list_execution_order() -> None:
+    def test_list_execution_order(hamilton_runtime: RuntimeBundle) -> None:
         """Verify list_execution_order returns node names."""
-        runtime = build_driver()
-        order = list_execution_order(runtime, ["modules"])
+        order = list_execution_order(hamilton_runtime, ["modules"])
         if "t__modules" not in order:
             pytest.fail("t__modules should be in execution order")
 
     @staticmethod
-    def test_get_dag_info_structure() -> None:
+    def test_get_dag_info_structure(hamilton_runtime: RuntimeBundle) -> None:
         """Verify get_dag_info returns expected structure."""
-        runtime = build_driver()
-        info = get_dag_info(runtime, ["modules"])
+        info = get_dag_info(hamilton_runtime, ["modules"])
         if "nodes" not in info:
             pytest.fail("DAG info missing 'nodes' field")
         if "edges" not in info:
@@ -371,10 +368,9 @@ class TestObservability:
             pytest.fail("DAG info missing 'closure' field")
 
     @staticmethod
-    def test_export_dag_json_valid() -> None:
+    def test_export_dag_json_valid(hamilton_runtime: RuntimeBundle) -> None:
         """Verify export_dag_json returns valid JSON."""
-        runtime = build_driver()
-        json_str = export_dag_json(runtime, ["modules"])
+        json_str = export_dag_json(hamilton_runtime, ["modules"])
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as e:
@@ -387,10 +383,9 @@ class TestSupportNodesCompilation:
     """Tests for support-node compilation."""
 
     @staticmethod
-    def test_driver_includes_dataset_nodes() -> None:
+    def test_driver_includes_dataset_nodes(hamilton_runtime: RuntimeBundle) -> None:
         """Verify driver graph includes dataset nodes for contract outputs."""
-        runtime = build_driver()
-        node_names = set(runtime.dr.graph.nodes)
+        node_names = set(hamilton_runtime.dr.graph.nodes)
         if dataset_node("analytics.function_metrics") not in node_names:
             pytest.fail("Expected dataset nodes for analytics.function_metrics")
 
@@ -399,11 +394,10 @@ class TestDriverConstruction:
     """Tests for driver construction with the unified module set."""
 
     @staticmethod
-    def test_build_driver_constructs_driver() -> None:
-        """Verify build_driver constructs a Driver."""
-        runtime = build_driver()
-        if runtime.dr is None:
-            pytest.fail("Driver runtime missing dr")
+    def test_runtime_constructs_driver(hamilton_runtime: RuntimeBundle) -> None:
+        """Verify runtime bundle constructs a Driver."""
+        if hamilton_runtime.dr is None:
+            pytest.fail("Runtime bundle missing driver")
 
 
 class TestDatasetNodeNaming:
@@ -435,43 +429,3 @@ class TestDatasetNodeNaming:
             pytest.fail("Target node should use t__ prefix")
         if not dataset_name.startswith("d__"):
             pytest.fail("Dataset node should use d__ prefix")
-
-
-class TestIbisIOConfig:
-    """Tests for IbisIOConfig dataclass."""
-
-    @staticmethod
-    def test_ibis_io_config_creation() -> None:
-        """Verify IbisIOConfig has expected fields."""
-        fields = getattr(IbisIOConfig, "__dataclass_fields__", {})
-        if "gateway" not in fields:
-            pytest.fail("IbisIOConfig missing gateway field")
-        if "validate_schema" not in fields:
-            pytest.fail("IbisIOConfig missing validate_schema field")
-
-
-class TestPanderaContractIntegration:
-    """Tests for Pandera contract integration."""
-
-    @staticmethod
-    def test_get_pandera_schema_import() -> None:
-        """Verify get_pandera_schema can be imported."""
-        if not callable(get_pandera_schema):
-            pytest.fail("get_pandera_schema is not callable")
-
-    @staticmethod
-    def test_with_contract_decorator_import() -> None:
-        """Verify with_contract decorator can be imported."""
-        if not callable(with_contract):
-            pytest.fail("with_contract is not callable")
-
-    @staticmethod
-    def test_contract_status_for_table() -> None:
-        """Verify contract_status_for_table returns expected structure."""
-        status = contract_status_for_table("nonexistent.table")
-        if not isinstance(status, dict):
-            pytest.fail("contract_status_for_table should return dict")
-        if "has_schema" not in status:
-            pytest.fail("Status missing has_schema field")
-        if "table_key" not in status:
-            pytest.fail("Status missing table_key field")

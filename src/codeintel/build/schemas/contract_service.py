@@ -2,20 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache
-from typing import TYPE_CHECKING, Literal, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from codeintel.build.hamilton.dag_catalog import OutputDescriptor
-from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.target_metadata import (
-    TargetMetadataProvider,
-    get_target_metadata_provider,
-    get_target_metadata_service,
-)
 from codeintel.config.datasets.composites import get_composite_schemas
+from codeintel.core.imports.lazy import lazy_getattr
 from codeintel.core.schemas.contract_factory import (
     DatasetContractOverrides,
     build_dataset_contract,
@@ -28,7 +23,10 @@ from codeintel.storage.views.inventory import discover_derived_docs_views
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from codeintel.build.target_metadata import TargetMetadataProvider
     from codeintel.config.datasets.primitives import CompositeSchema
+    from codeintel.core.hamilton.tag_query import TagQuery
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 __all__ = [
     "ContractProvider",
@@ -37,6 +35,7 @@ __all__ = [
     "ContractService",
     "clear_contract_cache",
     "column_order_for_table_key",
+    "configure_contract_service",
     "get_contract_for_table_key",
     "get_contract_provider",
     "get_contract_service",
@@ -46,6 +45,24 @@ __all__ = [
     "iter_contracts_by_table_key",
     "overrides_from_output_descriptor",
 ]
+
+
+def _schema_service() -> SchemaService:
+    get_service = cast(
+        "Callable[[], SchemaService]",
+        lazy_getattr("codeintel.build.schemas.service", "get_schema_service"),
+    )
+    return get_service()
+
+
+def _target_metadata_provider(
+    *, runtime: RuntimeBundle
+) -> TargetMetadataProvider:
+    get_provider = cast(
+        "Callable[..., TargetMetadataProvider]",
+        lazy_getattr("codeintel.build.target_metadata", "get_target_metadata_provider"),
+    )
+    return get_provider(runtime=runtime)
 
 
 def is_view(table_key: str) -> bool:
@@ -163,6 +180,7 @@ class ContractService:
 
     schema_service: SchemaService
     target_metadata: TargetMetadataProvider
+    tag_query: TagQuery | None = None
 
     def get_dataset_contract(self, table_key: str) -> DatasetContract:
         """Return the DatasetContract for a table key.
@@ -212,8 +230,9 @@ class ContractService:
             except KeyError:
                 continue
 
-        runtime = get_target_metadata_service().system.runtime
-        for view_key in discover_derived_docs_views(tag_query=runtime.tag_query):
+        if self.tag_query is None:
+            return
+        for view_key in discover_derived_docs_views(tag_query=self.tag_query):
             if view_key in seen:
                 continue
             seen.add(view_key)
@@ -264,7 +283,41 @@ class ContractService:
         return self.iter_dataset_contracts_by_table_key()
 
 
-@lru_cache(maxsize=1)
+@dataclass(slots=True)
+class _ContractServiceState:
+    service: ContractService | None = None
+    fingerprint: str | None = None
+
+
+_CONTRACT_SERVICE_STATE = _ContractServiceState()
+
+
+def configure_contract_service(*, runtime: RuntimeBundle) -> ContractService:
+    """Configure the contract service for a runtime bundle.
+
+    Parameters
+    ----------
+    runtime
+        Runtime bundle providing catalog metadata and tag query.
+
+    Returns
+    -------
+    ContractService
+        Configured contract service.
+    """
+    state = _CONTRACT_SERVICE_STATE
+    if runtime.fingerprint == state.fingerprint and state.service is not None:
+        return state.service
+    service = ContractService(
+        schema_service=_schema_service(),
+        target_metadata=_target_metadata_provider(runtime=runtime),
+        tag_query=runtime.tag_query,
+    )
+    state.service = service
+    state.fingerprint = runtime.fingerprint
+    return service
+
+
 def get_contract_service() -> ContractService:
     """Return the canonical contract service instance.
 
@@ -272,11 +325,19 @@ def get_contract_service() -> ContractService:
     -------
     ContractService
         Contract service configured for full contract resolution.
+
+    Raises
+    ------
+    RuntimeError
+        If the ContractService has not been configured.
     """
-    return get_enriched_contract_service()
+    service = _CONTRACT_SERVICE_STATE.service
+    if service is None:
+        msg = "ContractService has not been configured"
+        raise RuntimeError(msg)
+    return service
 
 
-@lru_cache(maxsize=1)
 def get_enriched_contract_service() -> ContractService:
     """Return the contract service that includes target metadata.
 
@@ -285,10 +346,7 @@ def get_enriched_contract_service() -> ContractService:
     ContractService
         Contract service with target metadata.
     """
-    return ContractService(
-        schema_service=get_schema_service(),
-        target_metadata=get_target_metadata_provider(),
-    )
+    return get_contract_service()
 
 
 def get_contract_provider(
@@ -312,7 +370,7 @@ def get_contract_provider(
     if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:
             return ContractService(
-                schema_service=get_schema_service(),
+                schema_service=_schema_service(),
                 target_metadata=settings.target_metadata_provider,
             )
         return get_enriched_contract_service()
@@ -348,7 +406,7 @@ def get_contract_for_table_key(
     if mode is ContractResolutionMode.FULL:
         if settings.target_metadata_provider is not None:
             service = ContractService(
-                schema_service=get_schema_service(),
+                schema_service=_schema_service(),
                 target_metadata=settings.target_metadata_provider,
             )
             return service.get_contract_for_table_key(table_key)
@@ -388,8 +446,8 @@ def iter_contracts_by_table_key(
 def clear_contract_cache() -> None:
     """Clear cached dataset contracts."""
     _get_enriched_contract_for_table_key.cache_clear()
-    get_enriched_contract_service.cache_clear()
-    get_contract_service.cache_clear()
+    _CONTRACT_SERVICE_STATE.service = None
+    _CONTRACT_SERVICE_STATE.fingerprint = None
 
 
 def column_order_for_table_key(table_key: str) -> tuple[str, ...]:
@@ -405,7 +463,7 @@ def column_order_for_table_key(table_key: str) -> tuple[str, ...]:
     tuple[str, ...]
         Ordered column names, or empty tuple when schema is unavailable.
     """
-    schema = get_schema_service().get_table_schema(table_key)
+    schema = _schema_service().get_table_schema(table_key)
     if schema is None:
         return ()
     return tuple(column.name for column in schema.columns)

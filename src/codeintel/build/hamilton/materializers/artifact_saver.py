@@ -15,13 +15,12 @@ import typing
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
 
 import pyarrow as pa
 from hamilton.io.data_adapters import DataSaver
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
-from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.base import (
@@ -66,6 +65,16 @@ class ArtifactWritePlan:
     """
 
     write_to: Callable[[Path], int]
+
+
+@dataclass(frozen=True, slots=True)
+class _ArtifactMaterializationContext:
+    env: BuildEnv
+    target_name: str
+    artifact_name: str
+    path_template: str | None
+    input_hash: str
+    duration_ms_value: float
 
 
 @dataclass(frozen=True)
@@ -171,120 +180,40 @@ class FileArtifactSaver(DataSaver):
             Metadata describing the write and materialization outcome.
         """
         start = perf_counter()
-        input_hash: str | None = None
-        result: MaterializationResult | None = None
-
-        try:
-            prepared = resolve_materialization_context(
-                env=self.env,
-                catalog=self.catalog,
-                target_name=self.target_name,
+        prepared = resolve_materialization_context(
+            env=self.env,
+            catalog=self.catalog,
+            target_name=self.target_name,
+        )
+        if isinstance(prepared, MaterializationContextError):
+            result = failed_artifact_result(
+                artifact_name=self.artifact_name,
+                duration_ms=duration_ms(start),
+                input_hash=prepared.input_hash or "",
+                error=prepared.message,
             )
-            if isinstance(prepared, MaterializationContextError):
-                result = failed_artifact_result(
-                    artifact_name=self.artifact_name,
-                    duration_ms=duration_ms(start),
-                    input_hash=prepared.input_hash or "",
-                    error=prepared.message,
-                )
-            else:
-                context = prepared
-                input_hash = context.input_hash
-                if data is None:
-                    result = failed_artifact_result(
-                        artifact_name=self.artifact_name,
-                        duration_ms=duration_ms(start),
-                        input_hash=input_hash or "",
-                        error="Expected artifact payload but received None",
-                    )
-                else:
-                    output_path = _resolve_artifact_path(
-                        self.env,
-                        self.target_name,
-                        self.artifact_name,
-                        path_template=self.path_template,
-                    )
-                    if output_path is None:
-                        result = failed_artifact_result(
-                            artifact_name=self.artifact_name,
-                            duration_ms=duration_ms(start),
-                            input_hash=input_hash or "",
-                            error=f"Artifact path could not be resolved: {self.artifact_name}",
-                        )
-                    else:
-                        # Validate contract if strict mode is enabled
-                        ContractEnforcer.validate_artifact_write(self.artifact_name)
+            return result.to_mapping()
 
-                        if isinstance(data, ArtifactWritePlan):
-                            size_bytes = _atomic_write_via_plan(output_path, data)
-                            result = succeeded_artifact_result(
-                                artifact_name=self.artifact_name,
-                                duration_ms=duration_ms(start),
-                                input_hash=input_hash or "",
-                                path=str(output_path),
-                                size_bytes=size_bytes,
-                            )
-                        elif isinstance(data, DuckDBRelation):
-                            size_bytes = _write_relation_artifact(output_path, data)
-                            result = succeeded_artifact_result(
-                                artifact_name=self.artifact_name,
-                                duration_ms=duration_ms(start),
-                                input_hash=input_hash or "",
-                                path=str(output_path),
-                                size_bytes=size_bytes,
-                            )
-                        elif isinstance(data, pa.RecordBatchReader):
-                            size_bytes = _write_arrow_reader(output_path, data)
-                            result = succeeded_artifact_result(
-                                artifact_name=self.artifact_name,
-                                duration_ms=duration_ms(start),
-                                input_hash=input_hash or "",
-                                path=str(output_path),
-                                size_bytes=size_bytes,
-                            )
-                        elif isinstance(data, pa.Table):
-                            size_bytes = _write_arrow_reader(output_path, data.to_reader())
-                            result = succeeded_artifact_result(
-                                artifact_name=self.artifact_name,
-                                duration_ms=duration_ms(start),
-                                input_hash=input_hash or "",
-                                path=str(output_path),
-                                size_bytes=size_bytes,
-                            )
-                        elif isinstance(data, Path) and _same_path(data, output_path):
-                            size_bytes = output_path.stat().st_size
-                            result = succeeded_artifact_result(
-                                artifact_name=self.artifact_name,
-                                duration_ms=duration_ms(start),
-                                input_hash=input_hash or "",
-                                path=str(output_path),
-                                size_bytes=size_bytes,
-                            )
-                        else:
-                            content_bytes = _coerce_bytes(data)
-                            _atomic_write(output_path, content_bytes)
-                            result = succeeded_artifact_result(
-                                artifact_name=self.artifact_name,
-                                duration_ms=duration_ms(start),
-                                input_hash=input_hash or "",
-                                path=str(output_path),
-                                size_bytes=len(content_bytes),
-                            )
-
+        input_hash = prepared.input_hash or ""
+        try:
+            materialization_context = _ArtifactMaterializationContext(
+                env=self.env,
+                target_name=self.target_name,
+                artifact_name=self.artifact_name,
+                path_template=self.path_template,
+                input_hash=input_hash,
+                duration_ms_value=duration_ms(start),
+            )
+            result = _materialize_artifact_payload(
+                materialization_context,
+                data=data,
+            )
         except _RECOVERABLE_EXCEPTIONS as exc:
             result = failed_artifact_result(
                 artifact_name=self.artifact_name,
                 duration_ms=duration_ms(start),
-                input_hash=input_hash or "",
+                input_hash=input_hash,
                 error=str(exc),
-            )
-
-        if result is None:
-            result = failed_artifact_result(
-                artifact_name=self.artifact_name,
-                duration_ms=duration_ms(start),
-                input_hash=input_hash or "",
-                error="Unknown artifact materialization failure",
             )
 
         return result.to_mapping()
@@ -303,7 +232,7 @@ def _resolve_artifact_path(
     artifact_name: str,
     *,
     path_template: str | None,
-) -> Path | None:
+) -> Path:
     if not path_template:
         msg = (
             f"Missing artifact path_template for {target_name}.{artifact_name} "
@@ -311,6 +240,53 @@ def _resolve_artifact_path(
         )
         raise ValueError(msg)
     return _resolve_artifact_path_from_template(env, path_template)
+
+
+def _materialize_artifact_payload(
+    context: _ArtifactMaterializationContext,
+    *,
+    data: object,
+) -> MaterializationResult:
+    if data is None:
+        return failed_artifact_result(
+            artifact_name=context.artifact_name,
+            duration_ms=context.duration_ms_value,
+            input_hash=context.input_hash,
+            error="Expected artifact payload but received None",
+        )
+
+    output_path = _resolve_artifact_path(
+        context.env,
+        context.target_name,
+        context.artifact_name,
+        path_template=context.path_template,
+    )
+    size_bytes = _write_artifact_payload(output_path, data)
+    return succeeded_artifact_result(
+        artifact_name=context.artifact_name,
+        duration_ms=context.duration_ms_value,
+        input_hash=context.input_hash,
+        path=str(output_path),
+        size_bytes=size_bytes,
+    )
+
+
+def _write_artifact_payload(output_path: Path, data: object) -> int:
+    if isinstance(data, ArtifactWritePlan):
+        return _atomic_write_via_plan(output_path, data)
+    if isinstance(data, DuckDBRelation):
+        return _write_relation_artifact(output_path, data)
+    if isinstance(data, pa.RecordBatchReader):
+        return _write_arrow_reader(output_path, data)
+    if isinstance(data, pa.Table):
+        table = cast("pa.Table", data)
+        return _write_arrow_reader(output_path, table.to_reader())
+    if isinstance(data, Path) and _same_path(data, output_path):
+        return output_path.stat().st_size
+
+    content_bytes = _coerce_bytes(data)
+    _atomic_write(output_path, content_bytes)
+    return len(content_bytes)
 
 
 def _resolve_artifact_path_from_template(env: BuildEnv, template: str) -> Path:
@@ -345,10 +321,13 @@ def _default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
 
 def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("wb") as sink:
-        with pa.ipc.new_stream(sink, reader.schema, options=_default_ipc_write_options()) as writer:
-            for batch in reader:
-                writer.write_batch(batch)
+    with output_path.open("wb") as sink, pa.ipc.new_stream(
+        sink,
+        reader.schema,
+        options=_default_ipc_write_options(),
+    ) as writer:
+        for batch in reader:
+            writer.write_batch(batch)
     return output_path.stat().st_size
 
 

@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import pytest
 
+from codeintel.build.schemas import get_schema_provider
 from codeintel.build.spec import compile_buildspec
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def test_buildspec_compiler_outputs_match_dag() -> None:
+def test_buildspec_compiler_outputs_match_dag(hamilton_runtime: RuntimeBundle) -> None:
     """Compile BuildSpec and verify key targets/outputs are present."""
-    spec = compile_buildspec()
+    spec = compile_buildspec(
+        catalog=hamilton_runtime.catalog,
+        provider=get_schema_provider(),
+    )
     by_name = {t.name: t for t in spec.targets}
 
     risk = by_name.get("risk_factors")

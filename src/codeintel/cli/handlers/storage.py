@@ -170,13 +170,13 @@ def _load_missing_schema_versions(connection: DuckDBConnection) -> list[str]:
     registry_ref = meta_table_ref("metadata.table_schema_registry")
     versions_ref = meta_table_ref("metadata.schema_versions")
     rows = connection.execute(
-        """
+        f"""
         SELECT r.table_key
         FROM {registry_ref} AS r
         LEFT JOIN {versions_ref} AS v
           ON r.schema_digest = v.schema_digest
         WHERE v.schema_digest IS NULL
-        """.format(registry_ref=registry_ref, versions_ref=versions_ref)
+        """
     ).fetchall()
     return [str(row[0]) for row in rows]
 

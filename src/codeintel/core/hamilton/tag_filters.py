@@ -47,6 +47,23 @@ def tf_semantic_views() -> dict[str, object]:
     }
 
 
+def tf_schema_tables(*, table_key: str | None = None) -> dict[str, object]:
+    """Return a tag filter for schema table outputs.
+
+    Returns
+    -------
+    dict[str, object]
+        Tag filter matching contract table saver nodes.
+    """
+    tag_filter: dict[str, object] = {
+        "hamilton.data_saver": True,
+        "output_role": "contract",
+        ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_TABLE,
+    }
+    tag_filter[ht.TAG_TABLE_KEY] = None if table_key is None else table_key
+    return tag_filter
+
+
 def tf_savers(*, role: str | None = None, sink: str | None = None) -> dict[str, object]:
     """Return a tag filter for data saver nodes.
 
@@ -63,4 +80,4 @@ def tf_savers(*, role: str | None = None, sink: str | None = None) -> dict[str, 
     return tag_filter
 
 
-__all__ = ["tf_artifacts", "tf_datasets", "tf_savers", "tf_semantic_views"]
+__all__ = ["tf_artifacts", "tf_datasets", "tf_savers", "tf_schema_tables", "tf_semantic_views"]

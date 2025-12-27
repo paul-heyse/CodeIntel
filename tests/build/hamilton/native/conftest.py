@@ -58,17 +58,11 @@ def migration_harness(
 
 # List of native targets that exist and can be tested
 NATIVE_ANALYTICS_TARGETS = [
-    "cfg_dfg",
     "coverage_functions",
-    "data_models",
-    "dependencies",
-    "entrypoints",
-    "function_history",
-    "history_timeseries",
-    "hotspots",
+    "external_deps",
+    "function_metrics",
+    "module_profile",
     "risk_factors",
-    "subsystems",
-    "test_graph_metrics",
 ]
 
 NATIVE_INGESTION_TARGETS = [
@@ -77,7 +71,10 @@ NATIVE_INGESTION_TARGETS = [
 ]
 
 NATIVE_GRAPHS_TARGETS = [
-    "call_graph_views",
+    "call_graph",
+    "cfg",
+    "dfg",
+    "import_graph",
 ]
 
 NATIVE_EXPORT_TARGETS = [

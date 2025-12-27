@@ -24,6 +24,7 @@ TAG_ENTITY = "entity"
 TAG_GRAIN = "grain"
 TAG_MCP_VISIBLE = "mcp_visible"
 
+OUTPUT_KIND_TABLE = "table"
 OUTPUT_KIND_VIEW = "view"
 OUTPUT_KIND_SEMANTIC_VIEW = "semantic_view"
 
@@ -44,6 +45,7 @@ __all__ = [
     "NODE_TYPE_MATERIALIZE",
     "NODE_TYPE_TOOL",
     "OUTPUT_KIND_SEMANTIC_VIEW",
+    "OUTPUT_KIND_TABLE",
     "OUTPUT_KIND_VIEW",
     "TAG_ARTIFACT",
     "TAG_ARTIFACT_PATH_TEMPLATE",

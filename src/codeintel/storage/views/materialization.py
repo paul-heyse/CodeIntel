@@ -18,7 +18,7 @@ from types import ModuleType
 from typing import TYPE_CHECKING
 
 import duckdb
-from ibis.common.exceptions import IbisError
+from ibis.common.exceptions import IbisError, TableNotFound
 
 from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.helpers.table_key import split_table_key
@@ -37,12 +37,12 @@ from codeintel.storage.views.discovery import discover_view_builders
 if TYPE_CHECKING:
     import ibis.expr.types as it
     from hamilton.driver import Driver
+    from ibis.backends.duckdb import Backend as DuckDBBackend
 
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.storage.gateway.protocol import MinimalGateway
-    from ibis.backends.duckdb import Backend as DuckDBBackend
 
-__all__ = ["materialize_registered_views"]
+__all__ = ["ViewMaterializationOptions", "materialize_registered_views"]
 
 log = logging.getLogger(__name__)
 
@@ -60,14 +60,21 @@ class _IbisGatewayAdapter:
         return self.con.table(table_name)
 
 
+@dataclass(frozen=True, slots=True)
+class ViewMaterializationOptions:
+    """Options controlling view compilation and materialization."""
+
+    overwrite: bool = True
+    strict: bool = False
+    dr: Driver | None = None
+    tag_query: TagQuery | None = None
+
+
 def materialize_registered_views(
     gateway: MinimalGateway,
     *,
     modules: tuple[ModuleType, ...],
-    overwrite: bool = True,
-    strict: bool = False,
-    dr: Driver | None = None,
-    tag_query: TagQuery | None = None,
+    options: ViewMaterializationOptions | None = None,
 ) -> dict[str, str]:
     """Compile and materialize tagged Ibis views.
 
@@ -77,27 +84,21 @@ def materialize_registered_views(
         Gateway providing DuckDB connection access and Ibis integration.
     modules
         Python modules containing view builder functions decorated/tagged for discovery.
-    overwrite
-        When True, overwrite existing views.
-    strict
-        When True, raise on any view build/materialization failure. When False,
-        failures are logged and processing continues.
-    dr
-        Hamilton Driver used for view discovery and callable resolution.
-    tag_query
-        Optional cached tag query helper.
+    options
+        Optional materialization options (overwrite, strict, driver, tag query).
 
     Returns
     -------
     dict[str, str]
         Mapping of view table_key -> compiled SQL used for dependency resolution.
     """
+    active = options or ViewMaterializationOptions()
     expr_by_view, sql_by_view = _compile_view_definitions(
         gateway,
         modules=modules,
-        strict=strict,
-        dr=dr,
-        tag_query=tag_query,
+        strict=active.strict,
+        dr=active.dr,
+        tag_query=active.tag_query,
     )
     if not sql_by_view:
         return {}
@@ -106,8 +107,8 @@ def materialize_registered_views(
         gateway,
         expr_by_view=expr_by_view,
         sql_by_view=sql_by_view,
-        overwrite=overwrite,
-        strict=strict,
+        overwrite=active.overwrite,
+        strict=active.strict,
     )
     _sync_view_lineage(gateway, sql_by_view=sql_by_view)
     return dict(sql_by_view)
@@ -133,6 +134,15 @@ def _compile_view_definitions(
             expr = spec.builder(ibis_gateway)
             expr_by_view[view_name] = expr
             sql_by_view[view_name] = ibis_gateway.con.compile(expr)
+        except TableNotFound:
+            log.warning("Skipping view with missing source tables: %s", view_name)
+        except duckdb.CatalogException as exc:
+            if "does not exist" in str(exc):
+                log.warning("Skipping view with missing source tables: %s", view_name)
+                continue
+            log.exception("Failed to build view expression: %s", view_name)
+            if strict:
+                raise
         except (duckdb.Error, IbisError, KeyError, TypeError, ValueError):
             log.exception("Failed to build view expression: %s", view_name)
             if strict:

@@ -8,9 +8,10 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from codeintel.build.schemas.schema_index import build_schema_index
-from codeintel.build.target_metadata import TargetSystem, get_target_metadata_service
+from codeintel.build.target_metadata import TargetSystem
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.catalog import build_catalog, make_target_descriptor
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ class _FakeInferenceService:
         }
 
 
-def _build_target_system() -> TargetSystem:
+def _build_target_system(runtime: RuntimeBundle) -> TargetSystem:
     target = make_target_descriptor(
         name="alpha",
         module="analytics",
@@ -70,7 +71,6 @@ def _build_target_system() -> TargetSystem:
         for table_key, output in catalog.table_outputs.items()
     }
     by_artifact_name: dict[str, TargetDescriptor] = {}
-    runtime = get_target_metadata_service().system.runtime
     return TargetSystem(
         runtime=runtime,
         catalog=catalog,
@@ -80,9 +80,11 @@ def _build_target_system() -> TargetSystem:
     )
 
 
-def test_schema_index_requires_explicit_schema_for_non_inferable() -> None:
+def test_schema_index_requires_explicit_schema_for_non_inferable(
+    hamilton_runtime: RuntimeBundle,
+) -> None:
     """Non-inferable outputs must have explicit registry schemas."""
-    system = _build_target_system()
+    system = _build_target_system(hamilton_runtime)
     declared_provider = MappingSchemaProvider({})
     with pytest.raises(ValueError, match="Missing explicit schema overrides"):
         build_schema_index(
@@ -92,9 +94,9 @@ def test_schema_index_requires_explicit_schema_for_non_inferable() -> None:
         )
 
 
-def test_schema_index_uses_catalog_outputs() -> None:
+def test_schema_index_uses_catalog_outputs(hamilton_runtime: RuntimeBundle) -> None:
     """Schema index derivations should come from catalog outputs."""
-    system = _build_target_system()
+    system = _build_target_system(hamilton_runtime)
     declared_provider = MappingSchemaProvider(
         {
             "analytics.explicit": TableSchema(

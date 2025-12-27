@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pandas as pd
-import polars as pl
-
-Column = pd.Series | pl.Series | pl.Expr
+from codeintel.build.hamilton.column_ops.types import Column
 
 
 def loc_squared(loc: Column) -> Column:

@@ -14,6 +14,7 @@ __all__ = [
     "EXPORT_AUDIT_TABLE",
     "METADATA_TABLES",
     "SCHEMA_MANIFEST_RUNS_TABLE",
+    "SCHEMA_VALIDATION_RUNS_TABLE",
     "SCHEMA_VERSIONS_TABLE",
     "TABLE_SCHEMA_REGISTRY_TABLE",
 ]
@@ -103,12 +104,34 @@ SCHEMA_MANIFEST_RUNS_TABLE = TableSchema(
     ),
 )
 
+SCHEMA_VALIDATION_RUNS_TABLE = TableSchema(
+    schema="metadata",
+    name="schema_validation_runs",
+    columns=[
+        Column("validation_id", "VARCHAR", nullable=False),
+        Column("repo", "VARCHAR"),
+        Column("commit", "VARCHAR"),
+        Column("validation_mode", "VARCHAR", nullable=False),
+        Column("include_views", "BOOLEAN", nullable=False),
+        Column("issue_count", "BIGINT", nullable=False),
+        Column("status", "VARCHAR", nullable=False),
+        Column("issues", "JSON"),
+        Column("created_at", "TIMESTAMPTZ", nullable=False),
+    ],
+    primary_key=("validation_id",),
+    indexes=(
+        Index("idx_schema_validation_runs_repo_commit", ("repo", "commit", "created_at")),
+        Index("idx_schema_validation_runs_status", ("status", "created_at")),
+    ),
+)
+
 METADATA_TABLES: tuple[TableSchema, ...] = (
     EXPORT_AUDIT_TABLE,
     CANONICAL_CATALOGS_TABLE,
     SCHEMA_VERSIONS_TABLE,
     TABLE_SCHEMA_REGISTRY_TABLE,
     SCHEMA_MANIFEST_RUNS_TABLE,
+    SCHEMA_VALIDATION_RUNS_TABLE,
     TableSchema(
         schema="metadata",
         name="datasets",

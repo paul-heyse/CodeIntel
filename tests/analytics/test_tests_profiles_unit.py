@@ -38,9 +38,10 @@ from codeintel.analytics.testing.profiles.types import (
     TestProfileOptions,
     TestRecord,
 )
-from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.schemas import configure_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table, serialize_row
 from codeintel.config.primitives import SnapshotRef
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.factories import (
     blank_behavioral_coverage_row,
     blank_test_profile_row,
@@ -58,10 +59,16 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway import StorageGateway
 
 
-get_schema_service()
-_COLUMNS_BY_TABLE = load_columns_by_table()
-TEST_PROFILE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.test_profile"])
-BEHAVIORAL_COVERAGE_COLUMNS = tuple(_COLUMNS_BY_TABLE["analytics.behavioral_coverage"])
+
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
+
+
+def _columns_by_table() -> dict[str, tuple[str, ...]]:
+    columns = load_columns_by_table()
+    return {key: tuple(value) for key, value in columns.items()}
 
 
 def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -72,7 +79,8 @@ def serialize_test_profile_row(row: Mapping[str, object]) -> tuple[object, ...]:
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, TEST_PROFILE_COLUMNS)
+    columns = _columns_by_table()["analytics.test_profile"]
+    return serialize_row(row, columns)
 
 
 def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object, ...]:
@@ -83,7 +91,8 @@ def behavioral_coverage_row_to_tuple(row: Mapping[str, object]) -> tuple[object,
     tuple[object, ...]
         Tuple of values in storage column order.
     """
-    return serialize_row(row, BEHAVIORAL_COVERAGE_COLUMNS)
+    columns = _columns_by_table()["analytics.behavioral_coverage"]
+    return serialize_row(row, columns)
 
 
 @contextmanager
@@ -118,67 +127,6 @@ class _FakeCon:
     def executemany(self, sql: str, params_list: list[list[object]]) -> None:
         """Record executemany call."""
         self.executemany_calls.append((sql, params_list))
-
-
-class _FakeIbis:
-    """Fake IbisGateway for testing without real DB."""
-
-    def __init__(self) -> None:
-        self.delete_calls: list[tuple[str, object | None]] = []
-        self.table_calls: list[str] = []
-        self.write_calls: list[tuple[str, list[tuple[object, ...]], list[str] | None]] = []
-
-    def table(self, table_key: str) -> SimpleNamespace:
-        """Return a fake table object with repo/commit columns.
-
-        Returns
-        -------
-        SimpleNamespace
-            Fake table exposing repo and commit columns.
-        """
-        self.table_calls.append(table_key)
-        return SimpleNamespace(repo=_FakeIbisColumn("repo"), commit=_FakeIbisColumn("commit"))
-
-    def delete(self, table_key: str, *, where: object | None = None) -> int:
-        """Record delete call and return a fake deleted row count.
-
-        Returns
-        -------
-        int
-            Sentinel row count indicating deletion attempt.
-        """
-        self.delete_calls.append((table_key, where))
-        return -1
-
-    def write(
-        self,
-        table_key: str,
-        data: list[tuple[object, ...]],
-        *,
-        columns: list[str] | None = None,
-    ) -> SimpleNamespace:
-        """Record write call and return fake result.
-
-        Returns
-        -------
-        SimpleNamespace
-            Fake WriteResult.
-        """
-        self.write_calls.append((table_key, data, columns))
-        return SimpleNamespace(rows_affected=len(data), method="insert_values")
-
-
-class _FakeIbisColumn:
-    """Fake Ibis column expression used by _FakeIbis.table()."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __eq__(self, _other: object) -> bool:
-        return True
-
-    def __hash__(self) -> int:
-        return hash(self.name)
 
 
 def _default_options() -> tuple[TestProfileOptions, BehavioralCoverageOptions]:
@@ -405,7 +353,7 @@ def test_build_test_profile_rows_round_trip() -> None:
         msg = "Expected exactly one model."
         pytest.fail(msg)
     serialized = serialize_test_profile_row(models[0])
-    if len(serialized) != len(TEST_PROFILE_COLUMNS):
+    if len(serialized) != len(_columns_by_table()["analytics.test_profile"]):
         msg = "Serialized tuple length mismatch for test_profile."
         pytest.fail(msg)
     if models[0]["created_at"] != created_at:
@@ -435,7 +383,7 @@ def test_build_behavioral_coverage_rows_normalization() -> None:
         msg = "Expected exactly one behavioral coverage model."
         pytest.fail(msg)
     serialized = behavioral_coverage_row_to_tuple(models[0])
-    if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
+    if len(serialized) != len(_columns_by_table()["analytics.behavioral_coverage"]):
         msg = "Serialized tuple length mismatch for behavioral_coverage."
         pytest.fail(msg)
 
@@ -714,7 +662,7 @@ def test_test_profile_model_snapshot() -> None:
     if model != expected:
         pytest.fail(f"Snapshot mismatch for test_profile model: {model}")
     serialized = serialize_test_profile_row(model)
-    if len(serialized) != len(TEST_PROFILE_COLUMNS):
+    if len(serialized) != len(_columns_by_table()["analytics.test_profile"]):
         pytest.fail("Serialized tuple length mismatch for test_profile.")
 
 
@@ -731,7 +679,7 @@ def test_behavioral_coverage_serialization() -> None:
     row["created_at"] = datetime.now(tz=UTC)
 
     serialized = behavioral_coverage_row_to_tuple(row)
-    if len(serialized) != len(BEHAVIORAL_COVERAGE_COLUMNS):
+    if len(serialized) != len(_columns_by_table()["analytics.behavioral_coverage"]):
         pytest.fail("Serialized tuple length mismatch for behavioral_coverage.")
 
 
@@ -749,5 +697,5 @@ def test_test_profile_serialization() -> None:
     sample_row["created_at"] = datetime.now(tz=UTC)
 
     serialized = serialize_test_profile_row(sample_row)
-    if len(serialized) != len(TEST_PROFILE_COLUMNS):
+    if len(serialized) != len(_columns_by_table()["analytics.test_profile"]):
         pytest.fail("Serialized tuple length mismatch for test_profile.")

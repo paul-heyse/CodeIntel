@@ -18,8 +18,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from hamilton.function_modifiers import inject, source
-
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
@@ -281,8 +279,6 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
     except (OSError, RuntimeError, ValueError, TypeError) as exc:
         log.exception("Module scan failed")
         return ModuleToolOutput(result=ExecutionResult.failed(str(exc)))
-
-
 
 
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME)
@@ -715,8 +711,6 @@ def t__config_ingest__scan(env: BuildEnv) -> ConfigScanResult:
         return ConfigScanResult(success=False, error="Config file discovery failed with exception")
 
 
-
-
 @tag_tool(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__run(
     env: BuildEnv,
@@ -795,7 +789,9 @@ def t__config_ingest__ingest(
     )
 
 
-@tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__raw_rows")
+@tag_compute(
+    domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__raw_rows"
+)
 def config_ingest__raw_rows(
     t__config_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
 ) -> tuple[tuple[object, ...], ...] | None:
@@ -829,11 +825,10 @@ def config_ingest__raw_rows(
     context=CONFIG_INGEST_SAVE_CONTEXT,
     spec=TableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
 )
-@pipe_ingest_rows(required_indices=(0, 1, 2, 3, 4))
-@inject(rows=source("config_ingest__raw_rows"))
+@pipe_ingest_rows(required_indices=(0, 1, 2, 3, 4), input_name="config_ingest__raw_rows")
 @tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__rows")
 def config_ingest__rows(
-    rows: tuple[tuple[object, ...], ...] | None,
+    config_ingest__raw_rows: tuple[tuple[object, ...], ...] | None,
 ) -> tuple[tuple[object, ...], ...] | None:
     """Return cleaned rows for analytics.config_values.
 
@@ -842,7 +837,7 @@ def config_ingest__rows(
     tuple[tuple[object, ...], ...] | None
         Cleaned rows for the config values table.
     """
-    return rows
+    return config_ingest__raw_rows
 
 
 @tag_helper(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
@@ -937,8 +932,6 @@ def coverage_ingest__file_state_hash(env: BuildEnv) -> str | None:
     if coverage_path is None:
         return None
     return _state_hash_for_paths((coverage_path,), root=env.snapshot.repo_root)
-
-
 
 
 def _coerce_coverage_output(
@@ -1175,8 +1168,6 @@ def tests_ingest__file_state_hash(env: BuildEnv) -> str | None:
     return _state_hash_for_paths((report_path,), root=env.snapshot.repo_root)
 
 
-
-
 def _coerce_tests_output(
     output: ToolStepOutput,
     warnings: tuple[str, ...],
@@ -1367,8 +1358,6 @@ def t__tests_ingest(
 # ---------------------------------------------------------------------------
 # typing target
 # ---------------------------------------------------------------------------
-
-
 
 
 def _coerce_typing_output(

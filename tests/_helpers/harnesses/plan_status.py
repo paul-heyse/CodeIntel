@@ -6,14 +6,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.build.hamilton.driver_factory import build_driver
 from codeintel.build.hamilton.planner import compute_plan
+from codeintel.build.planning.model import BuildPlan, PlanRequest
 from codeintel.build.state import StateValidationOptions, StateValidator
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from codeintel.build.hamilton.planner import HamiltonBuildPlan
     from codeintel.build.state_types import BuildState
     from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
@@ -28,6 +28,8 @@ class PlanSummary:
 def compute_plan_summary(
     harness: HamiltonBuildHarness,
     targets: Iterable[str],
+    *,
+    runtime: RuntimeBundle,
 ) -> PlanSummary:
     """Compute a summary of plan entries for requested targets.
 
@@ -36,13 +38,27 @@ def compute_plan_summary(
     PlanSummary
         Mapping of target -> (status, reason).
     """
-    plan = compute_plan(env=harness.build_env(), requested=tuple(targets))
+    request = PlanRequest(
+        requested_targets=tuple(targets),
+        mode="predict",
+        include_node_details=False,
+        include_io_details=False,
+        include_cache_details=False,
+    )
+    plan = compute_plan(
+        env=harness.build_env(),
+        plan_request=request,
+        runtime=runtime,
+        materialize=False,
+    )
     return _summarize_plan(plan)
 
 
 def compute_status_summary(
     harness: HamiltonBuildHarness,
     targets: Iterable[str],
+    *,
+    runtime: RuntimeBundle,
 ) -> PlanSummary:
     """Compute a summary of build status for requested targets.
 
@@ -52,7 +68,6 @@ def compute_status_summary(
         Mapping of target -> (status, reason).
     """
     env = harness.build_env()
-    runtime = build_driver(config={"profile": env.profile})
     validator = StateValidator(
         runtime.catalog,
         env.gateway,
@@ -98,8 +113,14 @@ def format_plan_diff(expected: PlanSummary, actual: PlanSummary) -> str:
     return "\n".join(lines)
 
 
-def _summarize_plan(plan: HamiltonBuildPlan) -> PlanSummary:
-    entries = {entry.target: (entry.status, entry.reason) for entry in plan.entries}
+def _summarize_plan(plan: BuildPlan) -> PlanSummary:
+    entries = {
+        entry.target: (
+            entry.predicted_action,
+            ", ".join(entry.block_reasons) if entry.block_reasons else None,
+        )
+        for entry in plan.entries
+    }
     return PlanSummary(entries=entries)
 
 

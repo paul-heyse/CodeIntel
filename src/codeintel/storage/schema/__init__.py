@@ -11,6 +11,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from codeintel.storage.schema.arrow_schema import arrow_schema_for_table_key
     from codeintel.storage.schema.ddl import (
         SCHEMAS,
         apply_all_schemas,
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     )
 
     _TYPE_CHECKING_EXPORTS = (
+        arrow_schema_for_table_key,
         SCHEMAS,
         apply_all_schemas,
         assert_schema_alignment,
@@ -38,6 +40,10 @@ if TYPE_CHECKING:
     )
 
 _EXPORTS: dict[str, tuple[str, str]] = {
+    "arrow_schema_for_table_key": (
+        "codeintel.storage.schema.arrow_schema",
+        "arrow_schema_for_table_key",
+    ),
     "SCHEMAS": ("codeintel.storage.schema.ddl", "SCHEMAS"),
     "apply_all_schemas": ("codeintel.storage.schema.ddl", "apply_all_schemas"),
     "assert_schema_alignment": ("codeintel.storage.schema.ddl", "assert_schema_alignment"),
@@ -74,6 +80,7 @@ def __dir__() -> list[str]:
 __all__ = (
     "SCHEMAS",
     "apply_all_schemas",
+    "arrow_schema_for_table_key",
     "assert_schema_alignment",
     "build_validator",
     "create_schemas",

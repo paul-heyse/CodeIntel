@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.planner import HamiltonBuildPlan, PlanEntry, compute_plan
+from codeintel.build.hamilton.planner import compute_plan
+from codeintel.build.planning.model import BuildPlan, PlanRequest, PlanTargetEntry
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.build import (
     TEST_BUILD_SETTINGS,
     make_build_config,
@@ -53,85 +54,109 @@ def make_test_build_env(
 
 
 class TestPlanEntryStructure:
-    """Tests for PlanEntry dataclass structure."""
+    """Tests for PlanTargetEntry dataclass structure."""
 
     @staticmethod
     def test_plan_entry_has_required_fields() -> None:
-        """Verify PlanEntry has all required fields."""
-        entry = PlanEntry(
+        """Verify PlanTargetEntry has all required fields."""
+        entry = PlanTargetEntry(
             target="modules",
-            node="t__modules",
-            module="ingestion",
-            status="compute",
-            reason="scheduled",
-            dependencies=(),
-            table_keys=("ingestion.modules",),
-            artifact_keys=(),
+            domain="ingestion",
+            deps=(),
+            reads=(),
+            writes_tables=("ingestion.modules",),
+            writes_artifacts=(),
+            predicted_action="compute",
+            block_reasons=(),
+            cache_hit_ratio=None,
+            miss_nodes=(),
         )
         assert entry.target == "modules"
-        assert entry.node == "t__modules"
-        assert entry.status == "compute"
-        assert entry.reason == "scheduled"
+        assert entry.domain == "ingestion"
+        assert entry.predicted_action == "compute"
         payload = entry.to_dict()
         assert payload["target"] == "modules"
-        assert payload["status"] == "compute"
+        assert payload["predicted_action"] == "compute"
 
 
 class TestHamiltonBuildPlanStructure:
-    """Tests for HamiltonBuildPlan dataclass structure."""
+    """Tests for BuildPlan dataclass structure."""
 
     @staticmethod
     def test_plan_has_entries() -> None:
-        """Verify HamiltonBuildPlan has entries field."""
-        entry = PlanEntry(
-            target="a",
-            node="t__a",
-            module="ingestion",
-            status="compute",
-            reason="scheduled",
-            dependencies=(),
-            table_keys=(),
-            artifact_keys=(),
+        """Verify BuildPlan has entries field."""
+        request = PlanRequest(
+            requested_targets=("a",),
+            mode="predict",
+            include_node_details=False,
+            include_io_details=False,
+            include_cache_details=False,
         )
-        plan = HamiltonBuildPlan(
-            requested=("a",),
+        entry = PlanTargetEntry(
+            target="a",
+            domain="ingestion",
+            deps=(),
+            reads=(),
+            writes_tables=(),
+            writes_artifacts=(),
+            predicted_action="compute",
+            block_reasons=(),
+            cache_hit_ratio=None,
+            miss_nodes=(),
+        )
+        plan = BuildPlan(
+            request=request,
             closure=("a",),
             entries=(entry,),
+            created_at_utc="2024-01-01T00:00:00Z",
+            build_fingerprint="test-fingerprint",
         )
         assert len(plan.entries) == 1
-        assert plan.requested == ("a",)
+        assert plan.request.requested_targets == ("a",)
         assert plan.closure == ("a",)
-        assert plan.to_skip == ()
 
     @staticmethod
     def test_plan_get_entry_method() -> None:
-        """Verify get_entry returns matching entry."""
-        entry_a = PlanEntry(
+        """Verify BuildPlan entries can be located by target."""
+        request = PlanRequest(
+            requested_targets=("b",),
+            mode="predict",
+            include_node_details=False,
+            include_io_details=False,
+            include_cache_details=False,
+        )
+        entry_a = PlanTargetEntry(
             target="a",
-            node="t__a",
-            module="ingestion",
-            status="compute",
-            reason="scheduled",
-            dependencies=(),
-            table_keys=(),
-            artifact_keys=(),
+            domain="ingestion",
+            deps=(),
+            reads=(),
+            writes_tables=(),
+            writes_artifacts=(),
+            predicted_action="compute",
+            block_reasons=(),
+            cache_hit_ratio=None,
+            miss_nodes=(),
         )
-        entry_b = PlanEntry(
+        entry_b = PlanTargetEntry(
             target="b",
-            node="t__b",
-            module="graphs",
-            status="compute",
-            reason="scheduled",
-            dependencies=("a",),
-            table_keys=(),
-            artifact_keys=(),
+            domain="graphs",
+            deps=("a",),
+            reads=(),
+            writes_tables=(),
+            writes_artifacts=(),
+            predicted_action="compute",
+            block_reasons=(),
+            cache_hit_ratio=None,
+            miss_nodes=(),
         )
-        plan = HamiltonBuildPlan(
-            requested=("b",),
+        plan = BuildPlan(
+            request=request,
             closure=("a", "b"),
             entries=(entry_a, entry_b),
+            created_at_utc="2024-01-01T00:00:00Z",
+            build_fingerprint="test-fingerprint",
         )
-        found = plan.get_entry("b")
+        found = next((entry for entry in plan.entries if entry.target == "b"), None)
         assert found is not None
         assert found.target == "b"
 
@@ -142,13 +167,22 @@ class TestPlanComputation:
     @staticmethod
     def test_compute_plan_closure(
         fake_gateway: FakeGateway,
-        minimal_target_graph: DagCatalog,
         tmp_path: Path,
+        hamilton_runtime: RuntimeBundle,
     ) -> None:
         """Verify compute_plan returns a closure entry for the target graph."""
         env = make_test_build_env(fake_gateway, tmp_path)
-        plan = compute_plan(env=env, catalog=minimal_target_graph, requested=("c",))
-        assert plan.to_compute == plan.closure
-        assert plan.to_skip == ()
-        assert plan.blocked == ()
-        assert plan.missing == ()
+        request = PlanRequest(
+            requested_targets=("modules",),
+            mode="predict",
+            include_node_details=False,
+            include_io_details=False,
+            include_cache_details=False,
+        )
+        plan = compute_plan(
+            env=env,
+            plan_request=request,
+            runtime=hamilton_runtime,
+            materialize=False,
+        )
+        assert "modules" in plan.closure

@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.helpers.table_key import fully_qualified_table_ref

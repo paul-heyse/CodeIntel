@@ -7,16 +7,29 @@ schema automation). Keeping these builders in one place prevents semantic drift.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
+import sqlglot
 import sqlglot.expressions as exp
+from sqlglot.errors import ParseError
 
+from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 
 __all__ = [
     "create_index_if_not_exists_ast",
     "create_schema_if_not_exists_ast",
 ]
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _validate_identifier(identifier: str, *, kind: str) -> str:
+    if _IDENTIFIER_RE.fullmatch(identifier) is None:
+        msg = f"Invalid {kind} identifier: {identifier!r}"
+        raise ValueError(msg)
+    return identifier
 
 
 def create_schema_if_not_exists_ast(
@@ -37,16 +50,30 @@ def create_schema_if_not_exists_ast(
     -------
     exp.Create
         SQLGlot expression for schema creation with IF NOT EXISTS.
+
+    Raises
+    ------
+    ValueError
+        If the generated DDL cannot be parsed or identifiers are invalid.
+    TypeError
+        If the generated DDL is not a CREATE statement.
     """
-    schema_expr = exp.Schema(
-        this=exp.to_identifier(schema_name),
-        db=exp.to_identifier(catalog) if catalog is not None else None,
-    )
-    return exp.Create(
-        this=schema_expr,
-        kind="SCHEMA",
-        exists=True,
-    )
+    _validate_identifier(schema_name, kind="schema")
+    qualifier = schema_name
+    if catalog is not None:
+        _validate_identifier(catalog, kind="catalog")
+        qualifier = f"{catalog}.{schema_name}"
+
+    sql = f"CREATE SCHEMA IF NOT EXISTS {qualifier}"
+    try:
+        parsed = sqlglot.parse_one(sql, read=DUCKDB_DIALECT)
+    except ParseError as exc:
+        msg = "Failed to parse generated schema DDL"
+        raise ValueError(msg) from exc
+    if not isinstance(parsed, exp.Create):
+        msg = "Generated DDL did not produce a CREATE statement"
+        raise TypeError(msg)
+    return parsed
 
 
 def create_index_if_not_exists_ast(

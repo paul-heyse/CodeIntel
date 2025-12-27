@@ -6,9 +6,9 @@ This module provides utilities for converting schema definitions to JSON Schema
 - ``json_schema_from_table_schema``: Convert TableSchema primitives to JSON Schema
 - ``pandera_to_json_schema``: Convert Pandera DataFrameSchema to JSON Schema
 
-This module is intentionally independent of the dataset schema registry to
-avoid import cycles during bootstrap. Callers that need registry access
-should depend on ``codeintel.build.hamilton.contracts.schemas.validation`` instead.
+This module is intentionally independent of build-time registries to avoid
+import cycles during bootstrap. Callers that need registry access should
+use the configured ``SchemaService`` or storage validation helpers.
 """
 
 from __future__ import annotations

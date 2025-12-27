@@ -25,14 +25,14 @@ CI_PLAN_EXPLAIN_ARTIFACT = "ci.plan.explain.md"
 @codeintel_target(
     domain=PLAN_DOMAIN,
     target=CI_PLAN_TARGET_NAME,
-    spec=TargetSpecDescriptor(spec_version="v1"),
+    spec=TargetSpecDescriptor(spec_version="1"),
 )
 def t__ci_plan(
     env: BuildEnv,
     catalog: DagCatalog,
     m__artifact__ci__plan__json: MaterializationResult,
     m__artifact__ci__plan__explain__md: MaterializationResult,
-    m__ci__plan__entries: MaterializationResult,
+    m__ci__plan_entries: MaterializationResult,
 ) -> TargetRunRecord:
     """Persist planning artifacts and emit a target record.
 
@@ -53,7 +53,7 @@ def t__ci_plan(
             CI_PLAN_EXPLAIN_ARTIFACT: m__artifact__ci__plan__explain__md,
         },
         table_materializations={
-            CI_PLAN_ENTRIES_TABLE_KEY: m__ci__plan__entries,
+            CI_PLAN_ENTRIES_TABLE_KEY: m__ci__plan_entries,
         },
     )
 

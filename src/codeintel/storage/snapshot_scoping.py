@@ -31,11 +31,11 @@ class RepoCommitScope(Protocol):
 
 
 def maybe_scope_by_repo_commit(
-    table: "DuckDBRelation",
+    table: DuckDBRelation,
     *,
     repo: str,
     commit: str,
-) -> "DuckDBRelation":
+) -> DuckDBRelation:
     """Apply repo/commit filtering when the table contains snapshot columns.
 
     Parameters
@@ -63,10 +63,10 @@ def maybe_scope_by_repo_commit(
 
 
 def maybe_scope_by_snapshot(
-    table: "DuckDBRelation",
+    table: DuckDBRelation,
     *,
     snapshot: RepoCommitScope,
-) -> "DuckDBRelation":
+) -> DuckDBRelation:
     """Apply snapshot scoping based on a structural repo/commit identity.
 
     Parameters

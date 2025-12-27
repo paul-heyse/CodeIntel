@@ -106,7 +106,7 @@ Columns:
 * `table_key` **PK** (VARCHAR)
 * `schema_digest` (VARCHAR) — FK-like pointer to `schema_versions.schema_digest`
 * `schema_hash` (VARCHAR)
-* `derivation_kind` (VARCHAR) — `explicit_override|inferred_ibis|declared_source|view_inferred`
+* `derivation_kind` (VARCHAR) — `explicit_override|inferred_relation|declared_source|view_inferred`
 * `derivation_source` (VARCHAR) — usually target name or `"declared"|"duckdb"`
 * `inference_status` (VARCHAR, NULL) — `inferred|override|disabled|error|pending`
 * `inference_error` (VARCHAR, NULL)
@@ -171,7 +171,7 @@ Responsibilities:
 * `prefill_schema_index(schema_index, *, table_keys=None)`
 
   * loads inferred schemas from `table_schema_registry`+`schema_versions` and calls `SchemaIndex.prefill_cache(...)`
-  * (optional) only prefill where derivation_kind == `inferred_ibis` and inference_status in {`inferred`,`override`}
+  * (optional) only prefill where derivation_kind == `inferred_relation` and inference_status in {`inferred`,`override`}
 
 ### 3.2 Wire into gateway
 
@@ -864,7 +864,7 @@ class TableSchemaRegistryRecord:
     schema_hash
         Legacy/compat hash for quick comparisons.
     derivation_kind
-        Provenance category (e.g., explicit_override, inferred_ibis, declared_source).
+        Provenance category (e.g., explicit_override, inferred_relation, declared_source).
     derivation_source
         Optional provenance details (e.g., target name, module).
     inference_status

@@ -20,7 +20,6 @@ from codeintel.build.schemas import (
     iter_contracts_by_table_key,
 )
 from codeintel.build.schemas.constraints import extract_constraints_from_pandera
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -32,6 +31,7 @@ from codeintel.cli.core.result_types import (
     ServeStartResult,
 )
 from codeintel.cli.errors.results import fail_dataset_not_found
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.http.app import create_serving_app
 from codeintel.serving.mcp.server import create_mcp_server
@@ -39,8 +39,10 @@ from codeintel.serving.settings import get_serving_settings
 from codeintel.storage.validation import collect_contract_issues
 
 if TYPE_CHECKING:
+    from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.cli.context import CommandContext
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 LOG = logging.getLogger(__name__)
 
@@ -222,9 +224,12 @@ def _downstream_consumers_for_contract(
     return tuple(sorted(set(consumers)))
 
 
-def _flow_targets_for_table_key(table_key: str) -> tuple[list[str], list[str]]:
-    metadata_service = get_target_metadata_service()
-    surfaces = metadata_service.system.catalog.io_surfaces
+def _flow_targets_for_table_key(
+    table_key: str,
+    *,
+    catalog: DagCatalog,
+) -> tuple[list[str], list[str]]:
+    surfaces = catalog.io_surfaces
 
     producers: set[str] = set()
     consumers: set[str] = set()
@@ -238,19 +243,32 @@ def _flow_targets_for_table_key(table_key: str) -> tuple[list[str], list[str]]:
     return sorted(producers), sorted(consumers)
 
 
-def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
+def dataset_info_structured(
+    *,
+    table_key: str,
+    runtime: RuntimeBundle,
+) -> CliResult[DatasetInfoResult]:
     """Show comprehensive schema information for a dataset (structured).
 
     Parameters
     ----------
     table_key
         Dataset table key.
+    runtime
+        Runtime bundle for catalog access.
+    runtime
+        Runtime bundle for catalog access.
+    runtime
+        Runtime bundle for catalog access.
+    runtime
+        Runtime bundle for catalog access.
 
     Returns
     -------
     CliResult[DatasetInfoResult]
         Schema information including columns, metadata, and JSON schema.
     """
+    _ = runtime
     try:
         contract = get_contract_for_table_key(table_key)
     except KeyError:
@@ -258,11 +276,11 @@ def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
 
     schema_service = get_schema_service()
     record = schema_service.get_record(table_key)
-    dataset_schema = record.dataset_schema
     table_schema = record.table_schema
+    pandera_schema = schema_service.get_pandera_schema(table_key)
 
-    if dataset_schema is not None:
-        columns = tuple(dataset_schema.pandera_schema.columns.keys())
+    if pandera_schema is not None:
+        columns = tuple(pandera_schema.columns.keys())
     elif table_schema is not None:
         columns = tuple(table_schema.column_names())
     else:
@@ -281,7 +299,7 @@ def dataset_info_structured(*, table_key: str) -> CliResult[DatasetInfoResult]:
             columns=columns,
             metadata=_metadata_to_dict(contract, downstream_consumers=downstream),
             json_schema=record.json_schema or {},
-            has_pandera_schema=dataset_schema is not None,
+            has_pandera_schema=pandera_schema is not None,
         )
     )
 
@@ -301,16 +319,23 @@ def dataset_info_handler(ctx: CommandContext) -> CliResult[DatasetInfoResult]:
         Schema information.
     """
     table_key = ctx.params.require_str("table_key")
-    return dataset_info_structured(table_key=table_key)
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    return dataset_info_structured(table_key=table_key, runtime=runtime_bundle)
 
 
-def dataset_flow_structured(*, table_key: str) -> CliResult[DatasetFlowResult]:
+def dataset_flow_structured(
+    *,
+    table_key: str,
+    runtime: RuntimeBundle,
+) -> CliResult[DatasetFlowResult]:
     """Show producer/consumer graph for a dataset (structured).
 
     Parameters
     ----------
     table_key
         Dataset table key.
+    runtime
+        Runtime bundle for catalog access.
 
     Returns
     -------
@@ -321,7 +346,7 @@ def dataset_flow_structured(*, table_key: str) -> CliResult[DatasetFlowResult]:
         _ = get_contract_for_table_key(table_key)
     except KeyError:
         return fail_dataset_not_found(table_key)
-    producers, consumers = _flow_targets_for_table_key(table_key)
+    producers, consumers = _flow_targets_for_table_key(table_key, catalog=runtime.catalog)
 
     return CliResult.ok(
         DatasetFlowResult(
@@ -347,7 +372,8 @@ def dataset_flow_handler(ctx: CommandContext) -> CliResult[DatasetFlowResult]:
         Flow result with producers and consumers.
     """
     table_key = ctx.params.require_str("table_key")
-    return dataset_flow_structured(table_key=table_key)
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    return dataset_flow_structured(table_key=table_key, runtime=runtime_bundle)
 
 
 def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstraintsResult]:
@@ -367,11 +393,11 @@ def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstr
         Constraint information including kind, column, and expression.
     """
     schema_service = get_schema_service()
-    dataset_schema = schema_service.get_dataset_schema(table_key)
-    if dataset_schema is None:
+    pandera_schema = schema_service.get_pandera_schema(table_key)
+    if pandera_schema is None:
         return fail_dataset_not_found(table_key)
 
-    constraint_set = extract_constraints_from_pandera(table_key, dataset_schema.pandera_schema)
+    constraint_set = extract_constraints_from_pandera(table_key, pandera_schema)
 
     constraints: list[dict[str, object]] = [
         {

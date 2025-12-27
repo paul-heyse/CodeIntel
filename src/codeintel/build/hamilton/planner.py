@@ -40,6 +40,11 @@ def compute_plan(
     -------
     BuildPlan
         DAG-native build plan output.
+
+    Raises
+    ------
+    TypeError
+        If the planning DAG does not return a BuildPlan.
     """
     resolved_runtime = runtime or _compose_planning_runtime(env=env, config=config)
     final_vars = _plan_final_vars(runtime=resolved_runtime, materialize=materialize)

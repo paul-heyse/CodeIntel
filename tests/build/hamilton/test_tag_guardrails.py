@@ -12,11 +12,12 @@ from codeintel.build.hamilton.graph_validation import (
     validate_graph,
     validation_result_to_json,
 )
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def test_validate_graph_has_no_errors() -> None:
-    """Ensure build_driver() produces a tag-clean graph."""
-    result = validate_graph()
+def test_validate_graph_has_no_errors(hamilton_runtime: RuntimeBundle) -> None:
+    """Ensure runtime bundle produces a tag-clean graph."""
+    result = validate_graph(runtime=hamilton_runtime)
     if result.has_errors:
         payload = validation_result_to_json(result)
         pytest.fail(f"Graph validation errors:\n{payload}")

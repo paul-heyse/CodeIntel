@@ -16,7 +16,7 @@ Import patterns::
 
 
     from codeintel.build import DagCatalog, TargetDescriptor
-    from codeintel.build.target_metadata import get_target_metadata_service
+    from codeintel.runtime.compose import compose_runtime
 
 
     from codeintel.build.resources import TargetResources, TargetExecution
@@ -24,6 +24,7 @@ Import patterns::
 
 
     from codeintel.build.hamilton.env import BuildEnv
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
     from codeintel.build.errors import BuildError, BuildErrorCollection
@@ -41,7 +42,7 @@ CLI usage::
     codeintel build status
     codeintel build history
 
-Use ``get_target_metadata_service().system.catalog`` for the canonical DAG catalog.
+Use ``RuntimeBundle.catalog`` (from ``compose_runtime``) for the canonical DAG catalog.
 """
 
 from __future__ import annotations

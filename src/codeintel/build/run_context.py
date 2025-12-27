@@ -12,10 +12,8 @@ from codeintel.build.execution_policy import ExecutionPolicy
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.hamilton.variants import variant_config_from_build_config
-from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
-from codeintel.core.registry import RegistryService
 from codeintel.storage import StorageFacade
 
 if TYPE_CHECKING:
@@ -38,7 +36,6 @@ class BuildRunContextOverrides:
     config_overrides: BuildConfigOverrides | None = None
     force_targets: frozenset[str] | None = None
     validate_outputs: bool = False
-    strict_contracts: bool = False
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
@@ -60,7 +57,6 @@ class BuildRunContext:
     execution_options: BuildExecutionOptions | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
-    strict_contracts: bool = False
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
@@ -112,14 +108,9 @@ class BuildRunContext:
         variants = variant_config_from_build_config(stacked)
         if self.execution_context is not None:
             variants = self.execution_context.variants
+        _ = load_catalogs
         registry_service = None
-        if load_catalogs:
-            registry_service = RegistryService.from_gateway(
-                gateway=self.gateway,
-                root=self.snapshot.repo_root,
-            )
-        if load_schema_service:
-            get_schema_service()
+        _ = load_schema_service
         storage_facade = StorageFacade.from_gateway(self.gateway)
         return BuildEnv(
             gateway=self.gateway,
@@ -135,7 +126,6 @@ class BuildRunContext:
             force_targets=self.force_targets,
             manifest_index=self.manifest_index,
             validate_outputs=self.validate_outputs,
-            strict_contracts=self.strict_contracts,
             history_options=self.history_options,
             history_db_resolver=self.history_db_resolver,
             fingerprint_policy=fingerprint_policy,
@@ -221,7 +211,6 @@ class BuildRunContext:
             execution_options=resolved.execution_options,
             force_targets=resolved.force_targets or frozenset(),
             validate_outputs=resolved.validate_outputs,
-            strict_contracts=resolved.strict_contracts,
             manifest_index=resolved.manifest_index,
             fingerprint_policy=resolved.fingerprint_policy,
             history_options=resolved.history_options,

@@ -2,21 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import yaml
 
-from codeintel.build.target_metadata import get_target_system
+from codeintel.build.schemas.contract_service import (
+    configure_contract_service,
+    get_contract_service,
+)
 from codeintel.core.exports.formats import export_format_choices, resolve_export_format_spec
 from codeintel.core.imports.lazy import lazy_getattr
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
 
-    from codeintel.build.schemas.contract_service import ContractService
     from codeintel.build.targets import TargetDescriptor
     from codeintel.core.exports.formats import ExportFormat, ExportFormatSpec
     from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -699,6 +701,7 @@ class RegistryService:
         *,
         gateway: StorageGateway | None = None,
         root: Path | None = None,
+        runtime: RuntimeBundle,
     ) -> RegistryService:
         """Load dataset and target catalogs from the build graph.
 
@@ -709,17 +712,11 @@ class RegistryService:
         """
         _ = gateway
         _ = root
-        contract_service_factory = cast(
-            "Callable[[], ContractService]",
-            lazy_getattr(
-                "codeintel.build.schemas.contract_service",
-                "get_enriched_contract_service",
-            ),
-        )
+        configure_contract_service(runtime=runtime)
         contracts = {
-            contract.table_key: contract for contract in contract_service_factory().iter_contracts()
+            contract.table_key: contract for contract in get_contract_service().iter_contracts()
         }
-        targets = dict(get_target_system().catalog.targets)
+        targets = dict(runtime.catalog.targets)
         return cls(contract_catalog=contracts, target_catalog=targets, semantic_registry=None)
 
     @classmethod

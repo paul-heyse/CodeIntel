@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tests._helpers.assertions import expect_false, expect_not_in
+from tests._helpers.assertions import expect_false
 
 
 def _repo_root() -> Path:
@@ -52,11 +52,10 @@ def test_storage_legacy_modules_removed() -> None:
 
 
 def test_ibis_gateway_has_no_sql_escape_hatch() -> None:
-    """IbisGateway.sql should not exist (raw SQL must stay internal)."""
+    """Legacy ibis adapter module should remain removed."""
     root = _repo_root()
     path = root / "src" / "codeintel" / "storage" / "ibis_adapter.py"
-    text = path.read_text(encoding="utf-8")
-    expect_not_in("def sql(self, raw_sql", text)
+    expect_false(path.exists(), message="ibis_adapter.py should be removed")
 
 
 def test_no_gateway_accessor_inserts_in_src() -> None:

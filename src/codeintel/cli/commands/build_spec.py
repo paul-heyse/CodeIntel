@@ -26,7 +26,7 @@ build_spec_app = App(
     help="BuildSpec product commands (compile, show, diff, etc.).",
 )
 
-_SPEC_CONFIG = CommandConfig(require_runtime=False, require_gateway=False)
+_SPEC_CONFIG = CommandConfig(require_runtime=True, require_gateway=True)
 
 BUILD_SPEC_COMPILE_PATH: CommandPath = ("build", "spec", "compile")
 

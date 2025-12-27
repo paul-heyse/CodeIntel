@@ -8,9 +8,9 @@ from dataclasses import MISSING, dataclass, is_dataclass
 from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.catalog import FunctionSpan
 from codeintel.core.schemas.generated_rows.analytics import (
@@ -73,8 +73,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-get_schema_service()
-_COLUMNS_BY_TABLE = load_columns_by_table()
+@lru_cache(maxsize=1)
+def _columns_by_table() -> dict[str, list[str]]:
+    return load_columns_by_table()
 
 
 @dataclass(frozen=True)
@@ -140,7 +141,7 @@ class RowFactory:
         Mapping[str, object]
             Mapping populated with table columns set to None.
         """
-        columns = tuple(_COLUMNS_BY_TABLE[table_key])
+        columns = tuple(_columns_by_table()[table_key])
         return cast("Mapping[str, object]", dict.fromkeys(columns))
 
     @staticmethod

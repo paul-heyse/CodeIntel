@@ -73,9 +73,7 @@ CST_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
-CI_PLAN_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
-    CI_PLAN_ENTRIES_TABLE_SCHEMA,
-)
+CI_PLAN_OVERRIDE_TABLES: tuple[TableSchema, ...] = (CI_PLAN_ENTRIES_TABLE_SCHEMA,)
 
 DOCSTRINGS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
@@ -1036,6 +1034,33 @@ COVERAGE_TEST_EDGES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+COVERAGE_FUNCTIONS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="analytics",
+        name="coverage_functions",
+        columns=[
+            Column("function_goid_h128", "DECIMAL(38,0)"),
+            Column("urn", "VARCHAR"),
+            Column("repo", "VARCHAR"),
+            Column("commit", "VARCHAR"),
+            Column("rel_path", "VARCHAR"),
+            Column("language", "VARCHAR"),
+            Column("kind", "VARCHAR"),
+            Column("qualname", "VARCHAR"),
+            Column("start_line", "INTEGER"),
+            Column("end_line", "INTEGER"),
+            Column("executable_lines", "INTEGER"),
+            Column("covered_lines", "INTEGER"),
+            Column("coverage_ratio", "DOUBLE"),
+            Column("tested", "BOOLEAN"),
+            Column("untested_reason", "VARCHAR"),
+            Column("created_at", "TIMESTAMP"),
+        ],
+        indexes=(Index("idx_analytics_coverage_functions_goid", ("function_goid_h128",)),),
+        description="Per-function coverage summary derived from coverage lines.",
+    ),
+)
+
 FUNCTION_METRICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="analytics",
@@ -1104,6 +1129,26 @@ FUNCTION_METRICS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
         primary_key=("repo", "commit", "function_goid_h128", "issue"),
         indexes=(Index("idx_function_validation_repo_commit", ("repo", "commit")),),
         description="Validation findings for function analytics gaps",
+    ),
+)
+
+RISK_FACTORS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="analytics",
+        name="goid_risk_factors",
+        columns=[
+            Column("function_goid_h128", "DECIMAL(38,0)"),
+            Column("repo", "VARCHAR"),
+            Column("commit", "VARCHAR"),
+            Column("risk_score", "INTEGER"),
+            Column("risk_level", "VARCHAR"),
+            Column("cyclomatic_complexity", "INTEGER"),
+            Column("fan_in_count", "INTEGER"),
+            Column("fan_out_count", "INTEGER"),
+            Column("has_tests", "BOOLEAN"),
+        ],
+        indexes=(Index("idx_analytics_goid_risk_factors_goid", ("function_goid_h128",)),),
+        description="Per-function risk factors derived from complexity and tests.",
     ),
 )
 
@@ -2065,6 +2110,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *CONFIG_DATA_FLOW_OVERRIDE_TABLES,
         *CONFIG_INGEST_OVERRIDE_TABLES,
         *COVERAGE_INGEST_OVERRIDE_TABLES,
+        *COVERAGE_FUNCTIONS_OVERRIDE_TABLES,
         *COVERAGE_TEST_EDGES_OVERRIDE_TABLES,
         *CST_OVERRIDE_TABLES,
         *CI_PLAN_OVERRIDE_TABLES,
@@ -2079,6 +2125,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *FUNCTION_EFFECTS_OVERRIDE_TABLES,
         *FUNCTION_HISTORY_OVERRIDE_TABLES,
         *FUNCTION_METRICS_OVERRIDE_TABLES,
+        *RISK_FACTORS_OVERRIDE_TABLES,
         *GOIDS_OVERRIDE_TABLES,
         *GRAPH_METRICS_OVERRIDE_TABLES,
         *GRAPH_VALIDATION_OVERRIDE_TABLES,
@@ -2125,6 +2172,7 @@ __all__ = [
     "CI_PLAN_OVERRIDE_TABLES",
     "CONFIG_DATA_FLOW_OVERRIDE_TABLES",
     "CONFIG_INGEST_OVERRIDE_TABLES",
+    "COVERAGE_FUNCTIONS_OVERRIDE_TABLES",
     "COVERAGE_INGEST_OVERRIDE_TABLES",
     "COVERAGE_TEST_EDGES_OVERRIDE_TABLES",
     "CST_OVERRIDE_TABLES",
@@ -2148,6 +2196,7 @@ __all__ = [
     "MODULES_OVERRIDE_TABLES",
     "OUTPUT_TABLE_SCHEMAS",
     "PROFILES_OVERRIDE_TABLES",
+    "RISK_FACTORS_OVERRIDE_TABLES",
     "SCHEMA_INFERENCE_ERRORS_OVERRIDE_TABLES",
     "SCIP_OVERRIDE_TABLES",
     "SEMANTIC_ROLES_OVERRIDE_TABLES",

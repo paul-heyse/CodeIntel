@@ -60,12 +60,12 @@ def _is_graph_nodes_access(node: ast.AST) -> bool:
 
 
 def _is_graph_nodes_iter(node: ast.AST) -> bool:
-    if _is_graph_nodes_access(node):
-        return True
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-        if node.func.attr in {"items", "values", "keys"} and _is_graph_nodes_access(node.func.value):
-            return True
-    return False
+    return _is_graph_nodes_access(node) or (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"items", "values", "keys"}
+        and _is_graph_nodes_access(node.func.value)
+    )
 
 
 def _bound_names(target: ast.AST) -> set[str]:
@@ -85,9 +85,12 @@ class _TagAccessVisitor(ast.NodeVisitor):
         self.found = False
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        if isinstance(node.value, ast.Name) and node.attr == "tags":
-            if node.value.id in self.bound_names:
-                self.found = True
+        if (
+            isinstance(node.value, ast.Name)
+            and node.attr == "tags"
+            and node.value.id in self.bound_names
+        ):
+            self.found = True
         self.generic_visit(node)
 
 
@@ -167,10 +170,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not violations:
         return 0
 
-    for violation in violations:
-        rel = violation.path.relative_to(root)
-        print(f"{rel}:{violation.lineno}: {violation.message}")
-    print(f"{len(violations)} manual tag scan(s) detected.")
+    output_lines = [
+        f"{violation.path.relative_to(root)}:{violation.lineno}: {violation.message}"
+        for violation in violations
+    ]
+    output_lines.append(f"{len(violations)} manual tag scan(s) detected.")
+    sys.stderr.write("\n".join(output_lines) + "\n")
     return 1
 
 

@@ -55,7 +55,8 @@ def _get_instruments(meter: Meter) -> _CacheInstruments:
 class CacheEventMetrics:
     """Helper for emitting cache event metrics."""
 
-    def record_hit(self, duration_ms: float | None = None) -> None:
+    @staticmethod
+    def record_hit(duration_ms: float | None = None) -> None:
         """Record a cache hit event.
 
         Parameters
@@ -71,7 +72,8 @@ class CacheEventMetrics:
         if duration_ms is not None:
             instruments.duration_ms.record(duration_ms)
 
-    def record_miss(self, duration_ms: float | None = None) -> None:
+    @staticmethod
+    def record_miss(duration_ms: float | None = None) -> None:
         """Record a cache miss event.
 
         Parameters
@@ -87,7 +89,8 @@ class CacheEventMetrics:
         if duration_ms is not None:
             instruments.duration_ms.record(duration_ms)
 
-    def record_store(self, duration_ms: float | None = None) -> None:
+    @staticmethod
+    def record_store(duration_ms: float | None = None) -> None:
         """Record a cache store event.
 
         Parameters

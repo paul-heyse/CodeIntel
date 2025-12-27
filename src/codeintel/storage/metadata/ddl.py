@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.storage.constants import DUCKDB_DIALECT
 from codeintel.storage.metadata.schema import METADATA_TABLES
+from codeintel.storage.metadata.views import apply_metadata_views
 from codeintel.storage.schema.sqlglot_ddl import (
     create_index_if_not_exists_ast,
     create_schema_if_not_exists_ast,
@@ -24,9 +25,12 @@ def apply_metadata_ddl(con: DuckDBPyConnection, *, catalog: str | None) -> None:
     """Create metadata schema tables required for runtime and export."""
     for table in METADATA_TABLES:
         _ensure_metadata_table(con, table, catalog=catalog)
+    apply_metadata_views(con, catalog=catalog)
 
 
-def _ensure_metadata_table(con: DuckDBPyConnection, table: TableSchema, *, catalog: str | None) -> None:
+def _ensure_metadata_table(
+    con: DuckDBPyConnection, table: TableSchema, *, catalog: str | None
+) -> None:
     con.execute(
         create_schema_if_not_exists_ast(table.schema, catalog=catalog).sql(dialect=DUCKDB_DIALECT)
     )

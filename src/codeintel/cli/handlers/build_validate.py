@@ -10,6 +10,7 @@ from codeintel.build.hamilton.graph_validation import (
 )
 from codeintel.cli.core import CliResult
 from codeintel.cli.errors.results import fail_execution_failed
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 
 if TYPE_CHECKING:
     from codeintel.cli.context import CommandContext
@@ -39,7 +40,8 @@ def build_validate_handler(ctx: CommandContext) -> CliResult[str]:
             status=400,
         )
 
-    result = validate_graph()
+    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
+    result = validate_graph(runtime=runtime_bundle)
 
     if result.has_errors:
         lines: list[str] = []

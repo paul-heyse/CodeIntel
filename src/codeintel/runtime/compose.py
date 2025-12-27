@@ -27,8 +27,10 @@ from codeintel.build.hamilton.driver_options import BuildDriverOptions
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.nodes import support_nodes
 from codeintel.build.hamilton.nodes.support_spec import support_spec_from_catalog
+from codeintel.build.schemas.contract_service import configure_contract_service
 from codeintel.build.schemas.inference_service import get_schema_inference_service
 from codeintel.build.schemas.schema_index import SchemaIndex, build_schema_index
+from codeintel.build.schemas.service import configure_schema_service
 from codeintel.build.serving.semantic_compile import compile_semantic_registry_from_tag_query
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -135,6 +137,8 @@ def compose_runtime(
             cache_adapter=cache_adapter,
             cache_store=cache_store,
         )
+        configure_schema_service(runtime=runtime_bundle)
+        configure_contract_service(runtime=runtime_bundle)
         runtime_key = _runtime_key(
             env=identity.env,
             config=identity.config,
@@ -239,9 +243,7 @@ def _build_runtime_bundle(
     tag_query = TagQuery(driver)
     cache_index = cache_store
     cache_key_resolver = (
-        _build_cache_key_resolver(driver, cache_store)
-        if cache_store is not None
-        else None
+        _build_cache_key_resolver(driver, cache_store) if cache_store is not None else None
     )
 
     schema_index = _build_schema_index(driver=driver, catalog=catalog)

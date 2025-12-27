@@ -14,11 +14,11 @@ from typing import TYPE_CHECKING, Annotated
 
 from cyclopts import App
 
-from codeintel.build.target_metadata import get_target_system
 from codeintel.cli.commands.decorators import cli_command
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.command import Command
 from codeintel.cli.core.results import result_type
+from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.cli.options.registry import (
     GRAPH_DEPENDENCY_POLICY,
     GRAPH_NAMES,
@@ -47,22 +47,6 @@ _GRAPH_TARGETS_LIST_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_LIST_PATH)
 _GRAPH_TARGETS_PLAN_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PLAN_PATH)
 _GRAPH_PLUGINS_FLAGS_FIELD = shared_flags_field(GRAPH_PLUGINS_PATH)
 _GRAPH_TARGETS_FLAGS_FIELD = shared_flags_field(GRAPH_TARGETS_PATH)
-
-
-def _get_graph_targets() -> list[tuple[str, str, tuple[str, ...]]]:
-    """Get all targets in the graphs module.
-
-    Returns
-    -------
-    list[tuple[str, str, tuple[str, ...]]]
-        List of (name, description, dependencies) for each graph target.
-    """
-    catalog = get_target_system().catalog
-    return [
-        (t.name, t.description or f"Graph target: {t.name}", t.dependencies)
-        for t in catalog.all_targets
-        if t.module == "graphs"
-    ]
 
 
 @result_type
@@ -153,7 +137,7 @@ class DependencyPolicy(StrEnum):
     STRICT = "strict"
 
 
-@cli_command("graph.targets.list", require_storage=False)
+@cli_command("graph.targets.list", require_storage=True)
 @graphs_app.command(name="targets-list")
 @dataclass(frozen=True)
 class GraphTargetsList(Command[GraphTargetsResult]):
@@ -180,12 +164,12 @@ class GraphTargetsList(Command[GraphTargetsResult]):
         CliResult[GraphTargetsResult]
             List of targets.
         """
-        _ = ctx
+        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
         names_set = set(self.names) if self.names else None
 
         LOG.info("Listing graph targets (names=%s)", names_set)
 
-        catalog = get_target_system().catalog
+        catalog = runtime_bundle.catalog
         targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         if names_set:
@@ -209,7 +193,7 @@ class GraphTargetsList(Command[GraphTargetsResult]):
         )
 
 
-@cli_command("graph.targets.plan", require_storage=False)
+@cli_command("graph.targets.plan", require_storage=True)
 @graphs_app.command(name="targets-plan")
 @dataclass(frozen=True)
 class GraphTargetsPlan(Command[GraphPlanResult]):
@@ -236,11 +220,11 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
         CliResult[GraphPlanResult]
             Execution plan in topological order.
         """
-        _ = ctx
+        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
 
         LOG.info("Planning graph targets (names=%s)", self.names)
 
-        catalog = get_target_system().catalog
+        catalog = runtime_bundle.catalog
         graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         if self.names:
@@ -265,7 +249,7 @@ class GraphTargetsPlan(Command[GraphPlanResult]):
         )
 
 
-@cli_command("graph.plugins", require_storage=False)
+@cli_command("graph.plugins", require_storage=True)
 @graphs_app.command(name="plugins")
 @dataclass(frozen=True)
 class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
@@ -309,10 +293,10 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
         CliResult[GraphPlanResult | GraphTargetsResult]
             Either the planned execution order or the plugin list.
         """
-        _ = ctx
+        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
         names_set = set(self.names) if self.names else None
 
-        catalog = get_target_system().catalog
+        catalog = runtime_bundle.catalog
         graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         available_names = {t.name for t in graph_targets}
@@ -361,7 +345,7 @@ class GraphPlugins(Command[GraphPlanResult | GraphTargetsResult]):
         )
 
 
-@cli_command("graph.targets", require_storage=False)
+@cli_command("graph.targets", require_storage=True)
 @graphs_app.command(name="targets")
 @dataclass(frozen=True)
 class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
@@ -392,10 +376,10 @@ class GraphTargets(Command[GraphPlanResult | GraphTargetsResult]):
         CliResult[GraphPlanResult | GraphTargetsResult]
             Either the planned execution order or the target list.
         """
-        _ = ctx
+        runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
         names_set = set(self.names) if self.names else None
 
-        catalog = get_target_system().catalog
+        catalog = runtime_bundle.catalog
         graph_targets = [t for t in catalog.all_targets if t.module == "graphs"]
 
         if names_set:

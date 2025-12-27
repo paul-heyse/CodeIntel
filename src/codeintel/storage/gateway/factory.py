@@ -15,6 +15,7 @@ from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.schemas import MappingSchemaProvider, SchemaService
 from codeintel.core.schemas.service import get_schema_service, set_schema_service
 from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.contracts.catalog_state import (
     contract_catalog_table_schemas,
     get_contract_catalog,
@@ -25,14 +26,18 @@ from codeintel.storage.datasets.registry import load_dataset_registry
 from codeintel.storage.gateway.accessors import DuckDBGateway
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.inference import InferenceGateway
-from codeintel.storage.metadata import bootstrap_metadata_datasets
-from codeintel.storage.metadata.meta_catalog import attach_meta_database
-from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.metadata import (
+    SchemaValidationRun,
+    bootstrap_metadata_datasets,
+    record_schema_validation_run,
+)
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
+from codeintel.storage.metadata.meta_catalog import attach_meta_database
 from codeintel.storage.schema import apply_all_schemas, assert_schema_alignment
 from codeintel.storage.validation import (
     ContractValidationMode,
     clear_contract_validation_cache,
+    collect_contract_issues,
     collect_contract_issues_lenient,
     validate_contract_or_raise,
 )
@@ -157,17 +162,38 @@ def _apply_contract_validation(
 ) -> None:
     if not config.validate_schema:
         return
-    if config.validation_mode == ContractValidationMode.STRICT:
-        assert_schema_alignment(
-            con,
-            include_views=include_views,
-            strict=True,
+    if config.validation_mode == ContractValidationMode.OFF:
+        return
+
+    drift_issues = assert_schema_alignment(
+        con,
+        include_views=include_views,
+        strict=False,
+    )
+    if config.validation_mode == ContractValidationMode.LENIENT:
+        contract_issues = collect_contract_issues_lenient(con, include_views=include_views)
+    else:
+        contract_issues = collect_contract_issues(
+            con, include_views=include_views, missing_ok=False
         )
-        validate_contract_or_raise(con, include_views=include_views)
+    issues = [*drift_issues, *contract_issues]
+
+    if config.attach_meta and not config.read_only:
+        validation_run = SchemaValidationRun(
+            repo=config.repo,
+            commit=config.commit,
+            validation_mode=config.validation_mode.value,
+            include_views=include_views,
+            issues=issues,
+        )
+        record_schema_validation_run(con, validation_run)
+
+    if config.validation_mode == ContractValidationMode.STRICT:
+        if issues:
+            assert_schema_alignment(con, include_views=include_views, strict=True)
+            validate_contract_or_raise(con, include_views=include_views)
         return
-    if config.validation_mode != ContractValidationMode.LENIENT:
-        return
-    issues = collect_contract_issues_lenient(con, include_views=include_views)
+
     _log_contract_issues(issues)
     _write_contract_validation_summary(
         issues=issues,
@@ -208,6 +234,7 @@ def open_gateway(
             session_config = replace(config, apply_schema=False)
         session = DuckDBSession(session_config)
         con = session.open_reader() if config.read_only else session.open()
+        attach_meta_database(con, config=config)
         if not config.read_only:
             apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
             include_views_for_bootstrap = config.ensure_views and config.apply_schema

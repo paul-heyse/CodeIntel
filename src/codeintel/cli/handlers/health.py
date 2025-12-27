@@ -193,6 +193,7 @@ def _check_storage() -> CheckResult:
         Check result.
     """
     try:
+
         def _seed_contract_catalog(con: DuckDBPyConnection) -> None:
             persist_contract_catalog_to_connection(
                 con,

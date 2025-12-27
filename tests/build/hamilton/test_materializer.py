@@ -11,9 +11,8 @@ from typing import TYPE_CHECKING, cast
 
 import pandas as pd
 
-from codeintel.build.hamilton.contracts.enforcement import ContractEnforcer
 from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.materializers import DuckDBIbisTableSaver, DuckDBRowsSaver
+from codeintel.build.hamilton.materializers import DuckDBRelationSaver, DuckDBRowsSaver
 from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.hashing import stable_hash
@@ -100,14 +99,14 @@ def _module_row_for_schema(
 def test_materialize_table_uses_policy_and_insert_select(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBIbisTableSaver should replace snapshot rows via Warehouse policy."""
+    """DuckDBRelationSaver should replace snapshot rows via Warehouse policy."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
     snapshot = env.snapshot
     repo = snapshot.repo
     commit = snapshot.commit
     graph = _make_graph()
-    saver = DuckDBIbisTableSaver(
+    saver = DuckDBRelationSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -116,15 +115,15 @@ def test_materialize_table_uses_policy_and_insert_select(
 
     df1 = _modules_rows(repo=repo, commit=commit, count=1)
     env.gateway.con.register("tmp_modules_1", df1)
-    expr1 = env.gateway.ibis.con.table("tmp_modules_1")
-    meta1 = saver.save_data(expr1)
+    rel1 = env.gateway.con.table("tmp_modules_1")
+    meta1 = saver.save_data(rel1)
     expect_equal(meta1["status"], expected="succeeded")
     expect_equal(meta1["row_count"], expected=1)
 
     df2 = _modules_rows(repo=repo, commit=commit, count=2)
     env.gateway.con.register("tmp_modules_2", df2)
-    expr2 = env.gateway.ibis.con.table("tmp_modules_2")
-    meta2 = saver.save_data(expr2)
+    rel2 = env.gateway.con.table("tmp_modules_2")
+    meta2 = saver.save_data(rel2)
     expect_equal(meta2["status"], expected="succeeded")
     expect_equal(meta2["row_count"], expected=2)
 
@@ -140,13 +139,13 @@ def test_materialize_table_uses_policy_and_insert_select(
 def test_materialize_table_validates_when_schema_available(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBIbisTableSaver should succeed when schema validation is enabled."""
+    """DuckDBRelationSaver should succeed when schema validation is enabled."""
     harness = build_harness.with_force_targets("modules")
     env = replace(harness.build_env(), validate_outputs=True)
     repo = env.snapshot.repo
     commit = env.snapshot.commit
     graph = _make_graph()
-    saver = DuckDBIbisTableSaver(
+    saver = DuckDBRelationSaver(
         env=env,
         catalog=graph,
         target_name="modules",
@@ -155,8 +154,8 @@ def test_materialize_table_validates_when_schema_available(
 
     df = _modules_rows(repo=repo, commit=commit, count=2)
     env.gateway.con.register("tmp_modules_validate", df)
-    expr = env.gateway.ibis.con.table("tmp_modules_validate")
-    meta = saver.save_data(expr)
+    rel = env.gateway.con.table("tmp_modules_validate")
+    meta = saver.save_data(rel)
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=len(df))
 
@@ -171,8 +170,6 @@ def test_rows_saver_resolves_deferred_columns(
     commit = env.snapshot.commit
     graph = _make_graph()
     table_key = "core.modules"
-    target = graph.get("modules")
-
     schema = get_schema_service().require_table_schema(table_key)
     row = _module_row_for_schema(
         repo=repo,
@@ -188,19 +185,7 @@ def test_rows_saver_resolves_deferred_columns(
         columns=deferred_columns_for_table_key(table_key),
     )
 
-    allowed_tables = frozenset(
-        output.key for output in graph.table_outputs_by_target.get(target.name, ())
-    )
-    allowed_artifacts = frozenset(
-        output.key for output in graph.artifact_outputs_by_target.get(target.name, ())
-    )
-    with ContractEnforcer.for_target(
-        target.name,
-        strict=True,
-        allowed_tables=allowed_tables,
-        allowed_artifacts=allowed_artifacts,
-    ):
-        meta = saver.save_data((row,))
+    meta = saver.save_data((row,))
 
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=1)

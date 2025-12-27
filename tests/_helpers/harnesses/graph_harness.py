@@ -5,8 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self
 
-from codeintel.build.hamilton.native.graphs.call_graph import CALL_GRAPH_TABLE_KEYS
-from codeintel.build.hamilton.native.graphs.import_graph import IMPORT_GRAPH_TABLE_KEYS
+from codeintel.build.hamilton.native.graphs.call_graph import (
+    CALL_GRAPH_EDGES_TABLE_KEY,
+    CALL_GRAPH_NODES_TABLE_KEY,
+)
+from codeintel.build.hamilton.native.graphs.import_graph import (
+    IMPORT_GRAPH_EDGES_TABLE_KEY,
+    IMPORT_MODULES_TABLE_KEY,
+)
 from tests._helpers.assertions.table_assertions import assert_table_has_rows
 from tests._helpers.assertions.target_record_assertions import assert_record_has_datasets
 from tests._helpers.fixtures.repos import write_callgraph_alias_repo
@@ -24,6 +30,8 @@ if TYPE_CHECKING:
 
 
 DEFAULT_GRAPH_TARGETS: tuple[str, ...] = ("call_graph", "import_graph")
+CALL_GRAPH_TABLE_KEYS = (CALL_GRAPH_NODES_TABLE_KEY, CALL_GRAPH_EDGES_TABLE_KEY)
+IMPORT_GRAPH_TABLE_KEYS = (IMPORT_MODULES_TABLE_KEY, IMPORT_GRAPH_EDGES_TABLE_KEY)
 
 
 @dataclass

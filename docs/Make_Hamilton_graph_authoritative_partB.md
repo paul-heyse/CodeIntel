@@ -556,7 +556,7 @@ You currently build schema derivations by iterating `target.contract.table_keys`
     * `inferable = inference_service.inferable_table_keys(catalog=system.catalog)` (signature change below)
     * for each produced `table_key`:
 
-      * if `table_key in inferable`: `kind="inferred_ibis"`; `override_schema=None` (or optionally use registry schema as fallback)
+      * if `table_key in inferable`: `kind="inferred_relation"`; `override_schema=None` (or optionally use registry schema as fallback)
       * else: require `table_registry.get_table_schema(table_key)` is present; set `kind="explicit_registry"`; attach schema if you still store it inside derivation
     * if missing explicit schema for non-inferable: raise `ValueError` (or emit validation issues earlier; choose one consistent gate—prefer validator gate + exception here for deterministic failure)
 
@@ -690,7 +690,7 @@ Right now `build/schemas/contract_service.py` derives overrides from `OutputCont
     * `test_unknown_schema_issues_for_produced_tables`
 * `tests/build/hamilton/test_schema_index_overrides.py`
 
-  * Rewrite to test `explicit_registry` vs `inferred_ibis` derivations based on table registry presence and inferability; remove OutputContract override cases.
+  * Rewrite to test `explicit_registry` vs `inferred_relation` derivations based on table registry presence and inferability; remove OutputContract override cases.
 * `tests/build/test_hashing_plan_targets.py`, `tests/build/hamilton/test_pr09_planner.py`, `tests/build/test_state.py`, etc.
 
   * Remove `OutputContract(...)` construction; build a minimal synthetic DAG module using `SaveToObjectMetadataDecorator` to declare outputs (contract role) and assert catalog inventories drive planner/state.

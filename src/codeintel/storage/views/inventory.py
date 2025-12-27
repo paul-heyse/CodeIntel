@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
     from codeintel.core.hamilton.tag_query import TagQuery
 
+
 @lru_cache(maxsize=1)
 def _view_modules() -> tuple[ModuleType, ...]:
     """Return the canonical module set to scan for view builders.

@@ -2,6 +2,27 @@ Here’s the narrative pairing for **(7)**, **(8)**, and **(9)**—what the syst
 
 ---
 
+## Parallel-scope alignment notes (Parts A-C constraints)
+
+These are hard constraints from the parallel scopes that must be honored in this Part D plan:
+
+1. **No `build_driver` reintroduction**  
+   All composition must route through `compose_runtime(...)` and `RuntimeBundle`. Any remaining
+   `build_driver`/`driver_factory` call sites are removal/refactor targets, not compatibility shims.
+
+2. **Runtime-provided metadata only**  
+   Any consumer that needs catalog/targets/schemas must accept a `RuntimeBundle` (or a
+   `TargetMetadataService` built from it). No `get_target_metadata_service()` without a runtime,
+   and no hidden driver rebuilding.
+
+3. **No composition during DAG execution**  
+   Tests/helpers must compose once (session fixture) and pass the runtime through. Helper utilities
+   must not call `compose_runtime()` or `build_driver()` implicitly.
+
+These constraints are assumed for all refactors below (variants, tag discovery, relation-first IO).
+
+---
+
 ## 7) Variant logic + cross-cutting transforms move from “branchy code” to “DAG shape”
 
 ### Before
@@ -2071,4 +2092,3 @@ This mirrors the architecture intent that IO is at the saver boundary (you alrea
    → only in saver/serving layers: `to_parquet` or `fetch_arrow_reader` (stream), not `.to_df()` in compute nodes.
 
 ---
-

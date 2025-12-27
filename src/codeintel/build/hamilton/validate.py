@@ -9,12 +9,12 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from textwrap import dedent
 from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
-from codeintel.build.schemas import get_schema_provider
 from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_COMPUTE,
@@ -32,11 +32,17 @@ from codeintel.core.hamilton.tags import (
     TAG_TARGET,
     TAG_TARGET_SPEC_VERSION,
 )
+from codeintel.core.imports.lazy import lazy_getattr
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
     from codeintel.core.schemas.provider import SchemaProvider
+
+_SCHEMA_PROVIDER_FACTORY = cast(
+    "Callable[[], SchemaProvider]",
+    lazy_getattr("codeintel.build.schemas.registry", "get_schema_provider"),
+)
 
 
 class NodeLike(Protocol):
@@ -995,7 +1001,7 @@ def validate_nodes(
     """
     provider = schema_provider
     if validate_schema and provider is None:
-        provider = get_schema_provider()
+        provider = _SCHEMA_PROVIDER_FACTORY()
 
     inputs = _collect_validation_inputs(nodes)
 

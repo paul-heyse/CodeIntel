@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self
 
-from codeintel.build.hamilton.native.analytics.function_metrics import FUNCTION_METRICS_TABLE_KEYS
-from codeintel.build.hamilton.native.analytics.risk_factors import RISK_FACTORS_TABLE_KEY
+from codeintel.build.hamilton.native.analytics.tables_functions import FUNCTION_METRICS_TABLE_KEY
+from codeintel.build.hamilton.native.analytics.tables_risk import RISK_FACTORS_TABLE_KEY
 from tests._helpers.assertions.table_assertions import assert_table_has_rows
 from tests._helpers.fixtures.repos import write_graph_metrics_repo
 from tests._helpers.harnesses.hamilton_build import (
@@ -68,8 +68,7 @@ class AnalyticsTargetHarness:
     def assert_function_metrics(self, *, min_rows: int = 1) -> None:
         """Assert function metrics tables exist with at least min_rows rows."""
         gateway = self.harness.ctx.gateway
-        for table_key in FUNCTION_METRICS_TABLE_KEYS:
-            assert_table_has_rows(gateway, table_key, min_rows=min_rows)
+        assert_table_has_rows(gateway, FUNCTION_METRICS_TABLE_KEY, min_rows=min_rows)
 
     def assert_risk_factors(self, *, min_rows: int = 1) -> None:
         """Assert risk factor table exists with at least min_rows rows."""

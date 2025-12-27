@@ -819,10 +819,7 @@ def _rows_to_arrow_table(
     if not rows:
         return pa.table({name: [] for name in resolved_columns})
     columns = list(zip(*rows, strict=False))
-    data = {
-        name: list(values)
-        for name, values in zip(resolved_columns, columns, strict=False)
-    }
+    data = {name: list(values) for name, values in zip(resolved_columns, columns, strict=False)}
     return pa.table(data)
 
 

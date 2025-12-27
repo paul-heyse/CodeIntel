@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from codeintel.core.schemas.primitives import Column, Index, TableSchema
 
-CI_PLAN_ENTRIES_TABLE_KEY = "ci.plan.entries"
+CI_PLAN_ENTRIES_TABLE_KEY = "ci.plan_entries"
 
 CI_PLAN_ENTRIES_TABLE_SCHEMA = TableSchema(
     schema="ci",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers.path_templates import (
     default_formatter,
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
 def resolve_artifact_output_path(
     env: BuildEnv,
     *,
+    catalog: DagCatalog,
     target: str,
     artifact: str,
     fallback_template: str | None = None,
@@ -33,6 +35,8 @@ def resolve_artifact_output_path(
         Target name owning the artifact.
     artifact
         Artifact name to resolve.
+    catalog
+        DAG catalog supplying artifact output templates.
     fallback_template
         Optional template string used when DAG templates are unavailable.
 
@@ -47,7 +51,7 @@ def resolve_artifact_output_path(
         If no template is available for the requested artifact.
     """
     template: str | None = None
-    templates = artifact_templates_for_target(target)
+    templates = artifact_templates_for_target(target, outputs=catalog)
     if templates:
         template = templates.get(artifact)
     if template is None:
@@ -67,6 +71,7 @@ def resolve_artifact_output_path(
 def resolve_artifact_output_paths(
     env: BuildEnv,
     *,
+    catalog: DagCatalog,
     target: str,
     artifacts: Sequence[str],
     fallback_templates: Mapping[str, str] | None = None,
@@ -79,6 +84,8 @@ def resolve_artifact_output_paths(
         Build environment containing output inventory and build paths.
     target
         Target name owning the artifacts.
+    catalog
+        DAG catalog supplying artifact output templates.
     artifacts
         Artifact names to resolve.
     fallback_templates
@@ -96,6 +103,7 @@ def resolve_artifact_output_paths(
             fallback = fallback_templates.get(artifact)
         resolved[artifact] = resolve_artifact_output_path(
             env,
+            catalog=catalog,
             target=target,
             artifact=artifact,
             fallback_template=fallback,

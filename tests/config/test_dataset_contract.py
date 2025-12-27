@@ -6,15 +6,20 @@ import pytest
 
 from codeintel.analytics.utilities.datasets import get_delete_sql_by_table
 from codeintel.build.schemas import (
+    configure_schema_service,
     get_schema_provider,
     iter_contracts,
     iter_contracts_by_table_key,
 )
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.config.datasets.columns import load_columns_by_table
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from codeintel.storage.contracts.provider import get_contract_provider
 
-get_schema_service()
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
 
 
 def _require(*, condition: bool, message: str) -> None:

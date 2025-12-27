@@ -18,9 +18,7 @@ def _freeze_value(value: object) -> object:
 
 
 def _freeze_filter(tag_filter: Mapping[str, object]) -> tuple[tuple[str, object], ...]:
-    return tuple(
-        sorted((str(key), _freeze_value(value)) for key, value in tag_filter.items())
-    )
+    return tuple(sorted((str(key), _freeze_value(value)) for key, value in tag_filter.items()))
 
 
 class TagQuery:
@@ -40,9 +38,7 @@ class TagQuery:
         """
         key = _freeze_filter(tag_filter)
         if key not in self._cache:
-            self._cache[key] = tuple(
-                self._dr.list_available_variables(tag_filter=dict(tag_filter))
-            )
+            self._cache[key] = tuple(self._dr.list_available_variables(tag_filter=dict(tag_filter)))
         return self._cache[key]
 
     def one(self, tag_filter: Mapping[str, object]) -> object | None:

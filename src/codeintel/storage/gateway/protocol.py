@@ -112,6 +112,10 @@ class MinimalGateway(Protocol):
         """Return the policy backend for DDL and mutation operations."""
         ...
 
+    def relation_from_table_key(self, table_key: str) -> DuckDBRelation:
+        """Return a relation for a fully qualified table key."""
+        ...
+
 
 class StorageGateway(MinimalGateway, Protocol):
     """Expose DuckDB access along with dataset registry metadata."""

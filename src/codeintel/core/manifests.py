@@ -256,7 +256,7 @@ class ServingSnapshotManifest(ManifestBase):
 ExportArtifactKind = Literal["parquet", "jsonl", "json", "csv"]
 ManifestDerivationKind = Literal[
     "explicit_override",
-    "inferred_ibis",
+    "inferred_relation",
     "declared_source",
     "view_inferred",
 ]

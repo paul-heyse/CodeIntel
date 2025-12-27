@@ -40,7 +40,7 @@ def test_bulk_insert_normalizes_numpy_scalars(tmp_path: Path) -> None:
         )
 
         expect_equal(inserted, 1)
-        records = gateway.ibis.table("analytics.numpy_insert_test").to_pandas()
+        records = gateway.relation_from_table_key("analytics.numpy_insert_test").df()
         expect_equal(len(records), 1)
         expect_equal(normalize_decimal_id(records.loc[0, "id"]), 1)
     finally:

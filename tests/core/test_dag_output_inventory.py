@@ -7,8 +7,9 @@ from textwrap import dedent, indent
 
 import pytest
 
-from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas import configure_schema_service, get_schema_provider
 from codeintel.core.registry.service import DagOutputInventory, RegistryService
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
@@ -35,6 +36,11 @@ def _single_output_block(*, materialization: str, extra: str = "") -> str:
         base = f"{base}\n{extra_block}"
     indented = indent(base, "  ")
     return f"{indented}\n"
+
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
 
 
 def test_dag_output_inventory_loads_default() -> None:

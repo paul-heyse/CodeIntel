@@ -4,66 +4,56 @@ from __future__ import annotations
 
 import pytest
 
-from codeintel.build.hamilton.driver_factory import list_available_nodes
+from codeintel.build.hamilton.driver_factory import (
+    list_available_nodes,
+    target_to_node_name,
+)
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
-def test_auto_driver_includes_native_analytics_nodes() -> None:
-    """Verify auto driver includes compute and materialize nodes for native analytics."""
-    all_nodes = list_available_nodes()
+def test_auto_driver_includes_native_analytics_nodes(hamilton_runtime: RuntimeBundle) -> None:
+    """Verify auto driver includes target anchor nodes for native analytics."""
+    all_nodes = list_available_nodes(runtime=hamilton_runtime)
 
-    # Expected native analytics compute nodes
-    expected_compute_nodes = [
-        "t__coverage_functions__compute",
-        "t__hotspots__compute",
-        "t__subsystems__compute",
+    native_targets = [
+        "coverage_functions",
+        "external_deps",
+        "function_metrics",
+        "module_profile",
+        "risk_factors",
+    ]
+    expected_target_nodes = [f"t__{target_name}" for target_name in native_targets]
+
+    for node_name in expected_target_nodes:
+        if node_name not in all_nodes:
+            pytest.fail(f"Expected target node '{node_name}' not found in auto driver")
+
+
+def test_auto_driver_resolves_native_target_nodes(
+    hamilton_runtime: RuntimeBundle,
+) -> None:
+    """Verify native targets resolve to canonical target nodes."""
+    all_nodes = list_available_nodes(runtime=hamilton_runtime)
+
+    native_targets = [
+        "coverage_functions",
+        "external_deps",
+        "function_metrics",
+        "module_profile",
+        "risk_factors",
     ]
 
-    # Expected native analytics materialize nodes
-    expected_materialize_nodes = [
-        "t__coverage_functions",
-        "t__hotspots",
-        "t__subsystems",
-    ]
-
-    # Check compute nodes
-    for node_name in expected_compute_nodes:
-        if node_name not in all_nodes:
-            pytest.fail(f"Expected compute node '{node_name}' not found in auto driver")
-
-    # Check materialize nodes
-    for node_name in expected_materialize_nodes:
-        if node_name not in all_nodes:
-            pytest.fail(f"Expected materialize node '{node_name}' not found in auto driver")
-
-
-def test_auto_driver_excludes_wrapper_for_native_targets() -> None:
-    """Verify auto driver does not include wrapper t__ nodes for native targets."""
-    all_nodes = list_available_nodes()
-
-    # Native targets should not have duplicate wrapper nodes
-    # The driver should exclude these from the wrapper module
-    native_target_names = ["coverage_functions", "hotspots", "subsystems"]
-
-    # Check that we have the native nodes, not wrapper duplicates
-    for target_name in native_target_names:
-        node_name = f"t__{target_name}"
-
-        # The node should exist (from native module)
+    for target_name in native_targets:
+        node_name = target_to_node_name(target_name, runtime=hamilton_runtime)
+        if node_name is None:
+            pytest.fail(f"Expected target '{target_name}' to resolve to a node")
         if node_name not in all_nodes:
             pytest.fail(f"Expected node '{node_name}' not found in auto driver")
 
-        # Verify it's the native version by checking for compute node existence
-        compute_node_name = f"t__{target_name}__compute"
-        if compute_node_name not in all_nodes:
-            pytest.fail(
-                f"Found '{node_name}' but no '{compute_node_name}', "
-                f"suggesting wrapper instead of native"
-            )
 
-
-def test_risk_factors_native_still_present_in_wave2() -> None:
+def test_risk_factors_native_still_present_in_wave2(hamilton_runtime: RuntimeBundle) -> None:
     """Verify Wave 1 native target (risk_factors) is still present in auto driver."""
-    all_nodes = list_available_nodes()
+    all_nodes = list_available_nodes(runtime=hamilton_runtime)
 
     # risk_factors should have its native nodes
     expected_risk_factors_nodes = [

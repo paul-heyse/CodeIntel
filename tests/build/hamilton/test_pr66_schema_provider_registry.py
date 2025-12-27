@@ -12,14 +12,16 @@ import pytest
 
 from codeintel.build.schemas import (
     clear_schema_provider_cache,
+    configure_schema_service,
     declared_schema_provider,
     get_schema_provider,
     iter_table_schemas,
     require_table_schema,
 )
-from codeintel.build.target_metadata import get_target_metadata_service
+from codeintel.build.target_metadata import build_target_system
 from codeintel.core.schemas import schema_hash
 from codeintel.core.schemas.declared import iter_declared_schemas
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
@@ -36,7 +38,7 @@ def _get_full_declared_schemas() -> dict[str, TableSchema]:
     return {schema.table_key: schema for schema in iter_declared_schemas()}
 
 
-def _source_only_declared_schemas() -> dict[str, TableSchema]:
+def _source_only_declared_schemas(runtime: RuntimeBundle) -> dict[str, TableSchema]:
     """Return source-only declared schemas from the build provider.
 
     Returns
@@ -44,7 +46,15 @@ def _source_only_declared_schemas() -> dict[str, TableSchema]:
     dict[str, TableSchema]
         Mapping from table_key to source-only declared schema.
     """
-    return {schema.table_key: schema for schema in declared_schema_provider().iter_table_schemas()}
+    return {
+        schema.table_key: schema
+        for schema in declared_schema_provider(runtime=runtime).iter_table_schemas()
+    }
+
+
+@pytest.fixture(autouse=True)
+def _configure_schema_provider(hamilton_runtime: RuntimeBundle) -> None:
+    _ = hamilton_runtime
 
 
 def test_get_schema_provider_returns_valid_provider() -> None:
@@ -65,9 +75,10 @@ def test_get_schema_provider_returns_valid_provider() -> None:
         pytest.fail("iter_table_schemas is not callable")
 
 
-def test_get_schema_provider_is_cached() -> None:
+def test_get_schema_provider_is_cached(hamilton_runtime: RuntimeBundle) -> None:
     """Verify get_schema_provider returns the same instance on repeated calls."""
     clear_schema_provider_cache()
+    configure_schema_service(runtime=hamilton_runtime)
     provider1 = get_schema_provider()
     provider2 = get_schema_provider()
     if provider1 is not provider2:
@@ -121,10 +132,10 @@ def test_iter_table_schemas_contains_expected_keys() -> None:
         pytest.fail(f"Missing expected schema keys: {missing}")
 
 
-def test_declared_schema_provider_is_source_only() -> None:
+def test_declared_schema_provider_is_source_only(hamilton_runtime: RuntimeBundle) -> None:
     """Verify declared_schema_provider excludes DAG outputs."""
-    provider_keys = set(_source_only_declared_schemas())
-    outputs = set(get_target_metadata_service().system.all_table_keys)
+    provider_keys = set(_source_only_declared_schemas(hamilton_runtime))
+    outputs = set(build_target_system(runtime=hamilton_runtime).all_table_keys)
     overlap = sorted(provider_keys & outputs)
     if overlap:
         pytest.fail(f"Declared provider leaked output keys: {overlap[:10]}")
@@ -145,10 +156,10 @@ def test_every_declared_key_resolves_via_provider() -> None:
         pytest.fail(f"Missing keys in provider: {missing_keys}")
 
 
-def test_provider_schemas_match_declared_schemas() -> None:
+def test_provider_schemas_match_declared_schemas(hamilton_runtime: RuntimeBundle) -> None:
     """Verify source-only schemas match declared definitions."""
     provider = get_schema_provider()
-    declared_schemas = _source_only_declared_schemas()
+    declared_schemas = _source_only_declared_schemas(hamilton_runtime)
     mismatches: list[str] = []
 
     for key, declared_schema in declared_schemas.items():
@@ -162,10 +173,10 @@ def test_provider_schemas_match_declared_schemas() -> None:
         pytest.fail("Schema mismatches:\n" + "\n".join(mismatches))
 
 
-def test_provider_schema_count_at_least_declared() -> None:
+def test_provider_schema_count_at_least_declared(hamilton_runtime: RuntimeBundle) -> None:
     """Verify provider has at least as many schemas as source-only declared."""
     provider_count = len(list(iter_table_schemas()))
-    declared_count = len(_source_only_declared_schemas())
+    declared_count = len(_source_only_declared_schemas(hamilton_runtime))
     # Provider may have more schemas from Hamilton inference
     if provider_count < declared_count:
         pytest.fail(f"Provider has {provider_count} schemas, declared has {declared_count}")
@@ -208,10 +219,11 @@ def test_all_provider_schemas_are_hashable() -> None:
             )
 
 
-def test_clear_cache_allows_fresh_provider() -> None:
+def test_clear_cache_allows_fresh_provider(hamilton_runtime: RuntimeBundle) -> None:
     """Verify cache clearing works correctly."""
     provider1 = get_schema_provider()
     clear_schema_provider_cache()
+    configure_schema_service(runtime=hamilton_runtime)
     provider2 = get_schema_provider()
     # After cache clear, we get a new (but equivalent) provider
     # The providers should be functionally equivalent

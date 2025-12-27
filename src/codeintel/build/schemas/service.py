@@ -2,64 +2,37 @@
 
 This module wires the canonical SchemaService to build-specific providers:
 - Unified table schema provider (Hamilton inference + declared schemas)
-- DatasetSchema registry (Pandera-backed unified schemas)
+- Pandera schemas rendered from TableSchema for boundary validation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
-from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from codeintel.build.schemas.provider_unified import (
-    clear_unified_provider_cache,
-    unified_schema_provider,
-)
-from codeintel.core.imports.lazy import lazy_getattr
+from codeintel.core.imports.lazy import lazy_import
 from codeintel.core.schemas import (
     DatasetSchemaLike,
     SchemaService,
     clear_schema_service,
+    pandera_schema_from_table_schema,
     set_schema_service,
+)
+from codeintel.core.schemas import (
+    get_schema_service as get_core_schema_service,
 )
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from pandera import DataFrameSchema
+
     from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
     from codeintel.core.schemas.row_models import GeneratedRowBinding
-
-
-class _DatasetSchemaRegistry(Protocol):
-    """Protocol for the build-owned DatasetSchema registry."""
-
-    def get(self, table_key: str) -> DatasetSchemaLike | None:
-        """Return the DatasetSchema for the table key.
-
-        Parameters
-        ----------
-        table_key
-            Fully qualified table key (schema.table).
-
-        Returns
-        -------
-        DatasetSchema | None
-            Dataset schema metadata if available.
-        """
-        ...
-
-    def values(self) -> Iterable[DatasetSchemaLike]:
-        """Iterate all registered DatasetSchema objects.
-
-        Returns
-        -------
-        Iterable[DatasetSchema]
-            Registered dataset schemas.
-        """
-        ...
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
 
 
 @runtime_checkable
@@ -71,45 +44,56 @@ class _SchemaDerivationProvider(Protocol):
         ...
 
 
+@dataclass(slots=True)
+class _DerivedDatasetSchema:
+    """DatasetSchema-like payload derived from TableSchema."""
+
+    name: str
+    pandera_schema: DataFrameSchema
+    ddl_schema: TableSchema | None
+
+
 @dataclass(frozen=True, slots=True)
-class _BuildDatasetSchemaProvider:
-    """Adapter exposing DatasetSchema registry via the DatasetSchemaProvider protocol."""
+class _DerivedDatasetSchemaProvider:
+    """Adapter that renders DatasetSchema-like objects from TableSchema definitions."""
 
-    registry_module: str = "codeintel.build.hamilton.contracts.schemas.registry"
-    registry_attr: str = "SCHEMA_REGISTRY"
-
-    def _registry(self) -> _DatasetSchemaRegistry:
-        registry = lazy_getattr(self.registry_module, self.registry_attr)
-        return cast("_DatasetSchemaRegistry", registry)
+    schema_provider: SchemaProvider
 
     def get_dataset_schema(self, table_key: str) -> DatasetSchemaLike | None:
-        """Return dataset schema for the table key.
-
-        Parameters
-        ----------
-        table_key
-            Fully qualified table key (schema.table).
-
-        Returns
-        -------
-        DatasetSchema | None
-            Dataset schema metadata if available.
-        """
-        return self._registry().get(table_key)
+        table_schema = self.schema_provider.get_table_schema(table_key)
+        if table_schema is None:
+            return None
+        pandera_schema = pandera_schema_from_table_schema(
+            table_key=table_key,
+            table_schema=table_schema,
+        )
+        return _DerivedDatasetSchema(
+            name=table_key,
+            pandera_schema=pandera_schema,
+            ddl_schema=table_schema,
+        )
 
     def iter_dataset_schemas(self) -> Iterable[DatasetSchemaLike]:
-        """Iterate all registered dataset schemas.
-
-        Returns
-        -------
-        Iterable[DatasetSchema]
-            Registered dataset schemas.
-        """
-        return self._registry().values()
+        schemas: list[DatasetSchemaLike] = []
+        for schema in self.schema_provider.iter_table_schemas():
+            table_key = schema.table_key
+            pandera_schema = pandera_schema_from_table_schema(
+                table_key=table_key,
+                table_schema=schema,
+            )
+            schemas.append(
+                _DerivedDatasetSchema(
+                    name=table_key,
+                    pandera_schema=pandera_schema,
+                    ddl_schema=schema,
+                )
+            )
+        return schemas
 
 
 _DECLARED_SOURCE_KIND = "declared_source"
 _DECLARED_SOURCE_NAME = "declared"
+_SCHEMA_SERVICE_STATE: dict[str, str | None] = {"fingerprint": None}
 
 
 def _row_binding_for_provider(
@@ -132,37 +116,69 @@ def _row_binding_for_provider(
     )
 
 
-@lru_cache(maxsize=1)
-def get_schema_service() -> SchemaService:
-    """Return the canonical SchemaService configured for build.
+def configure_schema_service(*, runtime: RuntimeBundle) -> SchemaService:
+    """Configure the canonical SchemaService for a runtime bundle.
+
+    Parameters
+    ----------
+    runtime
+        Runtime bundle providing schema index and DAG catalog metadata.
 
     Returns
     -------
     SchemaService
         Configured schema service.
     """
-    schema_provider = unified_schema_provider()
+    if runtime.fingerprint == _SCHEMA_SERVICE_STATE["fingerprint"]:
+        return get_core_schema_service()
+
+    schema_provider = _unified_schema_provider(runtime=runtime)
 
     def _row_binding_factory(table_schema: TableSchema) -> GeneratedRowBinding:
         return _row_binding_for_provider(table_schema, schema_provider)
 
     service = SchemaService(
         table_provider=schema_provider,
-        dataset_provider=_BuildDatasetSchemaProvider(),
+        dataset_provider=_DerivedDatasetSchemaProvider(schema_provider),
         row_binding_factory=_row_binding_factory,
     )
     set_schema_service(service)
+    _SCHEMA_SERVICE_STATE["fingerprint"] = runtime.fingerprint
     return service
+
+
+def get_schema_service() -> SchemaService:
+    """Return the configured SchemaService.
+
+    Returns
+    -------
+    SchemaService
+        Configured schema service.
+    """
+    return get_core_schema_service()
 
 
 def clear_schema_service_cache() -> None:
     """Clear cached SchemaService instance and core registry."""
-    get_schema_service.cache_clear()
+    _SCHEMA_SERVICE_STATE["fingerprint"] = None
     clear_schema_service()
-    clear_unified_provider_cache()
+    _clear_unified_provider_cache()
+
+
+def _unified_schema_provider(*, runtime: RuntimeBundle) -> SchemaProvider:
+    module = lazy_import("codeintel.build.schemas.provider_unified")
+    provider_factory = module.unified_schema_provider
+    return provider_factory(runtime=runtime)
+
+
+def _clear_unified_provider_cache() -> None:
+    module = lazy_import("codeintel.build.schemas.provider_unified")
+    cache_clear = module.clear_unified_provider_cache
+    cache_clear()
 
 
 __all__ = [
     "clear_schema_service_cache",
+    "configure_schema_service",
     "get_schema_service",
 ]

@@ -463,6 +463,7 @@ def _build_saver_tags(
     tags.update(metadata_tags)
     if context.table_key is not None:
         tags[ht.TAG_TABLE_KEY] = context.table_key
+        tags[ht.TAG_OUTPUT_KIND] = ht.OUTPUT_KIND_TABLE
     if context.artifact_name is not None:
         tags[ht.TAG_ARTIFACT] = context.artifact_name
     if context.path_template is not None:

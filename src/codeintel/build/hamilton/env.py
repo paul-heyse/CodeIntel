@@ -124,7 +124,6 @@ class BuildEnv:
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None
     validate_outputs: bool = False
-    strict_contracts: bool = False
     history_options: HistoryTimeseriesOptions | None = None
     history_db_resolver: Callable[[str], StorageGateway] | None = None
     fingerprint_policy: FingerprintPolicy = field(
@@ -189,6 +188,7 @@ class BuildEnv:
         if self.storage is not None:
             return self.storage.warehouse
         return Warehouse(self.gateway)
+
 
 __all__ = [
     "BuildEnv",

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from hamilton.function_modifiers import inject, resolve_from_config, source
+from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.storage.gateway import DuckDBRelation
-
-DecoratorFactory = Callable[[Callable[..., object]], Callable[..., object]]
 
 
 def _pick_relation(
@@ -17,13 +14,13 @@ def _pick_relation(
     empty_node: str,
     existing_node: str,
     param_name: str,
-) -> DecoratorFactory:
+) -> NodeTransformLifecycle:
     if graph_backend == "existing":
         return inject(**{param_name: source(existing_node)})
     return inject(**{param_name: source(empty_node)})
 
 
-def _pick_call_graph_nodes(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_call_graph_nodes(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="call_graph_nodes_empty",
@@ -32,7 +29,7 @@ def _pick_call_graph_nodes(graph_backend: str | None = None) -> DecoratorFactory
     )
 
 
-def _pick_call_graph_edges(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_call_graph_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="call_graph_edges_empty",
@@ -41,7 +38,7 @@ def _pick_call_graph_edges(graph_backend: str | None = None) -> DecoratorFactory
     )
 
 
-def _pick_import_modules(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_import_modules(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="import_modules_empty",
@@ -50,7 +47,7 @@ def _pick_import_modules(graph_backend: str | None = None) -> DecoratorFactory:
     )
 
 
-def _pick_import_edges(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_import_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="import_graph_edges_empty",
@@ -59,7 +56,7 @@ def _pick_import_edges(graph_backend: str | None = None) -> DecoratorFactory:
     )
 
 
-def _pick_cfg_blocks(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_cfg_blocks(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="cfg_blocks_empty",
@@ -68,7 +65,7 @@ def _pick_cfg_blocks(graph_backend: str | None = None) -> DecoratorFactory:
     )
 
 
-def _pick_cfg_edges(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_cfg_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="cfg_edges_empty",
@@ -77,7 +74,7 @@ def _pick_cfg_edges(graph_backend: str | None = None) -> DecoratorFactory:
     )
 
 
-def _pick_dfg_edges(graph_backend: str | None = None) -> DecoratorFactory:
+def _pick_dfg_edges(graph_backend: str | None = None) -> NodeTransformLifecycle:
     return _pick_relation(
         graph_backend=graph_backend,
         empty_node="dfg_edges_empty",

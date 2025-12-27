@@ -13,9 +13,9 @@ from codeintel.build.hamilton.executor import HamiltonBuildExecutor, HamiltonBui
 from codeintel.build.hamilton.graph_validation import validate_graph
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.providers import Providers, create_default_providers
-from codeintel.build.target_metadata import get_target_metadata_service
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.context import SeedPack, TestContext, create_test_context
 from tests._helpers.env_options import EnvOptions, GatewayOptions
@@ -51,7 +51,6 @@ class BuildEnvSpec:
     force_targets: frozenset[str] | None = None
     manifest_index: Mapping[str, OutputManifest] | None = None
     validate_outputs: bool = False
-    strict_contracts: bool = False
 
 
 def build_test_env(
@@ -83,7 +82,6 @@ def build_test_env(
         force_targets=spec.force_targets or frozenset(),
         manifest_index=spec.manifest_index,
         validate_outputs=spec.validate_outputs,
-        strict_contracts=spec.strict_contracts,
     )
 
 
@@ -159,7 +157,6 @@ class HarnessConfig:
     commit: str
     profile: str | None = None
     file_backed_db: bool = True
-    strict_contracts: bool = True
     validate_outputs: bool = True
     parallel_backend: str = "threadpool"
     max_workers: int | None = 4
@@ -222,6 +219,7 @@ class HamiltonBuildHarness:
     config: HarnessConfig
     repo_files: tuple[Path, ...] = ()
     last_result: HamiltonBuildResult | None = None
+    runtime: RuntimeBundle | None = None
     _owns_ctx: bool = True
 
     @classmethod
@@ -261,7 +259,6 @@ class HamiltonBuildHarness:
             settings=TEST_BUILD_SETTINGS,
             profile=cfg.profile,
             validate_outputs=cfg.validate_outputs,
-            strict_contracts=cfg.strict_contracts,
         )
         executor = HamiltonBuildExecutor(
             profile=cfg.profile,
@@ -312,7 +309,6 @@ class HamiltonBuildHarness:
             settings=TEST_BUILD_SETTINGS,
             profile=cfg.profile,
             validate_outputs=cfg.validate_outputs,
-            strict_contracts=cfg.strict_contracts,
         )
         executor = HamiltonBuildExecutor(
             profile=cfg.profile,
@@ -391,7 +387,7 @@ class HamiltonBuildHarness:
         return result
 
     @staticmethod
-    def validate_graph() -> None:
+    def validate_graph(*, runtime: RuntimeBundle) -> None:
         """Validate Hamilton DAG invariants for the build graph.
 
         Raises
@@ -399,7 +395,7 @@ class HamiltonBuildHarness:
         AssertionError
             If graph validation reports errors or warnings.
         """
-        result = validate_graph()
+        result = validate_graph(runtime=runtime)
         if result.errors or result.warnings:
             message = (
                 f"Graph validation failed: errors={len(result.errors)} "
@@ -408,7 +404,7 @@ class HamiltonBuildHarness:
             raise AssertionError(message)
 
     @staticmethod
-    def assert_output_inventory_consistent() -> None:
+    def assert_output_inventory_consistent(*, runtime: RuntimeBundle) -> None:
         """Assert DAG-derived output inventory is internally consistent.
 
         Raises
@@ -416,8 +412,7 @@ class HamiltonBuildHarness:
         AssertionError
             If catalog outputs are missing required metadata.
         """
-        service = get_target_metadata_service()
-        catalog = service.system.catalog
+        catalog = runtime.catalog
         artifact_outputs = tuple(catalog.artifact_outputs.values())
         issues = [
             f"Artifact output missing template: {output.key}"
@@ -542,8 +537,33 @@ class HamiltonBuildHarness:
 
     @property
     def priming(self) -> ManifestPriming:
-        """Access manifest priming helpers for this harness."""
-        return ManifestPriming(self)
+        """Access manifest priming helpers for this harness.
+
+        Returns
+        -------
+        ManifestPriming
+            Manifest priming helpers for this harness.
+
+        Raises
+        ------
+        RuntimeError
+            If no runtime bundle has been attached to the harness.
+        """
+        if self.runtime is None:
+            message = "Manifest priming requires a RuntimeBundle on the harness."
+            raise RuntimeError(message)
+        return ManifestPriming(self, runtime=self.runtime)
+
+    def with_runtime(self, runtime: RuntimeBundle) -> HamiltonBuildHarness:
+        """Attach a RuntimeBundle for catalog-based helpers.
+
+        Returns
+        -------
+        HamiltonBuildHarness
+            Harness instance with an attached runtime bundle.
+        """
+        self.runtime = runtime
+        return self
 
 
 def _format_missing_record_error(target: str, result: HamiltonBuildResult) -> str:

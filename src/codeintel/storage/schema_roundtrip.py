@@ -67,6 +67,13 @@ def create_table_ast(
     -------
     sqlglot.expressions.Create
         SQLGlot AST for table creation.
+
+    Raises
+    ------
+    ValueError
+        If the generated DDL cannot be parsed or is invalid.
+    TypeError
+        If the generated DDL is not a CREATE statement.
     """
     _validate_identifier(table.schema, kind="schema")
     _validate_identifier(table.name, kind="table")
@@ -85,7 +92,7 @@ def create_table_ast(
         raise ValueError(msg) from exc
     if not isinstance(parsed, exp.Create):
         msg = "Generated DDL did not produce a CREATE statement"
-        raise ValueError(msg)
+        raise TypeError(msg)
     return parsed
 
 

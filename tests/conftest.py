@@ -14,10 +14,17 @@ from typing import TYPE_CHECKING
 import duckdb
 import pytest
 
-from codeintel.build.hamilton.driver_factory import build_driver
+from codeintel.build.config import BuildConfig
+from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.providers import create_default_providers
+from codeintel.build.schemas import configure_contract_service, configure_schema_service
 from codeintel.build.settings import DEFAULT_PROFILE_NAME
+from codeintel.config.models import ToolsConfig
 from codeintel.observability.runtime import shutdown_observability
+from codeintel.runtime.compose import compose_runtime
+from codeintel.runtime.runtime_bundle import RuntimeBundle
 from tests._helpers import GatewayOptions, ProvisioningConfig, TestScenario, provisioned_gateway
+from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.env import create_provisioned_test_env
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import GatewayFactory
@@ -46,13 +53,10 @@ from tests._helpers.tooling_audit import require_tooling as _require_tooling
 from tests._helpers.waiting import eventually as eventually_fn
 from tests._helpers.waiting import eventually_async as eventually_async_fn
 
-ensure_storage_contract_catalog()
-
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
 
-    from codeintel.build.hamilton.runtime import HamiltonRuntime
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs import CoverageEdgeEnv, ProvisionedGateway, SpanTestEnv
     from tests._helpers.context import TestContext
@@ -252,15 +256,53 @@ def metrics_ctx(tmp_path: Path) -> Iterator[TestContext]:
 
 
 @pytest.fixture(scope="session")
-def hamilton_runtime() -> HamiltonRuntime:
-    """Provide a session-scoped Hamilton runtime for DAG execution.
+def runtime_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[BuildEnv]:
+    """Provide a session-scoped BuildEnv for runtime composition.
+
+    Yields
+    ------
+    BuildEnv
+        Build environment for runtime composition.
+    """
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+    providers = create_default_providers(ToolsConfig.default())
+    env = BuildEnv(
+        gateway=ctx.gateway,
+        snapshot=ctx.snapshot,
+        paths=ctx.build_paths,
+        providers=providers,
+        config=BuildConfig.empty(),
+        settings=TEST_BUILD_SETTINGS,
+        profile=DEFAULT_PROFILE_NAME,
+    )
+    try:
+        yield env
+    finally:
+        ctx.close()
+
+
+@pytest.fixture(scope="session")
+def hamilton_runtime(runtime_env: BuildEnv) -> RuntimeBundle:
+    """Provide a session-scoped runtime bundle for DAG inspection.
 
     Returns
     -------
-    HamiltonRuntime
-        Runtime instance for DAG execution.
+    RuntimeBundle
+        Runtime bundle with driver, catalog, and tag query.
     """
-    return build_driver(config={"profile": DEFAULT_PROFILE_NAME})
+    config: dict[str, object] = {}
+    if runtime_env.profile:
+        config["profile"] = runtime_env.profile
+    config.update(runtime_env.variants.as_hamilton_config())
+    config["variant_fingerprint"] = runtime_env.variants.variant_fingerprint
+    return compose_runtime(env=runtime_env, config=config).bundle
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _session_schema_service(hamilton_runtime: RuntimeBundle) -> None:
+    configure_schema_service(runtime=hamilton_runtime)
+    configure_contract_service(runtime=hamilton_runtime)
+    ensure_storage_contract_catalog()
 
 
 @pytest.fixture

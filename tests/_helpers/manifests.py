@@ -10,6 +10,7 @@ from tests._helpers.hamilton_manifest_priming import ManifestPriming
 if TYPE_CHECKING:
     from codeintel.build.hamilton.run_records import TargetRunRecord
     from codeintel.core.build_manifest import OutputManifest
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.harnesses.hamilton_build import HamiltonBuildHarness
 
@@ -40,6 +41,7 @@ def prime_manifest(
     harness: HamiltonBuildHarness,
     *,
     spec: ManifestPriming.ManifestSpec,
+    runtime: RuntimeBundle,
 ) -> OutputManifest:
     """Insert a manifest for a target using the manifest priming helper.
 
@@ -48,7 +50,7 @@ def prime_manifest(
     OutputManifest
         Saved manifest record.
     """
-    priming = ManifestPriming(harness)
+    priming = ManifestPriming(harness, runtime=runtime)
     return priming.prime_manifest(spec)
 
 
@@ -58,6 +60,7 @@ def prime_modules_manifest(
     file_state_hash: str,
     row_count: int | None = None,
     change_delta: dict[str, object] | None = None,
+    runtime: RuntimeBundle,
 ) -> OutputManifest:
     """Prime the modules manifest using the provided file state hash.
 
@@ -66,7 +69,7 @@ def prime_modules_manifest(
     OutputManifest
         Saved manifest record for modules.
     """
-    priming = ManifestPriming(harness)
+    priming = ManifestPriming(harness, runtime=runtime)
     return priming.prime_modules_manifest(
         file_state_hash=file_state_hash,
         row_count=row_count,

@@ -493,7 +493,7 @@ class TestManifestDiffV2:
             table_provenance={
                 base_table.table_key: TableProvenance(
                     schema_hash="hash-b",
-                    derivation_kind="inferred_ibis",
+                    derivation_kind="inferred_relation",
                     derivation_source="target_b",
                 )
             },

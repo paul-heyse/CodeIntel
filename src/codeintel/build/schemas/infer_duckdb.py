@@ -30,6 +30,7 @@ _DECIMAL_INT_SCALE = 0
 _DESCRIBE_NULLABILITY_INDEX = 2
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+
 def _validate_identifier(identifier: str, *, kind: str) -> str:
     """Validate a DuckDB identifier.
 

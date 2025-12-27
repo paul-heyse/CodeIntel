@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.core.ibis_typing import and_predicates
 from codeintel.core.validation import (
     GRAPH_VALIDATION_COLS,
     BaseValidationOptions,
@@ -23,7 +22,7 @@ from codeintel.core.validation import (
 )
 from codeintel.graphs.runtime import GraphRuntime
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
 
 if TYPE_CHECKING:
     from codeintel.graphs.runtime import GraphRuntimeOptions
