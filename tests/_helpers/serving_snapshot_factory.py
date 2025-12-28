@@ -19,7 +19,10 @@ from codeintel.build.serving.publisher import (
 from codeintel.config.primitives import BuildPaths
 from codeintel.core.hashing import stable_hash
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import seed_contract_catalog
@@ -45,6 +48,7 @@ class ServingSnapshot:
     repo: str
     commit: str
     run_id: str
+    dataset_manifest_paths: tuple[Path, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +149,27 @@ class ServingSnapshotFactory:
         schema_manifest_path = resolved_serve_dir / "schema_manifest.json"
         buildspec_path = resolved_serve_dir / "buildspec.json"
         resolved_pointer_path = pointer_path or resolved_serve_dir / "current.json"
+
+        resolved_artifacts = artifacts or SnapshotArtifacts()
+        views = resolved_artifacts.views or _demo_views()
+        tables = resolved_artifacts.tables or _demo_tables()
+        db_setup = resolved_artifacts.db_setup
+
+        if db_setup is not None:
+            db_setup(db_path)
+        else:
+            _write_demo_db(db_path, row_count=3, repo=self.repo, commit=self.commit)
+
+        _write_registry(registry_path, views=views)
+        _write_schema_manifest(schema_manifest_path, tables=tables)
+        _write_buildspec(buildspec_path, tables=tables)
+        dataset_manifest_paths = _write_dataset_manifests(
+            db_path,
+            run_id=run_id,
+            serve_dir=resolved_serve_dir,
+            tables=tables,
+        )
+
         snapshot = ServingSnapshot(
             serve_dir=resolved_serve_dir,
             db_path=db_path,
@@ -155,21 +180,8 @@ class ServingSnapshotFactory:
             repo=self.repo,
             commit=self.commit,
             run_id=run_id,
+            dataset_manifest_paths=dataset_manifest_paths,
         )
-
-        resolved_artifacts = artifacts or SnapshotArtifacts()
-        views = resolved_artifacts.views or _demo_views()
-        tables = resolved_artifacts.tables or _demo_tables()
-        db_setup = resolved_artifacts.db_setup
-
-        if db_setup is not None:
-            db_setup(snapshot.db_path)
-        else:
-            _write_demo_db(snapshot.db_path, row_count=3, repo=self.repo, commit=self.commit)
-
-        _write_registry(snapshot.registry_path, views=views)
-        _write_schema_manifest(snapshot.schema_manifest_path, tables=tables)
-        _write_buildspec(snapshot.buildspec_path, tables=tables)
 
         if publish:
             _publish_snapshot(snapshot)
@@ -310,6 +322,51 @@ def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None
     )
 
 
+def _write_dataset_manifests(
+    db_path: Path,
+    *,
+    run_id: str,
+    serve_dir: Path,
+    tables: Iterable[dict[str, object]],
+) -> tuple[Path, ...]:
+    dataset_root = serve_dir / "datasets"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(str(db_path))
+    manifest_paths: list[Path] = []
+    try:
+        for table in tables:
+            table_key = str(table.get("table_key", "")).strip()
+            if not table_key:
+                continue
+            try:
+                schema_name, table_name = split_table_key(table_key)
+            except ValueError:
+                continue
+            try:
+                arrow_table = con.execute(
+                    f'SELECT * FROM "{schema_name}"."{table_name}"'
+                ).fetch_arrow_table()
+            except duckdb.Error:
+                continue
+            write_dataset(
+                dataset_root=dataset_root,
+                table_key=table_key,
+                snapshot_id=run_id,
+                data=arrow_table,
+                options=ArrowDatasetWriteOptions(),
+            )
+            manifest_path = dataset_manifest_path(
+                dataset_root=dataset_root,
+                table_key=table_key,
+                snapshot_id=run_id,
+            )
+            if manifest_path.is_file():
+                manifest_paths.append(manifest_path)
+    finally:
+        con.close()
+    return tuple(manifest_paths)
+
+
 def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: bool) -> None:
     published_at = datetime.now(tz=UTC)
     semantic_layer_version = _semantic_version(
@@ -328,10 +385,11 @@ def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: b
             run_id=snapshot.run_id,
             published_at=published_at,
             semantic_layer_version=semantic_layer_version,
+            dataset_manifest_paths=snapshot.dataset_manifest_paths,
         )
         snapshot.pointer_path.write_text(pointer.to_json(), encoding="utf-8")
         return
-    payload = {
+    payload: dict[str, object] = {
         "db_path": str(snapshot.db_path),
         "semantic_registry_path": str(snapshot.registry_path),
         "schema_manifest_path": str(snapshot.schema_manifest_path),
@@ -342,6 +400,8 @@ def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: b
         "published_at": published_at.isoformat(),
         "semantic_layer_version": semantic_layer_version,
     }
+    if snapshot.dataset_manifest_paths:
+        payload["dataset_manifest_paths"] = [str(path) for path in snapshot.dataset_manifest_paths]
     snapshot.pointer_path.write_text(_json_dump(payload), encoding="utf-8")
 
 
@@ -390,6 +450,7 @@ def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSna
         repo=pointer.repo,
         commit=pointer.commit,
         run_id=pointer.run_id,
+        dataset_manifest_paths=pointer.dataset_manifest_paths,
     )
 
 

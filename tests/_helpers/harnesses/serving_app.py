@@ -35,6 +35,7 @@ class ServingSettingsOverrides(TypedDict, total=False):
     port: int
     auth_token: str | None
     schema_enforcement: str
+    query_engine: str
     result_engine: str
     api_key: str | None
     cors_origins: tuple[str, ...]

@@ -60,8 +60,8 @@ def artifact_semantic_registry() -> int:
     return 1
 
 
-_SAVER_TAGS: dict[str, object] = {
-    "hamilton.data_saver": True,
+_SAVER_TAGS: dict[str, str] = {
+    "hamilton.data_saver": "true",
     "output_role": "contract",
     "hamilton.data_saver.sink": "duckdb",
 }
@@ -115,7 +115,8 @@ def _build_driver() -> h_driver.Driver:
 def _apply_saver_tags(dr: h_driver.Driver) -> None:
     node = dr.graph.nodes.get("saver_duckdb")
     if node is None:
-        raise KeyError("saver_duckdb node missing from driver graph")
+        msg = "saver_duckdb node missing from driver graph"
+        raise KeyError(msg)
     if isinstance(node.tags, dict):
         node.tags.update(_SAVER_TAGS)
         return

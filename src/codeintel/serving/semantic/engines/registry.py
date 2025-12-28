@@ -1,0 +1,127 @@
+"""Engine registry and selection helpers."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from codeintel.serving.semantic.engines.protocol import EngineContext, QueryEngine
+from codeintel.serving.semantic.specs import SemanticQuerySpec
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+
+class EngineSelectionError(ValueError):
+    """Raised when no semantic engine can satisfy a request."""
+
+
+@dataclass(frozen=True, slots=True)
+class QueryEngineRegistry:
+    """Registry of query engines with selection helpers."""
+
+    engines: tuple[QueryEngine, ...]
+
+    def get(self, name: str) -> QueryEngine | None:
+        """Return a registered engine by name.
+
+        Returns
+        -------
+        QueryEngine | None
+            Engine instance when registered, otherwise None.
+        """
+        normalized = name.lower()
+        for engine in self.engines:
+            if engine.name.lower() == normalized:
+                return engine
+        return None
+
+    def select(
+        self,
+        *,
+        preference: str,
+        spec: SemanticQuerySpec,
+        ctx: EngineContext,
+    ) -> QueryEngine:
+        """Select an engine given a preference and spec.
+
+        Returns
+        -------
+        QueryEngine
+            Selected engine instance.
+
+        Raises
+        ------
+        EngineSelectionError
+            If the preference is unknown or no engine can satisfy the spec.
+        """
+        normalized = preference.lower().strip() or "auto"
+        if normalized == "auto":
+            return self._select_first(("polars", "duckdb"), spec=spec, ctx=ctx)
+        engine = self.get(normalized)
+        if engine is None:
+            msg = f"Unknown query engine preference: {preference}"
+            raise EngineSelectionError(msg)
+        if not engine.can_run(spec, ctx=ctx):
+            msg = f"Query engine {engine.name} cannot satisfy the request"
+            raise EngineSelectionError(msg)
+        return engine
+
+    def select_prefer(
+        self,
+        names: Sequence[str],
+        *,
+        spec: SemanticQuerySpec,
+        ctx: EngineContext,
+    ) -> QueryEngine:
+        """Select the first engine from names that can run the spec.
+
+        Returns
+        -------
+        QueryEngine
+            Selected engine instance.
+        """
+        return self._select_first(tuple(names), spec=spec, ctx=ctx)
+
+    def _select_first(
+        self,
+        names: tuple[str, ...],
+        *,
+        spec: SemanticQuerySpec,
+        ctx: EngineContext,
+    ) -> QueryEngine:
+        """Return the first engine that can satisfy the spec.
+
+        Returns
+        -------
+        QueryEngine
+            Selected engine instance.
+
+        Raises
+        ------
+        EngineSelectionError
+            If no registered engine can satisfy the spec.
+        """
+        for name in names:
+            engine = self.get(name)
+            if engine is None:
+                continue
+            if engine.can_run(spec, ctx=ctx):
+                return engine
+        msg = "No registered query engines can satisfy the request"
+        raise EngineSelectionError(msg)
+
+
+def build_engine_registry(engines: Iterable[QueryEngine]) -> QueryEngineRegistry:
+    """Build a registry from an iterable of engines.
+
+    Returns
+    -------
+    QueryEngineRegistry
+        Registry containing the provided engines.
+    """
+    return QueryEngineRegistry(tuple(engines))
+
+
+__all__ = ["EngineSelectionError", "QueryEngineRegistry", "build_engine_registry"]

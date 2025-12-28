@@ -7,15 +7,22 @@ DAG-visible I/O, replacing the legacy ``native.materializer`` utilities.
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import pandas as pd
+import polars as pl
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.materializers import DuckDBRelationSaver, DuckDBRowsSaver
+from codeintel.build.hamilton.materializers import (
+    ArrowDatasetSaver,
+    DuckDBRelationSaver,
+    DuckDBRowsSaver,
+)
 from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.hashing import stable_hash
+from codeintel.storage.datasets.manifests import read_dataset_manifest
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_true,
@@ -197,3 +204,41 @@ def test_rows_saver_resolves_deferred_columns(
     expect_true(row_result is not None, message="Expected row materialization to persist data")
     persisted = cast("tuple[object, ...]", row_result)
     expect_equal(persisted, expected=row)
+
+
+def test_arrow_dataset_saver_writes_manifest(
+    build_harness: HamiltonBuildHarness,
+) -> None:
+    """ArrowDatasetSaver should emit a dataset manifest for persisted data."""
+    harness = build_harness.with_force_targets("modules")
+    env = harness.build_env()
+    snapshot = env.snapshot
+    graph = _make_graph()
+    saver = ArrowDatasetSaver(
+        env=env,
+        catalog=graph,
+        target_name="modules",
+        table_key="core.modules",
+    )
+
+    frame = pl.DataFrame(
+        {
+            "module": ["m1"],
+            "path": ["pkg/mod.py"],
+            "repo": [snapshot.repo],
+            "commit": [snapshot.commit],
+        }
+    )
+
+    meta = saver.save_data(frame)
+    expect_equal(meta["status"], expected="succeeded")
+    manifest_path = meta.get("dataset_manifest_path")
+    expect_true(
+        isinstance(manifest_path, str),
+        message="Expected dataset_manifest_path to be a string",
+    )
+    manifest_path_str = cast("str", manifest_path)
+    manifest = read_dataset_manifest(Path(manifest_path_str))
+    expect_equal(manifest.table_key, expected="core.modules")
+    expect_equal(manifest.snapshot_id, expected=snapshot.commit)
+    expect_equal(manifest.row_count, expected=1)

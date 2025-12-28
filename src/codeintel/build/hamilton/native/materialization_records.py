@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.io.artifact_ref import ArtifactRef
+from codeintel.build.hamilton.io.dataset_ref import DatasetRef
 from codeintel.build.hamilton.native.outputs import (
     expected_artifact_names_for_target,
     expected_table_keys_for_target,
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog, TargetDescriptor
+    from codeintel.core.hamilton.records import DatasetRefProtocol
 
 
 @dataclass(frozen=True)
@@ -198,6 +200,10 @@ def record_from_duckdb_materialization(
         "succeeded",
         result.input_hash,
         inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
+    )
+    record = _apply_dataset_manifest_paths(
+        record,
+        _dataset_manifest_paths({table_key: result}),
     )
     save_manifest(env, record)
     return record
@@ -454,6 +460,7 @@ def record_from_duckdb_materializations(
         input_hash,
         inputs=RunRecordInputs(env=env, run=run, catalog=catalog),
     )
+    record = _apply_dataset_manifest_paths(record, _dataset_manifest_paths(parsed))
     save_manifest(env, record, change_delta=change_delta)
     return record
 
@@ -657,6 +664,7 @@ def record_from_materializations(
         inputs=RunRecordInputs(env=context.env, run=run, catalog=context.catalog),
     )
     record = _apply_file_artifact_results(record, parsed_artifacts)
+    record = _apply_dataset_manifest_paths(record, _dataset_manifest_paths(parsed_tables))
     save_manifest(context.env, record, change_delta=context.change_delta)
     return record
 
@@ -1021,6 +1029,60 @@ def _apply_file_artifact_results(
         datasets=record.datasets,
         artifacts=tuple(updated_artifacts),
     )
+
+
+def _dataset_manifest_paths(
+    parsed: Mapping[str, MaterializationResult],
+) -> dict[str, str]:
+    results: dict[str, str] = {}
+    for table_key, result in parsed.items():
+        path = result.dataset_manifest_path
+        if path:
+            results[table_key] = path
+    return results
+
+
+def _apply_dataset_manifest_paths(
+    record: TargetRunRecord,
+    manifest_paths: Mapping[str, str],
+) -> TargetRunRecord:
+    if not manifest_paths or not record.datasets:
+        return record
+
+    updated_datasets: list[DatasetRefProtocol] = []
+    for dataset in record.datasets:
+        table_key = dataset.table_key
+        path = manifest_paths.get(table_key)
+        if path is None:
+            updated_datasets.append(dataset)
+            continue
+        updated_datasets.append(_apply_dataset_manifest_path(dataset, path))
+
+    return TargetRunRecord(
+        target=record.target,
+        impl_kind=record.impl_kind,
+        status=record.status,
+        input_hash=record.input_hash,
+        options_hash=record.options_hash,
+        duration_ms=record.duration_ms,
+        row_counts=record.row_counts,
+        error=record.error,
+        datasets=tuple(updated_datasets),
+        artifacts=record.artifacts,
+    )
+
+
+def _apply_dataset_manifest_path(
+    dataset: DatasetRefProtocol,
+    path: str,
+) -> DatasetRefProtocol:
+    if isinstance(dataset, DatasetRef):
+        return dataset.with_metadata("dataset_manifest_path", path)
+    with_metadata = getattr(dataset, "with_metadata", None)
+    if callable(with_metadata):
+        updated = with_metadata("dataset_manifest_path", path)
+        return cast("DatasetRefProtocol", updated)
+    return dataset
 
 
 __all__ = [

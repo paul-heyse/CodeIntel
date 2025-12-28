@@ -29,7 +29,9 @@ from codeintel.core.runtime.loader import (
 )
 from codeintel.core.tools import ToolBinaries
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
+from codeintel.serving.semantic.view_registry import ViewRegistry, view_spec_modules
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
@@ -318,6 +320,10 @@ class ServingSnapshotContext:
         Unified execution context derived from the serving snapshot metadata.
     registry_service
         Canonical registry service used for semantic discovery.
+    dataset_manifests
+        Dataset manifest metadata for Arrow-backed tables.
+    view_registry
+        Polars view registry for semantic views.
     """
 
     pointer: ServingSnapshotPointer
@@ -327,6 +333,12 @@ class ServingSnapshotContext:
     environment: dict[str, object] | None = None
     execution_context: ExecutionContext | None = None
     registry_service: RegistryService | None = None
+    dataset_manifests: DatasetManifestIndex = field(
+        default_factory=lambda: DatasetManifestIndex({})
+    )
+    view_registry: ViewRegistry = field(
+        default_factory=lambda: ViewRegistry.load(modules=view_spec_modules())
+    )
     summary: dict[str, object] = field(default_factory=dict)
 
     def to_summary(self) -> Mapping[str, object]:
@@ -390,6 +402,7 @@ def _load_snapshot_context(
     inventory = SchemaInventory.load(pointer.schema_manifest_path)
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
+    dataset_manifests = load_dataset_manifests(pointer.dataset_manifest_paths)
     env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
     environment: dict[str, object] | None = None
     if env_path is not None:
@@ -423,5 +436,7 @@ def _load_snapshot_context(
         environment=environment,
         execution_context=_build_execution_context(pointer),
         registry_service=registry_service,
+        dataset_manifests=dataset_manifests,
+        view_registry=ViewRegistry.load(modules=view_spec_modules()),
         summary=summary,
     )

@@ -1,0 +1,80 @@
+"""Engine protocols for semantic query execution."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Protocol
+
+from codeintel.serving.semantic.specs import SemanticQuerySpec
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+
+    from codeintel.serving.db.pointer import ServingSnapshotPointer
+    from codeintel.serving.semantic.datasets import DatasetManifestIndex
+    from codeintel.serving.semantic.inventory import SchemaInventory
+    from codeintel.serving.semantic.registry import SemanticRegistry
+    from codeintel.serving.semantic.view_registry import ViewRegistry
+    from codeintel.serving.settings import ServingSettings
+    from codeintel.storage.warehouse import Warehouse
+
+
+@dataclass(frozen=True, slots=True)
+class QueryExplain:
+    """Explain payload for query engines."""
+
+    sql: str | None
+    plan: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class EngineContext:
+    """Context shared across semantic query engines."""
+
+    pointer: ServingSnapshotPointer
+    inventory: SchemaInventory
+    registry: SemanticRegistry
+    dataset_manifests: DatasetManifestIndex
+    view_registry: ViewRegistry
+    settings: ServingSettings
+    warehouse: Warehouse | None = None
+
+
+class ExecutablePlan(Protocol):
+    """Executable plan returned by query engines."""
+
+    def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
+        """Return a RecordBatchReader for this plan."""
+        ...
+
+    def to_table(self) -> pa.Table:
+        """Return a fully materialized Arrow table for this plan."""
+        ...
+
+    def explain(self) -> QueryExplain:
+        """Return explain payload for this plan."""
+        ...
+
+    def cleanup(self) -> None:
+        """Release temporary resources after execution."""
+        ...
+
+
+class QueryEngine(Protocol):
+    """Protocol for semantic query engines."""
+
+    @property
+    def name(self) -> str:
+        """Return the engine identifier."""
+        ...
+
+    def can_run(self, spec: SemanticQuerySpec, *, ctx: EngineContext) -> bool:
+        """Return True when this engine can handle the spec."""
+        ...
+
+    def compile(self, spec: SemanticQuerySpec, *, ctx: EngineContext) -> ExecutablePlan:
+        """Compile the spec into an executable plan."""
+        ...
+
+
+__all__ = ["EngineContext", "ExecutablePlan", "QueryEngine", "QueryExplain"]

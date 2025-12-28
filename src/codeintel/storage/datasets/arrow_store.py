@@ -16,7 +16,7 @@ from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.schema import arrow_schema_hash
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
     from pyarrow import RecordBatchReader, Table
 
@@ -40,6 +40,20 @@ class ArrowDatasetWriteOptions:
     partition_columns: tuple[str, ...] = ()
     existing_data_behavior: ExistingDataBehavior = "delete_matching"
     persist_manifest: bool = True
+    schema_hash: str | None = None
+    manifest_extras: Mapping[str, object] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ArrowDatasetManifestRequest:
+    """Arguments for building Arrow dataset manifests."""
+
+    table_key: str
+    snapshot_id: str
+    partition_columns: tuple[str, ...]
+    schema_hash: str | None = None
+    extras: Mapping[str, object] | None = None
+    created_at: str | None = None
 
 
 def write_dataset(
@@ -77,7 +91,7 @@ def write_dataset(
         snapshot_id=snapshot_id,
     )
     snapshot_dir.mkdir(parents=True, exist_ok=True)
-    partitioning = _partitioning(resolved.partition_columns)
+    partitioning = _partitioning(resolved.partition_columns, schema=data.schema)
     ds.write_dataset(
         data,
         str(snapshot_dir),
@@ -86,17 +100,17 @@ def write_dataset(
         existing_data_behavior=resolved.existing_data_behavior,
     )
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
-    stats = dataset_stats(dataset)
-    files = _relative_files(dataset.files, base_dir=snapshot_dir)
-    manifest = ArrowDatasetManifest(
-        dataset_id=table_key,
-        snapshot_id=snapshot_id,
+    request = ArrowDatasetManifestRequest(
         table_key=table_key,
-        schema_hash=arrow_schema_hash(dataset.schema),
+        snapshot_id=snapshot_id,
         partition_columns=resolved.partition_columns,
-        files=files,
-        row_count=stats.row_count,
-        created_at=datetime.now(tz=UTC).isoformat(),
+        schema_hash=resolved.schema_hash,
+        extras=resolved.manifest_extras,
+    )
+    manifest = build_dataset_manifest(
+        dataset=dataset,
+        snapshot_dir=snapshot_dir,
+        request=request,
     )
     if resolved.persist_manifest:
         manifest_path = dataset_manifest_path(
@@ -162,10 +176,60 @@ def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
     return ArrowDatasetStats(row_count=_count_rows(dataset))
 
 
-def _partitioning(columns: Sequence[str]) -> ds.Partitioning | None:
+def build_dataset_manifest(
+    *,
+    dataset: ds.Dataset,
+    snapshot_dir: Path,
+    request: ArrowDatasetManifestRequest,
+) -> ArrowDatasetManifest:
+    """Return a dataset manifest for an on-disk dataset snapshot.
+
+    Parameters
+    ----------
+    dataset
+        Arrow dataset handle for the snapshot.
+    snapshot_dir
+        Snapshot directory containing the dataset files.
+    request
+        Manifest parameters for the snapshot.
+
+    Returns
+    -------
+    ArrowDatasetManifest
+        Manifest describing the on-disk dataset snapshot.
+    """
+    stats = dataset_stats(dataset)
+    files = _relative_files(dataset.files, base_dir=snapshot_dir)
+    resolved_hash = request.schema_hash or arrow_schema_hash(dataset.schema)
+    return ArrowDatasetManifest(
+        dataset_id=request.table_key,
+        snapshot_id=request.snapshot_id,
+        table_key=request.table_key,
+        schema_hash=resolved_hash,
+        partition_columns=tuple(str(column) for column in request.partition_columns),
+        files=files,
+        row_count=stats.row_count,
+        created_at=request.created_at or datetime.now(tz=UTC).isoformat(),
+        extras=dict(request.extras) if request.extras else None,
+    )
+
+
+def _partitioning(
+    columns: Sequence[str],
+    *,
+    schema: pa.Schema | None,
+) -> ds.Partitioning | None:
     if not columns:
         return None
-    return ds.partitioning([str(column) for column in columns])
+    if schema is None:
+        msg = "Partitioning requires a schema when partition columns are provided"
+        raise ValueError(msg)
+    try:
+        fields = [schema.field(str(column)) for column in columns]
+    except KeyError as exc:
+        msg = f"Partition columns missing from schema: {columns}"
+        raise ValueError(msg) from exc
+    return ds.partitioning(schema=pa.schema(fields))
 
 
 def _count_rows(dataset: ds.Dataset) -> int | None:
@@ -214,9 +278,11 @@ def _coerce_int(value: object) -> int | None:
 
 __all__ = [
     "ArrowDatasetInput",
+    "ArrowDatasetManifestRequest",
     "ArrowDatasetStats",
     "ArrowDatasetWriteOptions",
     "ExistingDataBehavior",
+    "build_dataset_manifest",
     "dataset_stats",
     "scan_dataset",
     "write_dataset",

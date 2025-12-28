@@ -24,6 +24,10 @@ from codeintel.serving.search.engine import (
     is_fts_available,
 )
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
+from codeintel.serving.semantic.engines.duckdb_engine import DuckDBQueryEngine
+from codeintel.serving.semantic.engines.polars_engine import PolarsQueryEngine
+from codeintel.serving.semantic.engines.protocol import EngineContext, QueryExplain
+from codeintel.serving.semantic.engines.registry import QueryEngineRegistry, build_engine_registry
 from codeintel.serving.semantic.fingerprints import (
     SemanticQueryFingerprintInput,
     fingerprint_search,
@@ -38,14 +42,10 @@ from codeintel.serving.semantic.models import (
     SemanticQueryResponse,
     SemanticViewDescriptionResponse,
 )
-from codeintel.serving.semantic.planner import (
-    SemanticQueryPlanner,
-    cleanup_temp_tables_if_needed,
-)
-from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
+from codeintel.serving.semantic.planner import SemanticQueryPlanner
+from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import META_CATALOG_NAME
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
@@ -62,8 +62,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from pathlib import Path
 
-    from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
     from codeintel.serving.search.models import SearchQueryRequest
     from codeintel.serving.semantic.inventory import SchemaInventory
@@ -72,7 +71,7 @@ if TYPE_CHECKING:
         SemanticQueryRequest,
     )
     from codeintel.serving.semantic.planner import ResolvedViewContext
-    from codeintel.serving.semantic.templates import BoundQuery, DbApiQuery
+    from codeintel.serving.semantic.templates import DbApiQuery
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
 
@@ -97,15 +96,6 @@ def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [{k: _sanitize_float_nan(v) for k, v in row.items()} for row in rows]
 
 
-def _format_explain_rows(rows: Sequence[Sequence[object]]) -> str:
-    plan_lines: list[str] = []
-    for row in rows:
-        if not row:
-            continue
-        plan_lines.append(str(row[1] if len(row) > 1 else row[0]))
-    return "\n".join(plan_lines)
-
-
 @dataclass
 class SemanticQueryKernel:
     """Unified query kernel for semantic layer access.
@@ -119,10 +109,17 @@ class SemanticQueryKernel:
     db: ServingDBManager
     settings: ServingSettings
     _planner: SemanticQueryPlanner = field(init=False, repr=False)
+    _engine_registry: QueryEngineRegistry = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Initialize planner after dataclass construction."""
         self._planner = SemanticQueryPlanner(db=self.db, settings=self.settings)
+        self._engine_registry = build_engine_registry(
+            (
+                PolarsQueryEngine(),
+                DuckDBQueryEngine(),
+            )
+        )
 
     def _execute_sql(
         self,
@@ -165,55 +162,65 @@ class SemanticQueryKernel:
         *,
         pointer: ServingSnapshotPointer,
         view_id: str,
-        plan: SemanticQueryPlan,
+        spec: SemanticQuerySpec,
         inventory: SchemaInventory,
     ) -> tuple[str, str | None]:
-        filter_dicts = [f.model_dump(mode="json") for f in plan.filters]
+        filter_dicts = [f.model_dump(mode="json") for f in spec.filters]
         schema_hash_value = self._planner.schema_hash_for_table_key(
-            inventory=inventory, table_key=plan.table_key
+            inventory=inventory, table_key=spec.table_key
         )
         inputs = SemanticQueryFingerprintInput(
             snapshot=self._snapshot_dict(pointer).model_dump(mode="json"),
             view_id=view_id,
-            table_key=plan.table_key,
-            select=plan.columns,
-            order_by=plan.order_by,
+            table_key=spec.table_key,
+            select=spec.columns,
+            order_by=spec.order_by,
             filters=filter_dicts,
-            limit=plan.limit,
-            offset=plan.offset,
+            limit=spec.limit,
+            offset=spec.offset,
             schema_hash=schema_hash_value,
         )
         query_hash = fingerprint_semantic_query(inputs)
         return query_hash, schema_hash_value
 
-    def _execute_semantic_plan(
+    def _engine_context(
         self,
         *,
-        warehouse: Warehouse,
-        plan: SemanticQueryPlan,
-        column_types: dict[str, ColumnType] | None,
-    ) -> tuple[list[dict[str, object]], str]:
-        ibis_con = ibis_facade.backend(warehouse.gateway)
-        built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
-        return self._execute_bound_query(warehouse=warehouse, query=built)
+        pointer: ServingSnapshotPointer,
+        context: ServingSnapshotContext,
+        warehouse: Warehouse | None,
+    ) -> EngineContext:
+        ctx_registry = context.registry
+        ctx_inventory = context.inventory
+        ctx_dataset_manifests = context.dataset_manifests
+        ctx_view_registry = context.view_registry
+        return EngineContext(
+            pointer=pointer,
+            inventory=ctx_inventory,
+            registry=ctx_registry,
+            dataset_manifests=ctx_dataset_manifests,
+            view_registry=ctx_view_registry,
+            settings=self.settings,
+            warehouse=warehouse,
+        )
 
-    def _execute_bound_query(
-        self, *, warehouse: Warehouse, query: BoundQuery
-    ) -> tuple[list[dict[str, object]], str]:
-        ibis_con = ibis_facade.backend(warehouse.gateway)
-        try:
-            sql = query.compile_sql(ibis_con)
-            assert_select_perimeter(sql, policy=SqlIngressPolicy())
-            rows = self._execute_sql(warehouse=warehouse, sql=sql)
-        except UnsafeSqlError as exc:
-            raise ValueError(str(exc)) from exc
-        else:
-            return rows, sql
-        finally:
-            cleanup_temp_tables_if_needed(
-                con=warehouse.gateway.con,
-                temp_tables=query.temp_tables,
-            )
+    def _rows_from_table(self, table: pa.Table) -> list[dict[str, object]]:
+        engine = self.settings.result_engine.lower()
+        if engine == "polars" and pl is not None:
+            df_pl = pl.from_arrow(table)
+            if isinstance(df_pl, pl.Series):
+                df_pl = df_pl.to_frame()
+            return _sanitize_rows(df_pl.to_dicts())
+
+        if engine == "pandas":
+            df_pd = table.to_pandas()
+            records = [
+                {str(key): value for key, value in record.items()}
+                for record in df_pd.astype("object").to_dict(orient="records")
+            ]
+            return _sanitize_rows(records)
+
+        return _sanitize_rows(table.to_pylist())
 
     def _execute_dbapi_query(
         self, *, warehouse: Warehouse, query: DbApiQuery
@@ -224,6 +231,26 @@ class SemanticQueryKernel:
             raise ValueError(str(exc)) from exc
         else:
             return self._execute_sql(warehouse=warehouse, sql=query.sql, params=query.params)
+
+    def _execute_engine_plan(
+        self,
+        *,
+        spec: SemanticQuerySpec,
+        ctx: EngineContext,
+    ) -> tuple[list[dict[str, object]], QueryExplain]:
+        engine = self._engine_registry.select(
+            preference=self.settings.query_engine,
+            spec=spec,
+            ctx=ctx,
+        )
+        plan = engine.compile(spec, ctx=ctx)
+        try:
+            table = plan.to_table()
+            rows = self._rows_from_table(table)
+            explain = plan.explain()
+        finally:
+            plan.cleanup()
+        return rows, explain
 
     def _resolve_view_context_for_export(
         self, *, pointer: ServingSnapshotPointer, view_id: str
@@ -350,28 +377,29 @@ class SemanticQueryKernel:
             inputs, effective_limit = self._planner.plan_inputs_for_query(
                 ctx=resolved, request=request
             )
-            plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
-            rows, compiled_sql = self._execute_semantic_plan(
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=self._planner.snapshot_context(pointer),
                 warehouse=warehouse,
-                plan=plan,
-                column_types=resolved.column_types,
             )
+            rows, explain = self._execute_engine_plan(spec=spec, ctx=engine_ctx)
 
         truncated = len(rows) > effective_limit
         if truncated:
             rows = rows[:effective_limit]
 
-        fingerprint_plan = self._planner.build_plan(
+        fingerprint_spec = self._planner.build_spec(
             ctx=resolved, inputs=inputs, limit=effective_limit
         )
         query_hash, schema_hash_value = self._fingerprint_semantic_plan(
             pointer=resolved.pointer,
             view_id=resolved.view.id,
-            plan=fingerprint_plan,
+            spec=fingerprint_spec,
             inventory=resolved.inventory,
         )
 
-        sql_fingerprint = sqlglot_canonical_sha256(compiled_sql) if compiled_sql else None
+        sql_fingerprint = sqlglot_canonical_sha256(explain.sql) if explain.sql is not None else None
         return SemanticQueryResponse(
             view_id=request.view_id,
             columns=inputs.columns,
@@ -397,24 +425,31 @@ class SemanticQueryKernel:
             Explain output including compiled SQL and plan text.
         """
         with self.db.connect() as (warehouse, pointer):
+            snapshot_context = self._planner.snapshot_context(pointer)
             resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
             inputs, effective_limit = self._planner.plan_inputs_for_query(
                 ctx=resolved, request=request
             )
-            plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit)
-            compiled, _temp_tables = self._planner.compile_plan(
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=snapshot_context,
                 warehouse=warehouse,
-                plan=plan,
-                column_types=resolved.column_types,
-                cleanup_temp_tables=True,
             )
-
-            raw_rows = warehouse.gateway.policy.execute_sql(f"EXPLAIN {compiled}").fetchall()
-            plan_text = _format_explain_rows(raw_rows)
+            engine = self._engine_registry.select_prefer(
+                ["duckdb"],
+                spec=spec,
+                ctx=engine_ctx,
+            )
+            plan = engine.compile(spec, ctx=engine_ctx)
+            try:
+                explain = plan.explain()
+            finally:
+                plan.cleanup()
             return SemanticExplainResponse(
                 view_id=request.view_id,
-                sql=compiled,
-                plan=plan_text,
+                sql=explain.sql or "",
+                plan=explain.plan or "",
                 snapshot=self._snapshot_dict(pointer),
             )
 
@@ -432,18 +467,28 @@ class SemanticQueryKernel:
             Compiled SQL string (validated select-only).
         """
         with self.db.connect() as (warehouse, pointer):
+            snapshot_context = self._planner.snapshot_context(pointer)
             resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
             inputs, effective_limit = self._planner.plan_inputs_for_query(
                 ctx=resolved, request=request
             )
-            plan = self._planner.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
-            compiled, _temp_tables = self._planner.compile_plan(
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit + 1)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=snapshot_context,
                 warehouse=warehouse,
-                plan=plan,
-                column_types=resolved.column_types,
-                cleanup_temp_tables=True,
             )
-            return compiled
+            engine = self._engine_registry.select_prefer(
+                ["duckdb"],
+                spec=spec,
+                ctx=engine_ctx,
+            )
+            plan = engine.compile(spec, ctx=engine_ctx)
+            try:
+                explain = plan.explain()
+            finally:
+                plan.cleanup()
+            return explain.sql or ""
 
     def meta(self) -> ServingKernelMetaResponse:
         """Return serving metadata for /meta endpoint and tools.
@@ -524,13 +569,13 @@ class SemanticQueryKernel:
         inputs, effective_limit = self._planner.plan_inputs_for_export(
             ctx=resolved, request=request
         )
-        fingerprint_plan = self._planner.build_plan(
+        fingerprint_spec = self._planner.build_spec(
             ctx=resolved, inputs=inputs, limit=effective_limit
         )
         return self._fingerprint_semantic_plan(
             pointer=pointer,
             view_id=resolved.view.id,
-            plan=fingerprint_plan,
+            spec=fingerprint_spec,
             inventory=resolved.inventory,
         )
 
@@ -551,25 +596,32 @@ class SemanticQueryKernel:
             Row dictionary for each result row.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, columns, temp_tables = self._planner.compile_export(
-                warehouse=warehouse,
-                pointer=pointer,
-                request=request,
+            snapshot_context = self._planner.snapshot_context(pointer)
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_export(
+                ctx=resolved, request=request
             )
-
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=snapshot_context,
+                warehouse=warehouse,
+            )
+            engine = self._engine_registry.select(
+                preference=self.settings.query_engine,
+                spec=spec,
+                ctx=engine_ctx,
+            )
+            plan = engine.compile(spec, ctx=engine_ctx)
             try:
-                result = warehouse.gateway.policy.execute_sql(sql)
-                reader = result.fetch_record_batch(self.settings.export_batch_size)
+                reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 for batch in reader:
                     payload = batch.to_pydict()
                     row_count = batch.num_rows
                     for idx in range(row_count):
-                        yield {name: payload[name][idx] for name in columns}
+                        yield {name: payload[name][idx] for name in inputs.columns}
             finally:
-                cleanup_temp_tables_if_needed(
-                    con=warehouse.gateway.con,
-                    temp_tables=temp_tables,
-                )
+                plan.cleanup()
 
     def export_sql(self, request: SemanticExportRequest) -> str:
         """Return the compiled SQL for an export request.
@@ -585,18 +637,27 @@ class SemanticQueryKernel:
             Compiled DuckDB SQL for the export.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, _columns, temp_tables = self._planner.compile_export(
-                warehouse=warehouse,
-                pointer=pointer,
-                request=request,
+            snapshot_context = self._planner.snapshot_context(pointer)
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_export(
+                ctx=resolved, request=request
             )
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=snapshot_context,
+                warehouse=warehouse,
+            )
+            engine = self._engine_registry.select_prefer(
+                ["duckdb"],
+                spec=spec,
+                ctx=engine_ctx,
+            )
+            plan = engine.compile(spec, ctx=engine_ctx)
             try:
-                return sql
+                return plan.explain().sql or ""
             finally:
-                cleanup_temp_tables_if_needed(
-                    con=warehouse.gateway.con,
-                    temp_tables=temp_tables,
-                )
+                plan.cleanup()
 
     def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
         """Write an export result to a Parquet file.
@@ -607,14 +668,25 @@ class SemanticQueryKernel:
             Number of rows written.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, _columns, temp_tables = self._planner.compile_export(
-                warehouse=warehouse,
-                pointer=pointer,
-                request=request,
+            snapshot_context = self._planner.snapshot_context(pointer)
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_export(
+                ctx=resolved, request=request
             )
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=snapshot_context,
+                warehouse=warehouse,
+            )
+            engine = self._engine_registry.select(
+                preference=self.settings.query_engine,
+                spec=spec,
+                ctx=engine_ctx,
+            )
+            plan = engine.compile(spec, ctx=engine_ctx)
             try:
-                result = warehouse.gateway.policy.execute_sql(sql)
-                reader = result.fetch_record_batch(self.settings.export_batch_size)
+                reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 rows_written = 0
                 writer = pq.ParquetWriter(str(output_path), reader.schema)
                 try:
@@ -625,10 +697,7 @@ class SemanticQueryKernel:
                     writer.close()
                 return rows_written
             finally:
-                cleanup_temp_tables_if_needed(
-                    con=warehouse.gateway.con,
-                    temp_tables=temp_tables,
-                )
+                plan.cleanup()
 
     def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
         """Write an export result to an Arrow IPC file.
@@ -639,14 +708,25 @@ class SemanticQueryKernel:
             Number of rows written.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            sql, _columns, temp_tables = self._planner.compile_export(
-                warehouse=warehouse,
-                pointer=pointer,
-                request=request,
+            snapshot_context = self._planner.snapshot_context(pointer)
+            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+            inputs, effective_limit = self._planner.plan_inputs_for_export(
+                ctx=resolved, request=request
             )
+            spec = self._planner.build_spec(ctx=resolved, inputs=inputs, limit=effective_limit)
+            engine_ctx = self._engine_context(
+                pointer=pointer,
+                context=snapshot_context,
+                warehouse=warehouse,
+            )
+            engine = self._engine_registry.select(
+                preference=self.settings.query_engine,
+                spec=spec,
+                ctx=engine_ctx,
+            )
+            plan = engine.compile(spec, ctx=engine_ctx)
             try:
-                result = warehouse.gateway.policy.execute_sql(sql)
-                reader = result.fetch_record_batch(self.settings.export_batch_size)
+                reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 rows_written = 0
                 with (
                     output_path.open("wb") as handle,
@@ -660,10 +740,7 @@ class SemanticQueryKernel:
                         writer.write_batch(batch)
                 return rows_written
             finally:
-                cleanup_temp_tables_if_needed(
-                    con=warehouse.gateway.con,
-                    temp_tables=temp_tables,
-                )
+                plan.cleanup()
 
 
 __all__ = ["SemanticQueryKernel"]

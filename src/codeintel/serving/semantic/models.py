@@ -10,6 +10,8 @@ from codeintel.serving.export.formats import ExportFormat
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
 Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
+type FilterScalar = bool | int | float | str
+type FilterValue = FilterScalar | list[FilterScalar]
 
 
 class SemanticViewDefaults(BaseModel):
@@ -87,7 +89,7 @@ class FilterSpec(BaseModel):
 
     column: str
     op: Op
-    value: object
+    value: FilterValue
 
 
 class SemanticQueryRequest(BaseModel):
@@ -281,7 +283,9 @@ class SemanticExportRequest(BaseModel):
 __all__ = [
     "ColumnLineageRef",
     "ExportFormat",
+    "FilterScalar",
     "FilterSpec",
+    "FilterValue",
     "Op",
     "SemanticCatalogResponse",
     "SemanticCatalogView",

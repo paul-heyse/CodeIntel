@@ -12,9 +12,9 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
 from codeintel.build.hamilton.native.patterns import (
-    RelationTableSaveSpec,
+    DatasetSaveSpec,
     SaverContext,
-    save_relation_table,
+    save_dataset,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -82,9 +82,9 @@ def function_metrics__base(q__core__goids: DuckDBRelation) -> pl.LazyFrame:
     )
 
 
-@save_relation_table(
+@save_dataset(
     context=FUNCTION_METRICS_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=FUNCTION_METRICS_TABLE_KEY),
+    spec=DatasetSaveSpec(table_key=FUNCTION_METRICS_TABLE_KEY),
 )
 @table_contract(FUNCTION_METRICS_CONTRACT)
 def function_metrics__table(function_metrics__base: pl.LazyFrame) -> pl.LazyFrame:
