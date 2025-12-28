@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+import pyarrow as pa
 
 from codeintel.core.hashing.fingerprint import fingerprint
+from codeintel.core.schemas.arrow_gen import (
+    ARROW_SCHEMA_CONTRACT_VERSION,
+    DEFAULT_EXTRAS_COLUMN,
+    DEFAULT_EXTRAS_POLICY,
+    ArrowSchemaMetadata,
+    ArrowSchemaProvenance,
+    ExtrasPolicy,
+    arrow_contract_for_table_schema,
+)
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.time import utc_now
 from codeintel.storage.tracking.schema_catalog_models import (
@@ -97,6 +109,7 @@ def _schema_hash_for_schema(
 def _schema_versions_for_schemas(
     *,
     schemas: tuple[TableSchema, ...],
+    provenance_by_table_key: Mapping[str, TableProvenance] | None,
     now: datetime,
 ) -> tuple[SchemaVersionRecord, ...]:
     schema_versions_by_digest: dict[str, SchemaVersionRecord] = {}
@@ -105,11 +118,17 @@ def _schema_versions_for_schemas(
         digest = fingerprint(schema_json)
         if digest in schema_versions_by_digest:
             continue
+        provenance = (
+            provenance_by_table_key.get(schema.table_key)
+            if provenance_by_table_key is not None
+            else None
+        )
+        renderer_cache = arrow_contract_renderer_cache(schema, provenance=provenance)
         schema_versions_by_digest[digest] = SchemaVersionRecord(
             schema_digest=digest,
             schema_hash=compute_schema_hash(schema),
             schema_json=schema_json,
-            renderer_cache=None,
+            renderer_cache=renderer_cache,
             created_at=now,
         )
     return tuple(schema_versions_by_digest[digest] for digest in sorted(schema_versions_by_digest))
@@ -124,7 +143,80 @@ def _build_schema_versions(
     schemas = list(_sorted_by_table_key(manifest.tables))
     if include_views:
         schemas.extend(_sorted_by_table_key(manifest.views))
-    return _schema_versions_for_schemas(schemas=tuple(schemas), now=now)
+    provenance_by_table_key = dict(manifest.table_provenance)
+    if include_views:
+        provenance_by_table_key.update(manifest.view_provenance)
+    return _schema_versions_for_schemas(
+        schemas=tuple(schemas),
+        provenance_by_table_key=provenance_by_table_key,
+        now=now,
+    )
+
+
+def _extras_policy_for_provenance(provenance: TableProvenance | None) -> ExtrasPolicy:
+    if provenance is None:
+        return DEFAULT_EXTRAS_POLICY
+    if provenance.derivation_kind == "declared_source":
+        return "retain"
+    return "reject"
+
+
+def _arrow_provenance(provenance: TableProvenance | None) -> ArrowSchemaProvenance | None:
+    if provenance is None:
+        return None
+    return ArrowSchemaProvenance(
+        derivation_kind=provenance.derivation_kind,
+        derivation_source=provenance.derivation_source,
+        inference_status=provenance.inference_status,
+        inference_error=provenance.inference_error,
+    )
+
+
+def arrow_contract_renderer_cache(
+    schema: TableSchema,
+    *,
+    provenance: TableProvenance | None,
+) -> dict[str, object]:
+    """Build renderer cache payload for a schema's Arrow contract.
+
+    Parameters
+    ----------
+    schema
+        Table schema to serialize as an Arrow contract.
+    provenance
+        Optional provenance metadata for schema rendering.
+
+    Returns
+    -------
+    dict[str, object]
+        Renderer cache payload with serialized Arrow schema metadata.
+    """
+    extras_policy: ExtrasPolicy = _extras_policy_for_provenance(provenance)
+    metadata = ArrowSchemaMetadata(
+        schema_hash=provenance.schema_hash if provenance is not None else None,
+        provenance=_arrow_provenance(provenance),
+        contract_version=ARROW_SCHEMA_CONTRACT_VERSION,
+        extras_policy=extras_policy,
+        extras_column=DEFAULT_EXTRAS_COLUMN,
+    )
+    arrow_schema = arrow_contract_for_table_schema(table_schema=schema, metadata=metadata)
+    ipc_bytes = _serialize_schema_ipc(arrow_schema)
+    return {
+        "arrow_schema_ipc_b64": base64.b64encode(ipc_bytes).decode("ascii"),
+        "arrow_schema_contract_version": ARROW_SCHEMA_CONTRACT_VERSION,
+        "extras_policy": extras_policy,
+        "extras_column": DEFAULT_EXTRAS_COLUMN,
+    }
+
+
+def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
+    serialize_schema = getattr(pa.ipc, "serialize_schema", None)
+    if not callable(serialize_schema):
+        msg = "pyarrow.ipc.serialize_schema is unavailable"
+        raise TypeError(msg)
+    result = serialize_schema(schema)
+    buffer = cast("pa.Buffer", result)
+    return buffer.to_pybytes()
 
 
 def _build_registry_record(
@@ -291,5 +383,6 @@ def compile_schema_catalog_batches(
 
 __all__ = [
     "SchemaCatalogBatches",
+    "arrow_contract_renderer_cache",
     "compile_schema_catalog_batches",
 ]

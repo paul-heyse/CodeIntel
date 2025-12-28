@@ -59,6 +59,11 @@ class _DummyQueryMetrics:
     view_id: str | None
     query_hash: str | None
     schema_hash: str | None
+    engine_preference: str | None = None
+    batch_size: int | None = None
+    scan_rows: int | None = None
+    scan_files: int | None = None
+    scan_bytes: int | None = None
 
 
 def _configure_tracing() -> InMemorySpanExporter:

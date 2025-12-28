@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
@@ -18,9 +18,15 @@ from codeintel.observability.semconv_keys import (
     CODEINTEL_COMPONENT,
     CODEINTEL_ENDPOINT,
     CODEINTEL_OPERATION,
+    CODEINTEL_QUERY_BATCH_SIZE,
     CODEINTEL_QUERY_ENDPOINT,
+    CODEINTEL_QUERY_ENGINE,
+    CODEINTEL_QUERY_ENGINE_PREFERENCE,
     CODEINTEL_QUERY_HASH,
     CODEINTEL_QUERY_ROW_COUNT,
+    CODEINTEL_QUERY_SCAN_BYTES,
+    CODEINTEL_QUERY_SCAN_FILES,
+    CODEINTEL_QUERY_SCAN_ROWS,
     CODEINTEL_QUERY_SCHEMA_HASH,
     CODEINTEL_QUERY_TRUNCATED,
     CODEINTEL_QUERY_VIEW_ID,
@@ -57,6 +63,21 @@ class QueryMetricsLike(Protocol):
     @property
     def schema_hash(self) -> str | None: ...
 
+    @property
+    def engine_preference(self) -> str | None: ...
+
+    @property
+    def batch_size(self) -> int | None: ...
+
+    @property
+    def scan_rows(self) -> int | None: ...
+
+    @property
+    def scan_files(self) -> int | None: ...
+
+    @property
+    def scan_bytes(self) -> int | None: ...
+
 
 @dataclass(slots=True)
 class _Instruments:
@@ -66,6 +87,10 @@ class _Instruments:
     query_duration_ms: Histogram
     query_row_count: Histogram
     query_truncated: Counter
+    query_scan_rows: Histogram
+    query_scan_files: Histogram
+    query_scan_bytes: Histogram
+    query_batch_size: Histogram
 
 
 _INSTRUMENT_REGISTRY = get_instrument_registry()
@@ -137,6 +162,26 @@ def _get_instruments(meter: Meter) -> _Instruments:
                 "codeintel.query.truncated",
                 unit="1",
                 description="Count of truncated query/export responses",
+            ),
+            query_scan_rows=inner_meter.create_histogram(
+                "codeintel.query.scan_rows",
+                unit="1",
+                description="Row counts scanned by query engines",
+            ),
+            query_scan_files=inner_meter.create_histogram(
+                "codeintel.query.scan_files",
+                unit="1",
+                description="File counts scanned by query engines",
+            ),
+            query_scan_bytes=inner_meter.create_histogram(
+                "codeintel.query.scan_bytes",
+                unit="By",
+                description="Bytes scanned by query engines",
+            ),
+            query_batch_size=inner_meter.create_histogram(
+                "codeintel.query.batch_size",
+                unit="1",
+                description="Batch sizes used for query streaming",
             ),
         )
 
@@ -260,19 +305,18 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
 
     normalized_endpoint = _normalize_endpoint(metrics.endpoint)
     component = _infer_component(metrics.endpoint)
-    attrs = {
-        CODEINTEL_ENDPOINT: normalized_endpoint,
-        CODEINTEL_COMPONENT: component,
-    }
-    attrs.update(bundle)
+    engine = getattr(metrics, "engine", None)
+    engine_preference = getattr(metrics, "engine_preference", None)
+    attrs = _query_metric_attributes(
+        bundle=bundle,
+        component=component,
+        normalized_endpoint=normalized_endpoint,
+        engine=engine,
+        engine_preference=engine_preference,
+    )
 
     if obs.enabled and obs.meter is not None:
-        instruments = _get_instruments(obs.meter)
-        instruments.query_calls.add(1, attributes=attrs)
-        instruments.query_duration_ms.record(metrics.duration_ms, attributes=attrs)
-        instruments.query_row_count.record(metrics.row_count, attributes=attrs)
-        if metrics.truncated:
-            instruments.query_truncated.add(1, attributes=attrs)
+        _record_query_instruments(obs.meter, metrics, attrs=attrs)
 
     if not obs.enabled:
         return
@@ -281,19 +325,87 @@ def record_query_metrics(metrics: QueryMetricsLike) -> None:
     if span is None:
         return
 
+    span_attrs = _query_span_attributes(
+        metrics,
+        normalized_endpoint=normalized_endpoint,
+        engine=engine,
+    )
+    for key, value in normalizer.normalize(span_attrs).items():
+        span.set_attribute(key, value)
+
+
+def _query_metric_attributes(
+    *,
+    bundle: Mapping[str, str],
+    component: str,
+    normalized_endpoint: str,
+    engine: str | None,
+    engine_preference: str | None,
+) -> dict[str, str]:
+    attrs = {
+        CODEINTEL_ENDPOINT: normalized_endpoint,
+        CODEINTEL_COMPONENT: component,
+    }
+    if engine:
+        attrs[CODEINTEL_QUERY_ENGINE] = engine
+    if engine_preference:
+        attrs[CODEINTEL_QUERY_ENGINE_PREFERENCE] = engine_preference
+    attrs.update(bundle)
+    return attrs
+
+
+def _record_query_instruments(
+    meter: Meter,
+    metrics: QueryMetricsLike,
+    *,
+    attrs: Mapping[str, str],
+) -> None:
+    instruments = _get_instruments(meter)
+    instruments.query_calls.add(1, attributes=attrs)
+    instruments.query_duration_ms.record(metrics.duration_ms, attributes=attrs)
+    instruments.query_row_count.record(metrics.row_count, attributes=attrs)
+    if metrics.truncated:
+        instruments.query_truncated.add(1, attributes=attrs)
+    if metrics.scan_rows is not None:
+        instruments.query_scan_rows.record(metrics.scan_rows, attributes=attrs)
+    if metrics.scan_files is not None:
+        instruments.query_scan_files.record(metrics.scan_files, attributes=attrs)
+    if metrics.scan_bytes is not None:
+        instruments.query_scan_bytes.record(metrics.scan_bytes, attributes=attrs)
+    if metrics.batch_size is not None:
+        instruments.query_batch_size.record(metrics.batch_size, attributes=attrs)
+
+
+def _query_span_attributes(
+    metrics: QueryMetricsLike,
+    *,
+    normalized_endpoint: str,
+    engine: str | None,
+) -> dict[str, object]:
     span_attrs: dict[str, object] = {
         CODEINTEL_QUERY_ENDPOINT: normalized_endpoint,
         CODEINTEL_QUERY_ROW_COUNT: metrics.row_count,
         CODEINTEL_QUERY_TRUNCATED: bool(metrics.truncated),
     }
+    if engine:
+        span_attrs[CODEINTEL_QUERY_ENGINE] = engine
+    if metrics.engine_preference:
+        span_attrs[CODEINTEL_QUERY_ENGINE_PREFERENCE] = metrics.engine_preference
     if metrics.view_id:
         span_attrs[CODEINTEL_QUERY_VIEW_ID] = metrics.view_id
     if metrics.query_hash:
         span_attrs[CODEINTEL_QUERY_HASH] = metrics.query_hash
     if metrics.schema_hash:
         span_attrs[CODEINTEL_QUERY_SCHEMA_HASH] = metrics.schema_hash
-    for key, value in normalizer.normalize(span_attrs).items():
-        span.set_attribute(key, value)
+    if metrics.batch_size is not None:
+        span_attrs[CODEINTEL_QUERY_BATCH_SIZE] = metrics.batch_size
+    if metrics.scan_rows is not None:
+        span_attrs[CODEINTEL_QUERY_SCAN_ROWS] = metrics.scan_rows
+    if metrics.scan_files is not None:
+        span_attrs[CODEINTEL_QUERY_SCAN_FILES] = metrics.scan_files
+    if metrics.scan_bytes is not None:
+        span_attrs[CODEINTEL_QUERY_SCAN_BYTES] = metrics.scan_bytes
+    return span_attrs
 
 
 def _resolve_descriptor(

@@ -34,7 +34,7 @@ from codeintel.build.hamilton.helpers import (
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
-    lazyframe_for_table_columns,
+    lazyframe_for_ingest_columns,
 )
 from codeintel.build.hamilton.native.ingestion.pipelines import pipe_ingest_rows
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
@@ -294,13 +294,11 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
             full_rebuild=False,
         )
 
-        module_rows = lazyframe_for_table_columns(MODULES_TABLE_KEY, scan_result.module_rows)
-        file_state_rows = lazyframe_for_table_columns(
+        module_rows = lazyframe_for_ingest_columns(MODULES_TABLE_KEY, scan_result.module_rows)
+        file_state_rows = lazyframe_for_ingest_columns(
             FILE_STATE_TABLE_KEY, scan_result.file_state_rows
         )
-        repo_map_rows = lazyframe_for_table_columns(
-            REPO_MAP_TABLE_KEY, scan_result.repo_map_rows
-        )
+        repo_map_rows = lazyframe_for_ingest_columns(REPO_MAP_TABLE_KEY, scan_result.repo_map_rows)
         return ModuleToolOutput(
             result=ExecutionResult.ok(),
             modules=scan_result.modules,
@@ -704,7 +702,7 @@ def t__config_ingest__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_table_columns(CONFIG_VALUES_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_ingest_columns(CONFIG_VALUES_TABLE_KEY, ingest_result.rows)
         return ConfigToolOutput(
             result=ingest_result.result,
             rows=frame,
@@ -970,7 +968,7 @@ def t__coverage_ingest__run(
                 coverage_file=coverage_path,
             )
         )
-        frame = lazyframe_for_table_columns(COVERAGE_LINES_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_ingest_columns(COVERAGE_LINES_TABLE_KEY, ingest_result.rows)
         return CoverageToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
             rows=frame,
@@ -1211,7 +1209,7 @@ def t__tests_ingest__run(
             commit=env.snapshot.commit,
             json_report_path=report_path,
         )
-        frame = lazyframe_for_table_columns(TEST_CATALOG_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_ingest_columns(TEST_CATALOG_TABLE_KEY, ingest_result.rows)
         return TestsToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
             rows=frame,
@@ -1423,11 +1421,11 @@ def t__typing__run(
                 run_diagnostics=True,
             )
         )
-        typedness_frame = lazyframe_for_table_columns(
+        typedness_frame = lazyframe_for_ingest_columns(
             TYPEDNESS_TABLE_KEY,
             ingest_result.typedness_rows,
         )
-        diagnostic_frame = lazyframe_for_table_columns(
+        diagnostic_frame = lazyframe_for_ingest_columns(
             STATIC_DIAGNOSTICS_TABLE_KEY,
             ingest_result.diagnostic_rows,
         )

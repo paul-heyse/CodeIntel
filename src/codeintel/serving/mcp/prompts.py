@@ -276,7 +276,7 @@ def _register_query_wizard(
             ),
             Message(
                 (
-                    "Need Arrow IPC? Add `export_format: \"arrow\"` to semantic_query "
+                    'Need Arrow IPC? Add `export_format: "arrow"` to semantic_query '
                     "to receive an export handle."
                 ),
                 role="assistant",
@@ -375,7 +375,7 @@ def _wizard_query_view_no_elicitation(settings: ServingSettings) -> list[PromptM
         Message(
             (
                 "Call `semantic_describe(view_id=...)` then `semantic_query(request=...)`. "
-                "Use `export_format: \"arrow\"` to get IPC exports."
+                'Use `export_format: "arrow"` to get IPC exports.'
             ),
             role="assistant",
         ),

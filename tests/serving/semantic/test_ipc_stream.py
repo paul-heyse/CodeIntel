@@ -65,6 +65,9 @@ async def test_query_ipc_stream_includes_metadata_and_rows(tmp_path: Path) -> No
         reader = pa.ipc.open_stream(pa.BufferReader(data))
         metadata = _decode_metadata(reader.schema.metadata or {})
         expect_equal(metadata.get("codeintel.table_key"), expected="docs.v_demo")
+        expect_equal(metadata.get("codeintel.repo"), expected=snapshot.repo)
+        expect_equal(metadata.get("codeintel.commit"), expected=snapshot.commit)
+        expect_equal(metadata.get("codeintel.view_id"), expected="demo.view")
         expect_true(
             bool(metadata.get("codeintel.snapshot_id")),
             message="Expected snapshot_id metadata",
@@ -77,6 +80,16 @@ async def test_query_ipc_stream_includes_metadata_and_rows(tmp_path: Path) -> No
             expect_true(
                 bool(metadata.get("codeintel.schema_hash")),
                 message="Expected schema_hash metadata",
+            )
+        if "codeintel.schema_digest" in metadata:
+            expect_true(
+                bool(metadata.get("codeintel.schema_digest")),
+                message="Expected schema_digest metadata",
+            )
+        if "codeintel.query_engine" in metadata:
+            expect_true(
+                bool(metadata.get("codeintel.query_engine")),
+                message="Expected query_engine metadata",
             )
 
         row_count = sum(batch.num_rows for batch in reader)

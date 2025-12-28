@@ -18,6 +18,12 @@ CODEINTEL_ACTOR = "codeintel.actor"
 CODEINTEL_STORAGE_READ_ONLY = "codeintel.storage.read_only"
 
 CODEINTEL_QUERY_ENDPOINT = "codeintel.query.endpoint"
+CODEINTEL_QUERY_ENGINE = "codeintel.query.engine"
+CODEINTEL_QUERY_ENGINE_PREFERENCE = "codeintel.query.engine_preference"
+CODEINTEL_QUERY_BATCH_SIZE = "codeintel.query.batch_size"
+CODEINTEL_QUERY_SCAN_ROWS = "codeintel.query.scan_rows"
+CODEINTEL_QUERY_SCAN_FILES = "codeintel.query.scan_files"
+CODEINTEL_QUERY_SCAN_BYTES = "codeintel.query.scan_bytes"
 CODEINTEL_QUERY_ROW_COUNT = "codeintel.query.row_count"
 CODEINTEL_QUERY_TRUNCATED = "codeintel.query.truncated"
 CODEINTEL_QUERY_VIEW_ID = "codeintel.query.view_id"
@@ -112,9 +118,15 @@ __all__ = [
     "CODEINTEL_HEALTH_CHECK",
     "CODEINTEL_OPERATION",
     "CODEINTEL_OUTPUT_FORMAT",
+    "CODEINTEL_QUERY_BATCH_SIZE",
     "CODEINTEL_QUERY_ENDPOINT",
+    "CODEINTEL_QUERY_ENGINE",
+    "CODEINTEL_QUERY_ENGINE_PREFERENCE",
     "CODEINTEL_QUERY_HASH",
     "CODEINTEL_QUERY_ROW_COUNT",
+    "CODEINTEL_QUERY_SCAN_BYTES",
+    "CODEINTEL_QUERY_SCAN_FILES",
+    "CODEINTEL_QUERY_SCAN_ROWS",
     "CODEINTEL_QUERY_SCHEMA_HASH",
     "CODEINTEL_QUERY_TRUNCATED",
     "CODEINTEL_QUERY_VIEW_ID",

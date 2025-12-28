@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 import shutil
 import threading
 import types
@@ -47,11 +49,12 @@ from codeintel.storage.datasets.paths import dataset_snapshot_dir
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from pyarrow import RecordBatchReader, Table
+    from pyarrow import RecordBatchReader
 
+    from codeintel.core.config.settings import ArrowDatasetSettings
     from codeintel.core.manifests import ArrowDatasetManifest
 
-    type ArrowDatasetInput = Table | RecordBatchReader
+    type ArrowDatasetInput = RecordBatchReader
 else:
     type ArrowDatasetInput = object
 
@@ -68,14 +71,15 @@ _RECOVERABLE_EXCEPTIONS = (
 )
 
 _TABULAR_TYPES: tuple[type, ...] = (
-    pa.Table,
     pa.RecordBatchReader,
     pl.LazyFrame,
 )
 
-_DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit")
+_DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit", "target")
 _COLLECT_GROUP_TAG = "ci.collect_group"
 _COLLECT_ALL_WAIT_S = 0.5
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -157,6 +161,7 @@ class _DatasetWriteContext:
     table_key: str
     snapshot_id: str
     options: ArrowDatasetWriteOptions
+    arrow_settings: ArrowDatasetSettings
 
 
 @dataclass(frozen=True)
@@ -295,10 +300,11 @@ def _materialize_dataset(
     )
     schema_hash_value = schema_hash(table_schema)
     extras = _manifest_extras(table_schema=table_schema, table_key=ctx.table_key)
-    options = ArrowDatasetWriteOptions(
+    options = _build_write_options(
+        ctx=ctx,
         partition_columns=resolved_partitions,
-        schema_hash=schema_hash_value,
-        manifest_extras=extras,
+        schema_hash_value=schema_hash_value,
+        extras=extras,
     )
     snapshot_id = _snapshot_id(ctx.env)
     dataset_root = ctx.env.paths.dataset_root_dir
@@ -309,6 +315,7 @@ def _materialize_dataset(
             table_key=ctx.table_key,
             snapshot_id=snapshot_id,
             options=options,
+            arrow_settings=ctx.env.settings.arrow_dataset,
         )
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
@@ -337,6 +344,29 @@ def _materialize_dataset(
     return manifest, manifest_path
 
 
+def _build_write_options(
+    *,
+    ctx: _MaterializeContext,
+    partition_columns: tuple[str, ...],
+    schema_hash_value: str,
+    extras: dict[str, object],
+) -> ArrowDatasetWriteOptions:
+    settings = ctx.env.settings.arrow_dataset
+    dictionary_max = settings.dictionary_max_cardinality if settings.dictionary_encode else None
+    return ArrowDatasetWriteOptions(
+        partition_columns=partition_columns,
+        schema_hash=schema_hash_value,
+        manifest_extras=extras,
+        max_rows_per_file=settings.max_rows_per_file,
+        row_group_size=settings.row_group_size,
+        data_page_size=settings.data_page_size,
+        compression=settings.compression,
+        dictionary_encode=settings.dictionary_encode,
+        dictionary_max_cardinality=dictionary_max,
+        unify_dictionaries=settings.unify_dictionaries,
+    )
+
+
 def _write_lazyframe_dataset(
     *,
     ctx: _DatasetWriteContext,
@@ -349,21 +379,33 @@ def _write_lazyframe_dataset(
     )
     _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
     partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
-    if partition_by:
+    if partition_by or not ctx.arrow_settings.enable_sink_parquet:
         reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        partitioning = _partitioning_from_schema(
-            schema=reader.schema,
-            partition_columns=partition_by,
+        return write_dataset(
+            dataset_root=ctx.dataset_root,
+            table_key=ctx.table_key,
+            snapshot_id=ctx.snapshot_id,
+            data=reader,
+            options=ctx.options,
         )
-        ds.write_dataset(
-            reader,
-            str(snapshot_dir),
-            format="parquet",
-            partitioning=partitioning,
-            existing_data_behavior=ctx.options.existing_data_behavior,
+
+    sink_path = snapshot_dir / "data.parquet"
+    try:
+        _sink_parquet_lazyframe(
+            data,
+            output_path=sink_path,
+            options=ctx.options,
         )
-    else:
-        data.sink_parquet(str(snapshot_dir / "data.parquet"))
+    except (PolarsError, TypeError, ValueError) as exc:
+        LOG.warning("LazyFrame sink_parquet failed; falling back to dataset write: %s", exc)
+        reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        return write_dataset(
+            dataset_root=ctx.dataset_root,
+            table_key=ctx.table_key,
+            snapshot_id=ctx.snapshot_id,
+            data=reader,
+            options=ctx.options,
+        )
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
     request = ArrowDatasetManifestRequest(
         table_key=ctx.table_key,
@@ -385,6 +427,44 @@ def _write_lazyframe_dataset(
         )
         write_dataset_manifest(path, manifest)
     return manifest
+
+
+def _sink_parquet_lazyframe(
+    frame: pl.LazyFrame,
+    *,
+    output_path: Path,
+    options: ArrowDatasetWriteOptions,
+) -> None:
+    sink_fn = getattr(frame, "sink_parquet", None)
+    if not callable(sink_fn):
+        msg = "LazyFrame.sink_parquet is unavailable"
+        raise TypeError(msg)
+    kwargs = _sink_parquet_kwargs(sink_fn, options=options)
+    sink_fn(str(output_path), **kwargs)
+
+
+def _sink_parquet_kwargs(
+    sink_fn: object,
+    *,
+    options: ArrowDatasetWriteOptions,
+) -> dict[str, object]:
+    try:
+        signature = inspect.signature(sink_fn)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return {}
+    kwargs: dict[str, object] = {}
+    if options.compression and "compression" in signature.parameters:
+        kwargs["compression"] = options.compression
+    if options.row_group_size and "row_group_size" in signature.parameters:
+        kwargs["row_group_size"] = options.row_group_size
+    if options.data_page_size and "data_page_size" in signature.parameters:
+        kwargs["data_page_size"] = options.data_page_size
+    if options.dictionary_encode:
+        if "use_dictionary" in signature.parameters:
+            kwargs["use_dictionary"] = True
+        elif "dictionary" in signature.parameters:
+            kwargs["dictionary"] = True
+    return kwargs
 
 
 def _collect_partitioned_frame(
@@ -475,9 +555,6 @@ def _partitioning_from_schema(
 def _table_schema_for_data(*, table_key: str, data: TabularData) -> TableSchema:
     if isinstance(data, pl.LazyFrame):
         return table_schema_from_polars_lazyframe(frame=data, table_key=table_key)
-    if isinstance(data, pa.Table):
-        arrow_table = cast("Table", data)
-        return table_schema_from_arrow_schema(arrow_schema=arrow_table.schema, table_key=table_key)
     if isinstance(data, pa.RecordBatchReader):
         arrow_reader = cast("RecordBatchReader", data)
         return table_schema_from_arrow_schema(
@@ -541,8 +618,6 @@ def _snapshot_id(env: BuildEnv) -> str:
 
 
 def _coerce_arrow_input(data: TabularData) -> ArrowDatasetInput:
-    if isinstance(data, pa.Table):
-        return cast("Table", data)
     if isinstance(data, pa.RecordBatchReader):
         return cast("RecordBatchReader", data)
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"

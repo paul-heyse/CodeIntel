@@ -15,7 +15,7 @@ from tests._helpers.mcp_payloads import extract_payload
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
 
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
@@ -56,7 +56,7 @@ class _SlowExportKernel:
 
     def query_ipc_stream(
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
-    ) -> Generator[bytes]:
+    ) -> Iterable[bytes]:
         return self.inner.query_ipc_stream(request, cancel_check=cancel_check)
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:

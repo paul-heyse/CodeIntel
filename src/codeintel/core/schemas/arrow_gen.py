@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 
@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 _DECIMAL_PATTERN = re.compile(r"^DECIMAL\\((\\d+),(\\d+)\\)$")
+ExtrasPolicy = Literal["retain", "reject", "drop"]
+ARROW_SCHEMA_CONTRACT_VERSION = "v1"
+DEFAULT_EXTRAS_POLICY: ExtrasPolicy = "reject"
+DEFAULT_EXTRAS_COLUMN = "_ci_extras"
+EXTRAS_POLICIES: frozenset[ExtrasPolicy] = frozenset({"retain", "reject", "drop"})
 _ARROW_TYPE_MAP: dict[str, pa.DataType] = {
     "BOOLEAN": pa.bool_(),
     "INTEGER": pa.int32(),
@@ -69,6 +74,10 @@ class ArrowSchemaMetadata:
     provenance: ArrowSchemaProvenance | None = None
     column_lineage: Mapping[str, Iterable[tuple[str, str]]] | None = None
     pii_by_column: Mapping[str, str] | None = None
+    contract_version: str | None = None
+    extras_policy: ExtrasPolicy | None = None
+    extras_column: str | None = None
+    extras_schema: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +88,57 @@ class _FieldMetadataContext:
     column_lineage: Mapping[str, Iterable[tuple[str, str]]] | None
     pii_by_column: Mapping[str, str] | None
     key_roles: Mapping[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _SchemaMetadataContext:
+    table_schema: TableSchema
+    schema_hash_value: str
+    schema_digest: str
+    provenance_payload: Mapping[str, str]
+    contract_version: str
+    extras_policy: ExtrasPolicy
+    extras_column: str
+    extras_schema: Mapping[str, str] | None
+
+
+def _validate_extras_policy(value: ExtrasPolicy) -> None:
+    if value not in EXTRAS_POLICIES:
+        msg = f"Unsupported extras policy: {value!r}"
+        raise ValueError(msg)
+
+
+def _normalize_extras_schema(schema: Mapping[str, str] | None) -> Mapping[str, str] | None:
+    if schema is None:
+        return None
+    normalized: dict[str, str] = {}
+    for key, value in schema.items():
+        if not isinstance(key, str):
+            msg = f"extras schema key must be a string, got {type(key)}"
+            raise TypeError(msg)
+        if not isinstance(value, str):
+            msg = f"extras schema value must be a string, got {type(value)}"
+            raise TypeError(msg)
+        normalized[key] = value
+    return normalized
+
+
+def _normalize_contract_metadata(
+    metadata: ArrowSchemaMetadata | None,
+) -> ArrowSchemaMetadata:
+    resolved = metadata or ArrowSchemaMetadata()
+    contract_version = resolved.contract_version or ARROW_SCHEMA_CONTRACT_VERSION
+    extras_policy = resolved.extras_policy or DEFAULT_EXTRAS_POLICY
+    _validate_extras_policy(extras_policy)
+    extras_column = resolved.extras_column or DEFAULT_EXTRAS_COLUMN
+    extras_schema = _normalize_extras_schema(resolved.extras_schema)
+    return replace(
+        resolved,
+        contract_version=contract_version,
+        extras_policy=extras_policy,
+        extras_column=extras_column,
+        extras_schema=extras_schema,
+    )
 
 
 def _arrow_decimal_type(normalized: str) -> pa.DataType:
@@ -159,22 +219,22 @@ def _field_metadata(
     return field_metadata
 
 
-def _schema_metadata(
-    table_schema: TableSchema,
-    schema_hash_value: str,
-    schema_digest: str,
-    provenance_payload: Mapping[str, str],
-) -> dict[str, object]:
+def _schema_metadata(context: _SchemaMetadataContext) -> dict[str, object]:
     schema_metadata: dict[str, object] = {
-        "codeintel.table_key": table_schema.table_key,
-        "codeintel.schema_hash": schema_hash_value,
-        "codeintel.schema_digest": schema_digest,
-        "codeintel.primary_key": list(table_schema.primary_key),
+        "codeintel.table_key": context.table_schema.table_key,
+        "codeintel.schema_hash": context.schema_hash_value,
+        "codeintel.schema_digest": context.schema_digest,
+        "codeintel.primary_key": list(context.table_schema.primary_key),
+        "codeintel.schema_contract_version": context.contract_version,
+        "codeintel.extras_policy": context.extras_policy,
+        "codeintel.extras_column": context.extras_column,
     }
-    if table_schema.description is not None:
-        schema_metadata["codeintel.description"] = table_schema.description
-    if provenance_payload:
-        schema_metadata["codeintel.provenance"] = dict(provenance_payload)
+    if context.extras_schema:
+        schema_metadata["codeintel.extras_schema"] = dict(context.extras_schema)
+    if context.table_schema.description is not None:
+        schema_metadata["codeintel.description"] = context.table_schema.description
+    if context.provenance_payload:
+        schema_metadata["codeintel.provenance"] = dict(context.provenance_payload)
     return schema_metadata
 
 
@@ -197,7 +257,7 @@ def arrow_schema_from_table_schema(
     pa.Schema
         Rendered PyArrow schema with metadata attached.
     """
-    resolved_metadata = metadata or ArrowSchemaMetadata()
+    resolved_metadata = _normalize_contract_metadata(metadata)
     resolved_hash = resolved_metadata.schema_hash or schema_hash(table_schema)
     resolved_digest = resolved_metadata.schema_digest or fingerprint(table_schema.to_json_obj())
     provenance_payload = _provenance_payload(resolved_metadata.provenance)
@@ -220,18 +280,51 @@ def arrow_schema_from_table_schema(
         for column in table_schema.columns
     ]
 
-    schema_metadata = _schema_metadata(
-        table_schema,
+    schema_context = _SchemaMetadataContext(
+        table_schema=table_schema,
         schema_hash_value=resolved_hash,
         schema_digest=resolved_digest,
         provenance_payload=provenance_payload,
+        contract_version=resolved_metadata.contract_version or ARROW_SCHEMA_CONTRACT_VERSION,
+        extras_policy=resolved_metadata.extras_policy or DEFAULT_EXTRAS_POLICY,
+        extras_column=resolved_metadata.extras_column or DEFAULT_EXTRAS_COLUMN,
+        extras_schema=resolved_metadata.extras_schema,
     )
+    schema_metadata = _schema_metadata(schema_context)
 
     return pa.schema(fields, metadata=_encode_metadata(schema_metadata))
 
 
+def arrow_contract_for_table_schema(
+    *,
+    table_schema: TableSchema,
+    metadata: ArrowSchemaMetadata | None = None,
+) -> pa.Schema:
+    """Return a canonical Arrow schema contract for a table schema.
+
+    Parameters
+    ----------
+    table_schema
+        Source TableSchema.
+    metadata
+        Optional contract metadata overrides.
+
+    Returns
+    -------
+    pa.Schema
+        Arrow schema with contract metadata applied.
+    """
+    return arrow_schema_from_table_schema(table_schema=table_schema, metadata=metadata)
+
+
 __all__ = [
+    "ARROW_SCHEMA_CONTRACT_VERSION",
+    "DEFAULT_EXTRAS_COLUMN",
+    "DEFAULT_EXTRAS_POLICY",
+    "EXTRAS_POLICIES",
     "ArrowSchemaMetadata",
     "ArrowSchemaProvenance",
+    "ExtrasPolicy",
+    "arrow_contract_for_table_schema",
     "arrow_schema_from_table_schema",
 ]

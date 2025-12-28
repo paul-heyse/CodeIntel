@@ -10,7 +10,7 @@ from codeintel.serving.http.route_utils import (
     ThreadpoolMetricsContext,
     run_in_threadpool_with_metrics,
 )
-from codeintel.serving.http.streaming import arrow_ipc_response
+from codeintel.serving.http.streaming import ArrowIpcResponseOptions, arrow_ipc_response
 from codeintel.serving.metrics import QueryMetrics
 from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.semantic.models import (
@@ -165,7 +165,8 @@ async def query_view(
         Arrow IPC stream response.
     """
 
-    def _success(_: object, duration_ms: float, correlation_id: str) -> QueryMetrics:
+    def _success(result: object, duration_ms: float, correlation_id: str) -> QueryMetrics:
+        scan_metrics = getattr(result, "scan_metrics", None)
         return QueryMetrics(
             endpoint="/v1/semantic/query",
             correlation_id=correlation_id,
@@ -174,8 +175,14 @@ async def query_view(
             query=None,
             row_count=0,
             truncated=False,
-            query_hash=None,
-            schema_hash=None,
+            engine=getattr(result, "engine", None),
+            engine_preference=ops.settings.query_engine,
+            query_hash=getattr(result, "query_hash", None),
+            schema_hash=getattr(result, "schema_hash", None),
+            batch_size=getattr(result, "batch_size", None),
+            scan_rows=scan_metrics.row_count if scan_metrics else None,
+            scan_files=scan_metrics.file_count if scan_metrics else None,
+            scan_bytes=scan_metrics.total_bytes if scan_metrics else None,
         )
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
@@ -206,8 +213,10 @@ async def query_view(
     )
     return arrow_ipc_response(
         stream,
-        filename=f"{payload.view_id}.arrow",
-        cancel_check=cancel_token.raise_if_cancelled,
+        options=ArrowIpcResponseOptions(
+            filename=f"{payload.view_id}.arrow",
+            cancel_check=cancel_token.raise_if_cancelled,
+        ),
     )
 
 

@@ -17,6 +17,7 @@ from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.schema import apply_all_schemas
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions import ModulesAssertions
+from tests._helpers.columnar_tables import materialize_table_from_rows
 from tests._helpers.configs import CoverageSeedConfig
 from tests._helpers.fixtures.rows import RowFactory
 from tests._helpers.gateway import GatewayFactory, seed_contract_catalog
@@ -187,7 +188,8 @@ def seed_architecture(
     rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
 
     module_map = _resolve_architecture_module_map(repo_root, rel_path, seed.module_import)
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "core.repo_map",
         [(repo, commit, json.dumps(module_map), "{}", now_iso)],
         columns=_table_columns(gateway, "core.repo_map"),
@@ -222,7 +224,8 @@ def seed_architecture(
     )
     snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
     ModulesAssertions(gateway, snapshot).inventory_consistent()
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.function_metrics",
         [
             (
@@ -260,7 +263,8 @@ def seed_architecture(
         columns=_table_columns(gateway, "analytics.function_metrics"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.goid_risk_factors",
         [
             (
@@ -278,7 +282,8 @@ def seed_architecture(
         columns=_table_columns(gateway, "analytics.goid_risk_factors"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "graph.call_graph_edges",
         [
             (
@@ -502,7 +507,8 @@ def seed_architecture(
             now_iso,
         ],
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "graph.import_graph_edges",
         [
             (repo, commit, "pkg.alpha", "pkg.beta", 1, 1, 0, None),
@@ -511,7 +517,8 @@ def seed_architecture(
         columns=_table_columns(gateway, "graph.import_graph_edges"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.subsystem_modules",
         [
             (repo, commit, "sub1", "pkg.alpha", "core"),
@@ -530,7 +537,8 @@ def seed_architecture(
         """,
         [repo, commit, "pkg.mod", now_iso],
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.subsystems",
         [
             (
@@ -557,13 +565,15 @@ def seed_architecture(
         columns=_table_columns(gateway, "analytics.subsystems"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.subsystem_modules",
         [(repo, commit, "subsysdemo", "pkg.mod", "api")],
         columns=_table_columns(gateway, "analytics.subsystem_modules"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.test_catalog",
         [
             (
@@ -586,7 +596,8 @@ def seed_architecture(
         columns=_table_columns(gateway, "analytics.test_catalog"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.test_coverage_edges",
         [
             (
@@ -608,13 +619,15 @@ def seed_architecture(
         columns=_table_columns(gateway, "analytics.test_coverage_edges"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.typedness",
         [(repo, commit, "pkg/mod.py", 0, '{"params":1.0}', 0, False)],
         columns=_table_columns(gateway, "analytics.typedness"),
         options=append,
     )
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         "analytics.static_diagnostics",
         [(repo, commit, "pkg/mod.py", 0, 0, 0, 0, False)],
         columns=_table_columns(gateway, "analytics.static_diagnostics"),

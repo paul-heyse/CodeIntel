@@ -31,6 +31,7 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.materializers import DuckDBRelationSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
+from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
     record_from_materializations,
@@ -47,16 +48,14 @@ from codeintel.build.schemas.compile import (
     compile_schema_manifest,
 )
 from codeintel.build.schemas.schema_index import SchemaIndex
-from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.serving.semantic_compile import (
     compile_semantic_registry_from_tag_query,
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
-from codeintel.build.tabular.conversion import lazyframe_from_rows
+from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
-from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.gateway.protocol import DuckDBError
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
@@ -402,19 +401,14 @@ def serving_artifacts__schema_inference_errors_rows(
     _ = serving_artifacts__schema_manifest
     run_context = env.run_context
     run_id = run_context.run_id if run_context is not None else "unknown"
-    rows = tuple(
-        row_to_tuple(
-            SCHEMA_INFERENCE_ERRORS_TABLE_KEY,
-            row,
-        )
-        for row in schema_index.iter_inference_error_rows(
-            repo=env.repo,
-            commit=env.commit,
-            run_id=run_id,
-        )
-    )
-    schema = get_schema_service().require_table_schema(SCHEMA_INFERENCE_ERRORS_TABLE_KEY)
-    return lazyframe_from_rows(rows=rows, columns=tuple(schema.column_names()))
+    buffer = columnar_buffer_for_table_key(SCHEMA_INFERENCE_ERRORS_TABLE_KEY)
+    for row in schema_index.iter_inference_error_rows(
+        repo=env.repo,
+        commit=env.commit,
+        run_id=run_id,
+    ):
+        buffer.append(row)
+    return lazyframe_for_table_columns(SCHEMA_INFERENCE_ERRORS_TABLE_KEY, buffer.data)
 
 
 @SaveToObjectMetadataDecorator(

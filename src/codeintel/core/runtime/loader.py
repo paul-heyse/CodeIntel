@@ -17,6 +17,7 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.core.config.settings import (
+    ArrowDatasetSettings,
     BatchProcessorSettings,
     BuildSettings,
     CliSettings,
@@ -85,11 +86,43 @@ def _resolve_export_audit_table_enabled() -> bool:
 
 
 def _load_build_settings() -> BuildSettings:
+    def optional_int(name: str) -> int | None:
+        if not is_set(name):
+            return None
+        return get_int(name, default=None)
+
+    def optional_str(name: str) -> str | None:
+        if not is_set(name):
+            return None
+        return get_str(name, default=None)
+
+    def optional_bool(name: str) -> bool | None:
+        if not is_set(name):
+            return None
+        return get_bool(name, default=None)
+
+    dictionary_max_cardinality = optional_int("CODEINTEL_ARROW_DATASET_DICT_MAX_CARDINALITY")
     return BuildSettings(
         engine_version=_resolve_engine_version(),
         export_audit=ExportAuditSettings(
             log_path=_resolve_export_audit_log_path(),
             table_enabled=_resolve_export_audit_table_enabled(),
+        ),
+        arrow_dataset=ArrowDatasetSettings(
+            compression=optional_str("CODEINTEL_ARROW_DATASET_COMPRESSION"),
+            row_group_size=optional_int("CODEINTEL_ARROW_DATASET_ROW_GROUP_SIZE"),
+            data_page_size=optional_int("CODEINTEL_ARROW_DATASET_DATA_PAGE_SIZE"),
+            max_rows_per_file=optional_int("CODEINTEL_ARROW_DATASET_MAX_ROWS_PER_FILE"),
+            dictionary_encode=bool(optional_bool("CODEINTEL_ARROW_DATASET_DICT_ENCODE") or False),
+            dictionary_max_cardinality=dictionary_max_cardinality
+            if dictionary_max_cardinality is not None
+            else ArrowDatasetSettings().dictionary_max_cardinality,
+            unify_dictionaries=bool(
+                optional_bool("CODEINTEL_ARROW_DATASET_UNIFY_DICTIONARIES") or False
+            ),
+            enable_sink_parquet=bool(
+                optional_bool("CODEINTEL_ARROW_DATASET_ENABLE_SINK_PARQUET") or True
+            ),
         ),
     )
 
@@ -175,6 +208,48 @@ def _load_serving_settings() -> ServingSettings:
         ),
         export_timeout_s=get_optional_float("CODEINTEL_SERVE_EXPORT_TIMEOUT_S"),
         enable_export_endpoints=get_required_bool("CODEINTEL_SERVE_ENABLE_EXPORT", default=True),
+        export_metrics_enabled=get_required_bool(
+            "CODEINTEL_SERVE_EXPORT_METRICS",
+            default=False,
+        ),
+        dataset_scan_metrics_enabled=get_required_bool(
+            "CODEINTEL_SERVE_DATASET_SCAN_METRICS",
+            default=False,
+        ),
+        dataset_fragment_readahead=get_optional_int(
+            "CODEINTEL_SERVE_DATASET_FRAGMENT_READAHEAD",
+        ),
+        ipc_enable_options=get_required_bool("CODEINTEL_SERVE_IPC_ENABLE_OPTIONS", default=False),
+        ipc_compression=get_str("CODEINTEL_SERVE_IPC_COMPRESSION", default=None),
+        ipc_use_threads=get_required_bool("CODEINTEL_SERVE_IPC_USE_THREADS", default=True),
+        ipc_unify_dictionaries=get_required_bool(
+            "CODEINTEL_SERVE_IPC_UNIFY_DICTIONARIES",
+            default=True,
+        ),
+        ipc_metadata_version=get_str("CODEINTEL_SERVE_IPC_METADATA_VERSION", default=None),
+        ipc_max_recursion_depth=get_optional_int(
+            "CODEINTEL_SERVE_IPC_MAX_RECURSION_DEPTH",
+        ),
+        ipc_read_use_threads=get_bool("CODEINTEL_SERVE_IPC_READ_USE_THREADS", default=None),
+        polars_profile=get_required_bool("CODEINTEL_SERVE_POLARS_PROFILE", default=False),
+        polars_inspect=get_required_bool("CODEINTEL_SERVE_POLARS_INSPECT", default=False),
+        polars_query_opt_flags=_obs_parse_csv(
+            get_str("CODEINTEL_SERVE_POLARS_QUERY_OPT_FLAGS", default=None)
+        ),
+        polars_streaming=get_required_bool("CODEINTEL_SERVE_POLARS_STREAMING", default=True),
+        polars_streaming_fallback=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_STREAMING_FALLBACK",
+            default=True,
+        ),
+        polars_use_arrow_scanner=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_USE_ARROW_SCANNER",
+            default=False,
+        ),
+        polars_set_sorted=get_required_bool("CODEINTEL_SERVE_POLARS_SET_SORTED", default=False),
+        polars_unify_dictionaries=get_required_bool(
+            "CODEINTEL_SERVE_POLARS_UNIFY_DICTIONARIES",
+            default=False,
+        ),
         # MCP Context Features
         mcp_enable_sampling=get_required_bool("CODEINTEL_MCP_ENABLE_SAMPLING", default=False),
         mcp_sample_threshold=get_required_int("CODEINTEL_MCP_SAMPLE_THRESHOLD", default=500),

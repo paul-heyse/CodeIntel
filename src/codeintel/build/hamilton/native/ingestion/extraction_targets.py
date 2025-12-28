@@ -25,7 +25,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
     empty_lazyframe_for_table,
-    lazyframe_for_table_columns,
+    lazyframe_for_ingest_columns,
 )
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
@@ -290,8 +290,8 @@ def t__ast__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        ast_frame = lazyframe_for_table_columns(AST_NODES_TABLE_KEY, extract_result.ast_rows)
-        metric_frame = lazyframe_for_table_columns(
+        ast_frame = lazyframe_for_ingest_columns(AST_NODES_TABLE_KEY, extract_result.ast_rows)
+        metric_frame = lazyframe_for_ingest_columns(
             AST_METRICS_TABLE_KEY, extract_result.metric_rows
         )
         return AstToolOutput(
@@ -518,7 +518,7 @@ def t__cst__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_table_columns(CST_NODES_TABLE_KEY, extract_result.rows)
+        frame = lazyframe_for_ingest_columns(CST_NODES_TABLE_KEY, extract_result.rows)
         return CstToolOutput(
             result=extract_result.result,
             rows=frame,
@@ -690,7 +690,7 @@ def t__docstrings__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_table_columns(DOCSTRINGS_TABLE_KEY, extract_result.rows)
+        frame = lazyframe_for_ingest_columns(DOCSTRINGS_TABLE_KEY, extract_result.rows)
         return DocstringsToolOutput(
             result=extract_result.result,
             rows=frame,

@@ -18,12 +18,19 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
+from codeintel.build.hamilton.native.ingestion.frame_utils import (
+    empty_lazyframe_for_table,
+    lazyframe_for_table_columns,
+)
+from codeintel.core.columnar.rows import ColumnarRowBuffer, columnar_buffer_for_table_key
 from codeintel.core.paths import normalize_path
 from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.repositories import DataModelsRepository
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from polars import LazyFrame
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
@@ -39,6 +46,7 @@ DATA_MODEL_USAGE_COLS = [
     "context_json",
     "created_at",
 ]
+DATA_MODEL_USAGE_TABLE_KEY = "analytics.data_model_usage"
 
 log = logging.getLogger(__name__)
 
@@ -470,11 +478,11 @@ def build_data_model_usage_rows(
     module_map: dict[str, str],
     ast_by_goid: dict[int, FunctionAst],
     missing_goids: set[int] | None = None,
-) -> tuple[tuple[object, ...], ...]:
+) -> LazyFrame:
     """Build data_model_usage rows without writing to database.
 
     Analyze per-function data model read/write usage patterns and return
-    rows suitable for materialization via Hamilton.
+    a columnar LazyFrame suitable for materialization via Hamilton.
 
     Parameters
     ----------
@@ -491,20 +499,21 @@ def build_data_model_usage_rows(
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Tuple of row tuples with columns: repo, commit, model_id,
-        function_goid_h128, usage_kinds_json, evidence_json, context_json,
-        created_at. Empty tuple if no models found.
+    pl.LazyFrame
+        LazyFrame with columns: repo, commit, model_id, function_goid_h128,
+        usage_kinds_json, evidence_json, context_json, created_at. Empty
+        frame if no models found.
 
     Notes
     -----
-    This is the pure compute version that returns rows without writing.
-    Use with `materialize_rows` for Hamilton-based persistence.
+    This is the pure compute version that returns a LazyFrame without writing.
+    Use with the Hamilton materializers to persist.
 
     Examples
     --------
-    >>> rows = build_data_model_usage_rows(gateway, snapshot, ...)
-    >>> ref = materialize_rows(ctx, "analytics.data_model_usage", rows, DATA_MODEL_USAGE_COLS)
+    >>> frame = build_data_model_usage_rows(gateway, snapshot, ...)
+    >>> frame.collect().height > 0
+    True
     """
     max_examples_per_usage = 3
     models = _load_models(gateway, snapshot.repo, snapshot.commit)
@@ -514,7 +523,7 @@ def build_data_model_usage_rows(
             snapshot.repo,
             snapshot.commit,
         )
-        return ()
+        return empty_lazyframe_for_table(DATA_MODEL_USAGE_TABLE_KEY)
 
     model_index = _build_model_index(models)
     subsystem_map = _subsystem_by_module(gateway, snapshot.repo, snapshot.commit)
@@ -548,13 +557,15 @@ def build_data_model_usage_rows(
         model_index=model_index,
         subsystem_map=subsystem_map,
     )
-    rows = _build_usage_rows(
+    buffer = columnar_buffer_for_table_key(DATA_MODEL_USAGE_TABLE_KEY)
+    _build_usage_rows(
         artifacts=artifacts,
         repo=snapshot.repo,
         commit=snapshot.commit,
         max_examples_per_usage=max_examples_per_usage,
+        buffer=buffer,
     )
-    return tuple(rows)
+    return lazyframe_for_table_columns(DATA_MODEL_USAGE_TABLE_KEY, buffer.data)
 
 
 def _build_usage_rows(
@@ -563,9 +574,9 @@ def _build_usage_rows(
     repo: str,
     commit: str,
     max_examples_per_usage: int,
-) -> list[tuple[object, ...]]:
+    buffer: ColumnarRowBuffer,
+) -> None:
     now = datetime.now(tz=UTC)
-    rows_to_insert: list[tuple[object, ...]] = []
     for goid, func_ast in artifacts.ast_by_goid.items():
         rel_path = normalize_path(func_ast.rel_path)
         module = artifacts.module_map.get(rel_path)
@@ -583,16 +594,15 @@ def _build_usage_rows(
                 collector = visitor.result.evidence.get((model_id, usage))
                 evidence_map[usage] = collector.to_dicts() if collector is not None else []
             context = _context_for_module(module, artifacts.subsystem_map)
-            rows_to_insert.append(
-                (
-                    repo,
-                    commit,
-                    model_id,
-                    goid,
-                    json.dumps(sorted(kinds)),
-                    json.dumps(evidence_map),
-                    json.dumps(context) if context else None,
-                    now,
-                )
+            buffer.append(
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "model_id": model_id,
+                    "function_goid_h128": goid,
+                    "usage_kinds_json": json.dumps(sorted(kinds)),
+                    "evidence_json": json.dumps(evidence_map),
+                    "context_json": json.dumps(context) if context else None,
+                    "created_at": now,
+                }
             )
-    return rows_to_insert

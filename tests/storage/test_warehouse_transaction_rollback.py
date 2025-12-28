@@ -11,6 +11,7 @@ from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
+from tests._helpers.columnar_tables import materialize_table_from_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -31,7 +32,8 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
     table_key = "core.repo_map"
     columns = ("repo", "commit", "modules", "overlays", "generated_at")
 
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         table_key,
         [(snapshot.repo, snapshot.commit, "[]", None, created_at)],
         columns=columns,
@@ -53,7 +55,8 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
         (snapshot.repo, snapshot.commit, '["dupe"]', None, created_at),
     ]
     with pytest.raises(DuckDBError):
-        warehouse.materialize_rows(
+        materialize_table_from_rows(
+            warehouse,
             table_key,
             bad_rows,
             columns=columns,

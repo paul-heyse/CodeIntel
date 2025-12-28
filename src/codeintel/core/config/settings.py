@@ -18,11 +18,26 @@ class ExportAuditSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ArrowDatasetSettings:
+    """Arrow dataset write tuning settings for build output."""
+
+    compression: str | None = None
+    row_group_size: int | None = None
+    data_page_size: int | None = None
+    max_rows_per_file: int | None = None
+    dictionary_encode: bool = False
+    dictionary_max_cardinality: int = 256
+    unify_dictionaries: bool = False
+    enable_sink_parquet: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class BuildSettings:
     """Build runtime settings injected into build execution."""
 
     engine_version: str
     export_audit: ExportAuditSettings = field(default_factory=ExportAuditSettings)
+    arrow_dataset: ArrowDatasetSettings = field(default_factory=ArrowDatasetSettings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +245,28 @@ class ServingSettings:
     export_batch_size: int = DEFAULT_ARROW_BATCH_SIZE
     export_timeout_s: float | None = None
     enable_export_endpoints: bool = True
+    export_metrics_enabled: bool = False
+    dataset_scan_metrics_enabled: bool = False
+    dataset_fragment_readahead: int | None = None
+
+    # Arrow IPC Control Plane
+    ipc_enable_options: bool = False
+    ipc_compression: str | None = None
+    ipc_use_threads: bool = True
+    ipc_unify_dictionaries: bool = True
+    ipc_metadata_version: str | None = None
+    ipc_max_recursion_depth: int | None = None
+    ipc_read_use_threads: bool | None = None
+
+    # Polars Execution Controls
+    polars_profile: bool = False
+    polars_inspect: bool = False
+    polars_query_opt_flags: tuple[str, ...] = ()
+    polars_streaming: bool = True
+    polars_streaming_fallback: bool = True
+    polars_use_arrow_scanner: bool = False
+    polars_set_sorted: bool = False
+    polars_unify_dictionaries: bool = False
 
     # MCP Context Features
     mcp_enable_sampling: bool = False
@@ -337,6 +374,7 @@ def _is_unspecified_host(host: str) -> bool:
 
 
 __all__ = [
+    "ArrowDatasetSettings",
     "BatchProcessorSettings",
     "BuildSettings",
     "CliSettings",

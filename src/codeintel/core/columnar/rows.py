@@ -29,7 +29,8 @@ class ColumnarRowBuffer:
     def append(self, row: Mapping[str, object]) -> None:
         """Append a row mapping to the buffer."""
         for name, col_type in zip(self.columns, self.column_types, strict=True):
-            self.data[name].append(normalize_row_value_for_type(row[name], col_type))
+            normalized_type = cast("ColumnType", col_type)
+            self.data[name].append(normalize_row_value_for_type(row[name], normalized_type))
         self.row_count += 1
 
     def extend(self, rows: Sequence[Mapping[str, object]]) -> None:
@@ -41,6 +42,11 @@ class ColumnarRowBuffer:
 def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
     """Create a ColumnarRowBuffer using the table schema registry.
 
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+
     Returns
     -------
     ColumnarRowBuffer
@@ -48,9 +54,7 @@ def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
     """
     schema = get_schema_service().require_table_schema(table_key)
     columns = tuple(schema.column_names())
-    column_types: tuple[ColumnType, ...] = tuple(
-        cast("ColumnType", column.type) for column in schema.columns
-    )
+    column_types: tuple[ColumnType, ...] = tuple(column.type for column in schema.columns)
     return ColumnarRowBuffer(
         table_key=table_key,
         columns=columns,
@@ -61,6 +65,11 @@ def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
 
 def columnar_row_count(columns: Mapping[str, Sequence[object]]) -> int:
     """Return row count for a columnar mapping, validating lengths.
+
+    Parameters
+    ----------
+    columns
+        Columnar mapping of column names to sequences of values.
 
     Returns
     -------

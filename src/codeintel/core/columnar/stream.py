@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from inspect import signature
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import pyarrow as pa
+
+from codeintel.core.columnar.schema import unify_schema_for_batches
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -78,6 +81,20 @@ class ColumnarStream(Protocol):
         ...
 
 
+@runtime_checkable
+class SupportsArrowCStream(Protocol):
+    """Protocol for Arrow C Data Interface stream providers."""
+
+    def __arrow_c_stream__(self) -> object: ...
+
+
+@runtime_checkable
+class SupportsDataFrameInterop(Protocol):
+    """Protocol for dataframe interchange providers."""
+
+    def __dataframe__(self, *args: object, **kwargs: object) -> object: ...
+
+
 @dataclass(frozen=True, slots=True)
 class RecordBatchReaderStream:
     """ColumnarStream adapter for Arrow RecordBatchReader."""
@@ -140,7 +157,9 @@ class RecordBatchReaderStream:
         pyarrow.Table
             Materialized table containing the stream data.
         """
-        return pa.Table.from_batches(list(self.reader), schema=self.reader.schema)
+        batches = list(self.reader)
+        schema = unify_schema_for_batches(batches, base_schema=self.reader.schema)
+        return pa.Table.from_batches(batches, schema=schema)
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,9 +270,103 @@ class LazyFrameStream:
 
 ColumnarStreamAdapter = RecordBatchReaderStream | LazyFrameStream
 
+
+def coerce_arrow_reader(
+    value: object,
+    *,
+    batch_size: int | None = None,
+) -> pa.RecordBatchReader | None:
+    """Coerce interoperability inputs into a RecordBatchReader.
+
+    Parameters
+    ----------
+    value
+        Candidate object implementing ``__arrow_c_stream__`` or ``__dataframe__``.
+    batch_size
+        Optional batch size when materializing from tables.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader | None
+        Reader when coercion succeeds, otherwise None.
+    """
+    if isinstance(value, pa.RecordBatchReader):
+        return value
+    reader = _import_c_stream(value)
+    if reader is not None:
+        return reader
+    table = _table_from_interchange(value)
+    if table is None:
+        return None
+    batches = table.to_batches(max_chunksize=batch_size) if batch_size else table.to_batches()
+    return pa.RecordBatchReader.from_batches(table.schema, batches)
+
+
+def coerce_arrow_table(value: object) -> pa.Table | None:
+    """Coerce interoperability inputs into an Arrow table.
+
+    Parameters
+    ----------
+    value
+        Candidate object implementing ``__arrow_c_stream__`` or ``__dataframe__``.
+
+    Returns
+    -------
+    pyarrow.Table | None
+        Table when coercion succeeds, otherwise None.
+    """
+    if isinstance(value, pa.Table):
+        return value
+    reader = _import_c_stream(value)
+    if reader is not None:
+        return pa.Table.from_batches(list(reader), schema=reader.schema)
+    return _table_from_interchange(value)
+
+
+def _import_c_stream(value: object) -> pa.RecordBatchReader | None:
+    stream_fn = getattr(value, "__arrow_c_stream__", None)
+    if not callable(stream_fn):
+        return None
+    capsule = stream_fn()
+    importer = getattr(pa.RecordBatchReader, "_import_from_c", None)
+    if callable(importer):
+        try:
+            return importer(capsule)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            return None
+    return None
+
+
+def _table_from_interchange(value: object) -> pa.Table | None:
+    dataframe_fn = getattr(value, "__dataframe__", None)
+    if not callable(dataframe_fn):
+        return None
+    interchange = dataframe_fn()
+    module = getattr(pa, "interchange", None)
+    if module is None:
+        return None
+    from_dataframe = getattr(module, "from_dataframe", None)
+    if not callable(from_dataframe):
+        return None
+    kwargs: dict[str, object] = {}
+    try:
+        params = signature(from_dataframe).parameters
+    except (TypeError, ValueError):
+        params = {}
+    if "allow_copy" in params:
+        kwargs["allow_copy"] = False
+    try:
+        return from_dataframe(interchange, **kwargs)
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+
 __all__ = [
     "ColumnarStream",
     "ColumnarStreamAdapter",
     "LazyFrameStream",
     "RecordBatchReaderStream",
+    "coerce_arrow_reader",
+    "coerce_arrow_table",
+    "SupportsArrowCStream",
+    "SupportsDataFrameInterop",
 ]

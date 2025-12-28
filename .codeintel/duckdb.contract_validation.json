@@ -1,7 +1,7 @@
 {
   "commit": null,
   "db_path": "/Users/paulheyse/CodeIntel/CodeIntel/.codeintel/duckdb.db",
-  "generated_at": "2025-12-28T20:57:52.111894+00:00",
+  "generated_at": "2025-12-28T22:40:13.631516+00:00",
   "include_views": false,
   "issue_count": 99,
   "issues": [

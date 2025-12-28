@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from codeintel.core.hashing.fingerprint import fingerprint
+
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
@@ -57,6 +59,24 @@ def schema_hash(schema: TableSchema) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def schema_digest(schema: TableSchema) -> str:
+    """Return a deterministic schema digest for a TableSchema.
+
+    The digest is a fingerprint over the full TableSchema JSON payload.
+
+    Parameters
+    ----------
+    schema
+        Table schema to digest.
+
+    Returns
+    -------
+    str
+        Hex-encoded SHA-256 fingerprint.
+    """
+    return fingerprint(schema.to_json_obj())
+
+
 def compute_table_schema_hash(
     table_key: str,
     *,
@@ -86,5 +106,6 @@ def compute_table_schema_hash(
 __all__ = [
     "canonical_type",
     "compute_table_schema_hash",
+    "schema_digest",
     "schema_hash",
 ]

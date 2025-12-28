@@ -19,6 +19,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, ClassVar, Protocol, runtime_checkable
 
 from codeintel.storage.warehouse import MaterializeOptions, UpsertConfig, Warehouse
+from tests._helpers.columnar_tables import materialize_table_from_rows
 from tests._helpers.sql import validate_identifier
 
 if TYPE_CHECKING:
@@ -136,7 +137,8 @@ def insert_rows(
                     update_columns=("repo", "commit", "language", "tags", "owners", "row_hash"),
                 ),
             )
-        result = warehouse.materialize_rows(
+        result = materialize_table_from_rows(
+            warehouse,
             table,
             [r.to_tuple() for r in group_rows],
             columns=columns,

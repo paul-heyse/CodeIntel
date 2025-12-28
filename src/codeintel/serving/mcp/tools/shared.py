@@ -66,8 +66,14 @@ class McpMetricsInput:
     row_count: int
     truncated: bool
     duration_ms: float
+    engine: str | None = None
+    engine_preference: str | None = None
     query_hash: str | None = None
     schema_hash: str | None = None
+    batch_size: int | None = None
+    scan_rows: int | None = None
+    scan_files: int | None = None
+    scan_bytes: int | None = None
 
 
 def log_mcp_query_metrics(
@@ -85,8 +91,14 @@ def log_mcp_query_metrics(
             truncated=metrics.truncated,
             duration_ms=metrics.duration_ms,
             correlation_id=mcp_correlation_id(ctx),
+            engine=metrics.engine,
+            engine_preference=metrics.engine_preference,
             query_hash=metrics.query_hash,
             schema_hash=metrics.schema_hash,
+            batch_size=metrics.batch_size,
+            scan_rows=metrics.scan_rows,
+            scan_files=metrics.scan_files,
+            scan_bytes=metrics.scan_bytes,
         )
     )
 

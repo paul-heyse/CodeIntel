@@ -8,9 +8,15 @@ import polars as pl
 import pyarrow as pa
 
 from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import lazyframe_from_rows, table_to_lazyframe
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.columnar.rows import columnar_row_count
-from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.core.columnar.schema_alignment import align_reader_to_contract
+from codeintel.core.schemas.arrow_gen import (
+    DEFAULT_EXTRAS_POLICY,
+    ArrowSchemaMetadata,
+    ExtrasPolicy,
+    arrow_contract_for_table_schema,
+)
 
 
 def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
@@ -22,34 +28,27 @@ def empty_lazyframe_for_table(table_key: str) -> pl.LazyFrame:
         Empty LazyFrame with the table's schema applied.
     """
     schema = get_schema_service().require_table_schema(table_key)
-    arrow_schema = arrow_schema_from_table_schema(table_schema=schema)
-    table = pa.Table.from_batches([], schema=arrow_schema)
-    return table_to_lazyframe(table)
-
-
-def lazyframe_for_table(
-    table_key: str,
-    rows: Sequence[Sequence[object]],
-) -> pl.LazyFrame:
-    """Build a LazyFrame for table rows using the schema's column order.
-
-    Returns
-    -------
-    pl.LazyFrame
-        LazyFrame with rows aligned to the schema's column order.
-    """
-    if not rows:
-        return empty_lazyframe_for_table(table_key)
-    schema = get_schema_service().require_table_schema(table_key)
-    columns = tuple(schema.column_names())
-    return lazyframe_from_rows(rows=rows, columns=columns)
+    arrow_schema = arrow_contract_for_table_schema(table_schema=schema)
+    reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
+    return arrow_reader_to_lazyframe(reader)
 
 
 def lazyframe_for_table_columns(
     table_key: str,
     columns: Mapping[str, Sequence[object]],
+    *,
+    extras_policy: ExtrasPolicy = DEFAULT_EXTRAS_POLICY,
 ) -> pl.LazyFrame:
     """Build a LazyFrame for columnar data using the schema's column order.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    columns
+        Columnar mapping of column names to sequences of values.
+    extras_policy
+        Policy for handling extra columns when aligning to the contract schema.
 
     Returns
     -------
@@ -59,27 +58,57 @@ def lazyframe_for_table_columns(
     Raises
     ------
     ValueError
-        If input columns contain unexpected names.
+        If input columns contain unexpected names under a reject policy.
     """
     if not columns:
         return empty_lazyframe_for_table(table_key)
     row_count = columnar_row_count(columns)
     if row_count == 0:
         return empty_lazyframe_for_table(table_key)
-    schema = get_schema_service().require_table_schema(table_key)
-    column_names = tuple(schema.column_names())
-    extra = set(columns).difference(column_names)
-    if extra:
-        msg = f"Unexpected columns for {table_key}: {sorted(extra)}"
-        raise ValueError(msg)
-    ordered: dict[str, list[object]] = {}
-    for name in column_names:
-        values = columns.get(name)
-        if values is None:
-            ordered[name] = [None] * row_count
-        else:
-            ordered[name] = list(values)
-    return pl.DataFrame(ordered).lazy()
+    table_schema = get_schema_service().require_table_schema(table_key)
+    metadata = ArrowSchemaMetadata(extras_policy=extras_policy)
+    contract_schema = arrow_contract_for_table_schema(
+        table_schema=table_schema,
+        metadata=metadata,
+    )
+    reader = _reader_from_columns(columns)
+    aligned = align_reader_to_contract(
+        reader,
+        contract_schema,
+        extras_policy=extras_policy,
+    )
+    return arrow_reader_to_lazyframe(aligned)
+
+
+def lazyframe_for_ingest_columns(
+    table_key: str,
+    columns: Mapping[str, Sequence[object]],
+) -> pl.LazyFrame:
+    """Build a LazyFrame for ingest sources, retaining extra fields.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    columns
+        Columnar mapping of column names to sequences of values.
+
+    Returns
+    -------
+    pl.LazyFrame
+        LazyFrame aligned to the contract schema with extras retained.
+    """
+    return lazyframe_for_table_columns(
+        table_key,
+        columns,
+        extras_policy="retain",
+    )
+
+
+def _reader_from_columns(columns: Mapping[str, Sequence[object]]) -> pa.RecordBatchReader:
+    payload = {name: list(values) for name, values in columns.items()}
+    batch = pa.RecordBatch.from_pydict(payload)
+    return pa.RecordBatchReader.from_batches(batch.schema, [batch])
 
 
 def dedupe_frame_for_table(
@@ -109,6 +138,6 @@ def dedupe_frame_for_table(
 __all__ = [
     "dedupe_frame_for_table",
     "empty_lazyframe_for_table",
-    "lazyframe_for_table",
+    "lazyframe_for_ingest_columns",
     "lazyframe_for_table_columns",
 ]

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import polars as pl
 import pyarrow as pa
 
-from codeintel.build.tabular.conversion import table_to_lazyframe
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
 
 if TYPE_CHECKING:
@@ -112,8 +112,8 @@ class MiniSeedHarness:
             return cached
         table_schema = self.schema_provider.require_table_schema(table_key)
         arrow_schema = arrow_schema_from_table_schema(table_schema=table_schema)
-        table = pa.Table.from_batches([], schema=arrow_schema)
-        frame = table_to_lazyframe(table)
+        reader = pa.RecordBatchReader.from_batches(arrow_schema, [])
+        frame = arrow_reader_to_lazyframe(reader)
         self._seeded[table_key] = frame
         return frame
 

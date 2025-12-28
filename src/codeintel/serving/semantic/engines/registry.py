@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.serving.semantic.engines.protocol import EngineContext, QueryEngine
-from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.serving.semantic.query_ast import ServingQuery
+from codeintel.serving.semantic.routing import auto_preference
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -41,10 +42,10 @@ class QueryEngineRegistry:
         self,
         *,
         preference: str,
-        spec: SemanticQuerySpec,
+        query: ServingQuery,
         ctx: EngineContext,
     ) -> QueryEngine:
-        """Select an engine given a preference and spec.
+        """Select an engine given a preference and query.
 
         Returns
         -------
@@ -54,16 +55,16 @@ class QueryEngineRegistry:
         Raises
         ------
         EngineSelectionError
-            If the preference is unknown or no engine can satisfy the spec.
+            If the preference is unknown or no engine can satisfy the query.
         """
         normalized = preference.lower().strip() or "auto"
         if normalized == "auto":
-            return self._select_first(self._auto_preference(spec=spec, ctx=ctx), spec=spec, ctx=ctx)
+            return self._select_first(auto_preference(query, ctx=ctx), query=query, ctx=ctx)
         engine = self.get(normalized)
         if engine is None:
             msg = f"Unknown query engine preference: {preference}"
             raise EngineSelectionError(msg)
-        if not engine.can_run(spec, ctx=ctx):
+        if not engine.can_run(query, ctx=ctx):
             msg = f"Query engine {engine.name} cannot satisfy the request"
             raise EngineSelectionError(msg)
         return engine
@@ -72,26 +73,26 @@ class QueryEngineRegistry:
         self,
         names: Sequence[str],
         *,
-        spec: SemanticQuerySpec,
+        query: ServingQuery,
         ctx: EngineContext,
     ) -> QueryEngine:
-        """Select the first engine from names that can run the spec.
+        """Select the first engine from names that can run the query.
 
         Returns
         -------
         QueryEngine
             Selected engine instance.
         """
-        return self._select_first(tuple(names), spec=spec, ctx=ctx)
+        return self._select_first(tuple(names), query=query, ctx=ctx)
 
     def _select_first(
         self,
         names: tuple[str, ...],
         *,
-        spec: SemanticQuerySpec,
+        query: ServingQuery,
         ctx: EngineContext,
     ) -> QueryEngine:
-        """Return the first engine that can satisfy the spec.
+        """Return the first engine that can satisfy the query.
 
         Returns
         -------
@@ -101,33 +102,16 @@ class QueryEngineRegistry:
         Raises
         ------
         EngineSelectionError
-            If no registered engine can satisfy the spec.
+            If no registered engine can satisfy the query.
         """
         for name in names:
             engine = self.get(name)
             if engine is None:
                 continue
-            if engine.can_run(spec, ctx=ctx):
+            if engine.can_run(query, ctx=ctx):
                 return engine
         msg = "No registered query engines can satisfy the request"
         raise EngineSelectionError(msg)
-
-    @staticmethod
-    def _auto_preference(*, spec: SemanticQuerySpec, ctx: EngineContext) -> tuple[str, ...]:
-        """Return engine ordering for auto mode based on capability hints.
-
-        Returns
-        -------
-        tuple[str, ...]
-            Engine names ordered by preference.
-        """
-        try:
-            view = ctx.registry.by_id(spec.view_id)
-        except KeyError:
-            return ("polars", "duckdb")
-        if view.kind == "view" and ctx.view_registry.get(spec.table_key) is None:
-            return ("duckdb", "polars")
-        return ("polars", "duckdb")
 
 
 def build_engine_registry(engines: Iterable[QueryEngine]) -> QueryEngineRegistry:

@@ -85,7 +85,17 @@ def sort_columns(df: pl.LazyFrame, column_order: Sequence[str]) -> pl.LazyFrame:
     """
     if not column_order:
         return df
-    return df.select(list(column_order))
+    return df.select(_selector_by_name(column_order))
+
+
+def _selector_by_name(names: Sequence[str]) -> pl.Expr | list[str]:
+    selectors = getattr(pl, "selectors", None)
+    if selectors is None:
+        return list(names)
+    by_name = getattr(selectors, "by_name", None)
+    if callable(by_name):
+        return by_name(list(names))
+    return list(names)
 
 
 __all__ = [
