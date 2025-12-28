@@ -20,6 +20,7 @@ from codeintel.core.catalog import CatalogService
 from codeintel.core.data_models.ids import normalize_decimal_id
 from codeintel.graphs.runtime import resolve_graph_runtime
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.query_results import coerce_int
 
 if TYPE_CHECKING:
@@ -393,15 +394,17 @@ def _unresolved_call_counts(gateway: StorageGateway, repo: str, commit: str) -> 
     counts: dict[int, int] = {}
     try:
         relation = gateway.con.sql(
-            """
-            SELECT caller_goid_h128, COUNT(*) AS unresolved_count
-            FROM graph.call_graph_edges
-            WHERE repo = $repo
-              AND commit = $commit
-              AND (callee_goid_h128 IS NULL OR callee_goid_h128 = -1)
-            GROUP BY caller_goid_h128
-            """,
-            {"repo": repo, "commit": commit},
+            render_sql(
+                """
+                SELECT caller_goid_h128, COUNT(*) AS unresolved_count
+                FROM graph.call_graph_edges
+                WHERE repo = $repo
+                  AND commit = $commit
+                  AND (callee_goid_h128 IS NULL OR callee_goid_h128 = -1)
+                GROUP BY caller_goid_h128
+                """,
+                {"repo": repo, "commit": commit},
+            )
         )
         rows = relation.fetchall()
     except DuckDBError:

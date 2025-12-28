@@ -23,6 +23,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
+
 def default_meta_db_path(db_path: Path) -> Path:
     """Return the default meta database path for a primary database.
 

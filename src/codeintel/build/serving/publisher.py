@@ -60,6 +60,8 @@ class PublishServingSnapshotRequest:
         Path to compiled semantic registry artifact.
     schema_manifest_path
         Path to compiled schema manifest artifact.
+    dataset_manifest_paths
+        Paths to compiled dataset manifest artifacts (Arrow datasets).
     buildspec_path
         Path to compiled BuildSpec artifact.
     keep_last
@@ -71,6 +73,7 @@ class PublishServingSnapshotRequest:
     semantic_registry_path: Path
     schema_manifest_path: Path
     buildspec_path: Path
+    dataset_manifest_paths: tuple[Path, ...] = ()
     keep_last: int = 10
 
 
@@ -78,6 +81,7 @@ class PublishServingSnapshotRequest:
 class _SnapshotArtifacts:
     registry_path: Path
     schema_manifest_path: Path
+    dataset_manifest_paths: tuple[Path, ...]
     buildspec_path: Path
 
 
@@ -161,6 +165,18 @@ def _copy_snapshot_artifacts(
     snap_buildspec = snap_dir / "buildspec.json"
     shutil.copy2(request.buildspec_path, snap_buildspec)
 
+    dataset_manifests: list[Path] = []
+    if request.dataset_manifest_paths:
+        manifests_dir = snap_dir / "dataset_manifests"
+        manifests_dir.mkdir(parents=True, exist_ok=True)
+        for idx, path in enumerate(request.dataset_manifest_paths):
+            if not path.is_file():
+                msg = f"Dataset manifest not found: {path}"
+                raise FileNotFoundError(msg)
+            dest = manifests_dir / f"{idx:03d}_{path.name}"
+            shutil.copy2(path, dest)
+            dataset_manifests.append(dest)
+
     env_artifact = request.buildspec_path.parent / "environment.json"
     if env_artifact.is_file():
         shutil.copy2(env_artifact, snap_dir / "environment.json")
@@ -168,6 +184,7 @@ def _copy_snapshot_artifacts(
     return _SnapshotArtifacts(
         registry_path=snap_registry,
         schema_manifest_path=snap_manifest,
+        dataset_manifest_paths=tuple(dataset_manifests),
         buildspec_path=snap_buildspec,
     )
 
@@ -244,6 +261,7 @@ def publish_serving_snapshot(
         db_path=str(snap_db),
         semantic_registry_path=str(artifacts.registry_path),
         schema_manifest_path=str(artifacts.schema_manifest_path),
+        dataset_manifest_paths=tuple(str(path) for path in artifacts.dataset_manifest_paths),
         buildspec_path=str(artifacts.buildspec_path),
         semantic_layer_version=version,
     )

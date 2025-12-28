@@ -14,7 +14,8 @@ def tf_datasets(*, table_key: str | None = None) -> dict[str, object]:
         Tag filter matching dataset nodes.
     """
     tag_filter: dict[str, object] = {ht.TAG_NODE_TYPE: ht.NODE_TYPE_DATASET}
-    tag_filter[ht.TAG_TABLE_KEY] = None if table_key is None else table_key
+    if table_key is not None:
+        tag_filter[ht.TAG_TABLE_KEY] = table_key
     return tag_filter
 
 
@@ -27,7 +28,8 @@ def tf_artifacts(*, artifact: str | None = None) -> dict[str, object]:
         Tag filter matching artifact nodes.
     """
     tag_filter: dict[str, object] = {ht.TAG_NODE_TYPE: ht.NODE_TYPE_ARTIFACT}
-    tag_filter[ht.TAG_ARTIFACT] = None if artifact is None else artifact
+    if artifact is not None:
+        tag_filter[ht.TAG_ARTIFACT] = artifact
     return tag_filter
 
 
@@ -41,8 +43,6 @@ def tf_semantic_views() -> dict[str, object]:
     """
     return {
         ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_SEMANTIC_VIEW,
-        ht.TAG_TABLE_KEY: None,
-        ht.TAG_SEMANTIC_ID: None,
         ht.TAG_MCP_VISIBLE: "1",
     }
 
@@ -60,7 +60,8 @@ def tf_schema_tables(*, table_key: str | None = None) -> dict[str, object]:
         "output_role": "contract",
         ht.TAG_OUTPUT_KIND: ht.OUTPUT_KIND_TABLE,
     }
-    tag_filter[ht.TAG_TABLE_KEY] = None if table_key is None else table_key
+    if table_key is not None:
+        tag_filter[ht.TAG_TABLE_KEY] = table_key
     return tag_filter
 
 

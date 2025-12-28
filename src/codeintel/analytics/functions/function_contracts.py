@@ -11,10 +11,11 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.utilities.ast import literal_int, literal_value, safe_unparse
 from codeintel.core.data_models.ids import normalize_decimal_id
+from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Iterable, Mapping
+    from collections.abc import Iterable, Mapping
 
     from codeintel.analytics.parsing.ast_cache import FunctionAst
     from codeintel.config.primitives import SnapshotRef
@@ -167,12 +168,14 @@ def _load_docstrings(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[tuple[str, str], dict[str, object]]:
     relation = gateway.con.sql(
-        """
-        SELECT rel_path, qualname, params, returns
-        FROM core.docstrings
-        WHERE repo = $repo AND commit = $commit
-        """,
-        {"repo": repo, "commit": commit},
+        render_sql(
+            """
+            SELECT rel_path, qualname, params, returns
+            FROM core.docstrings
+            WHERE repo = $repo AND commit = $commit
+            """,
+            {"repo": repo, "commit": commit},
+        )
     )
     rows = _normalize_records(records_from_relation(relation))
     mapping: dict[tuple[str, str], dict[str, object]] = {}
@@ -192,12 +195,14 @@ def _load_function_types(
     gateway: StorageGateway, *, repo: str, commit: str
 ) -> dict[int, dict[str, object]]:
     relation = gateway.con.sql(
-        """
-        SELECT function_goid_h128, return_type, param_types
-        FROM analytics.function_types
-        WHERE repo = $repo AND commit = $commit
-        """,
-        {"repo": repo, "commit": commit},
+        render_sql(
+            """
+            SELECT function_goid_h128, return_type, param_types
+            FROM analytics.function_types
+            WHERE repo = $repo AND commit = $commit
+            """,
+            {"repo": repo, "commit": commit},
+        )
     )
     rows = _normalize_records(records_from_relation(relation))
     mapping: dict[int, dict[str, object]] = {}
@@ -212,7 +217,7 @@ def _load_function_types(
     return mapping
 
 
-def _normalize_records(records: Iterable[Mapping[Hashable, object]]) -> list[dict[str, object]]:
+def _normalize_records(records: Iterable[Mapping[str, object]]) -> list[dict[str, object]]:
     return [{str(key): value for key, value in record.items()} for record in records]
 
 

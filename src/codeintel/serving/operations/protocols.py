@@ -50,6 +50,11 @@ class ServingSnapshotPointerProtocol(Protocol):
         ...
 
     @property
+    def dataset_manifest_paths(self) -> tuple[Path, ...]:
+        """Paths to dataset manifests for the snapshot."""
+        ...
+
+    @property
     def semantic_layer_version(self) -> str:
         """Semantic layer version/hash for the snapshot."""
         ...

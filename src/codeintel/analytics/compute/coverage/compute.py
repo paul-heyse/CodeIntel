@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -78,7 +79,8 @@ def build_coverage_functions_expr(
 
     try:
         return gateway.con.sql(
-            """
+            render_sql(
+                """
             WITH goids AS (
                 SELECT
                     goid_h128,
@@ -188,8 +190,9 @@ def build_coverage_functions_expr(
                 END AS untested_reason,
                 NOW() AS created_at
             FROM aggregated
-            """,
-            {"repo": snapshot.repo, "commit": snapshot.commit},
+                """,
+                {"repo": snapshot.repo, "commit": snapshot.commit},
+            )
         )
     except DuckDBError as exc:
         LOG.warning("coverage_functions: failed to access tables: %s", exc)

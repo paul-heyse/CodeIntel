@@ -9,6 +9,8 @@ from codeintel.build.schemas.schema_index import SchemaIndex
 from codeintel.core.schemas.authority import SchemaAuthority
 from codeintel.core.schemas.declared import source_declared_schema_provider
 from codeintel.runtime.runtime_bundle import RuntimeBundle
+from codeintel.storage.views.inventory import discover_derived_docs_views, view_builder_modules
+from codeintel.storage.views.schema_inference import derive_view_schemas
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
@@ -90,6 +92,8 @@ class UnifiedSchemaProvider:
     allow_inference: bool = True
     fallback_to_override_on_error: bool = True
     schema_authority: SchemaAuthority = field(init=False, repr=False)
+    _view_schema_cache: dict[str, TableSchema] = field(default_factory=dict, repr=False)
+    _view_schema_loaded: bool = field(default=False, repr=False)
 
     def __post_init__(self) -> None:
         """Initialize the SchemaAuthority backing this provider."""
@@ -118,7 +122,10 @@ class UnifiedSchemaProvider:
         TableSchema | None
             Resolved table schema, or None if not found.
         """
-        return self.schema_authority.get_table_schema(table_key)
+        schema = self.schema_authority.get_table_schema(table_key)
+        if schema is not None:
+            return schema
+        return self._view_schema(table_key)
 
     def require_table_schema(self, table_key: str) -> TableSchema:
         """Return schema for table_key, raising when unknown.
@@ -138,7 +145,7 @@ class UnifiedSchemaProvider:
         KeyError
             If table_key is unknown to all providers in the fallback chain.
         """
-        schema = self.schema_authority.get_table_schema(table_key)
+        schema = self.get_table_schema(table_key)
         if schema is None:
             msg = f"Unknown table schema: {table_key}"
             raise KeyError(msg)
@@ -147,12 +154,19 @@ class UnifiedSchemaProvider:
     def iter_table_schemas(self) -> Iterable[TableSchema]:
         """Iterate all known table schemas.
 
-        Returns
-        -------
-        Iterable[TableSchema]
-            Table schemas from the DAG and declared providers.
+        Yields
+        ------
+        TableSchema
+            Table schemas from the DAG, declared providers, and derived views.
         """
-        return self.schema_authority.iter_table_schemas()
+        seen: set[str] = set()
+        for schema in self.schema_authority.iter_table_schemas():
+            seen.add(schema.table_key)
+            yield schema
+        for table_key, view_schema in self._view_schema_map().items():
+            if table_key in seen:
+                continue
+            yield view_schema
 
     @property
     def inferable_table_keys(self) -> frozenset[str]:
@@ -174,6 +188,21 @@ class UnifiedSchemaProvider:
             Derivation metadata when available, otherwise None.
         """
         return self.schema_authority.derivation(table_key)
+
+    def _view_schema_map(self) -> dict[str, TableSchema]:
+        if self._view_schema_loaded:
+            return self._view_schema_cache
+        view_keys = discover_derived_docs_views()
+        self._view_schema_cache = derive_view_schemas(
+            provider=self.schema_authority,
+            view_keys=view_keys,
+            modules=view_builder_modules(),
+        )
+        self._view_schema_loaded = True
+        return self._view_schema_cache
+
+    def _view_schema(self, table_key: str) -> TableSchema | None:
+        return self._view_schema_map().get(table_key)
 
     def with_inference(self, *, allow_inference: bool) -> UnifiedSchemaProvider:
         """Return a copy with inference enabled or disabled.

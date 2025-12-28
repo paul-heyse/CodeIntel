@@ -7,17 +7,20 @@ type adapter caching issues that cause ValidationError when tests run in paralle
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 
 import pytest
 
-from tests._helpers.cli import run_cli
+from tests._helpers.cli import CliResult
 
 pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 
 
-def test_cli_plan_outputs_isolation_and_scope_metadata() -> None:
+def test_cli_plan_outputs_isolation_and_scope_metadata(
+    cli_project_runner: Callable[[list[str]], CliResult],
+) -> None:
     """Plan output should include structured plan data with plugins."""
-    result = run_cli(["graph", "plugins", "--plan", "--output-format", "json"])
+    result = cli_project_runner(["graph", "plugins", "--plan", "--output-format", "json"])
     if result.exit_code != 0:
         message = f"CLI plan command should exit successfully: {result.output}"
         pytest.fail(message)

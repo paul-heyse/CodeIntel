@@ -15,7 +15,6 @@ from codeintel.build.schemas.contract_service import (
     ContractResolutionMode,
     ContractResolutionSettings,
 )
-from codeintel.build.schemas.infer_duckdb import infer_view_schema
 from codeintel.build.schemas.manifest import (
     ArtifactProvenance,
     ExportArtifact,
@@ -49,7 +48,7 @@ DEFAULT_SCHEMA_MANIFEST_VERSION = V2_SCHEMA_MANIFEST_VERSION
 DECLARED_SOURCE_KIND = "declared_source"
 DECLARED_SOURCE_NAME = "declared"
 VIEW_DERIVATION_KIND = "view_inferred"
-VIEW_DERIVATION_SOURCE = "duckdb"
+VIEW_DERIVATION_SOURCE = "schema_provider"
 
 
 @dataclass(frozen=True)
@@ -73,7 +72,7 @@ class SchemaManifestRequest:
     version
         Manifest version identifier (v2 only).
     include_views
-        When True, include DuckDB view schemas in the manifest.
+        When True, include view schemas discovered from the schema provider.
     include_artifacts
         When True, include export artifact specifications in the manifest.
     include_provenance
@@ -356,7 +355,7 @@ def _ensure_v2(version: str) -> None:
 def _resolve_v2_extras(
     *,
     request: SchemaManifestRequest,
-    con: DuckDBConnection | None,
+    provider: SchemaProvider,
     tag_query: TagQuery | None,
 ) -> tuple[V2Extras | None, str]:
     """Resolve optional v2 manifest extras and the effective version.
@@ -365,8 +364,8 @@ def _resolve_v2_extras(
     ----------
     request
         Manifest request controlling inclusion of views and artifacts.
-    con
-        Optional DuckDB connection required for view inference.
+    provider
+        Schema provider used to resolve view schemas.
     tag_query
         Optional TagQuery helper for view discovery.
 
@@ -375,17 +374,14 @@ def _resolve_v2_extras(
     tuple[V2Extras | None, str]
         Extras bundle (or None) and the effective manifest version.
 
-    Raises
-    ------
-    ValueError
-        If view inference is requested without a DuckDB connection.
     """
     views: tuple[TableSchema, ...] = ()
     if request.include_views:
-        if con is None:
-            msg = "DuckDB connection required for view schema inference"
-            raise ValueError(msg)
-        views = _collect_view_schemas(con=con, stable=request.stable, tag_query=tag_query)
+        views = _collect_view_schemas(
+            provider=provider,
+            stable=request.stable,
+            tag_query=tag_query,
+        )
 
     artifacts: tuple[ExportArtifact, ...] = ()
     if request.include_artifacts:
@@ -400,19 +396,19 @@ def _resolve_v2_extras(
 
 def _collect_view_schemas(
     *,
-    con: DuckDBConnection,
+    provider: SchemaProvider,
     stable: bool,
     tag_query: TagQuery | None,
 ) -> tuple[TableSchema, ...]:
-    """Collect schemas for all known DuckDB views.
+    """Collect schemas for all known docs views.
 
-    Iterates through discovered docs views and infers schemas for views that
-    exist in the database. Views that don't exist are silently skipped.
+    Iterates through discovered docs views and resolves any registered schemas
+    from the provider. Views without schemas are skipped.
 
     Parameters
     ----------
-    con
-        DuckDB connection with views created.
+    provider
+        Schema provider used to resolve view schemas.
     stable
         When True, sort views deterministically by table_key.
     tag_query
@@ -425,13 +421,11 @@ def _collect_view_schemas(
     """
     views: list[TableSchema] = []
     for view_key in discover_derived_docs_views(tag_query=tag_query):
-        try:
-            view_schema = infer_view_schema(con=con, view_key=view_key)
-            views.append(view_schema)
-        except (RuntimeError, OSError, ValueError):
-            # Skip views that don't exist or can't be described
-            _logger.debug("Skipping view %s (not found or error)", view_key)
+        view_schema = provider.get_table_schema(view_key)
+        if view_schema is None:
+            _logger.debug("Skipping view %s (no registered schema)", view_key)
             continue
+        views.append(view_schema)
 
     if stable:
         views = sorted(views, key=lambda v: v.table_key)
@@ -709,8 +703,7 @@ def compile_schema_manifest(
     request
         Selection and options for manifest compilation. When None, uses defaults.
     con
-        Optional DuckDB connection required for view schema inference.
-        Must be provided if request.include_views is True.
+        Optional DuckDB connection (ignored for view schema resolution).
     batch_inferer
         Optional callable used to batch-infer native table schemas in a single pass.
 
@@ -736,9 +729,11 @@ def compile_schema_manifest(
         ),
         batch_inferer=batch_inferer,
     )
+    if con is not None and req.include_views:
+        _logger.debug("Ignoring DuckDB connection for view schema resolution.")
     extras, version = _resolve_v2_extras(
         request=req,
-        con=con,
+        provider=active_provider,
         tag_query=context.tag_query,
     )
 

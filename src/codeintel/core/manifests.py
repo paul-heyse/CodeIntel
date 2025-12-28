@@ -128,6 +128,49 @@ class ExportManifestData(ManifestBase):
 
 
 @dataclass(frozen=True)
+class ArrowDatasetManifest(ManifestBase):
+    """Manifest describing an Arrow dataset snapshot."""
+
+    dataset_id: str
+    snapshot_id: str
+    table_key: str
+    schema_hash: str | None
+    partition_columns: tuple[str, ...]
+    files: tuple[str, ...]
+    row_count: int | None = None
+    stats: Mapping[str, Any] | None = None
+    created_at: str | None = None
+    extras: Mapping[str, Any] | None = None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable dataset manifest payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable dataset manifest payload.
+        """
+        payload: dict[str, object] = {
+            "dataset_id": self.dataset_id,
+            "snapshot_id": self.snapshot_id,
+            "table_key": self.table_key,
+            "partition_columns": list(self.partition_columns),
+            "files": list(self.files),
+        }
+        if self.schema_hash is not None:
+            payload["schema_hash"] = self.schema_hash
+        if self.row_count is not None:
+            payload["row_count"] = self.row_count
+        if self.stats:
+            payload["stats"] = dict(self.stats)
+        if self.created_at is not None:
+            payload["created_at"] = self.created_at
+        if self.extras:
+            payload["extras"] = dict(self.extras)
+        return payload
+
+
+@dataclass(frozen=True)
 class IncrementalMarker(ManifestBase):
     """Metadata persisted to decide if an export can be reused."""
 
@@ -199,6 +242,8 @@ class ServingSnapshotManifest(ManifestBase):
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
+    dataset_manifest_paths
+        Paths to dataset manifest files (Arrow datasets).
     buildspec_path
         Path to buildspec.json.
     semantic_layer_version
@@ -214,6 +259,7 @@ class ServingSnapshotManifest(ManifestBase):
     schema_manifest_path: str
     buildspec_path: str
     semantic_layer_version: str
+    dataset_manifest_paths: tuple[str, ...] = ()
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable manifest payload.
@@ -231,6 +277,11 @@ class ServingSnapshotManifest(ManifestBase):
             "db_path": self.db_path,
             "semantic_registry_path": self.semantic_registry_path,
             "schema_manifest_path": self.schema_manifest_path,
+            **(
+                {"dataset_manifest_paths": list(self.dataset_manifest_paths)}
+                if self.dataset_manifest_paths
+                else {}
+            ),
             "buildspec_path": self.buildspec_path,
             "semantic_layer_version": self.semantic_layer_version,
         }
@@ -250,6 +301,8 @@ class ServingSnapshotManifest(ManifestBase):
             Loaded manifest instance.
         """
         data = read_manifest_json(path)
+        raw_paths = data.get("dataset_manifest_paths") or ()
+        data["dataset_manifest_paths"] = tuple(str(path) for path in raw_paths)
         return cls(**data)
 
 
@@ -472,6 +525,7 @@ class SchemaManifest(ManifestBase):
 
 
 __all__ = [
+    "ArrowDatasetManifest",
     "ArtifactProvenance",
     "ExportArtifact",
     "ExportArtifactKind",

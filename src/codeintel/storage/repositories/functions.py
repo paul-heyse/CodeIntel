@@ -220,7 +220,7 @@ class FunctionRepository(BaseRepository):
         relation = self._relation("analytics.function_profile")
         predicates = [self._predicate_ge("risk_score", min_risk)]
         if tested_only:
-            predicates.append(self._predicate_eq("tested", True))
+            predicates.append(self._predicate_eq("tested", value=True))
         relation = self._apply_predicates(relation, predicates)
         relation = relation.order("risk_score DESC").limit(limit)
         return self._validated_records("analytics.function_profile", relation)

@@ -28,6 +28,7 @@ from codeintel.core.hamilton.semantic_tags import (
     TAG_TABLE_KEY,
 )
 from codeintel.core.hamilton.tag_filters import tf_semantic_views
+from codeintel.core.hamilton.tag_query import TagQuery
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -218,7 +219,8 @@ def compile_semantic_registry_from_driver(
     CompiledSemanticRegistry
         Compiled registry.
     """
-    variables = dr.list_available_variables(tag_filter=tf_semantic_views())
+    tag_query = TagQuery(dr)
+    variables = tag_query.query(tf_semantic_views())
     return _compile_semantic_registry_from_variables(
         schema_provider=schema_provider,
         variables=variables,

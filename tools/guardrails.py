@@ -22,14 +22,17 @@ from codeintel.build.hamilton.graph_validation import (
     validation_result_to_json,
 )
 from codeintel.build.meta.contract_catalog import persist_contract_catalog_to_connection
+from codeintel.build.schemas.contract_service import configure_contract_service
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.cli.resolution import resolve_from_params
+from codeintel.core.schemas.provider import MappingSchemaProvider
 from codeintel.storage.gateway import (
     DuckDBConnection,
     MemoryGatewayOptions,
     StorageConfig,
     StorageConnectionError,
     open_gateway,
+    open_inference_gateway,
     open_memory_gateway,
 )
 
@@ -219,6 +222,12 @@ def main() -> int:
     try:
         gateway = open_gateway(config)
     except (FileNotFoundError, StorageConnectionError):
+        inference_gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
+        try:
+            runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=inference_gateway)
+            configure_contract_service(runtime=runtime_bundle)
+        finally:
+            inference_gateway.close()
 
         def _seed_contract_catalog(con: DuckDBConnection) -> None:
             persist_contract_catalog_to_connection(con, inputs={"source": "guardrails"})

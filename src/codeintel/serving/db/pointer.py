@@ -25,6 +25,8 @@ class ServingSnapshotPointer:
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
+    dataset_manifest_paths
+        Paths to dataset manifest files (Arrow datasets).
     buildspec_path
         Path to buildspec.json.
     repo
@@ -48,6 +50,7 @@ class ServingSnapshotPointer:
     run_id: str
     published_at: datetime
     semantic_layer_version: str
+    dataset_manifest_paths: tuple[Path, ...] = ()
 
     @classmethod
     def load(cls, path: Path) -> ServingSnapshotPointer:
@@ -81,11 +84,14 @@ class ServingSnapshotPointer:
             msg = "Pointer missing buildspec_path"
             raise KeyError(msg) from exc
         buildspec_path = Path(buildspec_raw).resolve()
+        dataset_manifest_raw = raw.get("dataset_manifest_paths") or ()
+        dataset_manifest_paths = tuple(Path(path).resolve() for path in dataset_manifest_raw)
 
         return cls(
             db_path=Path(raw["db_path"]).resolve(),
             semantic_registry_path=Path(raw["semantic_registry_path"]).resolve(),
             schema_manifest_path=Path(raw["schema_manifest_path"]).resolve(),
+            dataset_manifest_paths=dataset_manifest_paths,
             buildspec_path=buildspec_path,
             repo=raw["repo"],
             commit=raw["commit"],
@@ -107,6 +113,11 @@ class ServingSnapshotPointer:
                 "db_path": str(self.db_path),
                 "semantic_registry_path": str(self.semantic_registry_path),
                 "schema_manifest_path": str(self.schema_manifest_path),
+                **(
+                    {"dataset_manifest_paths": [str(path) for path in self.dataset_manifest_paths]}
+                    if self.dataset_manifest_paths
+                    else {}
+                ),
                 "buildspec_path": str(self.buildspec_path),
                 "repo": self.repo,
                 "commit": self.commit,

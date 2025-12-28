@@ -8,12 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from duckdb import ColumnExpression, ConstantExpression
-
 from codeintel.build.assets.fingerprinting import ArtifactVersionInput, TableVersionInput
 from codeintel.build.schemas.registry import get_schema_provider
 from codeintel.core.errors.storage import StorageError
 from codeintel.core.schemas.hashing import compute_table_schema_hash
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
 from codeintel.storage.tracking.asset_tracking import (
     AssetLineageEdgeRecord,

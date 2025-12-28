@@ -139,6 +139,7 @@ class BuildLayoutOptions:
     build_dir: Path | None = None
     db_path: Path | None = None
     document_output_dir: Path | None = None
+    dataset_root_dir: Path | None = None
     log_db_path: Path | None = None
 
     def materialize(self, repo_root: Path, *, check_collisions: bool = False) -> BuildPaths:
@@ -169,6 +170,7 @@ class BuildPathOverrides:
 
     db_path: Path | None = None
     document_output_dir: Path | None = None
+    dataset_root_dir: Path | None = None
     scip_dir: Path | None = None
     coverage_json: Path | None = None
     pytest_report: Path | None = None
@@ -194,6 +196,7 @@ class BuildPathOverrides:
             for name, path in (
                 ("db_path", normalized.db_path),
                 ("document_output_dir", normalized.document_output_dir),
+                ("dataset_root_dir", normalized.dataset_root_dir),
                 ("scip_dir", normalized.scip_dir),
                 ("coverage_json", normalized.coverage_json),
                 ("pytest_report", normalized.pytest_report),
@@ -224,6 +227,7 @@ class BuildPathOverrides:
         return BuildPathOverrides(
             db_path=self._resolve_optional(self.db_path, resolved_build),
             document_output_dir=self._resolve_optional(self.document_output_dir, resolved_build),
+            dataset_root_dir=self._resolve_optional(self.dataset_root_dir, resolved_build),
             scip_dir=self._resolve_optional(self.scip_dir, resolved_build),
             coverage_json=self._resolve_optional(self.coverage_json, resolved_build),
             pytest_report=self._resolve_optional(self.pytest_report, resolved_build),
@@ -255,6 +259,8 @@ class BuildPaths:
         Path to the primary DuckDB database file.
     document_output_dir : Path
         Directory for final exported datasets (JSONL, Parquet).
+    dataset_root_dir : Path
+        Directory for Arrow dataset outputs.
     scip_dir : Path
         Directory for SCIP index artifacts.
     coverage_json : Path
@@ -270,6 +276,7 @@ class BuildPaths:
     build_dir: Path
     db_path: Path
     document_output_dir: Path
+    dataset_root_dir: Path
     scip_dir: Path
     coverage_json: Path
     pytest_report: Path
@@ -282,6 +289,7 @@ class BuildPaths:
             "build_dir",
             "db_path",
             "document_output_dir",
+            "dataset_root_dir",
             "scip_dir",
             "coverage_json",
             "pytest_report",
@@ -314,10 +322,12 @@ class BuildPaths:
         """
         resolved_root = repo_root.resolve()
         resolved_build = (build_dir or resolved_root / "build").resolve()
+        document_output_dir = resolved_root / "Document Output"
         return cls(
             build_dir=resolved_build,
             db_path=resolved_build / "db" / "codeintel.duckdb",
-            document_output_dir=resolved_root / "Document Output",
+            document_output_dir=document_output_dir,
+            dataset_root_dir=document_output_dir / "datasets",
             scip_dir=resolved_build / "scip",
             coverage_json=resolved_build / "coverage" / "coverage.json",
             pytest_report=resolved_build / "test-results" / "pytest-report.json",
@@ -350,11 +360,15 @@ class BuildPaths:
         override_bundle = overrides or BuildPathOverrides()
         override_bundle.validate(resolved_build)
         normalized = override_bundle.resolved(resolved_build)
+        document_output_dir = (
+            normalized.document_output_dir or resolved_build.parent / "Document Output"
+        ).resolve()
         return cls(
             build_dir=resolved_build,
             db_path=(normalized.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
-            document_output_dir=(
-                normalized.document_output_dir or resolved_build.parent / "Document Output"
+            document_output_dir=document_output_dir,
+            dataset_root_dir=(
+                normalized.dataset_root_dir or document_output_dir / "datasets"
             ).resolve(),
             scip_dir=(normalized.scip_dir or resolved_build / "scip").resolve(),
             coverage_json=(
@@ -396,11 +410,15 @@ class BuildPaths:
         layout = overrides or BuildLayoutOptions()
         resolved_root = repo_root.resolve()
         resolved_build = (layout.build_dir or resolved_root / "build").resolve()
+        document_output_dir = (
+            layout.document_output_dir or resolved_root / "Document Output"
+        ).resolve()
         paths = cls(
             build_dir=resolved_build,
             db_path=(layout.db_path or resolved_build / "db" / "codeintel.duckdb").resolve(),
-            document_output_dir=(
-                layout.document_output_dir or resolved_root / "Document Output"
+            document_output_dir=document_output_dir,
+            dataset_root_dir=(
+                layout.dataset_root_dir or document_output_dir / "datasets"
             ).resolve(),
             scip_dir=(resolved_build / "scip").resolve(),
             coverage_json=(resolved_build / "coverage" / "coverage.json").resolve(),
@@ -415,6 +433,7 @@ class BuildPaths:
                 {
                     "db_path": paths.db_path,
                     "document_output_dir": paths.document_output_dir,
+                    "dataset_root_dir": paths.dataset_root_dir,
                     "scip_dir": paths.scip_dir,
                     "coverage_json": paths.coverage_json,
                     "pytest_report": paths.pytest_report,

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.history.git_history import iter_file_history
 from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.query_results import (
     coerce_int,
     coerce_optional_int,
@@ -262,26 +263,28 @@ def _load_function_spans(
     commit: str,
 ) -> dict[str, list[FuncSpan]]:
     relation = gateway.con.sql(
-        """
-        SELECT
-            metrics.repo AS repo,
-            metrics.commit AS commit,
-            metrics.function_goid_h128,
-            metrics.urn,
-            metrics.rel_path,
-            modules.module,
-            metrics.qualname,
-            metrics.start_line,
-            metrics.end_line,
-            metrics.loc
-        FROM analytics.function_metrics AS metrics
-        LEFT JOIN core.modules AS modules
-          ON metrics.repo = modules.repo
-         AND metrics.commit = modules.commit
-         AND metrics.rel_path = modules.path
-        WHERE metrics.repo = $repo AND metrics.commit = $commit
-        """,
-        {"repo": repo, "commit": commit},
+        render_sql(
+            """
+            SELECT
+                metrics.repo AS repo,
+                metrics.commit AS commit,
+                metrics.function_goid_h128,
+                metrics.urn,
+                metrics.rel_path,
+                modules.module,
+                metrics.qualname,
+                metrics.start_line,
+                metrics.end_line,
+                metrics.loc
+            FROM analytics.function_metrics AS metrics
+            LEFT JOIN core.modules AS modules
+              ON metrics.repo = modules.repo
+             AND metrics.commit = modules.commit
+             AND metrics.rel_path = modules.path
+            WHERE metrics.repo = $repo AND metrics.commit = $commit
+            """,
+            {"repo": repo, "commit": commit},
+        )
     )
     rows = records_from_relation(relation)
 

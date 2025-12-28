@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.core.execution.ids import new_uuid_str
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -27,13 +28,19 @@ from codeintel.storage.tracking.schema_catalog_models import (
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import AbstractSet, Mapping, Sequence
 
-    from codeintel.build.schemas.manifest import SchemaManifest
-    from codeintel.build.schemas.schema_index import SchemaIndex
-    from codeintel.core.manifests import TableProvenance
+    from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.storage.gateway.protocol import StorageGateway
+
+    class SchemaIndex(Protocol):
+        """Protocol for schema index consumers without build-layer imports."""
+
+        @property
+        def inferable_table_keys(self) -> AbstractSet[str]: ...
+
+        def prefill_cache(self, schemas: Mapping[str, TableSchema]) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +54,47 @@ class PersistSchemaManifestResult:
     schema_versions_rows: int
     table_schema_registry_rows: int
     schema_manifest_runs_rows: int
+
+
+@dataclass(frozen=True, slots=True)
+class _LatestManifest:
+    """Latest manifest metadata used for registry health reporting."""
+
+    catalog_hash: str
+    repo: str
+    commit: str
+    manifest_kind: str
+    created_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class _RegistryStats:
+    """Registry row counts and freshness metadata."""
+
+    row_count: int
+    updated_at: datetime | None
+    stale: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _InferableStats:
+    """Inference health summary for inferable tables."""
+
+    total: int
+    inferred: int
+    errors: int
+    success_rate: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _OverrideRecordContext:
+    """Context payload for building override registry records."""
+
+    manifest: SchemaManifest
+    request: SchemaCatalogRequest
+    version_id: str
+    catalog_hash: str | None
+    now: datetime
 
 
 class SchemaCatalogTracking:
@@ -359,19 +407,7 @@ class SchemaCatalogTracking:
         dict[str, object]
             Health snapshot payload for the schema registry.
         """
-        manifest_runs_ref = meta_table_ref("metadata.schema_manifest_runs")
-        registry_ref = meta_table_ref("metadata.table_schema_registry")
-        override_ref = meta_table_ref("metadata.table_schema_override_registry")
-
-        latest = self._con.execute(
-            f"""
-            SELECT catalog_hash, repo, commit, manifest_kind, created_at
-            FROM {manifest_runs_ref}
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        ).fetchone()
-
+        latest = self._load_latest_manifest()
         if latest is None:
             return {
                 "status": "missing_manifest",
@@ -386,79 +422,39 @@ class SchemaCatalogTracking:
                 "inference_success_rate": None,
             }
 
-        catalog_hash, repo, commit, manifest_kind, created_at = latest
-        registry_rows = self._con.execute(
-            f"""
-            SELECT COUNT(*), MAX(updated_at)
-            FROM {registry_ref}
-            WHERE catalog_hash = ?
-            """,
-            [catalog_hash],
-        ).fetchone()
-
-        registry_count = int(registry_rows[0]) if registry_rows is not None else 0
-        registry_updated_at = registry_rows[1] if registry_rows is not None else None
-        registry_stale = registry_updated_at is None or registry_updated_at < created_at
-
-        inferable_row = self._con.execute(
-            f"""
-            SELECT
-                SUM(CASE WHEN derivation_kind = 'inferred_relation' THEN 1 ELSE 0 END) AS total,
-                SUM(
-                    CASE
-                        WHEN derivation_kind = 'inferred_relation'
-                         AND inference_status = 'inferred'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS inferred_count,
-                SUM(
-                    CASE
-                        WHEN derivation_kind = 'inferred_relation'
-                         AND inference_status = 'error'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS error_count
-            FROM {registry_ref}
-            WHERE catalog_hash = ?
-            """,
-            [catalog_hash],
-        ).fetchone()
-
-        inferable_total = int(inferable_row[0] or 0) if inferable_row is not None else 0
-        inferred_count = int(inferable_row[1] or 0) if inferable_row is not None else 0
-        inference_error_count = int(inferable_row[2] or 0) if inferable_row is not None else 0
-        inference_success_rate = inferred_count / inferable_total if inferable_total else None
-
-        override_rows = self._con.execute(f"SELECT COUNT(*) FROM {override_ref}").fetchone()
-        override_registry_rows = int(override_rows[0]) if override_rows is not None else 0
-
+        registry_stats = self._registry_stats(
+            catalog_hash=latest.catalog_hash,
+            created_at=latest.created_at,
+        )
+        inferable_stats = self._inferable_stats(catalog_hash=latest.catalog_hash)
+        override_registry_rows = self._override_registry_rows()
         status = "ok"
-        if registry_stale or override_registry_rows == 0:
+        if registry_stats.stale or override_registry_rows == 0:
             status = "warn"
-        if inference_error_count:
+        if inferable_stats.errors:
             status = "warn"
 
         return {
             "status": status,
             "latest_manifest": {
-                "catalog_hash": str(catalog_hash),
-                "repo": str(repo),
-                "commit": str(commit),
-                "manifest_kind": str(manifest_kind),
-                "created_at": created_at.isoformat() if created_at is not None else None,
+                "catalog_hash": latest.catalog_hash,
+                "repo": latest.repo,
+                "commit": latest.commit,
+                "manifest_kind": latest.manifest_kind,
+                "created_at": latest.created_at.isoformat()
+                if latest.created_at is not None
+                else None,
             },
-            "registry_rows": registry_count,
-            "registry_updated_at": (
-                registry_updated_at.isoformat() if registry_updated_at is not None else None
-            ),
-            "registry_stale": registry_stale,
+            "registry_rows": registry_stats.row_count,
+            "registry_updated_at": registry_stats.updated_at.isoformat()
+            if registry_stats.updated_at is not None
+            else None,
+            "registry_stale": registry_stats.stale,
             "override_registry_rows": override_registry_rows,
-            "inferable_total": inferable_total,
-            "inferred_count": inferred_count,
-            "inference_error_count": inference_error_count,
-            "inference_success_rate": inference_success_rate,
+            "inferable_total": inferable_stats.total,
+            "inferred_count": inferable_stats.inferred,
+            "inference_error_count": inferable_stats.errors,
+            "inference_success_rate": inferable_stats.success_rate,
         }
 
     def prefill_schema_index(
@@ -596,23 +592,16 @@ class SchemaCatalogTracking:
             raise RuntimeError(msg)
 
         now = request.now or utc_now()
-        inferable_tables: list[TableSchema] = []
-        blocked_tables: list[str] = []
-
-        for table in manifest.tables:
-            provenance = manifest.table_provenance.get(table.table_key)
-            if provenance is None:
-                if request.strict_provenance:
-                    msg = f"Missing table provenance for override refresh: {table.table_key}"
-                    raise ValueError(msg)
-                blocked_tables.append(table.table_key)
-                continue
-            if provenance.derivation_kind != "inferred_relation":
-                continue
-            if provenance.inference_status != "inferred":
-                blocked_tables.append(table.table_key)
-                continue
-            inferable_tables.append(table)
+        inferable_tables, blocked_tables, missing_provenance = self._select_inferable_tables(
+            manifest,
+            strict_provenance=request.strict_provenance,
+        )
+        if missing_provenance and request.strict_provenance:
+            msg = (
+                "Missing table provenance for override refresh: "
+                f"{', '.join(sorted(missing_provenance))}"
+            )
+            raise ValueError(msg)
 
         if blocked_tables:
             reason = (
@@ -641,49 +630,17 @@ class SchemaCatalogTracking:
             )
 
         version_id = new_uuid_str()
-        schema_versions: dict[str, SchemaVersionRecord] = {}
-        override_versions: list[TableSchemaOverrideVersionRecord] = []
-        override_registry: list[TableSchemaOverrideRegistryRecord] = []
-
-        for table in inferable_tables:
-            provenance = manifest.table_provenance.get(table.table_key)
-            if provenance is None:
-                msg = f"Missing table provenance for override refresh: {table.table_key}"
-                raise ValueError(msg)
-            schema_json = table.to_json_obj()
-            schema_digest = fingerprint(schema_json)
-            schema_hash = _schema_hash_for_override(
-                table=table,
-                provenance=provenance,
-                strict_hash_match=request.strict_hash_match,
-            )
-            if schema_digest not in schema_versions:
-                schema_versions[schema_digest] = SchemaVersionRecord(
-                    schema_digest=schema_digest,
-                    schema_hash=schema_hash,
-                    schema_json=schema_json,
-                    renderer_cache=None,
-                    created_at=now,
-                )
-            override_versions.append(
-                TableSchemaOverrideVersionRecord(
-                    version_id=version_id,
-                    table_key=table.table_key,
-                    schema_digest=schema_digest,
-                    schema_hash=schema_hash,
-                    catalog_hash=catalog_hash,
-                    created_at=now,
-                )
-            )
-            override_registry.append(
-                TableSchemaOverrideRegistryRecord(
-                    table_key=table.table_key,
-                    schema_digest=schema_digest,
-                    schema_hash=schema_hash,
-                    version_id=version_id,
-                    updated_at=now,
-                )
-            )
+        context = _OverrideRecordContext(
+            manifest=manifest,
+            request=request,
+            version_id=version_id,
+            catalog_hash=catalog_hash,
+            now=now,
+        )
+        schema_versions, override_versions, override_registry = self._build_override_records(
+            inferable_tables,
+            context=context,
+        )
 
         with self._backend.transaction():
             schema_versions_rows = self.record_schema_versions_batch(
@@ -701,6 +658,169 @@ class SchemaCatalogTracking:
             override_versions_rows=override_versions_rows,
             override_registry_rows=override_registry_rows,
         )
+
+    def _load_latest_manifest(self) -> _LatestManifest | None:
+        manifest_runs_ref = meta_table_ref("metadata.schema_manifest_runs")
+        row = self._con.execute(
+            f"""
+            SELECT catalog_hash, repo, commit, manifest_kind, created_at
+            FROM {manifest_runs_ref}
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            return None
+        catalog_hash, repo, commit, manifest_kind, created_at = row
+        return _LatestManifest(
+            catalog_hash=str(catalog_hash),
+            repo=str(repo),
+            commit=str(commit),
+            manifest_kind=str(manifest_kind),
+            created_at=created_at if isinstance(created_at, datetime) else None,
+        )
+
+    def _registry_stats(
+        self,
+        *,
+        catalog_hash: str,
+        created_at: datetime | None,
+    ) -> _RegistryStats:
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        row = self._con.execute(
+            f"""
+            SELECT COUNT(*), MAX(updated_at)
+            FROM {registry_ref}
+            WHERE catalog_hash = ?
+            """,
+            [catalog_hash],
+        ).fetchone()
+        row_count = int(row[0]) if row is not None else 0
+        updated_at = row[1] if row is not None else None
+        stale = updated_at is None
+        if created_at is not None and updated_at is not None:
+            stale = updated_at < created_at
+        return _RegistryStats(row_count=row_count, updated_at=updated_at, stale=stale)
+
+    def _inferable_stats(self, *, catalog_hash: str) -> _InferableStats:
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        row = self._con.execute(
+            f"""
+            SELECT
+                SUM(CASE WHEN derivation_kind = 'inferred_relation' THEN 1 ELSE 0 END) AS total,
+                SUM(
+                    CASE
+                        WHEN derivation_kind = 'inferred_relation'
+                         AND inference_status = 'inferred'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS inferred_count,
+                SUM(
+                    CASE
+                        WHEN derivation_kind = 'inferred_relation'
+                         AND inference_status = 'error'
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS error_count
+            FROM {registry_ref}
+            WHERE catalog_hash = ?
+            """,
+            [catalog_hash],
+        ).fetchone()
+        total = int(row[0] or 0) if row is not None else 0
+        inferred = int(row[1] or 0) if row is not None else 0
+        errors = int(row[2] or 0) if row is not None else 0
+        success_rate = inferred / total if total else None
+        return _InferableStats(
+            total=total, inferred=inferred, errors=errors, success_rate=success_rate
+        )
+
+    def _override_registry_rows(self) -> int:
+        override_ref = meta_table_ref("metadata.table_schema_override_registry")
+        row = self._con.execute(f"SELECT COUNT(*) FROM {override_ref}").fetchone()
+        return int(row[0]) if row is not None else 0
+
+    @staticmethod
+    def _select_inferable_tables(
+        manifest: SchemaManifest,
+        *,
+        strict_provenance: bool,
+    ) -> tuple[list[TableSchema], list[str], list[str]]:
+        inferable_tables: list[TableSchema] = []
+        blocked_tables: list[str] = []
+        missing_provenance: list[str] = []
+        for table in manifest.tables:
+            provenance = manifest.table_provenance.get(table.table_key)
+            if provenance is None:
+                missing_provenance.append(table.table_key)
+                if strict_provenance:
+                    continue
+                blocked_tables.append(table.table_key)
+                continue
+            if provenance.derivation_kind != "inferred_relation":
+                continue
+            if provenance.inference_status != "inferred":
+                blocked_tables.append(table.table_key)
+                continue
+            inferable_tables.append(table)
+        return inferable_tables, blocked_tables, missing_provenance
+
+    @staticmethod
+    def _build_override_records(
+        inferable_tables: Sequence[TableSchema],
+        *,
+        context: _OverrideRecordContext,
+    ) -> tuple[
+        dict[str, SchemaVersionRecord],
+        list[TableSchemaOverrideVersionRecord],
+        list[TableSchemaOverrideRegistryRecord],
+    ]:
+        schema_versions: dict[str, SchemaVersionRecord] = {}
+        override_versions: list[TableSchemaOverrideVersionRecord] = []
+        override_registry: list[TableSchemaOverrideRegistryRecord] = []
+
+        for table in inferable_tables:
+            provenance = context.manifest.table_provenance.get(table.table_key)
+            if provenance is None:
+                msg = f"Missing table provenance for override refresh: {table.table_key}"
+                raise ValueError(msg)
+            schema_json = table.to_json_obj()
+            schema_digest = fingerprint(schema_json)
+            schema_hash = _schema_hash_for_override(
+                table=table,
+                provenance=provenance,
+                strict_hash_match=context.request.strict_hash_match,
+            )
+            if schema_digest not in schema_versions:
+                schema_versions[schema_digest] = SchemaVersionRecord(
+                    schema_digest=schema_digest,
+                    schema_hash=schema_hash,
+                    schema_json=schema_json,
+                    renderer_cache=None,
+                    created_at=context.now,
+                )
+            override_versions.append(
+                TableSchemaOverrideVersionRecord(
+                    version_id=context.version_id,
+                    table_key=table.table_key,
+                    schema_digest=schema_digest,
+                    schema_hash=schema_hash,
+                    catalog_hash=context.catalog_hash,
+                    created_at=context.now,
+                )
+            )
+            override_registry.append(
+                TableSchemaOverrideRegistryRecord(
+                    table_key=table.table_key,
+                    schema_digest=schema_digest,
+                    schema_hash=schema_hash,
+                    version_id=context.version_id,
+                    updated_at=context.now,
+                )
+            )
+        return schema_versions, override_versions, override_registry
 
     def set_override_registry_version(
         self,

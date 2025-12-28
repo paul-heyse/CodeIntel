@@ -26,7 +26,9 @@ import sqlglot.expressions as exp
 from duckdb import ColumnExpression, ConstantExpression, ExplainType
 
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.helpers.json import encode_json_compact
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.snapshot_scoping import RepoCommitScope
@@ -39,6 +41,7 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.contract_primitives import DatasetContract
+    from codeintel.core.schemas.primitives import ColumnType
     from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
 
@@ -166,9 +169,8 @@ class Warehouse:
         bool
             True when the object exists (and has snapshot rows when requested).
         """
-        schema, name = split_table_key(table_key)
         try:
-            relation = self.gateway.con.table(f"{schema}.{name}")
+            relation = self.gateway.relation_from_table_key(table_key)
         except DuckDBError:
             return False
 
@@ -192,8 +194,7 @@ class Warehouse:
         int
             Row count for the requested object.
         """
-        schema, name = split_table_key(table_key)
-        relation = self.gateway.con.table(f"{schema}.{name}")
+        relation = self.gateway.relation_from_table_key(table_key)
         if snapshot is not None and _relation_has_repo_commit_columns(relation):
             relation = relation.filter(
                 (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
@@ -815,12 +816,56 @@ def _rows_to_arrow_table(
     rows: Sequence[tuple[object, ...]],
     *,
     resolved_columns: Sequence[str],
+    column_types: Mapping[str, ColumnType] | None = None,
 ) -> pa.Table:
     if not rows:
         return pa.table({name: [] for name in resolved_columns})
-    columns = list(zip(*rows, strict=False))
+    normalized_rows = _normalize_rows_for_arrow(
+        rows,
+        resolved_columns=resolved_columns,
+        column_types=column_types,
+    )
+    columns = list(zip(*normalized_rows, strict=False))
     data = {name: list(values) for name, values in zip(resolved_columns, columns, strict=False)}
     return pa.table(data)
+
+
+def _column_types_for_table(
+    gateway: StorageGateway,
+    *,
+    table_key: str,
+    resolved_columns: Sequence[str],
+) -> Mapping[str, ColumnType]:
+    contract = gateway.datasets.by_table_key.get(table_key)
+    if contract is None or contract.schema is None:
+        return {}
+    resolved = set(resolved_columns)
+    return {col.name: col.type for col in contract.schema.columns if col.name in resolved}
+
+
+def _normalize_rows_for_arrow(
+    rows: Sequence[tuple[object, ...]],
+    *,
+    resolved_columns: Sequence[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Sequence[tuple[object, ...]]:
+    if not column_types:
+        return rows
+    normalized_rows: list[tuple[object, ...]] = []
+    for row in rows:
+        normalized_row: list[object] = []
+        for col, value in zip(resolved_columns, row, strict=True):
+            col_type = column_types.get(col)
+            if col_type == "JSON":
+                normalized = normalize_row_value_for_type(value, col_type)
+                if isinstance(normalized, (dict, list)):
+                    normalized_row.append(encode_json_compact(normalized))
+                else:
+                    normalized_row.append(normalized)
+            else:
+                normalized_row.append(normalize_row_value_for_type(value, col_type))
+        normalized_rows.append(tuple(normalized_row))
+    return normalized_rows
 
 
 def _write_rows(
@@ -881,7 +926,16 @@ def _write_rows_with_staging(
     resolved_columns: Sequence[str],
     options: MaterializeOptions,
 ) -> int:
-    table = _rows_to_arrow_table(rows, resolved_columns=resolved_columns)
+    column_types = _column_types_for_table(
+        gateway,
+        table_key=table_key,
+        resolved_columns=resolved_columns,
+    )
+    table = _rows_to_arrow_table(
+        rows,
+        resolved_columns=resolved_columns,
+        column_types=column_types,
+    )
     if table.num_rows == 0:
         return 0
     with registered_temp_relation(gateway.con, table, prefix="ci_rows_") as temp_name:
@@ -916,7 +970,16 @@ def _write_rows_upsert(
     resolved_columns: Sequence[str],
     upsert: UpsertConfig,
 ) -> int | None:
-    table = _rows_to_arrow_table(rows, resolved_columns=resolved_columns)
+    column_types = _column_types_for_table(
+        gateway,
+        table_key=table_key,
+        resolved_columns=resolved_columns,
+    )
+    table = _rows_to_arrow_table(
+        rows,
+        resolved_columns=resolved_columns,
+        column_types=column_types,
+    )
     if table.num_rows == 0:
         return 0
     with registered_temp_relation(gateway.con, table, prefix="ci_rows_") as temp_name:

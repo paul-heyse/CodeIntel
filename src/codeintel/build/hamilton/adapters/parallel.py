@@ -63,6 +63,10 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 
+def _is_in_memory_gateway(env: BuildEnv) -> bool:
+    return str(env.gateway.config.db_path) == ":memory:"
+
+
 class ExecutionBackend(Enum):
     """Available execution backends.
 
@@ -282,6 +286,9 @@ class ThreadPoolAdapter(
     def _execute_without_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:
         resolved = _resolve_futures(kwargs)
         resolved = self._maybe_inject_thread_gateway(resolved, read_only=True)
+        if self._requires_lock(resolved):
+            with self._write_lock:
+                return fn(**resolved)
         return fn(**resolved)
 
     def _execute_with_lock(self, fn: Callable[..., object], kwargs: dict[str, object]) -> object:
@@ -303,10 +310,19 @@ class ThreadPoolAdapter(
         # Main-thread execution can reuse the primary gateway safely.
         if threading.get_ident() == self._primary_thread_id:
             return resolved
+        if _is_in_memory_gateway(env):
+            return resolved
 
         thread_gateway = self._get_thread_gateway(env, _read_only=read_only)
         resolved["env"] = replace(env, gateway=thread_gateway)
         return resolved
+
+    @staticmethod
+    def _requires_lock(resolved: dict[str, object]) -> bool:
+        env = resolved.get("env")
+        if not isinstance(env, BuildEnv):
+            return False
+        return _is_in_memory_gateway(env)
 
     def _get_thread_gateway(self, env: BuildEnv, *, _read_only: bool) -> StorageGateway:
         # DuckDB disallows mixing read-only and read-write connections per database file.

@@ -19,6 +19,7 @@ from codeintel.ingestion.ports.change_detection import (
 )
 from codeintel.ingestion.ports.discovery import ModuleRecord
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
+from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -152,30 +153,33 @@ class HashChangeDetectionAdapter:
         Returns
         -------
         Mapping[str, FileDigest]
-            Mapping from relative path to file digest.
+        Mapping from relative path to file digest.
         """
         gateway = getattr(self._storage, "_gateway", None)
         if gateway is not None:
+            gateway.policy.ensure_table(FILE_STATE_TABLE_KEY)
             relation = gateway.con.sql(
-                """
-                WITH ranked AS (
-                    SELECT
-                        rel_path,
-                        size_bytes,
-                        mtime_ns,
-                        content_hash,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY rel_path
-                            ORDER BY mtime_ns DESC
-                        ) AS rn
-                    FROM core.file_state
-                    WHERE repo = $repo AND language = $language
+                render_sql(
+                    """
+                    WITH ranked AS (
+                        SELECT
+                            rel_path,
+                            size_bytes,
+                            mtime_ns,
+                            content_hash,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY rel_path
+                                ORDER BY mtime_ns DESC
+                            ) AS rn
+                        FROM core.file_state
+                        WHERE repo = $repo AND language = $language
+                    )
+                    SELECT rel_path, size_bytes, mtime_ns, content_hash
+                    FROM ranked
+                    WHERE rn = 1
+                    """,
+                    {"repo": repo, "language": language},
                 )
-                SELECT rel_path, size_bytes, mtime_ns, content_hash
-                FROM ranked
-                WHERE rn = 1
-                """,
-                {"repo": repo, "language": language},
             )
             rows = [
                 {

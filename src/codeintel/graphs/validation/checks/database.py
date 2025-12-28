@@ -9,8 +9,10 @@ Check classes implement CheckProtocol from core/validation.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
+
 from codeintel.graphs.validation.base import GraphCheckBase
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     import logging
@@ -123,34 +125,36 @@ def _warn_missing_function_goids_impl(
     """
     try:
         relation = gateway.con.sql(
-            """
-            WITH funcs AS (
-                SELECT path AS rel_path, COUNT(*) AS function_count
-                FROM core.ast_nodes
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND node_type IN ('FunctionDef', 'AsyncFunctionDef')
-                GROUP BY path
-            ),
-            goid_counts AS (
-                SELECT rel_path, COUNT(*) AS goid_count
-                FROM core.goids
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND kind IN ('function', 'method')
-                GROUP BY rel_path
+            render_sql(
+                """
+                WITH funcs AS (
+                    SELECT path AS rel_path, COUNT(*) AS function_count
+                    FROM core.ast_nodes
+                    WHERE repo = $repo
+                      AND commit = $commit
+                      AND node_type IN ('FunctionDef', 'AsyncFunctionDef')
+                    GROUP BY path
+                ),
+                goid_counts AS (
+                    SELECT rel_path, COUNT(*) AS goid_count
+                    FROM core.goids
+                    WHERE repo = $repo
+                      AND commit = $commit
+                      AND kind IN ('function', 'method')
+                    GROUP BY rel_path
+                )
+                SELECT
+                    funcs.rel_path,
+                    funcs.function_count,
+                    COALESCE(goid_counts.goid_count, 0) AS goid_count
+                FROM funcs
+                LEFT JOIN goid_counts
+                  ON funcs.rel_path = goid_counts.rel_path
+                WHERE COALESCE(goid_counts.goid_count, 0) < funcs.function_count
+                ORDER BY funcs.rel_path
+                """,
+                {"repo": repo, "commit": commit},
             )
-            SELECT
-                funcs.rel_path,
-                funcs.function_count,
-                COALESCE(goid_counts.goid_count, 0) AS goid_count
-            FROM funcs
-            LEFT JOIN goid_counts
-              ON funcs.rel_path = goid_counts.rel_path
-            WHERE COALESCE(goid_counts.goid_count, 0) < funcs.function_count
-            ORDER BY funcs.rel_path
-            """,
-            {"repo": repo, "commit": commit},
         )
         rows = relation.fetchall()
     except DuckDBError:
@@ -197,14 +201,16 @@ def _warn_callsite_span_mismatches_impl(
     spans_by_goid = {span.goid: span for span in catalog.function_spans}
     try:
         relation = gateway.con.sql(
-            """
-            SELECT caller_goid_h128, callsite_path, callsite_line
-            FROM graph.call_graph_edges
-            WHERE repo = $repo
-              AND commit = $commit
-              AND callsite_line IS NOT NULL
-            """,
-            {"repo": repo, "commit": commit},
+            render_sql(
+                """
+                SELECT caller_goid_h128, callsite_path, callsite_line
+                FROM graph.call_graph_edges
+                WHERE repo = $repo
+                  AND commit = $commit
+                  AND callsite_line IS NOT NULL
+                """,
+                {"repo": repo, "commit": commit},
+            )
         )
         rows = relation.fetchall()
     except DuckDBError:
@@ -257,39 +263,7 @@ def _warn_orphan_modules_impl(
     query_failed = False
     try:
         relation = gateway.con.sql(
-            """
-            WITH module_goids AS (
-                SELECT rel_path, COUNT(*) AS cnt
-                FROM core.goids
-                WHERE repo = $repo
-                  AND commit = $commit
-                  AND kind = 'module'
-                GROUP BY rel_path
-            )
-            SELECT modules.path
-            FROM core.modules AS modules
-            LEFT JOIN module_goids
-              ON modules.path = module_goids.rel_path
-            WHERE modules.repo = $repo
-              AND modules.commit = $commit
-              AND module_goids.cnt IS NULL
-            """,
-            {"repo": repo, "commit": commit},
-        )
-        rows = [(path,) for (path,) in relation.fetchall()]
-
-        count_rel = gateway.con.sql(
-            """
-            SELECT COUNT(*) AS cnt
-            FROM core.modules
-            WHERE repo = $repo AND commit = $commit
-            """,
-            {"repo": repo, "commit": commit},
-        )
-        count_row = count_rel.fetchone()
-        module_count = 0 if count_row is None else int(count_row[0])
-        if rows:
-            stats_rel = gateway.con.sql(
+            render_sql(
                 """
                 WITH module_goids AS (
                     SELECT rel_path, COUNT(*) AS cnt
@@ -299,22 +273,59 @@ def _warn_orphan_modules_impl(
                       AND kind = 'module'
                     GROUP BY rel_path
                 )
-                SELECT
-                    modules.path,
-                    COALESCE(module_goids.cnt, 0) AS module_goids
+                SELECT modules.path
                 FROM core.modules AS modules
                 LEFT JOIN module_goids
                   ON modules.path = module_goids.rel_path
                 WHERE modules.repo = $repo
                   AND modules.commit = $commit
-                ORDER BY module_goids, modules.path
-                LIMIT 5
+                  AND module_goids.cnt IS NULL
                 """,
                 {"repo": repo, "commit": commit},
             )
+        )
+        rows = [(path,) for (path,) in relation.fetchall()]
+
+        count_rel = gateway.con.sql(
+            render_sql(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM core.modules
+                WHERE repo = $repo AND commit = $commit
+                """,
+                {"repo": repo, "commit": commit},
+            )
+        )
+        count_row = count_rel.fetchone()
+        module_count = 0 if count_row is None else int(count_row[0])
+        if rows:
+            stats_rel = gateway.con.sql(
+                render_sql(
+                    """
+                    WITH module_goids AS (
+                        SELECT rel_path, COUNT(*) AS cnt
+                        FROM core.goids
+                        WHERE repo = $repo
+                          AND commit = $commit
+                          AND kind = 'module'
+                        GROUP BY rel_path
+                    )
+                    SELECT
+                        modules.path,
+                        COALESCE(module_goids.cnt, 0) AS module_goids
+                    FROM core.modules AS modules
+                    LEFT JOIN module_goids
+                      ON modules.path = module_goids.rel_path
+                    WHERE modules.repo = $repo
+                      AND modules.commit = $commit
+                    ORDER BY module_goids, modules.path
+                    LIMIT 5
+                    """,
+                    {"repo": repo, "commit": commit},
+                )
+            )
             sample_detail = ", ".join(
-                f"{path} (module_goids={cnt})"
-                for path, cnt in stats_rel.fetchall()
+                f"{path} (module_goids={cnt})" for path, cnt in stats_rel.fetchall()
             )
             log.info(
                 "Orphan module debug: repo=%s commit=%s sample=%s",

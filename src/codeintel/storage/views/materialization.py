@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import duckdb
 from sqlglot.errors import ParseError
@@ -36,7 +36,6 @@ from codeintel.storage.views.discovery import discover_view_builders
 
 if TYPE_CHECKING:
     from hamilton.driver import Driver
-    from sqlglot import exp
 
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.storage.gateway.protocol import MinimalGateway
@@ -114,7 +113,7 @@ def _compile_view_definitions(
     for spec in builders:
         view_name = spec.table_key
         try:
-            expr = cast("exp.Expression", spec.builder())
+            expr = spec.builder()
             sql = expr.sql(dialect="duckdb")
             assert_select_perimeter(sql, policy=SqlIngressPolicy())
             sql_by_view[view_name] = sql

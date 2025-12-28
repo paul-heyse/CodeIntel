@@ -30,7 +30,7 @@ def _load_view_map() -> dict[str, ViewSqlSpec]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         msg = "view_sql_map.json must contain a mapping"
-        raise ValueError(msg)
+        raise TypeError(msg)
     view_map: dict[str, ViewSqlSpec] = {}
     for key, value in raw.items():
         if not isinstance(key, str) or not isinstance(value, dict):
@@ -46,6 +46,33 @@ def _load_view_map() -> dict[str, ViewSqlSpec]:
 
 
 _VIEW_SQL_MAP: Final[dict[str, ViewSqlSpec]] = _load_view_map()
+
+
+def _apply_tags(
+    builder: Callable[[], exp.Expression],
+    tags: dict[str, str],
+) -> Callable[[], exp.Expression]:
+    bypass_value = tags.get("bypass_reserved_namespaces_")
+    bypass_reserved = _parse_bool_tag(bypass_value)
+    filtered = {key: value for key, value in tags.items() if key != "bypass_reserved_namespaces_"}
+    tagger = cast(
+        "Callable[..., Callable[[Callable[[], exp.Expression]], Callable[[], exp.Expression]]]",
+        h_tag,
+    )
+    tagged = tagger(**filtered)(builder)
+    if bypass_reserved:
+        tagged = cast(
+            "Callable[[], exp.Expression]",
+            h_tag(bypass_reserved_namespaces_=True)(tagged),
+        )
+    return tagged
+
+
+def _parse_bool_tag(value: str | None) -> bool:
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    return normalized in {"1", "true", "yes", "y"}
 
 
 def _build_view_builder(
@@ -64,7 +91,7 @@ def _build_view_builder(
     builder.__module__ = __name__
     builder.__doc__ = f"Build a SQLGlot expression for {table_key}."
 
-    tagged = cast("Callable[[], exp.Expression]", h_tag(**tags)(builder))
+    tagged = _apply_tags(builder, tags)
     if tags.get(ht.TAG_OUTPUT_KIND) == ht.OUTPUT_KIND_SEMANTIC_VIEW:
         setattr(tagged, SEMANTIC_VIEW_TAG_ATTR, dict(tags))
     return tagged
@@ -75,5 +102,3 @@ for table_key, spec in _VIEW_SQL_MAP.items():
     fn = _build_view_builder(table_key=table_key, spec=spec)
     globals()[fn.__name__] = fn
     _BUILDERS[table_key] = fn
-
-__all__ = sorted(fn.__name__ for fn in _BUILDERS.values())

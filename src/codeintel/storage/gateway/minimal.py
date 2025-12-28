@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
+from codeintel.storage.gateway.relation import relation_from_table_key as _relation_from_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -168,7 +169,7 @@ class MinimalStorageGateway:
         DuckDBPyRelation
             Relation bound to the requested table.
         """
-        return self._con.table(table_key)
+        return _relation_from_table_key(self._con, table_key)
 
     # -------------------------------------------------------------------------
     # Unsupported accessor properties

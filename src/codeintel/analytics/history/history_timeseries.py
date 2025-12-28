@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 from codeintel.core.hashing import sha256_short
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
-from duckdb import ColumnExpression, ConstantExpression
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

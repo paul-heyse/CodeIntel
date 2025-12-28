@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.analytics.profiles.types import FunctionGraphFeatures
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -29,56 +30,58 @@ def summarize_graph_for_function_profile(
     """
     try:
         relation = inputs.gateway.con.sql(
-            """
-            WITH scoped_edges AS (
-                SELECT *
-                FROM graph.call_graph_edges
-                WHERE repo = $repo AND commit = $commit
-            ),
-            cg_out AS (
+            render_sql(
+                """
+                WITH scoped_edges AS (
+                    SELECT *
+                    FROM graph.call_graph_edges
+                    WHERE repo = $repo AND commit = $commit
+                ),
+                cg_out AS (
+                    SELECT
+                        caller_goid_h128 AS function_goid_h128,
+                        COUNT(*) AS call_edge_out_count,
+                        COUNT(DISTINCT callee_goid_h128) AS call_fan_out
+                    FROM scoped_edges
+                    GROUP BY caller_goid_h128
+                ),
+                cg_in AS (
+                    SELECT
+                        callee_goid_h128 AS function_goid_h128,
+                        COUNT(*) AS call_edge_in_count,
+                        COUNT(DISTINCT caller_goid_h128) AS call_fan_in
+                    FROM scoped_edges
+                    WHERE callee_goid_h128 IS NOT NULL
+                    GROUP BY callee_goid_h128
+                ),
+                combined AS (
+                    SELECT
+                        COALESCE(cg_out.function_goid_h128, cg_in.function_goid_h128)
+                            AS function_goid_h128,
+                        COALESCE(cg_in.call_fan_in, 0) AS call_fan_in,
+                        COALESCE(cg_out.call_fan_out, 0) AS call_fan_out,
+                        COALESCE(cg_in.call_edge_in_count, 0) AS call_edge_in_count,
+                        COALESCE(cg_out.call_edge_out_count, 0) AS call_edge_out_count
+                    FROM cg_out
+                    FULL OUTER JOIN cg_in
+                      ON cg_out.function_goid_h128 = cg_in.function_goid_h128
+                )
                 SELECT
-                    caller_goid_h128 AS function_goid_h128,
-                    COUNT(*) AS call_edge_out_count,
-                    COUNT(DISTINCT callee_goid_h128) AS call_fan_out
-                FROM scoped_edges
-                GROUP BY caller_goid_h128
-            ),
-            cg_in AS (
-                SELECT
-                    callee_goid_h128 AS function_goid_h128,
-                    COUNT(*) AS call_edge_in_count,
-                    COUNT(DISTINCT caller_goid_h128) AS call_fan_in
-                FROM scoped_edges
-                WHERE callee_goid_h128 IS NOT NULL
-                GROUP BY callee_goid_h128
-            ),
-            combined AS (
-                SELECT
-                    COALESCE(cg_out.function_goid_h128, cg_in.function_goid_h128)
-                        AS function_goid_h128,
-                    COALESCE(cg_in.call_fan_in, 0) AS call_fan_in,
-                    COALESCE(cg_out.call_fan_out, 0) AS call_fan_out,
-                    COALESCE(cg_in.call_edge_in_count, 0) AS call_edge_in_count,
-                    COALESCE(cg_out.call_edge_out_count, 0) AS call_edge_out_count
-                FROM cg_out
-                FULL OUTER JOIN cg_in
-                  ON cg_out.function_goid_h128 = cg_in.function_goid_h128
+                    combined.function_goid_h128,
+                    combined.call_fan_in,
+                    combined.call_fan_out,
+                    combined.call_edge_in_count,
+                    combined.call_edge_out_count,
+                    combined.call_fan_out = 0 AS call_is_leaf,
+                    combined.call_fan_in = 0 AND combined.call_fan_out > 0 AS call_is_entrypoint,
+                    nodes.is_public AS call_is_public
+                FROM combined
+                LEFT JOIN graph.call_graph_nodes AS nodes
+                  ON combined.function_goid_h128 = nodes.goid_h128
+                ORDER BY combined.function_goid_h128
+                """,
+                {"repo": inputs.repo, "commit": inputs.commit},
             )
-            SELECT
-                combined.function_goid_h128,
-                combined.call_fan_in,
-                combined.call_fan_out,
-                combined.call_edge_in_count,
-                combined.call_edge_out_count,
-                combined.call_fan_out = 0 AS call_is_leaf,
-                combined.call_fan_in = 0 AND combined.call_fan_out > 0 AS call_is_entrypoint,
-                nodes.is_public AS call_is_public
-            FROM combined
-            LEFT JOIN graph.call_graph_nodes AS nodes
-              ON combined.function_goid_h128 = nodes.goid_h128
-            ORDER BY combined.function_goid_h128
-            """,
-            {"repo": inputs.repo, "commit": inputs.commit},
         )
     except DuckDBError:
         return {}

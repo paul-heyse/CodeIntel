@@ -196,20 +196,12 @@ class _CompiledManifest:
     manifest: SchemaManifest
 
 
-class _ViewsRequireGatewayError(ValueError):
-    """Raised when --include-views is specified but gateway is unavailable."""
-
-
 def _compile_manifest(
     ctx: CommandContext,
     *,
     gateway_con: DuckDBConnection | None = None,
 ) -> _CompiledManifest:
     selection = _parse_selection(ctx)
-
-    # Validate that --include-views has a connection available
-    if selection.include_views and gateway_con is None:
-        raise _ViewsRequireGatewayError
 
     request = SchemaManifestRequest(
         targets=selection.targets,
@@ -611,20 +603,13 @@ def build_schema_compile_handler(ctx: CommandContext) -> CliResult[str]:
             status=400,
         )
 
-    # Get gateway connection if available (needed for --include-views)
+    # Get gateway connection if available (legacy, currently unused for view schemas)
     gateway_con = ctx.gateway.con if ctx.has_storage else None
 
     try:
         compiled = _compile_manifest(ctx, gateway_con=gateway_con)
     except _InvalidModuleError as exc:
         return fail_invalid_module(exc.module, _VALID_MODULES)
-    except _ViewsRequireGatewayError:
-        return fail_execution_failed(
-            "build",
-            "--include-views requires a database connection. "
-            "Use --db-path or ensure a database is configured.",
-            status=400,
-        )
     except KeyError as exc:
         return fail_invalid_targets(str(exc))
     except (RuntimeError, TypeError, ValueError) as exc:
@@ -729,7 +714,7 @@ def _try_compile_manifest(
     ctx
         Command context.
     gateway_con
-        Optional DuckDB connection for view inference.
+        Optional DuckDB connection (legacy, unused for view schemas).
 
     Returns
     -------
@@ -740,13 +725,6 @@ def _try_compile_manifest(
         return _compile_manifest(ctx, gateway_con=gateway_con)
     except _InvalidModuleError as exc:
         return fail_invalid_module(exc.module, _VALID_MODULES)
-    except _ViewsRequireGatewayError:
-        return fail_execution_failed(
-            "build",
-            "--include-views requires a database connection. "
-            "Use --db-path or ensure a database is configured.",
-            status=400,
-        )
     except KeyError as exc:
         return fail_invalid_targets(str(exc))
     except (RuntimeError, TypeError, ValueError) as exc:

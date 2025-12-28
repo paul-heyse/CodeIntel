@@ -155,6 +155,7 @@ def _load_serving_settings() -> ServingSettings:
         auth_token=get_str("CODEINTEL_AUTH_TOKEN", default=None),
         schema_enforcement=get_str("CODEINTEL_SERVE_SCHEMA_ENFORCEMENT", default="strict")
         or "strict",
+        query_engine=get_str("CODEINTEL_SERVE_QUERY_ENGINE", default="auto") or "auto",
         result_engine=get_str("CODEINTEL_SERVE_RESULT_ENGINE", default="polars") or "polars",
         api_key=get_str("CODEINTEL_SERVE_API_KEY", default=None),
         cors_origins=cors_origins,

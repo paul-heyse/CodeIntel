@@ -11,6 +11,7 @@ from typing import SupportsInt, cast
 from duckdb import SQLExpression
 
 from codeintel.storage.helpers.json import decode_json, decode_json_dict
+from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.repositories.base import BaseRepository
 
 _DEFAULT_CREATED_AT = datetime.fromtimestamp(0, tz=UTC)
@@ -155,9 +156,9 @@ class DataModelsRepository(BaseRepository):
             "FROM core.goids AS g "
             "LEFT JOIN core.modules AS m "
             "ON g.rel_path = m.path AND g.repo = m.repo AND g.commit = m.commit "
-            "WHERE g.repo = ? AND g.commit = ? AND g.kind = 'class'"
+            "WHERE g.repo = $repo AND g.commit = $commit AND g.kind = 'class'"
         )
-        relation = self.gateway.con.sql(sql, params=[self.repo, self.commit])
+        relation = self.gateway.con.sql(render_sql(sql, {"repo": self.repo, "commit": self.commit}))
         return self._relation_to_dicts(relation)
 
     def list_class_docstrings_rows(self) -> list[dict[str, object]]:

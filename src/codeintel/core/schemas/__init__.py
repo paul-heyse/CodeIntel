@@ -9,6 +9,12 @@ Hamilton-inferred, compiled manifests, etc.).
 from __future__ import annotations
 
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+from codeintel.core.schemas.arrow_polars import (
+    table_schema_from_arrow_schema,
+    table_schema_from_polars_dataframe,
+    table_schema_from_polars_lazyframe,
+    table_schema_from_polars_schema,
+)
 from codeintel.core.schemas.authority import (
     SchemaAuthority,
     SchemaDerivation,
@@ -60,5 +66,9 @@ __all__ = [
     "row_binding_for_table_schema",
     "schema_hash",
     "set_schema_service",
+    "table_schema_from_arrow_schema",
     "table_schema_from_json_obj",
+    "table_schema_from_polars_dataframe",
+    "table_schema_from_polars_lazyframe",
+    "table_schema_from_polars_schema",
 ]

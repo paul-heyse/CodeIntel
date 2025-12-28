@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Literal, get_args, get_origin
 
-import duckdb
 import polars as pl
 import pyarrow as pa
 from hamilton.io.data_adapters import DataSaver
@@ -24,6 +23,7 @@ from codeintel.build.hamilton.materializers.base import (
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
 from codeintel.build.tabular.duckdb_relation import register_ephemeral
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
+from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 
 _RECOVERABLE_EXCEPTIONS = (
@@ -35,7 +35,7 @@ _RECOVERABLE_EXCEPTIONS = (
 )
 
 _TABULAR_TYPES: tuple[type, ...] = (
-    duckdb.DuckDBPyRelation,
+    DuckDBRelation,
     pa.Table,
     pa.RecordBatchReader,
     pl.DataFrame,
@@ -196,7 +196,7 @@ def _coerce_relation(
     *,
     data: object,
     table_key: str,
-) -> tuple[duckdb.DuckDBPyRelation, str | None]:
+) -> tuple[DuckDBRelation, str | None]:
     """Coerce a tabular input into a DuckDB relation.
 
     Parameters
@@ -210,7 +210,7 @@ def _coerce_relation(
 
     Returns
     -------
-    tuple[duckdb.DuckDBPyRelation, str | None]
+    tuple[DuckDBRelation, str | None]
         DuckDB relation plus optional registered temp name.
 
     Raises
@@ -218,7 +218,7 @@ def _coerce_relation(
     TypeError
         If the input type is not supported.
     """
-    if isinstance(data, duckdb.DuckDBPyRelation):
+    if isinstance(data, DuckDBRelation):
         return data, None
     if isinstance(data, _TABULAR_TYPES):
         temp_name = register_ephemeral(env.gateway.con, data, prefix=table_key)
@@ -231,7 +231,7 @@ def _materialize_relation(
     warehouse: Warehouse,
     *,
     table_key: str,
-    relation: duckdb.DuckDBPyRelation,
+    relation: DuckDBRelation,
     options: MaterializeOptions,
 ) -> int:
     result = warehouse.materialize_table(table_key, relation, options=options)

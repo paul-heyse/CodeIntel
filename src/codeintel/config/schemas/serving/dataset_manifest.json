@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeIntel dataset_manifest.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["dataset_id", "snapshot_id", "table_key", "partition_columns", "files"],
+  "properties": {
+    "dataset_id": { "type": "string" },
+    "snapshot_id": { "type": "string" },
+    "table_key": { "type": "string" },
+    "schema_hash": { "type": "string" },
+    "partition_columns": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "row_count": { "type": "integer" },
+    "stats": { "type": "object" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "extras": { "type": "object" }
+  }
+}

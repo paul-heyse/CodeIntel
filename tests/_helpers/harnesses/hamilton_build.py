@@ -160,7 +160,7 @@ class HarnessConfig:
     validate_outputs: bool = True
     parallel_backend: str = "threadpool"
     max_workers: int | None = 4
-    enable_hamilton_cache: bool = True
+    enable_hamilton_cache: bool = False
     cache_dir: Path | None = None
 
 

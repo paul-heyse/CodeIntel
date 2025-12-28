@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 from codeintel.core.schemas.contract_primitives import DatasetContract
@@ -12,12 +12,15 @@ from codeintel.storage.metadata.meta_catalog import meta_table_ref
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+    from pathlib import Path
 
     from duckdb import DuckDBPyConnection
 
+    from codeintel.core.manifests import ArrowDatasetManifest
 
 __all__ = [
     "DatasetRegistry",
+    "attach_dataset_manifests",
     "build_dataset_dependency_graph",
     "dataset_for_name",
     "dataset_for_table",
@@ -36,6 +39,8 @@ class DatasetRegistry:
     by_table_key: Mapping[str, DatasetContract]
     jsonl_datasets: Mapping[str, str]
     parquet_datasets: Mapping[str, str]
+    dataset_root_dir: Path | None = None
+    dataset_manifests: Mapping[str, ArrowDatasetManifest] = field(default_factory=dict)
 
     @property
     def all_datasets(self) -> tuple[str, ...]:
@@ -127,12 +132,88 @@ class DatasetRegistry:
         """
         return tuple(name for name, ds in self.by_name.items() if ds.is_view)
 
+    def dataset_manifest_for_table(self, table_key: str) -> ArrowDatasetManifest | None:
+        """Return the Arrow dataset manifest for a table key, if present.
 
-def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        ArrowDatasetManifest | None
+            Manifest for the table key when available.
+        """
+        return self.dataset_manifests.get(table_key)
+
+    def with_dataset_root(self, dataset_root_dir: Path | None) -> DatasetRegistry:
+        """Return a new registry with dataset root configured.
+
+        Parameters
+        ----------
+        dataset_root_dir
+            Root directory for Arrow dataset snapshots, when available.
+
+        Returns
+        -------
+        DatasetRegistry
+            New registry with dataset root metadata attached.
+        """
+        return DatasetRegistry(
+            by_name=self.by_name,
+            by_table_key=self.by_table_key,
+            jsonl_datasets=self.jsonl_datasets,
+            parquet_datasets=self.parquet_datasets,
+            dataset_root_dir=dataset_root_dir,
+            dataset_manifests=self.dataset_manifests,
+        )
+
+    def with_dataset_manifests(
+        self,
+        dataset_manifests: Mapping[str, ArrowDatasetManifest],
+    ) -> DatasetRegistry:
+        """Return a new registry with dataset manifest bindings.
+
+        Parameters
+        ----------
+        dataset_manifests
+            Mapping of table_key to Arrow dataset manifest metadata.
+
+        Returns
+        -------
+        DatasetRegistry
+            New registry with dataset manifest metadata attached.
+        """
+        return DatasetRegistry(
+            by_name=self.by_name,
+            by_table_key=self.by_table_key,
+            jsonl_datasets=self.jsonl_datasets,
+            parquet_datasets=self.parquet_datasets,
+            dataset_root_dir=self.dataset_root_dir,
+            dataset_manifests=dict(dataset_manifests),
+        )
+
+
+def load_dataset_registry(
+    con: DuckDBPyConnection,
+    *,
+    dataset_root_dir: Path | None = None,
+    dataset_manifests: Mapping[str, ArrowDatasetManifest] | None = None,
+) -> DatasetRegistry:
     """Load dataset metadata from DuckDB's metadata.datasets table.
 
     Hydrates DatasetContracts by merging database metadata with contract
     defaults from the contract provider.
+
+    Parameters
+    ----------
+    con
+        DuckDB connection used to read metadata datasets.
+    dataset_root_dir
+        Optional Arrow dataset root path for downstream consumers.
+    dataset_manifests
+        Optional mapping of table_key to Arrow dataset manifests.
 
     Returns
     -------
@@ -225,6 +306,40 @@ def load_dataset_registry(con: DuckDBPyConnection) -> DatasetRegistry:
         by_table_key=by_table,
         jsonl_datasets=jsonl_map,
         parquet_datasets=parquet_map,
+        dataset_root_dir=dataset_root_dir,
+        dataset_manifests=dict(dataset_manifests or {}),
+    )
+
+
+def attach_dataset_manifests(
+    registry: DatasetRegistry,
+    *,
+    dataset_root_dir: Path | None,
+    dataset_manifests: Mapping[str, ArrowDatasetManifest] | None = None,
+) -> DatasetRegistry:
+    """Return a registry augmented with Arrow dataset manifest metadata.
+
+    Parameters
+    ----------
+    registry
+        Base dataset registry to augment.
+    dataset_root_dir
+        Root directory for Arrow dataset snapshots, when available.
+    dataset_manifests
+        Mapping of table_key to Arrow dataset manifest metadata.
+
+    Returns
+    -------
+    DatasetRegistry
+        Registry augmented with dataset manifest metadata.
+    """
+    return DatasetRegistry(
+        by_name=registry.by_name,
+        by_table_key=registry.by_table_key,
+        jsonl_datasets=registry.jsonl_datasets,
+        parquet_datasets=registry.parquet_datasets,
+        dataset_root_dir=dataset_root_dir,
+        dataset_manifests=dict(dataset_manifests or {}),
     )
 
 

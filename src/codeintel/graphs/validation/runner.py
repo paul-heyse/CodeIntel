@@ -18,8 +18,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, SupportsInt, cast
 
-import pandas as pd
-
 from codeintel.core.catalog import load_function_catalog
 from codeintel.core.validation.runner import ValidationRunner
 from codeintel.graphs.runtime import GraphRuntime, GraphRuntimeOptions, resolve_graph_runtime
@@ -47,6 +45,7 @@ from codeintel.graphs.validation.findings import (
     resolve_validation_options,
 )
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
@@ -322,7 +321,7 @@ def log_db_snapshot(gateway: StorageGateway, repo: str, commit: str, log: loggin
         if where:
             sql += f" WHERE {where}"
         try:
-            result = gateway.con.sql(sql, params or {}).fetchone()
+            result = gateway.con.sql(render_sql(sql, params)).fetchone()
             if result is None:
                 return 0
             return int(cast("SupportsInt", result[0]))

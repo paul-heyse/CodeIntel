@@ -46,17 +46,14 @@ class SubsystemRepository(BaseRepository):
         if role:
             modules = self._relation("analytics.subsystem_modules")
             role_subsystems = (
-                modules.filter(self._predicate_eq("role", role))
-                .select("subsystem_id")
-                .distinct()
+                modules.filter(self._predicate_eq("role", role)).select("subsystem_id").distinct()
             )
             relation = relation.join(role_subsystems, "subsystem_id")
 
         if query:
-            pattern = f"%{query.replace(\"'\", \"''\")}%"
-            predicate = SQLExpression(
-                f"name ILIKE '{pattern}' OR description ILIKE '{pattern}'"
-            )
+            escaped_query = query.replace("'", "''")
+            pattern = f"%{escaped_query}%"
+            predicate = SQLExpression(f"name ILIKE '{pattern}' OR description ILIKE '{pattern}'")
             relation = relation.filter(predicate)
 
         relation = relation.order("module_count DESC, subsystem_id").limit(limit)
