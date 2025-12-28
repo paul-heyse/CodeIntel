@@ -108,6 +108,7 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
         pointer_path=snapshot.pointer_path,
         pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
+        hot_swap=False,
     )
     await manager.start()
     try:
@@ -187,6 +188,7 @@ async def test_kernel_describe_includes_lineage(tmp_path: Path) -> None:
         pointer_path=snapshot.pointer_path,
         pool_cfg=PoolConfig(size=1),
         poll_interval_s=0.01,
+        hot_swap=False,
     )
     await manager.start()
     try:

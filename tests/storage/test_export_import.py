@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
 from tests._helpers.gateway import seed_contract_catalog
@@ -44,7 +45,7 @@ def test_export_import_roundtrip(tmp_path: Path) -> None:
 
     target = _make_gateway(dst_db)
     try:
-        target.con.execute("DROP SCHEMA metadata CASCADE")
+        target.con.execute(f"DROP SCHEMA IF EXISTS {META_CATALOG_NAME}.metadata CASCADE")
         target.import_database(directory=export_dir)
         row = target.con.execute("SELECT COUNT(*) FROM sample").fetchone()
     finally:

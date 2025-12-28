@@ -14,8 +14,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
-import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +22,8 @@ from typing import TYPE_CHECKING, Literal
 import pyarrow as pa
 import sqlglot.expressions as exp
 from duckdb import ColumnExpression, ConstantExpression, ExplainType
+from sqlglot import parse_one
+from sqlglot.errors import ParseError
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
@@ -733,14 +733,6 @@ def _materialize_with_writer(
     )
 
 
-_NAME_SANITIZER = re.compile(r"[^0-9A-Za-z_]+")
-
-
-def _temp_relation_name(prefix: str) -> str:
-    cleaned = _NAME_SANITIZER.sub("_", prefix.strip()) or "ci_rel_"
-    return f"{cleaned}{uuid.uuid4().hex}"
-
-
 def _relation_columns(relation: DuckDBRelation) -> list[str]:
     columns = getattr(relation, "columns", None)
     if columns is None:
@@ -754,22 +746,25 @@ def _relation_row_count(relation: DuckDBRelation, *, table_key: str) -> int:
     return coerce_int(row[0], ctx=f"{table_key}.count()") if row is not None else 0
 
 
-def _register_relation_view(
+def _relation_select_expr(
     relation: DuckDBRelation,
     *,
-    prefix: str = "ci_rel_",
-) -> str:
-    name = _temp_relation_name(prefix)
-    create_view = getattr(relation, "create_view", None)
-    if not callable(create_view):
-        msg = "DuckDB relation does not support create_view"
-        raise TypeError(msg)
-    create_view(name)
-    return name
-
-
-def _drop_relation_view(gateway: StorageGateway, view_name: str) -> None:
-    gateway.con.execute(f"DROP VIEW IF EXISTS {view_name}")
+    columns: Sequence[str],
+) -> exp.Select:
+    alias = "ci_src"
+    subquery = exp.Subquery(
+        this=parse_one(relation.sql_query(), dialect=DUCKDB_DIALECT),
+        alias=exp.TableAlias(this=exp.to_identifier(alias)),
+    )
+    return exp.Select(
+        expressions=[
+            exp.Column(
+                this=exp.to_identifier(column),
+                table=exp.to_identifier(alias),
+            )
+            for column in columns
+        ],
+    ).from_(subquery)
 
 
 def _write_relation(
@@ -785,11 +780,7 @@ def _write_relation(
     row_count = _relation_row_count(relation, table_key=table_key)
     if row_count == 0:
         return 0
-    view_name = _register_relation_view(relation)
-    try:
-        select_expr = exp.Select(
-            expressions=[exp.Column(this=exp.to_identifier(col)) for col in columns],
-        ).from_(exp.Table(this=exp.to_identifier(view_name)))
+    def _apply_select(select_expr: exp.Expression) -> None:
         if options.mode == "upsert" and options.upsert is not None:
             gateway.policy.upsert_select(
                 table_key,
@@ -807,8 +798,17 @@ def _write_relation(
                 columns=columns,
                 select_sql=select_expr,
             )
-    finally:
-        _drop_relation_view(gateway, view_name)
+
+    try:
+        select_expr = _relation_select_expr(relation, columns=columns)
+        _apply_select(select_expr)
+    except ParseError:
+        table = relation.fetch_arrow_table()
+        with registered_temp_relation(gateway.con, table, prefix="ci_rel_") as name:
+            select_expr = exp.Select(
+                expressions=[exp.Column(this=exp.to_identifier(column)) for column in columns],
+            ).from_(exp.Table(this=exp.to_identifier(name)))
+            _apply_select(select_expr)
     return row_count
 
 

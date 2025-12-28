@@ -85,7 +85,11 @@ async def test_polars_execution_path_matches_expected_rows(tmp_path: Path) -> No
     """Polars engine returns expected rows from Arrow datasets."""
     pytest.importorskip("polars")
     snapshot = _make_snapshot(ServingSnapshotFactory(tmp_path))
-    manager = ServingDBManager(pointer_path=snapshot.pointer_path, pool_cfg=PoolConfig(size=1))
+    manager = ServingDBManager(
+        pointer_path=snapshot.pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        hot_swap=False,
+    )
     await manager.start()
     try:
         kernel = SemanticQueryKernel(
