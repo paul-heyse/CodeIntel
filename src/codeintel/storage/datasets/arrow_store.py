@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
+from time import perf_counter
+from typing import TYPE_CHECKING, Literal, Protocol, cast, runtime_checkable
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
@@ -21,11 +25,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
     from pyarrow import RecordBatchReader, Table
+    from pyarrow.dataset import FileWriteOptions
 
     type ArrowDatasetInput = Table | RecordBatchReader
 else:
     type ArrowDatasetInput = object
 ExistingDataBehavior = Literal["delete_matching", "error", "overwrite_or_ignore"]
+
+LOG = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -92,6 +99,13 @@ class ArrowDatasetWriteOptions:
     persist_manifest: bool = True
     schema_hash: str | None = None
     manifest_extras: Mapping[str, object] | None = None
+    max_rows_per_file: int | None = None
+    row_group_size: int | None = None
+    data_page_size: int | None = None
+    compression: str | None = None
+    dictionary_encode: bool = False
+    dictionary_max_cardinality: int | None = None
+    unify_dictionaries: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,20 +148,26 @@ def write_dataset(
     ArrowDatasetManifest
         Manifest describing the written dataset snapshot.
     """
+    start = perf_counter()
     resolved = options or ArrowDatasetWriteOptions()
+    prepared = _apply_dictionary_options(data, resolved)
     snapshot_dir = dataset_snapshot_dir(
         dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
     )
     snapshot_dir.mkdir(parents=True, exist_ok=True)
-    partitioning = _partitioning(resolved.partition_columns, schema=data.schema)
+    partitioning = _partitioning(resolved.partition_columns, schema=prepared.schema)
+    parquet_format, file_options = _parquet_write_options(resolved)
     ds.write_dataset(
-        data,
+        prepared,
         str(snapshot_dir),
-        format="parquet",
+        format=parquet_format,
         partitioning=partitioning,
         existing_data_behavior=resolved.existing_data_behavior,
+        file_options=file_options,
+        max_rows_per_file=resolved.max_rows_per_file,
+        max_rows_per_group=resolved.row_group_size,
     )
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
     request = ArrowDatasetManifestRequest(
@@ -169,6 +189,15 @@ def write_dataset(
             snapshot_id=snapshot_id,
         )
         write_dataset_manifest(manifest_path, manifest)
+    if LOG.isEnabledFor(logging.INFO):
+        duration_ms = (perf_counter() - start) * 1000
+        LOG.info(
+            "Arrow dataset write: table=%s rows=%s files=%s duration_ms=%.2f",
+            table_key,
+            manifest.row_count,
+            len(manifest.files),
+            duration_ms,
+        )
     return manifest
 
 
@@ -210,6 +239,79 @@ def scan_dataset(
     return ds.dataset(str(snapshot_dir), format="parquet")
 
 
+def scan_dataset_scanner(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+    batch_size: int,
+    fragment_readahead: int | None = None,
+    filter_expression: ds.Expression | None = None,
+) -> ds.Scanner:
+    """Return a dataset scanner for streaming reads.
+
+    Parameters
+    ----------
+    dataset_root
+        Root directory where Arrow datasets are stored.
+    table_key
+        Fully qualified table key (schema.table).
+    snapshot_id
+        Snapshot identifier used to scope the dataset.
+    batch_size
+        Target batch size for scanned record batches.
+    fragment_readahead
+        Optional fragment readahead hint for the scanner.
+    filter_expression
+        Optional dataset filter expression for pushdown.
+
+    Returns
+    -------
+    pyarrow.dataset.Scanner
+        Scanner configured for streaming reads.
+    """
+    dataset = scan_dataset(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+    )
+    scan_kwargs: dict[str, object] = {"batch_size": batch_size}
+    if fragment_readahead is not None:
+        scan_kwargs["fragment_readahead"] = fragment_readahead
+    return _build_scanner(
+        dataset,
+        filter_expression=filter_expression,
+        scan_kwargs=scan_kwargs,
+    )
+
+
+def scan_dataset_reader(
+    *,
+    dataset_root: Path,
+    table_key: str,
+    snapshot_id: str,
+    batch_size: int,
+    fragment_readahead: int | None = None,
+    filter_expression: ds.Expression | None = None,
+) -> pa.RecordBatchReader:
+    """Return a RecordBatchReader for a dataset snapshot.
+
+    Returns
+    -------
+    pyarrow.RecordBatchReader
+        Reader streaming record batches from the dataset.
+    """
+    scanner = scan_dataset_scanner(
+        dataset_root=dataset_root,
+        table_key=table_key,
+        snapshot_id=snapshot_id,
+        batch_size=batch_size,
+        fragment_readahead=fragment_readahead,
+        filter_expression=filter_expression,
+    )
+    return scanner.to_reader()
+
+
 def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
     """Return lightweight dataset statistics.
 
@@ -225,12 +327,13 @@ def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
     """
     files = tuple(dataset.files)
     parquet_stats = _parquet_stats(files)
+    parquet_rows = parquet_stats.rows_from_metadata if parquet_stats else None
     sort_keys = parquet_stats.sort_keys if parquet_stats and parquet_stats.sort_keys else None
     column_min_max = (
         parquet_stats.column_min_max if parquet_stats and parquet_stats.column_min_max else None
     )
     return ArrowDatasetStats(
-        row_count=_count_rows(dataset),
+        row_count=_count_rows(dataset, parquet_rows=parquet_rows),
         row_group_count=parquet_stats.row_group_count if parquet_stats else None,
         file_count=parquet_stats.file_count if parquet_stats else None,
         rows_from_metadata=parquet_stats.rows_from_metadata if parquet_stats else None,
@@ -297,7 +400,141 @@ def _partitioning(
     return ds.partitioning(schema=pa.schema(fields))
 
 
-def _count_rows(dataset: ds.Dataset) -> int | None:
+def _build_scanner(
+    dataset: ds.Dataset,
+    *,
+    filter_expression: ds.Expression | None,
+    scan_kwargs: Mapping[str, object],
+) -> ds.Scanner:
+    if filter_expression is None:
+        return dataset.scanner(**scan_kwargs)
+    fragments = _fragments_for_filter(dataset, filter_expression)
+    from_fragments = getattr(ds.Scanner, "from_fragments", None)
+    if fragments is not None and callable(from_fragments):
+        try:
+            return from_fragments(fragments, schema=dataset.schema, **scan_kwargs)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            pass
+    scan_kwargs = dict(scan_kwargs)
+    scan_kwargs["filter"] = filter_expression
+    return dataset.scanner(**scan_kwargs)
+
+
+def _fragments_for_filter(
+    dataset: ds.Dataset,
+    filter_expression: ds.Expression,
+) -> tuple[ds.Fragment, ...] | None:
+    get_fragments = getattr(dataset, "get_fragments", None)
+    if not callable(get_fragments):
+        return None
+    try:
+        return tuple(get_fragments(filter=filter_expression))
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+
+
+def _parquet_write_options(
+    options: ArrowDatasetWriteOptions,
+) -> tuple[ds.FileFormat, FileWriteOptions | None]:
+    parquet_format = ds.ParquetFileFormat()
+    make_options = getattr(parquet_format, "make_write_options", None)
+    if not callable(make_options):
+        return parquet_format, None
+    signature = inspect.signature(make_options)
+    kwargs: dict[str, object] = {}
+    if options.compression and "compression" in signature.parameters:
+        kwargs["compression"] = options.compression
+    if options.data_page_size and "data_page_size" in signature.parameters:
+        kwargs["data_page_size"] = options.data_page_size
+    if options.dictionary_encode and "use_dictionary" in signature.parameters:
+        kwargs["use_dictionary"] = True
+    if kwargs:
+        return parquet_format, cast("FileWriteOptions", make_options(**kwargs))
+    return parquet_format, cast("FileWriteOptions", make_options())
+
+
+def _apply_dictionary_options(
+    data: ArrowDatasetInput,
+    options: ArrowDatasetWriteOptions,
+) -> ArrowDatasetInput:
+    if not options.dictionary_encode and not options.unify_dictionaries:
+        return data
+    if isinstance(data, pa.Table):
+        table = data
+        if options.dictionary_encode:
+            table = _dictionary_encode_table(
+                table,
+                max_cardinality=options.dictionary_max_cardinality,
+            )
+        if options.unify_dictionaries:
+            table = _unify_dictionaries(table)
+        return table
+    if isinstance(data, pa.RecordBatchReader) and options.dictionary_encode:
+        LOG.debug("Dictionary encode skipped for stream input")
+    if options.unify_dictionaries:
+        LOG.debug("Dictionary unify skipped for stream input")
+    return data
+
+
+def _dictionary_encode_table(
+    table: pa.Table,
+    *,
+    max_cardinality: int | None,
+) -> pa.Table:
+    if max_cardinality is None or max_cardinality <= 0:
+        return table
+    arrays: list[pa.Array | pa.ChunkedArray] = []
+    fields: list[pa.Field] = []
+    for name in table.schema.names:
+        column = table.column(name)
+        encoded = _maybe_dictionary_encode_array(column, max_cardinality=max_cardinality)
+        arrays.append(encoded)
+        fields.append(pa.field(name, encoded.type))
+    return pa.Table.from_arrays(arrays, schema=pa.schema(fields))
+
+
+def _maybe_dictionary_encode_array(
+    array: pa.Array | pa.ChunkedArray,
+    *,
+    max_cardinality: int,
+) -> pa.Array | pa.ChunkedArray:
+    data_type = array.type
+    if not (pa.types.is_string(data_type) or pa.types.is_large_string(data_type)):
+        return array
+    distinct = _count_distinct(array)
+    if distinct is None or distinct > max_cardinality:
+        return array
+    return _dictionary_encode(array)
+
+
+def _count_distinct(array: pa.Array | pa.ChunkedArray) -> int | None:
+    func = getattr(pc, "count_distinct", None)
+    if not callable(func):
+        return None
+    result = func(array)
+    return _coerce_int(_normalize_stat_value(result))
+
+
+def _dictionary_encode(array: pa.Array | pa.ChunkedArray) -> pa.Array | pa.ChunkedArray:
+    func = getattr(pc, "dictionary_encode", None)
+    if not callable(func):
+        return array
+    return func(array)
+
+
+def _unify_dictionaries(table: pa.Table) -> pa.Table:
+    unify = getattr(table, "unify_dictionaries", None)
+    if not callable(unify):
+        return table
+    try:
+        return unify()
+    except pa.ArrowInvalid:
+        return table
+
+
+def _count_rows(dataset: ds.Dataset, *, parquet_rows: int | None) -> int | None:
+    if parquet_rows is not None:
+        return parquet_rows
     counter = getattr(dataset, "count_rows", None)
     if callable(counter):
         try:
@@ -315,8 +552,7 @@ def _count_rows(dataset: ds.Dataset) -> int | None:
                 return coerced
         except (TypeError, ValueError, pa.ArrowInvalid):
             pass
-    table = scanner.to_table()
-    return table.num_rows
+    return None
 
 
 def _relative_files(files: Iterable[str], *, base_dir: Path) -> tuple[str, ...]:
@@ -446,13 +682,11 @@ def _extract_min_max(stats: object) -> tuple[object | None, object | None]:
 def _normalize_stat_value(value: object) -> object | None:
     if value is None:
         return None
-    as_py = getattr(value, "as_py", None)
-    if callable(as_py):
-        return as_py()
-    item = getattr(value, "item", None)
-    if callable(item):
+    if isinstance(value, _SupportsAsPy):
+        return value.as_py()
+    if isinstance(value, _SupportsItem):
         try:
-            return item()
+            return value.item()
         except (TypeError, ValueError, OverflowError):
             return value
     return value
@@ -534,5 +768,7 @@ __all__ = [
     "build_dataset_manifest",
     "dataset_stats",
     "scan_dataset",
+    "scan_dataset_reader",
+    "scan_dataset_scanner",
     "write_dataset",
 ]

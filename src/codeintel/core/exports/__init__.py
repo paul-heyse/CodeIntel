@@ -6,6 +6,8 @@ from codeintel.core.exports.arrow_ipc import (
     ARROW_IPC_STREAM_MIME,
     ArrowIpcStreamError,
     apply_ipc_metadata,
+    build_ipc_read_options,
+    build_ipc_write_options,
     default_ipc_write_options,
     iter_ipc_stream,
 )
@@ -36,6 +38,8 @@ __all__ = [
     "ExportFormat",
     "ExportFormatSpec",
     "apply_ipc_metadata",
+    "build_ipc_read_options",
+    "build_ipc_write_options",
     "coerce_export_row",
     "coerce_export_value",
     "default_export_format",

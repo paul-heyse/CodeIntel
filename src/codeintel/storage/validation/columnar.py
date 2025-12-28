@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterator
 from typing import Literal
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
@@ -133,7 +134,7 @@ def _nullability_errors_for_table(table_schema: TableSchema, table: pa.Table) ->
             continue
         if column.name not in table.column_names:
             continue
-        if _has_nulls(table.column(column.name)):
+        if not _all_valid(table.column(column.name)):
             errors.append(f"Column {column.name} contains nulls but is non-nullable")
     return errors
 
@@ -150,9 +151,23 @@ def _nullability_errors_for_batch(
         if column.name not in names:
             continue
         index = names.index(column.name)
-        if _has_nulls(batch.column(index)):
+        if not _all_valid(batch.column(index)):
             errors.append(f"Column {column.name} contains nulls but is non-nullable")
     return errors
+
+
+def _all_valid(values: pa.Array | pa.ChunkedArray) -> bool:
+    is_valid = getattr(pc, "is_valid", None)
+    if not callable(is_valid):
+        return not _has_nulls(values)
+    try:
+        mask = is_valid(values)
+        all_fn = getattr(pc, "all", None)
+        if callable(all_fn):
+            return bool(all_fn(mask).as_py())
+        return not _has_nulls(values)
+    except (TypeError, pa.ArrowInvalid):
+        return not _has_nulls(values)
 
 
 def _arrow_validation_errors(table: pa.Table) -> list[str]:

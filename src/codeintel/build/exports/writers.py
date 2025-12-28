@@ -98,6 +98,11 @@ def write_jsonl_records(
     -------
     int
         Number of rows written to the JSONL output.
+
+    Raises
+    ------
+    ValueError
+        If a custom serializer is provided.
     """
     if serializer is not default_json_serializer:
         msg = "Custom JSON serializers are not supported for columnar JSONL exports"

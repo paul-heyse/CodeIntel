@@ -99,10 +99,10 @@ def _is_tabular_annotation(annotation: object) -> bool:
             for token in (
                 "TabularInput",
                 "InferableTabularInput",
-                "pa.Table",
-                "pyarrow.Table",
                 "pa.RecordBatchReader",
                 "pyarrow.RecordBatchReader",
+                "pa.Table",
+                "pyarrow.Table",
                 "pl.LazyFrame",
                 "polars.LazyFrame",
             )
@@ -112,10 +112,10 @@ def _is_tabular_annotation(annotation: object) -> bool:
         for token in (
             "TabularInput",
             "InferableTabularInput",
-            "pa.Table",
-            "pyarrow.Table",
             "pa.RecordBatchReader",
             "pyarrow.RecordBatchReader",
+            "pa.Table",
+            "pyarrow.Table",
             "pl.LazyFrame",
             "polars.LazyFrame",
         )

@@ -29,7 +29,7 @@ from codeintel.serving.mcp.tools.shared import (
 )
 from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.operations.ops import ServingOperations
-from codeintel.serving.semantic.models import SemanticExportRequest
+from codeintel.serving.semantic.models import SemanticExportRequest, SemanticQueryResponse
 
 if TYPE_CHECKING:
     from codeintel.serving.export.formats import ExportFormat
@@ -57,61 +57,45 @@ class SemanticQueryHandler:
         await ctx.info(f"Querying view: {request.view_id}")
         await maybe_report_progress(ctx, settings=self.settings, progress=10, total=100)
         cancel_token = CancelToken.from_timeout(self.settings.query_timeout_s)
-        semantic_request = request.to_semantic_request()
         result = await self.limiter.run_with_timeout(
             self.ops.query,
             self.settings.query_timeout_s,
-            semantic_request,
+            request.to_semantic_request(),
             cancel_check=cancel_token.raise_if_cancelled,
         )
         await maybe_report_progress(ctx, settings=self.settings, progress=100, total=100)
 
-        row_count = len(result.rows)
-        truncated = result.truncated
-        query_hash = result.query_hash
-        schema_hash = result.schema_hash
-
-        sql_fingerprint = result.sql_fingerprint
-
-        preview: QueryPreview | None = None
-        if truncated or row_count > PREVIEW_ROW_COUNT:
-            preview = QueryPreview(
-                columns=tuple(result.columns),
-                rows=tuple(result.rows[:PREVIEW_ROW_COUNT]),
-                truncated=row_count > PREVIEW_ROW_COUNT or truncated,
-            )
-
-        summary: str | None = None
-        if self.feature_set.enable_mcp_sampling and preview is not None:
-            should_sample = truncated or row_count >= self.settings.mcp_sample_threshold
-            if should_sample:
-                summary = await try_sample_summary(
-                    ctx,
-                    view_id=request.view_id,
-                    preview=preview,
-                    query_hash=query_hash,
-                )
-
+        preview = self._preview_from_result(result)
+        summary = await self._maybe_sample_summary(
+            ctx=ctx,
+            request=request,
+            preview=preview,
+            result=result,
+        )
         export_handle = await self._maybe_export_handle(request, ctx=ctx)
-        export_uri = export_handle.uri if export_handle is not None else None
-        export_meta_uri = export_handle.meta_uri if export_handle is not None else None
-
         note = self._build_note(
-            truncated=truncated,
+            truncated=result.truncated,
             export_requested=request.export_format is not None,
             export_handle=export_handle,
         )
 
         duration_ms = (time.perf_counter() - start) * 1000
+        row_count = len(result.rows)
         metrics = McpMetricsInput(
             endpoint="mcp:semantic_query",
             view_id=request.view_id,
             query=None,
             row_count=row_count,
-            truncated=truncated,
+            truncated=result.truncated,
             duration_ms=duration_ms,
-            query_hash=query_hash,
-            schema_hash=schema_hash,
+            engine=result.engine,
+            engine_preference=self.settings.query_engine,
+            query_hash=result.query_hash,
+            schema_hash=result.schema_hash,
+            batch_size=result.batch_size,
+            scan_rows=result.scan_metrics.row_count if result.scan_metrics else None,
+            scan_files=result.scan_metrics.file_count if result.scan_metrics else None,
+            scan_bytes=result.scan_metrics.total_bytes if result.scan_metrics else None,
         )
         log_mcp_query_metrics(metrics, ctx=ctx)
 
@@ -119,11 +103,42 @@ class SemanticQueryHandler:
             result=result,
             preview=preview,
             export=export_handle,
-            export_uri=export_uri,
-            export_meta_uri=export_meta_uri,
+            export_uri=export_handle.uri if export_handle is not None else None,
+            export_meta_uri=export_handle.meta_uri if export_handle is not None else None,
             summary=summary,
-            sql_fingerprint=sql_fingerprint,
+            sql_fingerprint=result.sql_fingerprint,
             note=note,
+        )
+
+    @staticmethod
+    def _preview_from_result(result: SemanticQueryResponse) -> QueryPreview | None:
+        row_count = len(result.rows)
+        if not result.truncated and row_count <= PREVIEW_ROW_COUNT:
+            return None
+        return QueryPreview(
+            columns=tuple(result.columns),
+            rows=tuple(result.rows[:PREVIEW_ROW_COUNT]),
+            truncated=row_count > PREVIEW_ROW_COUNT or result.truncated,
+        )
+
+    async def _maybe_sample_summary(
+        self,
+        *,
+        ctx: Context,
+        request: SemanticQueryToolRequest,
+        preview: QueryPreview | None,
+        result: SemanticQueryResponse,
+    ) -> str | None:
+        if not self.feature_set.enable_mcp_sampling or preview is None:
+            return None
+        should_sample = result.truncated or len(result.rows) >= self.settings.mcp_sample_threshold
+        if not should_sample:
+            return None
+        return await try_sample_summary(
+            ctx,
+            view_id=request.view_id,
+            preview=preview,
+            query_hash=result.query_hash,
         )
 
     async def _maybe_export_handle(
@@ -158,6 +173,14 @@ class SemanticQueryHandler:
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class ExportWorkflowConfig:
+    """Export workflow configuration for semantic_query."""
+
+    store: ResourceStore
+    limiter: QueryLimiter
+
+
 def _export_request_from_query(
     request: SemanticQueryToolRequest,
     *,
@@ -184,17 +207,16 @@ def register_query_tool(
     limiter: QueryLimiter,
     *,
     settings: ServingSettings,
-    store: ResourceStore | None = None,
-    export_limiter: QueryLimiter | None = None,
+    export_config: ExportWorkflowConfig | None = None,
 ) -> None:
     """Register semantic_query tool."""
     feature_set = ServingFeatureSet.from_settings(settings)
     export_workflow = None
-    if store is not None and export_limiter is not None and feature_set.enable_mcp_export:
+    if export_config is not None and feature_set.enable_mcp_export:
         export_workflow = ExportWorkflow(
             ops=ops,
-            limiter=export_limiter,
-            store=store,
+            limiter=export_config.limiter,
+            store=export_config.store,
             settings=settings,
         )
     handler = SemanticQueryHandler(
@@ -221,4 +243,4 @@ def register_query_tool(
     )(semantic_query)
 
 
-__all__ = ["register_query_tool"]
+__all__ = ["ExportWorkflowConfig", "register_query_tool"]

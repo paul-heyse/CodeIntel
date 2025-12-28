@@ -134,6 +134,16 @@ class SemanticQueryRequest(BaseModel):
         return items or None
 
 
+class QueryScanMetrics(BaseModel):
+    """Dataset scan metrics for semantic queries."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    row_count: int | None = None
+    file_count: int | None = None
+    total_bytes: int | None = None
+
+
 class SemanticQueryResponse(BaseModel):
     """Response from a semantic view query.
 
@@ -147,12 +157,18 @@ class SemanticQueryResponse(BaseModel):
         Result rows as list of dicts.
     truncated
         Whether results were truncated by limit.
+    engine
+        Query execution engine used for the response.
     snapshot
         Snapshot metadata (repo, commit, run_id).
     query_hash
         Stable fingerprint of validated query inputs.
     schema_hash
         Stable fingerprint of the resolved schema (when available).
+    scan_metrics
+        Input scan metrics derived from dataset manifests when available.
+    batch_size
+        Batch size used for streaming execution.
     sql_fingerprint
         Stable fingerprint of canonical SQL when compiled SQL is available.
     """
@@ -163,9 +179,12 @@ class SemanticQueryResponse(BaseModel):
     columns: list[str]
     rows: list[dict[str, object]]
     truncated: bool
+    engine: str | None = None
     snapshot: ServingSnapshotIdentity
     query_hash: str | None = None
     schema_hash: str | None = None
+    scan_metrics: QueryScanMetrics | None = None
+    batch_size: int | None = None
     sql_fingerprint: str | None = None
 
 
@@ -287,6 +306,7 @@ __all__ = [
     "FilterSpec",
     "FilterValue",
     "Op",
+    "QueryScanMetrics",
     "SemanticCatalogResponse",
     "SemanticCatalogView",
     "SemanticExplainResponse",

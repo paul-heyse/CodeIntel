@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
@@ -13,6 +16,7 @@ from codeintel.core.schemas.arrow_gen import (
     arrow_schema_from_table_schema,
 )
 from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
 
@@ -47,6 +51,117 @@ def _load_registry_metadata(con: DuckDBPyConnection, table_key: str) -> dict[str
     }
 
 
+def _load_contract_schema(
+    con: DuckDBPyConnection,
+    *,
+    table_key: str,
+) -> pa.Schema | None:
+    registry_ref = meta_table_ref("metadata.table_schema_registry")
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    row = con.execute(
+        f"""
+        SELECT versions.renderer_cache
+        FROM {registry_ref} AS registry
+        JOIN {versions_ref} AS versions
+          ON registry.schema_digest = versions.schema_digest
+        WHERE registry.table_key = ?
+        """,
+        [table_key],
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    renderer_cache = decode_json_dict(row[0])
+    ipc_payload = renderer_cache.get("arrow_schema_ipc_b64")
+    if not isinstance(ipc_payload, str):
+        return None
+    return _schema_from_ipc_payload(ipc_payload)
+
+
+def _schema_from_ipc_payload(payload: str) -> pa.Schema | None:
+    try:
+        raw = base64.b64decode(payload)
+    except (ValueError, binascii.Error):
+        return None
+    try:
+        buffer = pa.py_buffer(raw)
+        return pa.ipc.read_schema(pa.BufferReader(buffer))
+    except (OSError, pa.ArrowInvalid, ValueError):
+        return None
+
+
+def _apply_runtime_metadata(
+    schema: pa.Schema,
+    *,
+    column_lineage: Mapping[str, list[tuple[str, str]]] | None,
+    pii_by_column: Mapping[str, str] | None,
+) -> pa.Schema:
+    if not column_lineage and not pii_by_column:
+        return schema
+    fields: list[pa.Field] = []
+    for field in schema:
+        updates: dict[str, object] = {}
+        if pii_by_column is not None:
+            pii_class = pii_by_column.get(field.name)
+            if pii_class is not None:
+                updates["codeintel.pii_class"] = pii_class
+        if column_lineage is not None:
+            lineage = column_lineage.get(field.name)
+            if lineage:
+                updates["codeintel.lineage_edges"] = _lineage_payload(lineage)
+        if updates:
+            field = _merge_field_metadata(field, updates)
+        fields.append(field)
+    return pa.schema(fields, metadata=schema.metadata)
+
+
+def _merge_field_metadata(field: pa.Field, updates: Mapping[str, object]) -> pa.Field:
+    existing = _decode_metadata(field.metadata)
+    merged = dict(existing)
+    for key, value in updates.items():
+        if value is None or key in merged:
+            continue
+        merged[key] = value
+    return field.with_metadata(_encode_metadata(merged))
+
+
+def _decode_metadata(metadata: Mapping[bytes, bytes] | None) -> dict[str, object]:
+    if not metadata:
+        return {}
+    decoded: dict[str, object] = {}
+    for key, raw in metadata.items():
+        key_str = key.decode("utf-8")
+        raw_str = raw.decode("utf-8")
+        decoded[key_str] = _decode_metadata_value(raw_str)
+    return decoded
+
+
+def _decode_metadata_value(raw: str) -> object:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes] | None:
+    if not metadata:
+        return None
+    encoded: dict[bytes, bytes] = {}
+    for key, value in metadata.items():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            raw = value
+        else:
+            raw = json.dumps(value, sort_keys=True, separators=(",", ":"))
+        encoded[key.encode("utf-8")] = raw.encode("utf-8")
+    return encoded or None
+
+
+def _lineage_payload(lineage: list[tuple[str, str]]) -> list[dict[str, str]]:
+    entries = sorted(lineage, key=lambda item: (item[0], item[1]))
+    return [{"table_key": table_key, "column": column} for table_key, column in entries]
+
+
 def arrow_schema_for_table_key(
     con: DuckDBPyConnection,
     *,
@@ -78,15 +193,6 @@ def arrow_schema_for_table_key(
     table_schema = get_schema_provider().get_table_schema(table_key)
     if table_schema is None:
         return None
-
-    registry_metadata = _load_registry_metadata(con, table_key)
-    schema_digest = _normalize_str(registry_metadata.get("schema_digest"))
-    schema_hash_value = _normalize_str(registry_metadata.get("schema_hash"))
-    derivation_kind = _normalize_str(registry_metadata.get("derivation_kind"))
-    derivation_source = _normalize_str(registry_metadata.get("derivation_source"))
-    inference_status = _normalize_str(registry_metadata.get("inference_status"))
-    inference_error = _normalize_str(registry_metadata.get("inference_error"))
-
     column_lineage = None
     if repo and commit:
         column_lineage = load_derived_lineage_columns(
@@ -95,6 +201,21 @@ def arrow_schema_for_table_key(
             commit=commit,
             downstream_table=table_key,
         )
+    contract_schema = _load_contract_schema(con, table_key=table_key)
+    if contract_schema is not None:
+        return _apply_runtime_metadata(
+            contract_schema,
+            column_lineage=column_lineage,
+            pii_by_column=pii_by_column,
+        )
+
+    registry_metadata = _load_registry_metadata(con, table_key)
+    schema_digest = _normalize_str(registry_metadata.get("schema_digest"))
+    schema_hash_value = _normalize_str(registry_metadata.get("schema_hash"))
+    derivation_kind = _normalize_str(registry_metadata.get("derivation_kind"))
+    derivation_source = _normalize_str(registry_metadata.get("derivation_source"))
+    inference_status = _normalize_str(registry_metadata.get("inference_status"))
+    inference_error = _normalize_str(registry_metadata.get("inference_error"))
 
     provenance = ArrowSchemaProvenance(
         derivation_kind=derivation_kind,

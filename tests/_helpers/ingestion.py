@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, TypeGuard, cast
+from typing import TYPE_CHECKING
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.helpers import paths_to_modules
@@ -15,7 +15,7 @@ from codeintel.build.schemas import column_names_for_table_key
 from codeintel.build.targets import TargetDescriptor
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
-from codeintel.core.columnar.rows import ColumnarRows, columnar_row_count
+from codeintel.core.columnar.rows import ColumnarRows
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -31,6 +31,7 @@ from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.modules import ModulesAssertions
 from tests._helpers.build import TEST_BUILD_SETTINGS
 from tests._helpers.catalog import make_target_descriptor
+from tests._helpers.columnar_tables import materialize_table_from_rows
 from tests._helpers.factories import make_snapshot
 from tests._helpers.fakes.tools import write_dummy_scip_files
 from tests._helpers.fixtures.repos import write_tree
@@ -45,7 +46,7 @@ from tests._helpers.scip_proto import write_scip_index as write_proto_index
 from tests._helpers.tool_payloads import pytest_report_payload
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Generator
     from pathlib import Path
 
     from codeintel.build.hamilton.env import BuildEnv
@@ -416,50 +417,18 @@ def materialize_rows_for_snapshot(
     snapshot: SnapshotRef,
 ) -> None:
     """Materialize rows into a snapshot-scoped table."""
-    columns = column_names_for_table_key(table_key)
-    resolved_columns = columns if columns else None
-    tuples: Sequence[tuple[object, ...]]
-    if _is_columnar_rows(rows):
-        resolved_columns = columns
-        tuples = _columnar_to_tuples(rows, columns=columns)
-    else:
-        tuples = cast("Sequence[tuple[object, ...]]", rows)
     warehouse = Warehouse(gateway)
-    warehouse.materialize_rows(
+    columns = column_names_for_table_key(table_key)
+    materialize_table_from_rows(
+        warehouse,
         table_key,
-        tuples,
-        columns=resolved_columns,
+        rows,
+        columns=columns if columns else None,
         options=MaterializeOptions(
             mode="replace",
             snapshot=snapshot,
         ),
     )
-
-
-def _columnar_to_tuples(
-    rows: ColumnarRows,
-    *,
-    columns: Sequence[str],
-) -> Sequence[tuple[object, ...]]:
-    if not columns:
-        return ()
-    row_count = columnar_row_count(rows)
-    if row_count == 0:
-        return ()
-    ordered: list[Sequence[object]] = []
-    for name in columns:
-        values = rows.get(name)
-        if values is None:
-            msg = f"Missing column {name} in columnar rows"
-            raise KeyError(msg)
-        ordered.append(values)
-    return list(zip(*ordered, strict=True))
-
-
-def _is_columnar_rows(
-    rows: Sequence[tuple[object, ...]] | ColumnarRows,
-) -> TypeGuard[ColumnarRows]:
-    return isinstance(rows, Mapping)
 
 
 def materialize_repo_scan_result(

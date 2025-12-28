@@ -25,7 +25,7 @@ from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
-    lazyframe_for_table_columns,
+    lazyframe_for_ingest_columns,
 )
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
@@ -507,9 +507,7 @@ def _execute_scip_incremental(
         module_inputs.scan.file_state_row_count == 0
         and columnar_row_count(change_set.state_rows) > 0
     ):
-        file_state_rows = lazyframe_for_table_columns(
-            FILE_STATE_TABLE_KEY, change_set.state_rows
-        )
+        file_state_rows = lazyframe_for_ingest_columns(FILE_STATE_TABLE_KEY, change_set.state_rows)
     file_state_by_path = _build_file_state_map(file_state_rows)
     try:
         config = ScipIncrementalConfig(
@@ -623,14 +621,14 @@ def t__scip__run(
 
     output = run_tool_step(context=context, run=_execute)
     scip_output = _coerce_scip_run_output(output, run_id=run_id, mode="unknown")
+    if scip_output.result.skipped and output_scip.is_file():
+        return ScipRunResult(
+            result=ExecutionResult.skip("SCIP target skipped"),
+            outputs={SCIP_ARTIFACT_INDEX: output_scip},
+            run_id=run_id,
+            mode="skipped",
+        )
     if scip_output.result.skipped:
-        if output_scip.is_file():
-            return ScipRunResult(
-                result=ExecutionResult.skip("SCIP target skipped"),
-                outputs={SCIP_ARTIFACT_INDEX: output_scip},
-                run_id=run_id,
-                mode="skipped",
-            )
         log.warning("SCIP target marked up-to-date but index.scip is missing; rebuilding")
         return _execute()
 
@@ -716,18 +714,18 @@ def _build_scip_row_payload(
     diagnostic_rows = build_diagnostic_rows(parsed.diagnostics, row_context)
     external_symbol_rows = build_external_symbol_rows(parsed.external_symbols, row_context)
     return ScipRowPayload(
-        symbol_rows=lazyframe_for_table_columns(SCIP_SYMBOLS_TABLE_KEY, symbol_rows),
-        occurrence_rows=lazyframe_for_table_columns(SCIP_OCCURRENCES_TABLE_KEY, occurrence_rows),
-        symbol_info_rows=lazyframe_for_table_columns(
+        symbol_rows=lazyframe_for_ingest_columns(SCIP_SYMBOLS_TABLE_KEY, symbol_rows),
+        occurrence_rows=lazyframe_for_ingest_columns(SCIP_OCCURRENCES_TABLE_KEY, occurrence_rows),
+        symbol_info_rows=lazyframe_for_ingest_columns(
             SCIP_SYMBOL_INFO_TABLE_KEY,
             symbol_info_rows,
         ),
-        relationship_rows=lazyframe_for_table_columns(
+        relationship_rows=lazyframe_for_ingest_columns(
             SCIP_RELATIONSHIPS_TABLE_KEY,
             relationship_rows,
         ),
-        diagnostic_rows=lazyframe_for_table_columns(SCIP_DIAGNOSTICS_TABLE_KEY, diagnostic_rows),
-        external_symbol_rows=lazyframe_for_table_columns(
+        diagnostic_rows=lazyframe_for_ingest_columns(SCIP_DIAGNOSTICS_TABLE_KEY, diagnostic_rows),
+        external_symbol_rows=lazyframe_for_ingest_columns(
             SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
             external_symbol_rows,
         ),
@@ -767,7 +765,7 @@ def _build_module_state_frame(
         env.snapshot.repo,
         env.snapshot.commit,
     )
-    frame = lazyframe_for_table_columns(SCIP_MODULE_STATE_TABLE_KEY, rows)
+    frame = lazyframe_for_ingest_columns(SCIP_MODULE_STATE_TABLE_KEY, rows)
     return frame, columnar_row_count(rows)
 
 

@@ -9,6 +9,7 @@ from typing import cast, get_args
 import polars as pl
 import pyarrow as pa
 
+from codeintel.core.schemas.arrow_gen import ARROW_SCHEMA_CONTRACT_VERSION, EXTRAS_POLICIES
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.storage.helpers.table_key import split_table_key, validate_table_key
 
@@ -38,6 +39,7 @@ def table_schema_from_arrow_schema(
         TableSchema derived from the Arrow schema.
     """
     metadata = _decode_metadata(arrow_schema.metadata)
+    _validate_contract_metadata(metadata)
     resolved_key = _resolve_table_key(table_key=table_key, metadata=metadata)
     schema_name, table_name = split_table_key(resolved_key)
     table_description = _metadata_str(metadata, "codeintel.description")
@@ -364,6 +366,48 @@ def _decode_metadata_value(raw: str) -> object:
         return json.loads(raw)
     except json.JSONDecodeError:
         return raw
+
+
+def _validate_contract_metadata(metadata: Mapping[str, object]) -> None:
+    version = metadata.get("codeintel.schema_contract_version")
+    if version is not None:
+        if not isinstance(version, str):
+            msg = (
+                "Arrow schema metadata codeintel.schema_contract_version must be a string, "
+                f"got {type(version)}"
+            )
+            raise TypeError(msg)
+        if version != ARROW_SCHEMA_CONTRACT_VERSION:
+            msg = (
+                "Arrow schema contract version mismatch: "
+                f"{version!r} != {ARROW_SCHEMA_CONTRACT_VERSION!r}"
+            )
+            raise ValueError(msg)
+    extras_policy = metadata.get("codeintel.extras_policy")
+    if extras_policy is not None:
+        if not isinstance(extras_policy, str):
+            msg = (
+                "Arrow schema metadata codeintel.extras_policy must be a string, "
+                f"got {type(extras_policy)}"
+            )
+            raise TypeError(msg)
+        if extras_policy not in EXTRAS_POLICIES:
+            msg = f"Arrow schema extras_policy is not supported: {extras_policy!r}"
+            raise ValueError(msg)
+    extras_column = metadata.get("codeintel.extras_column")
+    if extras_column is not None and not isinstance(extras_column, str):
+        msg = (
+            "Arrow schema metadata codeintel.extras_column must be a string, "
+            f"got {type(extras_column)}"
+        )
+        raise TypeError(msg)
+    extras_schema = metadata.get("codeintel.extras_schema")
+    if extras_schema is not None and not isinstance(extras_schema, Mapping):
+        msg = (
+            "Arrow schema metadata codeintel.extras_schema must be a mapping, "
+            f"got {type(extras_schema)}"
+        )
+        raise TypeError(msg)
 
 
 __all__ = [

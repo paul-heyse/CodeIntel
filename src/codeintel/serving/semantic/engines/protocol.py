@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.serving.semantic.query_ast import ServingQuery
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -68,12 +68,12 @@ class QueryEngine(Protocol):
         """Return the engine identifier."""
         ...
 
-    def can_run(self, spec: SemanticQuerySpec, *, ctx: EngineContext) -> bool:
-        """Return True when this engine can handle the spec."""
+    def can_run(self, query: ServingQuery, *, ctx: EngineContext) -> bool:
+        """Return True when this engine can handle the query."""
         ...
 
-    def compile(self, spec: SemanticQuerySpec, *, ctx: EngineContext) -> ExecutablePlan:
-        """Compile the spec into an executable plan."""
+    def compile(self, query: ServingQuery, *, ctx: EngineContext) -> ExecutablePlan:
+        """Compile the query into an executable plan."""
         ...
 
 

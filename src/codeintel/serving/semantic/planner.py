@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.serving.errors import SemanticColumnNotFoundError, SemanticInvalidFilterError
+from codeintel.serving.semantic.query_ast import ServingQuery, build_serving_query
 from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilderError
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType
@@ -198,6 +200,31 @@ class SemanticQueryPlanner:
             offset=inputs.offset,
             column_types=ctx.column_types,
         )
+
+    def build_query(
+        self,
+        *,
+        ctx: ResolvedViewContext,
+        inputs: PlanInputs,
+        limit: int,
+    ) -> ServingQuery:
+        """Build a serving query bundle with SQLGlot AST.
+
+        Returns
+        -------
+        ServingQuery
+            Serving query bundle with the SQLGlot AST.
+
+        Raises
+        ------
+        SemanticInvalidFilterError
+            If the query cannot be represented as a SQLGlot AST.
+        """
+        spec = self.build_spec(ctx=ctx, inputs=inputs, limit=limit)
+        try:
+            return build_serving_query(spec=spec)
+        except SqlglotQueryBuilderError as exc:
+            raise SemanticInvalidFilterError(reason=str(exc)) from exc
 
     @staticmethod
     def schema_hash_for_table_key(*, inventory: SchemaInventory, table_key: str) -> str | None:

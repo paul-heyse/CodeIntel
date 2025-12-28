@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 import polars as pl
 import pyarrow as pa
 
@@ -61,25 +59,8 @@ def table_to_lazyframe(table: pa.Table) -> pl.LazyFrame:
     return frame.lazy()
 
 
-def lazyframe_from_rows(
-    *,
-    rows: Sequence[Sequence[object]],
-    columns: Sequence[str],
-) -> pl.LazyFrame:
-    """Build a Polars LazyFrame from row tuples and column names.
-
-    Returns
-    -------
-    pl.LazyFrame
-        LazyFrame constructed from the provided rows and column names.
-    """
-    frame = pl.DataFrame(rows, schema=list(columns))
-    return frame.lazy()
-
-
 __all__ = [
     "arrow_reader_to_lazyframe",
-    "lazyframe_from_rows",
     "relation_to_arrow_reader",
     "relation_to_polars_lazy",
     "table_to_lazyframe",

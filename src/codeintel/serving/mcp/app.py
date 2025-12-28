@@ -30,6 +30,7 @@ from codeintel.serving.mcp.tools import (
     register_query_tool,
     register_search_tool,
 )
+from codeintel.serving.mcp.tools.query import ExportWorkflowConfig
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.settings import ServingSettings
 
@@ -108,8 +109,7 @@ def build_mcp_app(
         ops,
         query_limiter,
         settings=settings,
-        store=store,
-        export_limiter=export_limiter,
+        export_config=ExportWorkflowConfig(store=store, limiter=export_limiter),
     )
 
     if features.enable_mcp_explain:

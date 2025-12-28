@@ -11,6 +11,8 @@ from codeintel.storage.warehouse import MaterializationResult, MaterializeOption
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    import pyarrow as pa
+
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.datasets.registry import DatasetRegistry
     from codeintel.storage.duckdb_types import DuckDBRelation
@@ -75,11 +77,11 @@ class StorageFacade:
     def materialize_table(
         self,
         table_key: str,
-        expr: DuckDBRelation,
+        expr: DuckDBRelation | pa.RecordBatchReader | pa.Table,
         *,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:
-        """Materialize a DuckDB relation to DuckDB.
+        """Materialize a tabular input to DuckDB.
 
         Returns
         -------

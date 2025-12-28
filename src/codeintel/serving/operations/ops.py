@@ -18,7 +18,7 @@ from codeintel.serving.operations.protocols import ServingDBManagerProtocol, Ser
 from codeintel.serving.settings import ServingSettings
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
 
     from codeintel.serving.meta.models import ServingKernelMetaResponse
@@ -124,7 +124,7 @@ class ServingOperations:
 
     def query_ipc_stream(
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
-    ) -> Generator[bytes]:
+    ) -> Iterable[bytes]:
         """Execute a semantic query and return Arrow IPC stream bytes.
 
         Parameters
@@ -136,8 +136,8 @@ class ServingOperations:
 
         Returns
         -------
-        Generator[bytes, None, None]
-            Iterator of Arrow IPC stream bytes.
+        Iterable[bytes]
+            Iterable of Arrow IPC stream bytes.
 
         Raises
         ------

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import pyarrow as pa
 
 from codeintel.build.tabular.duckdb_relation import coerce_to_relation
 from codeintel.config.primitives import SnapshotRef
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
 from tests._helpers.assertions.expectation_assertions import expect_equal
+from tests._helpers.columnar_tables import materialize_table_from_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,12 +28,13 @@ def test_warehouse_materialize_variants_write_equivalent_rows(
     options = MaterializeOptions(snapshot=snapshot, mode="replace")
     table_key = "core.repo_map"
 
-    dataframe = pd.DataFrame([{"repo": snapshot.repo, "commit": snapshot.commit}])
-    relation = coerce_to_relation(fresh_gateway.con, dataframe, name_hint="repo_map")
+    arrow_table = pa.table({"repo": [snapshot.repo], "commit": [snapshot.commit]})
+    relation = coerce_to_relation(fresh_gateway.con, arrow_table, name_hint="repo_map")
     warehouse.materialize_table(table_key, relation, options=options)
     expect_equal(warehouse.count(table_key, snapshot=snapshot), 1, label="df count")
 
-    warehouse.materialize_rows(
+    materialize_table_from_rows(
+        warehouse,
         table_key,
         [(snapshot.repo, snapshot.commit)],
         columns=("repo", "commit"),

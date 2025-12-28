@@ -6,6 +6,7 @@ JSON (JSONL) or Arrow IPC streams to support efficient export of large datasets.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -69,13 +70,20 @@ def ndjson_response(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ArrowIpcResponseOptions:
+    filename: str | None = None
+    headers: Mapping[str, str] | None = None
+    metadata: Mapping[str, object] | None = None
+    batch_metadata: Mapping[str, object] | None = None
+    options: pa.ipc.IpcWriteOptions | None = None
+    cancel_check: Callable[[], None] | None = None
+
+
 def arrow_ipc_response(
     source: pa.RecordBatchReader | Iterable[bytes],
     *,
-    filename: str | None = None,
-    headers: Mapping[str, str] | None = None,
-    metadata: Mapping[str, object] | None = None,
-    cancel_check: Callable[[], None] | None = None,
+    options: ArrowIpcResponseOptions | None = None,
 ) -> StreamingResponse:
     """Create an Arrow IPC streaming response.
 
@@ -83,27 +91,28 @@ def arrow_ipc_response(
     ----------
     source
         RecordBatchReader or pre-encoded IPC byte chunks to stream.
-    filename
-        Optional filename for Content-Disposition header.
-    headers
-        Optional extra response headers.
-    metadata
-        Optional schema metadata to inject into the stream.
-    cancel_check
-        Optional cancellation hook invoked between record batches.
+    options
+        Optional Arrow IPC response options.
 
     Returns
     -------
     StreamingResponse
         Streaming response with Arrow IPC stream content type.
     """
+    resolved = options or ArrowIpcResponseOptions()
     response_headers: dict[str, str] = {}
-    if filename:
-        response_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
-    if headers is not None:
-        response_headers.update({str(k): str(v) for k, v in headers.items()})
+    if resolved.filename:
+        response_headers["Content-Disposition"] = f'attachment; filename="{resolved.filename}"'
+    if resolved.headers is not None:
+        response_headers.update({str(k): str(v) for k, v in resolved.headers.items()})
     if isinstance(source, pa.RecordBatchReader):
-        payload = iter_ipc_stream(source, metadata=metadata, cancel_check=cancel_check)
+        payload = iter_ipc_stream(
+            source,
+            metadata=resolved.metadata,
+            batch_metadata=resolved.batch_metadata,
+            options=resolved.options,
+            cancel_check=resolved.cancel_check,
+        )
     else:
         payload = source
     return StreamingResponse(
@@ -113,4 +122,9 @@ def arrow_ipc_response(
     )
 
 
-__all__ = ["arrow_ipc_response", "ndjson_response", "ndjson_stream"]
+__all__ = [
+    "ArrowIpcResponseOptions",
+    "arrow_ipc_response",
+    "ndjson_response",
+    "ndjson_stream",
+]

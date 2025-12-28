@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator, Mapping
+from inspect import signature
 
 import pyarrow as pa
 
@@ -61,12 +62,103 @@ def default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
     pyarrow.ipc.IpcWriteOptions
         Default IPC write options with compression and metadata version.
     """
-    return pa.ipc.IpcWriteOptions(
-        metadata_version=pa.ipc.MetadataVersion.V5,
+    return build_ipc_write_options(
         compression="zstd",
         use_threads=True,
         unify_dictionaries=True,
+        metadata_version="V5",
     )
+
+
+def build_ipc_write_options(
+    *,
+    compression: str | None,
+    use_threads: bool | None,
+    unify_dictionaries: bool | None,
+    metadata_version: str | None,
+) -> pa.ipc.IpcWriteOptions:
+    """Build IPC write options from optional overrides.
+
+    Parameters
+    ----------
+    compression
+        Optional compression codec (e.g., ``"zstd"``).
+    use_threads
+        Whether to enable threaded IPC encoding.
+    unify_dictionaries
+        Whether to unify dictionary-encoded columns.
+    metadata_version
+        Optional metadata version override (e.g., ``"V5"``).
+
+    Returns
+    -------
+    pyarrow.ipc.IpcWriteOptions
+        IPC write options configured with overrides.
+    """
+    kwargs: dict[str, object] = {}
+    if compression is not None:
+        kwargs["compression"] = compression
+    if use_threads is not None:
+        kwargs["use_threads"] = use_threads
+    if unify_dictionaries is not None:
+        kwargs["unify_dictionaries"] = unify_dictionaries
+    resolved_version = _parse_metadata_version(metadata_version)
+    if resolved_version is not None:
+        kwargs["metadata_version"] = resolved_version
+    filtered = _filter_kwargs(pa.ipc.IpcWriteOptions, kwargs)
+    return pa.ipc.IpcWriteOptions(**filtered)
+
+
+def build_ipc_read_options(
+    *,
+    use_threads: bool | None,
+    max_recursion_depth: int | None,
+) -> pa.ipc.IpcReadOptions | None:
+    """Build IPC read options from optional overrides.
+
+    Parameters
+    ----------
+    use_threads
+        Whether to enable threaded IPC decoding.
+    max_recursion_depth
+        Optional recursion depth limit for nested data.
+
+    Returns
+    -------
+    pyarrow.ipc.IpcReadOptions | None
+        Read options when supported, otherwise None.
+    """
+    read_options = getattr(pa.ipc, "IpcReadOptions", None)
+    if read_options is None:
+        return None
+    kwargs: dict[str, object] = {}
+    if use_threads is not None:
+        kwargs["use_threads"] = use_threads
+    if max_recursion_depth is not None:
+        kwargs["max_recursion_depth"] = max_recursion_depth
+    filtered = _filter_kwargs(read_options, kwargs)
+    return read_options(**filtered)
+
+
+def _parse_metadata_version(value: str | None) -> pa.ipc.MetadataVersion | None:
+    if not value:
+        return None
+    normalized = value.strip().upper()
+    if not normalized:
+        return None
+    if normalized.isdigit():
+        normalized = f"V{normalized}"
+    if not normalized.startswith("V"):
+        normalized = f"V{normalized}"
+    return getattr(pa.ipc.MetadataVersion, normalized, None)
+
+
+def _filter_kwargs(target: object, kwargs: Mapping[str, object]) -> dict[str, object]:
+    try:
+        params = signature(target).parameters
+    except (TypeError, ValueError):
+        return dict(kwargs)
+    return {key: value for key, value in kwargs.items() if key in params}
 
 
 def _encode_metadata_value(value: object) -> bytes:
@@ -79,10 +171,19 @@ def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes]:
     }
 
 
-def _merge_schema_metadata(schema: pa.Schema, metadata: Mapping[str, object]) -> pa.Schema:
+def _merge_schema_metadata(
+    schema: pa.Schema,
+    metadata: Mapping[str, object],
+    *,
+    overwrite: bool = False,
+) -> pa.Schema:
     existing = schema.metadata or {}
     merged = dict(existing)
-    merged.update(_encode_metadata(metadata))
+    encoded = _encode_metadata(metadata)
+    for key, value in encoded.items():
+        if not overwrite and key in merged:
+            continue
+        merged[key] = value
     return schema.with_metadata(merged)
 
 
@@ -99,7 +200,7 @@ def apply_ipc_metadata(schema: pa.Schema, metadata: Mapping[str, object] | None)
     Returns
     -------
     pyarrow.Schema
-        Schema with merged metadata.
+        Schema with appended metadata.
     """
     if not metadata:
         return schema
@@ -110,6 +211,7 @@ def iter_ipc_stream(
     reader: pa.RecordBatchReader,
     *,
     metadata: Mapping[str, object] | None = None,
+    batch_metadata: Mapping[str, object] | None = None,
     options: pa.ipc.IpcWriteOptions | None = None,
     cancel_check: Callable[[], None] | None = None,
 ) -> Iterator[bytes]:
@@ -121,6 +223,8 @@ def iter_ipc_stream(
         RecordBatchReader to serialize.
     metadata
         Optional schema metadata to inject into the IPC stream.
+    batch_metadata
+        Optional per-record-batch metadata to inject.
     options
         Optional IPC write options. Uses default options when omitted.
     cancel_check
@@ -140,15 +244,37 @@ def iter_ipc_stream(
         for batch in reader:
             if cancel_check is not None:
                 cancel_check()
-            writer.write_batch(batch)
+            resolved_batch = _apply_batch_metadata(batch, batch_metadata)
+            writer.write_batch(resolved_batch)
             yield from sink.drain()
     yield from sink.drain()
+
+
+def _apply_batch_metadata(
+    batch: pa.RecordBatch,
+    metadata: Mapping[str, object] | None,
+) -> pa.RecordBatch:
+    if not metadata:
+        return batch
+    replace = getattr(batch, "replace_schema_metadata", None)
+    if not callable(replace):
+        return batch
+    existing = batch.schema.metadata or {}
+    merged = dict(existing)
+    encoded = _encode_metadata(metadata)
+    for key, value in encoded.items():
+        if key in merged:
+            continue
+        merged[key] = value
+    return replace(merged)
 
 
 __all__ = [
     "ARROW_IPC_STREAM_MIME",
     "ArrowIpcStreamError",
     "apply_ipc_metadata",
+    "build_ipc_read_options",
+    "build_ipc_write_options",
     "default_ipc_write_options",
     "iter_ipc_stream",
 ]

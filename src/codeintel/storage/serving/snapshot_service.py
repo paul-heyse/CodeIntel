@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import pyarrow.dataset as ds
+
 from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 from codeintel.storage.backend import DuckDBSession
-from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, META_CATALOG_NAME
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 from codeintel.storage.duckdb_policy_backend import duckdb_default_catalog
 from codeintel.storage.gateway.config import StorageConfig
@@ -20,6 +22,9 @@ from codeintel.storage.serving.search_index import build_search_documents_table,
 
 if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import DuckDBConnection, DuckDBRelation
+
+
+DEFAULT_FRAGMENT_READAHEAD = 2
 
 
 class ServingSnapshotError(RuntimeError):
@@ -314,12 +319,24 @@ def _dataset_read_parquet_relation(
     manifest_path: Path,
 ) -> DuckDBRelation:
     dataset_dir = manifest_path.parent.resolve()
-    hive_partitioning = bool(manifest.partition_columns)
+    partitioning: str | None = "hive" if manifest.partition_columns else None
     if manifest.files:
         paths = [str(dataset_dir / path) for path in manifest.files]
-        return con.read_parquet(paths, hive_partitioning=hive_partitioning, union_by_name=True)
-    glob_path = str(dataset_dir / "**" / "*.parquet")
-    return con.read_parquet(glob_path, hive_partitioning=hive_partitioning, union_by_name=True)
+        dataset = ds.dataset(paths, format="parquet", partitioning=partitioning)
+    else:
+        dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
+    scanner = dataset.scanner(
+        batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        fragment_readahead=DEFAULT_FRAGMENT_READAHEAD,
+    )
+    try:
+        return con.from_arrow(scanner)
+    except (TypeError, ValueError):
+        reader = scanner.to_reader()
+        try:
+            return con.from_arrow(reader)
+        except (TypeError, ValueError):
+            return con.from_arrow(dataset)
 
 
 def _current_schema(con: DuckDBConnection) -> str:

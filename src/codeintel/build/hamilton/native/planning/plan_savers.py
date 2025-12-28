@@ -8,6 +8,7 @@ from collections.abc import Iterable
 import polars as pl
 
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table_columns
 from codeintel.build.hamilton.native.patterns.savers import (
     ArtifactSaveSpec,
     RelationTableSaveSpec,
@@ -22,9 +23,7 @@ from codeintel.build.hamilton.native.planning.plan_targets import (
     PLAN_DOMAIN,
 )
 from codeintel.build.planning.model import PLAN_SCHEMA_VERSION, BuildPlan
-from codeintel.build.schemas.service import get_schema_service
-from codeintel.build.tabular.conversion import lazyframe_from_rows
-from codeintel.core.schemas.row_serialization import row_to_tuple
+from codeintel.core.columnar.rows import columnar_buffer_for_table_key
 from codeintel.core.schemas.tables.ci_plan_entries import CI_PLAN_ENTRIES_TABLE_KEY
 
 
@@ -145,12 +144,10 @@ def m__ci_plan_entries(env: BuildEnv, plan: BuildPlan) -> pl.LazyFrame:
     """
     run_context = env.run_context
     run_id = run_context.run_id if run_context is not None else "unknown"
-    rows = tuple(
-        row_to_tuple(CI_PLAN_ENTRIES_TABLE_KEY, row)
-        for row in _plan_row_mappings(plan=plan, run_id=run_id)
-    )
-    schema = get_schema_service().require_table_schema(CI_PLAN_ENTRIES_TABLE_KEY)
-    return lazyframe_from_rows(rows=rows, columns=tuple(schema.column_names()))
+    buffer = columnar_buffer_for_table_key(CI_PLAN_ENTRIES_TABLE_KEY)
+    for row in _plan_row_mappings(plan=plan, run_id=run_id):
+        buffer.append(row)
+    return lazyframe_for_table_columns(CI_PLAN_ENTRIES_TABLE_KEY, buffer.data)
 
 
 __all__ = [

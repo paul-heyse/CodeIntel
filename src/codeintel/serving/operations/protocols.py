@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterator
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
 
     from codeintel.serving.meta.models import ServingKernelMetaResponse
@@ -106,7 +106,7 @@ class ServingKernelProtocol(Protocol):
 
     def query_ipc_stream(
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
-    ) -> Generator[bytes]:
+    ) -> Iterable[bytes]:
         """Execute a semantic query and return Arrow IPC stream bytes."""
         ...
 

@@ -15,7 +15,10 @@ from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.helpers.json import decode_json_dict, normalize_duckdb_json_value
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 from codeintel.storage.metadata.meta_catalog import meta_table_ref
-from codeintel.storage.tracking.schema_catalog_compile import compile_schema_catalog_batches
+from codeintel.storage.tracking.schema_catalog_compile import (
+    arrow_contract_renderer_cache,
+    compile_schema_catalog_batches,
+)
 from codeintel.storage.tracking.schema_catalog_models import (
     OverrideRegistryRefreshResult,
     SchemaCatalogRequest,
@@ -795,11 +798,12 @@ class SchemaCatalogTracking:
                 strict_hash_match=context.request.strict_hash_match,
             )
             if schema_digest not in schema_versions:
+                renderer_cache = arrow_contract_renderer_cache(table, provenance=provenance)
                 schema_versions[schema_digest] = SchemaVersionRecord(
                     schema_digest=schema_digest,
                     schema_hash=schema_hash,
                     schema_json=schema_json,
-                    renderer_cache=None,
+                    renderer_cache=renderer_cache,
                     created_at=context.now,
                 )
             override_versions.append(

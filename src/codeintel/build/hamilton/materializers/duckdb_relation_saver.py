@@ -36,8 +36,8 @@ _RECOVERABLE_EXCEPTIONS = (
 
 _TABULAR_TYPES: tuple[type, ...] = (
     DuckDBRelation,
-    pa.Table,
     pa.RecordBatchReader,
+    pa.Table,
     pl.LazyFrame,
 )
 

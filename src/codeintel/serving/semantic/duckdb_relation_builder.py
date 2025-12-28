@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import duckdb
+import pyarrow.dataset as ds
+
+from codeintel.serving.semantic.datasets import (
+    dataset_filter_expression,
+    dataset_for_entry,
+    dataset_scanner_for_entry,
+)
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
 from codeintel.serving.semantic.models import FilterSpec, FilterValue
 from codeintel.serving.semantic.specs import SemanticQuerySpec
@@ -16,6 +25,7 @@ from codeintel.storage.duckdb_types import (
     Expression,
     FunctionExpression,
 )
+from codeintel.storage.helpers.json import normalize_duckdb_json_value
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -28,11 +38,24 @@ class DuckDBRelationQueryBuilderError(ValueError):
     """Raised when a relation-based query cannot be built."""
 
 
+DEFAULT_FRAGMENT_READAHEAD = 2
+
+
+@dataclass(frozen=True, slots=True)
+class RelationScanOptions:
+    """Scan options for Arrow-backed DuckDB relations."""
+
+    batch_size: int
+    fragment_readahead: int | None = DEFAULT_FRAGMENT_READAHEAD
+    metrics_enabled: bool = False
+
+
 def build_relation_plan(
     *,
     con: DuckDBConnection,
     spec: SemanticQuerySpec,
     dataset_manifests: DatasetManifestIndex,
+    scan_options: RelationScanOptions,
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> DuckDBRelation:
     """Build a DuckDB relation plan for a semantic query spec.
@@ -42,7 +65,17 @@ def build_relation_plan(
     DuckDBRelation
         Lazy relation representing the query plan.
     """
-    relation = _resolve_relation(con=con, table_key=spec.table_key, manifests=dataset_manifests)
+    filter_expression = dataset_filter_expression(
+        filters=spec.filters,
+        column_types=column_types,
+    )
+    relation = _resolve_relation(
+        con=con,
+        table_key=spec.table_key,
+        manifests=dataset_manifests,
+        scan_options=scan_options,
+        filter_expression=filter_expression,
+    )
     return apply_query_spec(
         relation,
         spec=spec,
@@ -94,10 +127,17 @@ def _resolve_relation(
     con: DuckDBConnection,
     table_key: str,
     manifests: DatasetManifestIndex,
+    scan_options: RelationScanOptions,
+    filter_expression: ds.Expression | None,
 ) -> DuckDBRelation:
     entry = manifests.get(table_key)
     if entry is not None:
-        return _scan_dataset(con=con, entry=entry)
+        return _scan_dataset(
+            con=con,
+            entry=entry,
+            scan_options=scan_options,
+            filter_expression=filter_expression,
+        )
     try:
         return con.table(table_key)
     except DuckDBCatalogException as exc:
@@ -105,13 +145,29 @@ def _resolve_relation(
         raise DuckDBRelationQueryBuilderError(msg) from exc
 
 
-def _scan_dataset(*, con: DuckDBConnection, entry: DatasetManifestEntry) -> DuckDBRelation:
-    hive_partitioning = bool(entry.manifest.partition_columns)
-    if entry.manifest.files:
-        paths = [str(entry.dataset_dir / path) for path in entry.manifest.files]
-        return con.read_parquet(paths, hive_partitioning=hive_partitioning, union_by_name=True)
-    glob = str(entry.dataset_dir / "**" / "*.parquet")
-    return con.read_parquet(glob, hive_partitioning=hive_partitioning, union_by_name=True)
+def _scan_dataset(
+    *,
+    con: DuckDBConnection,
+    entry: DatasetManifestEntry,
+    scan_options: RelationScanOptions,
+    filter_expression: ds.Expression | None,
+) -> DuckDBRelation:
+    dataset = dataset_for_entry(entry)
+    scanner = dataset_scanner_for_entry(
+        entry,
+        batch_size=scan_options.batch_size,
+        fragment_readahead=scan_options.fragment_readahead,
+        filter_expression=filter_expression,
+        metrics_enabled=scan_options.metrics_enabled,
+    )
+    try:
+        return con.from_arrow(scanner)
+    except (TypeError, ValueError):
+        reader = scanner.to_reader()
+        try:
+            return con.from_arrow(reader)
+        except (TypeError, ValueError):
+            return con.from_arrow(dataset)
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:
@@ -192,6 +248,39 @@ _UNKNOWN_COLUMN_TYPE = "UNKNOWN"
 _COMPARISON_OPS = frozenset({"eq", "ne", "lt", "lte", "gt", "gte"})
 _ORDERING_OPS = frozenset({"lt", "lte", "gt", "gte"})
 _STRING_OPS = frozenset({"contains", "startswith"})
+_DECIMAL_38_0 = "DECIMAL(38,0)"
+
+
+def _duckdb_type_for_column(column_type: ColumnType | None) -> object | None:
+    if column_type is None:
+        return None
+    normalized = str(column_type).upper()
+    if normalized == _DECIMAL_38_0:
+        return duckdb.decimal_type(38, 0)
+    if normalized == "DECIMAL":
+        return duckdb.sqltype("DECIMAL")
+    type_map: dict[str, object] = {
+        "BOOLEAN": duckdb.sqltypes.BOOLEAN,
+        "INTEGER": duckdb.sqltypes.INTEGER,
+        "BIGINT": duckdb.sqltypes.BIGINT,
+        "DOUBLE": duckdb.sqltypes.DOUBLE,
+        "VARCHAR": duckdb.sqltypes.VARCHAR,
+        "TIMESTAMP": duckdb.sqltypes.TIMESTAMP,
+        "TIMESTAMPTZ": duckdb.sqltypes.TIMESTAMP_TZ,
+        "JSON": duckdb.sqltype("JSON"),
+    }
+    return type_map.get(normalized)
+
+
+def _typed_constant(value: FilterValue, *, column_type: ColumnType | None) -> Expression:
+    literal_value: object = value
+    if column_type == "JSON":
+        literal_value = normalize_duckdb_json_value(value)
+    literal = ConstantExpression(literal_value)
+    duckdb_type = _duckdb_type_for_column(column_type)
+    if duckdb_type is None:
+        return literal
+    return literal.cast(duckdb_type)
 
 
 def _build_comparison_predicate(
@@ -207,7 +296,7 @@ def _build_comparison_predicate(
     if op in _ORDERING_OPS and column_type == "VARCHAR":
         msg = f"Operator {op} is not supported for string columns"
         raise DuckDBRelationQueryBuilderError(msg)
-    literal = ConstantExpression(value)
+    literal = _typed_constant(value, column_type=column_type)
     if op == "eq":
         return col_expr == literal
     if op == "ne":
@@ -236,7 +325,7 @@ def _build_in_predicate(
     if column_type == "JSON":
         msg = "IN operator is not supported for JSON columns"
         raise DuckDBRelationQueryBuilderError(msg)
-    constants = [ConstantExpression(item) for item in value]
+    constants = [_typed_constant(item, column_type=column_type) for item in value]
     return col_expr.isin(*constants)
 
 
@@ -253,7 +342,7 @@ def _build_string_predicate(
     if column_type is not None and column_type != "VARCHAR":
         msg = f"{op} operator is only supported for VARCHAR columns"
         raise DuckDBRelationQueryBuilderError(msg)
-    literal = ConstantExpression(value)
+    literal = _typed_constant(value, column_type=column_type)
     func_name = "contains" if op == "contains" else "starts_with"
     return FunctionExpression(func_name, col_expr, literal)
 
@@ -278,4 +367,9 @@ def _combine_predicates(predicates: Sequence[Expression]) -> Expression | None:
     return combined
 
 
-__all__ = ["DuckDBRelationQueryBuilderError", "apply_query_spec", "build_relation_plan"]
+__all__ = [
+    "DuckDBRelationQueryBuilderError",
+    "RelationScanOptions",
+    "apply_query_spec",
+    "build_relation_plan",
+]

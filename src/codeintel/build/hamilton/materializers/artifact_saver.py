@@ -15,7 +15,7 @@ import typing
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 import pyarrow as pa
 from hamilton.io.data_adapters import DataSaver
@@ -123,7 +123,6 @@ class FileArtifactSaver(DataSaver):
             str,
             Path,
             DuckDBRelation,
-            pa.Table,
             pa.RecordBatchReader,
         ]
 
@@ -141,7 +140,7 @@ class FileArtifactSaver(DataSaver):
         bool
             True when the saver can persist the output type.
         """
-        if type_ in {bytes, str, Path, DuckDBRelation, pa.Table, pa.RecordBatchReader}:
+        if type_ in {bytes, str, Path, DuckDBRelation, pa.RecordBatchReader}:
             return True
         if type_ is ArtifactWritePlan:
             return True
@@ -156,7 +155,6 @@ class FileArtifactSaver(DataSaver):
                     str,
                     Path,
                     DuckDBRelation,
-                    pa.Table,
                     pa.RecordBatchReader,
                     type(None),
                 }
@@ -173,7 +171,7 @@ class FileArtifactSaver(DataSaver):
         data
             Artifact payload. Supported types are bytes, str (encoded as UTF-8),
             Path (reads bytes from the referenced file), DuckDB relations, or
-            Arrow tables/readers.
+            Arrow record batch readers.
 
         Returns
         -------
@@ -279,9 +277,6 @@ def _write_artifact_payload(output_path: Path, data: object) -> int:
         return _write_relation_artifact(output_path, data)
     if isinstance(data, pa.RecordBatchReader):
         return _write_arrow_reader(output_path, data)
-    if isinstance(data, pa.Table):
-        table = cast("pa.Table", data)
-        return _write_arrow_reader(output_path, table.to_reader())
     if isinstance(data, Path) and _same_path(data, output_path):
         return output_path.stat().st_size
 

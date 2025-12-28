@@ -25,10 +25,9 @@ from duckdb import ColumnExpression, ConstantExpression, ExplainType
 from sqlglot import parse_one
 from sqlglot.errors import ParseError
 
+from codeintel.core.columnar import ColumnarStream, coerce_arrow_reader, coerce_arrow_table
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
-from codeintel.storage.helpers.json import encode_json_compact
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import coerce_int
 from codeintel.storage.snapshot_scoping import RepoCommitScope
@@ -41,14 +40,22 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.schemas.primitives import ColumnType
-    from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
+    from codeintel.core.columnar import SupportsArrowCStream, SupportsDataFrameInterop
+    from codeintel.storage.duckdb_types import DuckDBConnection
     from codeintel.storage.gateway import StorageGateway
 
-from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError
+from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError, DuckDBRelation
 
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
+TabularInput = (
+    DuckDBRelation
+    | pa.Table
+    | pa.RecordBatchReader
+    | ColumnarStream
+    | SupportsArrowCStream
+    | SupportsDataFrameInterop
+)
 
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
 
@@ -114,6 +121,14 @@ class MaterializeOptions:
     upsert: UpsertConfig | None = None
     use_staging: bool = False
     fallback_upsert_on_conflict: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class RelationWriteState:
+    """Row-count metadata for relation writes."""
+
+    row_count: int | None
+    skip_row_count: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,11 +221,11 @@ class Warehouse:
     def materialize_table(
         self,
         table_key: str,
-        relation: DuckDBRelation,
+        relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
         *,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:
-        """Materialize a DuckDB relation to a table.
+        """Materialize a tabular input to a DuckDB table.
 
         Returns
         -------
@@ -232,71 +247,10 @@ class Warehouse:
         )
 
         def _write() -> int | None:
-            return _write_relation(
+            return _write_tabular(
                 gateway=self.gateway,
                 table_key=table_key,
                 relation=relation,
-                options=active,
-            )
-
-        ctx = _MaterializeWriterContext(
-            gateway=self.gateway,
-            table_key=table_key,
-            started_at=started_at,
-            schema_version=schema_version,
-            schema_hash=computed_schema_hash,
-        )
-        return _materialize_with_writer(ctx, options=active, writer=_write)
-
-    def materialize_rows(
-        self,
-        table_key: str,
-        rows: Sequence[tuple[object, ...]],
-        *,
-        columns: Sequence[str] | None,
-        options: MaterializeOptions | None = None,
-    ) -> MaterializationResult:
-        """Materialize row tuples to DuckDB.
-
-        Parameters
-        ----------
-        table_key
-            Destination table key (schema.table).
-        rows
-            Row tuples matching the provided columns.
-        columns
-            Column names matching the row tuple positions. When omitted, column order is derived
-            from the configured schema provider.
-        options
-            Materialization options, including snapshot identity and write mode.
-
-        Returns
-        -------
-        MaterializationResult
-            Structured result describing the write.
-        """
-        active = options or MaterializeOptions()
-        _validate_materialize_options(
-            active,
-            supports_upsert=True,
-            upsert_unsupported_message="mode='upsert' requires options.upsert to be provided",
-        )
-
-        started_at = datetime.now(tz=UTC)
-        self.gateway.policy.ensure_table(table_key, create_if_missing=True)
-        schema_version, computed_schema_hash = _contract_schema_metadata(
-            self.gateway, table_key=table_key
-        )
-        resolved_columns = (
-            list(columns) if columns is not None else _require_columns(self.gateway, table_key)
-        )
-
-        def _write() -> int | None:
-            return _write_rows(
-                gateway=self.gateway,
-                table_key=table_key,
-                rows=rows,
-                resolved_columns=resolved_columns,
                 options=active,
             )
 
@@ -341,8 +295,7 @@ class Warehouse:
             active,
             supports_upsert=False,
             upsert_unsupported_message=(
-                "materialize_mappings does not support mode='upsert'; "
-                "use materialize_rows/dataframe"
+                "materialize_mappings does not support mode='upsert'; use materialize_table"
             ),
         )
 
@@ -669,15 +622,6 @@ def _contract_schema_metadata(
     return schema_version, computed_schema_hash
 
 
-def _require_columns(gateway: StorageGateway, table_key: str) -> list[str]:
-    provider = gateway.policy.schema_provider
-    if provider is None:
-        msg = f"Schema provider is required to infer columns for {table_key!r}"
-        raise RuntimeError(msg)
-    schema = provider.require_table_schema(table_key)
-    return list(schema.column_names())
-
-
 @dataclass(frozen=True, slots=True)
 class _MaterializeWriterContext:
     gateway: StorageGateway
@@ -774,12 +718,34 @@ def _write_relation(
     relation: DuckDBRelation,
     options: MaterializeOptions,
 ) -> int | None:
+    return _write_relation_inner(
+        gateway=gateway,
+        table_key=table_key,
+        relation=relation,
+        options=options,
+        write_state=RelationWriteState(row_count=None, skip_row_count=False),
+    )
+
+
+def _write_relation_inner(
+    *,
+    gateway: StorageGateway,
+    table_key: str,
+    relation: DuckDBRelation,
+    options: MaterializeOptions,
+    write_state: RelationWriteState,
+) -> int | None:
     columns = _relation_columns(relation)
     if not columns:
         return 0
-    row_count = _relation_row_count(relation, table_key=table_key)
-    if row_count == 0:
-        return 0
+    if write_state.skip_row_count:
+        if write_state.row_count == 0:
+            return 0
+        resolved_count = write_state.row_count
+    else:
+        resolved_count = _relation_row_count(relation, table_key=table_key)
+        if resolved_count == 0:
+            return 0
 
     def _apply_select(select_expr: exp.Expression) -> None:
         if options.mode == "upsert" and options.upsert is not None:
@@ -811,194 +777,50 @@ def _write_relation(
                 expressions=[exp.Column(this=exp.to_identifier(column)) for column in columns],
             ).from_(exp.Table(this=exp.to_identifier(name)))
             _apply_select(select_expr)
-    return row_count
+    return resolved_count
 
 
-def _rows_to_arrow_table(
-    rows: Sequence[tuple[object, ...]],
-    *,
-    resolved_columns: Sequence[str],
-    column_types: Mapping[str, ColumnType] | None = None,
-) -> pa.Table:
-    if not rows:
-        return pa.table({name: [] for name in resolved_columns})
-    normalized_rows = _normalize_rows_for_arrow(
-        rows,
-        resolved_columns=resolved_columns,
-        column_types=column_types,
-    )
-    columns = list(zip(*normalized_rows, strict=False))
-    data = {name: list(values) for name, values in zip(resolved_columns, columns, strict=False)}
-    return pa.table(data)
-
-
-def _column_types_for_table(
-    gateway: StorageGateway,
-    *,
-    table_key: str,
-    resolved_columns: Sequence[str],
-) -> Mapping[str, ColumnType]:
-    contract = gateway.datasets.by_table_key.get(table_key)
-    if contract is None or contract.schema is None:
-        return {}
-    resolved = set(resolved_columns)
-    return {col.name: col.type for col in contract.schema.columns if col.name in resolved}
-
-
-def _normalize_rows_for_arrow(
-    rows: Sequence[tuple[object, ...]],
-    *,
-    resolved_columns: Sequence[str],
-    column_types: Mapping[str, ColumnType] | None,
-) -> Sequence[tuple[object, ...]]:
-    if not column_types:
-        return rows
-    normalized_rows: list[tuple[object, ...]] = []
-    for row in rows:
-        normalized_row: list[object] = []
-        for col, value in zip(resolved_columns, row, strict=True):
-            col_type = column_types.get(col)
-            if col_type == "JSON":
-                normalized = normalize_row_value_for_type(value, col_type)
-                if isinstance(normalized, (dict, list)):
-                    normalized_row.append(encode_json_compact(normalized))
-                else:
-                    normalized_row.append(normalized)
-            else:
-                normalized_row.append(normalize_row_value_for_type(value, col_type))
-        normalized_rows.append(tuple(normalized_row))
-    return normalized_rows
-
-
-def _write_rows(
+def _write_tabular(
     *,
     gateway: StorageGateway,
     table_key: str,
-    rows: Sequence[tuple[object, ...]],
-    resolved_columns: Sequence[str],
+    relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
     options: MaterializeOptions,
 ) -> int | None:
-    if not rows:
-        return 0
-    if options.mode == "upsert" and options.upsert is not None:
-        return _write_rows_upsert(
+    if isinstance(relation, DuckDBRelation):
+        return _write_relation(
             gateway=gateway,
             table_key=table_key,
-            rows=rows,
-            resolved_columns=resolved_columns,
-            upsert=options.upsert,
+            relation=relation,
+            options=options,
         )
-    if options.fallback_upsert_on_conflict:
-        upsert = _resolve_fallback_upsert(
-            gateway,
-            table_key=table_key,
-            resolved_columns=resolved_columns,
-        )
-        if upsert is not None:
-            log.warning("Using upsert fallback for %s row write", table_key)
-            rows_affected = _write_rows_upsert(
+    if isinstance(relation, pa.Table):
+        if relation.num_rows == 0:
+            return 0
+        with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+            rel = gateway.con.table(name)
+            return _write_relation_inner(
                 gateway=gateway,
                 table_key=table_key,
-                rows=rows,
-                resolved_columns=resolved_columns,
-                upsert=upsert,
-            )
-            return (
-                coerce_int(
-                    rows_affected,
-                    ctx=f"{table_key} upsert rows_affected",
-                )
-                or 0
-            )
-        log.warning("Upsert fallback requested for %s, but no primary key found", table_key)
-    return _write_rows_with_staging(
-        gateway=gateway,
-        table_key=table_key,
-        rows=rows,
-        resolved_columns=resolved_columns,
-        options=options,
-    )
-
-
-def _write_rows_with_staging(
-    *,
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[tuple[object, ...]],
-    resolved_columns: Sequence[str],
-    options: MaterializeOptions,
-) -> int:
-    column_types = _column_types_for_table(
-        gateway,
-        table_key=table_key,
-        resolved_columns=resolved_columns,
-    )
-    table = _rows_to_arrow_table(
-        rows,
-        resolved_columns=resolved_columns,
-        column_types=column_types,
-    )
-    if table.num_rows == 0:
-        return 0
-    with registered_temp_relation(gateway.con, table, prefix="ci_rows_") as temp_name:
-        select_expr = exp.Select(
-            expressions=[exp.Column(this=exp.to_identifier(col)) for col in resolved_columns],
-        ).from_(exp.Table(this=exp.to_identifier(temp_name)))
-        if options.mode == "upsert" and options.upsert is not None:
-            gateway.policy.upsert_select(
-                table_key,
-                columns=resolved_columns,
-                select_sql=select_expr,
-                upsert=UpsertSpec(
-                    conflict_columns=options.upsert.conflict_columns,
-                    update_columns=options.upsert.update_columns,
-                    update_condition=options.upsert.update_condition,
+                relation=rel,
+                options=options,
+                write_state=RelationWriteState(
+                    row_count=relation.num_rows,
+                    skip_row_count=True,
                 ),
             )
-            return table.num_rows
-        gateway.policy.insert_select(
-            table_key,
-            columns=resolved_columns,
-            select_sql=select_expr,
-        )
-        return table.num_rows
-
-
-def _write_rows_upsert(
-    *,
-    gateway: StorageGateway,
-    table_key: str,
-    rows: Sequence[tuple[object, ...]],
-    resolved_columns: Sequence[str],
-    upsert: UpsertConfig,
-) -> int | None:
-    column_types = _column_types_for_table(
-        gateway,
-        table_key=table_key,
-        resolved_columns=resolved_columns,
-    )
-    table = _rows_to_arrow_table(
-        rows,
-        resolved_columns=resolved_columns,
-        column_types=column_types,
-    )
-    if table.num_rows == 0:
-        return 0
-    with registered_temp_relation(gateway.con, table, prefix="ci_rows_") as temp_name:
-        select_expr = exp.Select(
-            expressions=[exp.Column(this=exp.to_identifier(col)) for col in resolved_columns],
-        ).from_(exp.Table(this=exp.to_identifier(temp_name)))
-        gateway.policy.upsert_select(
-            table_key,
-            columns=resolved_columns,
-            select_sql=select_expr,
-            upsert=UpsertSpec(
-                conflict_columns=upsert.conflict_columns,
-                update_columns=upsert.update_columns,
-                update_condition=upsert.update_condition,
-            ),
-        )
-    return table.num_rows
+    if isinstance(relation, pa.RecordBatchReader):
+        with registered_temp_relation(gateway.con, relation, prefix="ci_rb_") as name:
+            rel = gateway.con.table(name)
+            return _write_relation_inner(
+                gateway=gateway,
+                table_key=table_key,
+                relation=rel,
+                options=options,
+                write_state=RelationWriteState(row_count=None, skip_row_count=True),
+            )
+    msg = f"Unsupported tabular input for {table_key}: {type(relation)!r}"
+    raise TypeError(msg)
 
 
 __all__ = [
