@@ -12,8 +12,8 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from pandera import Check, DataFrameSchema
-from pandera import Column as PanderaColumn
+from pandera.pandas import Check, DataFrameSchema
+from pandera.pandas import Column as PanderaColumn
 
 if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType, TableSchema

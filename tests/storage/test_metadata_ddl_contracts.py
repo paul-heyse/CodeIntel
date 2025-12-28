@@ -10,7 +10,6 @@ import pytest
 
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.helpers.table_key import fully_qualified_table_ref
 from codeintel.storage.metadata.ddl import apply_metadata_ddl
 from codeintel.storage.metadata.meta_catalog import attach_meta_database
 from codeintel.storage.metadata.schema import METADATA_TABLES
@@ -33,12 +32,11 @@ def test_apply_metadata_ddl_is_idempotent() -> None:
         apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
 
         expected_names = {table.name for table in METADATA_TABLES}
-        info_schema_ref = fully_qualified_table_ref(
-            "information_schema.tables",
-            catalog=META_CATALOG_NAME,
-        )
         rows = con.execute(
-            f"SELECT table_name FROM {info_schema_ref} WHERE table_schema = 'metadata'"
+            "SELECT table_name FROM information_schema.tables "
+            "WHERE table_schema = 'metadata' AND table_catalog = ? "
+            "AND table_type = 'BASE TABLE'",
+            [META_CATALOG_NAME],
         ).fetchall()
         actual_names = {str(row[0]) for row in rows}
 

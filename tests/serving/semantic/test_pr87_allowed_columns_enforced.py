@@ -85,7 +85,11 @@ async def test_strict_mode_rejects_unknown_columns(tmp_path: Path) -> None:
     """Strict schema enforcement rejects unknown semantic view columns."""
     snapshot = _make_snapshot(ServingSnapshotFactory(tmp_path))
 
-    manager = ServingDBManager(pointer_path=snapshot.pointer_path, pool_cfg=PoolConfig(size=1))
+    manager = ServingDBManager(
+        pointer_path=snapshot.pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        hot_swap=False,
+    )
     await manager.start()
     try:
         kernel = SemanticQueryKernel(
@@ -110,7 +114,11 @@ async def test_warn_mode_intersects_unknown_columns(tmp_path: Path) -> None:
     """Warn schema enforcement intersects unknown columns with the manifest."""
     snapshot = _make_snapshot(ServingSnapshotFactory(tmp_path))
 
-    manager = ServingDBManager(pointer_path=snapshot.pointer_path, pool_cfg=PoolConfig(size=1))
+    manager = ServingDBManager(
+        pointer_path=snapshot.pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        hot_swap=False,
+    )
     await manager.start()
     try:
         kernel = SemanticQueryKernel(

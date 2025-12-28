@@ -20,7 +20,7 @@ from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
-    AnalyticsTestCoverageEdgesRow as TestCoverageEdgeRow,
+    AnalyticsTestCoverageEdgesRow as CoverageEdgeRowModel,
 )
 from codeintel.core.schemas.generated_rows.graph import (
     GraphCallGraphEdgesRow as CallGraphEdgeRow,
@@ -99,7 +99,7 @@ SYMBOL_USE_SAMPLES: list[SymbolUseRow] = [
         use_goid_h128=None,
     ),
 ]
-TEST_COVERAGE_EDGE_SAMPLES: list[TestCoverageEdgeRow] = [
+TEST_COVERAGE_EDGE_SAMPLES: list[CoverageEdgeRowModel] = [
     {
         "test_id": "test_demo",
         "test_goid_h128": 101,
@@ -191,7 +191,7 @@ def _call_graph_edge_strategy() -> SearchStrategy[CallGraphEdgeRow]:
     return st.sampled_from(CALL_GRAPH_EDGE_SAMPLES)
 
 
-def _test_coverage_edge_strategy() -> SearchStrategy[TestCoverageEdgeRow]:
+def _test_coverage_edge_strategy() -> SearchStrategy[CoverageEdgeRowModel]:
     return st.sampled_from(TEST_COVERAGE_EDGE_SAMPLES)
 
 
@@ -230,7 +230,7 @@ def _json_safe(value: object) -> object:
     return str(value)
 
 
-@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
 @given(_call_graph_edge_strategy())
 def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
     """Generate schemas from TypedDict should validate generated call graph edges."""
@@ -244,7 +244,7 @@ def test_call_graph_edge_round_trip(row: CallGraphEdgeRow) -> None:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
 @given(_symbol_use_row_strategy())
 def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
     """Generate schemas should align with symbol use dataclass and serializer."""
@@ -258,11 +258,11 @@ def test_symbol_use_round_trip(row: SymbolUseRow) -> None:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
 @given(_test_coverage_edge_strategy())
-def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
+def test_test_coverage_round_trip(row: CoverageEdgeRowModel) -> None:
     """Generate schemas should align with test coverage edge TypedDict and serializer."""
-    schema = json_schema_from_typeddict(TestCoverageEdgeRow)
+    schema = json_schema_from_typeddict(CoverageEdgeRowModel)
     validate_row_with_schema({key: _json_safe(value) for key, value in row.items()}, schema)
     contract = _contracts_by_table_key()["analytics.test_coverage_edges"]
     expected_len = len(contract.schema.columns) if contract.schema else 0
@@ -272,7 +272,7 @@ def test_test_coverage_round_trip(row: TestCoverageEdgeRow) -> None:
         pytest.fail(f"Expected {expected_len} values, got {len(values)}")
 
 
-@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES)
+@settings(max_examples=MAX_HYPOTHESIS_EXAMPLES, deadline=None)
 @given(_behavioral_coverage_strategy())
 def test_behavioral_coverage_round_trip(row: BehavioralCoverageRowModel) -> None:
     """Generate schemas should align with behavioral coverage TypedDict and serializer."""

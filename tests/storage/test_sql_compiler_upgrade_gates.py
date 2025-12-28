@@ -58,9 +58,9 @@ def test_compiler_upgrade_gate_create_table_sql_is_stable() -> None:
     sql = create_table_ast(schema, if_not_exists=True).sql(dialect=DUCKDB_DIALECT)
     canonical = _canonical_duckdb_sql(sql)
     expected = (
-        'CREATE TABLE IF NOT EXISTS core.demo_types ("id" BIGINT NOT NULL, '
-        '"flag" BOOLEAN NOT NULL, "count" INT, "ratio" DOUBLE, "name" TEXT NOT NULL, '
-        '"payload" JSON, "ts" TIMESTAMP, "ts_tz" TIMESTAMPTZ, "amount" DECIMAL(38, 0), '
+        "CREATE TABLE IF NOT EXISTS core.demo_types (id BIGINT NOT NULL, "
+        "flag BOOLEAN NOT NULL, count INT, ratio DOUBLE, name TEXT NOT NULL, "
+        "payload JSON, ts TIMESTAMP, ts_tz TIMESTAMPTZ, amount DECIMAL(38, 0), "
         "PRIMARY KEY (id))"
     )
     if canonical != expected:

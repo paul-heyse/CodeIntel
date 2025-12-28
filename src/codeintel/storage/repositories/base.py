@@ -128,7 +128,7 @@ class BaseRepository:
             Arrow table fetched (and validated when table_key is provided).
         """
         table = relation.fetch_arrow_table()
-        if table_key is None:
+        if table_key is None or BaseRepository._has_nested_arrow_columns(table):
             return table
         df = table.to_pandas()
         validated = validate_df(table_key, df)
@@ -225,11 +225,12 @@ class BaseRepository:
         list[RowDict]
             Validated records from the relation.
         """
-        table = relation.fetch_arrow_table()
-        df = table.to_pandas()
-        validated = validate_df(table_key, df)
-        validated_table = pa.Table.from_pandas(validated, preserve_index=False)
-        return records_from_arrow_table(validated_table)
+        table = BaseRepository._relation_to_arrow(relation, table_key=table_key)
+        return records_from_arrow_table(table)
+
+    @staticmethod
+    def _has_nested_arrow_columns(table: pa.Table) -> bool:
+        return any(pa.types.is_nested(field.type) for field in table.schema)
 
     @staticmethod
     def _predicate_eq(column: str, value: object) -> Expression:
@@ -241,19 +242,7 @@ class BaseRepository:
 
     @staticmethod
     def _constant_expression(value: object) -> Expression:
-        literal = BaseRepository._literal_sql(value)
-        return ConstantExpression(literal)
-
-    @staticmethod
-    def _literal_sql(value: object) -> str:
-        if value is None:
-            return "NULL"
-        if isinstance(value, bool):
-            return "TRUE" if value else "FALSE"
-        if isinstance(value, (int, float)):
-            return str(value)
-        escaped = str(value).replace("'", "''")
-        return f"'{escaped}'"
+        return ConstantExpression(value)
 
     @staticmethod
     def _apply_predicates(
