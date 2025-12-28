@@ -16,7 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from pandera import Column, DataFrameSchema
+    from pandera.pandas import Column, DataFrameSchema
 
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 

@@ -5,7 +5,10 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
-from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
+from codeintel.serving.http.route_utils import (
+    ThreadpoolMetricsContext,
+    run_in_threadpool_with_metrics,
+)
 from codeintel.serving.metrics import QueryMetrics
 from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
 
@@ -64,9 +67,13 @@ async def search(
             truncated=False,
         )
 
-    return await run_in_threadpool_with_metrics(
-        background, request, ops.search, _success, _error, payload
+    context = ThreadpoolMetricsContext(
+        background=background,
+        request=request,
+        success_metrics=_success,
+        error_metrics=_error,
     )
+    return await run_in_threadpool_with_metrics(context, ops.search, payload)
 
 
 __all__ = ["router"]

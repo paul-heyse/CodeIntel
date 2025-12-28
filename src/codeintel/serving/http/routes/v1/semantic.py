@@ -5,8 +5,12 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
-from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
+from codeintel.serving.http.route_utils import (
+    ThreadpoolMetricsContext,
+    run_in_threadpool_with_metrics,
+)
 from codeintel.serving.metrics import QueryMetrics
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.semantic.models import (
     SemanticCatalogResponse,
     SemanticExplainResponse,
@@ -66,7 +70,13 @@ async def list_views(
             truncated=False,
         )
 
-    return await run_in_threadpool_with_metrics(background, request, ops.catalog, _success, _error)
+    context = ThreadpoolMetricsContext(
+        background=background,
+        request=request,
+        success_metrics=_success,
+        error_metrics=_error,
+    )
+    return await run_in_threadpool_with_metrics(context, ops.catalog)
 
 
 @router.get("/views/{view_id}", response_model=SemanticViewDescriptionResponse)
@@ -119,9 +129,13 @@ async def describe_view(
             truncated=False,
         )
 
-    return await run_in_threadpool_with_metrics(
-        background, request, ops.describe, _success, _error, view_id
+    context = ThreadpoolMetricsContext(
+        background=background,
+        request=request,
+        success_metrics=_success,
+        error_metrics=_error,
     )
+    return await run_in_threadpool_with_metrics(context, ops.describe, view_id)
 
 
 @router.post("/query", response_model=SemanticQueryResponse)
@@ -176,8 +190,20 @@ async def query_view(
             truncated=False,
         )
 
+    cancel_token = CancelToken.from_timeout(ops.settings.query_timeout_s)
+    context = ThreadpoolMetricsContext(
+        background=background,
+        request=request,
+        success_metrics=_success,
+        error_metrics=_error,
+        timeout_s=ops.settings.query_timeout_s,
+        cancel_token=cancel_token,
+    )
     return await run_in_threadpool_with_metrics(
-        background, request, ops.query, _success, _error, payload
+        context,
+        ops.query,
+        payload,
+        cancel_check=cancel_token.raise_if_cancelled,
     )
 
 
@@ -231,9 +257,13 @@ async def explain_view(
             truncated=False,
         )
 
-    return await run_in_threadpool_with_metrics(
-        background, request, ops.explain, _success, _error, payload
+    context = ThreadpoolMetricsContext(
+        background=background,
+        request=request,
+        success_metrics=_success,
+        error_metrics=_error,
     )
+    return await run_in_threadpool_with_metrics(context, ops.explain, payload)
 
 
 __all__ = ["router"]

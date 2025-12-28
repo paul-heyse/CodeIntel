@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.serving.meta.models import ServingKernelMetaResponse
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
         SemanticCatalogResponse,
@@ -92,7 +93,9 @@ class ServingKernelProtocol(Protocol):
         """Describe a semantic view."""
         ...
 
-    def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
+    def query(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> SemanticQueryResponse:
         """Execute a semantic query and return typed results."""
         ...
 
@@ -112,7 +115,9 @@ class ServingKernelProtocol(Protocol):
         """Return serving metadata."""
         ...
 
-    def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:
+    def export_rows(
+        self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[dict[str, object]]:
         """Return an iterator over export rows for a view."""
         ...
 
@@ -124,11 +129,23 @@ class ServingKernelProtocol(Protocol):
         """Return query hash and optional schema hash for the export request."""
         ...
 
-    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_parquet(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
         """Write an export payload as Parquet and return rows written."""
         ...
 
-    def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_arrow_ipc(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
         """Write an Arrow IPC file to the provided path and return rows written."""
         ...
 

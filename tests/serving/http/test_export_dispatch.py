@@ -8,7 +8,11 @@ from typing import cast
 
 import pytest
 
-from codeintel.serving.http.export_dispatch import ExportMetricsContext, dispatch_semantic_export
+from codeintel.serving.http.export_dispatch import (
+    ExportDispatchOptions,
+    ExportMetricsContext,
+    dispatch_semantic_export,
+)
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
@@ -18,11 +22,25 @@ from tests._helpers.assertions.expectation_assertions import expect_equal, expec
 class _FakeOps:
     rows_written: int
 
-    def export_to_parquet(self, _request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_parquet(
+        self,
+        _request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: object | None = None,
+    ) -> int:
+        _ = cancel_check
         output_path.write_bytes(b"fake-parquet")
         return self.rows_written
 
-    def export_to_arrow_ipc(self, _request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_arrow_ipc(
+        self,
+        _request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: object | None = None,
+    ) -> int:
+        _ = cancel_check
         output_path.write_bytes(b"fake-arrow")
         return self.rows_written
 
@@ -38,11 +56,12 @@ async def test_http_export_dispatch_returns_row_count_for_parquet() -> None:
         query_hash="q_123",
         schema_hash=None,
     )
+    options = ExportDispatchOptions(headers={})
     dispatched = await dispatch_semantic_export(
         cast("ServingOperations", fake),
         payload,
         metrics,
-        headers={},
+        options=options,
     )
     expect_equal(dispatched.metrics_row_count, 7)
     expect_true(hasattr(dispatched.response, "headers"))

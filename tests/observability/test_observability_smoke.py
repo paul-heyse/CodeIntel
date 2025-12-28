@@ -28,7 +28,10 @@ from codeintel.observability.telemetry_context import (
     RepoCommitContext,
     telemetry_context,
 )
-from codeintel.serving.http.route_utils import run_in_threadpool_with_metrics
+from codeintel.serving.http.route_utils import (
+    ThreadpoolMetricsContext,
+    run_in_threadpool_with_metrics,
+)
 from codeintel.serving.mcp.middleware_stack import McpOpenTelemetryMiddleware
 from codeintel.serving.metrics import QueryMetrics
 from tests._helpers.assertions.expectation_assertions import (
@@ -217,13 +220,13 @@ async def test_http_route_wrapper_emits_span() -> None:
             correlation_id=correlation_id,
         )
 
-    result = await run_in_threadpool_with_metrics(
-        background,
-        request,
-        _fn,
-        _success_metrics,
-        _error_metrics,
+    context = ThreadpoolMetricsContext(
+        background=background,
+        request=request,
+        success_metrics=_success_metrics,
+        error_metrics=_error_metrics,
     )
+    result = await run_in_threadpool_with_metrics(context, _fn)
     expect_equal(result, "ok")
 
     spans = exporter.get_finished_spans()

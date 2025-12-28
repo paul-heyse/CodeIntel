@@ -15,6 +15,7 @@ from codeintel.serving.semantic.engines.protocol import (
 from codeintel.serving.semantic.polars_query_builder import (
     PolarsQueryBuilderError,
     apply_query_spec,
+    can_apply_query_spec,
 )
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.view_registry import ViewInputs
@@ -126,6 +127,12 @@ class PolarsQueryEngine:
             True if Polars can execute the spec.
         """
         if pl is None or self.name.lower() != "polars":
+            return False
+        if not can_apply_query_spec(
+            spec=spec,
+            allowed_columns=spec.allowed_columns,
+            column_types=spec.column_types,
+        ):
             return False
         if ctx.view_registry.get(spec.table_key) is not None:
             return True

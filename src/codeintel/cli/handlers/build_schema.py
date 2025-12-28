@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     from codeintel.build.schemas.manifest import ExportArtifactKind
     from codeintel.build.targets import TargetModule
     from codeintel.cli.context import CommandContext
-    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 
 _VALID_MODULES: tuple[TargetModule, ...] = ("ingestion", "graphs", "analytics", "export")
@@ -196,11 +195,7 @@ class _CompiledManifest:
     manifest: SchemaManifest
 
 
-def _compile_manifest(
-    ctx: CommandContext,
-    *,
-    gateway_con: DuckDBConnection | None = None,
-) -> _CompiledManifest:
+def _compile_manifest(ctx: CommandContext) -> _CompiledManifest:
     selection = _parse_selection(ctx)
 
     request = SchemaManifestRequest(
@@ -228,7 +223,6 @@ def _compile_manifest(
             tag_query=runtime_bundle.tag_query,
         ),
         request=request,
-        con=gateway_con,
     )
     payload = json.dumps(manifest.to_json_obj(), indent=2, sort_keys=True) + "\n"
     return _CompiledManifest(
@@ -603,11 +597,8 @@ def build_schema_compile_handler(ctx: CommandContext) -> CliResult[str]:
             status=400,
         )
 
-    # Get gateway connection if available (legacy, currently unused for view schemas)
-    gateway_con = ctx.gateway.con if ctx.has_storage else None
-
     try:
-        compiled = _compile_manifest(ctx, gateway_con=gateway_con)
+        compiled = _compile_manifest(ctx)
     except _InvalidModuleError as exc:
         return fail_invalid_module(exc.module, _VALID_MODULES)
     except KeyError as exc:
@@ -704,8 +695,6 @@ def _format_detailed_diff_result(
 
 def _try_compile_manifest(
     ctx: CommandContext,
-    *,
-    gateway_con: DuckDBConnection | None = None,
 ) -> CliResult[_CompiledManifest] | _CompiledManifest:
     """Compile manifest with error handling.
 
@@ -713,8 +702,6 @@ def _try_compile_manifest(
     ----------
     ctx
         Command context.
-    gateway_con
-        Optional DuckDB connection (legacy, unused for view schemas).
 
     Returns
     -------
@@ -722,7 +709,7 @@ def _try_compile_manifest(
         Compiled manifest on success, or CliResult failure.
     """
     try:
-        return _compile_manifest(ctx, gateway_con=gateway_con)
+        return _compile_manifest(ctx)
     except _InvalidModuleError as exc:
         return fail_invalid_module(exc.module, _VALID_MODULES)
     except KeyError as exc:
@@ -807,11 +794,8 @@ def build_schema_diff_handler(ctx: CommandContext) -> CliResult[str]:
     if isinstance(load_result, CliResult):
         return cast("CliResult[str]", load_result)
 
-    # Get gateway connection if available (needed for --include-views)
-    gateway_con = ctx.gateway.con if ctx.has_storage else None
-
     # Compile current manifest
-    compile_result = _try_compile_manifest(ctx, gateway_con=gateway_con)
+    compile_result = _try_compile_manifest(ctx)
     if isinstance(compile_result, CliResult):
         return cast("CliResult[str]", compile_result)
 
@@ -900,11 +884,8 @@ def build_schema_migrate_handler(ctx: CommandContext) -> CliResult[str]:
         except (json.JSONDecodeError, TypeError):
             pass
 
-    # Get gateway connection if available (needed for --include-views)
-    gateway_con = ctx.gateway.con if ctx.has_storage else None
-
     # Compile current manifest
-    compile_result = _try_compile_manifest(ctx, gateway_con=gateway_con)
+    compile_result = _try_compile_manifest(ctx)
     if isinstance(compile_result, CliResult):
         return cast("CliResult[str]", compile_result)
 

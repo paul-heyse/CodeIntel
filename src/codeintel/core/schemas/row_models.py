@@ -32,7 +32,7 @@ from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
 if TYPE_CHECKING:
-    from pandera import DataFrameSchema
+    from pandera.pandas import DataFrameSchema
 
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 

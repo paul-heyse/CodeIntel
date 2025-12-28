@@ -9,5 +9,6 @@ from codeintel.storage.duckdb_types import DuckDBRelation
 
 type TabularRelation = DuckDBRelation
 type TabularInput = DuckDBRelation | pa.Table | pa.RecordBatchReader | pl.DataFrame | pl.LazyFrame
+type InferableTabularInput = pa.Table | pa.RecordBatchReader | pl.DataFrame | pl.LazyFrame
 
-__all__ = ["TabularInput", "TabularRelation"]
+__all__ = ["InferableTabularInput", "TabularInput", "TabularRelation"]

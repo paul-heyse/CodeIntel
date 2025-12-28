@@ -13,12 +13,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
 from codeintel.serving.http.export_dispatch import (
+    ExportDispatchOptions,
     ExportMetricsContext,
     dispatch_semantic_export,
     export_hash_headers,
 )
 from codeintel.serving.http.middleware import get_correlation_id
-from codeintel.serving.http.route_utils import schedule_query_metrics
+from codeintel.serving.http.route_utils import schedule_query_metrics, watch_request_disconnect
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.semantic.models import SemanticExportRequest
 
 if TYPE_CHECKING:
@@ -78,7 +80,19 @@ async def export_view(
         schema_hash=schema_hash,
     )
 
-    dispatched = await dispatch_semantic_export(ops, payload, metrics, headers=headers)
+    cancel_token = CancelToken.from_timeout(ops.settings.export_timeout_s)
+    async with watch_request_disconnect(request, cancel_token):
+        options = ExportDispatchOptions(
+            headers=headers,
+            cancel_check=cancel_token.raise_if_cancelled,
+            timeout_s=ops.settings.export_timeout_s,
+        )
+        dispatched = await dispatch_semantic_export(
+            ops,
+            payload,
+            metrics,
+            options=options,
+        )
     if dispatched.metrics_row_count is not None:
         duration_ms = (time.perf_counter() - start) * 1000
         schedule_query_metrics(

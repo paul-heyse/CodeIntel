@@ -12,7 +12,7 @@ from codeintel.storage.contracts.schema_provider import get_schema_provider
 
 if TYPE_CHECKING:
     import pandas as pd
-    from pandera import DataFrameSchema
+    from pandera.pandas import DataFrameSchema
 
 ValidationMode = str
 

@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     import pyarrow as pa
-    from pandera import DataFrameSchema
+    from pandera.pandas import DataFrameSchema
 
 
 class DatasetSchemaLike(Protocol):

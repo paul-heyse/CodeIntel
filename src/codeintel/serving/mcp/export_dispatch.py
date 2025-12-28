@@ -6,6 +6,7 @@ FastMCP tool handlers remain thin and consistent.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.serving.export.engine import ExportDelivery, build_export_plan, write_export_file
@@ -16,16 +17,22 @@ from codeintel.serving.semantic.models import SemanticExportRequest
 
 if TYPE_CHECKING:
     from codeintel.serving.mcp.resource_store import StoredArtifact, StoredMetadata
+    from codeintel.serving.operations.cancellation import CancelCheck
 
 
-def write_export_to_store(
-    *,
-    ops: ServingOperations,
-    store: ResourceStore,
-    request: SemanticExportRequest,
-    spec: ExportArtifactSpec,
-    export_id: str,
-) -> tuple[str, StoredArtifact, StoredMetadata]:
+@dataclass(frozen=True, slots=True)
+class ExportStoreRequest:
+    """Input payload for storing a semantic export."""
+
+    ops: ServingOperations
+    store: ResourceStore
+    request: SemanticExportRequest
+    spec: ExportArtifactSpec
+    export_id: str
+    cancel_check: CancelCheck | None = None
+
+
+def write_export_to_store(payload: ExportStoreRequest) -> tuple[str, StoredArtifact, StoredMetadata]:
     """Write a semantic export to the ResourceStore based on the requested format.
 
     Returns
@@ -38,25 +45,34 @@ def write_export_to_store(
     ValueError
         If the export format is unsupported.
     """
-    plan = build_export_plan(request)
+    plan = build_export_plan(payload.request)
 
     if plan.delivery is ExportDelivery.ndjson_stream:
-        return store.put_with_metadata_stream(
-            ops.export_rows(request),
-            spec=spec,
-            export_id=export_id,
+        return payload.store.put_with_metadata_stream(
+            payload.ops.export_rows(payload.request, cancel_check=payload.cancel_check),
+            spec=payload.spec,
+            export_id=payload.export_id,
         )
     if plan.delivery is ExportDelivery.json_rows:
-        rows = list(ops.export_rows(request))
-        return store.put_with_metadata(rows, spec=spec, export_id=export_id)
-    if plan.delivery is ExportDelivery.binary_file:
-        return store.put_generated_file_with_metadata(
-            spec=spec,
-            export_id=export_id,
-            write_fn=lambda path: write_export_file(ops, request, output_path=path),
+        rows = list(payload.ops.export_rows(payload.request, cancel_check=payload.cancel_check))
+        return payload.store.put_with_metadata(
+            rows,
+            spec=payload.spec,
+            export_id=payload.export_id,
         )
-    msg = f"Unsupported export format: {request.format}"
+    if plan.delivery is ExportDelivery.binary_file:
+        return payload.store.put_generated_file_with_metadata(
+            spec=payload.spec,
+            export_id=payload.export_id,
+            write_fn=lambda path: write_export_file(
+                payload.ops,
+                payload.request,
+                output_path=path,
+                cancel_check=payload.cancel_check,
+            ),
+        )
+    msg = f"Unsupported export format: {payload.request.format}"
     raise ValueError(msg)
 
 
-__all__ = ["write_export_to_store"]
+__all__ = ["ExportStoreRequest", "write_export_to_store"]

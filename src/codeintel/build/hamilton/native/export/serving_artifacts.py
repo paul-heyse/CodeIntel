@@ -115,7 +115,6 @@ def _schema_manifest_json(
             include_artifacts=True,
             include_provenance=True,
         ),
-        con=env.gateway.con,
     )
     run_id = env.run_context.run_id if env.run_context is not None else new_run_id("schema")
     catalog_request = SchemaCatalogRequest(

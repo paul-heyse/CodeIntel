@@ -20,9 +20,9 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.duckdb_relation import relation_to_polars
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, DuckDBRelation)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
 
 FUNCTION_METRICS_TARGET_NAME = "function_metrics"
 FUNCTION_METRICS_TABLE_KEY = "analytics.function_metrics"
@@ -42,7 +42,7 @@ FUNCTION_METRICS_CONTRACT = TableContractSpec(
 )
 
 
-def function_metrics__base(q__core__goids: DuckDBRelation) -> pl.LazyFrame:
+def function_metrics__base(q__core__goids: TabularInput) -> pl.LazyFrame:
     """Build a minimal function metrics frame from core.goids.
 
     Parameters

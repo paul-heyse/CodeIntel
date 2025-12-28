@@ -220,6 +220,7 @@ class ServingSettings:
     schema_enforcement: str = "strict"
     query_engine: str = "auto"
     result_engine: str = "polars"
+    query_timeout_s: float | None = None
     api_key: str | None = None
     cors_origins: tuple[str, ...] = ()
     trusted_hosts: tuple[str, ...] = ()
@@ -227,6 +228,7 @@ class ServingSettings:
     enable_gzip: bool = True
     export_max_rows: int = 100_000
     export_batch_size: int = DEFAULT_ARROW_BATCH_SIZE
+    export_timeout_s: float | None = None
     enable_export_endpoints: bool = True
 
     # MCP Context Features

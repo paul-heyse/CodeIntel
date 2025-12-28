@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.serving.errors import SemanticColumnNotFoundError
+from codeintel.serving.errors import SemanticColumnNotFoundError, SemanticInvalidFilterError
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 
 if TYPE_CHECKING:
@@ -122,6 +122,8 @@ class SemanticQueryPlanner:
         ------
         SemanticColumnNotFoundError
             If requested columns are not allowed for the view.
+        SemanticInvalidFilterError
+            If filters or ordering reference unknown columns.
         """
         if request.select:
             unknown = sorted(set(request.select) - set(ctx.allowed_columns))
@@ -130,6 +132,8 @@ class SemanticQueryPlanner:
             columns = list(request.select)
         else:
             columns = ctx.allowed_columns
+        _validate_filters(filters=request.filters, allowed_columns=ctx.allowed_columns)
+        _validate_order_by(order_by=request.order_by, allowed_columns=ctx.allowed_columns)
         effective_limit = request.limit if request.limit else ctx.view.defaults.limit
         effective_order = request.order_by if request.order_by else ctx.view.defaults.order_by
         inputs = PlanInputs(
@@ -155,6 +159,8 @@ class SemanticQueryPlanner:
         ------
         SemanticColumnNotFoundError
             If requested columns are not allowed for the view.
+        SemanticInvalidFilterError
+            If filters or ordering reference unknown columns.
         """
         if request.select:
             unknown = sorted(set(request.select) - set(ctx.allowed_columns))
@@ -163,6 +169,8 @@ class SemanticQueryPlanner:
             columns = list(request.select)
         else:
             columns = ctx.allowed_columns
+        _validate_filters(filters=request.filters, allowed_columns=ctx.allowed_columns)
+        _validate_order_by(order_by=request.order_by, allowed_columns=ctx.allowed_columns)
 
         inputs = PlanInputs(
             columns=columns,
@@ -264,6 +272,21 @@ def _column_types_for_view(
     if table_schema is None:
         return None
     return {col.name: col.type for col in table_schema.columns}
+
+
+def _validate_filters(*, filters: list[FilterSpec], allowed_columns: list[str]) -> None:
+    allowed = set(allowed_columns)
+    for filt in filters:
+        if filt.column not in allowed:
+            raise SemanticInvalidFilterError(reason=f"Unknown filter column: {filt.column}")
+
+
+def _validate_order_by(*, order_by: list[str], allowed_columns: list[str]) -> None:
+    allowed = set(allowed_columns)
+    for entry in order_by:
+        column = entry[1:] if entry.startswith("-") else entry
+        if column not in allowed:
+            raise SemanticInvalidFilterError(reason=f"Unknown order_by column: {column}")
 
 
 __all__ = [

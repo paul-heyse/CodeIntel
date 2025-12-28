@@ -18,7 +18,7 @@ from codeintel.serving.export.meta import (
     build_export_snapshot_dict,
 )
 from codeintel.serving.features import ServingFeatureSet
-from codeintel.serving.mcp.export_dispatch import write_export_to_store
+from codeintel.serving.mcp.export_dispatch import ExportStoreRequest, write_export_to_store
 from codeintel.serving.mcp.models import (
     ExportHandleResponse,
     ExportSnapshot,
@@ -38,6 +38,7 @@ from codeintel.serving.mcp.tools.shared import (
     normalize_export_format_for_tool,
     validate_semantic_export_request,
 )
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticExportRequest, SemanticViewDescriptionResponse
 from codeintel.serving.uris import (
@@ -52,6 +53,7 @@ if TYPE_CHECKING:
     from codeintel.serving.export.formats import ExportFormat
     from codeintel.serving.export.models import ExportArtifactSpec
     from codeintel.serving.mcp.resource_store import StoredArtifact, StoredMetadata
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.settings import ServingSettings
 
 
@@ -133,8 +135,16 @@ class ExportWorkflow:
         description = _safe_view_description(self.ops, request.view_id)
         column_types = _column_types_from_description(description)
         columns = tuple(column_types)
-        compiled_sql = await self.limiter.run(self.ops.export_sql, request)
-        query_hash, schema_hash = await self.limiter.run(self.ops.export_fingerprint, request)
+        compiled_sql = await self.limiter.run_with_timeout(
+            self.ops.export_sql,
+            self.settings.export_timeout_s,
+            request,
+        )
+        query_hash, schema_hash = await self.limiter.run_with_timeout(
+            self.ops.export_fingerprint,
+            self.settings.export_timeout_s,
+            request,
+        )
         spec = build_export_artifact_spec(
             ExportArtifactInputs(
                 view_id=request.view_id,
@@ -153,7 +163,10 @@ class ExportWorkflow:
         self, request: SemanticExportRequest, *, format_type: ExportFormat
     ) -> ExportPreparation:
         ptr = self.ops.db.current_pointer()
-        meta_result = await self.limiter.run(self.ops.meta)
+        meta_result = await self.limiter.run_with_timeout(
+            self.ops.meta,
+            self.settings.export_timeout_s,
+        )
         meta_payload = meta_result.model_dump(mode="json")
         buildspec_value = meta_payload.get("buildspec_hash")
         buildspec_hash = str(buildspec_value) if buildspec_value is not None else "unknown"
@@ -182,19 +195,24 @@ class ExportWorkflow:
         request: SemanticExportRequest,
         *,
         spec: ExportArtifactSpec,
+        cancel_check: CancelCheck | None,
         ctx: Context | None,
     ) -> ExportOutcome:
         export_id = secrets.token_urlsafe(16)
         cancel_exc = anyio.get_cancelled_exc_class()
         try:
-            token, artifact, stored_meta = await self.limiter.run(
+            token, artifact, stored_meta = await self.limiter.run_with_timeout(
                 lambda: write_export_to_store(
-                    ops=self.ops,
-                    store=self.store,
-                    request=request,
-                    spec=spec,
-                    export_id=export_id,
-                )
+                    ExportStoreRequest(
+                        ops=self.ops,
+                        store=self.store,
+                        request=request,
+                        spec=spec,
+                        export_id=export_id,
+                        cancel_check=cancel_check,
+                    )
+                ),
+                self.settings.export_timeout_s,
             )
         except cancel_exc:
             if ctx is not None:
@@ -217,11 +235,17 @@ class ExportWorkflow:
             await ctx.info(f"Exporting view: {request.view_id} (format={request.format})")
         await maybe_report_progress(ctx, settings=self.settings, progress=10, total=100)
 
+        cancel_token = CancelToken.from_timeout(self.settings.export_timeout_s)
         normalized_request, format_type = self._normalize_request(request)
         preparation = await self._prepare_export(normalized_request, format_type=format_type)
 
         await maybe_report_progress(ctx, settings=self.settings, progress=20, total=100)
-        outcome = await self._store_export(normalized_request, spec=preparation.spec, ctx=ctx)
+        outcome = await self._store_export(
+            normalized_request,
+            spec=preparation.spec,
+            cancel_check=cancel_token.raise_if_cancelled,
+            ctx=ctx,
+        )
 
         await maybe_report_progress(ctx, settings=self.settings, progress=100, total=100)
         if ctx is not None:

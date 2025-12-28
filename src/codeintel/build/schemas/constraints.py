@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from pandera import DataFrameSchema
+    from pandera.pandas import DataFrameSchema
 
 __all__ = [
     "Constraint",

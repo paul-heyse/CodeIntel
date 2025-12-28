@@ -138,6 +138,13 @@ def _load_serving_settings() -> ServingSettings:
             return default_when_unset
         return get_int(name, default=None)
 
+    def get_optional_float(
+        name: str, *, default_when_unset: float | None = None
+    ) -> float | None:
+        if not is_set(name):
+            return default_when_unset
+        return get_float(name, default=None)
+
     serve_dir = get_path("CODEINTEL_SERVE_DIR", default=Path(".codeintel/serve")) or Path(
         ".codeintel/serve"
     )
@@ -157,6 +164,7 @@ def _load_serving_settings() -> ServingSettings:
         or "strict",
         query_engine=get_str("CODEINTEL_SERVE_QUERY_ENGINE", default="auto") or "auto",
         result_engine=get_str("CODEINTEL_SERVE_RESULT_ENGINE", default="polars") or "polars",
+        query_timeout_s=get_optional_float("CODEINTEL_SERVE_QUERY_TIMEOUT_S"),
         api_key=get_str("CODEINTEL_SERVE_API_KEY", default=None),
         cors_origins=cors_origins,
         trusted_hosts=trusted_hosts,
@@ -167,6 +175,7 @@ def _load_serving_settings() -> ServingSettings:
             "CODEINTEL_SERVE_EXPORT_BATCH_SIZE",
             default=DEFAULT_ARROW_BATCH_SIZE,
         ),
+        export_timeout_s=get_optional_float("CODEINTEL_SERVE_EXPORT_TIMEOUT_S"),
         enable_export_endpoints=get_required_bool("CODEINTEL_SERVE_ENABLE_EXPORT", default=True),
         # MCP Context Features
         mcp_enable_sampling=get_required_bool("CODEINTEL_MCP_ENABLE_SAMPLING", default=False),

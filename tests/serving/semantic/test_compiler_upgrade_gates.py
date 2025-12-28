@@ -8,6 +8,7 @@ may affect caching, query policies, or downstream tooling.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 import pytest
@@ -46,7 +47,13 @@ def _canonical_duckdb_sql(sql: str) -> str:
     str
         Canonicalized SQL string.
     """
-    return parse_one(sql, dialect=DUCKDB_DIALECT).sql(dialect=DUCKDB_DIALECT)
+    canonical = parse_one(sql, dialect=DUCKDB_DIALECT).sql(dialect=DUCKDB_DIALECT)
+    canonical = _PARQUET_SCAN_PATH_RE.sub("PARQUET_SCAN(['<DATASET>']", canonical)
+    return _PARQUET_SCAN_ALIAS_RE.sub("parquet_scan", canonical)
+
+
+_PARQUET_SCAN_PATH_RE = re.compile(r"PARQUET_SCAN\(\['[^']+'\]")
+_PARQUET_SCAN_ALIAS_RE = re.compile(r"parquet_[0-9a-f]+")
 
 
 def _make_snapshot_db(db_path: Path) -> None:
@@ -153,8 +160,10 @@ async def test_compiler_upgrade_gate_numeric_filter_sql_is_stable(tmp_path: Path
         await manager.stop()
 
     expected = (
-        'SELECT * FROM "docs"."v_demo" AS "t0" WHERE "t0"."id" >= 2 '
-        'ORDER BY "t0"."id" DESC LIMIT 10'
+        "SELECT id, \"label\" FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM "
+        "PARQUET_SCAN(['<DATASET>'], (binary_as_string = FALSE), (file_row_number = FALSE), "
+        "(filename = FALSE), (hive_partitioning = FALSE), (union_by_name = TRUE))) AS "
+        "parquet_scan WHERE (id >= 2)) AS parquet_scan ORDER BY id DESC) AS parquet_scan LIMIT 10"
     )
     expect_equal(canonical, expected)
 
@@ -196,7 +205,10 @@ async def test_compiler_upgrade_gate_string_contains_sql_is_stable(tmp_path: Pat
         await manager.stop()
 
     expected = (
-        'SELECT * FROM "docs"."v_demo" AS "t0" WHERE CONTAINS("t0"."label", \'t\') '
-        'ORDER BY "t0"."id" ASC LIMIT 10'
+        "SELECT id, \"label\" FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM "
+        "PARQUET_SCAN(['<DATASET>'], (binary_as_string = FALSE), (file_row_number = FALSE), "
+        "(filename = FALSE), (hive_partitioning = FALSE), (union_by_name = TRUE))) AS "
+        "parquet_scan WHERE CONTAINS(\"label\", 't')) AS parquet_scan ORDER BY id) AS "
+        "parquet_scan LIMIT 10"
     )
     expect_equal(canonical, expected)

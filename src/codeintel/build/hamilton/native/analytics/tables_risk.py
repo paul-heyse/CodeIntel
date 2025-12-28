@@ -20,9 +20,9 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.duckdb_relation import relation_to_polars
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, DuckDBRelation)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
 
 RISK_FACTORS_TARGET_NAME = "risk_factors"
 RISK_FACTORS_TABLE_KEY = "analytics.goid_risk_factors"
@@ -45,7 +45,7 @@ RISK_LEVEL_HIGH_THRESHOLD = 5
 RISK_LEVEL_MEDIUM_THRESHOLD = 3
 
 
-def risk_factors__base(q__analytics__function_metrics: DuckDBRelation) -> pl.LazyFrame:
+def risk_factors__base(q__analytics__function_metrics: TabularInput) -> pl.LazyFrame:
     """Build a minimal risk factors frame from function metrics.
 
     Parameters
