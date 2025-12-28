@@ -35,7 +35,7 @@ class QueryMetrics:
     correlation_id
         Request correlation identifier.
     engine
-        Result extraction engine used (polars/pandas).
+        Result extraction engine used (polars).
     query_hash
         Stable fingerprint of query inputs when available.
     schema_hash

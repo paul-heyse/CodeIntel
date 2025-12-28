@@ -6,12 +6,13 @@ from collections.abc import Callable, Mapping
 from types import ModuleType
 
 import hamilton.driver as h_driver
+import polars as pl
 import pytest
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.dag_catalog import IOSurface
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
+from codeintel.build.hamilton.materializers import DuckDBRelationSaver, FileArtifactSaver
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_loader_query
@@ -82,28 +83,26 @@ def _module_with_duplicate_outputs() -> ModuleType:
     module = ModuleType("dup_outputs_module")
 
     @SaveToObjectMetadataDecorator(
-        [DuckDBRowsSaver],
+        [DuckDBRelationSaver],
         output_name_="m__core__dup_one",
         env=source("env"),
         catalog=source("catalog"),
         target_name=value("dup_target"),
         table_key=value("core.dup"),
-        columns=value(("id",)),
     )
-    def dup_rows_one() -> tuple[tuple[int, ...], ...]:
-        return ()
+    def dup_rows_one() -> pl.LazyFrame:
+        return pl.DataFrame({"id": [1]}).lazy()
 
     @SaveToObjectMetadataDecorator(
-        [DuckDBRowsSaver],
+        [DuckDBRelationSaver],
         output_name_="m__core__dup_two",
         env=source("env"),
         catalog=source("catalog"),
         target_name=value("dup_target"),
         table_key=value("core.dup"),
-        columns=value(("id",)),
     )
-    def dup_rows_two() -> tuple[tuple[int, ...], ...]:
-        return ()
+    def dup_rows_two() -> pl.LazyFrame:
+        return pl.DataFrame({"id": [2]}).lazy()
 
     @codeintel_target(domain="analytics", target="dup_target")
     def t__dup_target(
@@ -128,19 +127,18 @@ def _module_with_io_surface() -> ModuleType:
     module = ModuleType("io_surface_module")
 
     @tag_loader_query(domain="analytics", table_key="core.source")
-    def source_rows() -> tuple[tuple[int, ...], ...]:
-        return ((1,),)
+    def source_rows() -> pl.LazyFrame:
+        return pl.DataFrame({"id": [1]}).lazy()
 
     @SaveToObjectMetadataDecorator(
-        [DuckDBRowsSaver],
+        [DuckDBRelationSaver],
         output_name_="m__analytics__alpha_out",
         env=source("env"),
         catalog=source("catalog"),
         target_name=value("alpha"),
         table_key=value("analytics.alpha_out"),
-        columns=value(("id",)),
     )
-    def alpha_rows(source_rows: tuple[tuple[int, ...], ...]) -> tuple[tuple[int, ...], ...]:
+    def alpha_rows(source_rows: pl.LazyFrame) -> pl.LazyFrame:
         return source_rows
 
     @SaveToObjectMetadataDecorator(
@@ -152,13 +150,14 @@ def _module_with_io_surface() -> ModuleType:
         artifact_name=value("alpha_meta"),
         path_template=value("{build_dir}/alpha_meta.json"),
     )
-    def alpha_meta(alpha_rows: tuple[tuple[int, ...], ...]) -> bytes:
+    def alpha_meta(alpha_rows: pl.LazyFrame) -> bytes:
         _ = alpha_rows
         return b"ok"
 
     @codeintel_target(domain="analytics", target="alpha")
-    def t__alpha(alpha_rows: tuple[tuple[int, ...], ...]) -> int:
-        return len(alpha_rows)
+    def t__alpha(alpha_rows: pl.LazyFrame) -> int:
+        _ = alpha_rows
+        return 1
 
     _register_module_functions(
         module,

@@ -20,6 +20,8 @@ from codeintel.core.ports.storage import BatchResult, MutableQueryResult, QueryR
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    import pyarrow as pa
+
 
 @runtime_checkable
 class IngestStoragePort(Protocol):
@@ -173,12 +175,14 @@ class IngestStoragePort(Protocol):
         """
         ...
 
-    def fetch_dataframe(
+    def fetch_arrow_reader(
         self,
         sql: str,
         params: Sequence[object] | None = None,
-    ) -> object:
-        """Execute a query and return results as a DataFrame.
+        *,
+        batch_size: int | None = None,
+    ) -> pa.RecordBatchReader:
+        """Execute a query and return results as an Arrow stream.
 
         Parameters
         ----------
@@ -186,11 +190,13 @@ class IngestStoragePort(Protocol):
             SQL query string.
         params
             Optional query parameters.
+        batch_size
+            Optional batch size for Arrow record batches.
 
         Returns
         -------
-        object
-            Query results as a pandas DataFrame.
+        pyarrow.RecordBatchReader
+            Streaming Arrow reader for query results.
         """
         ...
 

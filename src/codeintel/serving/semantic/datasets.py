@@ -69,6 +69,11 @@ def load_dataset_manifests(
     -------
     DatasetManifestIndex
         Loaded dataset manifest index keyed by table key.
+
+    Raises
+    ------
+    ValueError
+        If manifest metadata is inconsistent with the snapshot manifest.
     """
     by_table: dict[str, DatasetManifestEntry] = {}
     for table_key, entry in snapshot_manifest.datasets.items():

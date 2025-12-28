@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import pyarrow as pa
 
 if TYPE_CHECKING:
-    import polars as pl
+    from collections.abc import Iterator
 
-    type PolarsLazyFrame = pl.LazyFrame
+    from polars import LazyFrame
+
+    type PolarsLazyFrame = LazyFrame
 else:
     type PolarsLazyFrame = object
 
@@ -26,19 +28,53 @@ class ColumnarStream(Protocol):
 
     @property
     def schema(self) -> pa.Schema:
-        """Return the Arrow schema for the stream."""
+        """Return the Arrow schema for the stream.
+
+        Returns
+        -------
+        pyarrow.Schema
+            Schema describing the stream output.
+        """
         ...
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
-        """Return a RecordBatchReader for the stream."""
+        """Return a RecordBatchReader for the stream.
+
+        Parameters
+        ----------
+        batch_size
+            Target batch size for stream readers that support it.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader over the stream batches.
+        """
         ...
 
     def to_lazyframe(self) -> PolarsLazyFrame:
-        """Return a Polars LazyFrame for the stream."""
+        """Return a Polars LazyFrame for the stream.
+
+        Returns
+        -------
+        polars.LazyFrame
+            LazyFrame view of the stream.
+
+        Raises
+        ------
+        RuntimeError
+            If Polars is unavailable for conversion.
+        """
         ...
 
     def to_table(self) -> pa.Table:
-        """Return a fully materialized Arrow table (last resort)."""
+        """Return a fully materialized Arrow table (last resort).
+
+        Returns
+        -------
+        pyarrow.Table
+            Materialized table containing the stream data.
+        """
         ...
 
 
@@ -50,16 +86,44 @@ class RecordBatchReaderStream:
 
     @property
     def schema(self) -> pa.Schema:
-        """Return the Arrow schema for the stream."""
+        """Return the Arrow schema for the stream.
+
+        Returns
+        -------
+        pyarrow.Schema
+            Schema describing the stream output.
+        """
         return self.reader.schema
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
-        """Return the underlying reader (batch_size is advisory only)."""
+        """Return the underlying reader (batch_size is advisory only).
+
+        Parameters
+        ----------
+        batch_size
+            Target batch size (not enforced for Arrow readers).
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader over the stream batches.
+        """
         _ = batch_size
         return self.reader
 
     def to_lazyframe(self) -> PolarsLazyFrame:
-        """Convert the stream into a Polars LazyFrame."""
+        """Convert the stream into a Polars LazyFrame.
+
+        Returns
+        -------
+        polars.LazyFrame
+            LazyFrame view over the stream data.
+
+        Raises
+        ------
+        RuntimeError
+            If Polars is unavailable.
+        """
         if pl is None:  # pragma: no cover
             msg = "polars is required for LazyFrame conversion"
             raise RuntimeError(msg)
@@ -69,7 +133,13 @@ class RecordBatchReaderStream:
         return frame.lazy()
 
     def to_table(self) -> pa.Table:
-        """Materialize the stream into a table."""
+        """Materialize the stream into a table.
+
+        Returns
+        -------
+        pyarrow.Table
+            Materialized table containing the stream data.
+        """
         return pa.Table.from_batches(list(self.reader), schema=self.reader.schema)
 
 
@@ -81,7 +151,20 @@ class LazyFrameStream:
 
     @property
     def schema(self) -> pa.Schema:
-        """Return the Arrow schema for the stream."""
+        """Return the Arrow schema for the stream.
+
+        Returns
+        -------
+        pyarrow.Schema
+            Schema describing the stream output.
+
+        Raises
+        ------
+        RuntimeError
+            If Polars is unavailable.
+        TypeError
+            If the wrapped object is not a LazyFrame.
+        """
         if pl is None:  # pragma: no cover
             msg = "polars is required for LazyFrame schema"
             raise RuntimeError(msg)
@@ -91,22 +174,72 @@ class LazyFrameStream:
         raise TypeError(msg)
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
-        """Stream the LazyFrame as record batches."""
+        """Stream the LazyFrame as record batches.
+
+        Parameters
+        ----------
+        batch_size
+            Target row chunk size for streaming batches.
+
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader over the streamed record batches.
+
+        Raises
+        ------
+        ValueError
+            If batch_size is not positive.
+        RuntimeError
+            If Polars is unavailable.
+        TypeError
+            If the wrapped object is not a LazyFrame.
+        """
+        if batch_size <= 0:
+            msg = "batch_size must be positive"
+            raise ValueError(msg)
         if pl is None:  # pragma: no cover
             msg = "polars is required for LazyFrame streaming"
             raise RuntimeError(msg)
         if not isinstance(self.lazyframe, pl.LazyFrame):
             msg = "LazyFrameStream expects a polars.LazyFrame"
             raise TypeError(msg)
-        batches = self.lazyframe.collect_batches(batch_size=batch_size, engine="streaming")
-        return pa.RecordBatchReader.from_batches(self.schema, batches)
+
+        def _iter_batches() -> Iterator[pa.RecordBatch]:
+            for frame in self.lazyframe.collect_batches(
+                chunk_size=batch_size,
+                engine="streaming",
+            ):
+                table = frame.to_arrow()
+                yield from table.to_batches()
+
+        return pa.RecordBatchReader.from_batches(self.schema, _iter_batches())
 
     def to_lazyframe(self) -> PolarsLazyFrame:
-        """Return the underlying LazyFrame."""
+        """Return the underlying LazyFrame.
+
+        Returns
+        -------
+        polars.LazyFrame
+            LazyFrame backing this stream adapter.
+        """
         return self.lazyframe
 
     def to_table(self) -> pa.Table:
-        """Materialize the LazyFrame into a table (last resort)."""
+        """Materialize the LazyFrame into a table (last resort).
+
+        Returns
+        -------
+        pyarrow.Table
+            Materialized table containing the LazyFrame results.
+
+        Raises
+        ------
+        RuntimeError
+            If Polars is unavailable.
+        TypeError
+            If the wrapped object is not a LazyFrame.
+        """
         if pl is None:  # pragma: no cover
             msg = "polars is required for LazyFrame materialization"
             raise RuntimeError(msg)

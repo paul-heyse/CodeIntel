@@ -35,6 +35,7 @@ from codeintel.build.hamilton.native.ingestion.frame_utils import (
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
     lazyframe_for_table,
+    lazyframe_for_table_columns,
 )
 from codeintel.build.hamilton.native.ingestion.pipelines import pipe_ingest_rows
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
@@ -699,11 +700,11 @@ def t__config_ingest__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_table(CONFIG_VALUES_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_table_columns(CONFIG_VALUES_TABLE_KEY, ingest_result.rows)
         return ConfigToolOutput(
             result=ingest_result.result,
             rows=frame,
-            row_count=len(ingest_result.rows),
+            row_count=ingest_result.row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)

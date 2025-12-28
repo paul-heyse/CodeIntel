@@ -119,7 +119,7 @@ async def test_kernel_catalog_describe_query_meta(tmp_path: Path) -> None:
                 hot_swap=False,
                 pool_size=1,
                 poll_interval_s=0.01,
-                result_engine="pandas",
+                result_engine="polars",
                 schema_enforcement="strict",
             ),
         )
@@ -199,7 +199,7 @@ async def test_kernel_describe_includes_lineage(tmp_path: Path) -> None:
                 hot_swap=False,
                 pool_size=1,
                 poll_interval_s=0.01,
-                result_engine="pandas",
+                result_engine="polars",
                 schema_enforcement="strict",
             ),
         )
@@ -233,7 +233,7 @@ async def test_kernel_export_rows_close_releases_export_pool(tmp_path: Path) -> 
                 hot_swap=False,
                 pool_size=1,
                 poll_interval_s=0.01,
-                result_engine="pandas",
+                result_engine="polars",
                 schema_enforcement="strict",
             ),
         )

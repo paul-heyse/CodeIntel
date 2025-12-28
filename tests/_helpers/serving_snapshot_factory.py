@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast, get_args
 
 import duckdb
 
@@ -20,7 +20,7 @@ from codeintel.config.primitives import BuildPaths
 from codeintel.core.hashing import stable_hash
 from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
-from codeintel.core.schemas.primitives import Column, TableSchema
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
@@ -63,6 +63,18 @@ class SnapshotArtifacts:
     views: list[dict[str, object]] | None = None
     tables: list[dict[str, object]] | None = None
     db_setup: Callable[[Path], None] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _SnapshotPaths:
+    serve_dir: Path
+    db_path: Path
+    registry_path: Path
+    schema_manifest_path: Path
+    buildspec_path: Path
+    pointer_path: Path
+    snapshot_root: Path
+    snapshot_manifest_path: Path
 
 
 @dataclass(frozen=True)
@@ -146,14 +158,10 @@ class ServingSnapshotFactory:
         ServingSnapshot
             Snapshot paths and identity metadata.
         """
-        resolved_serve_dir = pointer_path.parent if pointer_path else self._default_serve_dir()
-        resolved_serve_dir.mkdir(parents=True, exist_ok=True)
-
-        db_path = resolved_serve_dir / "codeintel.duckdb"
-        registry_path = resolved_serve_dir / "semantic_registry.json"
-        schema_manifest_path = resolved_serve_dir / "schema_manifest.json"
-        buildspec_path = resolved_serve_dir / "buildspec.json"
-        resolved_pointer_path = pointer_path or resolved_serve_dir / "current.json"
+        paths = _resolve_snapshot_paths(
+            pointer_path=pointer_path,
+            default_serve_dir=self._default_serve_dir(),
+        )
 
         resolved_artifacts = artifacts or SnapshotArtifacts()
         views = resolved_artifacts.views or _demo_views()
@@ -161,31 +169,29 @@ class ServingSnapshotFactory:
         db_setup = resolved_artifacts.db_setup
 
         if db_setup is not None:
-            db_setup(db_path)
+            db_setup(paths.db_path)
         else:
-            _write_demo_db(db_path, row_count=3, repo=self.repo, commit=self.commit)
+            _write_demo_db(paths.db_path, row_count=3, repo=self.repo, commit=self.commit)
 
-        _write_registry(registry_path, views=views)
-        _write_schema_manifest(schema_manifest_path, tables=tables)
-        _write_buildspec(buildspec_path, tables=tables)
+        _write_registry(paths.registry_path, views=views)
+        _write_schema_manifest(paths.schema_manifest_path, tables=tables)
+        _write_buildspec(paths.buildspec_path, tables=tables)
         dataset_manifest_paths = _write_dataset_manifests(
-            db_path,
+            paths.db_path,
             run_id=run_id,
-            serve_dir=resolved_serve_dir,
+            serve_dir=paths.serve_dir,
             tables=tables,
         )
-        snapshot_root = resolved_serve_dir
-        snapshot_manifest_path = resolved_serve_dir / "snapshot_manifest.json"
 
         snapshot = ServingSnapshot(
-            serve_dir=resolved_serve_dir,
-            snapshot_root=snapshot_root,
-            snapshot_manifest_path=snapshot_manifest_path,
-            db_path=db_path,
-            registry_path=registry_path,
-            schema_manifest_path=schema_manifest_path,
-            buildspec_path=buildspec_path,
-            pointer_path=resolved_pointer_path,
+            serve_dir=paths.serve_dir,
+            snapshot_root=paths.snapshot_root,
+            snapshot_manifest_path=paths.snapshot_manifest_path,
+            db_path=paths.db_path,
+            registry_path=paths.registry_path,
+            schema_manifest_path=paths.schema_manifest_path,
+            buildspec_path=paths.buildspec_path,
+            pointer_path=paths.pointer_path,
             repo=self.repo,
             commit=self.commit,
             run_id=run_id,
@@ -345,7 +351,7 @@ def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None
         table_key = str(table.get("table_key", "")).strip()
         if not table_key:
             continue
-        schema_hash = table.get("schema_hash") or _schema_hash_for_table_entry(table)
+        schema_hash = _schema_hash_from_table(table)
         if schema_hash is None:
             msg = f"schema_hash is required for buildspec dataset: {table_key}"
             raise ValueError(msg)
@@ -382,7 +388,7 @@ def _write_dataset_manifests(
                 ).fetch_arrow_table()
             except duckdb.Error:
                 continue
-            schema_hash = table.get("schema_hash") or _schema_hash_for_table_entry(table)
+            schema_hash = _schema_hash_from_table(table)
             if schema_hash is None:
                 msg = f"schema_hash is required for dataset manifest: {table_key}"
                 raise ValueError(msg)
@@ -443,7 +449,7 @@ def _snapshot_dataset_entries(
 
 
 def _ensure_table_schema_hash(table: dict[str, object]) -> dict[str, object]:
-    schema_hash = table.get("schema_hash") or _schema_hash_for_table_entry(table)
+    schema_hash = _schema_hash_from_table(table)
     if schema_hash is None:
         table_key = table.get("table_key")
         msg = f"schema_hash is required for schema manifest table: {table_key}"
@@ -452,16 +458,32 @@ def _ensure_table_schema_hash(table: dict[str, object]) -> dict[str, object]:
     return table
 
 
+def _schema_hash_from_table(table: Mapping[str, object]) -> str | None:
+    raw_hash = table.get("schema_hash")
+    if isinstance(raw_hash, str) and raw_hash.strip():
+        return raw_hash
+    return _schema_hash_for_table_entry(table)
+
+
 def _schema_hash_for_table_entry(table: Mapping[str, object]) -> str | None:
     schema = table.get("schema")
     name = table.get("name")
+    columns_raw = table.get("columns")
     if not isinstance(schema, str) or not schema.strip():
         return None
     if not isinstance(name, str) or not name.strip():
         return None
-    columns_raw = table.get("columns")
     if not isinstance(columns_raw, list):
         return None
+    columns = _columns_from_raw(columns_raw)
+    if not columns:
+        return None
+    table_schema = TableSchema(schema=schema, name=name, columns=columns)
+    return compute_schema_hash(table_schema)
+
+
+def _columns_from_raw(columns_raw: list[object]) -> list[Column] | None:
+    allowed_types = set(get_args(ColumnType))
     columns: list[Column] = []
     for col in columns_raw:
         if not isinstance(col, dict):
@@ -470,20 +492,45 @@ def _schema_hash_for_table_entry(table: Mapping[str, object]) -> str | None:
         col_type = col.get("type")
         if not isinstance(col_name, str) or not isinstance(col_type, str):
             return None
+        if col_type not in allowed_types:
+            return None
         description = col.get("description")
         description_str = description if isinstance(description, str) else None
         columns.append(
             Column(
                 name=col_name,
-                type=col_type,
+                type=cast("ColumnType", col_type),
                 nullable=bool(col.get("nullable", True)),
                 description=description_str,
             )
         )
-    if not columns:
-        return None
-    table_schema = TableSchema(schema=schema, name=name, columns=columns)
-    return compute_schema_hash(table_schema)
+    return columns or None
+
+
+def _resolve_snapshot_paths(
+    *,
+    pointer_path: Path | None,
+    default_serve_dir: Path,
+) -> _SnapshotPaths:
+    serve_dir = pointer_path.parent if pointer_path else default_serve_dir
+    serve_dir.mkdir(parents=True, exist_ok=True)
+    db_path = serve_dir / "codeintel.duckdb"
+    registry_path = serve_dir / "semantic_registry.json"
+    schema_manifest_path = serve_dir / "schema_manifest.json"
+    buildspec_path = serve_dir / "buildspec.json"
+    resolved_pointer_path = pointer_path or serve_dir / "current.json"
+    snapshot_root = serve_dir
+    snapshot_manifest_path = serve_dir / "snapshot_manifest.json"
+    return _SnapshotPaths(
+        serve_dir=serve_dir,
+        db_path=db_path,
+        registry_path=registry_path,
+        schema_manifest_path=schema_manifest_path,
+        buildspec_path=buildspec_path,
+        pointer_path=resolved_pointer_path,
+        snapshot_root=snapshot_root,
+        snapshot_manifest_path=snapshot_manifest_path,
+    )
 
 
 def _write_pointer(

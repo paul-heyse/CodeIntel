@@ -122,8 +122,6 @@ class SemanticQueryPlanner:
         ------
         SemanticColumnNotFoundError
             If requested columns are not allowed for the view.
-        SemanticInvalidFilterError
-            If filters or ordering reference unknown columns.
         """
         if request.select:
             unknown = sorted(set(request.select) - set(ctx.allowed_columns))
@@ -159,8 +157,6 @@ class SemanticQueryPlanner:
         ------
         SemanticColumnNotFoundError
             If requested columns are not allowed for the view.
-        SemanticInvalidFilterError
-            If filters or ordering reference unknown columns.
         """
         if request.select:
             unknown = sorted(set(request.select) - set(ctx.allowed_columns))

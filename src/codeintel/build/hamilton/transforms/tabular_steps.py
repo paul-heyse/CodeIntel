@@ -25,7 +25,13 @@ def drop_bad_rows(df: pl.LazyFrame, required_cols: tuple[str, ...]) -> pl.LazyFr
 
 
 def clip_numeric(df: pl.LazyFrame, col: str, max_value: float) -> pl.LazyFrame:
-    """Clip numeric column values to a maximum bound (polars lazy)."""
+    """Clip numeric column values to a maximum bound (polars lazy).
+
+    Returns
+    -------
+    pl.LazyFrame
+        LazyFrame with the numeric column clipped to the max value.
+    """
     return df.with_columns(pl.col(col).clip(upper_bound=max_value))
 
 

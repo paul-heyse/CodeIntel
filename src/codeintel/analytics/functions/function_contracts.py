@@ -65,7 +65,7 @@ def build_function_contracts_rows(
     Build contract rows for `analytics.function_contracts` without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
 
     Parameters
     ----------

@@ -26,18 +26,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pandas as pd
 import pyarrow as pa
 
 from codeintel.core.repository import PagedResult
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
     ConstantExpression,
     DuckDBCatalogException,
     Expression,
 )
-from codeintel.storage.query_results import records_from_arrow_table
-from codeintel.storage.validation.pandera_df import validate_df
+from codeintel.storage.query_results import records_from_arrow_reader
+from codeintel.storage.validation.columnar import validate_record_batch_reader
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -118,52 +118,13 @@ class BaseRepository:
             relation = relation.filter(predicate)
         return relation
 
-    @staticmethod
-    def _relation_to_arrow(
-        relation: DuckDBRelation,
-        *,
-        table_key: str | None = None,
-    ) -> pa.Table:
-        """Return an Arrow table from a relation, optionally validated.
-
-        Returns
-        -------
-        pa.Table
-            Arrow table fetched (and validated when table_key is provided).
-        """
-        table = relation.fetch_arrow_table()
-        if table_key is None or BaseRepository._has_nested_arrow_columns(table):
-            return table
-        df = table.to_pandas()
-        validated = validate_df(table_key, df)
-        return pa.Table.from_pandas(validated, preserve_index=False)
-
-    @staticmethod
-    def _relation_to_df(
-        relation: DuckDBRelation,
-        *,
-        table_key: str | None = None,
-    ) -> pd.DataFrame:
-        """Return a DataFrame from a relation, optionally validated.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame fetched (and validated when table_key is provided).
-        """
-        table = relation.fetch_arrow_table()
-        df = table.to_pandas()
-        if table_key:
-            return validate_df(table_key, df)
-        return df
-
     def _relation_to_dicts(
         self,
         relation: DuckDBRelation,
         table_key: str | None = None,
     ) -> list[RowDict]:
-        table = self._relation_to_arrow(relation, table_key=table_key)
-        return records_from_arrow_table(table)
+        reader = self._relation_to_reader(relation, table_key=table_key)
+        return records_from_arrow_reader(reader)
 
     def _relation_to_one(
         self,
@@ -204,8 +165,7 @@ class BaseRepository:
         """
         fetch_limit = limit + 1
         limited = relation.limit(fetch_limit)
-        table = self._relation_to_arrow(limited, table_key=table_key)
-        all_rows = records_from_arrow_table(table)
+        all_rows = self._relation_to_dicts(limited, table_key=table_key)
         truncated = len(all_rows) > limit
         items = all_rows[:limit]
 
@@ -229,12 +189,24 @@ class BaseRepository:
         list[RowDict]
             Validated records from the relation.
         """
-        table = BaseRepository._relation_to_arrow(relation, table_key=table_key)
-        return records_from_arrow_table(table)
+        reader = BaseRepository._relation_to_reader(relation, table_key=table_key)
+        return records_from_arrow_reader(reader)
 
     @staticmethod
-    def _has_nested_arrow_columns(table: pa.Table) -> bool:
-        return any(pa.types.is_nested(field.type) for field in table.schema)
+    def _relation_to_reader(
+        relation: DuckDBRelation,
+        *,
+        table_key: str | None = None,
+        batch_size: int = DEFAULT_ARROW_BATCH_SIZE,
+    ) -> pa.RecordBatchReader:
+        reader = relation.fetch_record_batch(batch_size)
+        if table_key is None or BaseRepository._has_nested_arrow_types(reader.schema):
+            return reader
+        return validate_record_batch_reader(table_key, reader)
+
+    @staticmethod
+    def _has_nested_arrow_types(schema: pa.Schema) -> bool:
+        return any(pa.types.is_nested(field.type) for field in schema)
 
     @staticmethod
     def _predicate_eq(column: str, value: object) -> Expression:

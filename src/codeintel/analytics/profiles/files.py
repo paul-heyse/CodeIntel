@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,35 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+_FILE_PROFILE_AGG_EXPR = ", ".join(
+    [
+        "count(rel_path) as total_functions",
+        "sum(case when call_is_public then 1 else 0 end) as public_functions",
+        "avg(loc) as avg_loc",
+        "max(loc) as max_loc",
+        "avg(cyclomatic_complexity) as avg_cyclomatic_complexity",
+        "max(cyclomatic_complexity) as max_cyclomatic_complexity",
+        ("sum(case when risk_level = 'high' then 1 else 0 end) as high_risk_function_count"),
+        ("sum(case when risk_level = 'medium' then 1 else 0 end) as medium_risk_function_count"),
+        "max(risk_score) as max_risk_score",
+        "sum(covered_lines) as sum_covered_lines",
+        "sum(executable_lines) as sum_exec_lines",
+        "sum(case when tested then 1 else 0 end) as tested_function_count",
+        "sum(case when tested then 0 else 1 end) as untested_function_count",
+        "sum(tests_touching) as tests_touching",
+    ]
+)
+
+
+@dataclass(frozen=True)
+class _FileProfileTables:
+    fp: DuckDBRelation
+    ast_metrics: DuckDBRelation
+    hotspots: DuckDBRelation
+    typedness: DuckDBRelation
+    static_diag: DuckDBRelation
+    modules: DuckDBRelation
+
 
 def compute_file_profile_inputs(
     gateway: StorageGateway, snapshot: SnapshotRef
@@ -67,14 +97,7 @@ def compute_file_profile_inputs(
 
 def _load_file_profile_tables(
     inputs: FileProfileInputs, module_table: str
-) -> tuple[
-    DuckDBRelation,
-    DuckDBRelation,
-    DuckDBRelation,
-    DuckDBRelation,
-    DuckDBRelation,
-    DuckDBRelation,
-] | None:
+) -> _FileProfileTables | None:
     """
     Load filtered profile source tables.
 
@@ -119,7 +142,84 @@ def _load_file_profile_tables(
         log.warning("file_profile: failed to access tables: %s", exc)
         return None
     else:
-        return fp, ast_metrics, hotspots, typedness, static_diag, modules
+        return _FileProfileTables(
+            fp=fp,
+            ast_metrics=ast_metrics,
+            hotspots=hotspots,
+            typedness=typedness,
+            static_diag=static_diag,
+            modules=modules,
+        )
+
+
+def _build_file_profile_relation(tables: _FileProfileTables) -> DuckDBRelation:
+    """
+    Assemble the base relation used to compute file profile rows.
+
+    Parameters
+    ----------
+    tables
+        Container for the scoped relations used to build the file profile view.
+
+    Returns
+    -------
+    DuckDBRelation
+        Joined relation ready for selection into file profile rows.
+    """
+    fm = tables.fp.aggregate(_FILE_PROFILE_AGG_EXPR, "repo, commit, rel_path").set_alias("fm")
+    joined = fm.join(
+        tables.ast_metrics.set_alias("ast"),
+        "fm.rel_path = ast.rel_path",
+        how="left",
+    ).set_alias("base")
+    joined = joined.join(
+        tables.hotspots.set_alias("hotspots"),
+        "base.rel_path = hotspots.rel_path",
+        how="left",
+    ).set_alias("base")
+    joined = joined.join(
+        tables.typedness.select(
+            "repo",
+            "commit",
+            "path",
+            "annotation_ratio",
+            "untyped_defs",
+            "overlay_needed",
+            "type_error_count",
+        ).set_alias("typedness"),
+        (
+            "base.repo = typedness.repo "
+            "AND base.commit = typedness.commit "
+            "AND base.rel_path = typedness.path"
+        ),
+        how="left",
+    ).set_alias("base")
+    joined = joined.join(
+        tables.static_diag.set_alias("diagnostics"),
+        (
+            "base.repo = diagnostics.repo "
+            "AND base.commit = diagnostics.commit "
+            "AND base.rel_path = diagnostics.rel_path"
+        ),
+        how="left",
+    ).set_alias("base")
+    return joined.join(
+        tables.modules.select(
+            "repo",
+            "commit",
+            "path",
+            "module",
+            "language",
+            "tags",
+            "owners",
+        ).set_alias("modules"),
+        (
+            "base.repo = modules.repo "
+            "AND base.commit = modules.commit "
+            "AND base.rel_path = modules.path"
+        ),
+        how="left",
+    ).set_alias("base")
 
 
 def build_file_profile_rows(
@@ -148,92 +248,50 @@ def build_file_profile_rows(
     if tables is None:
         return
 
-    fp, ast_metrics, hotspots, typedness, static_diag, modules = tables
-
-    fm = fp.group_by("repo", "commit", "rel_path").aggregate(
-        [
-            "count(rel_path) as total_functions",
-            "sum(case when call_is_public then 1 else 0 end) as public_functions",
-            "avg(loc) as avg_loc",
-            "max(loc) as max_loc",
-            "avg(cyclomatic_complexity) as avg_cyclomatic_complexity",
-            "max(cyclomatic_complexity) as max_cyclomatic_complexity",
-            "sum(case when risk_level = 'high' then 1 else 0 end) as high_risk_function_count",
-            "sum(case when risk_level = 'medium' then 1 else 0 end) as medium_risk_function_count",
-            "max(risk_score) as max_risk_score",
-            "sum(covered_lines) as sum_covered_lines",
-            "sum(executable_lines) as sum_exec_lines",
-            "sum(case when tested then 1 else 0 end) as tested_function_count",
-            "sum(case when tested then 0 else 1 end) as untested_function_count",
-            "sum(tests_touching) as tests_touching",
-        ]
-    )
-    typedness_rel = typedness.select(
-        "repo",
-        "commit",
-        "path as rel_path",
-        "annotation_ratio",
-        "untyped_defs",
-        "overlay_needed",
-        "type_error_count",
-    )
-    modules_rel = modules.select(
-        "repo",
-        "commit",
-        "path as rel_path",
-        "module",
-        "language",
-        "tags",
-        "owners",
-    )
-
-    joined = (
-        fm.join(ast_metrics, ["rel_path"], how="left")
-        .join(hotspots, ["rel_path"], how="left")
-        .join(typedness_rel, ["repo", "commit", "rel_path"], how="left")
-        .join(static_diag, ["repo", "commit", "rel_path"], how="left")
-        .join(modules_rel, ["repo", "commit", "rel_path"], how="left")
-    )
+    joined = _build_file_profile_relation(tables)
 
     try:
         selected = joined.select(
-            "repo",
-            "commit",
-            "rel_path",
-            "module",
-            "language",
-            "node_count",
-            "function_count",
-            "class_count",
-            "avg_depth",
-            "max_depth",
-            "complexity as ast_complexity",
-            "score as hotspot_score",
-            "commit_count",
-            "author_count",
-            "lines_added",
-            "lines_deleted",
-            "cast(json_extract(annotation_ratio, '$.params') as double) as annotation_ratio",
-            "untyped_defs",
-            "overlay_needed",
-            "type_error_count",
-            "total_errors as static_error_count",
-            "has_errors as has_static_errors",
-            "total_functions",
-            "public_functions",
-            "avg_loc",
-            "max_loc",
-            "avg_cyclomatic_complexity",
-            "max_cyclomatic_complexity",
-            "high_risk_function_count",
-            "medium_risk_function_count",
-            "max_risk_score",
-            "cast(sum_covered_lines as double) / nullif(sum_exec_lines, 0) as file_coverage_ratio",
-            "tested_function_count",
-            "untested_function_count",
-            "tests_touching",
-            "tags",
-            "owners",
+            "base.repo as repo",
+            "base.commit as commit",
+            "base.rel_path as rel_path",
+            "base.module as module",
+            "base.language as language",
+            "base.node_count as node_count",
+            "base.function_count as function_count",
+            "base.class_count as class_count",
+            "base.avg_depth as avg_depth",
+            "base.max_depth as max_depth",
+            "base.complexity as ast_complexity",
+            "base.score as hotspot_score",
+            "base.commit_count as commit_count",
+            "base.author_count as author_count",
+            "base.lines_added as lines_added",
+            "base.lines_deleted as lines_deleted",
+            "cast(json_extract(base.annotation_ratio, '$.params') as double) as annotation_ratio",
+            "base.untyped_defs as untyped_defs",
+            "base.overlay_needed as overlay_needed",
+            "base.type_error_count as type_error_count",
+            "base.total_errors as static_error_count",
+            "base.has_errors as has_static_errors",
+            "base.total_functions as total_functions",
+            "base.public_functions as public_functions",
+            "base.avg_loc as avg_loc",
+            "base.max_loc as max_loc",
+            "base.avg_cyclomatic_complexity as avg_cyclomatic_complexity",
+            "base.max_cyclomatic_complexity as max_cyclomatic_complexity",
+            "base.high_risk_function_count as high_risk_function_count",
+            "base.medium_risk_function_count as medium_risk_function_count",
+            "base.max_risk_score as max_risk_score",
+            (
+                "cast(base.sum_covered_lines as double) / "
+                "nullif(base.sum_exec_lines, 0) as file_coverage_ratio"
+            ),
+            "base.tested_function_count as tested_function_count",
+            "base.untested_function_count as untested_function_count",
+            "base.tests_touching as tests_touching",
+            "base.tags as tags",
+            "base.owners as owners",
         )
         records = records_from_relation(selected)
     except DuckDBError as exc:

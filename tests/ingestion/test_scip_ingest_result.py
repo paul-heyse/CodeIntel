@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import polars as pl
+
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.scip import (
@@ -83,5 +85,35 @@ def test_scip_ingest_parses_explicit_index_path(tmp_path: Path) -> None:
     expect_true(payload is not None)
     if payload is None:
         return
-    expect_true(len(payload["core.scip_symbols"]) > 0)
-    expect_true(len(payload["core.scip_occurrences"]) > 0)
+    expect_true(payload["core.scip_symbols"].collect().height > 0)
+    expect_true(payload["core.scip_occurrences"].collect().height > 0)
+
+
+def test_scip_ingest_payload_is_columnar(tmp_path: Path) -> None:
+    """SCIP ingest should emit LazyFrame payloads for all tables."""
+    env = _build_env(tmp_path / "env")
+    proto_module_path = ensure_proto_module(tmp_path)
+    output_scip = tmp_path / "columnar" / "index.scip"
+    write_scip_index(output_scip, proto_module_path=proto_module_path)
+
+    inputs = ScipIngestInputs(
+        modules=_modules_record(),
+        run=ScipRunResult(
+            result=ExecutionResult.ok(),
+            outputs={"scip_index": output_scip},
+        ),
+        proto_module_path=proto_module_path,
+        options=ScipIngestOptions(),
+    )
+
+    result = t__scip__ingest(env, inputs)
+
+    payload = result.payload
+    expect_true(payload is not None)
+    if payload is None:
+        return
+    for table_key, frame in payload.items():
+        expect_true(
+            isinstance(frame, pl.LazyFrame),
+            message=f"Expected LazyFrame for {table_key}",
+        )

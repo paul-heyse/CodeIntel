@@ -15,7 +15,7 @@ from tests._helpers.mcp_payloads import extract_payload
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
     from pathlib import Path
 
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
@@ -53,6 +53,11 @@ class _SlowExportKernel:
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
     ) -> SemanticQueryResponse:
         return self.inner.query(request, cancel_check=cancel_check)
+
+    def query_ipc_stream(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Generator[bytes]:
+        return self.inner.query_ipc_stream(request, cancel_check=cancel_check)
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
         return self.inner.explain(request)
@@ -116,7 +121,7 @@ async def test_mcp_export_task_mode_completes(
     harness = ServingAppHarness.from_snapshot(snapshot)
     settings_overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
         "mcp_export_enable_tasks": True,
@@ -147,7 +152,7 @@ async def test_mcp_export_task_cancellation_cleans_up_artifacts(
     harness = ServingAppHarness.from_snapshot(snapshot)
     settings_overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
         "mcp_export_enable_tasks": True,

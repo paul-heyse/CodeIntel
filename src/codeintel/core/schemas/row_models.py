@@ -8,8 +8,7 @@ This module also provides ``GeneratedRowBinding``, a schema-generated row bindin
 that includes provenance metadata (table_key, schema_hash) for cache invalidation
 and debugging.
 
-Additionally, it provides utilities for generating TypedDicts from Pandera
-DataFrameSchema definitions for interoperability with validation boundaries.
+Row models are derived from ``TableSchema`` and avoid pandas-specific types.
 """
 
 from __future__ import annotations
@@ -23,17 +22,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, make_dataclass
 from decimal import Decimal
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
-import pandas as pd
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
 if TYPE_CHECKING:
-    from pandera.pandas import DataFrameSchema
-
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
 _VALID_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -118,25 +114,21 @@ RowSerializer = Callable[[Mapping[str, object]], tuple[object, ...]]
 
 _ROW_VALUE_CONTAINERS: tuple[type[object], ...] = (dict, list, tuple, set)
 _ROW_VALUE_BINARY: tuple[type[object], ...] = (bytes, bytearray, memoryview)
+_ROW_VALUE_NON_MISSING: tuple[type[object], ...] = _ROW_VALUE_CONTAINERS + _ROW_VALUE_BINARY
 
 
 def _is_missing_value(value: object) -> bool:
-    if isinstance(value, _ROW_VALUE_CONTAINERS):
+    if isinstance(value, _ROW_VALUE_NON_MISSING):
         return False
-    if isinstance(value, _ROW_VALUE_BINARY):
-        return False
-    is_missing = False
-    if value is pd.NA or value is pd.NaT:
-        is_missing = True
-    elif isinstance(value, float):
-        is_missing = math.isnan(value)
-    elif isinstance(value, Decimal):
-        is_missing = value.is_nan()
-    elif isinstance(value, np.floating):
-        is_missing = bool(np.isnan(value))
-    elif isinstance(value, (np.datetime64, np.timedelta64)):
-        is_missing = bool(np.isnat(value))
-    return is_missing
+    if isinstance(value, float):
+        return math.isnan(value)
+    if isinstance(value, Decimal):
+        return value.is_nan()
+    if isinstance(value, np.floating):
+        return bool(np.isnan(value))
+    if isinstance(value, (np.datetime64, np.timedelta64)):
+        return bool(np.isnat(value))
+    return False
 
 
 def normalize_row_value(value: object) -> object:
@@ -153,10 +145,6 @@ def normalize_row_value(value: object) -> object:
         return None
     if isinstance(value, np.generic):
         return value.item()
-    if isinstance(value, pd.Timestamp):
-        return value.to_pydatetime()
-    if isinstance(value, pd.Timedelta):
-        return value.to_pytimedelta()
     return value
 
 
@@ -368,156 +356,6 @@ def row_binding_for_table_schema(
     )
 
 
-# ---------------------------------------------------------------------------
-# Pandera-based row model generation
-# ---------------------------------------------------------------------------
-
-_PANDAS_TYPE_MAP: dict[type[object], type[Any]] = {
-    pd.Int64Dtype: int,
-    pd.Float64Dtype: float,
-    pd.BooleanDtype: bool,
-    pd.StringDtype: str,
-}
-
-_STRING_MARKERS: list[tuple[str, type[Any]]] = [
-    ("int", int),
-    ("float", float),
-    ("double", float),
-    ("bool", bool),
-    ("datetime", dt.datetime),
-]
-
-
-def _pandera_dtype_to_python(dtype: object) -> type[Any]:
-    """Map a Pandera column dtype to a Python type.
-
-    This function performs a best-effort mapping from Pandera/pandas dtypes
-    to Python types suitable for TypedDict annotations.
-
-    Parameters
-    ----------
-    dtype
-        Pandera column dtype (may be a pandas dtype, numpy dtype, or type).
-
-    Returns
-    -------
-    type[Any]
-        Corresponding Python type.
-
-    Examples
-    --------
-    >>> _pandera_dtype_to_python(pd.Int64Dtype())
-    <class 'int'>
-    """
-    for pandera_type, python_type in _PANDAS_TYPE_MAP.items():
-        if isinstance(dtype, pandera_type):
-            return python_type
-
-    dtype_str = str(dtype).lower()
-    for marker, python_type in _STRING_MARKERS:
-        if marker in dtype_str:
-            return python_type
-
-    return str
-
-
-def typed_dict_from_pandera(
-    name: str,
-    schema: DataFrameSchema,
-    *,
-    nullable_as_optional: bool = True,
-) -> type[Any]:
-    """Generate a TypedDict from a Pandera DataFrameSchema.
-
-    This enables automatic derivation of row types from the canonical Pandera
-    schema, eliminating manual TypedDict maintenance.
-
-    Parameters
-    ----------
-    name
-        Name for the generated TypedDict class.
-    schema
-        Pandera DataFrameSchema to derive from.
-    nullable_as_optional
-        If True, nullable columns become union types with None (e.g., `int | None`).
-
-    Returns
-    -------
-    type[Any]
-        Generated TypedDict class with appropriate field annotations.
-
-    Examples
-    --------
-    >>> from pandera import DataFrameSchema, Column
-    >>> schema = DataFrameSchema(
-    ...     {
-    ...         "repo": Column(str),
-    ...         "loc": Column(int, nullable=True),
-    ...     }
-    ... )
-    >>> RowModel = typed_dict_from_pandera("MyRow", schema)
-    >>>
-    """
-    annotations: dict[str, Any] = {}
-
-    for col_name, column in schema.columns.items():
-        py_type = _pandera_dtype_to_python(column.dtype)
-
-        if nullable_as_optional and column.nullable:
-            annotations[col_name] = py_type | None
-        else:
-            annotations[col_name] = py_type
-
-    td_class = type(name, (), {"__annotations__": annotations, "__total__": True})
-    return cast("type[Any]", td_class)
-
-
-def row_serializer_from_pandera(
-    schema: DataFrameSchema,
-) -> Callable[[Mapping[str, Any]], tuple[Any, ...]]:
-    """Generate a row serializer function from a Pandera schema.
-
-    The serializer converts a row dictionary to a tuple in column order,
-    suitable for database INSERT operations.
-
-    Parameters
-    ----------
-    schema
-        Pandera DataFrameSchema defining column order.
-
-    Returns
-    -------
-    Callable[[Mapping[str, Any]], tuple[Any, ...]]
-        Serializer function that converts row dicts to tuples.
-
-    Examples
-    --------
-    >>> from pandera import DataFrameSchema, Column
-    >>> schema = DataFrameSchema({"a": Column(str), "b": Column(int)})
-    >>> serialize = row_serializer_from_pandera(schema)
-    >>> serialize({"a": "hello", "b": 42})
-    ('hello', 42)
-    """
-    columns = tuple(schema.columns.keys())
-
-    def serialize(row: Mapping[str, Any]) -> tuple[Any, ...]:
-        """Serialize a row dictionary to a tuple in column order.
-
-        Parameters
-        ----------
-        row
-            Row data as a mapping from column name to value.
-
-        Returns
-        -------
-        tuple[Any, ...]
-            Values ordered according to schema columns.
-        """
-        return tuple(normalize_row_value(row[col]) for col in columns)
-
-    return serialize
-
-
 __all__ = [
     "GeneratedRowBinding",
     "RowSerializer",
@@ -526,6 +364,4 @@ __all__ = [
     "row_binding_for_table_schema",
     "row_model_for_table_schema",
     "row_serializer_for_table_schema",
-    "row_serializer_from_pandera",
-    "typed_dict_from_pandera",
 ]

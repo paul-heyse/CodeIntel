@@ -58,6 +58,11 @@ class PolarsExecutablePlan:
         -------
         pyarrow.RecordBatchReader
             Reader over the plan output.
+
+        Raises
+        ------
+        PolarsQueryBuilderError
+            If Polars is unavailable.
         """
         if pl is None:  # pragma: no cover
             msg = "polars is required for Polars query execution"
@@ -119,8 +124,7 @@ def _record_batches_from_frames(
 ) -> Iterator[pa.RecordBatch]:
     for frame in frames:
         table = frame.to_arrow()
-        for batch in table.to_batches():
-            yield batch
+        yield from table.to_batches()
 
 
 @dataclass(frozen=True, slots=True)

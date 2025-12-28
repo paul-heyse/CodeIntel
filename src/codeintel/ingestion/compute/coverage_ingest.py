@@ -7,12 +7,12 @@ test coverage data, using ports for all I/O operations.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -92,16 +92,15 @@ class CoverageIngestStep:
                 result=ExecutionResult.failed(f"Coverage export failed: {result.error}")
             )
 
-        all_rows: list[tuple[object, ...]] = []
+        buffer = columnar_buffer_for_table_key(COVERAGE_LINES_TABLE_KEY)
         file_count = 0
-        serializer = row_serializer_for_table_key(COVERAGE_LINES_TABLE_KEY)
 
         for file_data in result.files:
             file_count += 1
             rel_path = file_data.rel_path
 
-            all_rows.extend(
-                serializer(
+            for line_num in file_data.executed_lines:
+                buffer.append(
                     {
                         "repo": repo,
                         "commit": commit,
@@ -114,11 +113,8 @@ class CoverageIngestStep:
                         "created_at": created_at,
                     }
                 )
-                for line_num in file_data.executed_lines
-            )
-
-            all_rows.extend(
-                serializer(
+            for line_num in file_data.missing_lines:
+                buffer.append(
                     {
                         "repo": repo,
                         "commit": commit,
@@ -131,20 +127,19 @@ class CoverageIngestStep:
                         "created_at": created_at,
                     }
                 )
-                for line_num in file_data.missing_lines
-            )
 
         log.info(
             "Coverage ingest: repo=%s commit=%s files=%d lines=%d",
             repo,
             commit,
             file_count,
-            len(all_rows),
+            buffer.row_count,
         )
 
         return CoverageIngestResult(
             result=ExecutionResult.ok(),
-            rows=tuple(all_rows),
+            rows=buffer.data,
+            row_count=buffer.row_count,
         )
 
 
@@ -153,7 +148,8 @@ class CoverageIngestResult:
     """Result bundle for coverage ingestion."""
 
     result: ExecutionResult
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: ColumnarRows = field(default_factory=dict)
+    row_count: int = 0
 
 
 __all__ = ["CoverageIngestResult", "CoverageIngestStep"]

@@ -7,24 +7,35 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+import polars as pl
+import pyarrow as pa
+
 if TYPE_CHECKING:
-    import pandas as pd
+    from polars import DataFrame, LazyFrame
 
 
-def to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
-    """Convert DataFrame rows into a list of dictionaries.
+def to_records(frame: DataFrame | LazyFrame | pa.Table) -> list[dict[str, Any]]:
+    """Convert a columnar frame into a list of dictionaries.
 
     Parameters
     ----------
-    df
-        The pandas DataFrame to convert.
+    frame
+        Polars DataFrame/LazyFrame or Arrow table to convert.
 
     Returns
     -------
     list[dict[str, Any]]
-        Records returned by ``DataFrame.to_dict(orient="records")``.
+        Records returned by ``DataFrame.to_dicts()``.
     """
-    return cast("list[dict[str, Any]]", df.to_dict(orient="records"))
+    if isinstance(frame, pa.Table):
+        resolved = pl.from_arrow(frame)
+        if isinstance(resolved, pl.Series):
+            resolved = resolved.to_frame()
+    elif isinstance(frame, pl.LazyFrame):
+        resolved = frame.collect()
+    else:
+        resolved = frame
+    return cast("list[dict[str, Any]]", resolved.to_dicts())
 
 
 __all__ = ["to_records"]

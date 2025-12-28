@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import pyarrow as pa
 
 from codeintel.ingestion.ports.storage import BatchResult, QueryResult
 from tests._helpers.records import CallRecorder, StorageOpCall
@@ -179,29 +179,26 @@ class FakeIngestStorage:
         )
         return QueryResult.empty()
 
-    def fetch_dataframe(
+    def fetch_arrow_reader(
         self,
         sql: str,
         params: Sequence[object] | None = None,
-    ) -> object:
-        """Execute a query and return results as a DataFrame.
-
-        Parameters
-        ----------
-        sql
-            SQL query string.
-        params
-            Optional query parameters.
+        *,
+        batch_size: int | None = None,
+    ) -> pa.RecordBatchReader:
+        """Execute a query and return results as an Arrow stream.
 
         Returns
         -------
-        object
-            Empty DataFrame-like object.
+        pa.RecordBatchReader
+            Empty Arrow reader for fake storage responses.
         """
+        _ = batch_size
         self.operations.record(
-            StorageOpCall(op="fetch_dataframe", target=sql, details={"params": params})
+            StorageOpCall(op="fetch_arrow_reader", target=sql, details={"params": params})
         )
-        return pd.DataFrame()
+        schema = pa.schema([])
+        return pa.RecordBatchReader.from_batches(schema, [])
 
 
 __all__ = ["FakeIngestStorage"]

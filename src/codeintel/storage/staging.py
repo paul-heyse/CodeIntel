@@ -1,7 +1,7 @@
 """Lifecycle-safe staging helpers for DuckDB-backed workflows.
 
 This module provides small utilities for temporarily registering in-memory data
-structures (e.g., pandas DataFrames or Arrow tables) with a DuckDB connection
+structures (e.g., Polars DataFrames or Arrow tables) with a DuckDB connection
 and guaranteeing cleanup.
 """
 
@@ -31,7 +31,7 @@ def registered_temp_relation(
         DuckDB connection object exposing `register(name, obj)` and
         `unregister(name)` methods.
     obj
-        Object to register (e.g., pandas DataFrame, pyarrow Table).
+        Object to register (e.g., Polars DataFrame, pyarrow Table).
     prefix
         Prefix used to generate a unique registered name.
 

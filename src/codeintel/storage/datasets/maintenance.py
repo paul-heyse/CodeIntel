@@ -51,30 +51,59 @@ class DatasetVacuumReport:
     remaining_orphans: tuple[Path, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class DatasetRewriteRequest:
+    """Inputs for rewriting dataset partitions."""
+
+    dataset_root: Path
+    table_key: str
+    snapshot_id: str
+    partition_columns: tuple[str, ...]
+    output_snapshot_id: str | None = None
+    existing_data_behavior: ExistingDataBehavior = "delete_matching"
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetCompactRequest:
+    """Inputs for compacting dataset files."""
+
+    dataset_root: Path
+    table_key: str
+    snapshot_id: str
+    output_snapshot_id: str | None = None
+    max_rows_per_file: int | None = None
+    existing_data_behavior: ExistingDataBehavior = "delete_matching"
+
+
 def rewrite_dataset_partitions(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    partition_columns: tuple[str, ...],
-    output_snapshot_id: str | None = None,
-    existing_data_behavior: ExistingDataBehavior = "delete_matching",
+    request: DatasetRewriteRequest,
 ) -> ArrowDatasetManifest:
-    """Rewrite a dataset snapshot with a new partition spec."""
+    """Rewrite a dataset snapshot with a new partition spec.
+
+    Parameters
+    ----------
+    request
+        Request describing the dataset rewrite.
+
+    Returns
+    -------
+    ArrowDatasetManifest
+        Manifest for the rewritten dataset snapshot.
+    """
     source_manifest = _require_manifest(
-        dataset_root=dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
+        dataset_root=request.dataset_root,
+        table_key=request.table_key,
+        snapshot_id=request.snapshot_id,
     )
-    target_snapshot_id = output_snapshot_id or snapshot_id
+    target_snapshot_id = request.output_snapshot_id or request.snapshot_id
     source_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
+        request.dataset_root,
+        table_key=request.table_key,
+        snapshot_id=request.snapshot_id,
     )
     target_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
+        request.dataset_root,
+        table_key=request.table_key,
         snapshot_id=target_snapshot_id,
     )
     dataset = ds.dataset(str(source_dir), format="parquet")
@@ -82,59 +111,61 @@ def rewrite_dataset_partitions(
         dataset,
         str(target_dir),
         format="parquet",
-        partitioning=_partitioning(partition_columns, schema=dataset.schema),
-        existing_data_behavior=existing_data_behavior,
+        partitioning=_partitioning(request.partition_columns, schema=dataset.schema),
+        existing_data_behavior=request.existing_data_behavior,
     )
     return _finalize_manifest(
-        dataset_root=dataset_root,
-        table_key=table_key,
+        dataset_root=request.dataset_root,
+        table_key=request.table_key,
         snapshot_id=target_snapshot_id,
-        partition_columns=partition_columns,
+        partition_columns=request.partition_columns,
         source_manifest=source_manifest,
     )
 
 
 def compact_dataset_files(
-    *,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    output_snapshot_id: str | None = None,
-    max_rows_per_file: int | None = None,
-    existing_data_behavior: ExistingDataBehavior = "delete_matching",
+    request: DatasetCompactRequest,
 ) -> ArrowDatasetManifest:
-    """Compact dataset files by rewriting into larger Parquet chunks."""
+    """Compact dataset files by rewriting into larger Parquet chunks.
+
+    Parameters
+    ----------
+    request
+        Request describing the dataset compaction.
+
+    Returns
+    -------
+    ArrowDatasetManifest
+        Manifest for the compacted dataset snapshot.
+    """
     source_manifest = _require_manifest(
-        dataset_root=dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
+        dataset_root=request.dataset_root,
+        table_key=request.table_key,
+        snapshot_id=request.snapshot_id,
     )
-    target_snapshot_id = output_snapshot_id or snapshot_id
+    target_snapshot_id = request.output_snapshot_id or request.snapshot_id
     source_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
+        request.dataset_root,
+        table_key=request.table_key,
+        snapshot_id=request.snapshot_id,
     )
     target_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
+        request.dataset_root,
+        table_key=request.table_key,
         snapshot_id=target_snapshot_id,
     )
     dataset = ds.dataset(str(source_dir), format="parquet")
-    write_kwargs: dict[str, object] = {}
-    if max_rows_per_file is not None:
-        write_kwargs["max_rows_per_file"] = max_rows_per_file
     ds.write_dataset(
         dataset,
         str(target_dir),
         format="parquet",
         partitioning=_partitioning(source_manifest.partition_columns, schema=dataset.schema),
-        existing_data_behavior=existing_data_behavior,
-        **write_kwargs,
+        existing_data_behavior=request.existing_data_behavior,
+        max_rows_per_file=request.max_rows_per_file,
     )
     return _finalize_manifest(
-        dataset_root=dataset_root,
-        table_key=table_key,
+        dataset_root=request.dataset_root,
+        table_key=request.table_key,
         snapshot_id=target_snapshot_id,
         partition_columns=source_manifest.partition_columns,
         source_manifest=source_manifest,
@@ -142,7 +173,13 @@ def compact_dataset_files(
 
 
 def verify_dataset_manifest(*, manifest_path: Path) -> DatasetVerifyReport:
-    """Verify that manifest files match on-disk Parquet files."""
+    """Verify that manifest files match on-disk Parquet files.
+
+    Returns
+    -------
+    DatasetVerifyReport
+        Report describing missing and extra Parquet files.
+    """
     manifest = read_dataset_manifest(manifest_path)
     dataset_dir = manifest_path.parent
     expected = _expected_files(manifest, dataset_dir=dataset_dir)
@@ -162,7 +199,13 @@ def vacuum_dataset_manifest(
     manifest_path: Path,
     dry_run: bool = True,
 ) -> DatasetVacuumReport:
-    """Remove orphaned Parquet files not referenced by the manifest."""
+    """Remove orphaned Parquet files not referenced by the manifest.
+
+    Returns
+    -------
+    DatasetVacuumReport
+        Report describing removed and remaining orphaned files.
+    """
     manifest = read_dataset_manifest(manifest_path)
     dataset_dir = manifest_path.parent
     expected = _expected_files(manifest, dataset_dir=dataset_dir)
@@ -274,6 +317,8 @@ def _partitioning(
 
 
 __all__ = [
+    "DatasetCompactRequest",
+    "DatasetRewriteRequest",
     "DatasetVacuumReport",
     "DatasetVerifyReport",
     "compact_dataset_files",

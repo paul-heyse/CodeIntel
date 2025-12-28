@@ -10,13 +10,13 @@ import configparser
 import json
 import logging
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
@@ -252,7 +252,8 @@ class ConfigIngestResult:
     """Result bundle for config ingestion."""
 
     result: ExecutionResult
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: ColumnarRows = field(default_factory=dict)
+    row_count: int = 0
 
 
 class ConfigIngestStep(BaseExtractStep):
@@ -290,12 +291,8 @@ class ConfigIngestStep(BaseExtractStep):
         ConfigIngestResult
             Result bundle with row tuples and execution status.
         """
-        all_rows: list[tuple[object, ...]] = []
+        buffer = columnar_buffer_for_table_key(CONFIG_VALUES_TABLE_KEY)
         errors: list[str] = []
-        try:
-            serializer = row_serializer_for_table_key(CONFIG_VALUES_TABLE_KEY)
-        except RuntimeError as exc:
-            return ConfigIngestResult(result=ExecutionResult.failed(str(exc)))
 
         for record in config_files:
             content = self._discovery.read_text(record.file_path)
@@ -310,29 +307,27 @@ class ConfigIngestStep(BaseExtractStep):
             config_format = get_config_format(record.file_path)
 
             for key, _value in kvs:
-                all_rows.append(
-                    serializer(
-                        {
-                            "repo": repo,
-                            "commit": commit,
-                            "config_path": record.rel_path,
-                            "format": config_format,
-                            "key": key,
-                            "reference_paths": "[]",
-                            "reference_modules": "[]",
-                            "reference_count": 0,
-                        }
-                    )
+                buffer.append(
+                    {
+                        "repo": repo,
+                        "commit": commit,
+                        "config_path": record.rel_path,
+                        "format": config_format,
+                        "key": key,
+                        "reference_paths": "[]",
+                        "reference_modules": "[]",
+                        "reference_count": 0,
+                    }
                 )
 
         warnings = tuple(errors)
-        if warnings and not all_rows:
+        if warnings and buffer.row_count == 0:
             warning_text = "; ".join(warnings)
             return ConfigIngestResult(
                 result=ExecutionResult.failed(
                     f"Config ingest failed: {warning_text}",
                     warnings=warnings,
-                )
+                ),
             )
 
         log.info(
@@ -340,12 +335,13 @@ class ConfigIngestStep(BaseExtractStep):
             repo,
             commit,
             len(config_files),
-            len(all_rows),
+            buffer.row_count,
         )
 
         return ConfigIngestResult(
             result=ExecutionResult.ok(warnings=warnings),
-            rows=tuple(all_rows),
+            rows=buffer.data,
+            row_count=buffer.row_count,
         )
 
 

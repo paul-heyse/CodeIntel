@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pandera.errors import SchemaErrors
-
-from codeintel.storage.validation.pandera_df import get_pandera_schema, validate_df
+from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.validation.columnar import TableValidationError, validate_table
 from tests._helpers.assertions.expectation_assertions import (
     expect_equal,
     expect_in,
@@ -59,15 +58,20 @@ def assert_table_schema_valid(gateway: StorageGateway, table_key: str) -> None:
     AssertionError
         If the table is missing a schema or fails validation.
     """
-    schema = get_pandera_schema(table_key)
-    if schema is None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError as exc:
+        message = f"Schema provider unavailable for {table_key}: {exc}"
+        raise AssertionError(message) from exc
+    table_schema = provider.get_table_schema(table_key)
+    if table_schema is None:
         message = f"No schema registered for {table_key}"
         raise AssertionError(message)
-    df = gateway.con.table(table_key).df()
+    table = gateway.con.table(table_key).fetch_arrow_table()
     try:
-        validate_df(table_key, df, mode="strict")
-    except SchemaErrors as exc:
-        message = f"Schema validation failed for {table_key}: {exc}"
+        validate_table(table_key, table, table_schema=table_schema, mode="strict")
+    except TableValidationError as exc:
+        message = f"Schema validation failed for {table_key}: {exc.errors}"
         raise AssertionError(message) from exc
 
 

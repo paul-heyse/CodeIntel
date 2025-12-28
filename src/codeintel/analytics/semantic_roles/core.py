@@ -196,7 +196,7 @@ def build_semantic_roles_rows(
     Build semantic role rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
 
     Parameters
     ----------

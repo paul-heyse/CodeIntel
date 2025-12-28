@@ -6,7 +6,6 @@ both FastAPI routes and MCP tools.
 
 from __future__ import annotations
 
-import logging
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -54,11 +53,6 @@ from codeintel.storage.queries.safe import (
     assert_select_perimeter,
 )
 
-try:
-    import polars as pl
-except ImportError:  # pragma: no cover
-    pl = None
-
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from pathlib import Path
@@ -77,8 +71,6 @@ if TYPE_CHECKING:
     from codeintel.serving.settings import ServingSettings
     from codeintel.storage.warehouse import Warehouse
 
-LOG = logging.getLogger(__name__)
-
 
 class UnknownViewIdError(KeyError):
     """Raise when a semantic view identifier cannot be resolved."""
@@ -96,6 +88,15 @@ def _sanitize_float_nan(value: object) -> object:
 
 def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [{k: _sanitize_float_nan(v) for k, v in row.items()} for row in rows]
+
+
+def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, object]]:
+    columns = batch.schema.names
+    arrays = [batch.column(idx) for idx in range(batch.num_columns)]
+    return [
+        {name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)}
+        for row_idx in range(batch.num_rows)
+    ]
 
 
 def _raise_if_cancelled(cancel_check: CancelCheck | None) -> None:
@@ -152,23 +153,10 @@ class SemanticQueryKernel:
         sql: str,
         params: Sequence[object] | None = None,
     ) -> list[dict[str, object]]:
-        engine = self.settings.result_engine.lower()
         backend = warehouse.gateway.policy
         result = backend.execute_sql(sql, params=params)
-
-        if engine == "polars" and pl is not None:
-            df_pl = result.pl()
-            return _sanitize_rows(df_pl.to_dicts())
-
-        if engine == "polars" and pl is None:
-            LOG.warning("polars not installed; falling back to pandas result extraction")
-
-        df_pd = result.df()
-        records = [
-            {str(key): value for key, value in record.items()}
-            for record in df_pd.astype("object").to_dict(orient="records")
-        ]
-        return _sanitize_rows(records)
+        reader = result.fetch_record_batch(self.settings.export_batch_size)
+        return _sanitize_rows(self._rows_from_reader(reader, cancel_check=None))
 
     @staticmethod
     def _snapshot_dict(pointer: ServingSnapshotPointer) -> ServingSnapshotIdentity:
@@ -228,26 +216,8 @@ class SemanticQueryKernel:
             warehouse=warehouse,
         )
 
-    def _rows_from_table(self, table: pa.Table) -> list[dict[str, object]]:
-        engine = self.settings.result_engine.lower()
-        if engine == "polars" and pl is not None:
-            df_pl = pl.from_arrow(table)
-            if isinstance(df_pl, pl.Series):
-                df_pl = df_pl.to_frame()
-            return _sanitize_rows(df_pl.to_dicts())
-
-        if engine == "pandas":
-            df_pd = table.to_pandas()
-            records = [
-                {str(key): value for key, value in record.items()}
-                for record in df_pd.astype("object").to_dict(orient="records")
-            ]
-            return _sanitize_rows(records)
-
-        return _sanitize_rows(table.to_pylist())
-
+    @staticmethod
     def _rows_from_reader(
-        self,
         reader: pa.RecordBatchReader,
         *,
         cancel_check: CancelCheck | None,
@@ -255,8 +225,7 @@ class SemanticQueryKernel:
         rows: list[dict[str, object]] = []
         for batch in reader:
             _raise_if_cancelled(cancel_check)
-            table = pa.Table.from_batches([batch], schema=reader.schema)
-            rows.extend(self._rows_from_table(table))
+            rows.extend(_records_from_batch(batch))
         return rows
 
     def _execute_dbapi_query(
@@ -284,12 +253,8 @@ class SemanticQueryKernel:
         plan = engine.compile(spec, ctx=ctx)
         try:
             _raise_if_cancelled(cancel_check)
-            if cancel_check is None:
-                table = plan.to_table()
-                rows = self._rows_from_table(table)
-            else:
-                reader = plan.to_reader(batch_size=self.settings.export_batch_size)
-                rows = self._rows_from_reader(reader, cancel_check=cancel_check)
+            reader = plan.to_reader(batch_size=self.settings.export_batch_size)
+            rows = _sanitize_rows(self._rows_from_reader(reader, cancel_check=cancel_check))
             explain = plan.explain()
         finally:
             plan.cleanup()
@@ -744,10 +709,15 @@ class SemanticQueryKernel:
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 for batch in reader:
                     _raise_if_cancelled(cancel_check)
-                    payload = batch.to_pydict()
-                    row_count = batch.num_rows
-                    for idx in range(row_count):
-                        yield {name: payload[name][idx] for name in inputs.columns}
+                    columns = batch.schema.names
+                    column_index = {name: idx for idx, name in enumerate(columns)}
+                    indices = [column_index[name] for name in inputs.columns]
+                    arrays = [batch.column(idx) for idx in range(batch.num_columns)]
+                    for row_idx in range(batch.num_rows):
+                        yield {
+                            inputs.columns[col_idx]: arrays[array_idx][row_idx].as_py()
+                            for col_idx, array_idx in enumerate(indices)
+                        }
             finally:
                 plan.cleanup()
 

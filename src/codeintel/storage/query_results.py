@@ -11,9 +11,11 @@ import math
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+import polars as pl
 import pyarrow as pa
 
 from codeintel.core.schemas.row_models import normalize_row_value
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import DuckDBRelation
 
 if TYPE_CHECKING:
@@ -25,6 +27,7 @@ __all__ = [
     "coerce_int",
     "coerce_optional_float",
     "coerce_optional_int",
+    "records_from_arrow_reader",
     "records_from_arrow_table",
     "records_from_relation",
 ]
@@ -177,14 +180,38 @@ def records_from_arrow_table(table: pa.Table) -> list[dict[str, object]]:
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    records = cast("list[dict[str, object]]", table.to_pylist())
-    normalized = []
-    for record in records:
-        cleaned: dict[str, object] = {}
-        for key, value in record.items():
-            cleaned[str(key)] = normalize_row_value(_normalize_goid_value(value))
-        normalized.append(cleaned)
-    return normalized
+    if table.num_rows == 0:
+        return []
+    frame = pl.from_arrow(table)
+    if isinstance(frame, pl.Series):
+        frame = frame.to_frame()
+    records = cast("list[dict[str, object]]", frame.to_dicts())
+    return _normalize_records(records)
+
+
+def records_from_arrow_reader(reader: pa.RecordBatchReader) -> list[dict[str, object]]:
+    """Convert an Arrow RecordBatchReader to row dictionaries with normalized values.
+
+    Parameters
+    ----------
+    reader
+        Arrow record batch reader to normalize.
+
+    Returns
+    -------
+    list[dict[str, object]]
+        List of row dictionaries with missing values set to None.
+    """
+    records: list[dict[str, object]] = []
+    for batch in reader:
+        if batch.num_rows == 0:
+            continue
+        frame = pl.from_arrow(batch)
+        if isinstance(frame, pl.Series):
+            frame = frame.to_frame()
+        batch_records = cast("list[dict[str, object]]", frame.to_dicts())
+        records.extend(_normalize_records(batch_records))
+    return records
 
 
 def records_from_relation(relation: DuckDBRelation) -> list[dict[str, object]]:
@@ -200,7 +227,18 @@ def records_from_relation(relation: DuckDBRelation) -> list[dict[str, object]]:
     list[dict[str, object]]
         List of row dictionaries with missing values set to None.
     """
-    return records_from_arrow_table(relation.fetch_arrow_table())
+    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    return records_from_arrow_reader(reader)
+
+
+def _normalize_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    for record in records:
+        cleaned: dict[str, object] = {}
+        for key, value in record.items():
+            cleaned[str(key)] = normalize_row_value(_normalize_goid_value(value))
+        normalized.append(cleaned)
+    return normalized
 
 
 def _normalize_goid_value(value: object) -> object:

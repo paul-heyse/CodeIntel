@@ -46,7 +46,7 @@ def _make_harness(tmp_path: Path) -> ServingAppHarness:
 def _default_mcp_settings() -> ServingSettingsOverrides:
     return {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
     }
@@ -369,7 +369,7 @@ async def test_mcp_semantic_export_returns_uri(tmp_path: Path) -> None:
         )
 
         # Verify other fields
-        expect_equal(result.get("format"), "jsonl")
+        expect_equal(result.get("format"), "arrow")
         expect_equal(result.get("row_count"), 3)  # Demo has 3 rows
         byte_size = result.get("byte_size", 0)
         expect_true(
@@ -591,7 +591,7 @@ async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
         export_result = extract_payload(
             await client.call_tool(
                 "semantic_export",
-                {"request": {"view_id": "demo.view", "limit": 10}},
+                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 10}},
             )
         )
         export_id = export_result.get("export_id")
@@ -609,7 +609,7 @@ async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
         expect_equal(data.get("export_id"), export_id)
         expect_equal(data.get("status"), "ready")
         expect_true("created_at" in data, message="Should have created_at")
-        expect_equal(data.get("format"), "jsonl")
+        expect_equal(data.get("format"), "arrow")
         expect_equal(data.get("row_count"), 3)  # Demo view has 3 rows
 
         # Verify snapshot info
@@ -634,7 +634,7 @@ async def test_mcp_resource_export_preview(tmp_path: Path) -> None:
         export_result = extract_payload(
             await client.call_tool(
                 "semantic_export",
-                {"request": {"view_id": "demo.view", "limit": 10}},
+                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 10}},
             )
         )
         export_id = export_result.get("export_id")
@@ -673,7 +673,7 @@ async def test_mcp_resource_export_lines_chunk(tmp_path: Path) -> None:
         export_result = extract_payload(
             await client.call_tool(
                 "semantic_export",
-                {"request": {"view_id": "demo.view", "limit": 10}},
+                {"request": {"view_id": "demo.view", "export_format": "jsonl", "limit": 10}},
             )
         )
         export_id = export_result["export_id"]

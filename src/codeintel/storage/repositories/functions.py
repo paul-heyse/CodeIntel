@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from codeintel.storage.query_results import coerce_optional_int, records_from_arrow_table
+from codeintel.storage.query_results import coerce_optional_int
 from codeintel.storage.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
@@ -273,8 +273,7 @@ class FunctionRepository(BaseRepository):
             Function GOIDs present in the snapshot.
         """
         relation = self._relation("docs.v_function_summary").select("function_goid_h128")
-        table = relation.fetch_arrow_table()
-        records = records_from_arrow_table(table)
+        records = self._relation_to_dicts(relation)
 
         goids: list[int] = []
         for row in records:

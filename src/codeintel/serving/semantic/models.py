@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from codeintel.serving.export.formats import ExportFormat
+from codeintel.serving.export.formats import ExportFormat, default_export_format
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
 Op = Literal["eq", "ne", "lt", "lte", "gt", "gte", "in", "contains", "startswith"]
@@ -262,7 +262,7 @@ class SemanticExportRequest(BaseModel):
     select: list[str] | None = None
     filters: list[FilterSpec] = Field(default_factory=list)
     order_by: list[str] = Field(default_factory=list)
-    format: ExportFormat = "jsonl"
+    format: ExportFormat = Field(default_factory=default_export_format)
     limit: int = Field(default=100_000, ge=0, le=1_000_000)
     offset: int = Field(default=0, ge=0)
 

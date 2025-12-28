@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import io
-from collections.abc import Iterator
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -17,29 +15,18 @@ if TYPE_CHECKING:
     from duckdb import DuckDBPyRelation
     from duckdb import Expression as DuckDBExpression
 
-
-@dataclass
-class _EmptyBatch:
-    num_rows: int = 0
-
-    def to_pydict(self) -> dict[str, list[object]]:
-        return {} if self.num_rows == 0 else {"rows": []}
-
-
-class _EmptyReader:
-    schema: pa.Schema = pa.schema(())
-
-    def __iter__(self) -> Iterator[_EmptyBatch]:
-        return iter(())
+_EMPTY_SCHEMA = pa.schema(())
 
 
 class _BatchRecorder:
     def __init__(self) -> None:
         self.batch_sizes: list[int] = []
 
-    def fetch_record_batch(self, rows_per_batch: int = DEFAULT_ARROW_BATCH_SIZE) -> _EmptyReader:
+    def fetch_record_batch(
+        self, rows_per_batch: int = DEFAULT_ARROW_BATCH_SIZE
+    ) -> pa.RecordBatchReader:
         self.batch_sizes.append(rows_per_batch)
-        return _EmptyReader()
+        return pa.RecordBatchReader.from_batches(_EMPTY_SCHEMA, [])
 
     def aggregate(
         self,

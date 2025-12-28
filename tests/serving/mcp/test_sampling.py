@@ -32,7 +32,7 @@ async def test_mcp_sampling_opt_in_adds_summary(
     harness = ServingAppHarness.from_snapshot(snapshot)
     settings_overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
         "mcp_enable_sampling": True,
@@ -70,7 +70,7 @@ async def test_mcp_sampling_disabled_does_not_sample(
     harness = ServingAppHarness.from_snapshot(snapshot)
     settings_overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
         "mcp_enable_sampling": False,

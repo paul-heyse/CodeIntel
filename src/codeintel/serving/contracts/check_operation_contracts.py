@@ -43,7 +43,7 @@ from codeintel.serving.settings import ServingSettings
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Generator, Iterable, Iterator
 
     from codeintel.serving.db.manager import ServingDBManager
     from codeintel.serving.operations.cancellation import CancelCheck
@@ -129,10 +129,10 @@ class _DummyKernel:
     @staticmethod
     def query_ipc_stream(
         request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
-    ) -> Iterator[bytes]:
+    ) -> Generator[bytes]:
         _ = cancel_check
         _ = request
-        return iter(())
+        yield from ()
 
     @staticmethod
     def explain(request: SemanticQueryRequest) -> SemanticExplainResponse:
@@ -155,7 +155,7 @@ class _DummyKernel:
             results=[],
             truncated=False,
             snapshot=ServingSnapshotIdentity(repo="demo/repo", commit="deadbeef", run_id="run-1"),
-            engine="pandas",
+            engine="polars",
         )
 
     @staticmethod
