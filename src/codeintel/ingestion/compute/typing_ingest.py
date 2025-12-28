@@ -11,18 +11,22 @@ import ast
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.core.columnar.rows import (
+    ColumnarRowBuffer,
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+)
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsStaticDiagnosticsRow as StaticDiagnosticRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTypednessRow as TypednessRow,
 )
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.ports.tools import ToolStatus
 
 _ANNOTATION_OVERLAY_THRESHOLD = 0.5
@@ -260,20 +264,24 @@ class TypingIngestStep:
         if run_diagnostics and self._tools is not None:
             diag_counts = await _collect_diagnostic_counts(Path(repo_root), self._tools)
 
-        typedness_rows, diagnostic_rows = self._process_modules(modules, repo, commit, diag_counts)
+        typedness_buffer, diagnostic_buffer = self._process_modules(
+            modules, repo, commit, diag_counts
+        )
 
         log.info(
             "Typing ingest: repo=%s commit=%s typedness=%d diagnostics=%d",
             repo,
             commit,
-            len(typedness_rows),
-            len(diagnostic_rows),
+            typedness_buffer.row_count,
+            diagnostic_buffer.row_count,
         )
 
         return TypingIngestResult(
             result=ExecutionResult.ok(),
-            typedness_rows=tuple(typedness_rows),
-            diagnostic_rows=tuple(diagnostic_rows),
+            typedness_rows=typedness_buffer.data,
+            diagnostic_rows=diagnostic_buffer.data,
+            typedness_row_count=typedness_buffer.row_count,
+            diagnostic_row_count=diagnostic_buffer.row_count,
         )
 
     def _process_modules(
@@ -282,7 +290,7 @@ class TypingIngestStep:
         repo: str,
         commit: str,
         diag_counts: DiagnosticCounts,
-    ) -> tuple[list[tuple[object, ...]], list[tuple[object, ...]]]:
+    ) -> tuple[ColumnarRowBuffer, ColumnarRowBuffer]:
         """Process modules and build rows.
 
         Parameters
@@ -301,11 +309,8 @@ class TypingIngestStep:
         tuple[list[tuple[object, ...]], list[tuple[object, ...]]]
             Typedness rows and diagnostic rows.
         """
-        typedness_serializer = row_serializer_for_table_key(TYPEDNESS_TABLE_KEY)
-        diagnostics_serializer = row_serializer_for_table_key(DIAGNOSTICS_TABLE_KEY)
-
-        typedness_rows: list[tuple[object, ...]] = []
-        diagnostic_rows: list[tuple[object, ...]] = []
+        typedness_buffer = columnar_buffer_for_table_key(TYPEDNESS_TABLE_KEY)
+        diagnostic_buffer = columnar_buffer_for_table_key(DIAGNOSTICS_TABLE_KEY)
 
         for module in modules:
             if not module.rel_path.endswith(".py"):
@@ -340,24 +345,22 @@ class TypingIngestStep:
                 untyped_defs=info.untyped_defs,
                 overlay_needed=overlay_needed,
             )
-            typedness_rows.append(typedness_serializer(row))
+            typedness_buffer.append(row)
 
-            diagnostic_rows.append(
-                diagnostics_serializer(
-                    StaticDiagnosticRow(
-                        repo=repo,
-                        commit=commit,
-                        rel_path=module.rel_path,
-                        pyright_errors=pyright_errors,
-                        pyrefly_errors=pyrefly_errors,
-                        ruff_errors=ruff_errors,
-                        total_errors=type_error_count,
-                        has_errors=type_error_count > 0,
-                    ),
+            diagnostic_buffer.append(
+                StaticDiagnosticRow(
+                    repo=repo,
+                    commit=commit,
+                    rel_path=module.rel_path,
+                    pyright_errors=pyright_errors,
+                    pyrefly_errors=pyrefly_errors,
+                    ruff_errors=ruff_errors,
+                    total_errors=type_error_count,
+                    has_errors=type_error_count > 0,
                 )
             )
 
-        return typedness_rows, diagnostic_rows
+        return typedness_buffer, diagnostic_buffer
 
     def execute(
         self,
@@ -397,8 +400,10 @@ class TypingIngestResult:
     """Result bundle for typing ingestion."""
 
     result: ExecutionResult
-    typedness_rows: tuple[tuple[object, ...], ...] = ()
-    diagnostic_rows: tuple[tuple[object, ...], ...] = ()
+    typedness_rows: ColumnarRows = field(default_factory=dict)
+    diagnostic_rows: ColumnarRows = field(default_factory=dict)
+    typedness_row_count: int = 0
+    diagnostic_row_count: int = 0
 
 
 def collect_function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:

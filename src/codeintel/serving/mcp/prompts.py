@@ -276,6 +276,13 @@ def _register_query_wizard(
             ),
             Message(
                 (
+                    "Need Arrow IPC? Add `export_format: \"arrow\"` to semantic_query "
+                    "to receive an export handle."
+                ),
+                role="assistant",
+            ),
+            Message(
+                (
                     "If sampling is enabled server-side and supported client-side, "
                     "large results may include a summary. "
                     f"sampling_enabled={feature_set.enable_mcp_sampling}"
@@ -366,7 +373,10 @@ def _wizard_query_view_no_elicitation(settings: ServingSettings) -> list[PromptM
     return [
         Message("Elicitation is not available in this client.", role="assistant"),
         Message(
-            ("Call `semantic_describe(view_id=...)` then `semantic_query(request=...)`."),
+            (
+                "Call `semantic_describe(view_id=...)` then `semantic_query(request=...)`. "
+                "Use `export_format: \"arrow\"` to get IPC exports."
+            ),
             role="assistant",
         ),
         Message(f"sampling_enabled={feature_set.enable_mcp_sampling}", role="assistant"),

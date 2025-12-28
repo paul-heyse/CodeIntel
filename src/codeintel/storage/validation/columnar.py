@@ -7,7 +7,6 @@ from collections.abc import Callable, Iterator
 from typing import Literal
 
 import pyarrow as pa
-import pyarrow.compute as pc
 
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
@@ -122,7 +121,9 @@ def _has_nulls(values: pa.Array | pa.ChunkedArray) -> bool:
     null_count = values.null_count
     if null_count is not None and null_count >= 0:
         return null_count > 0
-    return bool(pc.count_null(values).as_py() or 0)
+    if isinstance(values, pa.ChunkedArray):
+        return any((chunk.null_count or 0) > 0 for chunk in values.chunks)
+    return False
 
 
 def _nullability_errors_for_table(table_schema: TableSchema, table: pa.Table) -> list[str]:

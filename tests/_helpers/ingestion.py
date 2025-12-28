@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeGuard, cast
 
 from codeintel.build.config import BuildConfig
 from codeintel.build.hamilton.helpers import paths_to_modules
@@ -15,6 +15,7 @@ from codeintel.build.schemas import column_names_for_table_key
 from codeintel.build.targets import TargetDescriptor
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
+from codeintel.core.columnar.rows import ColumnarRows, columnar_row_count
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
     FilesystemDiscoveryAdapter,
@@ -410,23 +411,55 @@ def build_ingestion_context_bundle(
 def materialize_rows_for_snapshot(
     gateway: StorageGateway,
     table_key: str,
-    rows: Sequence[tuple[object, ...]],
+    rows: Sequence[tuple[object, ...]] | ColumnarRows,
     *,
     snapshot: SnapshotRef,
 ) -> None:
-    """Materialize row tuples into a snapshot-scoped table."""
+    """Materialize rows into a snapshot-scoped table."""
     columns = column_names_for_table_key(table_key)
     resolved_columns = columns if columns else None
+    tuples: Sequence[tuple[object, ...]]
+    if _is_columnar_rows(rows):
+        resolved_columns = columns
+        tuples = _columnar_to_tuples(rows, columns=columns)
+    else:
+        tuples = cast("Sequence[tuple[object, ...]]", rows)
     warehouse = Warehouse(gateway)
     warehouse.materialize_rows(
         table_key,
-        rows,
+        tuples,
         columns=resolved_columns,
         options=MaterializeOptions(
             mode="replace",
             snapshot=snapshot,
         ),
     )
+
+
+def _columnar_to_tuples(
+    rows: ColumnarRows,
+    *,
+    columns: Sequence[str],
+) -> Sequence[tuple[object, ...]]:
+    if not columns:
+        return ()
+    row_count = columnar_row_count(rows)
+    if row_count == 0:
+        return ()
+    ordered: list[Sequence[object]] = []
+    for name in columns:
+        values = rows.get(name)
+        if values is None:
+            msg = f"Missing column {name} in columnar rows"
+            raise KeyError(msg)
+        ordered.append(values)
+    return list(zip(*ordered, strict=True))
+
+
+def _is_columnar_rows(
+    rows: Sequence[tuple[object, ...]] | ColumnarRows,
+) -> TypeGuard[ColumnarRows]:
+    return isinstance(rows, Mapping)
 
 
 def materialize_repo_scan_result(

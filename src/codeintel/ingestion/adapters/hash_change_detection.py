@@ -10,6 +10,7 @@ import hashlib
 import logging
 from typing import TYPE_CHECKING, SupportsInt, cast
 
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.core.hashing import sha256_short
 from codeintel.core.paths import normalize_path
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -365,12 +366,12 @@ class HashChangeDetectionAdapter:
         commit: str,
         language: str,
         state: Mapping[str, FileDigest],
-    ) -> list[tuple[object, ...]]:
+    ) -> ColumnarRows:
         if not state:
-            return []
-        serializer = row_serializer_for_table_key(FILE_STATE_TABLE_KEY)
-        return [
-            serializer(
+            return {}
+        buffer = columnar_buffer_for_table_key(FILE_STATE_TABLE_KEY)
+        for rel_path, digest in sorted(state.items()):
+            buffer.append(
                 {
                     "repo": repo,
                     "commit": commit,
@@ -381,8 +382,7 @@ class HashChangeDetectionAdapter:
                     "content_hash": digest.content_hash,
                 }
             )
-            for rel_path, digest in sorted(state.items())
-        ]
+        return buffer.data
 
 
 __all__ = ["HashChangeDetectionAdapter"]

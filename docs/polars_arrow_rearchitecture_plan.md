@@ -383,3 +383,71 @@ Acceptance criteria:
 2. Complete POC 1 (IPC streaming response) and POC 2 (streaming dataset write).
 3. Align export protocols with Arrow batch access patterns.
 4. Remove remaining row-tuple shims and update tests.
+
+## Remaining Scope Checklist (Sequenced, File-Level)
+
+### 1) Ingestion: remove row tuples and shift to columnar builders
+- [ ] Convert SCIP row builders to produce columnar structures directly (no tuple lists):
+  `src/codeintel/ingestion/scip/rows.py`
+- [ ] Replace tuple-based assembly in SCIP ingestion with Polars-first construction:
+  `src/codeintel/build/hamilton/native/ingestion/scip.py`
+- [ ] Convert ingest target outputs to `pl.LazyFrame` / `pa.RecordBatchReader`:
+  `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`,
+  `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`
+- [ ] Replace row-based cleaning/dedupe with Polars expressions:
+  `src/codeintel/build/hamilton/native/ingestion/pipelines.py`
+- [ ] Update ingestion payload mapping types to columnar inputs:
+  `src/codeintel/build/hamilton/native/patterns/tool_target.py`
+
+### 2) Analytics: LazyFrame/RecordBatchReader outputs only
+- [ ] Convert history timeseries to Polars-only computation and remove row lists:
+  `src/codeintel/analytics/history/history_timeseries.py`
+- [ ] Wire Hamilton native history_timeseries to save columnar outputs:
+  `src/codeintel/build/hamilton/native/analytics/history_timeseries.py`
+- [ ] Ensure analytics table functions source from LazyFrame and return LazyFrame:
+  `src/codeintel/build/hamilton/native/analytics/tables_functions.py`,
+  `src/codeintel/build/hamilton/native/analytics/tables_modules.py`,
+  `src/codeintel/build/hamilton/native/analytics/tables_risk.py`
+
+### 3) Exports: Arrow/Polars streaming writers
+- [ ] Stream JSONL via Arrow batches or Polars writer (no per-row dict loops):
+  `src/codeintel/build/exports/writers.py`,
+  `src/codeintel/build/exports/jsonl.py`
+- [ ] Ensure Parquet writer uses RecordBatchReader with no eager materialization:
+  `src/codeintel/build/exports/writers.py`
+- [ ] Audit validation to be batch-based for Parquet:
+  `src/codeintel/build/exports/validation.py`
+
+### 4) Schema/constraints: Arrow/Polars-native enforcement
+- [ ] Replace Pandera-based constraints with Arrow/Polars checks:
+  `src/codeintel/build/schemas/constraints.py`,
+  `src/codeintel/build/schemas/service.py`
+- [ ] Remove remaining Pandera/pandas schema utilities in core:
+  `src/codeintel/core/schemas/pandera_gen.py`,
+  `src/codeintel/core/schemas/pandera_types.py`,
+  `src/codeintel/core/schemas/json_schema_gen.py`
+
+### 5) Serving/MCP parity: IPC-first across transports
+- [ ] Add IPC-first query path for MCP (optional tool or format flag):
+  `src/codeintel/serving/mcp/tools/query.py`,
+  `src/codeintel/serving/mcp/models/semantic.py`,
+  `src/codeintel/serving/mcp/resources/exports.py`
+- [ ] Align MCP docs/prompts with IPC defaults:
+  `src/codeintel/serving/mcp/prompts.py`
+
+### 6) Remove legacy row materialization paths
+- [ ] Remove or strictly isolate row-based materialization entry points:
+  `src/codeintel/storage/warehouse.py`
+- [ ] Sweep for row tuple usage in analytics/materialization:
+  `src/codeintel/analytics/compute/data_models/usage.py`
+
+### 7) Tests and coverage for new columnar flows
+- [ ] Add/extend ingestion tests that assert columnar payloads end-to-end:
+  `tests/ingestion/test_scip_ingest.py`,
+  `tests/ingestion/test_scip_ingest_result.py`
+- [ ] Add export tests validating IPC-first defaults and batch-based writers:
+  `tests/serving/http/test_export.py`,
+  `tests/serving/mcp/test_resources.py`,
+  `tests/serving/export/test_formats.py`
+- [ ] Add analytics tests that accept LazyFrame outputs:
+  `tests/analytics/*` (targeted to the refactored modules above)

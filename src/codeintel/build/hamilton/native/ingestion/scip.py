@@ -24,7 +24,9 @@ from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table
+from codeintel.build.hamilton.native.ingestion.frame_utils import (
+    lazyframe_for_table_columns,
+)
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.patterns import (
@@ -50,10 +52,10 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.config.settings import ObservabilitySettings
 from codeintel.core.errors import CodeIntelStorageError, ColumnNotFoundError, TableNotFoundError
 from codeintel.core.execution.ids import new_run_id
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.core.tools import ToolName
 from codeintel.ingestion.engine.infrastructure import (
     ToolExecutionError,
@@ -62,6 +64,13 @@ from codeintel.ingestion.engine.infrastructure import (
 )
 from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 from codeintel.ingestion.scip import (
+    SCIP_DIAGNOSTICS_TABLE_KEY,
+    SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+    SCIP_MODULE_STATE_TABLE_KEY,
+    SCIP_OCCURRENCES_TABLE_KEY,
+    SCIP_RELATIONSHIPS_TABLE_KEY,
+    SCIP_SYMBOL_INFO_TABLE_KEY,
+    SCIP_SYMBOLS_TABLE_KEY,
     ScipParsedIndex,
     ScipRowContext,
     build_diagnostic_rows,
@@ -112,13 +121,6 @@ ScipRunMode = Literal["incremental", "full", "skipped", "precheck_failed", "unkn
 SCIP_TARGET_NAME = "scip"
 SCIP_ARTIFACT_INDEX = "scip_index"
 
-SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbols"
-SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
-SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
-SCIP_RELATIONSHIPS_TABLE_KEY = "core.scip_symbol_relationships"
-SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
-SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
-SCIP_MODULE_STATE_TABLE_KEY = "core.scip_module_state"
 SCIP_TABLE_KEYS = (
     SCIP_SYMBOLS_TABLE_KEY,
     SCIP_OCCURRENCES_TABLE_KEY,
@@ -501,10 +503,13 @@ def _execute_scip_incremental(
         options_hash=options_hash,
     )
     file_state_rows = module_inputs.scan.file_state_rows
-    if module_inputs.scan.file_state_row_count == 0:
-        fallback_rows = list(change_set.state_rows)
-        if fallback_rows:
-            file_state_rows = lazyframe_for_table(FILE_STATE_TABLE_KEY, fallback_rows)
+    if (
+        module_inputs.scan.file_state_row_count == 0
+        and columnar_row_count(change_set.state_rows) > 0
+    ):
+        file_state_rows = lazyframe_for_table_columns(
+            FILE_STATE_TABLE_KEY, change_set.state_rows
+        )
     file_state_by_path = _build_file_state_map(file_state_rows)
     try:
         config = ScipIncrementalConfig(
@@ -704,52 +709,34 @@ def _build_scip_row_payload(
         include_references=options.should_include_references(),
         include_implementations=options.should_include_implementations(),
     )
-    symbol_rows = build_symbol_rows(
-        parsed.documents,
-        row_context,
-        serializer=row_serializer_for_table_key(SCIP_SYMBOLS_TABLE_KEY),
-    )
-    occurrence_rows = build_occurrence_rows(
-        parsed.documents,
-        row_context,
-        serializer=row_serializer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY),
-    )
-    symbol_info_rows = build_symbol_information_rows(
-        parsed.symbol_infos,
-        row_context,
-        serializer=row_serializer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY),
-    )
-    relationship_rows = build_symbol_relationship_rows(
-        parsed.relationships,
-        row_context,
-        serializer=row_serializer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY),
-    )
-    diagnostic_rows = build_diagnostic_rows(
-        parsed.diagnostics,
-        row_context,
-        serializer=row_serializer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY),
-    )
-    external_symbol_rows = build_external_symbol_rows(
-        parsed.external_symbols,
-        row_context,
-        serializer=row_serializer_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
-    )
+    symbol_rows = build_symbol_rows(parsed.documents, row_context)
+    occurrence_rows = build_occurrence_rows(parsed.documents, row_context)
+    symbol_info_rows = build_symbol_information_rows(parsed.symbol_infos, row_context)
+    relationship_rows = build_symbol_relationship_rows(parsed.relationships, row_context)
+    diagnostic_rows = build_diagnostic_rows(parsed.diagnostics, row_context)
+    external_symbol_rows = build_external_symbol_rows(parsed.external_symbols, row_context)
     return ScipRowPayload(
-        symbol_rows=lazyframe_for_table(SCIP_SYMBOLS_TABLE_KEY, symbol_rows),
-        occurrence_rows=lazyframe_for_table(SCIP_OCCURRENCES_TABLE_KEY, occurrence_rows),
-        symbol_info_rows=lazyframe_for_table(SCIP_SYMBOL_INFO_TABLE_KEY, symbol_info_rows),
-        relationship_rows=lazyframe_for_table(SCIP_RELATIONSHIPS_TABLE_KEY, relationship_rows),
-        diagnostic_rows=lazyframe_for_table(SCIP_DIAGNOSTICS_TABLE_KEY, diagnostic_rows),
-        external_symbol_rows=lazyframe_for_table(
+        symbol_rows=lazyframe_for_table_columns(SCIP_SYMBOLS_TABLE_KEY, symbol_rows),
+        occurrence_rows=lazyframe_for_table_columns(SCIP_OCCURRENCES_TABLE_KEY, occurrence_rows),
+        symbol_info_rows=lazyframe_for_table_columns(
+            SCIP_SYMBOL_INFO_TABLE_KEY,
+            symbol_info_rows,
+        ),
+        relationship_rows=lazyframe_for_table_columns(
+            SCIP_RELATIONSHIPS_TABLE_KEY,
+            relationship_rows,
+        ),
+        diagnostic_rows=lazyframe_for_table_columns(SCIP_DIAGNOSTICS_TABLE_KEY, diagnostic_rows),
+        external_symbol_rows=lazyframe_for_table_columns(
             SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
             external_symbol_rows,
         ),
-        symbol_row_count=len(symbol_rows),
-        occurrence_row_count=len(occurrence_rows),
-        symbol_info_row_count=len(symbol_info_rows),
-        relationship_row_count=len(relationship_rows),
-        diagnostic_row_count=len(diagnostic_rows),
-        external_symbol_row_count=len(external_symbol_rows),
+        symbol_row_count=columnar_row_count(symbol_rows),
+        occurrence_row_count=columnar_row_count(occurrence_rows),
+        symbol_info_row_count=columnar_row_count(symbol_info_rows),
+        relationship_row_count=columnar_row_count(relationship_rows),
+        diagnostic_row_count=columnar_row_count(diagnostic_rows),
+        external_symbol_row_count=columnar_row_count(external_symbol_rows),
     )
 
 
@@ -779,11 +766,9 @@ def _build_module_state_frame(
         manifest,
         env.snapshot.repo,
         env.snapshot.commit,
-        serializer=row_serializer_for_table_key(SCIP_MODULE_STATE_TABLE_KEY),
     )
-    rows_list = list(rows)
-    frame = lazyframe_for_table(SCIP_MODULE_STATE_TABLE_KEY, rows_list)
-    return frame, len(rows_list)
+    frame = lazyframe_for_table_columns(SCIP_MODULE_STATE_TABLE_KEY, rows)
+    return frame, columnar_row_count(rows)
 
 
 def _build_scip_ingest_result(
@@ -799,7 +784,7 @@ def _build_scip_ingest_result(
     try:
         parsed: ScipParsedIndex = parse_index(output_scip, proto_module_path)
         payload = _build_scip_row_payload(env, parsed, inputs.options)
-    except (OSError, AttributeError, TypeError, ValueError):
+    except (OSError, AttributeError, KeyError, RuntimeError, TypeError, ValueError):
         log.exception("SCIP ingestion failed")
         return IngestStep(result=ExecutionResult.failed("SCIP ingestion failed with exception"))
 

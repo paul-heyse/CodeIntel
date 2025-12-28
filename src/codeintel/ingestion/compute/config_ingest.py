@@ -291,7 +291,10 @@ class ConfigIngestStep(BaseExtractStep):
         ConfigIngestResult
             Result bundle with row tuples and execution status.
         """
-        buffer = columnar_buffer_for_table_key(CONFIG_VALUES_TABLE_KEY)
+        try:
+            buffer = columnar_buffer_for_table_key(CONFIG_VALUES_TABLE_KEY)
+        except (KeyError, RuntimeError) as exc:
+            return ConfigIngestResult(result=ExecutionResult.failed(str(exc)))
         errors: list[str] = []
 
         for record in config_files:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.ports.tools import ScipDocument
 from codeintel.ingestion.scip.manifest import ScipShardManifest
 from codeintel.ingestion.scip.models import (
@@ -18,10 +19,16 @@ from codeintel.ingestion.scip.models import (
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from codeintel.core.schemas.row_models import RowSerializer
-
 _ROLE_DEFINITION = 1
 _ROLE_REFERENCE = 2
+
+SCIP_SYMBOLS_TABLE_KEY = "core.scip_symbols"
+SCIP_OCCURRENCES_TABLE_KEY = "core.scip_occurrences"
+SCIP_SYMBOL_INFO_TABLE_KEY = "core.scip_symbol_information"
+SCIP_RELATIONSHIPS_TABLE_KEY = "core.scip_symbol_relationships"
+SCIP_DIAGNOSTICS_TABLE_KEY = "core.scip_diagnostics"
+SCIP_EXTERNAL_SYMBOLS_TABLE_KEY = "core.scip_external_symbols"
+SCIP_MODULE_STATE_TABLE_KEY = "core.scip_module_state"
 
 
 @dataclass(frozen=True)
@@ -38,9 +45,7 @@ class ScipRowContext:
 def build_symbol_rows(
     documents: Sequence[ScipDocument],
     context: ScipRowContext,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build symbol rows from SCIP documents.
 
     Deduplicates by (rel_path, symbol) to avoid primary key violations.
@@ -51,14 +56,13 @@ def build_symbol_rows(
         SCIP documents containing symbols.
     context
         Shared row context (repo, commit, created_at).
-    serializer
-        Optional row serializer for deterministic column ordering.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Symbol rows for storage (deduplicated).
+    ColumnarRows
+        Columnar rows for storage (deduplicated).
     """
+    buffer = columnar_buffer_for_table_key(SCIP_SYMBOLS_TABLE_KEY)
     seen: dict[tuple[str, str], dict[str, object]] = {}
     for doc in documents:
         for sym in doc.symbols:
@@ -73,30 +77,15 @@ def build_symbol_rows(
                     "created_at": context.created_at,
                 }
 
-    rows: list[tuple[object, ...]] = []
     for payload in seen.values():
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["rel_path"],
-                    payload["symbol"],
-                    payload["documentation"],
-                    payload["created_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 def build_occurrence_rows(
     documents: Sequence[ScipDocument],
     context: ScipRowContext,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build occurrence rows from SCIP documents.
 
     Deduplicates by (rel_path, symbol, start_line, start_col) to avoid
@@ -108,14 +97,13 @@ def build_occurrence_rows(
         SCIP documents containing occurrences.
     context
         Shared row context (repo, commit, created_at, include_references).
-    serializer
-        Optional row serializer for deterministic column ordering.
 
     Returns
     -------
-    list[tuple[object, ...]]
+    ColumnarRows
         Occurrence rows for storage (deduplicated).
     """
+    buffer = columnar_buffer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY)
     seen: dict[tuple[str, str, int, int], dict[str, object]] = {}
     for doc in documents:
         for occ in doc.occurrences:
@@ -136,34 +124,15 @@ def build_occurrence_rows(
                     "created_at": context.created_at,
                 }
 
-    rows: list[tuple[object, ...]] = []
     for payload in seen.values():
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["rel_path"],
-                    payload["symbol"],
-                    payload["start_line"],
-                    payload["start_col"],
-                    payload["end_line"],
-                    payload["end_col"],
-                    payload["roles"],
-                    payload["created_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 def build_symbol_information_rows(
     symbol_infos: Sequence[ScipSymbolInfo],
     context: ScipRowContext,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build rows for core.scip_symbol_information.
 
     Parameters
@@ -172,15 +141,13 @@ def build_symbol_information_rows(
         Parsed symbol info records.
     context
         Shared row context (repo, commit, created_at).
-    serializer
-        Optional row serializer for deterministic column ordering.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Serialized row tuples for symbol information.
+    ColumnarRows
+        Columnar rows for symbol information.
     """
-    rows: list[tuple[object, ...]] = []
+    buffer = columnar_buffer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY)
     seen: dict[str, ScipSymbolInfo] = {}
     for info in symbol_infos:
         existing = seen.get(info.symbol)
@@ -200,23 +167,8 @@ def build_symbol_information_rows(
             "enclosing_symbol": info.enclosing_symbol,
             "created_at": context.created_at,
         }
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["symbol"],
-                    payload["documentation"],
-                    payload["kind"],
-                    payload["display_name"],
-                    payload["signature"],
-                    payload["enclosing_symbol"],
-                    payload["created_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 def _symbol_info_score(info: ScipSymbolInfo) -> int:
@@ -243,9 +195,7 @@ def _prefer_symbol_info(current: ScipSymbolInfo, candidate: ScipSymbolInfo) -> S
 def build_symbol_relationship_rows(
     relationships: Sequence[ScipSymbolRelationship],
     context: ScipRowContext,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build rows for core.scip_symbol_relationships.
 
     Parameters
@@ -254,15 +204,13 @@ def build_symbol_relationship_rows(
         Parsed symbol relationships.
     context
         Shared row context (repo, commit, created_at, include_* flags).
-    serializer
-        Optional row serializer for deterministic column ordering.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Serialized row tuples for symbol relationships.
+    ColumnarRows
+        Columnar rows for symbol relationships.
     """
-    rows: list[tuple[object, ...]] = []
+    buffer = columnar_buffer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY)
     seen: set[tuple[str, str, str]] = set()
     for rel in relationships:
         if not context.include_references and rel.relationship_kind == "reference":
@@ -281,20 +229,8 @@ def build_symbol_relationship_rows(
             "relationship_kind": rel.relationship_kind,
             "created_at": context.created_at,
         }
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["symbol"],
-                    payload["related_symbol"],
-                    payload["relationship_kind"],
-                    payload["created_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 def _is_reference_only(symbol_roles: int) -> bool:
@@ -306,9 +242,7 @@ def _is_reference_only(symbol_roles: int) -> bool:
 def build_diagnostic_rows(
     diagnostics: Sequence[ScipDiagnostic],
     context: ScipRowContext,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build rows for core.scip_diagnostics.
 
     Parameters
@@ -317,15 +251,13 @@ def build_diagnostic_rows(
         Parsed diagnostics entries.
     context
         Shared row context (repo, commit, created_at).
-    serializer
-        Optional row serializer for deterministic column ordering.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Serialized row tuples for diagnostics.
+    ColumnarRows
+        Columnar rows for diagnostics.
     """
-    rows: list[tuple[object, ...]] = []
+    buffer = columnar_buffer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY)
     for diag in diagnostics:
         payload = {
             "repo": context.repo,
@@ -341,34 +273,14 @@ def build_diagnostic_rows(
             "source": diag.source,
             "created_at": context.created_at,
         }
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["rel_path"],
-                    payload["start_line"],
-                    payload["start_col"],
-                    payload["end_line"],
-                    payload["end_col"],
-                    payload["severity"],
-                    payload["code"],
-                    payload["message"],
-                    payload["source"],
-                    payload["created_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 def build_external_symbol_rows(
     external_symbols: Sequence[ScipExternalSymbol],
     context: ScipRowContext,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build rows for core.scip_external_symbols.
 
     Parameters
@@ -377,15 +289,13 @@ def build_external_symbol_rows(
         Parsed external symbols.
     context
         Shared row context (repo, commit, created_at).
-    serializer
-        Optional row serializer for deterministic column ordering.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Serialized row tuples for external symbols.
+    ColumnarRows
+        Columnar rows for external symbols.
     """
-    rows: list[tuple[object, ...]] = []
+    buffer = columnar_buffer_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
     for sym in external_symbols:
         payload = {
             "repo": context.repo,
@@ -396,38 +306,23 @@ def build_external_symbol_rows(
             "package_version": sym.package_version,
             "created_at": context.created_at,
         }
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["symbol"],
-                    payload["package_manager"],
-                    payload["package_name"],
-                    payload["package_version"],
-                    payload["created_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 def build_module_state_rows(
     manifest: ScipShardManifest,
     repo: str,
     commit: str,
-    *,
-    serializer: RowSerializer | None = None,
-) -> list[tuple[object, ...]]:
+) -> ColumnarRows:
     """Build rows for core.scip_module_state.
 
     Returns
     -------
-    list[tuple[object, ...]]
-        Serialized row tuples for module state records.
+    ColumnarRows
+        Columnar rows for module state records.
     """
-    rows: list[tuple[object, ...]] = []
+    buffer = columnar_buffer_for_table_key(SCIP_MODULE_STATE_TABLE_KEY)
     for rel_path, record in sorted(manifest.records.items()):
         payload = {
             "repo": repo,
@@ -439,25 +334,18 @@ def build_module_state_rows(
             "shard_path": record.shard_path,
             "updated_at": record.updated_at,
         }
-        if serializer is not None:
-            rows.append(serializer(payload))
-        else:
-            rows.append(
-                (
-                    payload["repo"],
-                    payload["commit"],
-                    payload["rel_path"],
-                    payload["content_hash"],
-                    payload["options_hash"],
-                    payload["tool_version"],
-                    payload["shard_path"],
-                    payload["updated_at"],
-                )
-            )
-    return rows
+        buffer.append(payload)
+    return buffer.data
 
 
 __all__ = [
+    "SCIP_DIAGNOSTICS_TABLE_KEY",
+    "SCIP_EXTERNAL_SYMBOLS_TABLE_KEY",
+    "SCIP_MODULE_STATE_TABLE_KEY",
+    "SCIP_OCCURRENCES_TABLE_KEY",
+    "SCIP_RELATIONSHIPS_TABLE_KEY",
+    "SCIP_SYMBOLS_TABLE_KEY",
+    "SCIP_SYMBOL_INFO_TABLE_KEY",
     "ScipRowContext",
     "build_diagnostic_rows",
     "build_external_symbol_rows",

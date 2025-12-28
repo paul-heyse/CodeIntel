@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.ingestion.ports.tools import ScipDocument, ScipOccurrence
 from codeintel.ingestion.scip.models import ScipSymbolRelationship
 from codeintel.ingestion.scip.rows import (
@@ -71,9 +72,9 @@ def test_build_occurrence_rows_filters_references() -> None:
         ),
     )
 
-    assert len(rows_all) == expected_all
-    assert len(rows_filtered) == expected_filtered
-    filtered_symbols = {row[3] for row in rows_filtered}
+    assert columnar_row_count(rows_all) == expected_all
+    assert columnar_row_count(rows_filtered) == expected_filtered
+    filtered_symbols = set(rows_filtered.get("symbol", []))
     assert "sym_ref" not in filtered_symbols
     assert {"sym_def", "sym_both", "sym_unknown"}.issubset(filtered_symbols)
 
@@ -142,10 +143,10 @@ def test_build_symbol_relationship_rows_filters_options() -> None:
         ),
     )
 
-    assert len(rows_all) == expected_all
-    assert len(rows_no_refs) == expected_without_refs
-    assert len(rows_no_impl) == expected_without_impl
-    assert len(rows_filtered) == expected_filtered
+    assert columnar_row_count(rows_all) == expected_all
+    assert columnar_row_count(rows_no_refs) == expected_without_refs
+    assert columnar_row_count(rows_no_impl) == expected_without_impl
+    assert columnar_row_count(rows_filtered) == expected_filtered
 
-    filtered_kinds = {row[4] for row in rows_filtered}
+    filtered_kinds = set(rows_filtered.get("relationship_kind", []))
     assert filtered_kinds == {"definition", "type_definition"}

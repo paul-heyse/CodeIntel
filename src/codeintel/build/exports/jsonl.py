@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Literal
 
 from codeintel.build.exports.common import MAX_EXPORT_LIMIT, build_export_relation
 from codeintel.build.exports.engine import export_all_datasets
 from codeintel.build.exports.engine import export_jsonl_for_table as _engine_export_jsonl_for_table
+from codeintel.build.exports.writers import write_json_array
 from codeintel.core.config.settings import ExportAuditSettings
-from codeintel.core.exports.serialization import coerce_export_row
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
@@ -168,23 +167,8 @@ def export_repo_map_json(
         output_path = document_output_dir / "repo_map.json"
         rel = build_export_relation(gateway, table_name, MAX_EXPORT_LIMIT, 0)
         with output_path.open("w", encoding="utf-8") as handle:
-            handle.write("[")
-            first = True
             reader = rel.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-            for batch in reader:
-                columns = batch.schema.names
-                arrays = [batch.column(idx) for idx in range(batch.num_columns)]
-                for row_idx in range(batch.num_rows):
-                    record = {
-                        name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)
-                    }
-                    if first:
-                        first = False
-                    else:
-                        handle.write(",")
-                    payload_row = coerce_export_row(record)
-                    handle.write(json.dumps(payload_row, ensure_ascii=False))
-            handle.write("]\n")
+            write_json_array(handle, reader=reader)
     else:
         output_path = document_output_dir / "repo_map.jsonl"
         export_jsonl_for_table(gateway, table_name, output_path, settings=settings)

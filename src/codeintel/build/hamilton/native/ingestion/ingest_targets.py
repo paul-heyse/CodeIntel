@@ -34,7 +34,6 @@ from codeintel.build.hamilton.helpers import (
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
     dedupe_frame_for_table,
     empty_lazyframe_for_table,
-    lazyframe_for_table,
     lazyframe_for_table_columns,
 )
 from codeintel.build.hamilton.native.ingestion.pipelines import pipe_ingest_rows
@@ -59,6 +58,7 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
+from codeintel.core.columnar.rows import columnar_row_count
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -294,9 +294,13 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
             full_rebuild=False,
         )
 
-        module_rows = lazyframe_for_table(MODULES_TABLE_KEY, scan_result.module_rows)
-        file_state_rows = lazyframe_for_table(FILE_STATE_TABLE_KEY, scan_result.file_state_rows)
-        repo_map_rows = lazyframe_for_table(REPO_MAP_TABLE_KEY, scan_result.repo_map_rows)
+        module_rows = lazyframe_for_table_columns(MODULES_TABLE_KEY, scan_result.module_rows)
+        file_state_rows = lazyframe_for_table_columns(
+            FILE_STATE_TABLE_KEY, scan_result.file_state_rows
+        )
+        repo_map_rows = lazyframe_for_table_columns(
+            REPO_MAP_TABLE_KEY, scan_result.repo_map_rows
+        )
         return ModuleToolOutput(
             result=ExecutionResult.ok(),
             modules=scan_result.modules,
@@ -305,9 +309,9 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
             module_rows=module_rows,
             file_state_rows=file_state_rows,
             repo_map_rows=repo_map_rows,
-            module_row_count=len(scan_result.module_rows),
-            file_state_row_count=len(scan_result.file_state_rows),
-            repo_map_row_count=len(scan_result.repo_map_rows),
+            module_row_count=columnar_row_count(scan_result.module_rows),
+            file_state_row_count=columnar_row_count(scan_result.file_state_rows),
+            repo_map_row_count=columnar_row_count(scan_result.repo_map_rows),
         )
 
     except (OSError, RuntimeError, ValueError, TypeError) as exc:
@@ -966,11 +970,11 @@ def t__coverage_ingest__run(
                 coverage_file=coverage_path,
             )
         )
-        frame = lazyframe_for_table(COVERAGE_LINES_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_table_columns(COVERAGE_LINES_TABLE_KEY, ingest_result.rows)
         return CoverageToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
             rows=frame,
-            row_count=len(ingest_result.rows),
+            row_count=ingest_result.row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -1207,11 +1211,11 @@ def t__tests_ingest__run(
             commit=env.snapshot.commit,
             json_report_path=report_path,
         )
-        frame = lazyframe_for_table(TEST_CATALOG_TABLE_KEY, ingest_result.rows)
+        frame = lazyframe_for_table_columns(TEST_CATALOG_TABLE_KEY, ingest_result.rows)
         return TestsToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
             rows=frame,
-            row_count=len(ingest_result.rows),
+            row_count=ingest_result.row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -1419,11 +1423,11 @@ def t__typing__run(
                 run_diagnostics=True,
             )
         )
-        typedness_frame = lazyframe_for_table(
+        typedness_frame = lazyframe_for_table_columns(
             TYPEDNESS_TABLE_KEY,
             ingest_result.typedness_rows,
         )
-        diagnostic_frame = lazyframe_for_table(
+        diagnostic_frame = lazyframe_for_table_columns(
             STATIC_DIAGNOSTICS_TABLE_KEY,
             ingest_result.diagnostic_rows,
         )
@@ -1431,8 +1435,8 @@ def t__typing__run(
             result=_merge_result_warnings(ingest_result.result, warnings),
             typedness_rows=typedness_frame,
             diagnostic_rows=diagnostic_frame,
-            typedness_row_count=len(ingest_result.typedness_rows),
-            diagnostic_row_count=len(ingest_result.diagnostic_rows),
+            typedness_row_count=ingest_result.typedness_row_count,
+            diagnostic_row_count=ingest_result.diagnostic_row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)

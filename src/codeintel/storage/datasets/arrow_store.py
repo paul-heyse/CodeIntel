@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 import pyarrow as pa
 import pyarrow.dataset as ds
@@ -26,6 +26,23 @@ if TYPE_CHECKING:
 else:
     type ArrowDatasetInput = object
 ExistingDataBehavior = Literal["delete_matching", "error", "overwrite_or_ignore"]
+
+
+@runtime_checkable
+class _SupportsAsPy(Protocol):
+    def as_py(self) -> object: ...
+
+
+@runtime_checkable
+class _SupportsItem(Protocol):
+    def item(self) -> object: ...
+
+
+@runtime_checkable
+class _SupportsRichComparison(Protocol):
+    def __lt__(self, other: object) -> bool: ...
+
+    def __gt__(self, other: object) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,8 +446,9 @@ def _extract_min_max(stats: object) -> tuple[object | None, object | None]:
 def _normalize_stat_value(value: object) -> object | None:
     if value is None:
         return None
-    if isinstance(value, pa.Scalar):
-        return value.as_py()
+    as_py = getattr(value, "as_py", None)
+    if callable(as_py):
+        return as_py()
     item = getattr(value, "item", None)
     if callable(item):
         try:
@@ -453,17 +471,25 @@ def _merge_min_max_pair(
 
 
 def _safe_min(current: object, candidate: object) -> object:
-    try:
-        return candidate if candidate < current else current
-    except TypeError:
-        return current
+    if isinstance(candidate, _SupportsRichComparison) and isinstance(
+        current, _SupportsRichComparison
+    ):
+        try:
+            return candidate if candidate < current else current
+        except TypeError:
+            return current
+    return current
 
 
 def _safe_max(current: object, candidate: object) -> object:
-    try:
-        return candidate if candidate > current else current
-    except TypeError:
-        return current
+    if isinstance(candidate, _SupportsRichComparison) and isinstance(
+        current, _SupportsRichComparison
+    ):
+        try:
+            return candidate if candidate > current else current
+        except TypeError:
+            return current
+    return current
 
 
 def _min_max_to_mapping(
@@ -480,23 +506,23 @@ def _min_max_to_mapping(
 
 def _json_safe_value(value: object) -> object:
     if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, bytes):
-        return value.hex()
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return str(value)
-    as_py = getattr(value, "as_py", None)
-    if callable(as_py):
-        return _json_safe_value(as_py())
-    item = getattr(value, "item", None)
-    if callable(item):
+        result: object = value
+    elif isinstance(value, bytes):
+        result = value.hex()
+    elif isinstance(value, (datetime, date)):
+        result = value.isoformat()
+    elif isinstance(value, Decimal):
+        result = str(value)
+    elif isinstance(value, _SupportsAsPy):
+        result = _json_safe_value(value.as_py())
+    elif isinstance(value, _SupportsItem):
         try:
-            return _json_safe_value(item())
+            result = _json_safe_value(value.item())
         except (TypeError, ValueError, OverflowError):
-            return str(value)
-    return str(value)
+            result = str(value)
+    else:
+        result = str(value)
+    return result
 
 
 __all__ = [

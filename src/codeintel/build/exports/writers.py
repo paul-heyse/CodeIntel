@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, SupportsInt, TextIO, cast
 
+import polars as pl
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from codeintel.core.exports.serialization import coerce_export_row, coerce_export_value
+from codeintel.core.exports.serialization import coerce_export_value
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.protocols import ExportRelation, RecordBatch, RecordBatchReader
 
@@ -99,19 +99,91 @@ def write_jsonl_records(
     int
         Number of rows written to the JSONL output.
     """
-    rows_written = 0
+    if serializer is not default_json_serializer:
+        msg = "Custom JSON serializers are not supported for columnar JSONL exports"
+        raise ValueError(msg)
     reader = rel.fetch_record_batch(batch_size)
+    return write_jsonl_reader(handle, reader=reader, record_type=record_type)
+
+
+def write_jsonl_reader(
+    handle: TextIO,
+    *,
+    reader: RecordBatchReader,
+    record_type: str | None = None,
+) -> int:
+    """Write JSONL records from a RecordBatchReader.
+
+    Parameters
+    ----------
+    handle
+        File-like object opened for writing.
+    reader
+        Arrow record batch reader to stream.
+    record_type
+        Optional record type field to inject.
+
+    Returns
+    -------
+    int
+        Number of rows written to the JSONL output.
+    """
+    rows_written = 0
     for batch in _iter_batches(reader):
-        columns = batch.schema.names
-        arrays = [batch.column(idx) for idx in range(batch.num_columns)]
-        for row_idx in range(batch.num_rows):
-            record = {name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)}
-            if record_type is not None:
-                record["_type"] = record_type
-            payload_row = coerce_export_row(record)
-            handle.write(json.dumps(payload_row, ensure_ascii=False, default=serializer))
-            handle.write("\n")
-            rows_written += 1
+        frame = _frame_for_batch(batch)
+        if record_type is not None:
+            frame = frame.with_columns(pl.lit(record_type).alias("_type"))
+        if frame.height == 0:
+            continue
+        frame.write_ndjson(handle)
+        rows_written += frame.height
+    return rows_written
+
+
+def write_json_array(
+    handle: TextIO,
+    *,
+    reader: RecordBatchReader,
+    record_type: str | None = None,
+) -> int:
+    """Write a JSON array to the handle from a RecordBatchReader.
+
+    Parameters
+    ----------
+    handle
+        File-like object opened for writing.
+    reader
+        Arrow record batch reader to stream.
+    record_type
+        Optional record type field to inject.
+
+    Returns
+    -------
+    int
+        Number of rows written to the JSON output.
+    """
+    rows_written = 0
+    first = True
+    handle.write("[")
+    for batch in _iter_batches(reader):
+        frame = _frame_for_batch(batch)
+        if record_type is not None:
+            frame = frame.with_columns(pl.lit(record_type).alias("_type"))
+        if frame.height == 0:
+            continue
+        payload = frame.write_json()
+        if payload == "[]":
+            continue
+        content = payload[1:-1]
+        if not content:
+            continue
+        if first:
+            first = False
+        else:
+            handle.write(",")
+        handle.write(content)
+        rows_written += frame.height
+    handle.write("]\n")
     return rows_written
 
 
@@ -172,11 +244,20 @@ def _iter_batches(reader: Iterable[RecordBatch]) -> Iterable[RecordBatch]:
     return reader
 
 
+def _frame_for_batch(batch: RecordBatch) -> pl.DataFrame:
+    frame = pl.from_arrow(batch)
+    if isinstance(frame, pl.Series):
+        return frame.to_frame()
+    return frame
+
+
 __all__ = [
     "ExportRelation",
     "RecordBatch",
     "RecordBatchReader",
     "default_json_serializer",
+    "write_json_array",
+    "write_jsonl_reader",
     "write_jsonl_records",
     "write_parquet_relation",
 ]

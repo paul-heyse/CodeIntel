@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.ports.change_detection import ChangeRequest
 
 if TYPE_CHECKING:
@@ -39,18 +39,18 @@ class RepoScanResult:
     change_set
         Change set describing added/modified/deleted modules.
     module_rows
-        Row tuples for core.modules.
+        Columnar rows for core.modules.
     file_state_rows
-        Row tuples for core.file_state.
+        Columnar rows for core.file_state.
     repo_map_rows
-        Row tuples for core.repo_map.
+        Columnar rows for core.repo_map.
     """
 
     modules: tuple[ModuleRecord, ...]
     change_set: ChangeSet
-    module_rows: tuple[tuple[object, ...], ...]
-    file_state_rows: tuple[tuple[object, ...], ...]
-    repo_map_rows: tuple[tuple[object, ...], ...]
+    module_rows: ColumnarRows
+    file_state_rows: ColumnarRows
+    repo_map_rows: ColumnarRows
 
 
 class RepoScanStep:
@@ -133,8 +133,7 @@ class RepoScanStep:
         )
         change_set = self._change_detection.compute_changes(change_request, modules)
 
-        serializer = row_serializer_for_table_key(MODULES_TABLE_KEY)
-        module_rows: list[tuple[object, ...]] = []
+        module_buffer = columnar_buffer_for_table_key(MODULES_TABLE_KEY)
         for module in modules:
             payload = {
                 "module": module.module_name,
@@ -146,7 +145,7 @@ class RepoScanStep:
                 "owners": [],
                 "row_hash": None,
             }
-            module_rows.append(serializer(payload))
+            module_buffer.append(payload)
 
         repo_map_rows = self._build_repo_map_rows(
             repo=repo,
@@ -167,8 +166,8 @@ class RepoScanStep:
         return RepoScanResult(
             modules=tuple(modules),
             change_set=change_set,
-            module_rows=tuple(module_rows),
-            file_state_rows=tuple(change_set.state_rows),
+            module_rows=module_buffer.data,
+            file_state_rows=change_set.state_rows,
             repo_map_rows=repo_map_rows,
         )
 
@@ -178,24 +177,23 @@ class RepoScanStep:
         repo: str,
         commit: str,
         modules: Sequence[ModuleRecord],
-    ) -> tuple[tuple[object, ...], ...]:
+    ) -> ColumnarRows:
         if not modules:
-            return ()
+            return {}
         module_entries: dict[str, str] = {}
         for module in modules:
             module_entries[str(module.module_name)] = str(module.rel_path)
-        serializer = row_serializer_for_table_key(REPO_MAP_TABLE_KEY)
-        return (
-            serializer(
-                {
-                    "repo": repo,
-                    "commit": commit,
-                    "modules": module_entries,
-                    "overlays": {},
-                    "generated_at": datetime.now(tz=UTC),
-                }
-            ),
+        buffer = columnar_buffer_for_table_key(REPO_MAP_TABLE_KEY)
+        buffer.append(
+            {
+                "repo": repo,
+                "commit": commit,
+                "modules": module_entries,
+                "overlays": {},
+                "generated_at": datetime.now(tz=UTC),
+            }
         )
+        return buffer.data
 
 
 __all__ = ["RepoScanResult", "RepoScanStep"]
