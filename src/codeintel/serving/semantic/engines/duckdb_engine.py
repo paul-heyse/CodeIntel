@@ -1,4 +1,4 @@
-"""DuckDB/Ibis-based semantic query engine."""
+"""DuckDB relation-first semantic query engine."""
 
 from __future__ import annotations
 
@@ -6,30 +6,30 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
+from ibis.common.exceptions import IbisError
+from sqlglot.errors import SqlglotError
 
-from codeintel.serving.semantic.engines.protocol import (
-    EngineContext,
-    ExecutablePlan,
-    QueryExplain,
+from codeintel.serving.semantic.duckdb_relation_builder import (
+    DuckDBRelationQueryBuilderError,
+    build_relation_plan,
 )
+from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.query_builder import QueryBuilderError, build_query
 from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.serving.semantic.sqlglot_query_builder import (
+    SqlglotQueryBuilderError,
+    build_sqlglot_query,
+)
 from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
+from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from duckdb import DuckDBPyConnection
+    from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-
-def _format_explain_rows(rows: Sequence[Sequence[object]]) -> str:
-    plan_lines: list[str] = []
-    for row in rows:
-        if not row:
-            continue
-        plan_lines.append(str(row[1] if len(row) > 1 else row[0]))
-    return "\n".join(plan_lines)
+    from codeintel.storage.warehouse import Warehouse
 
 
 def cleanup_temp_tables_if_needed(*, con: DuckDBPyConnection, temp_tables: Sequence[str]) -> None:
@@ -42,20 +42,58 @@ def cleanup_temp_tables_if_needed(*, con: DuckDBPyConnection, temp_tables: Seque
 
 
 @dataclass(frozen=True, slots=True)
-class DuckDBExecutablePlan:
-    """Executable DuckDB plan wrapper."""
+class DuckDBRelationPlan:
+    """Executable DuckDB relation plan wrapper."""
 
-    sql: str
-    temp_tables: tuple[str, ...]
-    warehouse: object
+    relation: DuckDBPyRelation
+    warehouse: Warehouse
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
         """Execute the plan and return a RecordBatchReader.
 
-        Parameters
-        ----------
-        batch_size
-            Max batch size per chunk in the reader.
+        Returns
+        -------
+        pyarrow.RecordBatchReader
+            Reader over the plan output.
+        """
+        return self.relation.fetch_record_batch(batch_size)
+
+    def to_table(self) -> pa.Table:
+        """Execute the plan and return an Arrow table.
+
+        Returns
+        -------
+        pyarrow.Table
+            Materialized Arrow table.
+        """
+        return self.relation.fetch_arrow_table()
+
+    def explain(self) -> QueryExplain:
+        """Return an EXPLAIN plan for the relation.
+
+        Returns
+        -------
+        QueryExplain
+            Explain payload with SQL and plan text.
+        """
+        return QueryExplain(sql=self.relation.sql_query(), plan=self.relation.explain())
+
+    @staticmethod
+    def cleanup() -> None:
+        """Release temporary resources after execution."""
+        return
+
+
+@dataclass(frozen=True, slots=True)
+class DuckDBSqlPlan:
+    """Executable DuckDB SQL plan wrapper."""
+
+    sql: str
+    temp_tables: tuple[str, ...]
+    warehouse: Warehouse
+
+    def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
+        """Execute the plan and return a RecordBatchReader.
 
         Returns
         -------
@@ -86,34 +124,26 @@ class DuckDBExecutablePlan:
         Returns
         -------
         QueryExplain
-            Explain payload containing SQL and plan text.
+            Explain payload with SQL and plan text.
         """
-        result = self._execute_sql(f"EXPLAIN {self.sql}")
-        plan_text = _format_explain_rows(result.fetchall())
+        relation = self.warehouse.gateway.con.sql(self.sql)
+        plan_text = relation.explain()
         return QueryExplain(sql=self.sql, plan=plan_text)
 
     def cleanup(self) -> None:
         """Release temporary resources after execution."""
-        con = getattr(self.warehouse, "gateway", None)
-        conn = getattr(con, "con", None) if con is not None else None
-        if conn is None:
-            return
-        cleanup_temp_tables_if_needed(con=conn, temp_tables=self.temp_tables)
+        cleanup_temp_tables_if_needed(
+            con=self.warehouse.gateway.con,
+            temp_tables=self.temp_tables,
+        )
 
     def _execute(self) -> DuckDBPyConnection:
-        return self._execute_sql(self.sql)
-
-    def _execute_sql(self, sql: str) -> DuckDBPyConnection:
-        gateway = getattr(self.warehouse, "gateway", None)
-        if gateway is None:
-            msg = "DuckDBExecutablePlan requires a warehouse gateway"
-            raise QueryBuilderError(msg)
-        return gateway.policy.execute_sql(sql)
+        return self.warehouse.gateway.policy.execute_sql(self.sql)
 
 
 @dataclass(frozen=True, slots=True)
 class DuckDBQueryEngine:
-    """DuckDB engine backed by the Ibis query builder."""
+    """DuckDB engine backed by relations with Ibis fallback."""
 
     name: str = "duckdb"
 
@@ -157,28 +187,111 @@ class DuckDBQueryEngine:
         if ctx.warehouse is None:
             msg = f"{self.name} engine requires a warehouse connection"
             raise QueryBuilderError(msg)
+        try:
+            relation = build_relation_plan(
+                con=ctx.warehouse.gateway.con,
+                spec=spec,
+                dataset_manifests=ctx.dataset_manifests,
+                column_types=spec.column_types,
+            )
+            return DuckDBRelationPlan(relation=relation, warehouse=ctx.warehouse)
+        except DuckDBRelationQueryBuilderError as exc:
+            relation_error = exc
+
+        sqlglot_error: Exception | None = None
+        try:
+            sql_expr = build_sqlglot_query(
+                spec=spec,
+                allowed_columns=spec.allowed_columns,
+                column_types=spec.column_types,
+            )
+            sql = render_sql_duckdb(sql_expr)
+            policy = _sql_policy_for_spec(spec, temp_tables=())
+            validated = _validate_sql(sql, policy=policy)
+        except SqlglotQueryBuilderError as exc:
+            sqlglot_error = exc
+        except UnsafeSqlError as exc:
+            raise QueryBuilderError(str(exc)) from exc
+        except (SqlglotError, TypeError, ValueError) as exc:
+            sqlglot_error = exc
+        else:
+            return DuckDBSqlPlan(
+                sql=validated,
+                temp_tables=(),
+                warehouse=ctx.warehouse,
+            )
+
         ibis_con = ibis_facade.backend(ctx.warehouse.gateway)
         bound = build_query(ibis_con=ibis_con, spec=spec, column_types=spec.column_types)
         try:
             sql = bound.compile_sql(ibis_con)
-            assert_select_perimeter(sql, policy=SqlIngressPolicy())
+            policy = _sql_policy_for_spec(spec, temp_tables=bound.temp_tables)
+            validated = _validate_sql(sql, policy=policy)
         except UnsafeSqlError as exc:
             cleanup_temp_tables_if_needed(
                 con=ctx.warehouse.gateway.con,
                 temp_tables=bound.temp_tables,
             )
             raise QueryBuilderError(str(exc)) from exc
-        except Exception:
+        except (IbisError, SqlglotError, TypeError, ValueError) as exc:
             cleanup_temp_tables_if_needed(
                 con=ctx.warehouse.gateway.con,
                 temp_tables=bound.temp_tables,
             )
-            raise
-        return DuckDBExecutablePlan(
-            sql=sql,
+            msg = f"DuckDB relation plan failed: {relation_error}; SQLGlot error: {sqlglot_error}"
+            raise QueryBuilderError(msg) from exc
+        return DuckDBSqlPlan(
+            sql=validated,
             temp_tables=bound.temp_tables,
             warehouse=ctx.warehouse,
         )
 
 
-__all__ = ["DuckDBExecutablePlan", "DuckDBQueryEngine", "cleanup_temp_tables_if_needed"]
+def _sql_policy_for_spec(
+    spec: SemanticQuerySpec, *, temp_tables: tuple[str, ...]
+) -> SqlIngressPolicy:
+    allowed_tables = {spec.table_key.lower(), *{name.lower() for name in temp_tables}}
+    return SqlIngressPolicy(
+        allowed_tables=frozenset(allowed_tables),
+        allowed_functions=_SEMANTIC_SQL_ALLOWED_FUNCTIONS,
+    )
+
+
+def _validate_sql(sql: str, *, policy: SqlIngressPolicy) -> str:
+    root = assert_select_perimeter(sql, policy=policy)
+    return render_sql_duckdb(root)
+
+
+_SEMANTIC_SQL_ALLOWED_FUNCTIONS = frozenset(
+    {
+        "abs",
+        "cast",
+        "coalesce",
+        "contains",
+        "date_add",
+        "date_diff",
+        "date_sub",
+        "date_trunc",
+        "floor",
+        "length",
+        "lower",
+        "ltrim",
+        "nullif",
+        "round",
+        "rtrim",
+        "starts_with",
+        "strftime",
+        "substr",
+        "substring",
+        "trim",
+        "upper",
+    }
+)
+
+
+__all__ = [
+    "DuckDBQueryEngine",
+    "DuckDBRelationPlan",
+    "DuckDBSqlPlan",
+    "cleanup_temp_tables_if_needed",
+]

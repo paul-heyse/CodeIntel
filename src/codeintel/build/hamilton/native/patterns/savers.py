@@ -65,6 +65,7 @@ class DatasetSaveSpec:
 
     table_key: str
     partition_columns: tuple[str, ...] = ()
+    collect_group: str | None = None
     output_role: OutputRole | None = None
     output_name: str | None = None
 
@@ -194,6 +195,7 @@ def save_dataset(
         target_name=_dep(value(context.target)),
         table_key=_dep(value(spec.table_key)),
         partition_columns=_dep(value(spec.partition_columns)),
+        collect_group=_dep(value(spec.collect_group)),
         output_role=_dep(value(spec.output_role)),
     )
 

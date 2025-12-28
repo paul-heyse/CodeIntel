@@ -57,7 +57,12 @@ class QueryLimiter:
         """
         return self._max
 
-    async def run(self, fn: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
+    async def run(
+        self,
+        fn: Callable[P, T],
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
         """Execute a synchronous function with concurrency limiting.
 
         Acquire the semaphore, then offload the function to a thread
@@ -78,7 +83,47 @@ class QueryLimiter:
             Result from the function.
         """
         async with self._sem:
-            return await to_thread.run_sync(lambda: fn(*args, **kwargs))
+            return await to_thread.run_sync(
+                lambda: fn(*args, **kwargs),
+                abandon_on_cancel=True,
+            )
+
+    async def run_with_timeout(
+        self,
+        fn: Callable[P, T],
+        timeout_s: float | None,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Execute a synchronous function with an optional timeout.
+
+        Parameters
+        ----------
+        fn
+            Synchronous function to execute.
+        timeout_s
+            Optional timeout in seconds (None disables timeout).
+        *args
+            Positional arguments for the function.
+        **kwargs
+            Keyword arguments for the function.
+
+        Returns
+        -------
+        T
+            Result from the function.
+        """
+        async with self._sem:
+            if timeout_s is None:
+                return await to_thread.run_sync(
+                    lambda: fn(*args, **kwargs),
+                    abandon_on_cancel=True,
+                )
+            with anyio.fail_after(timeout_s):
+                return await to_thread.run_sync(
+                    lambda: fn(*args, **kwargs),
+                    abandon_on_cancel=True,
+                )
 
     async def run_async(
         self,
@@ -106,6 +151,37 @@ class QueryLimiter:
         """
         async with self._sem:
             return await coro_fn(*args, **kwargs)
+
+    async def run_async_with_timeout(
+        self,
+        coro_fn: Callable[P, Awaitable[T]],
+        timeout_s: float | None,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> T:
+        """Execute an async function with an optional timeout.
+
+        Parameters
+        ----------
+        coro_fn
+            Async function to execute.
+        timeout_s
+            Optional timeout in seconds (None disables timeout).
+        *args
+            Positional arguments for the coroutine.
+        **kwargs
+            Keyword arguments for the coroutine.
+
+        Returns
+        -------
+        T
+            Result from the coroutine.
+        """
+        async with self._sem:
+            if timeout_s is None:
+                return await coro_fn(*args, **kwargs)
+            with anyio.fail_after(timeout_s):
+                return await coro_fn(*args, **kwargs)
 
 
 __all__ = ["QueryLimiter"]

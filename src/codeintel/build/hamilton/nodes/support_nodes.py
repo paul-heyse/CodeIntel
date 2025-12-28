@@ -21,7 +21,7 @@ from codeintel.build.hamilton.naming import (
 )
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagKey, TagSpec, TagValue
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularInput
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -168,13 +168,13 @@ def _decorate_query_nodes(
 
 
 @resolve_from_config(decorate_with=_decorate_query_nodes)
-def load_relation(env: BuildEnv, ref: DatasetRef) -> DuckDBRelation:
-    """Load a dataset as a DuckDB relation.
+def load_relation(env: BuildEnv, ref: DatasetRef) -> TabularInput:
+    """Load a dataset as a tabular input.
 
     Returns
     -------
-    DuckDBRelation
-        DuckDB relation for the dataset reference.
+    TabularInput
+        Tabular input for the dataset reference.
     """
     return load_dataset_relation(gateway=env.gateway, ref=ref)
 

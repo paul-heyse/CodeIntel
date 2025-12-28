@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from codeintel.serving.meta.models import ServingKernelMetaResponse
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
         SemanticCatalogResponse,
@@ -87,13 +88,17 @@ class ServingOperations:
         except KeyError as exc:
             raise SemanticViewNotFoundError(view_id) from exc
 
-    def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
+    def query(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> SemanticQueryResponse:
         """Execute a semantic query.
 
         Parameters
         ----------
         request
             Semantic query request.
+        cancel_check
+            Optional cancellation hook invoked during query execution.
 
         Returns
         -------
@@ -108,7 +113,7 @@ class ServingOperations:
             When the request is invalid.
         """
         try:
-            return self.kernel.query(request)
+            return self.kernel.query(request, cancel_check=cancel_check)
         except KeyError as exc:
             raise SemanticViewNotFoundError(request.view_id) from exc
         except ValueError as exc:
@@ -213,13 +218,17 @@ class ServingOperations:
         """
         return self.kernel.meta()
 
-    def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:
+    def export_rows(
+        self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[dict[str, object]]:
         """Yield export rows.
 
         Parameters
         ----------
         request
             Export request.
+        cancel_check
+            Optional cancellation hook invoked during export.
 
         Yields
         ------
@@ -238,7 +247,7 @@ class ServingOperations:
         if self._export_limit_exceeded(limit=request.limit):
             raise ExportTooLargeError(row_count=request.limit)
         try:
-            yield from self.kernel.export_rows(request)
+            yield from self.kernel.export_rows(request, cancel_check=cancel_check)
         except KeyError as exc:
             raise SemanticViewNotFoundError(request.view_id) from exc
         except ValueError as exc:
@@ -315,7 +324,13 @@ class ServingOperations:
                 details={"reason": str(exc)},
             ) from exc
 
-    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_parquet(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
         """Write Parquet export to disk and return row count.
 
         Parameters
@@ -324,6 +339,13 @@ class ServingOperations:
             Export request.
         output_path
             Output path for the Parquet file.
+        cancel_check
+            Optional cancellation hook invoked during export.
+
+        Returns
+        -------
+        int
+            Number of rows written.
 
         Raises
         ------
@@ -333,17 +355,13 @@ class ServingOperations:
             When the requested view cannot be resolved.
         CodeIntelDomainError
             When the request is invalid.
-
-        Returns
-        -------
-        int
-            Number of rows written.
-
         """
         if self._export_limit_exceeded(limit=request.limit):
             raise ExportTooLargeError(row_count=request.limit)
         try:
-            return self.kernel.export_to_parquet(request, output_path=output_path)
+            return self.kernel.export_to_parquet(
+                request, output_path=output_path, cancel_check=cancel_check
+            )
         except KeyError as exc:
             raise SemanticViewNotFoundError(request.view_id) from exc
         except ValueError as exc:
@@ -352,7 +370,13 @@ class ServingOperations:
                 details={"reason": str(exc)},
             ) from exc
 
-    def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_arrow_ipc(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
         """Write Arrow IPC export to disk and return row count.
 
         Parameters
@@ -361,6 +385,8 @@ class ServingOperations:
             Export request.
         output_path
             Output path for the Arrow IPC file.
+        cancel_check
+            Optional cancellation hook invoked during export.
 
         Returns
         -------
@@ -379,7 +405,9 @@ class ServingOperations:
         if self._export_limit_exceeded(limit=request.limit):
             raise ExportTooLargeError(row_count=request.limit)
         try:
-            return self.kernel.export_to_arrow_ipc(request, output_path=output_path)
+            return self.kernel.export_to_arrow_ipc(
+                request, output_path=output_path, cancel_check=cancel_check
+            )
         except KeyError as exc:
             raise SemanticViewNotFoundError(request.view_id) from exc
         except ValueError as exc:

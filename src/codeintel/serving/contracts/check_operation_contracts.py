@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator
 
     from codeintel.serving.db.manager import ServingDBManager
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest
     from codeintel.serving.semantic.models import SemanticExportRequest, SemanticQueryRequest
 
@@ -113,7 +114,10 @@ class _DummyKernel:
         )
 
     @staticmethod
-    def query(request: SemanticQueryRequest) -> SemanticQueryResponse:
+    def query(
+        request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> SemanticQueryResponse:
+        _ = cancel_check
         return SemanticQueryResponse(
             view_id=request.view_id,
             columns=[],
@@ -165,7 +169,10 @@ class _DummyKernel:
         )
 
     @staticmethod
-    def export_rows(request: SemanticExportRequest) -> Iterator[dict[str, object]]:
+    def export_rows(
+        request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[dict[str, object]]:
+        _ = cancel_check
         _ = request
         return iter(())
 
@@ -180,14 +187,26 @@ class _DummyKernel:
         return ("q_dummy", None)
 
     @staticmethod
-    def export_to_parquet(request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_parquet(
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
+        _ = cancel_check
         _ = request
         _ = output_path
         msg = "_DummyKernel does not support parquet exports"
         raise RuntimeError(msg)
 
     @staticmethod
-    def export_to_arrow_ipc(request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_arrow_ipc(
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
+        _ = cancel_check
         _ = request
         _ = output_path
         msg = "_DummyKernel does not support arrow exports"

@@ -20,9 +20,9 @@ from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.transforms.table_contract import TableContractSpec, table_contract
 from codeintel.build.tabular.duckdb_relation import relation_to_polars
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularInput
 
-_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, DuckDBRelation)
+_HAMILTON_TYPE_HINTS = (BuildEnv, DagCatalog, TargetRunRecord, TabularInput)
 
 MODULE_PROFILE_TARGET_NAME = "module_profile"
 MODULE_PROFILE_TABLE_KEY = "analytics.module_profile"
@@ -42,7 +42,7 @@ MODULE_PROFILE_CONTRACT = TableContractSpec(
 )
 
 
-def module_profile__base(q__core__modules: DuckDBRelation) -> pl.LazyFrame:
+def module_profile__base(q__core__modules: TabularInput) -> pl.LazyFrame:
     """Build a minimal module profile frame from core.modules.
 
     Parameters

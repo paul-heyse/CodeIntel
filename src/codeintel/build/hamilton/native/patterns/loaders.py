@@ -11,7 +11,7 @@ from codeintel.build.hamilton.io.duckdb_relation_adapter import load_dataset_rel
 from codeintel.build.hamilton.naming import dataset_node, to_node_name
 from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.tagging import tag_loader_query
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularInput
 
 
 def _default_loader_name(*, target: str, table_key: str) -> str:
@@ -31,7 +31,7 @@ def _loader_signature(*, dataset_param: str) -> inspect.Signature:
             annotation=DatasetRef,
         ),
     ]
-    return inspect.Signature(params, return_annotation=DuckDBRelation)
+    return inspect.Signature(params, return_annotation=TabularInput)
 
 
 def load_table(
@@ -40,18 +40,18 @@ def load_table(
     target: str,
     table_key: str,
     node_name: str | None = None,
-) -> Callable[..., DuckDBRelation]:
+) -> Callable[..., TabularInput]:
     """Build a tagged loader node for a dataset relation.
 
     Returns
     -------
-    Callable[..., DuckDBRelation]
-        Hamilton node that loads the dataset as a DuckDB relation.
+    Callable[..., TabularInput]
+        Hamilton node that loads the dataset as a tabular input.
     """
     resolved_node_name = node_name or _default_loader_name(target=target, table_key=table_key)
     dataset_param = dataset_node(table_key)
 
-    def loader(env: BuildEnv, **kwargs: object) -> DuckDBRelation:
+    def loader(env: BuildEnv, **kwargs: object) -> TabularInput:
         dataset_ref = kwargs.get(dataset_param)
         if not isinstance(dataset_ref, DatasetRef):
             msg = f"Expected DatasetRef for {dataset_param}, got {type(dataset_ref)}"
@@ -71,12 +71,12 @@ def load_query(
     table_key: str,
     sql: str,
     node_name: str | None = None,
-) -> Callable[..., DuckDBRelation]:
+) -> Callable[..., TabularInput]:
     """Build a tagged loader node for a SQL query with dataset dependencies.
 
     Returns
     -------
-    Callable[..., DuckDBRelation]
+    Callable[..., TabularInput]
         Hamilton node that executes the SQL using DuckDB.
 
     Raises
@@ -90,7 +90,7 @@ def load_query(
     resolved_node_name = node_name or _default_loader_name(target=target, table_key=table_key)
     dataset_param = dataset_node(table_key)
 
-    def loader(env: BuildEnv, **kwargs: object) -> DuckDBRelation:
+    def loader(env: BuildEnv, **kwargs: object) -> TabularInput:
         dataset_ref = kwargs.get(dataset_param)
         if not isinstance(dataset_ref, DatasetRef):
             msg = f"Expected DatasetRef for {dataset_param}, got {type(dataset_ref)}"

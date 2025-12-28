@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from codeintel.serving.mcp.protocols import SemanticKernelProtocol as SemanticKernel
     from codeintel.serving.mcp.protocols import ServingDBManagerProtocol
     from codeintel.serving.meta.models import ServingKernelMetaResponse
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.runtime import ServingRuntime
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
     from codeintel.serving.semantic.models import (
@@ -48,8 +49,10 @@ class _SlowExportKernel:
     def describe(self, view_id: str) -> SemanticViewDescriptionResponse:
         return self.inner.describe(view_id)
 
-    def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
-        return self.inner.query(request)
+    def query(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> SemanticQueryResponse:
+        return self.inner.query(request, cancel_check=cancel_check)
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
         return self.inner.explain(request)
@@ -60,8 +63,10 @@ class _SlowExportKernel:
     def meta(self) -> ServingKernelMetaResponse:
         return self.inner.meta()
 
-    def export_rows(self, request: SemanticExportRequest) -> Iterator[dict[str, object]]:
-        for index, row in enumerate(self.inner.export_rows(request)):
+    def export_rows(
+        self, request: SemanticExportRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[dict[str, object]]:
+        for index, row in enumerate(self.inner.export_rows(request, cancel_check=cancel_check)):
             if index > 0:
                 time.sleep(self.delay_s)
             yield row
@@ -72,11 +77,31 @@ class _SlowExportKernel:
     def export_fingerprint(self, request: SemanticExportRequest) -> tuple[str, str | None]:
         return self.inner.export_fingerprint(request)
 
-    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
-        return self.inner.export_to_parquet(request, output_path=output_path)
+    def export_to_parquet(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
+        return self.inner.export_to_parquet(
+            request,
+            output_path=output_path,
+            cancel_check=cancel_check,
+        )
 
-    def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
-        return self.inner.export_to_arrow_ipc(request, output_path=output_path)
+    def export_to_arrow_ipc(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
+        return self.inner.export_to_arrow_ipc(
+            request,
+            output_path=output_path,
+            cancel_check=cancel_check,
+        )
 
     def compile_query_sql(self, request: SemanticQueryRequest) -> str:
         return self.inner.compile_query_sql(request)

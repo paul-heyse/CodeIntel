@@ -32,6 +32,44 @@ class PolarsQueryBuilderError(ValueError):
     """Raised when Polars query construction fails."""
 
 
+def can_apply_query_spec(
+    *,
+    spec: SemanticQuerySpec,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None = None,
+) -> bool:
+    """Return True when the spec can be applied by the Polars query builder.
+
+    Parameters
+    ----------
+    spec
+        Semantic query spec to validate.
+    allowed_columns
+        Columns permitted for selection, filtering, and ordering.
+    column_types
+        Optional column type mapping for operator validation.
+
+    Returns
+    -------
+    bool
+        True when the spec can be satisfied without builder errors.
+    """
+    try:
+        _validate_pagination(limit=spec.limit, offset=spec.offset)
+        for col in spec.columns:
+            _require_allowed_column(column=col, allowed_columns=allowed_columns, ctx="select")
+        _build_filter_exprs(
+            filters=spec.filters,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+        if spec.order_by:
+            _order_by_columns(spec.order_by, allowed_columns=allowed_columns)
+    except PolarsQueryBuilderError:
+        return False
+    return True
+
+
 def apply_query_spec(
     lazyframe: PolarsLazyFrame,
     *,
@@ -40,6 +78,17 @@ def apply_query_spec(
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> PolarsLazyFrame:
     """Apply a semantic query spec to a Polars LazyFrame.
+
+    Parameters
+    ----------
+    lazyframe
+        Input Polars LazyFrame to filter and project.
+    spec
+        Semantic query spec with filters, selection, and pagination.
+    allowed_columns
+        Columns permitted for selection, filtering, and ordering.
+    column_types
+        Optional column type mapping for operator validation.
 
     Returns
     -------
@@ -241,4 +290,4 @@ def _order_by_descending(order_by: list[str]) -> list[bool]:
     return [item.startswith("-") for item in order_by]
 
 
-__all__ = ["PolarsQueryBuilderError", "apply_query_spec"]
+__all__ = ["PolarsQueryBuilderError", "apply_query_spec", "can_apply_query_spec"]

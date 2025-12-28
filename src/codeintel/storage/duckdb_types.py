@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import cast
+
 import duckdb
 
 DuckDBConnection = duckdb.DuckDBPyConnection
 DuckDBRelation = duckdb.DuckDBPyRelation
 DuckDBError = duckdb.Error
 ColumnExpression = duckdb.ColumnExpression
-ConstantExpression = duckdb.ConstantExpression
 Expression = duckdb.Expression
+ConstantExpression = cast("Callable[[object], Expression]", duckdb.ConstantExpression)
+FunctionExpression = cast("Callable[..., Expression]", duckdb.FunctionExpression)
 DuckDBCatalogException = duckdb.CatalogException
 DuckDBConnectionException = duckdb.ConnectionException
 DuckDBDatabaseError = duckdb.DatabaseError
@@ -30,4 +34,5 @@ __all__ = [
     "DuckDBProgrammingError",
     "DuckDBRelation",
     "Expression",
+    "FunctionExpression",
 ]

@@ -269,7 +269,7 @@ def open_inference_gateway(*, schema_provider: SchemaProvider) -> InferenceGatew
 
     This bypasses metadata bootstrap and contract catalog loading, providing a
     lightweight DuckDB connection with a policy backend seeded by the supplied
-    schema provider.
+    schema provider. Metadata DDL is still applied to ensure meta tables exist.
 
     Parameters
     ----------
@@ -290,6 +290,7 @@ def open_inference_gateway(*, schema_provider: SchemaProvider) -> InferenceGatew
         validate_schema=False,
     )
     attach_meta_database(con, config=config)
+    apply_metadata_ddl(con, catalog=META_CATALOG_NAME)
     return InferenceGateway(con=con, schema_provider=schema_provider, config=config)
 
 

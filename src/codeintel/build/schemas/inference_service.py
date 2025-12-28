@@ -22,8 +22,7 @@ from codeintel.build.hamilton.execution_options import BuildExecutionOptions
 from codeintel.build.providers import create_default_providers
 from codeintel.build.run_context import BuildRunContext
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
-from codeintel.build.tabular.duckdb_relation import relation_schema
-from codeintel.build.tabular.types import TabularInput
+from codeintel.build.tabular.types import InferableTabularInput, TabularInput
 from codeintel.config.models import ToolsConfig
 from codeintel.config.primitives import BuildPaths, SnapshotRef
 from codeintel.core.config.settings import (
@@ -38,7 +37,6 @@ from codeintel.core.schemas.arrow_polars import (
 )
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
-from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
@@ -86,10 +84,10 @@ def _looks_inferable_compute(fn: Callable[..., object]) -> bool:
 
 
 def _is_tabular_annotation(annotation: object) -> bool:
-    tabular_types = tuple(get_args(TabularInput))
-    if annotation in tabular_types:
+    inferable_types = tuple(get_args(InferableTabularInput))
+    if annotation in inferable_types or annotation in {InferableTabularInput, TabularInput}:
         return True
-    if isinstance(annotation, type) and issubclass(annotation, tabular_types):
+    if isinstance(annotation, type) and issubclass(annotation, inferable_types):
         return True
     origin = get_origin(annotation)
     if origin in {types.UnionType, typing.Union}:
@@ -100,8 +98,8 @@ def _is_tabular_annotation(annotation: object) -> bool:
         return any(
             token in annotation
             for token in (
-                "DuckDBRelation",
                 "TabularInput",
+                "InferableTabularInput",
                 "pa.Table",
                 "pyarrow.Table",
                 "pa.RecordBatchReader",
@@ -112,7 +110,21 @@ def _is_tabular_annotation(annotation: object) -> bool:
                 "polars.LazyFrame",
             )
         )
-    return any(token in str(annotation) for token in ("DuckDBRelation", "TabularInput"))
+    return any(
+        token in str(annotation)
+        for token in (
+            "TabularInput",
+            "InferableTabularInput",
+            "pa.Table",
+            "pyarrow.Table",
+            "pa.RecordBatchReader",
+            "pyarrow.RecordBatchReader",
+            "pl.DataFrame",
+            "pl.LazyFrame",
+            "polars.DataFrame",
+            "polars.LazyFrame",
+        )
+    )
 
 
 @contextmanager
@@ -300,7 +312,7 @@ def _infer_table_schema_for_compute(
     job: _ComputeInferenceJob,
 ) -> TableSchema:
     with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
-        harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
+        harness = MiniSeedHarness(schema_provider=declared_provider)
         overrides: dict[str, object] = dict(harness.build_inputs(set(job.qparams)))
         inputs: dict[str, object] = {}
         if job.requires_env:
@@ -317,7 +329,7 @@ def _infer_table_schema_for_compute(
             msg = f"{job.exec_name} returned None; expected tabular output"
             raise TypeError(msg)
         return _table_schema_from_tabular(
-            cast("TabularInput", expr_obj),
+            cast("InferableTabularInput", expr_obj),
             table_key=job.table_key,
         )
 
@@ -527,7 +539,7 @@ def _infer_job_schema(
         raise TypeError(msg)
 
     return _table_schema_from_tabular(
-        cast("TabularInput", expr_obj),
+        cast("InferableTabularInput", expr_obj),
         table_key=job.table_key,
     )
 
@@ -566,7 +578,7 @@ def infer_table_schemas(
     union_qparams = _union_qparams(jobs)
 
     with _schema_inference_gateway(schema_provider=declared_provider) as gateway:
-        harness = MiniSeedHarness(gateway=gateway, schema_provider=declared_provider)
+        harness = MiniSeedHarness(schema_provider=declared_provider)
         base_overrides: dict[str, object] = dict(harness.build_inputs(set(union_qparams)))
         env = _inference_env(
             gateway=gateway,
@@ -585,7 +597,7 @@ def infer_table_schemas(
     return inferred
 
 
-def _table_schema_from_tabular(obj: TabularInput, *, table_key: str) -> TableSchema:
+def _table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) -> TableSchema:
     if isinstance(obj, pa.Table):
         return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
     if isinstance(obj, pa.RecordBatchReader):
@@ -594,14 +606,11 @@ def _table_schema_from_tabular(obj: TabularInput, *, table_key: str) -> TableSch
         return table_schema_from_polars_dataframe(frame=obj, table_key=table_key)
     if isinstance(obj, pl.LazyFrame):
         return table_schema_from_polars_lazyframe(frame=obj, table_key=table_key)
-    if isinstance(obj, DuckDBRelation):
-        arrow_schema = relation_schema(obj)
-        return table_schema_from_arrow_schema(arrow_schema=arrow_schema, table_key=table_key)
     msg = f"Unsupported tabular output for schema inference: {type(obj)}"
     raise TypeError(msg)
 
 
-def table_schema_from_tabular(obj: TabularInput, *, table_key: str) -> TableSchema:
+def table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) -> TableSchema:
     """Return a TableSchema derived from a tabular output.
 
     Parameters

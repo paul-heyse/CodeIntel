@@ -29,4 +29,4 @@ def relation_from_table_key(
         Relation bound to the requested table or view.
     """
     table_ref = fully_qualified_table_ref(table_key)
-    return con.sql(f"SELECT * FROM {table_ref}")
+    return con.table(table_ref)

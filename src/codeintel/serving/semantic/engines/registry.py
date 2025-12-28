@@ -58,7 +58,7 @@ class QueryEngineRegistry:
         """
         normalized = preference.lower().strip() or "auto"
         if normalized == "auto":
-            return self._select_first(("polars", "duckdb"), spec=spec, ctx=ctx)
+            return self._select_first(self._auto_preference(spec=spec, ctx=ctx), spec=spec, ctx=ctx)
         engine = self.get(normalized)
         if engine is None:
             msg = f"Unknown query engine preference: {preference}"
@@ -111,6 +111,23 @@ class QueryEngineRegistry:
                 return engine
         msg = "No registered query engines can satisfy the request"
         raise EngineSelectionError(msg)
+
+    @staticmethod
+    def _auto_preference(*, spec: SemanticQuerySpec, ctx: EngineContext) -> tuple[str, ...]:
+        """Return engine ordering for auto mode based on capability hints.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Engine names ordered by preference.
+        """
+        try:
+            view = ctx.registry.by_id(spec.view_id)
+        except KeyError:
+            return ("polars", "duckdb")
+        if view.kind == "view" and ctx.view_registry.get(spec.table_key) is None:
+            return ("duckdb", "polars")
+        return ("polars", "duckdb")
 
 
 def build_engine_registry(engines: Iterable[QueryEngine]) -> QueryEngineRegistry:

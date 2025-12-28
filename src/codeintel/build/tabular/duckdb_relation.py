@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Literal, overload
+from typing import Literal, cast, overload
 
 import polars as pl
 import pyarrow as pa
@@ -110,7 +110,7 @@ def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
 
 @overload
 def relation_to_polars(
-    relation: TabularRelation,
+    relation: TabularInput,
     *,
     lazy: Literal[True] = True,
 ) -> pl.LazyFrame: ...
@@ -118,23 +118,23 @@ def relation_to_polars(
 
 @overload
 def relation_to_polars(
-    relation: TabularRelation,
+    relation: TabularInput,
     *,
     lazy: Literal[False],
 ) -> pl.DataFrame: ...
 
 
 def relation_to_polars(
-    relation: TabularRelation,
+    relation: TabularInput,
     *,
     lazy: bool = True,
 ) -> pl.DataFrame | pl.LazyFrame:
-    """Convert a relation to a Polars DataFrame/LazyFrame.
+    """Convert a tabular input to a Polars DataFrame/LazyFrame.
 
     Parameters
     ----------
     relation
-        DuckDB relation to convert.
+        Tabular input to convert.
     lazy
         When True, return a Polars LazyFrame.
 
@@ -143,7 +143,28 @@ def relation_to_polars(
     pl.DataFrame | pl.LazyFrame
         Polars object representing the relation.
     """
-    return relation.pl(lazy=lazy)
+    if isinstance(relation, pl.LazyFrame):
+        return relation if lazy else relation.collect()
+    if isinstance(relation, pl.DataFrame):
+        return relation.lazy() if lazy else relation
+    if isinstance(relation, pa.Table):
+        frame = _polars_from_arrow(relation)
+        return frame.lazy() if lazy else frame
+    if isinstance(relation, pa.RecordBatchReader):
+        reader = cast("pa.RecordBatchReader", relation)
+        table = reader.read_all()
+        frame = _polars_from_arrow(table)
+        return frame.lazy() if lazy else frame
+    table = relation.arrow()
+    frame = _polars_from_arrow(table)
+    return frame.lazy() if lazy else frame
+
+
+def _polars_from_arrow(table: pa.Table) -> pl.DataFrame:
+    frame = pl.from_arrow(table)
+    if isinstance(frame, pl.Series):
+        return frame.to_frame()
+    return frame
 
 
 __all__ = [

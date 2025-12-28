@@ -485,7 +485,6 @@ def _maybe_persist_schema_manifest(
             tag_query=runtime.tag_query,
         ),
         request=request,
-        con=env.gateway.con,
     )
     catalog_hash = fingerprint(manifest.to_json_obj())
     latest = load_latest_canonical_catalog_from_connection(

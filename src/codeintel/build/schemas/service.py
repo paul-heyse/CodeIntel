@@ -26,7 +26,7 @@ from codeintel.core.schemas.row_models import row_binding_for_table_schema
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from pandera import DataFrameSchema
+    from pandera.pandas import DataFrameSchema
 
     from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema

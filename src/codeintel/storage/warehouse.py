@@ -780,6 +780,7 @@ def _write_relation(
     row_count = _relation_row_count(relation, table_key=table_key)
     if row_count == 0:
         return 0
+
     def _apply_select(select_expr: exp.Expression) -> None:
         if options.mode == "upsert" and options.upsert is not None:
             gateway.policy.upsert_select(

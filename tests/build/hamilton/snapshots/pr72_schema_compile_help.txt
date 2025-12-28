@@ -37,7 +37,7 @@ Compile a deterministic schema manifest for selected targets.
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_OUTPUT,          │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_OUTPUT]          │
 │                              [default: (none)]                               │
-│ INCLUDE-VIEWS                Include DuckDB view schemas in the manifest (v2 │
+│ INCLUDE-VIEWS                Include view schemas in the manifest (v2 │
 │   --include-views            format). [env var:                              │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_INCLUDE_VIEWS,   │
 │                              CODEINTEL_BUILD_SCHEMA_COMPILE_INCLUDE_VIEWS]   │

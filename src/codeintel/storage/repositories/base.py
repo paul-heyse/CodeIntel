@@ -28,10 +28,14 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 import pyarrow as pa
-from duckdb import ColumnExpression, ConstantExpression, Expression
 
 from codeintel.core.repository import PagedResult
-from codeintel.storage.duckdb_types import DuckDBCatalogException
+from codeintel.storage.duckdb_types import (
+    ColumnExpression,
+    ConstantExpression,
+    DuckDBCatalogException,
+    Expression,
+)
 from codeintel.storage.query_results import records_from_arrow_table
 from codeintel.storage.validation.pandera_df import validate_df
 

@@ -39,7 +39,6 @@ if TYPE_CHECKING:
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
-    from codeintel.storage.gateway.protocol import DuckDBConnection
 
 _logger = logging.getLogger(__name__)
 
@@ -689,7 +688,6 @@ def compile_schema_manifest(
     provider: SchemaProvider,
     context: SchemaManifestContext,
     request: SchemaManifestRequest | None = None,
-    con: DuckDBConnection | None = None,
     batch_inferer: NativeBatchInferer | None = None,
 ) -> SchemaManifest:
     """Compile a schema manifest for a build target selection.
@@ -702,8 +700,6 @@ def compile_schema_manifest(
         Manifest compilation context (catalog, schema index, tag query).
     request
         Selection and options for manifest compilation. When None, uses defaults.
-    con
-        Optional DuckDB connection (ignored for view schema resolution).
     batch_inferer
         Optional callable used to batch-infer native table schemas in a single pass.
 
@@ -729,8 +725,6 @@ def compile_schema_manifest(
         ),
         batch_inferer=batch_inferer,
     )
-    if con is not None and req.include_views:
-        _logger.debug("Ignoring DuckDB connection for view schema resolution.")
     extras, version = _resolve_v2_extras(
         request=req,
         provider=active_provider,

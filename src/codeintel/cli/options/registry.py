@@ -466,7 +466,7 @@ BUILD_SCHEMA_OUTPUT = OptionSpec(
 BUILD_SCHEMA_INCLUDE_VIEWS = OptionSpec(
     arg_name="include_views",
     names=("--include-views",),
-    help="Include DuckDB view schemas in the manifest (v2 format).",
+    help="Include view schemas in the manifest (v2 format).",
     negative=(),
 )
 BUILD_SCHEMA_INCLUDE_ARTIFACTS = OptionSpec(

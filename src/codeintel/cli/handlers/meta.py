@@ -68,7 +68,6 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
                 tag_query=runtime_bundle.tag_query,
             ),
             request=request,
-            con=ctx.gateway.con,
         )
         run_id = new_run_id("meta")
         catalog_request = SchemaCatalogRequest(

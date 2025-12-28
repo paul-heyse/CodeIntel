@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import shutil
+import threading
 import types
 import typing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
 
@@ -72,6 +73,89 @@ _TABULAR_TYPES: tuple[type, ...] = (
 )
 
 _DEFAULT_PARTITION_COLUMNS: tuple[str, ...] = ("repo", "commit")
+_COLLECT_GROUP_TAG = "ci.collect_group"
+_COLLECT_ALL_WAIT_S = 0.5
+
+
+@dataclass(frozen=True)
+class _CollectGroupState:
+    expected_keys: tuple[str, ...]
+    frames: dict[str, pl.LazyFrame] = field(default_factory=dict)
+    results: dict[str, pl.DataFrame] = field(default_factory=dict)
+    condition: threading.Condition = field(default_factory=threading.Condition, repr=False)
+
+    def collect(
+        self,
+        *,
+        table_key: str,
+        frame: pl.LazyFrame,
+        allow_wait: bool,
+    ) -> pl.DataFrame:
+        with self.condition:
+            cached = self.results.get(table_key)
+            if cached is not None:
+                return cached
+            self.frames[table_key] = frame
+            if self._ready_to_collect():
+                return self._collect_all_locked(table_key)
+            if allow_wait:
+                self.condition.wait_for(self._ready_to_collect, timeout=_COLLECT_ALL_WAIT_S)
+                if self._ready_to_collect():
+                    return self._collect_all_locked(table_key)
+
+        collected = frame.collect()
+        with self.condition:
+            self.results[table_key] = collected
+            self.frames.pop(table_key, None)
+            self.condition.notify_all()
+        return collected
+
+    def _ready_to_collect(self) -> bool:
+        return bool(self.frames) and (
+            len(self.frames) + len(self.results) >= len(self.expected_keys)
+        )
+
+    def _collect_all_locked(self, table_key: str) -> pl.DataFrame:
+        pending_keys = [key for key in self.expected_keys if key in self.frames]
+        frames = [self.frames[key] for key in pending_keys]
+        if not frames:
+            cached = self.results.get(table_key)
+            if cached is None:
+                msg = f"Collect group missing frame for {table_key}"
+                raise RuntimeError(msg)
+            return cached
+        dataframes = [frames[0].collect()] if len(frames) == 1 else pl.collect_all(frames)
+        for key, data in zip(pending_keys, dataframes, strict=True):
+            self.results[key] = data
+            self.frames.pop(key, None)
+        self.condition.notify_all()
+        cached = self.results.get(table_key)
+        if cached is None:
+            msg = f"Collect group missing result for {table_key}"
+            raise RuntimeError(msg)
+        return cached
+
+
+_COLLECT_GROUPS: dict[str, _CollectGroupState] = {}
+_COLLECT_GROUP_LOCK = threading.Lock()
+
+
+@dataclass(frozen=True, slots=True)
+class _MaterializeContext:
+    env: BuildEnv
+    catalog: DagCatalog
+    table_key: str
+    target_name: str
+    partition_columns: tuple[str, ...]
+    collect_group: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DatasetWriteContext:
+    dataset_root: Path
+    table_key: str
+    snapshot_id: str
+    options: ArrowDatasetWriteOptions
 
 
 @dataclass(frozen=True)
@@ -83,6 +167,7 @@ class ArrowDatasetSaver(DataSaver):
     target_name: str
     table_key: str
     partition_columns: tuple[str, ...] = ()
+    collect_group: str | None = None
     output_role: Literal["contract", "internal"] | None = None
 
     @classmethod
@@ -159,11 +244,17 @@ class ArrowDatasetSaver(DataSaver):
                         error="Expected tabular data but received None",
                     )
                 else:
-                    manifest, manifest_path = _materialize_dataset(
+                    context = _MaterializeContext(
                         env=self.env,
+                        catalog=self.catalog,
                         table_key=self.table_key,
-                        data=cast("TabularData", data),
+                        target_name=self.target_name,
                         partition_columns=self.partition_columns,
+                        collect_group=self.collect_group,
+                    )
+                    manifest, manifest_path = _materialize_dataset(
+                        ctx=context,
+                        data=cast("TabularData", data),
                     )
                     row_count = manifest.row_count if manifest.row_count is not None else 0
                     result = succeeded_table_result(
@@ -193,37 +284,45 @@ class ArrowDatasetSaver(DataSaver):
 
 def _materialize_dataset(
     *,
-    env: BuildEnv,
-    table_key: str,
+    ctx: _MaterializeContext,
     data: TabularData,
-    partition_columns: tuple[str, ...],
 ) -> tuple[ArrowDatasetManifest, Path]:
-    table_schema = _table_schema_for_data(table_key=table_key, data=data)
+    table_schema = _table_schema_for_data(table_key=ctx.table_key, data=data)
     resolved_partitions = _resolve_partition_columns(
         table_schema=table_schema,
-        requested=partition_columns,
+        requested=ctx.partition_columns,
     )
     schema_hash_value = schema_hash(table_schema)
-    extras = _manifest_extras(table_schema=table_schema, table_key=table_key)
+    extras = _manifest_extras(table_schema=table_schema, table_key=ctx.table_key)
     options = ArrowDatasetWriteOptions(
         partition_columns=resolved_partitions,
         schema_hash=schema_hash_value,
         manifest_extras=extras,
     )
-    snapshot_id = _snapshot_id(env)
-    dataset_root = env.paths.dataset_root_dir
+    snapshot_id = _snapshot_id(ctx.env)
+    dataset_root = ctx.env.paths.dataset_root_dir
 
     if isinstance(data, pl.LazyFrame):
-        manifest = _write_lazyframe_dataset(
-            data=data,
+        collected_frame: pl.DataFrame | None = None
+        if ctx.collect_group is not None and resolved_partitions:
+            collected_frame = _collect_partitioned_frame(
+                ctx=ctx,
+                frame=data,
+            )
+        write_ctx = _DatasetWriteContext(
             dataset_root=dataset_root,
-            table_key=table_key,
+            table_key=ctx.table_key,
             snapshot_id=snapshot_id,
             options=options,
         )
+        manifest = _write_lazyframe_dataset(
+            ctx=write_ctx,
+            data=data,
+            collected_frame=collected_frame,
+        )
         manifest_path = dataset_manifest_path(
             dataset_root=dataset_root,
-            table_key=table_key,
+            table_key=ctx.table_key,
             snapshot_id=snapshot_id,
         )
         return manifest, manifest_path
@@ -231,14 +330,14 @@ def _materialize_dataset(
     arrow_input = _coerce_arrow_input(data)
     manifest = write_dataset(
         dataset_root=dataset_root,
-        table_key=table_key,
+        table_key=ctx.table_key,
         snapshot_id=snapshot_id,
         data=arrow_input,
         options=options,
     )
     manifest_path = dataset_manifest_path(
         dataset_root=dataset_root,
-        table_key=table_key,
+        table_key=ctx.table_key,
         snapshot_id=snapshot_id,
     )
     return manifest, manifest_path
@@ -246,21 +345,19 @@ def _materialize_dataset(
 
 def _write_lazyframe_dataset(
     *,
+    ctx: _DatasetWriteContext,
     data: pl.LazyFrame,
-    dataset_root: Path,
-    table_key: str,
-    snapshot_id: str,
-    options: ArrowDatasetWriteOptions,
+    collected_frame: pl.DataFrame | None = None,
 ) -> ArrowDatasetManifest:
     snapshot_dir = dataset_snapshot_dir(
-        dataset_root,
-        table_key=table_key,
-        snapshot_id=snapshot_id,
+        ctx.dataset_root,
+        table_key=ctx.table_key,
+        snapshot_id=ctx.snapshot_id,
     )
-    _prepare_snapshot_dir(snapshot_dir, behavior=options.existing_data_behavior)
-    partition_by = list(options.partition_columns) if options.partition_columns else None
+    _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
+    partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
     if partition_by:
-        frame = data.collect()
+        frame = collected_frame or data.collect()
         frame.write_parquet(
             str(snapshot_dir),
             partition_by=partition_by,
@@ -270,25 +367,93 @@ def _write_lazyframe_dataset(
         data.sink_parquet(str(snapshot_dir / "data.parquet"))
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
     request = ArrowDatasetManifestRequest(
-        table_key=table_key,
-        snapshot_id=snapshot_id,
-        partition_columns=options.partition_columns,
-        schema_hash=options.schema_hash,
-        extras=options.manifest_extras,
+        table_key=ctx.table_key,
+        snapshot_id=ctx.snapshot_id,
+        partition_columns=ctx.options.partition_columns,
+        schema_hash=ctx.options.schema_hash,
+        extras=ctx.options.manifest_extras,
     )
     manifest = build_dataset_manifest(
         dataset=dataset,
         snapshot_dir=snapshot_dir,
         request=request,
     )
-    if options.persist_manifest:
+    if ctx.options.persist_manifest:
         path = dataset_manifest_path(
-            dataset_root=dataset_root,
-            table_key=table_key,
-            snapshot_id=snapshot_id,
+            dataset_root=ctx.dataset_root,
+            table_key=ctx.table_key,
+            snapshot_id=ctx.snapshot_id,
         )
         write_dataset_manifest(path, manifest)
     return manifest
+
+
+def _collect_partitioned_frame(
+    *,
+    ctx: _MaterializeContext,
+    frame: pl.LazyFrame,
+) -> pl.DataFrame:
+    if ctx.collect_group is None:
+        return frame.collect()
+    expected_keys = _collect_group_members(
+        catalog=ctx.catalog,
+        target_name=ctx.target_name,
+        collect_group=ctx.collect_group,
+    )
+    if ctx.table_key not in expected_keys or len(expected_keys) <= 1:
+        return frame.collect()
+    allow_wait = _allow_collect_wait(env=ctx.env, expected_count=len(expected_keys))
+    state = _collect_group_state(
+        group_key=_collect_group_key(
+            env=ctx.env,
+            target_name=ctx.target_name,
+            collect_group=ctx.collect_group,
+        ),
+        expected_keys=expected_keys,
+    )
+    return state.collect(table_key=ctx.table_key, frame=frame, allow_wait=allow_wait)
+
+
+def _collect_group_members(
+    *,
+    catalog: DagCatalog,
+    target_name: str,
+    collect_group: str,
+) -> tuple[str, ...]:
+    outputs = catalog.table_outputs_by_target.get(target_name, ())
+    members = [
+        output.key
+        for output in outputs
+        if output.tags.get(_COLLECT_GROUP_TAG) == collect_group
+    ]
+    return tuple(sorted(members))
+
+
+def _allow_collect_wait(*, env: BuildEnv, expected_count: int) -> bool:
+    if expected_count <= 1:
+        return False
+    backend = env.execution_settings.parallel_backend.lower()
+    if backend == "sequential":
+        return False
+    max_workers = env.execution_settings.max_workers
+    return max_workers is None or max_workers >= expected_count
+
+
+def _collect_group_key(
+    *, env: BuildEnv, target_name: str, collect_group: str
+) -> str:
+    return f"{env.snapshot.repo}:{env.snapshot.commit}:{target_name}:{collect_group}"
+
+
+def _collect_group_state(
+    *, group_key: str, expected_keys: tuple[str, ...]
+) -> _CollectGroupState:
+    with _COLLECT_GROUP_LOCK:
+        state = _COLLECT_GROUPS.get(group_key)
+        if state is None:
+            state = _CollectGroupState(expected_keys=expected_keys)
+            _COLLECT_GROUPS[group_key] = state
+        return state
 
 
 def _prepare_snapshot_dir(snapshot_dir: Path, *, behavior: object) -> None:

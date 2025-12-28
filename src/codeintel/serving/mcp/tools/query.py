@@ -26,6 +26,7 @@ from codeintel.serving.mcp.tools.shared import (
     try_sample_summary,
     validate_semantic_query_request,
 )
+from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.models import SemanticQueryRequest
 
@@ -51,7 +52,13 @@ class SemanticQueryHandler:
         start = time.perf_counter()
         await ctx.info(f"Querying view: {request.view_id}")
         await maybe_report_progress(ctx, settings=self.settings, progress=10, total=100)
-        result = await self.limiter.run(self.ops.query, request)
+        cancel_token = CancelToken.from_timeout(self.settings.query_timeout_s)
+        result = await self.limiter.run_with_timeout(
+            self.ops.query,
+            self.settings.query_timeout_s,
+            request,
+            cancel_check=cancel_token.raise_if_cancelled,
+        )
         await maybe_report_progress(ctx, settings=self.settings, progress=100, total=100)
 
         row_count = len(result.rows)

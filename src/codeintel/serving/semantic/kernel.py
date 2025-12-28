@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest
     from codeintel.serving.semantic.inventory import SchemaInventory
     from codeintel.serving.semantic.models import (
@@ -94,6 +95,11 @@ def _sanitize_float_nan(value: object) -> object:
 
 def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     return [{k: _sanitize_float_nan(v) for k, v in row.items()} for row in rows]
+
+
+def _raise_if_cancelled(cancel_check: CancelCheck | None) -> None:
+    if cancel_check is not None:
+        cancel_check()
 
 
 @dataclass
@@ -222,6 +228,19 @@ class SemanticQueryKernel:
 
         return _sanitize_rows(table.to_pylist())
 
+    def _rows_from_reader(
+        self,
+        reader: pa.RecordBatchReader,
+        *,
+        cancel_check: CancelCheck | None,
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for batch in reader:
+            _raise_if_cancelled(cancel_check)
+            table = pa.Table.from_batches([batch], schema=reader.schema)
+            rows.extend(self._rows_from_table(table))
+        return rows
+
     def _execute_dbapi_query(
         self, *, warehouse: Warehouse, query: DbApiQuery
     ) -> list[dict[str, object]]:
@@ -237,6 +256,7 @@ class SemanticQueryKernel:
         *,
         spec: SemanticQuerySpec,
         ctx: EngineContext,
+        cancel_check: CancelCheck | None,
     ) -> tuple[list[dict[str, object]], QueryExplain]:
         engine = self._engine_registry.select(
             preference=self.settings.query_engine,
@@ -245,8 +265,13 @@ class SemanticQueryKernel:
         )
         plan = engine.compile(spec, ctx=ctx)
         try:
-            table = plan.to_table()
-            rows = self._rows_from_table(table)
+            _raise_if_cancelled(cancel_check)
+            if cancel_check is None:
+                table = plan.to_table()
+                rows = self._rows_from_table(table)
+            else:
+                reader = plan.to_reader(batch_size=self.settings.export_batch_size)
+                rows = self._rows_from_reader(reader, cancel_check=cancel_check)
             explain = plan.explain()
         finally:
             plan.cleanup()
@@ -359,13 +384,17 @@ class SemanticQueryKernel:
             lineage=lineage,
         )
 
-    def query(self, request: SemanticQueryRequest) -> SemanticQueryResponse:
+    def query(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> SemanticQueryResponse:
         """Execute a semantic view query.
 
         Parameters
         ----------
         request
             Query request with filters, selection, and pagination.
+        cancel_check
+            Optional cancellation hook invoked during query execution.
 
         Returns
         -------
@@ -383,7 +412,11 @@ class SemanticQueryKernel:
                 context=self._planner.snapshot_context(pointer),
                 warehouse=warehouse,
             )
-            rows, explain = self._execute_engine_plan(spec=spec, ctx=engine_ctx)
+            rows, explain = self._execute_engine_plan(
+                spec=spec,
+                ctx=engine_ctx,
+                cancel_check=cancel_check,
+            )
 
         truncated = len(rows) > effective_limit
         if truncated:
@@ -579,7 +612,12 @@ class SemanticQueryKernel:
             inventory=resolved.inventory,
         )
 
-    def export_rows(self, request: SemanticExportRequest) -> Generator[dict[str, object]]:
+    def export_rows(
+        self,
+        request: SemanticExportRequest,
+        *,
+        cancel_check: CancelCheck | None = None,
+    ) -> Generator[dict[str, object]]:
         """Yield rows for streaming export (memory-efficient).
 
         Unlike query(), this method yields rows one at a time to support
@@ -589,6 +627,8 @@ class SemanticQueryKernel:
         ----------
         request
             Export request with filters, selection, and pagination.
+        cancel_check
+            Optional cancellation hook invoked during export.
 
         Yields
         ------
@@ -614,8 +654,10 @@ class SemanticQueryKernel:
             )
             plan = engine.compile(spec, ctx=engine_ctx)
             try:
+                _raise_if_cancelled(cancel_check)
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 for batch in reader:
+                    _raise_if_cancelled(cancel_check)
                     payload = batch.to_pydict()
                     row_count = batch.num_rows
                     for idx in range(row_count):
@@ -659,8 +701,23 @@ class SemanticQueryKernel:
             finally:
                 plan.cleanup()
 
-    def export_to_parquet(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_parquet(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
         """Write an export result to a Parquet file.
+
+        Parameters
+        ----------
+        request
+            Export request with filters, selection, and pagination.
+        output_path
+            Output path for the Parquet file.
+        cancel_check
+            Optional cancellation hook invoked during export.
 
         Returns
         -------
@@ -686,11 +743,13 @@ class SemanticQueryKernel:
             )
             plan = engine.compile(spec, ctx=engine_ctx)
             try:
+                _raise_if_cancelled(cancel_check)
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 rows_written = 0
                 writer = pq.ParquetWriter(str(output_path), reader.schema)
                 try:
                     for batch in reader:
+                        _raise_if_cancelled(cancel_check)
                         rows_written += batch.num_rows
                         writer.write_table(pa.Table.from_batches([batch], schema=reader.schema))
                 finally:
@@ -699,8 +758,23 @@ class SemanticQueryKernel:
             finally:
                 plan.cleanup()
 
-    def export_to_arrow_ipc(self, request: SemanticExportRequest, *, output_path: Path) -> int:
+    def export_to_arrow_ipc(
+        self,
+        request: SemanticExportRequest,
+        *,
+        output_path: Path,
+        cancel_check: CancelCheck | None = None,
+    ) -> int:
         """Write an export result to an Arrow IPC file.
+
+        Parameters
+        ----------
+        request
+            Export request with filters, selection, and pagination.
+        output_path
+            Output path for the Arrow IPC file.
+        cancel_check
+            Optional cancellation hook invoked during export.
 
         Returns
         -------
@@ -726,6 +800,7 @@ class SemanticQueryKernel:
             )
             plan = engine.compile(spec, ctx=engine_ctx)
             try:
+                _raise_if_cancelled(cancel_check)
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
                 rows_written = 0
                 with (
@@ -736,6 +811,7 @@ class SemanticQueryKernel:
                     ) as writer,
                 ):
                     for batch in reader:
+                        _raise_if_cancelled(cancel_check)
                         rows_written += batch.num_rows
                         writer.write_batch(batch)
                 return rows_written

@@ -18,6 +18,7 @@ _BINARY_EXPORT_FORMATS: set[str] = {"arrow", "parquet"}
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.operations.ops import ServingOperations
     from codeintel.serving.semantic.models import SemanticExportRequest
 
@@ -94,6 +95,7 @@ def write_export_file(
     request: SemanticExportRequest,
     *,
     output_path: Path,
+    cancel_check: CancelCheck | None = None,
 ) -> int:
     """Write an export payload to a file for binary formats.
 
@@ -105,6 +107,8 @@ def write_export_file(
         Export request payload.
     output_path
         Path to write the file to.
+    cancel_check
+        Optional cancellation hook invoked during export.
 
     Returns
     -------
@@ -118,9 +122,17 @@ def write_export_file(
     """
     normalized = normalize_export_format(request.format)
     if normalized == "parquet":
-        return ops.export_to_parquet(request, output_path=output_path)
+        return ops.export_to_parquet(
+            request,
+            output_path=output_path,
+            cancel_check=cancel_check,
+        )
     if normalized == "arrow":
-        return ops.export_to_arrow_ipc(request, output_path=output_path)
+        return ops.export_to_arrow_ipc(
+            request,
+            output_path=output_path,
+            cancel_check=cancel_check,
+        )
     msg = f"Unsupported file export format: {request.format}"
     raise ValueError(msg)
 

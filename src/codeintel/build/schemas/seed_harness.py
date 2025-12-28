@@ -1,7 +1,7 @@
 """Mini seed harness for deterministic schema compilation.
 
-The harness creates empty upstream tables required for compiling relation-native
-Hamilton compute nodes, then produces DuckDB relations that reference them.
+The harness creates empty Arrow tables from declared schemas to seed q__ inputs
+for schema inference without relying on DuckDB.
 """
 
 from __future__ import annotations
@@ -10,12 +10,15 @@ import inspect
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
+
+from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from types import ModuleType
 
     from codeintel.core.schemas.provider import SchemaProvider
-    from codeintel.storage.gateway.protocol import DuckDBRelation, MinimalGateway
 
 
 def qparam_to_table_key(qparam: str) -> str:
@@ -89,20 +92,27 @@ def extract_qparams_for_target_module(target: str, module: ModuleType) -> set[st
 
 @dataclass
 class MiniSeedHarness:
-    """Seed upstream empty tables and build q__ relation inputs for compute execution."""
+    """Seed upstream empty tables and build q__ Arrow inputs for compute execution."""
 
-    gateway: MinimalGateway
     schema_provider: SchemaProvider
-    _seeded: set[str] = field(default_factory=set)
+    _seeded: dict[str, pa.Table] = field(default_factory=dict)
 
-    def ensure_seeded_table(self, table_key: str) -> None:
-        """Create an empty table using the provider's schema if needed."""
-        if table_key in self._seeded:
-            return
+    def seed_table(self, table_key: str) -> pa.Table:
+        """Create and cache an empty Arrow table for the declared schema.
 
-        _ = self.schema_provider.require_table_schema(table_key)
-        self.gateway.policy.ensure_table(table_key)
-        self._seeded.add(table_key)
+        Returns
+        -------
+        pa.Table
+            Empty Arrow table for the requested schema.
+        """
+        cached = self._seeded.get(table_key)
+        if cached is not None:
+            return cached
+        table_schema = self.schema_provider.require_table_schema(table_key)
+        arrow_schema = arrow_schema_from_table_schema(table_schema=table_schema)
+        table = pa.Table.from_batches([], schema=arrow_schema)
+        self._seeded[table_key] = table
+        return table
 
     def seeded_table_keys(self) -> tuple[str, ...]:
         """Return seeded table keys in deterministic order.
@@ -114,8 +124,8 @@ class MiniSeedHarness:
         """
         return tuple(sorted(self._seeded))
 
-    def relation_input(self, qparam: str) -> DuckDBRelation:
-        """Return a relation for a q__ parameter.
+    def seed_input(self, qparam: str) -> pa.Table:
+        """Return an empty Arrow table for a q__ parameter.
 
         Parameters
         ----------
@@ -124,14 +134,13 @@ class MiniSeedHarness:
 
         Returns
         -------
-        DuckDBRelation
-            Relation for the referenced upstream table.
+        pa.Table
+            Empty Arrow table for the referenced upstream schema.
         """
         table_key = qparam_to_table_key(qparam)
-        self.ensure_seeded_table(table_key)
-        return self.gateway.relation_from_table_key(table_key)
+        return self.seed_table(table_key)
 
-    def build_inputs(self, qparams: set[str]) -> Mapping[str, DuckDBRelation]:
+    def build_inputs(self, qparams: set[str]) -> Mapping[str, pa.Table]:
         """Build a deterministic mapping of q__ inputs for compute execution.
 
         Parameters
@@ -141,10 +150,10 @@ class MiniSeedHarness:
 
         Returns
         -------
-        Mapping[str, DuckDBRelation]
-            Mapping from q__ parameter name to DuckDB relations.
+        Mapping[str, pa.Table]
+            Mapping from q__ parameter name to empty Arrow tables.
         """
-        return {q: self.relation_input(q) for q in sorted(qparams)}
+        return {q: self.seed_input(q) for q in sorted(qparams)}
 
 
 __all__ = [

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.native.patterns.loaders import load_query, load_table
-from codeintel.storage.gateway import DuckDBRelation
+from codeintel.build.tabular.types import TabularInput
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -23,13 +23,13 @@ class DataAccessSpec:
     node_name: str | None = None
 
 
-def load_table_spec(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
+def load_table_spec(spec: DataAccessSpec) -> Callable[..., TabularInput]:
     """Build a loader node from a table access spec.
 
     Returns
     -------
-    Callable[..., DuckDBRelation]
-        Loader function that returns a DuckDB relation.
+    Callable[..., TabularInput]
+        Loader function that returns a tabular input.
 
     Raises
     ------
@@ -47,13 +47,13 @@ def load_table_spec(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
     )
 
 
-def load_query_spec(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
+def load_query_spec(spec: DataAccessSpec) -> Callable[..., TabularInput]:
     """Build a loader node from a query access spec.
 
     Returns
     -------
-    Callable[..., DuckDBRelation]
-        Loader function that returns a DuckDB relation.
+    Callable[..., TabularInput]
+        Loader function that returns a tabular input.
 
     Raises
     ------
@@ -72,13 +72,13 @@ def load_query_spec(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
     )
 
 
-def load_access(spec: DataAccessSpec) -> Callable[..., DuckDBRelation]:
+def load_access(spec: DataAccessSpec) -> Callable[..., TabularInput]:
     """Build a loader node from a table/query access spec.
 
     Returns
     -------
-    Callable[..., DuckDBRelation]
-        Loader function that returns a DuckDB relation.
+    Callable[..., TabularInput]
+        Loader function that returns a tabular input.
     """
     if spec.sql:
         return load_query_spec(spec)

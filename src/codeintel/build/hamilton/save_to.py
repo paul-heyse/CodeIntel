@@ -39,6 +39,7 @@ _METADATA_TAGS: dict[str, str] = {
     "parquet_filename": "ci.parquet_filename",
     "dataset_owner": "ci.dataset_owner",
     "validation_profile": "ci.validation_profile",
+    "collect_group": "ci.collect_group",
 }
 
 _VALIDATION_PROFILES: frozenset[str] = frozenset({"strict", "lenient"})
