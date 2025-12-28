@@ -21,8 +21,12 @@ from codeintel.build.serving.publisher import (
     PublishServingSnapshotRequest,
     publish_serving_snapshot,
 )
+from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.contracts.schema_provider import get_schema_provider
+from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
+from codeintel.storage.datasets.manifests import dataset_manifest_path
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from tests._helpers.assertions import (
@@ -32,7 +36,7 @@ from tests._helpers.assertions import (
     expect_true,
 )
 from tests._helpers.harnesses.serving_harness import ServingTargetHarness
-from tests._helpers.schemas import ensure_production_schemas
+from tests._helpers.schemas import ensure_production_schemas, ensure_storage_contract_catalog
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -77,6 +81,29 @@ def _publish_snapshot(
         con.execute("CREATE TABLE t (id INTEGER)")
         con.execute("INSERT INTO t VALUES (1)")
         _seed_modules(con, repo=repo, commit=commit)
+        ensure_storage_contract_catalog()
+        schema_provider = get_schema_provider()
+        modules_schema = schema_provider.require_table_schema("core.modules")
+        modules_hash = compute_schema_hash(modules_schema)
+        modules_entry = modules_schema.to_json_obj()
+        modules_entry["schema_hash"] = modules_hash
+
+        dataset_root = tmp_path / "datasets"
+        dataset_root.mkdir(parents=True, exist_ok=True)
+        arrow_table = con.execute("SELECT * FROM core.modules").fetch_arrow_table()
+        write_dataset(
+            dataset_root=dataset_root,
+            table_key="core.modules",
+            snapshot_id=commit,
+            data=arrow_table,
+            options=ArrowDatasetWriteOptions(schema_hash=modules_hash),
+        )
+        manifest_path = dataset_manifest_path(
+            dataset_root=dataset_root,
+            table_key="core.modules",
+            snapshot_id=commit,
+        )
+        dataset_manifest_paths = (manifest_path,)
 
         gateway = _StubGateway(
             config=StorageConfig(db_path=db_path, repo=repo, commit=commit),
@@ -87,8 +114,18 @@ def _publish_snapshot(
         schema_manifest = tmp_path / "schema_manifest.json"
         buildspec = tmp_path / "buildspec.json"
         _write_text(semantic_registry, {"version": "v1", "views": []})
-        _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
-        _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+        _write_text(
+            schema_manifest,
+            {"version": "v2", "tables": [modules_entry], "views": [], "artifacts": []},
+        )
+        _write_text(
+            buildspec,
+            {
+                "spec_version": 1,
+                "targets": [],
+                "datasets": [{"table_key": "core.modules", "schema_hash": modules_hash}],
+            },
+        )
 
         serve_dir = tmp_path / "serve"
         manifest = publish_serving_snapshot(
@@ -99,6 +136,7 @@ def _publish_snapshot(
                 semantic_registry_path=semantic_registry,
                 schema_manifest_path=schema_manifest,
                 buildspec_path=buildspec,
+                dataset_manifest_paths=dataset_manifest_paths,
                 keep_last=keep_last,
             ),
         )
@@ -123,13 +161,17 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
     expect_true((snap_dir / "semantic_registry.json").exists())
     expect_true((snap_dir / "schema_manifest.json").exists())
     expect_true((snap_dir / "buildspec.json").exists())
+    expect_true((snap_dir / "snapshot_manifest.json").exists())
     expect_true((serve_dir / "current.json").exists())
 
     expect_equal(pointer.run_id, "run-1")
     expect_equal(pointer.repo, "demo/repo")
     expect_equal(pointer.commit, "c1")
+    expect_equal(pointer.snapshot_root, snap_dir)
     expect_equal(pointer.semantic_layer_version, manifest.semantic_layer_version)
     expect_true(pointer.buildspec_path.exists())
+    expect_true(pointer.snapshot_manifest_path.exists())
+    expect_true("core.modules" in manifest.datasets)
 
     snap_con = duckdb.connect(pointer.db_path, read_only=True)
     try:
@@ -184,6 +226,28 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     con = duckdb.connect(str(db_path))
     con.execute("CREATE TABLE t (id INTEGER)")
     _seed_modules(con, repo="demo/repo", commit="c1")
+    ensure_storage_contract_catalog()
+    schema_provider = get_schema_provider()
+    modules_schema = schema_provider.require_table_schema("core.modules")
+    modules_hash = compute_schema_hash(modules_schema)
+    modules_entry = modules_schema.to_json_obj()
+    modules_entry["schema_hash"] = modules_hash
+    dataset_root = tmp_path / "datasets"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    arrow_table = con.execute("SELECT * FROM core.modules").fetch_arrow_table()
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id="c1",
+        data=arrow_table,
+        options=ArrowDatasetWriteOptions(schema_hash=modules_hash),
+    )
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id="c1",
+    )
+    dataset_manifest_paths = (manifest_path,)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -193,8 +257,18 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
     schema_manifest = tmp_path / "schema_manifest.json"
     buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
-    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
-    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+    _write_text(
+        schema_manifest,
+        {"version": "v2", "tables": [modules_entry], "views": [], "artifacts": []},
+    )
+    _write_text(
+        buildspec,
+        {
+            "spec_version": 1,
+            "targets": [],
+            "datasets": [{"table_key": "core.modules", "schema_hash": modules_hash}],
+        },
+    )
 
     serve_dir = tmp_path / "serve"
     publish_serving_snapshot(
@@ -205,6 +279,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
             semantic_registry_path=semantic_registry,
             schema_manifest_path=schema_manifest,
             buildspec_path=buildspec,
+            dataset_manifest_paths=dataset_manifest_paths,
             keep_last=1,
         ),
     )
@@ -216,6 +291,7 @@ def test_publish_serving_snapshot_retention(tmp_path: Path) -> None:
             semantic_registry_path=semantic_registry,
             schema_manifest_path=schema_manifest,
             buildspec_path=buildspec,
+            dataset_manifest_paths=dataset_manifest_paths,
             keep_last=1,
         ),
     )
@@ -241,6 +317,28 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
         )
         """
     )
+    ensure_storage_contract_catalog()
+    schema_provider = get_schema_provider()
+    modules_schema = schema_provider.require_table_schema("core.modules")
+    modules_hash = compute_schema_hash(modules_schema)
+    modules_entry = modules_schema.to_json_obj()
+    modules_entry["schema_hash"] = modules_hash
+    dataset_root = tmp_path / "datasets"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    arrow_table = con.execute("SELECT * FROM core.modules").fetch_arrow_table()
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id="c1",
+        data=arrow_table,
+        options=ArrowDatasetWriteOptions(schema_hash=modules_hash),
+    )
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id="c1",
+    )
+    dataset_manifest_paths = (manifest_path,)
 
     gateway = _StubGateway(
         config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
@@ -250,8 +348,18 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
     schema_manifest = tmp_path / "schema_manifest.json"
     buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
-    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
-    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+    _write_text(
+        schema_manifest,
+        {"version": "v2", "tables": [modules_entry], "views": [], "artifacts": []},
+    )
+    _write_text(
+        buildspec,
+        {
+            "spec_version": 1,
+            "targets": [],
+            "datasets": [{"table_key": "core.modules", "schema_hash": modules_hash}],
+        },
+    )
 
     serve_dir = tmp_path / "serve"
     with pytest.raises(RuntimeError, match="Search index build failed"):
@@ -263,6 +371,7 @@ def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -> 
                 semantic_registry_path=semantic_registry,
                 schema_manifest_path=schema_manifest,
                 buildspec_path=buildspec,
+                dataset_manifest_paths=dataset_manifest_paths,
                 keep_last=10,
             ),
         )
@@ -274,6 +383,28 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
     db_path = tmp_path / "build.duckdb"
     con = duckdb.connect(str(db_path))
     _seed_modules(con, repo="demo/repo", commit="c1")
+    ensure_storage_contract_catalog()
+    schema_provider = get_schema_provider()
+    modules_schema = schema_provider.require_table_schema("core.modules")
+    modules_hash = compute_schema_hash(modules_schema)
+    modules_entry = modules_schema.to_json_obj()
+    modules_entry["schema_hash"] = modules_hash
+    dataset_root = tmp_path / "datasets"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    arrow_table = con.execute("SELECT * FROM core.modules").fetch_arrow_table()
+    write_dataset(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id="c1",
+        data=arrow_table,
+        options=ArrowDatasetWriteOptions(schema_hash=modules_hash),
+    )
+    manifest_path = dataset_manifest_path(
+        dataset_root=dataset_root,
+        table_key="core.modules",
+        snapshot_id="c1",
+    )
+    dataset_manifest_paths = (manifest_path,)
     edges_ref = meta_table_ref("metadata.derived_lineage_edges")
     columns_ref = meta_table_ref("metadata.derived_lineage_columns")
     con.execute(f"DROP TABLE IF EXISTS {edges_ref}")
@@ -287,8 +418,18 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
     schema_manifest = tmp_path / "schema_manifest.json"
     buildspec = tmp_path / "buildspec.json"
     _write_text(semantic_registry, {"version": "v1", "views": []})
-    _write_text(schema_manifest, {"version": "v2", "tables": [], "views": [], "artifacts": []})
-    _write_text(buildspec, {"spec_version": 1, "targets": [], "datasets": []})
+    _write_text(
+        schema_manifest,
+        {"version": "v2", "tables": [modules_entry], "views": [], "artifacts": []},
+    )
+    _write_text(
+        buildspec,
+        {
+            "spec_version": 1,
+            "targets": [],
+            "datasets": [{"table_key": "core.modules", "schema_hash": modules_hash}],
+        },
+    )
 
     serve_dir = tmp_path / "serve"
     with pytest.raises(RuntimeError, match="Lineage metadata missing"):
@@ -300,6 +441,7 @@ def test_publish_serving_snapshot_fails_on_missing_lineage_tables(tmp_path: Path
                 semantic_registry_path=semantic_registry,
                 schema_manifest_path=schema_manifest,
                 buildspec_path=buildspec,
+                dataset_manifest_paths=dataset_manifest_paths,
                 keep_last=10,
             ),
         )

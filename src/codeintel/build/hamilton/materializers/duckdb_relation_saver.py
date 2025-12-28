@@ -38,7 +38,6 @@ _TABULAR_TYPES: tuple[type, ...] = (
     DuckDBRelation,
     pa.Table,
     pa.RecordBatchReader,
-    pl.DataFrame,
     pl.LazyFrame,
 )
 

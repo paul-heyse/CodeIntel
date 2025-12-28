@@ -55,7 +55,7 @@ def module_profile__base(q__core__modules: TabularInput) -> pl.LazyFrame:
     pl.LazyFrame
         Lazy frame with module profile columns.
     """
-    frame = relation_to_polars(q__core__modules, lazy=True)
+    frame = relation_to_polars(q__core__modules)
     frame = frame.with_columns(
         pl.lit(1).cast(pl.Int64).alias("file_count"),
         pl.lit(0).cast(pl.Int64).alias("total_loc"),

@@ -19,14 +19,16 @@ class ServingSnapshotPointer:
 
     Parameters
     ----------
+    snapshot_root
+        Root directory for the published snapshot.
+    snapshot_manifest_path
+        Path to snapshot_manifest.json (root manifest).
     db_path
         Absolute path to the immutable DuckDB snapshot file.
     semantic_registry_path
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
-    dataset_manifest_paths
-        Paths to dataset manifest files (Arrow datasets).
     buildspec_path
         Path to buildspec.json.
     repo
@@ -41,6 +43,8 @@ class ServingSnapshotPointer:
         Version hash of the semantic layer.
     """
 
+    snapshot_root: Path
+    snapshot_manifest_path: Path
     db_path: Path
     semantic_registry_path: Path
     schema_manifest_path: Path
@@ -50,7 +54,6 @@ class ServingSnapshotPointer:
     run_id: str
     published_at: datetime
     semantic_layer_version: str
-    dataset_manifest_paths: tuple[Path, ...] = ()
 
     @classmethod
     def load(cls, path: Path) -> ServingSnapshotPointer:
@@ -84,14 +87,15 @@ class ServingSnapshotPointer:
             msg = "Pointer missing buildspec_path"
             raise KeyError(msg) from exc
         buildspec_path = Path(buildspec_raw).resolve()
-        dataset_manifest_raw = raw.get("dataset_manifest_paths") or ()
-        dataset_manifest_paths = tuple(Path(path).resolve() for path in dataset_manifest_raw)
+        snapshot_root_raw = raw["snapshot_root"]
+        snapshot_manifest_raw = raw["snapshot_manifest_path"]
 
         return cls(
+            snapshot_root=Path(snapshot_root_raw).resolve(),
+            snapshot_manifest_path=Path(snapshot_manifest_raw).resolve(),
             db_path=Path(raw["db_path"]).resolve(),
             semantic_registry_path=Path(raw["semantic_registry_path"]).resolve(),
             schema_manifest_path=Path(raw["schema_manifest_path"]).resolve(),
-            dataset_manifest_paths=dataset_manifest_paths,
             buildspec_path=buildspec_path,
             repo=raw["repo"],
             commit=raw["commit"],
@@ -110,14 +114,11 @@ class ServingSnapshotPointer:
         """
         return json.dumps(
             {
+                "snapshot_root": str(self.snapshot_root),
+                "snapshot_manifest_path": str(self.snapshot_manifest_path),
                 "db_path": str(self.db_path),
                 "semantic_registry_path": str(self.semantic_registry_path),
                 "schema_manifest_path": str(self.schema_manifest_path),
-                **(
-                    {"dataset_manifest_paths": [str(path) for path in self.dataset_manifest_paths]}
-                    if self.dataset_manifest_paths
-                    else {}
-                ),
                 "buildspec_path": str(self.buildspec_path),
                 "repo": self.repo,
                 "commit": self.commit,

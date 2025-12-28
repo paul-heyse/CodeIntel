@@ -15,21 +15,27 @@ The targets share a common pattern:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+import polars as pl
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.native.ingestion.frame_utils import (
+    empty_lazyframe_for_table,
+    lazyframe_for_table,
+)
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
+    RelationTableSaveSpec,
     SaverContext,
-    TableSaveSpec,
     ToolFinalizeContext,
     ToolRunContext,
     finalize_target_from_materializations,
     run_tool_step,
-    save_rows,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
@@ -88,22 +94,34 @@ DOCSTRINGS_SAVE_CONTEXT = SaverContext(
 class DocstringsToolOutput(ToolStepOutput):
     """Tool step output for docstrings extraction."""
 
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(DOCSTRINGS_TABLE_KEY)
+    )
+    row_count: int = 0
 
 
 @dataclass(frozen=True)
 class AstToolOutput(ToolStepOutput):
     """Tool step output for AST extraction."""
 
-    ast_rows: tuple[tuple[object, ...], ...] = ()
-    metric_rows: tuple[tuple[object, ...], ...] = ()
+    ast_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(AST_NODES_TABLE_KEY)
+    )
+    metric_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(AST_METRICS_TABLE_KEY)
+    )
+    ast_row_count: int = 0
+    metric_row_count: int = 0
 
 
 @dataclass(frozen=True)
 class CstToolOutput(ToolStepOutput):
     """Tool step output for CST extraction."""
 
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(CST_NODES_TABLE_KEY)
+    )
+    row_count: int = 0
 
 
 def _module_inventory_precheck(
@@ -162,6 +180,8 @@ def _coerce_ast_output(
                 ),
                 ast_rows=output.ast_rows,
                 metric_rows=output.metric_rows,
+                ast_row_count=output.ast_row_count,
+                metric_row_count=output.metric_row_count,
             )
         return output
 
@@ -170,7 +190,13 @@ def _coerce_ast_output(
         warnings,
         error_message="AST extraction failed",
     )
-    return AstToolOutput(result=merged, ast_rows=(), metric_rows=())
+    return AstToolOutput(
+        result=merged,
+        ast_rows=empty_lazyframe_for_table(AST_NODES_TABLE_KEY),
+        metric_rows=empty_lazyframe_for_table(AST_METRICS_TABLE_KEY),
+        ast_row_count=0,
+        metric_row_count=0,
+    )
 
 
 def _coerce_cst_output(
@@ -186,6 +212,7 @@ def _coerce_cst_output(
                     error_message="CST extraction failed",
                 ),
                 rows=output.rows,
+                row_count=output.row_count,
             )
         return output
 
@@ -194,7 +221,11 @@ def _coerce_cst_output(
         warnings,
         error_message="CST extraction failed",
     )
-    return CstToolOutput(result=merged, rows=())
+    return CstToolOutput(
+        result=merged,
+        rows=empty_lazyframe_for_table(CST_NODES_TABLE_KEY),
+        row_count=0,
+    )
 
 
 def _coerce_docstrings_output(
@@ -210,6 +241,7 @@ def _coerce_docstrings_output(
                     error_message="Docstrings extraction failed",
                 ),
                 rows=output.rows,
+                row_count=output.row_count,
             )
         return output
 
@@ -218,7 +250,11 @@ def _coerce_docstrings_output(
         warnings,
         error_message="Docstrings extraction failed",
     )
-    return DocstringsToolOutput(result=merged, rows=())
+    return DocstringsToolOutput(
+        result=merged,
+        rows=empty_lazyframe_for_table(DOCSTRINGS_TABLE_KEY),
+        row_count=0,
+    )
 
 
 @tag_tool(domain="ingestion", target=AST_TARGET_NAME)
@@ -254,10 +290,14 @@ def t__ast__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
+        ast_frame = lazyframe_for_table(AST_NODES_TABLE_KEY, extract_result.ast_rows)
+        metric_frame = lazyframe_for_table(AST_METRICS_TABLE_KEY, extract_result.metric_rows)
         return AstToolOutput(
             result=extract_result.result,
-            ast_rows=extract_result.ast_rows,
-            metric_rows=extract_result.metric_rows,
+            ast_rows=ast_frame,
+            metric_rows=metric_frame,
+            ast_row_count=len(extract_result.ast_rows),
+            metric_row_count=len(extract_result.metric_rows),
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -267,13 +307,13 @@ def t__ast__run(
 @tag_compute(domain="ingestion", target=AST_TARGET_NAME)
 def t__ast__ingest(
     t__ast__run: AstToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package AST rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__ast__run.result
     if result.skipped:
@@ -296,8 +336,8 @@ def t__ast__ingest(
         AST_METRICS_TABLE_KEY: t__ast__run.metric_rows,
     }
     table_counts = {
-        AST_NODES_TABLE_KEY: len(t__ast__run.ast_rows),
-        AST_METRICS_TABLE_KEY: len(t__ast__run.metric_rows),
+        AST_NODES_TABLE_KEY: t__ast__run.ast_row_count,
+        AST_METRICS_TABLE_KEY: t__ast__run.metric_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -305,20 +345,20 @@ def t__ast__ingest(
     )
 
 
-@save_rows(
+@save_relation_table(
     context=AST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=AST_NODES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=AST_NODES_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=AST_TARGET_NAME, target_="ast__node_rows")
 def ast__node_rows(
-    t__ast__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__ast__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.ast_nodes.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.ast_nodes, or None when skipped/failed.
+    pl.LazyFrame | None
+        Lazy frame for core.ast_nodes, or None when skipped/failed.
 
     Raises
     ------
@@ -332,27 +372,27 @@ def ast__node_rows(
     if payload is None:
         msg = "Missing AST ingest payload"
         raise ValueError(msg)
-    rows = payload.get(AST_NODES_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {AST_NODES_TABLE_KEY}"
+    frame = payload.get(AST_NODES_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {AST_NODES_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
-@save_rows(
+@save_relation_table(
     context=AST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=AST_METRICS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=AST_METRICS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=AST_TARGET_NAME, target_="ast__metric_rows")
 def ast__metric_rows(
-    t__ast__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__ast__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.ast_metrics.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.ast_metrics, or None when skipped/failed.
+    pl.LazyFrame | None
+        Lazy frame for core.ast_metrics, or None when skipped/failed.
 
     Raises
     ------
@@ -366,11 +406,11 @@ def ast__metric_rows(
     if payload is None:
         msg = "Missing AST ingest payload"
         raise ValueError(msg)
-    rows = payload.get(AST_METRICS_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {AST_METRICS_TABLE_KEY}"
+    frame = payload.get(AST_METRICS_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {AST_METRICS_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
 @tag_helper(domain="ingestion", target=AST_TARGET_NAME)
@@ -421,7 +461,7 @@ def ast__finalize_context(
 def t__ast(
     ast__finalize_context: ToolFinalizeContext,
     t__ast__run: AstToolOutput,
-    t__ast__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__ast__ingest: IngestStep[dict[str, pl.LazyFrame]],
     ast__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Python AST extraction and metrics.
@@ -476,7 +516,12 @@ def t__cst__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        return CstToolOutput(result=extract_result.result, rows=extract_result.rows)
+        frame = lazyframe_for_table(CST_NODES_TABLE_KEY, extract_result.rows)
+        return CstToolOutput(
+            result=extract_result.result,
+            rows=frame,
+            row_count=len(extract_result.rows),
+        )
 
     output = run_tool_step(context=context, run=_execute)
     return _coerce_cst_output(output, warnings)
@@ -485,13 +530,13 @@ def t__cst__run(
 @tag_compute(domain="ingestion", target=CST_TARGET_NAME)
 def t__cst__ingest(
     t__cst__run: CstToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package CST rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__cst__run.result
     if result.skipped:
@@ -510,27 +555,27 @@ def t__cst__ingest(
         )
 
     payload = {CST_NODES_TABLE_KEY: t__cst__run.rows}
-    table_counts = {CST_NODES_TABLE_KEY: len(t__cst__run.rows)}
+    table_counts = {CST_NODES_TABLE_KEY: t__cst__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
     )
 
 
-@save_rows(
+@save_relation_table(
     context=CST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=CST_NODES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=CST_NODES_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=CST_TARGET_NAME, target_="cst__node_rows")
 def cst__node_rows(
-    t__cst__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__cst__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.cst_nodes.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.cst_nodes, or None when skipped/failed.
+    pl.LazyFrame | None
+        Lazy frame for core.cst_nodes, or None when skipped/failed.
 
     Raises
     ------
@@ -544,11 +589,11 @@ def cst__node_rows(
     if payload is None:
         msg = "Missing CST ingest payload"
         raise ValueError(msg)
-    rows = payload.get(CST_NODES_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {CST_NODES_TABLE_KEY}"
+    frame = payload.get(CST_NODES_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {CST_NODES_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
 @tag_helper(domain="ingestion", target=CST_TARGET_NAME)
@@ -588,7 +633,7 @@ def cst__finalize_context(
 def t__cst(
     cst__finalize_context: ToolFinalizeContext,
     t__cst__run: CstToolOutput,
-    t__cst__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__cst__ingest: IngestStep[dict[str, pl.LazyFrame]],
     cst__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Concrete syntax tree extraction.
@@ -643,7 +688,12 @@ def t__docstrings__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        return DocstringsToolOutput(result=extract_result.result, rows=extract_result.rows)
+        frame = lazyframe_for_table(DOCSTRINGS_TABLE_KEY, extract_result.rows)
+        return DocstringsToolOutput(
+            result=extract_result.result,
+            rows=frame,
+            row_count=len(extract_result.rows),
+        )
 
     output = run_tool_step(context=context, run=_execute)
     return _coerce_docstrings_output(output, warnings)
@@ -652,13 +702,13 @@ def t__docstrings__run(
 @tag_compute(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
 def t__docstrings__ingest(
     t__docstrings__run: DocstringsToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package docstrings rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__docstrings__run.result
     if result.skipped:
@@ -677,27 +727,27 @@ def t__docstrings__ingest(
         )
 
     payload = {DOCSTRINGS_TABLE_KEY: t__docstrings__run.rows}
-    table_counts = {DOCSTRINGS_TABLE_KEY: len(t__docstrings__run.rows)}
+    table_counts = {DOCSTRINGS_TABLE_KEY: t__docstrings__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
     )
 
 
-@save_rows(
+@save_relation_table(
     context=DOCSTRINGS_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=DOCSTRINGS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=DOCSTRINGS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=DOCSTRINGS_TARGET_NAME, target_="docstrings__rows")
 def docstrings__rows(
-    t__docstrings__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__docstrings__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.docstrings.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.docstrings, or None when skipped/failed.
+    pl.LazyFrame | None
+        Lazy frame for core.docstrings, or None when skipped/failed.
 
     Raises
     ------
@@ -711,11 +761,11 @@ def docstrings__rows(
     if payload is None:
         msg = "Missing docstrings ingest payload"
         raise ValueError(msg)
-    rows = payload.get(DOCSTRINGS_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {DOCSTRINGS_TABLE_KEY}"
+    frame = payload.get(DOCSTRINGS_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {DOCSTRINGS_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
 @tag_helper(domain="ingestion", target=DOCSTRINGS_TARGET_NAME)
@@ -755,7 +805,7 @@ def docstrings__finalize_context(
 def t__docstrings(
     docstrings__finalize_context: ToolFinalizeContext,
     t__docstrings__run: DocstringsToolOutput,
-    t__docstrings__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__docstrings__ingest: IngestStep[dict[str, pl.LazyFrame]],
     docstrings__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Docstring extraction and parsing.

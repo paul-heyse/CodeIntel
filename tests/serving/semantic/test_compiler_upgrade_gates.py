@@ -160,7 +160,7 @@ async def test_compiler_upgrade_gate_numeric_filter_sql_is_stable(tmp_path: Path
         await manager.stop()
 
     expected = (
-        "SELECT id, \"label\" FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM "
+        'SELECT id, "label" FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM '
         "PARQUET_SCAN(['<DATASET>'], (binary_as_string = FALSE), (file_row_number = FALSE), "
         "(filename = FALSE), (hive_partitioning = FALSE), (union_by_name = TRUE))) AS "
         "parquet_scan WHERE (id >= 2)) AS parquet_scan ORDER BY id DESC) AS parquet_scan LIMIT 10"
@@ -205,7 +205,7 @@ async def test_compiler_upgrade_gate_string_contains_sql_is_stable(tmp_path: Pat
         await manager.stop()
 
     expected = (
-        "SELECT id, \"label\" FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM "
+        'SELECT id, "label" FROM (SELECT * FROM (SELECT * FROM (SELECT * FROM '
         "PARQUET_SCAN(['<DATASET>'], (binary_as_string = FALSE), (file_row_number = FALSE), "
         "(filename = FALSE), (hive_partitioning = FALSE), (union_by_name = TRUE))) AS "
         "parquet_scan WHERE CONTAINS(\"label\", 't')) AS parquet_scan ORDER BY id) AS "

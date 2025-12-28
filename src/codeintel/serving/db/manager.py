@@ -11,6 +11,7 @@ import contextlib
 import json
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.build.spec import buildspec_from_json
@@ -21,6 +22,7 @@ from codeintel.config.primitives import (
     SnapshotRef,
 )
 from codeintel.core.execution import ExecutionContext, new_run_context
+from codeintel.core.manifests import ServingSnapshotManifest
 from codeintel.core.registry import RegistryService
 from codeintel.core.runtime.loader import (
     RuntimeInputs,
@@ -36,7 +38,6 @@ from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
-    from pathlib import Path
 
     from codeintel.build.spec import BuildSpec
     from codeintel.serving.semantic.registry import SemanticRegistry
@@ -380,6 +381,7 @@ def _resolve_environment_path(
 ) -> Path | None:
     candidates = (
         pointer_path.parent / "environment.json",
+        pointer.snapshot_root / "environment.json",
         pointer.schema_manifest_path.parent / "environment.json",
         pointer_path.parent / "artifacts" / "environment.json",
     )
@@ -402,7 +404,8 @@ def _load_snapshot_context(
     inventory = SchemaInventory.load(pointer.schema_manifest_path)
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
-    dataset_manifests = load_dataset_manifests(pointer.dataset_manifest_paths)
+    snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
+    dataset_manifests = load_dataset_manifests(snapshot_manifest)
     env_path = _resolve_environment_path(pointer, pointer_path=pointer_path)
     environment: dict[str, object] | None = None
     if env_path is not None:
@@ -420,6 +423,7 @@ def _load_snapshot_context(
         "semantic_registry_version": registry.version,
         "schema_inventory": inventory.summary(),
         "buildspec_version": buildspec.spec_version,
+        "dataset_tables": len(dataset_manifests.by_table_key),
     }
     tools = None
     if isinstance(environment, dict):

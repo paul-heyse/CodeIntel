@@ -18,7 +18,10 @@ if TYPE_CHECKING:
 def test_pointer_roundtrip(tmp_path: Path) -> None:
     """Round-trip serialize and load pointer JSON."""
     now = datetime.now(tz=UTC)
+    snapshot_root = tmp_path / "snapshot"
     pointer = ServingSnapshotPointer(
+        snapshot_root=snapshot_root,
+        snapshot_manifest_path=snapshot_root / "snapshot_manifest.json",
         db_path=tmp_path / "codeintel.duckdb",
         semantic_registry_path=tmp_path / "semantic_registry.json",
         schema_manifest_path=tmp_path / "schema_manifest.json",
@@ -39,7 +42,10 @@ def test_pointer_roundtrip(tmp_path: Path) -> None:
 
 def test_pointer_load_requires_published_at(tmp_path: Path) -> None:
     """Pointer load fails when published_at is missing."""
+    snapshot_root = tmp_path / "snapshot"
     payload = {
+        "snapshot_root": str(snapshot_root),
+        "snapshot_manifest_path": str(snapshot_root / "snapshot_manifest.json"),
         "db_path": str(tmp_path / "codeintel.duckdb"),
         "semantic_registry_path": str(tmp_path / "semantic_registry.json"),
         "schema_manifest_path": str(tmp_path / "schema_manifest.json"),

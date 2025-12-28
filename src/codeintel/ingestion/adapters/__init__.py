@@ -21,7 +21,7 @@ Available Adapters
 DuckDBStorageAdapter
     Implements ``IngestStoragePort`` using DuckDB via ``StorageGateway``.
     Routes writes/deletes through ``DuckDBPolicyBackend`` and reads through
-    the gateway/ibis connection.
+    the gateway relation API.
 
 FilesystemDiscoveryAdapter
     Implements ``ModuleDiscoveryPort`` using file system scanning via
@@ -44,7 +44,7 @@ When to Use Adapters vs Direct Gateway Access
 
 - You need low-level database operations not covered by port interfaces
 - You're in a Hamilton plugin and want simple row writes via ``ctx.write_table()``
-- Performance is critical and you need direct ibis/SQL access
+- Performance is critical and you need direct relation/SQL access
 
 See Also
 --------

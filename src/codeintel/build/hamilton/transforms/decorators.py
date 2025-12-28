@@ -10,15 +10,9 @@ from hamilton.function_modifiers import pipe_input, resolve_from_config, step, v
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 from codeintel.build.hamilton.transforms.tabular_steps import (
-    clip_numeric_pandas,
-    clip_numeric_polars,
-    clip_numeric_polars_lazy,
-    drop_bad_rows_pandas,
-    drop_bad_rows_polars,
-    drop_bad_rows_polars_lazy,
-    normalize_nulls_pandas,
-    normalize_nulls_polars,
-    normalize_nulls_polars_lazy,
+    clip_numeric,
+    drop_bad_rows,
+    normalize_nulls,
 )
 from codeintel.build.hamilton.transforms.with_columns_backend import select_with_columns
 
@@ -57,18 +51,12 @@ def _pipe_cleaning(
 ) -> NodeTransformLifecycle:
     if clean_mode == "off":
         return _NoOpTransform()
-    if df_backend == "polars_lazy":
-        drop = drop_bad_rows_polars_lazy
-        normalize = normalize_nulls_polars_lazy
-        clip = clip_numeric_polars_lazy
-    elif df_backend == "polars":
-        drop = drop_bad_rows_polars
-        normalize = normalize_nulls_polars
-        clip = clip_numeric_polars
-    else:
-        drop = drop_bad_rows_pandas
-        normalize = normalize_nulls_pandas
-        clip = clip_numeric_pandas
+    if df_backend != "polars_lazy":
+        msg = f"Unsupported df_backend={df_backend!r}"
+        raise ValueError(msg)
+    drop = drop_bad_rows
+    normalize = normalize_nulls
+    clip = clip_numeric
     steps = [
         step(drop, required_cols=value(policy.required_cols)).when(clean_mode="strict"),
         step(normalize, policy=value(null_policy)).named("nulls", namespace="prep"),

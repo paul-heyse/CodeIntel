@@ -4,6 +4,8 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
+    "snapshot_root",
+    "snapshot_manifest_path",
     "db_path",
     "semantic_registry_path",
     "schema_manifest_path",
@@ -15,13 +17,11 @@
     "semantic_layer_version"
   ],
   "properties": {
+    "snapshot_root": { "type": "string" },
+    "snapshot_manifest_path": { "type": "string" },
     "db_path": { "type": "string" },
     "semantic_registry_path": { "type": "string" },
     "schema_manifest_path": { "type": "string" },
-    "dataset_manifest_paths": {
-      "type": "array",
-      "items": { "type": "string" }
-    },
     "buildspec_path": { "type": "string" },
     "repo": { "type": "string" },
     "commit": { "type": "string" },

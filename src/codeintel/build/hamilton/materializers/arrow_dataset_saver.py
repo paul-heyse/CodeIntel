@@ -6,6 +6,7 @@ import shutil
 import threading
 import types
 import typing
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import TYPE_CHECKING, Literal, cast, get_args, get_origin
@@ -25,14 +26,15 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.schemas import get_schema_provider
+from codeintel.core.columnar import LazyFrameStream
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
-    table_schema_from_polars_dataframe,
     table_schema_from_polars_lazyframe,
 )
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import TableSchema
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.arrow_store import (
     ArrowDatasetManifestRequest,
     ArrowDatasetWriteOptions,
@@ -53,7 +55,7 @@ if TYPE_CHECKING:
 else:
     type ArrowDatasetInput = object
 
-type TabularData = ArrowDatasetInput | pl.DataFrame | pl.LazyFrame
+type TabularData = ArrowDatasetInput | pl.LazyFrame
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -68,7 +70,6 @@ _RECOVERABLE_EXCEPTIONS = (
 _TABULAR_TYPES: tuple[type, ...] = (
     pa.Table,
     pa.RecordBatchReader,
-    pl.DataFrame,
     pl.LazyFrame,
 )
 
@@ -303,12 +304,6 @@ def _materialize_dataset(
     dataset_root = ctx.env.paths.dataset_root_dir
 
     if isinstance(data, pl.LazyFrame):
-        collected_frame: pl.DataFrame | None = None
-        if ctx.collect_group is not None and resolved_partitions:
-            collected_frame = _collect_partitioned_frame(
-                ctx=ctx,
-                frame=data,
-            )
         write_ctx = _DatasetWriteContext(
             dataset_root=dataset_root,
             table_key=ctx.table_key,
@@ -318,7 +313,6 @@ def _materialize_dataset(
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
             data=data,
-            collected_frame=collected_frame,
         )
         manifest_path = dataset_manifest_path(
             dataset_root=dataset_root,
@@ -347,7 +341,6 @@ def _write_lazyframe_dataset(
     *,
     ctx: _DatasetWriteContext,
     data: pl.LazyFrame,
-    collected_frame: pl.DataFrame | None = None,
 ) -> ArrowDatasetManifest:
     snapshot_dir = dataset_snapshot_dir(
         ctx.dataset_root,
@@ -357,11 +350,17 @@ def _write_lazyframe_dataset(
     _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
     partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
     if partition_by:
-        frame = collected_frame or data.collect()
-        frame.write_parquet(
+        reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        partitioning = _partitioning_from_schema(
+            schema=reader.schema,
+            partition_columns=partition_by,
+        )
+        ds.write_dataset(
+            reader,
             str(snapshot_dir),
-            partition_by=partition_by,
-            mkdir=True,
+            format="parquet",
+            partitioning=partitioning,
+            existing_data_behavior=ctx.options.existing_data_behavior,
         )
     else:
         data.sink_parquet(str(snapshot_dir / "data.parquet"))
@@ -422,9 +421,7 @@ def _collect_group_members(
 ) -> tuple[str, ...]:
     outputs = catalog.table_outputs_by_target.get(target_name, ())
     members = [
-        output.key
-        for output in outputs
-        if output.tags.get(_COLLECT_GROUP_TAG) == collect_group
+        output.key for output in outputs if output.tags.get(_COLLECT_GROUP_TAG) == collect_group
     ]
     return tuple(sorted(members))
 
@@ -439,15 +436,11 @@ def _allow_collect_wait(*, env: BuildEnv, expected_count: int) -> bool:
     return max_workers is None or max_workers >= expected_count
 
 
-def _collect_group_key(
-    *, env: BuildEnv, target_name: str, collect_group: str
-) -> str:
+def _collect_group_key(*, env: BuildEnv, target_name: str, collect_group: str) -> str:
     return f"{env.snapshot.repo}:{env.snapshot.commit}:{target_name}:{collect_group}"
 
 
-def _collect_group_state(
-    *, group_key: str, expected_keys: tuple[str, ...]
-) -> _CollectGroupState:
+def _collect_group_state(*, group_key: str, expected_keys: tuple[str, ...]) -> _CollectGroupState:
     with _COLLECT_GROUP_LOCK:
         state = _COLLECT_GROUPS.get(group_key)
         if state is None:
@@ -466,11 +459,22 @@ def _prepare_snapshot_dir(snapshot_dir: Path, *, behavior: object) -> None:
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _partitioning_from_schema(
+    *,
+    schema: pa.Schema,
+    partition_columns: Sequence[str],
+) -> ds.Partitioning:
+    try:
+        fields = [schema.field(str(column)) for column in partition_columns]
+    except KeyError as exc:
+        msg = f"Partition columns missing from schema: {partition_columns}"
+        raise ValueError(msg) from exc
+    return ds.partitioning(schema=pa.schema(fields))
+
+
 def _table_schema_for_data(*, table_key: str, data: TabularData) -> TableSchema:
     if isinstance(data, pl.LazyFrame):
         return table_schema_from_polars_lazyframe(frame=data, table_key=table_key)
-    if isinstance(data, pl.DataFrame):
-        return table_schema_from_polars_dataframe(frame=data, table_key=table_key)
     if isinstance(data, pa.Table):
         arrow_table = cast("Table", data)
         return table_schema_from_arrow_schema(arrow_schema=arrow_table.schema, table_key=table_key)
@@ -541,8 +545,6 @@ def _coerce_arrow_input(data: TabularData) -> ArrowDatasetInput:
         return cast("Table", data)
     if isinstance(data, pa.RecordBatchReader):
         return cast("RecordBatchReader", data)
-    if isinstance(data, pl.DataFrame):
-        return data.to_arrow()
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
 

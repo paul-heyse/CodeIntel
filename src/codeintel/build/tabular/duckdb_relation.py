@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 import uuid
-from typing import Literal, cast, overload
+from typing import cast
 
 import polars as pl
 import pyarrow as pa
 
+from codeintel.build.tabular.conversion import arrow_reader_to_lazyframe, table_to_lazyframe
 from codeintel.build.tabular.types import TabularInput, TabularRelation
 from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
 
@@ -89,7 +90,7 @@ def relation_schema(relation: TabularRelation) -> pa.Schema:
     pa.Schema
         Arrow schema for the relation.
     """
-    return relation.limit(0).arrow().schema
+    return relation.fetch_arrow_reader().schema
 
 
 def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
@@ -108,62 +109,30 @@ def relation_to_arrow_reader(relation: TabularRelation) -> pa.RecordBatchReader:
     return relation.fetch_arrow_reader()
 
 
-@overload
-def relation_to_polars(
-    relation: TabularInput,
-    *,
-    lazy: Literal[True] = True,
-) -> pl.LazyFrame: ...
-
-
-@overload
-def relation_to_polars(
-    relation: TabularInput,
-    *,
-    lazy: Literal[False],
-) -> pl.DataFrame: ...
-
-
-def relation_to_polars(
-    relation: TabularInput,
-    *,
-    lazy: bool = True,
-) -> pl.DataFrame | pl.LazyFrame:
-    """Convert a tabular input to a Polars DataFrame/LazyFrame.
+def relation_to_polars(relation: TabularInput) -> pl.LazyFrame:
+    """Convert a tabular input to a Polars LazyFrame.
 
     Parameters
     ----------
     relation
         Tabular input to convert.
-    lazy
-        When True, return a Polars LazyFrame.
 
     Returns
     -------
-    pl.DataFrame | pl.LazyFrame
-        Polars object representing the relation.
+    pl.LazyFrame
+        Polars LazyFrame representing the relation.
     """
     if isinstance(relation, pl.LazyFrame):
-        return relation if lazy else relation.collect()
-    if isinstance(relation, pl.DataFrame):
-        return relation.lazy() if lazy else relation
+        return relation
     if isinstance(relation, pa.Table):
-        frame = _polars_from_arrow(relation)
-        return frame.lazy() if lazy else frame
+        frame = table_to_lazyframe(relation)
+        return frame
     if isinstance(relation, pa.RecordBatchReader):
         reader = cast("pa.RecordBatchReader", relation)
-        table = reader.read_all()
-        frame = _polars_from_arrow(table)
-        return frame.lazy() if lazy else frame
-    table = relation.arrow()
-    frame = _polars_from_arrow(table)
-    return frame.lazy() if lazy else frame
-
-
-def _polars_from_arrow(table: pa.Table) -> pl.DataFrame:
-    frame = pl.from_arrow(table)
-    if isinstance(frame, pl.Series):
-        return frame.to_frame()
+        frame = arrow_reader_to_lazyframe(reader)
+        return frame
+    reader = relation.fetch_arrow_reader()
+    frame = arrow_reader_to_lazyframe(reader)
     return frame
 
 

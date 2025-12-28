@@ -32,7 +32,9 @@ class ExportStoreRequest:
     cancel_check: CancelCheck | None = None
 
 
-def write_export_to_store(payload: ExportStoreRequest) -> tuple[str, StoredArtifact, StoredMetadata]:
+def write_export_to_store(
+    payload: ExportStoreRequest,
+) -> tuple[str, StoredArtifact, StoredMetadata]:
     """Write a semantic export to the ResourceStore based on the requested format.
 
     Returns

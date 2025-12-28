@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import jsonschema
+import pyarrow as pa
 import pyarrow.parquet as pq
 from referencing import Registry
 
@@ -133,9 +134,21 @@ def _validate_parquet(path: Path, validator: jsonschema.Draft202012Validator) ->
     list[str]
         List of validation error messages.
     """
-    table = pq.read_table(path)
-    records = table.to_pylist()
-    return _validate_records(records, validator)
+    parquet_file = pq.ParquetFile(path)
+    errors: list[str] = []
+    for batch in parquet_file.iter_batches():
+        records = _records_from_batch(batch)
+        errors.extend(_validate_records(records, validator))
+    return errors
+
+
+def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, Any]]:
+    columns = batch.schema.names
+    arrays = [batch.column(idx) for idx in range(batch.num_columns)]
+    records: list[dict[str, Any]] = []
+    for row_idx in range(batch.num_rows):
+        records.append({name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)})
+    return records
 
 
 def validate_export_files(

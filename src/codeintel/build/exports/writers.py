@@ -102,10 +102,10 @@ def write_jsonl_records(
     rows_written = 0
     reader = rel.fetch_record_batch(batch_size)
     for batch in _iter_batches(reader):
-        payload = batch.to_pydict()
-        columns = list(payload.keys())
-        for idx in range(batch.num_rows):
-            record = {name: payload[name][idx] for name in columns}
+        columns = batch.schema.names
+        arrays = [batch.column(idx) for idx in range(batch.num_columns)]
+        for row_idx in range(batch.num_rows):
+            record = {name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)}
             if record_type is not None:
                 record["_type"] = record_type
             payload_row = coerce_export_row(record)

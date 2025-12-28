@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 
+import polars as pl
+
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.native.patterns.savers import (
     ArtifactSaveSpec,
+    RelationTableSaveSpec,
     SaverContext,
-    TableSaveSpec,
     save_artifact,
-    save_rows,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.planning.plan_targets import (
     CI_PLAN_EXPLAIN_ARTIFACT,
@@ -20,6 +22,8 @@ from codeintel.build.hamilton.native.planning.plan_targets import (
     PLAN_DOMAIN,
 )
 from codeintel.build.planning.model import PLAN_SCHEMA_VERSION, BuildPlan
+from codeintel.build.schemas.service import get_schema_service
+from codeintel.build.tabular.conversion import lazyframe_from_rows
 from codeintel.core.schemas.row_serialization import row_to_tuple
 from codeintel.core.schemas.tables.ci_plan_entries import CI_PLAN_ENTRIES_TABLE_KEY
 
@@ -124,27 +128,29 @@ def m__ci_plan_explain_md(plan: BuildPlan) -> str:
     return _plan_markdown(plan)
 
 
-@save_rows(
+@save_relation_table(
     context=SaverContext(domain=PLAN_DOMAIN, target=CI_PLAN_TARGET_NAME),
-    spec=TableSaveSpec(
+    spec=RelationTableSaveSpec(
         table_key=CI_PLAN_ENTRIES_TABLE_KEY,
         output_role="contract",
     ),
 )
-def m__ci_plan_entries(env: BuildEnv, plan: BuildPlan) -> tuple[tuple[object, ...], ...]:
-    """Materialize plan entries as row tuples.
+def m__ci_plan_entries(env: BuildEnv, plan: BuildPlan) -> pl.LazyFrame:
+    """Materialize plan entries as a lazy frame.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Row tuples for plan entries.
+    pl.LazyFrame
+        Lazy frame for plan entries.
     """
     run_context = env.run_context
     run_id = run_context.run_id if run_context is not None else "unknown"
-    return tuple(
+    rows = tuple(
         row_to_tuple(CI_PLAN_ENTRIES_TABLE_KEY, row)
         for row in _plan_row_mappings(plan=plan, run_id=run_id)
     )
+    schema = get_schema_service().require_table_schema(CI_PLAN_ENTRIES_TABLE_KEY)
+    return lazyframe_from_rows(rows=rows, columns=tuple(schema.column_names()))
 
 
 __all__ = [

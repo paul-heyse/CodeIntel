@@ -9,12 +9,12 @@ from typing import Literal, cast
 
 from codeintel.core.hashing.fingerprint import fingerprint
 
-DataFrameBackend = Literal["pandas", "polars", "polars_lazy"]
+DataFrameBackend = Literal["polars_lazy"]
 CleanMode = Literal["off", "lenient", "strict"]
 NullPolicy = Literal["preserve", "drop_bad_rows"]
 FeatureSetName = str
 
-_ALLOWED_BACKENDS: set[str] = {"pandas", "polars", "polars_lazy"}
+_ALLOWED_BACKENDS: set[str] = {"polars_lazy"}
 _ALLOWED_CLEAN_MODES: set[str] = {"off", "lenient", "strict"}
 _ALLOWED_NULL_POLICIES: set[str] = {"preserve", "drop_bad_rows"}
 

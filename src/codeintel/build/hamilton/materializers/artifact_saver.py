@@ -36,6 +36,7 @@ from codeintel.core.execution.materialization import (
     failed_artifact_result,
     succeeded_artifact_result,
 )
+from codeintel.core.exports import default_ipc_write_options
 from codeintel.storage.duckdb_types import DuckDBRelation
 
 _RECOVERABLE_EXCEPTIONS = (
@@ -310,15 +311,6 @@ def _coerce_bytes(data: object) -> bytes:
     raise TypeError(msg)
 
 
-def _default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
-    return pa.ipc.IpcWriteOptions(
-        metadata_version=pa.ipc.MetadataVersion.V5,
-        compression="zstd",
-        use_threads=True,
-        unify_dictionaries=True,
-    )
-
-
 def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with (
@@ -326,7 +318,7 @@ def _write_arrow_reader(output_path: Path, reader: pa.RecordBatchReader) -> int:
         pa.ipc.new_stream(
             sink,
             reader.schema,
-            options=_default_ipc_write_options(),
+            options=default_ipc_write_options(),
         ) as writer,
     ):
         for batch in reader:

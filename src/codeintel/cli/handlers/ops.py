@@ -19,7 +19,7 @@ from codeintel.build.schemas import (
     iter_contracts,
     iter_contracts_by_table_key,
 )
-from codeintel.build.schemas.constraints import extract_constraints_from_pandera
+from codeintel.build.schemas.constraints import extract_constraints_from_table_schema
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
     DatasetConstraintsResult,
@@ -277,11 +277,7 @@ def dataset_info_structured(
     schema_service = get_schema_service()
     record = schema_service.get_record(table_key)
     table_schema = record.table_schema
-    pandera_schema = schema_service.get_pandera_schema(table_key)
-
-    if pandera_schema is not None:
-        columns = tuple(pandera_schema.columns.keys())
-    elif table_schema is not None:
+    if table_schema is not None:
         columns = tuple(table_schema.column_names())
     else:
         columns = ()
@@ -299,7 +295,7 @@ def dataset_info_structured(
             columns=columns,
             metadata=_metadata_to_dict(contract, downstream_consumers=downstream),
             json_schema=record.json_schema or {},
-            has_pandera_schema=pandera_schema is not None,
+            has_table_schema=table_schema is not None,
         )
     )
 
@@ -379,7 +375,7 @@ def dataset_flow_handler(ctx: CommandContext) -> CliResult[DatasetFlowResult]:
 def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstraintsResult]:
     """Show constraint summary for a dataset (structured).
 
-    Extracts constraints from the Pandera schema and returns them in
+    Extracts constraints from the table schema and returns them in
     a structured format for programmatic consumption.
 
     Parameters
@@ -393,11 +389,11 @@ def dataset_constraints_structured(*, table_key: str) -> CliResult[DatasetConstr
         Constraint information including kind, column, and expression.
     """
     schema_service = get_schema_service()
-    pandera_schema = schema_service.get_pandera_schema(table_key)
-    if pandera_schema is None:
+    table_schema = schema_service.get_table_schema(table_key)
+    if table_schema is None:
         return fail_dataset_not_found(table_key)
 
-    constraint_set = extract_constraints_from_pandera(table_key, pandera_schema)
+    constraint_set = extract_constraints_from_table_schema(table_schema)
 
     constraints: list[dict[str, object]] = [
         {

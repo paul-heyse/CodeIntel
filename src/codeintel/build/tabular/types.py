@@ -8,7 +8,8 @@ import pyarrow as pa
 from codeintel.storage.duckdb_types import DuckDBRelation
 
 type TabularRelation = DuckDBRelation
-type TabularInput = DuckDBRelation | pa.Table | pa.RecordBatchReader | pl.DataFrame | pl.LazyFrame
-type InferableTabularInput = pa.Table | pa.RecordBatchReader | pl.DataFrame | pl.LazyFrame
+type TabularFrame = pl.LazyFrame
+type TabularInput = DuckDBRelation | pa.RecordBatchReader | pa.Table | TabularFrame
+type InferableTabularInput = pa.RecordBatchReader | pa.Table | TabularFrame
 
-__all__ = ["InferableTabularInput", "TabularInput", "TabularRelation"]
+__all__ = ["InferableTabularInput", "TabularFrame", "TabularInput", "TabularRelation"]

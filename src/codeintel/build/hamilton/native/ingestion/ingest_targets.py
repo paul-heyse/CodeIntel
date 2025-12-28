@@ -14,9 +14,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+
+import polars as pl
 
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
@@ -28,17 +31,22 @@ from codeintel.build.hamilton.helpers import (
     get_module_paths_from_env,
     paths_to_modules,
 )
+from codeintel.build.hamilton.native.ingestion.frame_utils import (
+    dedupe_frame_for_table,
+    empty_lazyframe_for_table,
+    lazyframe_for_table,
+)
 from codeintel.build.hamilton.native.ingestion.pipelines import pipe_ingest_rows
 from codeintel.build.hamilton.native.options.ingestion import ModuleIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
+    RelationTableSaveSpec,
     SaverContext,
-    TableSaveSpec,
     ToolFinalizeContext,
     ToolRunContext,
     finalize_target_from_materializations,
     run_tool_step,
-    save_rows,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.target_decorators import (
     TargetSpecDescriptor,
@@ -50,7 +58,6 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper, tag_tool
 from codeintel.build.hashing import compute_options_hash
 from codeintel.build.resources import TOOL_EXECUTION, TargetResources
-from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.paths import normalize_path
 from codeintel.ingestion.adapters import (
     DuckDBStorageAdapter,
@@ -67,8 +74,6 @@ from codeintel.ingestion.infrastructure.scanning import default_config_profile
 from codeintel.ingestion.ports.discovery import ModuleRecord
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.ingestion.ports.change_detection import ChangeSet, FileDigest
 
 log = logging.getLogger(__name__)
@@ -99,8 +104,6 @@ TYPEDNESS_TABLE_KEY = "analytics.typedness"
 STATIC_DIAGNOSTICS_TABLE_KEY = "analytics.static_diagnostics"
 TYPING_TABLE_KEYS = (TYPEDNESS_TABLE_KEY, STATIC_DIAGNOSTICS_TABLE_KEY)
 
-_DUPLICATE_SAMPLE_LIMIT = 5
-
 MODULES_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
     target=MODULES_TARGET_NAME,
@@ -130,9 +133,18 @@ class ModuleToolOutput(ToolStepOutput):
     modules: tuple[ModuleRecord, ...] = field(default_factory=tuple)
     change_set: ChangeSet | None = None
     file_state_hash: str | None = None
-    module_rows: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
-    file_state_rows: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
-    repo_map_rows: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
+    module_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(MODULES_TABLE_KEY)
+    )
+    file_state_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(FILE_STATE_TABLE_KEY)
+    )
+    repo_map_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(REPO_MAP_TABLE_KEY)
+    )
+    module_row_count: int = 0
+    file_state_row_count: int = 0
+    repo_map_row_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -161,29 +173,44 @@ class ConfigScanResult:
 class ConfigToolOutput(ToolStepOutput):
     """Tool step output for config ingestion."""
 
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY)
+    )
+    row_count: int = 0
 
 
 @dataclass(frozen=True)
 class CoverageToolOutput(ToolStepOutput):
     """Tool step output for coverage ingestion."""
 
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(COVERAGE_LINES_TABLE_KEY)
+    )
+    row_count: int = 0
 
 
 @dataclass(frozen=True)
 class TestsToolOutput(ToolStepOutput):
     """Tool step output for tests ingestion."""
 
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(TEST_CATALOG_TABLE_KEY)
+    )
+    row_count: int = 0
 
 
 @dataclass(frozen=True)
 class TypingToolOutput(ToolStepOutput):
     """Tool step output for typing ingestion."""
 
-    typedness_rows: tuple[tuple[object, ...], ...] = ()
-    diagnostic_rows: tuple[tuple[object, ...], ...] = ()
+    typedness_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(TYPEDNESS_TABLE_KEY)
+    )
+    diagnostic_rows: pl.LazyFrame = field(
+        default_factory=lambda: empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY)
+    )
+    typedness_row_count: int = 0
+    diagnostic_row_count: int = 0
 
 
 @tag_helper(domain="ingestion")
@@ -266,14 +293,20 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
             full_rebuild=False,
         )
 
+        module_rows = lazyframe_for_table(MODULES_TABLE_KEY, scan_result.module_rows)
+        file_state_rows = lazyframe_for_table(FILE_STATE_TABLE_KEY, scan_result.file_state_rows)
+        repo_map_rows = lazyframe_for_table(REPO_MAP_TABLE_KEY, scan_result.repo_map_rows)
         return ModuleToolOutput(
             result=ExecutionResult.ok(),
             modules=scan_result.modules,
             change_set=scan_result.change_set,
             file_state_hash=scan_result.change_set.state_hash,
-            module_rows=scan_result.module_rows,
-            file_state_rows=scan_result.file_state_rows,
-            repo_map_rows=scan_result.repo_map_rows,
+            module_rows=module_rows,
+            file_state_rows=file_state_rows,
+            repo_map_rows=repo_map_rows,
+            module_row_count=len(scan_result.module_rows),
+            file_state_row_count=len(scan_result.file_state_rows),
+            repo_map_row_count=len(scan_result.repo_map_rows),
         )
 
     except (OSError, RuntimeError, ValueError, TypeError) as exc:
@@ -284,13 +317,13 @@ def t__modules__run(env: BuildEnv) -> ModuleToolOutput:
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME)
 def t__modules__ingest(
     t__modules__run: ModuleToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package module scan rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__modules__run.result
     if result.skipped:
@@ -308,11 +341,11 @@ def t__modules__ingest(
             )
         )
 
-    module_rows = _dedupe_rows_for_table(
+    module_rows = dedupe_frame_for_table(
         t__modules__run.module_rows,
         table_key=MODULES_TABLE_KEY,
     )
-    file_state_rows = _dedupe_rows_for_table(
+    file_state_rows = dedupe_frame_for_table(
         t__modules__run.file_state_rows,
         table_key=FILE_STATE_TABLE_KEY,
         prefer_columns=("mtime_ns", "content_hash"),
@@ -324,9 +357,9 @@ def t__modules__ingest(
         REPO_MAP_TABLE_KEY: repo_map_rows,
     }
     table_counts = {
-        MODULES_TABLE_KEY: len(module_rows),
-        FILE_STATE_TABLE_KEY: len(file_state_rows),
-        REPO_MAP_TABLE_KEY: len(repo_map_rows),
+        MODULES_TABLE_KEY: t__modules__run.module_row_count,
+        FILE_STATE_TABLE_KEY: t__modules__run.file_state_row_count,
+        REPO_MAP_TABLE_KEY: t__modules__run.repo_map_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -334,20 +367,20 @@ def t__modules__ingest(
     )
 
 
-@save_rows(
+@save_relation_table(
     context=MODULES_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=MODULES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=MODULES_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__module_rows")
 def modules__module_rows(
-    t__modules__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.modules.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the modules table, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the modules table, or None when ingestion skipped or failed.
 
     Raises
     ------
@@ -361,27 +394,27 @@ def modules__module_rows(
     if payload is None:
         msg = "Missing modules ingest payload"
         raise ValueError(msg)
-    rows = payload.get(MODULES_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {MODULES_TABLE_KEY}"
+    frame = payload.get(MODULES_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {MODULES_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
-@save_rows(
+@save_relation_table(
     context=MODULES_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=FILE_STATE_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=FILE_STATE_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__file_state_rows")
 def modules__file_state_rows(
-    t__modules__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.file_state.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the file_state table, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the file_state table, or None when ingestion skipped or failed.
 
     Raises
     ------
@@ -395,27 +428,27 @@ def modules__file_state_rows(
     if payload is None:
         msg = "Missing modules ingest payload"
         raise ValueError(msg)
-    rows = payload.get(FILE_STATE_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {FILE_STATE_TABLE_KEY}"
+    frame = payload.get(FILE_STATE_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {FILE_STATE_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
-@save_rows(
+@save_relation_table(
     context=MODULES_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=REPO_MAP_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=REPO_MAP_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=MODULES_TARGET_NAME, target_="modules__repo_map_rows")
 def modules__repo_map_rows(
-    t__modules__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for core.repo_map.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the repo_map table, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the repo_map table, or None when ingestion skipped or failed.
 
     Raises
     ------
@@ -429,95 +462,11 @@ def modules__repo_map_rows(
     if payload is None:
         msg = "Missing modules ingest payload"
         raise ValueError(msg)
-    rows = payload.get(REPO_MAP_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {REPO_MAP_TABLE_KEY}"
+    frame = payload.get(REPO_MAP_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {REPO_MAP_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
-
-
-def _dedupe_rows_for_table(
-    rows: tuple[tuple[object, ...], ...],
-    *,
-    table_key: str,
-    prefer_columns: tuple[str, ...] | None = None,
-) -> tuple[tuple[object, ...], ...]:
-    if not rows:
-        return rows
-    schema = get_schema_service().get_table_schema(table_key)
-    if schema is None or not schema.primary_key:
-        return rows
-    columns = tuple(schema.column_names())
-    return _dedupe_rows_by_keys(
-        rows,
-        table_key=table_key,
-        columns=columns,
-        key_columns=tuple(schema.primary_key),
-        prefer_columns=prefer_columns,
-    )
-
-
-def _dedupe_rows_by_keys(
-    rows: tuple[tuple[object, ...], ...],
-    *,
-    table_key: str,
-    columns: tuple[str, ...],
-    key_columns: tuple[str, ...],
-    prefer_columns: tuple[str, ...] | None = None,
-) -> tuple[tuple[object, ...], ...]:
-    try:
-        key_indexes = tuple(columns.index(col) for col in key_columns)
-    except ValueError as exc:
-        log.warning("Unable to dedupe %s rows: missing key column (%s)", table_key, exc)
-        return rows
-    prefer_indexes = ()
-    if prefer_columns:
-        columns_set = set(columns)
-        prefer_indexes = tuple(columns.index(col) for col in prefer_columns if col in columns_set)
-    deduped: dict[tuple[object, ...], tuple[object, ...]] = {}
-    duplicate_count = 0
-    sample_keys: list[tuple[object, ...]] = []
-    for row in rows:
-        key = tuple(row[idx] for idx in key_indexes)
-        existing = deduped.get(key)
-        if existing is None:
-            deduped[key] = row
-            continue
-        duplicate_count += 1
-        if len(sample_keys) < _DUPLICATE_SAMPLE_LIMIT and key not in sample_keys:
-            sample_keys.append(key)
-        if prefer_indexes and _is_preferred_row(row, existing, prefer_indexes):
-            deduped[key] = row
-    if duplicate_count:
-        log.warning(
-            "Duplicate rows detected for %s (duplicates=%d, sample_keys=%s)",
-            table_key,
-            duplicate_count,
-            sample_keys,
-        )
-    return tuple(deduped.values())
-
-
-def _is_preferred_row(
-    candidate: tuple[object, ...],
-    existing: tuple[object, ...],
-    prefer_indexes: tuple[int, ...],
-) -> bool:
-    for idx in prefer_indexes:
-        candidate_value = candidate[idx]
-        existing_value = existing[idx]
-        if candidate_value == existing_value:
-            continue
-        if existing_value is None and candidate_value is not None:
-            return True
-        if candidate_value is None:
-            return False
-        if isinstance(candidate_value, (int, float)) and isinstance(existing_value, (int, float)):
-            return candidate_value > existing_value
-        if isinstance(candidate_value, str) and isinstance(existing_value, str):
-            return candidate_value > existing_value
-        return str(candidate_value) > str(existing_value)
-    return False
+    return frame
 
 
 @tag_helper(domain="ingestion", target=MODULES_TARGET_NAME)
@@ -582,7 +531,7 @@ def modules__finalize_context(
 def t__modules(
     modules__finalize_context: ToolFinalizeContext,
     t__modules__run: ModuleToolOutput,
-    t__modules__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__modules__ingest: IngestStep[dict[str, pl.LazyFrame]],
     modules__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Scan repository modules and file index.
@@ -738,7 +687,11 @@ def t__config_ingest__run(
     def _execute() -> ConfigToolOutput:
         config_files = t__config_ingest__scan.config_files
         if not config_files:
-            return ConfigToolOutput(result=ExecutionResult.ok(), rows=())
+            return ConfigToolOutput(
+                result=ExecutionResult.ok(),
+                rows=empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY),
+                row_count=0,
+            )
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         step = ConfigIngestStep(discovery=discovery)
         ingest_result = step.execute(
@@ -746,24 +699,33 @@ def t__config_ingest__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        return ConfigToolOutput(result=ingest_result.result, rows=ingest_result.rows)
+        frame = lazyframe_for_table(CONFIG_VALUES_TABLE_KEY, ingest_result.rows)
+        return ConfigToolOutput(
+            result=ingest_result.result,
+            rows=frame,
+            row_count=len(ingest_result.rows),
+        )
 
     output = run_tool_step(context=context, run=_execute)
     if isinstance(output, ConfigToolOutput):
         return output
-    return ConfigToolOutput(result=output.result, rows=())
+    return ConfigToolOutput(
+        result=output.result,
+        rows=empty_lazyframe_for_table(CONFIG_VALUES_TABLE_KEY),
+        row_count=0,
+    )
 
 
 @tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME)
 def t__config_ingest__ingest(
     t__config_ingest__run: ConfigToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package config ingestion rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__config_ingest__run.result
     if result.skipped:
@@ -782,7 +744,7 @@ def t__config_ingest__ingest(
         )
 
     payload = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.rows}
-    table_counts = {CONFIG_VALUES_TABLE_KEY: len(t__config_ingest__run.rows)}
+    table_counts = {CONFIG_VALUES_TABLE_KEY: t__config_ingest__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
@@ -793,14 +755,14 @@ def t__config_ingest__ingest(
     domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__raw_rows"
 )
 def config_ingest__raw_rows(
-    t__config_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__config_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract raw rows for analytics.config_values.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Raw rows for the config values table, or None when skipped/failed.
+    pl.LazyFrame | None
+        Raw frame for the config values table, or None when skipped/failed.
 
     Raises
     ------
@@ -814,28 +776,31 @@ def config_ingest__raw_rows(
     if payload is None:
         msg = "Missing config ingest payload"
         raise ValueError(msg)
-    rows = payload.get(CONFIG_VALUES_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {CONFIG_VALUES_TABLE_KEY}"
+    frame = payload.get(CONFIG_VALUES_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {CONFIG_VALUES_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
-@save_rows(
+@save_relation_table(
     context=CONFIG_INGEST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=CONFIG_VALUES_TABLE_KEY),
 )
-@pipe_ingest_rows(required_indices=(0, 1, 2, 3, 4), input_name="config_ingest__raw_rows")
+@pipe_ingest_rows(
+    required_cols=("repo", "commit", "config_path", "format", "key"),
+    input_name="config_ingest__raw_rows",
+)
 @tag_compute(domain="ingestion", target=CONFIG_INGEST_TARGET_NAME, target_="config_ingest__rows")
 def config_ingest__rows(
-    config_ingest__raw_rows: tuple[tuple[object, ...], ...] | None,
-) -> tuple[tuple[object, ...], ...] | None:
+    config_ingest__raw_rows: pl.LazyFrame | None,
+) -> pl.LazyFrame | None:
     """Return cleaned rows for analytics.config_values.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Cleaned rows for the config values table.
+    pl.LazyFrame | None
+        Cleaned frame for the config values table.
     """
     return config_ingest__raw_rows
 
@@ -877,7 +842,7 @@ def config_ingest__finalize_context(
 def t__config_ingest(
     config_ingest__finalize_context: ToolFinalizeContext,
     t__config_ingest__run: ConfigToolOutput,
-    t__config_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__config_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
     config_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Parse configuration files and track references.
@@ -943,10 +908,15 @@ def _coerce_coverage_output(
             return CoverageToolOutput(
                 result=_merge_result_warnings(output.result, warnings),
                 rows=output.rows,
+                row_count=output.row_count,
             )
         return output
     merged = _merge_result_warnings(output.result, warnings)
-    return CoverageToolOutput(result=merged, rows=())
+    return CoverageToolOutput(
+        result=merged,
+        rows=empty_lazyframe_for_table(COVERAGE_LINES_TABLE_KEY),
+        row_count=0,
+    )
 
 
 @tag_tool(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
@@ -978,7 +948,11 @@ def t__coverage_ingest__run(
         if coverage_path is None:
             log.info("No coverage file found, writing empty coverage rows")
             result = ExecutionResult.ok(warnings=warnings)
-            return CoverageToolOutput(result=result, rows=())
+            return CoverageToolOutput(
+                result=result,
+                rows=empty_lazyframe_for_table(COVERAGE_LINES_TABLE_KEY),
+                row_count=0,
+            )
 
         tools = ToolRunnerAdapter(env.providers.tool_service)
         step = CoverageIngestStep(tools=tools)
@@ -991,9 +965,11 @@ def t__coverage_ingest__run(
                 coverage_file=coverage_path,
             )
         )
+        frame = lazyframe_for_table(COVERAGE_LINES_TABLE_KEY, ingest_result.rows)
         return CoverageToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
-            rows=ingest_result.rows,
+            rows=frame,
+            row_count=len(ingest_result.rows),
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -1003,13 +979,13 @@ def t__coverage_ingest__run(
 @tag_compute(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
 def t__coverage_ingest__ingest(
     t__coverage_ingest__run: CoverageToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package coverage ingestion rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__coverage_ingest__run.result
     if result.skipped:
@@ -1028,27 +1004,27 @@ def t__coverage_ingest__ingest(
         )
 
     payload = {COVERAGE_LINES_TABLE_KEY: t__coverage_ingest__run.rows}
-    table_counts = {COVERAGE_LINES_TABLE_KEY: len(t__coverage_ingest__run.rows)}
+    table_counts = {COVERAGE_LINES_TABLE_KEY: t__coverage_ingest__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
     )
 
 
-@save_rows(
+@save_relation_table(
     context=COVERAGE_INGEST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=COVERAGE_LINES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=COVERAGE_LINES_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME, target_="coverage__rows")
 def coverage__rows(
-    t__coverage_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__coverage_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for analytics.coverage_lines.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the coverage_lines table, or None when ingestion is skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the coverage_lines table, or None when ingestion is skipped or failed.
 
     Raises
     ------
@@ -1062,11 +1038,11 @@ def coverage__rows(
     if payload is None:
         msg = "Missing coverage ingest payload"
         raise ValueError(msg)
-    rows = payload.get(COVERAGE_LINES_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {COVERAGE_LINES_TABLE_KEY}"
+    frame = payload.get(COVERAGE_LINES_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {COVERAGE_LINES_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
 @tag_helper(domain="ingestion", target=COVERAGE_INGEST_TARGET_NAME)
@@ -1106,7 +1082,7 @@ def coverage_ingest__finalize_context(
 def t__coverage_ingest(
     coverage_ingest__finalize_context: ToolFinalizeContext,
     t__coverage_ingest__run: CoverageToolOutput,
-    t__coverage_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__coverage_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
     coverage_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Ingest line-level test coverage.
@@ -1177,10 +1153,15 @@ def _coerce_tests_output(
             return TestsToolOutput(
                 result=_merge_result_warnings(output.result, warnings),
                 rows=output.rows,
+                row_count=output.row_count,
             )
         return output
     merged = _merge_result_warnings(output.result, warnings)
-    return TestsToolOutput(result=merged, rows=())
+    return TestsToolOutput(
+        result=merged,
+        rows=empty_lazyframe_for_table(TEST_CATALOG_TABLE_KEY),
+        row_count=0,
+    )
 
 
 @tag_tool(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
@@ -1212,7 +1193,11 @@ def t__tests_ingest__run(
         if report_path is None:
             log.info("No pytest report found, writing empty test rows")
             result = ExecutionResult.ok(warnings=warnings)
-            return TestsToolOutput(result=result, rows=())
+            return TestsToolOutput(
+                result=result,
+                rows=empty_lazyframe_for_table(TEST_CATALOG_TABLE_KEY),
+                row_count=0,
+            )
 
         step = TestsIngestStep()
         ingest_result = step.execute(
@@ -1221,9 +1206,11 @@ def t__tests_ingest__run(
             commit=env.snapshot.commit,
             json_report_path=report_path,
         )
+        frame = lazyframe_for_table(TEST_CATALOG_TABLE_KEY, ingest_result.rows)
         return TestsToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
-            rows=ingest_result.rows,
+            rows=frame,
+            row_count=len(ingest_result.rows),
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -1233,13 +1220,13 @@ def t__tests_ingest__run(
 @tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
 def t__tests_ingest__ingest(
     t__tests_ingest__run: TestsToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package tests ingestion rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__tests_ingest__run.result
     if result.skipped:
@@ -1258,27 +1245,27 @@ def t__tests_ingest__ingest(
         )
 
     payload = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.rows}
-    table_counts = {TEST_CATALOG_TABLE_KEY: len(t__tests_ingest__run.rows)}
+    table_counts = {TEST_CATALOG_TABLE_KEY: t__tests_ingest__run.row_count}
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
         payload=payload,
     )
 
 
-@save_rows(
+@save_relation_table(
     context=TESTS_INGEST_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=TEST_CATALOG_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=TESTS_INGEST_TARGET_NAME, target_="tests__rows")
 def tests__rows(
-    t__tests_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__tests_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for analytics.test_catalog.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the test_catalog table, or None when ingestion is skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the test_catalog table, or None when ingestion is skipped or failed.
 
     Raises
     ------
@@ -1292,11 +1279,11 @@ def tests__rows(
     if payload is None:
         msg = "Missing tests ingest payload"
         raise ValueError(msg)
-    rows = payload.get(TEST_CATALOG_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {TEST_CATALOG_TABLE_KEY}"
+    frame = payload.get(TEST_CATALOG_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {TEST_CATALOG_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
 @tag_helper(domain="ingestion", target=TESTS_INGEST_TARGET_NAME)
@@ -1336,7 +1323,7 @@ def tests_ingest__finalize_context(
 def t__tests_ingest(
     tests_ingest__finalize_context: ToolFinalizeContext,
     t__tests_ingest__run: TestsToolOutput,
-    t__tests_ingest__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__tests_ingest__ingest: IngestStep[dict[str, pl.LazyFrame]],
     tests_ingest__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Ingest test catalog from pytest.
@@ -1370,10 +1357,18 @@ def _coerce_typing_output(
                 result=_merge_result_warnings(output.result, warnings),
                 typedness_rows=output.typedness_rows,
                 diagnostic_rows=output.diagnostic_rows,
+                typedness_row_count=output.typedness_row_count,
+                diagnostic_row_count=output.diagnostic_row_count,
             )
         return output
     merged = _merge_result_warnings(output.result, warnings)
-    return TypingToolOutput(result=merged, typedness_rows=(), diagnostic_rows=())
+    return TypingToolOutput(
+        result=merged,
+        typedness_rows=empty_lazyframe_for_table(TYPEDNESS_TABLE_KEY),
+        diagnostic_rows=empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
+        typedness_row_count=0,
+        diagnostic_row_count=0,
+    )
 
 
 @tag_tool(domain="ingestion", target=TYPING_TARGET_NAME)
@@ -1403,7 +1398,13 @@ def t__typing__run(
     def _execute() -> TypingToolOutput:
         if not module_records:
             result = ExecutionResult.ok(warnings=warnings)
-            return TypingToolOutput(result=result, typedness_rows=(), diagnostic_rows=())
+            return TypingToolOutput(
+                result=result,
+                typedness_rows=empty_lazyframe_for_table(TYPEDNESS_TABLE_KEY),
+                diagnostic_rows=empty_lazyframe_for_table(STATIC_DIAGNOSTICS_TABLE_KEY),
+                typedness_row_count=0,
+                diagnostic_row_count=0,
+            )
 
         discovery = FilesystemDiscoveryAdapter(env.snapshot.repo_root)
         tools = ToolRunnerAdapter(env.providers.tool_service)
@@ -1417,10 +1418,20 @@ def t__typing__run(
                 run_diagnostics=True,
             )
         )
+        typedness_frame = lazyframe_for_table(
+            TYPEDNESS_TABLE_KEY,
+            ingest_result.typedness_rows,
+        )
+        diagnostic_frame = lazyframe_for_table(
+            STATIC_DIAGNOSTICS_TABLE_KEY,
+            ingest_result.diagnostic_rows,
+        )
         return TypingToolOutput(
             result=_merge_result_warnings(ingest_result.result, warnings),
-            typedness_rows=ingest_result.typedness_rows,
-            diagnostic_rows=ingest_result.diagnostic_rows,
+            typedness_rows=typedness_frame,
+            diagnostic_rows=diagnostic_frame,
+            typedness_row_count=len(ingest_result.typedness_rows),
+            diagnostic_row_count=len(ingest_result.diagnostic_rows),
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -1430,13 +1441,13 @@ def t__typing__run(
 @tag_compute(domain="ingestion", target=TYPING_TARGET_NAME)
 def t__typing__ingest(
     t__typing__run: TypingToolOutput,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Package typing rows for table materialization.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingest result with table row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingest result with table frames.
     """
     result = t__typing__run.result
     if result.skipped:
@@ -1459,8 +1470,8 @@ def t__typing__ingest(
         STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_rows,
     }
     table_counts = {
-        TYPEDNESS_TABLE_KEY: len(t__typing__run.typedness_rows),
-        STATIC_DIAGNOSTICS_TABLE_KEY: len(t__typing__run.diagnostic_rows),
+        TYPEDNESS_TABLE_KEY: t__typing__run.typedness_row_count,
+        STATIC_DIAGNOSTICS_TABLE_KEY: t__typing__run.diagnostic_row_count,
     }
     return IngestStep(
         result=ExecutionResult.ok(table_counts=table_counts, warnings=result.warnings),
@@ -1468,20 +1479,20 @@ def t__typing__ingest(
     )
 
 
-@save_rows(
+@save_relation_table(
     context=TYPING_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=TYPEDNESS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=TYPEDNESS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=TYPING_TARGET_NAME, target_="typing__typedness_rows")
 def typing__typedness_rows(
-    t__typing__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for analytics.typedness.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the typedness table, or None when ingestion is skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the typedness table, or None when ingestion is skipped or failed.
 
     Raises
     ------
@@ -1495,27 +1506,27 @@ def typing__typedness_rows(
     if payload is None:
         msg = "Missing typing ingest payload"
         raise ValueError(msg)
-    rows = payload.get(TYPEDNESS_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {TYPEDNESS_TABLE_KEY}"
+    frame = payload.get(TYPEDNESS_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {TYPEDNESS_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
-@save_rows(
+@save_relation_table(
     context=TYPING_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=STATIC_DIAGNOSTICS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=TYPING_TARGET_NAME, target_="typing__diagnostic_rows")
 def typing__diagnostic_rows(
-    t__typing__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Extract rows for analytics.static_diagnostics.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Rows for the static_diagnostics table, or None when ingestion is skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for the static_diagnostics table, or None when ingestion is skipped or failed.
 
     Raises
     ------
@@ -1529,11 +1540,11 @@ def typing__diagnostic_rows(
     if payload is None:
         msg = "Missing typing ingest payload"
         raise ValueError(msg)
-    rows = payload.get(STATIC_DIAGNOSTICS_TABLE_KEY)
-    if rows is None:
-        msg = f"Missing rows for {STATIC_DIAGNOSTICS_TABLE_KEY}"
+    frame = payload.get(STATIC_DIAGNOSTICS_TABLE_KEY)
+    if frame is None:
+        msg = f"Missing frame for {STATIC_DIAGNOSTICS_TABLE_KEY}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
 @tag_helper(domain="ingestion", target=TYPING_TARGET_NAME)
@@ -1592,7 +1603,7 @@ def typing__finalize_context(
 def t__typing(
     typing__finalize_context: ToolFinalizeContext,
     t__typing__run: TypingToolOutput,
-    t__typing__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__typing__ingest: IngestStep[dict[str, pl.LazyFrame]],
     typing__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:
     """Analyze type annotations and static diagnostics.

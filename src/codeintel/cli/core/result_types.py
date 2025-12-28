@@ -364,15 +364,15 @@ class DatasetInfoResult:
         Dataset metadata as a dictionary.
     json_schema
         JSON Schema representation of the dataset.
-    has_pandera_schema
-        Whether a Pandera schema is registered for this dataset.
+    has_table_schema
+        Whether a table schema is registered for this dataset.
     """
 
     name: str
     columns: tuple[str, ...]
     metadata: dict[str, object]
     json_schema: dict[str, object]
-    has_pandera_schema: bool = True
+    has_table_schema: bool = True
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -388,7 +388,7 @@ class DatasetInfoResult:
             "column_count": len(self.columns),
             "metadata": self.metadata,
             "json_schema": self.json_schema,
-            "has_pandera_schema": self.has_pandera_schema,
+            "has_table_schema": self.has_table_schema,
         }
 
 

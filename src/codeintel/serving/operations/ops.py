@@ -18,20 +18,20 @@ from codeintel.serving.operations.protocols import ServingDBManagerProtocol, Ser
 from codeintel.serving.settings import ServingSettings
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
     from pathlib import Path
 
     from codeintel.serving.meta.models import ServingKernelMetaResponse
     from codeintel.serving.operations.cancellation import CancelCheck
     from codeintel.serving.search.models import SearchQueryRequest, SearchQueryResponse
-    from codeintel.serving.semantic.models import (
-        SemanticCatalogResponse,
-        SemanticExplainResponse,
-        SemanticExportRequest,
-        SemanticQueryRequest,
-        SemanticQueryResponse,
-        SemanticViewDescriptionResponse,
-    )
+from codeintel.serving.semantic.models import (
+    SemanticCatalogResponse,
+    SemanticExplainResponse,
+    SemanticExportRequest,
+    SemanticQueryRequest,
+    SemanticQueryResponse,
+    SemanticViewDescriptionResponse,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +114,40 @@ class ServingOperations:
         """
         try:
             return self.kernel.query(request, cancel_check=cancel_check)
+        except KeyError as exc:
+            raise SemanticViewNotFoundError(request.view_id) from exc
+        except ValueError as exc:
+            raise CodeIntelDomainError(
+                code="CODEINTEL_SEMANTIC_INVALID_QUERY",
+                details={"reason": str(exc)},
+            ) from exc
+
+    def query_ipc_stream(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Generator[bytes]:
+        """Execute a semantic query and return Arrow IPC stream bytes.
+
+        Parameters
+        ----------
+        request
+            Semantic query request.
+        cancel_check
+            Optional cancellation hook invoked during query execution.
+
+        Returns
+        -------
+        Generator[bytes, None, None]
+            Iterator of Arrow IPC stream bytes.
+
+        Raises
+        ------
+        SemanticViewNotFoundError
+            When the requested view cannot be resolved.
+        CodeIntelDomainError
+            When the request is invalid.
+        """
+        try:
+            return self.kernel.query_ipc_stream(request, cancel_check=cancel_check)
         except KeyError as exc:
             raise SemanticViewNotFoundError(request.view_id) from exc
         except ValueError as exc:

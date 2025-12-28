@@ -15,7 +15,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
+import polars as pl
+
 from codeintel.core.hashing import sha256_short
+from codeintel.core.schemas import get_schema_service
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.engine.infrastructure import ToolRunner, ToolRunOptions
 from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
@@ -123,7 +126,7 @@ def build_history_timeseries_rows(
     *,
     options: HistoryTimeseriesOptions,
     runner: ToolRunner | None = None,
-) -> tuple[tuple[object, ...], ...]:
+) -> pl.LazyFrame:
     """Build history_timeseries rows without writing to database.
 
     Compute cross-commit history aggregation for functions and modules,
@@ -143,8 +146,8 @@ def build_history_timeseries_rows(
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Row tuples matching the schema order, ready for bulk insert.
+    pl.LazyFrame
+        Lazy frame matching the schema order, ready for materialization.
     """
     if not options.commits:
         log.info("No commits provided for history_timeseries; skipping.")
@@ -189,7 +192,8 @@ def build_history_timeseries_rows(
         len(rows),
         len(options.commits),
     )
-    return tuple(rows)
+    schema = get_schema_service().require_table_schema(HISTORY_TIMESERIES_TABLE_KEY)
+    return pl.DataFrame(rows, schema=list(schema.column_names())).lazy()
 
 
 def _select_entities(
