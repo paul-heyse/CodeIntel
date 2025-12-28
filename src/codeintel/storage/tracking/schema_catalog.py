@@ -28,7 +28,8 @@ from codeintel.storage.tracking.schema_catalog_models import (
 from codeintel.storage.upsert import UpsertSpec
 
 if TYPE_CHECKING:
-    from collections.abc import AbstractSet, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
+    from collections.abc import Set as AbstractSet
 
     from codeintel.core.manifests import SchemaManifest, TableProvenance
     from codeintel.core.schemas.primitives import TableSchema

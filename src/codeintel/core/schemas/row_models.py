@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 
 from codeintel.core.schemas.hashing import schema_hash
+from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
 
 if TYPE_CHECKING:
     from pandera import DataFrameSchema
@@ -36,6 +37,7 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import ColumnType, TableSchema
 
 _VALID_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_ROW_MODEL_NAME_PARTS = 3
 
 
 def _row_model_class_name(*, schema: str, name: str) -> str:
@@ -242,7 +244,7 @@ def row_serializer_for_table_schema(*, table_schema: TableSchema) -> RowSerializ
 
 def _row_model_name_parts(name: str) -> tuple[str, str] | None:
     parts = name.split("__")
-    if len(parts) != 3 or parts[2] != "Row":
+    if len(parts) != _ROW_MODEL_NAME_PARTS or parts[2] != "Row":
         return None
     schema_part, table_name, _suffix = parts
     if not schema_part or not table_name:
@@ -252,8 +254,6 @@ def _row_model_name_parts(name: str) -> tuple[str, str] | None:
 
 
 def __getattr__(name: str) -> object:
-    from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
-
     parts = _row_model_name_parts(name)
     if parts is None:
         msg = f"module {__name__!r} has no attribute {name!r}"

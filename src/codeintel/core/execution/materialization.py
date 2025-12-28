@@ -52,6 +52,8 @@ class MaterializationResult:
         Artifact name for file outputs.
     path
         Resolved artifact path for file outputs.
+    dataset_manifest_path
+        Path to the Arrow dataset manifest for table outputs.
     size_bytes
         Size of the artifact payload when available.
     duration_ms
@@ -67,6 +69,7 @@ class MaterializationResult:
     row_count: int | None = None
     artifact_name: str | None = None
     path: str | None = None
+    dataset_manifest_path: str | None = None
     size_bytes: int | None = None
     duration_ms: float = 0.0
     input_hash: str = ""
@@ -86,6 +89,7 @@ class MaterializationResult:
             "row_count": self.row_count,
             "artifact_name": self.artifact_name,
             "path": self.path,
+            "dataset_manifest_path": self.dataset_manifest_path,
             "size_bytes": self.size_bytes,
             "duration_ms": self.duration_ms,
             "input_hash": self.input_hash,
@@ -127,6 +131,7 @@ class MaterializationResult:
             row_count=_coerce_int(materialization.get("row_count")),
             artifact_name=artifact_name,
             path=_coerce_str(materialization.get("path")),
+            dataset_manifest_path=_coerce_str(materialization.get("dataset_manifest_path")),
             size_bytes=_coerce_int(materialization.get("size_bytes")),
             duration_ms=_coerce_duration(materialization.get("duration_ms")),
             input_hash=input_hash,
@@ -228,6 +233,7 @@ def skipped_table_result(
     duration_ms: float,
     input_hash: str,
     row_count: int | None,
+    dataset_manifest_path: str | None = None,
 ) -> MaterializationResult:
     """Build a skipped table result.
 
@@ -243,11 +249,17 @@ def skipped_table_result(
         duration_ms=duration_ms,
         input_hash=input_hash,
         error=None,
+        dataset_manifest_path=dataset_manifest_path,
     )
 
 
 def succeeded_table_result(
-    *, table_key: str, duration_ms: float, input_hash: str, row_count: int
+    *,
+    table_key: str,
+    duration_ms: float,
+    input_hash: str,
+    row_count: int,
+    dataset_manifest_path: str | None = None,
 ) -> MaterializationResult:
     """Build a succeeded table result.
 
@@ -263,6 +275,7 @@ def succeeded_table_result(
         duration_ms=duration_ms,
         input_hash=input_hash,
         error=None,
+        dataset_manifest_path=dataset_manifest_path,
     )
 
 

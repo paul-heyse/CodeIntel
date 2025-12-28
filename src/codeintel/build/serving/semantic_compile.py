@@ -36,7 +36,6 @@ if TYPE_CHECKING:
 
     from hamilton.driver import Driver
 
-    from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.provider import SchemaProvider
 
 

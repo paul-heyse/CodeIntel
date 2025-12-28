@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 import pytest
 
-from tests._helpers.cli import CliResult
+from tests._helpers.cli import CliResult, run_cli
 
 pytestmark = pytest.mark.xdist_group("cli_shared_flags")
 

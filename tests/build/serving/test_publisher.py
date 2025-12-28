@@ -12,6 +12,7 @@ import pytest
 
 from codeintel.build.hamilton.native.export.serving_artifacts import (
     SERVING_ARTIFACT_BUILDSPEC,
+    SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
     SERVING_ARTIFACT_SCHEMA_MANIFEST,
     SERVING_ARTIFACT_SEMANTIC_REGISTRY,
     SERVING_ARTIFACTS_TARGET_NAME,
@@ -23,7 +24,6 @@ from codeintel.build.serving.publisher import (
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.constants import META_CATALOG_NAME
 from codeintel.storage.gateway.config import StorageConfig
-from codeintel.storage.helpers.table_key import fully_qualified_table_ref
 from codeintel.storage.metadata.meta_catalog import attach_meta_database, meta_table_ref
 from tests._helpers.assertions import (
     assert_record_has_artifacts,
@@ -141,10 +141,6 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
             validate_schema=False,
         )
         attach_meta_database(snap_con, config=config)
-        info_schema_ref = fully_qualified_table_ref(
-            "information_schema.tables",
-            catalog=META_CATALOG_NAME,
-        )
         present = snap_con.execute(
             """
             SELECT 1
@@ -155,21 +151,27 @@ def test_publish_serving_snapshot_creates_snapshot_and_pointer(tmp_path: Path) -
         ).fetchone()
         expect_true(present is not None)
         lineage_edges = snap_con.execute(
-            f"""
-            SELECT 1
-            FROM {info_schema_ref}
-            WHERE table_schema = 'metadata' AND table_name = 'derived_lineage_edges'
-            LIMIT 1
             """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_catalog = ?
+              AND table_schema = 'metadata'
+              AND table_name = 'derived_lineage_edges'
+            LIMIT 1
+            """,
+            [META_CATALOG_NAME],
         ).fetchone()
         expect_true(lineage_edges is not None)
         lineage_columns = snap_con.execute(
-            f"""
-            SELECT 1
-            FROM {info_schema_ref}
-            WHERE table_schema = 'metadata' AND table_name = 'derived_lineage_columns'
-            LIMIT 1
             """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_catalog = ?
+              AND table_schema = 'metadata'
+              AND table_name = 'derived_lineage_columns'
+            LIMIT 1
+            """,
+            [META_CATALOG_NAME],
         ).fetchone()
         expect_true(lineage_columns is not None)
     finally:
@@ -317,6 +319,7 @@ def test_serving_harness_publishes_snapshot(
             SERVING_ARTIFACT_SEMANTIC_REGISTRY,
             SERVING_ARTIFACT_SCHEMA_MANIFEST,
             SERVING_ARTIFACT_BUILDSPEC,
+            SERVING_ARTIFACT_DATASET_MANIFEST_PATHS,
         ),
     )
     manifest = serving_target_harness.publish_snapshot(run_id="publisher-harness")

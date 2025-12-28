@@ -98,7 +98,9 @@ def _build_view_builder(
 
 
 _BUILDERS: dict[str, Callable[[], exp.Expression]] = {}
+fn: Callable[[], exp.Expression] | None = None
 for table_key, spec in _VIEW_SQL_MAP.items():
     fn = _build_view_builder(table_key=table_key, spec=spec)
     globals()[fn.__name__] = fn
     _BUILDERS[table_key] = fn
+fn = None

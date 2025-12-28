@@ -12,9 +12,9 @@ from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
 from codeintel.build.hamilton.native.patterns import (
-    RelationTableSaveSpec,
+    DatasetSaveSpec,
     SaverContext,
-    save_relation_table,
+    save_dataset,
 )
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
@@ -90,9 +90,9 @@ def risk_factors__base(q__analytics__function_metrics: DuckDBRelation) -> pl.Laz
     )
 
 
-@save_relation_table(
+@save_dataset(
     context=RISK_FACTORS_SAVE_CONTEXT,
-    spec=RelationTableSaveSpec(table_key=RISK_FACTORS_TABLE_KEY),
+    spec=DatasetSaveSpec(table_key=RISK_FACTORS_TABLE_KEY),
 )
 @table_contract(RISK_FACTORS_CONTRACT)
 def risk_factors__table(risk_factors__base: pl.LazyFrame) -> pl.LazyFrame:

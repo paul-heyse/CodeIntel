@@ -8,17 +8,9 @@ from typing import TYPE_CHECKING
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.serving.errors import SemanticColumnNotFoundError
-from codeintel.serving.semantic.query_builder import SemanticQueryPlan, build_query
-from codeintel.storage.gateway import ibis_facade
-from codeintel.storage.queries.safe import (
-    SqlIngressPolicy,
-    UnsafeSqlError,
-    assert_select_perimeter,
-)
+from codeintel.serving.semantic.specs import SemanticQuerySpec
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
@@ -30,7 +22,6 @@ if TYPE_CHECKING:
         SemanticViewSpec,
     )
     from codeintel.serving.settings import ServingSettings
-    from codeintel.storage.warehouse import Warehouse
 
 LOG = logging.getLogger(__name__)
 
@@ -182,24 +173,26 @@ class SemanticQueryPlanner:
         return inputs, request.limit
 
     @staticmethod
-    def build_plan(
+    def build_spec(
         *, ctx: ResolvedViewContext, inputs: PlanInputs, limit: int
-    ) -> SemanticQueryPlan:
-        """Build a semantic query plan from resolved context and inputs.
+    ) -> SemanticQuerySpec:
+        """Build a semantic query spec from resolved context and inputs.
 
         Returns
         -------
-        SemanticQueryPlan
-            Planned query parameters ready for compilation.
+        SemanticQuerySpec
+            Backend-neutral query spec.
         """
-        return SemanticQueryPlan(
+        return SemanticQuerySpec(
+            view_id=ctx.view.id,
             table_key=ctx.view.table_key,
-            columns=inputs.columns,
             allowed_columns=frozenset(ctx.allowed_columns),
+            columns=inputs.columns,
             filters=inputs.filters,
             order_by=inputs.order_by,
             limit=limit,
             offset=inputs.offset,
+            column_types=ctx.column_types,
         )
 
     @staticmethod
@@ -215,77 +208,6 @@ class SemanticQueryPlanner:
         if schema is None:
             return None
         return schema_hash(schema)
-
-    @staticmethod
-    def compile_plan(
-        *,
-        warehouse: Warehouse,
-        plan: SemanticQueryPlan,
-        column_types: dict[str, ColumnType] | None,
-        cleanup_temp_tables: bool,
-    ) -> tuple[str, tuple[str, ...]]:
-        """Compile a semantic query plan into safe SQL.
-
-        Returns
-        -------
-        tuple[str, tuple[str, ...]]
-            Compiled SQL string and created temp table names.
-
-        Raises
-        ------
-        ValueError
-            If the compiled SQL is unsafe.
-        """
-        ibis_con = ibis_facade.backend(warehouse.gateway)
-        built = build_query(ibis_con=ibis_con, plan=plan, column_types=column_types)
-        try:
-            compiled = built.compile_sql(ibis_con)
-            assert_select_perimeter(compiled, policy=SqlIngressPolicy())
-        except UnsafeSqlError as exc:
-            cleanup_temp_tables_if_needed(
-                con=warehouse.gateway.con,
-                temp_tables=built.temp_tables,
-            )
-            raise ValueError(str(exc)) from exc
-        except Exception:
-            cleanup_temp_tables_if_needed(
-                con=warehouse.gateway.con,
-                temp_tables=built.temp_tables,
-            )
-            raise
-
-        if cleanup_temp_tables:
-            cleanup_temp_tables_if_needed(
-                con=warehouse.gateway.con,
-                temp_tables=built.temp_tables,
-            )
-
-        return compiled, built.temp_tables
-
-    def compile_export(
-        self,
-        *,
-        warehouse: Warehouse,
-        pointer: ServingSnapshotPointer,
-        request: SemanticExportRequest,
-    ) -> tuple[str, list[str], tuple[str, ...]]:
-        """Compile an export request into SQL plus column order and temp tables.
-
-        Returns
-        -------
-        tuple[str, list[str], tuple[str, ...]]
-            SQL string, column order, and temp table names.
-        """
-        resolved = self.resolve_view_context(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self.plan_inputs_for_export(ctx=resolved, request=request)
-        plan = self.build_plan(ctx=resolved, inputs=inputs, limit=effective_limit)
-        sql, temp_tables = self.compile_plan(
-            warehouse=warehouse,
-            plan=plan,
-            column_types=resolved.column_types,
-            cleanup_temp_tables=False,
-        )
-        return sql, inputs.columns, temp_tables
 
     def _resolve_allowed_columns(
         self,
@@ -344,18 +266,8 @@ def _column_types_for_view(
     return {col.name: col.type for col in table_schema.columns}
 
 
-def cleanup_temp_tables_if_needed(*, con: object, temp_tables: Sequence[str]) -> None:
-    """Unregister Ibis temp tables when supported by the backend."""
-    unregister = getattr(con, "unregister", None)
-    if not callable(unregister):
-        return
-    for table_name in temp_tables:
-        unregister(table_name)
-
-
 __all__ = [
     "PlanInputs",
     "ResolvedViewContext",
     "SemanticQueryPlanner",
-    "cleanup_temp_tables_if_needed",
 ]

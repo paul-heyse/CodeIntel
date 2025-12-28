@@ -15,7 +15,7 @@ import ibis
 import pyarrow as pa
 
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
-from codeintel.serving.semantic.templates import QueryTemplate
+from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
@@ -26,42 +26,10 @@ if TYPE_CHECKING:
 
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.semantic.models import FilterSpec
-    from codeintel.serving.semantic.templates import BoundQuery
 
 
 class QueryBuilderError(ValueError):
     """Raised when query construction fails."""
-
-
-@dataclass(frozen=True, slots=True)
-class SemanticQueryPlan:
-    """Plan for building a safe semantic SELECT query.
-
-    Parameters
-    ----------
-    table_key
-        Fully qualified table/view name.
-    columns
-        Columns to select.
-    allowed_columns
-        Set of valid column names for validation.
-    filters
-        Filter specifications.
-    order_by
-        Order columns (prefix "-" for DESC).
-    limit
-        Maximum rows.
-    offset
-        Rows to skip.
-    """
-
-    table_key: str
-    columns: list[str]
-    allowed_columns: frozenset[str]
-    filters: list[FilterSpec]
-    order_by: list[str]
-    limit: int
-    offset: int
 
 
 _IN_LIST_MEMTABLE_THRESHOLD = 0
@@ -74,6 +42,76 @@ class _PredicateContext:
     column_types: Mapping[str, ColumnType] | None
     temp_tables: list[str]
     params: dict[it.Expr, object]
+
+
+@dataclass(frozen=True, slots=True)
+class QueryTemplate:
+    """A reusable semantic query shape (Ibis expression + temp resources)."""
+
+    expr: it.Table
+    temp_tables: tuple[str, ...] = ()
+
+    def bind(self, params: Mapping[it.Expr, object]) -> BoundQuery:
+        """Bind parameters for execution.
+
+        Returns
+        -------
+        BoundQuery
+            Bound query with scalar parameters attached.
+        """
+        return BoundQuery(template=self, params=dict(params))
+
+
+@dataclass(frozen=True, slots=True)
+class BoundQuery:
+    """A query template with bound scalar parameter values."""
+
+    template: QueryTemplate
+    params: dict[it.Expr, object]
+
+    @property
+    def expr(self) -> it.Table:
+        """Return the underlying Ibis expression.
+
+        Returns
+        -------
+        ibis.expr.types.Table
+            Ibis table expression for the query.
+        """
+        return self.template.expr
+
+    @property
+    def temp_tables(self) -> tuple[str, ...]:
+        """Return staged temporary table names, if any.
+
+        Returns
+        -------
+        tuple[str, ...]
+            Temp table names created for IN-list staging.
+        """
+        return self.template.temp_tables
+
+    def execute_params(self) -> Mapping[it.Value, object]:
+        """Return params mapping typed for ``Expr.execute(params=...)``.
+
+        Returns
+        -------
+        Mapping[ibis.expr.types.Value, object]
+            Parameter mapping for Ibis execution.
+        """
+        return cast("Mapping[it.Value, object]", self.params)
+
+    def compile_sql(self, ibis_con: DuckDBBackend) -> str:
+        """Compile to DuckDB SQL with parameters safely embedded by Ibis.
+
+        Returns
+        -------
+        str
+            Compiled DuckDB SQL string.
+        """
+        if not self.params:
+            return ibis_con.compile(self.expr)
+        return ibis_con.compile(self.expr, params=self.params)
 
 
 def _validate_pagination(*, limit: int, offset: int) -> None:
@@ -302,7 +340,7 @@ def _build_order_by(
 def build_query(
     *,
     ibis_con: DuckDBBackend,
-    plan: SemanticQueryPlan,
+    spec: SemanticQuerySpec,
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> BoundQuery:
     """Build an Ibis query expression for a semantic view.
@@ -311,8 +349,8 @@ def build_query(
     ----------
     ibis_con
         Ibis DuckDB backend bound to the serving connection.
-    plan
-        Resolved query plan.
+    spec
+        Resolved query spec.
     column_types
         Optional mapping of column name to contract type. When provided, filter
         operators are validated against the contract types.
@@ -327,18 +365,18 @@ def build_query(
     QueryBuilderError
         If any identifier is invalid or column not allowed.
     """
-    _validate_pagination(limit=plan.limit, offset=plan.offset)
+    _validate_pagination(limit=spec.limit, offset=spec.offset)
 
-    for col in plan.columns:
-        if col not in plan.allowed_columns:
+    for col in spec.columns:
+        if col not in spec.allowed_columns:
             msg = f"Unknown column: {col}"
             raise QueryBuilderError(msg)
 
-    table = _resolve_table(ibis_con=ibis_con, table_key=plan.table_key)
+    table = _resolve_table(ibis_con=ibis_con, table_key=spec.table_key)
     temp_tables: list[str] = []
     params: dict[it.Expr, object] = {}
     ctx = _PredicateContext(
-        allowed_columns=plan.allowed_columns,
+        allowed_columns=spec.allowed_columns,
         column_types=column_types,
         temp_tables=temp_tables,
         params=params,
@@ -349,22 +387,22 @@ def build_query(
             filter_spec=f,
             ctx=ctx,
         )
-        for f in plan.filters
+        for f in spec.filters
     ]
 
     expr = table
     if predicates:
         expr = expr.filter(*predicates)
 
-    if plan.order_by:
+    if spec.order_by:
         expr = expr.order_by(
-            _build_order_by(expr=expr, allowed_columns=plan.allowed_columns, order_by=plan.order_by)
+            _build_order_by(expr=expr, allowed_columns=spec.allowed_columns, order_by=spec.order_by)
         )
 
-    expr = expr.select([expr[c] for c in plan.columns])
-    limited_expr = expr.limit(plan.limit, offset=plan.offset)
+    expr = expr.select([expr[c] for c in spec.columns])
+    limited_expr = expr.limit(spec.limit, offset=spec.offset)
     template = QueryTemplate(expr=limited_expr, temp_tables=tuple(temp_tables))
     return template.bind(params)
 
 
-__all__ = ["QueryBuilderError", "SemanticQueryPlan", "build_query"]
+__all__ = ["BoundQuery", "QueryBuilderError", "QueryTemplate", "build_query"]

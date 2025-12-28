@@ -158,10 +158,7 @@ def _primary_key_from_metadata(metadata: Mapping[str, object]) -> tuple[str, ...
         return tuple(raw)
     if isinstance(raw, str):
         return (raw,)
-    msg = (
-        "Arrow schema metadata codeintel.primary_key must be a list of strings, "
-        f"got {type(raw)}"
-    )
+    msg = f"Arrow schema metadata codeintel.primary_key must be a list of strings, got {type(raw)}"
     raise TypeError(msg)
 
 

@@ -97,11 +97,7 @@ def duckdb_default_catalog(con: DuckDBPyConnection) -> str | None:
     if row is None:
         return None
     catalog = row[1]
-    if (
-        isinstance(catalog, str)
-        and catalog.strip()
-        and is_valid_catalog_identifier(catalog)
-    ):
+    if isinstance(catalog, str) and catalog.strip() and is_valid_catalog_identifier(catalog):
         return catalog
     return None
 

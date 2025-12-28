@@ -81,12 +81,15 @@ def ensure_production_schemas(con: DuckDBPyConnection) -> None:
 def _resolve_db_path(con: DuckDBPyConnection) -> Path:
     rows = con.execute("PRAGMA database_list").fetchall()
     for row in rows:
-        if str(row[1]) != "main":
-            continue
+        if str(row[1]) == "main":
+            db_path = row[2]
+            if db_path:
+                return Path(str(db_path))
+            break
+    for row in rows:
         db_path = row[2]
         if db_path:
             return Path(str(db_path))
-        break
     return Path(":memory:")
 
 

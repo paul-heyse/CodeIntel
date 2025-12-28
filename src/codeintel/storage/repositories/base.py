@@ -92,6 +92,11 @@ class BaseRepository:
         -------
         DuckDBRelation
             Relation scoped to the repository snapshot when applicable.
+
+        Raises
+        ------
+        DuckDBCatalogException
+            If the requested table/view does not exist and cannot be created.
         """
         try:
             relation = self.gateway.relation_from_table_key(table_key)

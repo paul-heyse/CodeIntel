@@ -45,6 +45,7 @@ from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
+from codeintel.storage.contracts.provider import is_view as is_view_contract
 from codeintel.storage.duckdb.catalog import (
     duckdb_default_catalog,
     duckdb_schema_exists,
@@ -90,6 +91,10 @@ log = logging.getLogger(__name__)
 
 
 _TABLE_CREATION_DENYLIST = frozenset({"docs.v_validation_summary"})
+
+
+def _skip_table_creation(table_key: str) -> bool:
+    return table_key in _TABLE_CREATION_DENYLIST or is_view_contract(table_key)
 
 
 def _resolve_hash_column(table_schema: TableSchema | None) -> str | None:
@@ -1135,7 +1140,7 @@ class DuckDBPolicyBackend:
             raise RuntimeError(msg)
 
         for schema in self.schema_provider.iter_table_schemas():
-            if schema.table_key in _TABLE_CREATION_DENYLIST:
+            if _skip_table_creation(schema.table_key):
                 continue
             self.create_schema_if_not_exists(schema.schema)
             self.create_table_from_schema(
@@ -1215,7 +1220,7 @@ class DuckDBPolicyBackend:
             msg = "DuckDBPolicyBackend requires schema_provider for ensure_table()"
             raise RuntimeError(msg)
 
-        if table_key in _TABLE_CREATION_DENYLIST:
+        if _skip_table_creation(table_key):
             return
 
         table_schema = self._resolve_table_schema(table_key, create_if_missing=create_if_missing)

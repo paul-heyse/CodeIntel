@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.materializers import (
+    ArrowDatasetSaver,
     DuckDBRelationSaver,
     DuckDBRowsSaver,
     FileArtifactSaver,
@@ -54,6 +55,16 @@ class TableSaveSpec:
 
     table_key: str
     columns: tuple[str, ...] | DeferredColumns | None = None
+    output_role: OutputRole | None = None
+    output_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetSaveSpec:
+    """Specification for saving a table as an Arrow dataset."""
+
+    table_key: str
+    partition_columns: tuple[str, ...] = ()
     output_role: OutputRole | None = None
     output_name: str | None = None
 
@@ -142,6 +153,47 @@ def save_rows(
         target_name=_dep(value(context.target)),
         table_key=_dep(value(spec.table_key)),
         columns=_dep(value(resolved_columns)),
+        output_role=_dep(value(spec.output_role)),
+    )
+
+    def apply(fn: Callable[P, R]) -> Callable[P, R]:
+        tagged = tag_compute(
+            domain=context.domain,
+            target=context.target,
+            extra_tags=context.extra_tags,
+        )(fn)
+        return decorator(tagged)
+
+    return apply
+
+
+def save_dataset(
+    *,
+    context: SaverContext,
+    spec: DatasetSaveSpec,
+) -> Callable[[Callable[P, R]], Callable[P, R]]:
+    """Return a decorator that tags and materializes Arrow dataset outputs.
+
+    Parameters
+    ----------
+    context
+        Shared context for tagging and saver metadata.
+    spec
+        Dataset output specification.
+
+    Returns
+    -------
+    Callable[[Callable[P, R]], Callable[P, R]]
+        Decorator that tags and materializes the dataset output.
+    """
+    decorator = SaveToObjectMetadataDecorator(
+        [ArrowDatasetSaver],
+        output_name_=spec.output_name or materialize_node(spec.table_key),
+        env=_dep(source("env")),
+        catalog=_dep(source("catalog")),
+        target_name=_dep(value(context.target)),
+        table_key=_dep(value(spec.table_key)),
+        partition_columns=_dep(value(spec.partition_columns)),
         output_role=_dep(value(spec.output_role)),
     )
 
@@ -248,11 +300,13 @@ def save_rows_internal(
 
 __all__ = [
     "ArtifactSaveSpec",
+    "DatasetSaveSpec",
     "RelationTableSaveSpec",
     "SaverContext",
     "TableSaveSpec",
     "save_artifact",
     "save_artifact_internal",
+    "save_dataset",
     "save_relation_table",
     "save_rows",
     "save_rows_internal",

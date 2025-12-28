@@ -17,7 +17,7 @@ from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.serving.manifest import ServingSnapshotManifest
-from codeintel.storage.constants import META_DB_FILENAME
+from codeintel.storage.constants import META_CATALOG_NAME, META_DB_FILENAME
 from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.metadata.meta_catalog import resolve_meta_db_path
 from codeintel.storage.serving.snapshot_service import (
@@ -239,6 +239,8 @@ def publish_serving_snapshot(
         raise FileNotFoundError(msg)
 
     gateway.execute("CHECKPOINT")
+    if gateway.config.attach_meta:
+        gateway.execute(f"CHECKPOINT {META_CATALOG_NAME}")
     gateway.con.commit()
 
     snap_dir = request.serve_dir / "snapshots" / request.run_id

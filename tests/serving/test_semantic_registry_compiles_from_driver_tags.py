@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import types
 
 import hamilton.driver as h_driver
@@ -41,8 +42,16 @@ def _driver() -> h_driver.Driver:
         Driver seeded with the semantic view example.
     """
     module = types.ModuleType("semantic_registry_fixture")
-    setattr(module, semantic_view_example.__name__, semantic_view_example)
-    return h_driver.Builder().with_modules(module).build()
+    module_name = module.__name__
+    original_module = semantic_view_example.__module__
+    semantic_view_example.__module__ = module.__name__
+    try:
+        sys.modules[module_name] = module
+        setattr(module, semantic_view_example.__name__, semantic_view_example)
+        return h_driver.Builder().with_modules(module).build()
+    finally:
+        sys.modules.pop(module_name, None)
+        semantic_view_example.__module__ = original_module
 
 
 def test_compile_semantic_registry_from_driver_tags() -> None:

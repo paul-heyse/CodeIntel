@@ -31,6 +31,7 @@ async def test_mcp_sql_fingerprint_is_stable_for_same_request(
         "result_engine": "pandas",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
+        "query_engine": "duckdb",
     }
     async with harness.mcp_client(settings_overrides=settings_overrides) as client:
         args = {"request": {"view_id": "demo.view", "pagination": {"limit": 2, "offset": 0}}}
@@ -57,6 +58,7 @@ async def test_mcp_sql_fingerprint_changes_when_limit_changes(
         "result_engine": "pandas",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
+        "query_engine": "duckdb",
     }
     async with harness.mcp_client(settings_overrides=settings_overrides) as client:
         first = extract_payload(
