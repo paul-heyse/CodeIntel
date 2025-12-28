@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
+from codeintel.core.columnar.rows import ColumnarRows
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from pathlib import Path
@@ -52,14 +54,14 @@ class ChangeSet:
     state_hash
         Stable hash of the current file state for caching.
     state_rows
-        Serialized row tuples for persisting current file state.
+        Columnar rows for persisting current file state.
     """
 
     added: list[ModuleRecord] = field(default_factory=list)
     modified: list[ModuleRecord] = field(default_factory=list)
     deleted: list[ModuleRecord] = field(default_factory=list)
     state_hash: str | None = None
-    state_rows: list[tuple[object, ...]] = field(default_factory=list)
+    state_rows: ColumnarRows = field(default_factory=dict)
 
     @property
     def has_changes(self) -> bool:

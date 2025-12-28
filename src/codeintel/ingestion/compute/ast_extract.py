@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
@@ -92,8 +92,10 @@ class AstExtractResult:
     """Result bundle for AST extraction."""
 
     result: ExecutionResult
-    ast_rows: tuple[tuple[object, ...], ...] = ()
-    metric_rows: tuple[tuple[object, ...], ...] = ()
+    ast_rows: ColumnarRows = field(default_factory=dict)
+    metric_rows: ColumnarRows = field(default_factory=dict)
+    ast_row_count: int = 0
+    metric_row_count: int = 0
 
 
 class AstVisitor(ast.NodeVisitor):
@@ -384,15 +386,12 @@ class AstExtractStep(BaseExtractStep):
         AstExtractResult
             Result bundle with row tuples and execution status.
         """
-        ast_rows: list[tuple[object, ...]] = []
-        metric_rows: list[tuple[object, ...]] = []
-        warnings: list[str] = []
-
         try:
-            ast_serializer = row_serializer_for_table_key(AST_NODES_TABLE_KEY)
-            metrics_serializer = row_serializer_for_table_key(AST_METRICS_TABLE_KEY)
-        except RuntimeError as exc:
+            ast_buffer = columnar_buffer_for_table_key(AST_NODES_TABLE_KEY)
+            metrics_buffer = columnar_buffer_for_table_key(AST_METRICS_TABLE_KEY)
+        except (KeyError, RuntimeError) as exc:
             return AstExtractResult(result=ExecutionResult.failed(str(exc)))
+        warnings: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_ast(module, source)
@@ -400,22 +399,25 @@ class AstExtractStep(BaseExtractStep):
                 warnings.append(f"Failed to extract AST from {module.rel_path}")
                 continue
 
-            ast_rows.extend(ast_serializer(row) for row in result.ast_rows)
+            for row in result.ast_rows:
+                ast_buffer.append(row)
             if result.metric_row is not None:
-                metric_rows.append(metrics_serializer(result.metric_row))
+                metrics_buffer.append(result.metric_row)
 
         log.info(
             "AST extraction: repo=%s commit=%s ast_rows=%d metrics=%d",
             repo,
             commit,
-            len(ast_rows),
-            len(metric_rows),
+            ast_buffer.row_count,
+            metrics_buffer.row_count,
         )
 
         return AstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            ast_rows=tuple(ast_rows),
-            metric_rows=tuple(metric_rows),
+            ast_rows=ast_buffer.data,
+            metric_rows=metrics_buffer.data,
+            ast_row_count=ast_buffer.row_count,
+            metric_row_count=metrics_buffer.row_count,
         )
 
 

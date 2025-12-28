@@ -7,14 +7,14 @@ LibCST concrete syntax trees, using ports for all I/O operations.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import libcst as cst
 from libcst import metadata
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep
 from codeintel.ingestion.infrastructure.cst_utils import (
     CstCaptureConfig,
@@ -88,7 +88,8 @@ class CstExtractResult:
     """Result bundle for CST extraction."""
 
     result: ExecutionResult
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: ColumnarRows = field(default_factory=dict)
+    row_count: int = 0
 
 
 class CstVisitor(CstCaptureVisitor):
@@ -178,12 +179,11 @@ class CstExtractStep(BaseExtractStep):
         CstExtractResult
             Result bundle with row tuples and execution status.
         """
-        all_rows: list[tuple[object, ...]] = []
-        warnings: list[str] = []
         try:
-            serializer = row_serializer_for_table_key(CST_NODES_TABLE_KEY)
-        except RuntimeError as exc:
+            buffer = columnar_buffer_for_table_key(CST_NODES_TABLE_KEY)
+        except (KeyError, RuntimeError) as exc:
             return CstExtractResult(result=ExecutionResult.failed(str(exc)))
+        warnings: list[str] = []
 
         for module, source in self._iter_python_sources(modules):
             result = _extract_module_cst(module, source)
@@ -194,30 +194,29 @@ class CstExtractStep(BaseExtractStep):
 
             for row in result.rows:
                 rel_path, node_id, kind, span, snippet, parents, qnames = row
-                all_rows.append(
-                    serializer(
-                        {
-                            "path": rel_path,
-                            "node_id": node_id,
-                            "kind": kind,
-                            "span": span,
-                            "text_preview": snippet,
-                            "parents": list(parents),
-                            "qnames": list(qnames),
-                        }
-                    )
+                buffer.append(
+                    {
+                        "path": rel_path,
+                        "node_id": node_id,
+                        "kind": kind,
+                        "span": span,
+                        "text_preview": snippet,
+                        "parents": list(parents),
+                        "qnames": list(qnames),
+                    }
                 )
 
         log.info(
             "CST extraction: repo=%s commit=%s rows=%d",
             repo,
             commit,
-            len(all_rows),
+            buffer.row_count,
         )
 
         return CstExtractResult(
             result=ExecutionResult.ok(warnings=tuple(warnings)),
-            rows=tuple(all_rows),
+            rows=buffer.data,
+            row_count=buffer.row_count,
         )
 
 

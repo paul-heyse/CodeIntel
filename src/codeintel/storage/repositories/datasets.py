@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
-from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.repositories.base import BaseRepository
 from codeintel.storage.validation.columnar import validate_record_batch_reader
 
 if TYPE_CHECKING:

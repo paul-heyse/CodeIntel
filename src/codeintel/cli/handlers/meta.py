@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from codeintel.build.meta.contract_catalog import persist_contract_catalog
+from codeintel.build.meta.contract_catalog import (
+    persist_contract_catalog,
+    persist_contract_catalog_to_connection,
+)
 from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestContext,
@@ -19,6 +22,10 @@ from codeintel.cli.errors.results import (
 )
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.core.execution.ids import new_run_id
+from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.duckdb_types import DuckDBConnection
+from codeintel.storage.gateway import open_gateway, open_inference_gateway
+from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 
 if TYPE_CHECKING:
@@ -45,21 +52,25 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     if not snapshot.repo or not snapshot.commit:
         return fail_execution_failed("meta", "repo and commit must be set for meta.sync")
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=ctx.runtime, gateway=ctx.gateway)
-    schema_index = runtime_bundle.schema_index
-    if schema_index is None:
-        return fail_execution_failed("meta", "Runtime schema_index is required")
-    schema_provider = get_schema_provider()
-    request = SchemaManifestRequest(
-        all_targets=True,
-        stable=True,
-        version="v2",
-        include_views=True,
-        include_artifacts=True,
-        include_provenance=True,
-    )
-
+    inference_gateway = open_inference_gateway(schema_provider=MappingSchemaProvider({}))
     try:
+        runtime_bundle = compose_cli_runtime_bundle(
+            runtime=ctx.runtime,
+            gateway=inference_gateway,
+        )
+        schema_index = runtime_bundle.schema_index
+        if schema_index is None:
+            return fail_execution_failed("meta", "Runtime schema_index is required")
+        schema_provider = get_schema_provider()
+        request = SchemaManifestRequest(
+            all_targets=True,
+            stable=True,
+            version="v2",
+            include_views=True,
+            include_artifacts=True,
+            include_provenance=True,
+        )
+
         manifest = compile_schema_manifest(
             provider=schema_provider,
             context=SchemaManifestContext(
@@ -69,6 +80,26 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
             ),
             request=request,
         )
+    except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+        return fail_execution_failed("meta", str(exc), status=500)
+    finally:
+        inference_gateway.close()
+
+    config = StorageConfig(
+        db_path=ctx.runtime.db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+    )
+
+    def _seed_contract_catalog(con: DuckDBConnection) -> None:
+        persist_contract_catalog_to_connection(con, inputs={"source": "meta.sync"})
+
+    gateway = open_gateway(config, seed_contract_catalog=_seed_contract_catalog)
+    try:
         run_id = new_run_id("meta")
         catalog_request = SchemaCatalogRequest(
             run_id=run_id,
@@ -76,21 +107,23 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
             commit=snapshot.commit,
             catalog_inputs={"source": "meta.sync"},
         )
-        schema_result = ctx.gateway.schemas.persist_schema_manifest(
+        schema_result = gateway.schemas.persist_schema_manifest(
             manifest,
             request=catalog_request,
         )
-        override_result = ctx.gateway.schemas.refresh_override_registry_from_manifest(
+        override_result = gateway.schemas.refresh_override_registry_from_manifest(
             manifest,
             request=catalog_request,
             catalog_hash=schema_result.catalog_hash,
         )
         contract_result = persist_contract_catalog(
-            ctx.gateway,
+            gateway,
             inputs={"source": "meta.sync"},
         )
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         return fail_execution_failed("meta", str(exc), status=500)
+    finally:
+        gateway.close()
 
     payload: dict[str, object] = {
         "run_id": run_id,

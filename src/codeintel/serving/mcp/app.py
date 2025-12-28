@@ -103,7 +103,14 @@ def build_mcp_app(
 
     register_catalog_tool(mcp, ops, query_limiter, settings=settings)
     register_describe_tool(mcp, ops, query_limiter, settings=settings)
-    register_query_tool(mcp, ops, query_limiter, settings=settings)
+    register_query_tool(
+        mcp,
+        ops,
+        query_limiter,
+        settings=settings,
+        store=store,
+        export_limiter=export_limiter,
+    )
 
     if features.enable_mcp_explain:
         register_explain_tool(mcp, ops, query_limiter, settings=settings)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
@@ -39,10 +39,18 @@ class ColumnarRowBuffer:
 
 
 def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
-    """Create a ColumnarRowBuffer using the table schema registry."""
+    """Create a ColumnarRowBuffer using the table schema registry.
+
+    Returns
+    -------
+    ColumnarRowBuffer
+        Buffer seeded with table columns and types.
+    """
     schema = get_schema_service().require_table_schema(table_key)
     columns = tuple(schema.column_names())
-    column_types = tuple(column.type for column in schema.columns)
+    column_types: tuple[ColumnType, ...] = tuple(
+        cast("ColumnType", column.type) for column in schema.columns
+    )
     return ColumnarRowBuffer(
         table_key=table_key,
         columns=columns,
@@ -52,7 +60,18 @@ def columnar_buffer_for_table_key(table_key: str) -> ColumnarRowBuffer:
 
 
 def columnar_row_count(columns: Mapping[str, Sequence[object]]) -> int:
-    """Return row count for a columnar mapping, validating lengths."""
+    """Return row count for a columnar mapping, validating lengths.
+
+    Returns
+    -------
+    int
+        Number of rows represented by the columnar mapping.
+
+    Raises
+    ------
+    ValueError
+        If the columnar mapping contains columns with mismatched lengths.
+    """
     lengths = {len(values) for values in columns.values()}
     if not lengths:
         return 0

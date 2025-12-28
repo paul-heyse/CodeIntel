@@ -9,16 +9,20 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
+from codeintel.core.columnar.rows import (
+    ColumnarRowBuffer,
+    ColumnarRows,
+    columnar_buffer_for_table_key,
+)
 from codeintel.ingestion.engine.results import parse_test_duration, parse_test_markers
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
     from pathlib import Path
 
     from codeintel.ingestion.ports.discovery import ModuleRecord
@@ -28,14 +32,13 @@ TEST_CATALOG_TABLE_KEY = "analytics.test_catalog"
 
 
 def _build_test_catalog_rows(
+    buffer: ColumnarRowBuffer,
     tests: Sequence[Mapping[str, object]],
     *,
     repo: str,
     commit: str,
     created_at: datetime,
-    serializer: Callable[[Mapping[str, object]], tuple[object, ...]],
-) -> list[tuple[object, ...]]:
-    rows: list[tuple[object, ...]] = []
+) -> None:
     for test in tests:
         nodeid = str(test.get("nodeid", ""))
         if not nodeid:
@@ -53,27 +56,24 @@ def _build_test_catalog_rows(
         parametrized = "[" in nodeid or "parametrize" in markers
         flaky = "flaky" in markers
 
-        rows.append(
-            serializer(
-                {
-                    "test_id": nodeid,
-                    "test_goid_h128": None,
-                    "urn": None,
-                    "repo": repo,
-                    "commit": commit,
-                    "rel_path": rel_path,
-                    "qualname": qualname,
-                    "kind": "test",
-                    "status": outcome,
-                    "duration_ms": duration_ms,
-                    "markers": list(markers),
-                    "parametrized": parametrized,
-                    "flaky": flaky,
-                    "created_at": created_at,
-                }
-            )
+        buffer.append(
+            {
+                "test_id": nodeid,
+                "test_goid_h128": None,
+                "urn": None,
+                "repo": repo,
+                "commit": commit,
+                "rel_path": rel_path,
+                "qualname": qualname,
+                "kind": "test",
+                "status": outcome,
+                "duration_ms": duration_ms,
+                "markers": list(markers),
+                "parametrized": parametrized,
+                "flaky": flaky,
+                "created_at": created_at,
+            }
         )
-    return rows
 
 
 class TestsIngestStep:
@@ -126,14 +126,13 @@ class TestsIngestStep:
             )
 
         tests = data.get("tests", [])
-        catalog_serializer = row_serializer_for_table_key(TEST_CATALOG_TABLE_KEY)
-
-        all_rows = _build_test_catalog_rows(
+        buffer = columnar_buffer_for_table_key(TEST_CATALOG_TABLE_KEY)
+        _build_test_catalog_rows(
+            buffer,
             tests,
             repo=repo,
             commit=commit,
             created_at=created_at,
-            serializer=catalog_serializer,
         )
 
         log.info(
@@ -145,7 +144,8 @@ class TestsIngestStep:
 
         return TestsIngestResult(
             result=ExecutionResult.ok(),
-            rows=tuple(all_rows),
+            rows=buffer.data,
+            row_count=buffer.row_count,
         )
 
 
@@ -154,7 +154,8 @@ class TestsIngestResult:
     """Result bundle for tests ingestion."""
 
     result: ExecutionResult
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: ColumnarRows = field(default_factory=dict)
+    row_count: int = 0
 
 
 __all__ = ["TestsIngestResult", "TestsIngestStep"]

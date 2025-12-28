@@ -8,8 +8,8 @@ This module replaces the per-target files for:
 The targets share a common pattern:
 1) Load module paths from the current snapshot
 2) Convert paths into ``ModuleRecord``s
-3) Execute pure ingestion compute-steps that return row tuples
-4) Materialize rows via Hamilton materializers and emit ``TargetRunRecord``
+3) Execute pure ingestion compute-steps that return columnar rows
+4) Materialize columnar rows via Hamilton materializers and emit ``TargetRunRecord``
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
 from codeintel.build.hamilton.native.ingestion.frame_utils import (
     empty_lazyframe_for_table,
-    lazyframe_for_table,
+    lazyframe_for_table_columns,
 )
 from codeintel.build.hamilton.native.patterns import (
     IngestStep,
@@ -290,14 +290,16 @@ def t__ast__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        ast_frame = lazyframe_for_table(AST_NODES_TABLE_KEY, extract_result.ast_rows)
-        metric_frame = lazyframe_for_table(AST_METRICS_TABLE_KEY, extract_result.metric_rows)
+        ast_frame = lazyframe_for_table_columns(AST_NODES_TABLE_KEY, extract_result.ast_rows)
+        metric_frame = lazyframe_for_table_columns(
+            AST_METRICS_TABLE_KEY, extract_result.metric_rows
+        )
         return AstToolOutput(
             result=extract_result.result,
             ast_rows=ast_frame,
             metric_rows=metric_frame,
-            ast_row_count=len(extract_result.ast_rows),
-            metric_row_count=len(extract_result.metric_rows),
+            ast_row_count=extract_result.ast_row_count,
+            metric_row_count=extract_result.metric_row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -516,11 +518,11 @@ def t__cst__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_table(CST_NODES_TABLE_KEY, extract_result.rows)
+        frame = lazyframe_for_table_columns(CST_NODES_TABLE_KEY, extract_result.rows)
         return CstToolOutput(
             result=extract_result.result,
             rows=frame,
-            row_count=len(extract_result.rows),
+            row_count=extract_result.row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)
@@ -688,11 +690,11 @@ def t__docstrings__run(
             repo=env.snapshot.repo,
             commit=env.snapshot.commit,
         )
-        frame = lazyframe_for_table(DOCSTRINGS_TABLE_KEY, extract_result.rows)
+        frame = lazyframe_for_table_columns(DOCSTRINGS_TABLE_KEY, extract_result.rows)
         return DocstringsToolOutput(
             result=extract_result.result,
             rows=frame,
-            row_count=len(extract_result.rows),
+            row_count=extract_result.row_count,
         )
 
     output = run_tool_step(context=context, run=_execute)

@@ -31,6 +31,7 @@ class SemanticQueryToolRequest(BaseModel):
     filters: list[FilterSpec] = Field(default_factory=list)
     order_by: list[str] = Field(default_factory=list)
     pagination: PaginationSpec | None = None
+    export_format: ExportFormat | None = None
 
     def to_semantic_request(self) -> SemanticQueryRequest:
         """Convert MCP query payload into the semantic request model.
@@ -40,7 +41,7 @@ class SemanticQueryToolRequest(BaseModel):
         SemanticQueryRequest
             Normalized semantic query request.
         """
-        payload = self.model_dump(exclude={"pagination"}, exclude_none=True)
+        payload = self.model_dump(exclude={"pagination", "export_format"}, exclude_none=True)
         if self.pagination is not None:
             payload["limit"] = self.pagination.limit
             payload["offset"] = self.pagination.offset

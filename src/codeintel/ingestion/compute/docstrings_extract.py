@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import ast
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
 from docstring_parser import DocstringStyle, ParseError, parse
 
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.core.columnar.rows import ColumnarRows, columnar_buffer_for_table_key
 from codeintel.core.schemas.generated_rows.core import CoreDocstringsRow as DocstringRow
-from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
 from codeintel.ingestion.compute.base import BaseExtractStep
 
 if TYPE_CHECKING:
@@ -253,7 +253,8 @@ class DocstringsExtractResult:
     """Result bundle for docstring extraction."""
 
     result: ExecutionResult
-    rows: tuple[tuple[object, ...], ...] = ()
+    rows: ColumnarRows = field(default_factory=dict)
+    row_count: int = 0
 
 
 class DocstringsExtractStep(BaseExtractStep):
@@ -298,25 +299,26 @@ class DocstringsExtractStep(BaseExtractStep):
         )
 
         try:
-            serializer = row_serializer_for_table_key(DOCSTRINGS_TABLE_KEY)
-        except RuntimeError as exc:
+            buffer = columnar_buffer_for_table_key(DOCSTRINGS_TABLE_KEY)
+        except (KeyError, RuntimeError) as exc:
             return DocstringsExtractResult(result=ExecutionResult.failed(str(exc)))
-        all_rows: list[tuple[object, ...]] = []
 
         for module, source in self._iter_python_sources(modules):
             docstrings = _extract_module_docstrings(module, source, ctx)
-            all_rows.extend(serializer(ds) for ds in docstrings)
+            for row in docstrings:
+                buffer.append(row)
 
         log.info(
             "Docstring extraction: repo=%s commit=%s rows=%d",
             repo,
             commit,
-            len(all_rows),
+            buffer.row_count,
         )
 
         return DocstringsExtractResult(
             result=ExecutionResult.ok(),
-            rows=tuple(all_rows),
+            rows=buffer.data,
+            row_count=buffer.row_count,
         )
 
 
