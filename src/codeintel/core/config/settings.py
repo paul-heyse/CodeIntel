@@ -218,6 +218,7 @@ class ServingSettings:
     port: int = 8000
     auth_token: str | None = None
     schema_enforcement: str = "strict"
+    query_engine: str = "auto"
     result_engine: str = "polars"
     api_key: str | None = None
     cors_origins: tuple[str, ...] = ()

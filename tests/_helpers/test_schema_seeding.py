@@ -5,7 +5,6 @@ from __future__ import annotations
 import duckdb
 
 from codeintel.storage.constants import META_CATALOG_NAME, SCHEMAS
-from codeintel.storage.helpers.table_key import fully_qualified_table_ref
 from tests._helpers.assertions.expectation_assertions import expect_true
 from tests._helpers.schemas import ensure_production_schemas
 
@@ -15,11 +14,14 @@ def _list_schemas(
     *,
     catalog: str | None = None,
 ) -> set[str]:
+    table_ref = "information_schema.schemata"
     if catalog is None:
-        table_ref = "information_schema.schemata"
+        rows = con.execute(f"SELECT schema_name FROM {table_ref}").fetchall()
     else:
-        table_ref = fully_qualified_table_ref("information_schema.schemata", catalog=catalog)
-    rows = con.execute(f"SELECT schema_name FROM {table_ref}").fetchall()
+        rows = con.execute(
+            f"SELECT schema_name FROM {table_ref} WHERE catalog_name = ?",
+            [catalog],
+        ).fetchall()
     return {str(row[0]) for row in rows}
 
 

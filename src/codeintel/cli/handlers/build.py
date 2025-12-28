@@ -1027,47 +1027,49 @@ def _build_run_result(
     except ResolutionError as exc:
         return fail_project_error("build", str(exc)), runtime, goals
 
-    runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=ctx.gateway)
-    catalog = runtime_bundle.catalog
-    scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
-    try:
-        goals = _resolve_goals(params.targets, params.module, scope, catalog)
-    except ValidationError as exc:
-        return fail_invalid_targets(str(exc)), runtime, goals
+    with ctx.storage.write_gateway() as gateway:
+        runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
+        catalog = runtime_bundle.catalog
+        scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
+        try:
+            goals = _resolve_goals(params.targets, params.module, scope, catalog)
+        except ValidationError as exc:
+            return fail_invalid_targets(str(exc)), runtime, goals
 
-    if params.publish_serving_snapshot and "serving_artifacts" not in goals:
-        goals.append("serving_artifacts")
+        if params.publish_serving_snapshot and "serving_artifacts" not in goals:
+            goals.append("serving_artifacts")
 
-    domain = _resolve_domain_for_goals(goals, catalog)
-    telemetry_state.domain = domain
+        domain = _resolve_domain_for_goals(goals, catalog)
+        telemetry_state.domain = domain
 
-    LOG.info(
-        "build.run repo=%s commit=%s targets=%s",
-        runtime.snapshot.repo,
-        runtime.snapshot.commit,
-        goals,
-    )
+        LOG.info(
+            "build.run repo=%s commit=%s targets=%s",
+            runtime.snapshot.repo,
+            runtime.snapshot.commit,
+            goals,
+        )
 
-    execution_args = BuildExecutionArgs(
-        goals=goals,
-        domain=domain,
-        force=params.force,
-        run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
-        validate_outputs=params.validate_outputs,
-        publish_serving_snapshot=params.publish_serving_snapshot,
-        parallel_backend=params.parallel_backend,
-        max_workers=params.max_workers,
-        enable_cache=params.enable_cache,
-        cache_dir=params.cache_dir,
-        clear_cache=params.clear_cache,
-        cache_report=params.cache_report,
-        validation_mode=params.validation_mode,
-    )
-    result = _execute_and_format_result(
-        runtime,
-        execution_args,
-        telemetry_state=telemetry_state,
-    )
+        execution_args = BuildExecutionArgs(
+            goals=goals,
+            domain=domain,
+            force=params.force,
+            run_mode=RunMode.DRY_RUN if params.dry_run else RunMode.EXECUTE,
+            validate_outputs=params.validate_outputs,
+            publish_serving_snapshot=params.publish_serving_snapshot,
+            parallel_backend=params.parallel_backend,
+            max_workers=params.max_workers,
+            enable_cache=params.enable_cache,
+            cache_dir=params.cache_dir,
+            clear_cache=params.clear_cache,
+            cache_report=params.cache_report,
+            validation_mode=params.validation_mode,
+        )
+        result = _execute_and_format_result(
+            runtime,
+            execution_args,
+            gateway=gateway,
+            telemetry_state=telemetry_state,
+        )
     return result, runtime, goals
 
 
@@ -1286,6 +1288,7 @@ def _execute_and_format_result(
     runtime: ResolvedRuntime,
     execution: BuildExecutionArgs,
     *,
+    gateway: StorageGateway | None = None,
     telemetry_state: _BuildRunTelemetryState | None = None,
 ) -> CliResult[BuildRunResult]:
     """Execute build and format result.
@@ -1296,6 +1299,8 @@ def _execute_and_format_result(
         Resolved runtime.
     execution
         BuildExecutionArgs capturing mode, validation, and goal selection.
+    gateway
+        Optional pre-opened gateway to reuse for execution.
     telemetry_state
         Optional telemetry state to populate with execution metadata.
 
@@ -1305,11 +1310,25 @@ def _execute_and_format_result(
         Build result.
     """
     try:
-        with runtime_gateway(
-            runtime,
-            read_only=False,
-            validation_mode=execution.validation_mode,
-        ) as gateway:
+        if gateway is None:
+            with runtime_gateway(
+                runtime,
+                read_only=False,
+                validation_mode=execution.validation_mode,
+            ) as runtime_gateway_obj:
+                outcome = _execute_build_hamilton(runtime, runtime_gateway_obj, execution)
+                if (
+                    execution.publish_serving_snapshot
+                    and execution.run_mode is RunMode.EXECUTE
+                    and outcome is not None
+                    and not outcome.result.failed_targets
+                ):
+                    _publish_serving_snapshot_from_build(
+                        runtime,
+                        runtime_gateway_obj,
+                        run_id=outcome.result.run_id,
+                    )
+        else:
             outcome = _execute_build_hamilton(runtime, gateway, execution)
             if (
                 execution.publish_serving_snapshot

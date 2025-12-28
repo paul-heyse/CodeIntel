@@ -45,7 +45,11 @@ from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.hashing import stable_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.storage.constants import DUCKDB_DIALECT, SCHEMAS
-from codeintel.storage.duckdb.catalog import duckdb_default_catalog, duckdb_schema_exists
+from codeintel.storage.duckdb.catalog import (
+    duckdb_default_catalog,
+    duckdb_schema_exists,
+    is_valid_catalog_identifier,
+)
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 from codeintel.storage.helpers.table_key import (
     fully_qualified_table_ref,
@@ -626,7 +630,7 @@ class DuckDBPolicyBackend:
 
     def _resolve_catalog(self, catalog: str | None) -> str | None:
         if catalog is not None:
-            return catalog
+            return catalog if is_valid_catalog_identifier(catalog) else None
         return self._default_catalog()
 
     def _run(self, expr: exp.Expression) -> None:

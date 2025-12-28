@@ -116,13 +116,7 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     return CliResult.ok(payload)
 
 
-def meta_override_pin_handler(
-    ctx: CommandContext,
-    *,
-    table_key: str,
-    schema_digest: str | None,
-    version_id: str | None,
-) -> CliResult[dict[str, object]]:
+def meta_override_pin_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     """Pin the override registry to a specific schema version.
 
     Returns
@@ -132,6 +126,16 @@ def meta_override_pin_handler(
     """
     if not ctx.has_storage:
         return fail_execution_failed("meta", "meta.override-pin requires storage access")
+    table_key = ctx.params.get_str("table_key")
+    if not table_key:
+        return fail_invalid_value(
+            "table_key",
+            table_key,
+            "table_key is required",
+            suggestion="Provide --table-key",
+        )
+    schema_digest = ctx.params.get_str("schema_digest")
+    version_id = ctx.params.get_str("version_id")
     if schema_digest is None and version_id is None:
         return fail_invalid_value(
             "schema_digest",
@@ -155,7 +159,7 @@ def meta_override_pin_handler(
     except (RuntimeError, ValueError) as exc:
         return fail_execution_failed("meta", str(exc), status=500)
 
-    payload = {
+    payload: dict[str, object] = {
         "table_key": record.table_key,
         "schema_digest": record.schema_digest,
         "schema_hash": record.schema_hash,

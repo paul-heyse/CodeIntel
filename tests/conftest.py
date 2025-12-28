@@ -298,10 +298,21 @@ def hamilton_runtime(runtime_env: BuildEnv) -> RuntimeBundle:
     return compose_runtime(env=runtime_env, config=config).bundle
 
 
+def _should_skip_session_services(request: pytest.FixtureRequest) -> bool:
+    items = request.session.items
+    if not items:
+        return False
+    return all(item.get_closest_marker("no_runtime_env") is not None for item in items)
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _session_schema_service(hamilton_runtime: RuntimeBundle) -> None:
-    configure_schema_service(runtime=hamilton_runtime)
-    configure_contract_service(runtime=hamilton_runtime)
+def _session_schema_service(request: pytest.FixtureRequest) -> None:
+    if _should_skip_session_services(request):
+        return
+
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+    configure_schema_service(runtime=runtime)
+    configure_contract_service(runtime=runtime)
     ensure_storage_contract_catalog()
 
 

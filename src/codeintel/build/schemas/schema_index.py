@@ -121,6 +121,21 @@ class SchemaIndex:
         for table_key in schemas:
             self._clear_inference_error(table_key)
 
+    def cached_schema_for(self, table_key: str) -> TableSchema | None:
+        """Return a cached schema without triggering inference.
+
+        Parameters
+        ----------
+        table_key
+            Fully qualified table key (schema.table).
+
+        Returns
+        -------
+        TableSchema | None
+            Cached schema if present, otherwise None.
+        """
+        return self._cache.get(table_key)
+
     def get_inference_error(self, table_key: str) -> str | None:
         """Return the most recent inference error for a table key.
 
@@ -343,7 +358,7 @@ class _SchemaIndexSeedProvider:
 
     def get_table_schema(self, table_key: str) -> TableSchema | None:
         if self.schema_index.is_inference_active(table_key):
-            cached = self.schema_index._cache.get(table_key)
+            cached = self.schema_index.cached_schema_for(table_key)
             if cached is not None:
                 return cached
             override_schema = self.schema_index.override_schema_for(table_key)

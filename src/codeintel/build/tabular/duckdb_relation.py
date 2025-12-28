@@ -6,11 +6,11 @@ import re
 import uuid
 from typing import Literal, overload
 
-import duckdb
 import polars as pl
 import pyarrow as pa
 
 from codeintel.build.tabular.types import TabularInput, TabularRelation
+from codeintel.storage.duckdb_types import DuckDBConnection, DuckDBRelation
 
 _NAME_SANITIZER = re.compile(r"[^0-9A-Za-z_]+")
 
@@ -21,7 +21,7 @@ def _sanitize_name(prefix: str) -> str:
 
 
 def register_ephemeral(
-    conn: duckdb.DuckDBPyConnection,
+    conn: DuckDBConnection,
     obj: TabularInput,
     *,
     prefix: str = "tmp",
@@ -49,7 +49,7 @@ def register_ephemeral(
 
 
 def coerce_to_relation(
-    conn: duckdb.DuckDBPyConnection,
+    conn: DuckDBConnection,
     obj: TabularInput,
     *,
     name_hint: str | None = None,
@@ -70,7 +70,7 @@ def coerce_to_relation(
     TabularRelation
         DuckDB relation for the provided object.
     """
-    if isinstance(obj, duckdb.DuckDBPyRelation):
+    if isinstance(obj, DuckDBRelation):
         return obj
     name = register_ephemeral(conn, obj, prefix=name_hint or "tmp")
     return conn.table(name)

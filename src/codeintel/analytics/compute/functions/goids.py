@@ -17,7 +17,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict
 
-from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.helpers.sql_params import render_sql
+from codeintel.storage.query_results import (
+    coerce_int,
+    coerce_optional_int,
+    records_from_relation,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -154,37 +159,39 @@ class FunctionGoidLoader:
             Each function GOID in the snapshot.
         """
         relation = self._gateway.con.sql(
-            """
-            SELECT
-                goid_h128,
-                urn,
-                repo,
-                commit,
-                rel_path,
-                language,
-                kind,
-                qualname,
-                start_line,
-                end_line
-            FROM core.goids
-            WHERE repo = $repo
-              AND commit = $commit
-              AND kind IN ('function', 'method')
-            """,
-            {"repo": self._snapshot.repo, "commit": self._snapshot.commit},
+            render_sql(
+                """
+                SELECT
+                    goid_h128,
+                    urn,
+                    repo,
+                    commit,
+                    rel_path,
+                    language,
+                    kind,
+                    qualname,
+                    start_line,
+                    end_line
+                FROM core.goids
+                WHERE repo = $repo
+                  AND commit = $commit
+                  AND kind IN ('function', 'method')
+                """,
+                {"repo": self._snapshot.repo, "commit": self._snapshot.commit},
+            )
         )
         for record in records_from_relation(relation):
             goid_row: GoidRow = {
-                "goid_h128": record["goid_h128"],
-                "urn": record["urn"],
-                "repo": record["repo"],
-                "commit": record["commit"],
-                "rel_path": record["rel_path"],
-                "language": record["language"],
-                "kind": record["kind"],
-                "qualname": record["qualname"],
-                "start_line": record["start_line"],
-                "end_line": record["end_line"],
+                "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
+                "urn": str(record["urn"]),
+                "repo": str(record["repo"]),
+                "commit": str(record["commit"]),
+                "rel_path": str(record["rel_path"]),
+                "language": str(record["language"]),
+                "kind": str(record["kind"]),
+                "qualname": str(record["qualname"]),
+                "start_line": coerce_int(record["start_line"], ctx="start_line"),
+                "end_line": coerce_optional_int(record.get("end_line"), ctx="end_line"),
             }
             yield FunctionGoid.from_row(goid_row)
 

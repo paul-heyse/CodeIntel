@@ -16,6 +16,7 @@ from codeintel.graphs.validation.findings import (
     SYMBOL_COMMUNITY_MIN,
 )
 from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.helpers.sql_params import render_sql
 
 if TYPE_CHECKING:
     import logging
@@ -99,20 +100,22 @@ def _symbol_community_findings_impl(
     """
     try:
         relation = gateway.con.sql(
-            """
-            SELECT symbol_community_id, COUNT(*) AS sym_count
-            FROM analytics.symbol_graph_metrics_modules
-            WHERE repo = $repo
-              AND commit = $commit
-              AND symbol_community_id IS NOT NULL
-            GROUP BY symbol_community_id
-            HAVING COUNT(*) > $min_count
-            """,
-            {
-                "repo": repo,
-                "commit": commit,
-                "min_count": SYMBOL_COMMUNITY_MIN,
-            },
+            render_sql(
+                """
+                SELECT symbol_community_id, COUNT(*) AS sym_count
+                FROM analytics.symbol_graph_metrics_modules
+                WHERE repo = $repo
+                  AND commit = $commit
+                  AND symbol_community_id IS NOT NULL
+                GROUP BY symbol_community_id
+                HAVING COUNT(*) > $min_count
+                """,
+                {
+                    "repo": repo,
+                    "commit": commit,
+                    "min_count": SYMBOL_COMMUNITY_MIN,
+                },
+            )
         )
         comm_counts = relation.fetchall()
     except DuckDBError:
@@ -147,14 +150,16 @@ def _subsystem_disagreement_findings_impl(
     """
     try:
         relation = gateway.con.sql(
-            """
-            SELECT module, subsystem_id, import_community_id
-            FROM analytics.subsystem_agreement
-            WHERE repo = $repo
-              AND commit = $commit
-              AND agrees = FALSE
-            """,
-            {"repo": repo, "commit": commit},
+            render_sql(
+                """
+                SELECT module, subsystem_id, import_community_id
+                FROM analytics.subsystem_agreement
+                WHERE repo = $repo
+                  AND commit = $commit
+                  AND agrees = FALSE
+                """,
+                {"repo": repo, "commit": commit},
+            )
         )
         disagreements = relation.fetchall()
     except DuckDBError:

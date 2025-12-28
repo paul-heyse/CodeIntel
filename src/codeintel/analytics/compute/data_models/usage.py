@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 from codeintel.analytics.compute.evidence.collection import EvidenceCollector
 from codeintel.analytics.utilities.ast import call_name, snippet_from_lines
 from codeintel.core.paths import normalize_path
+from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.repositories import DataModelsRepository
 
 if TYPE_CHECKING:
@@ -424,19 +425,21 @@ def _subsystem_by_module(
     gateway: StorageGateway, repo: str, commit: str
 ) -> dict[str, tuple[str, str]]:
     relation = gateway.con.sql(
-        """
-        SELECT
-            modules.module AS module,
-            modules.subsystem_id AS subsystem_id,
-            subsystems.name AS name
-        FROM analytics.subsystem_modules AS modules
-        LEFT JOIN analytics.subsystems AS subsystems
-          ON modules.repo = subsystems.repo
-         AND modules.commit = subsystems.commit
-         AND modules.subsystem_id = subsystems.subsystem_id
-        WHERE modules.repo = $repo AND modules.commit = $commit
-        """,
-        {"repo": repo, "commit": commit},
+        render_sql(
+            """
+            SELECT
+                modules.module AS module,
+                modules.subsystem_id AS subsystem_id,
+                subsystems.name AS name
+            FROM analytics.subsystem_modules AS modules
+            LEFT JOIN analytics.subsystems AS subsystems
+              ON modules.repo = subsystems.repo
+             AND modules.commit = subsystems.commit
+             AND modules.subsystem_id = subsystems.subsystem_id
+            WHERE modules.repo = $repo AND modules.commit = $commit
+            """,
+            {"repo": repo, "commit": commit},
+        )
     )
     rows = relation.fetchall()
     mapping: dict[str, tuple[str, str]] = {}
@@ -524,12 +527,14 @@ def build_data_model_usage_rows(
         )
 
     relation = gateway.con.sql(
-        """
-        SELECT function_goid_h128, param_types
-        FROM analytics.function_types
-        WHERE repo = $repo AND commit = $commit
-        """,
-        {"repo": snapshot.repo, "commit": snapshot.commit},
+        render_sql(
+            """
+            SELECT function_goid_h128, param_types
+            FROM analytics.function_types
+            WHERE repo = $repo AND commit = $commit
+            """,
+            {"repo": snapshot.repo, "commit": snapshot.commit},
+        )
     )
     param_types: dict[int, dict[str, str]] = {}
     for goid_raw, raw_param_types in relation.fetchall():

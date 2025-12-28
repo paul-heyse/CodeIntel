@@ -40,6 +40,7 @@ from codeintel.storage.duckdb_types import (
     DuckDBProgrammingError,
 )
 from codeintel.storage.helpers.table_key import is_valid_table_key
+from codeintel.storage.query_results import coerce_int, coerce_optional_float
 from codeintel.storage.sqlglot_tools import extract_table_refs
 
 if TYPE_CHECKING:
@@ -493,9 +494,8 @@ def safe_count_with_scope(
         return None
     columns = set(relation.columns)
     if "repo" in columns and "commit" in columns:
-        predicate = (
-            (ColumnExpression("repo") == ConstantExpression(snapshot.repo))
-            & (ColumnExpression("commit") == ConstantExpression(snapshot.commit))
+        predicate = (ColumnExpression("repo") == ConstantExpression(snapshot.repo)) & (
+            ColumnExpression("commit") == ConstantExpression(snapshot.commit)
         )
         relation = relation.filter(predicate)
     try:
@@ -530,9 +530,9 @@ def safe_table_exists(gateway: StorageGateway, table_key: str) -> bool:
         return False
     try:
         _ = relation.columns
-        return True
     except DUCKDB_QUERY_ERRORS:
         return False
+    return True
 
 
 def safe_get_columns(gateway: StorageGateway, table_key: str) -> set[str]:
@@ -706,7 +706,7 @@ def safe_count_non_positive(
     if column not in relation.columns:
         return 0
     try:
-        predicate = ColumnExpression(column) <= ConstantExpression(0)
+        predicate = ColumnExpression(column) <= ConstantExpression("0")
         result = relation.filter(predicate).count("*").fetchone()
         if result is None:
             return 0
@@ -784,28 +784,24 @@ def safe_not_null_fraction(
     if not _ensure_valid_table_key(table_key):
         return 0.0
     relation = _relation_for_table_key(gateway, table_key)
-    if relation is None:
+    if relation is None or column not in relation.columns:
         return 0.0
-    if column not in relation.columns:
-        return 0.0
+    fraction = 0.0
     try:
         total_result = relation.count("*").fetchone()
-        if total_result is None:
-            return 0.0
-        total = coerce_int(total_result[0], ctx=f"{table_key}.count()")
-        if total == 0:
-            return 0.0
-        non_null = relation.filter(~ColumnExpression(column).isnull())
-        non_null_result = non_null.count("*").fetchone()
-        if non_null_result is None:
-            return 0.0
-        non_null_count = coerce_int(
-            non_null_result[0], ctx=f"{table_key}.{column}.non_null_count"
-        )
-        return float(non_null_count) / float(total)
+        if total_result is not None:
+            total = coerce_int(total_result[0], ctx=f"{table_key}.count()")
+            if total:
+                non_null = relation.filter(~ColumnExpression(column).isnull())
+                non_null_result = non_null.count("*").fetchone()
+                if non_null_result is not None:
+                    non_null_count = coerce_int(
+                        non_null_result[0], ctx=f"{table_key}.{column}.non_null_count"
+                    )
+                    fraction = float(non_null_count) / float(total)
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug("Not null fraction failed for %s.%s: %s", table_key, column, exc)
-        return 0.0
+    return fraction
 
 
 @dataclass(frozen=True)
@@ -862,6 +858,7 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
     tgt_name = fk.ref_table
     src_col = fk.source_column
     tgt_col = fk.ref_column
+    orphan_count = 0
     try:
         sql = (
             "SELECT COUNT(*) AS orphan_count "
@@ -873,12 +870,11 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
         if not fk.allow_null:
             sql += f" AND src.{src_col} IS NOT NULL"
         result = gateway.con.execute(sql).fetchone()
-        if result is None:
-            return 0
-        return coerce_int(
-            result[0],
-            ctx=f"{fk.source_table}.{fk.source_column}.orphan_count",
-        )
+        if result is not None:
+            orphan_count = coerce_int(
+                result[0],
+                ctx=f"{fk.source_table}.{fk.source_column}.orphan_count",
+            )
     except DUCKDB_QUERY_ERRORS as exc:
         log.debug(
             "Count orphan refs failed for %s.%s -> %s.%s: %s",
@@ -888,7 +884,7 @@ def safe_count_orphan_refs(gateway: StorageGateway, fk: ForeignKeyRef) -> int:
             fk.ref_column,
             exc,
         )
-        return 0
+    return orphan_count
 
 
 __all__ = [

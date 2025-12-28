@@ -280,32 +280,31 @@ def test_registry_health_snapshot_reflects_latest_manifest(
     fresh_gateway: StorageGateway,
 ) -> None:
     """Registry health should reflect the latest manifest and overrides."""
-    inferable_key = "analytics.health_inferable"
-    explicit_key = "analytics.health_explicit"
-    view_key = "docs.v_health_view"
-
-    inferable_schema = _schema_for_key(inferable_key)
-    explicit_schema = _schema_for_key(explicit_key)
-    view_schema = _schema_for_key(view_key)
+    table_keys = {
+        "inferable": "analytics.health_inferable",
+        "explicit": "analytics.health_explicit",
+        "view": "docs.v_health_view",
+    }
+    schemas = {name: _schema_for_key(key) for name, key in table_keys.items()}
 
     manifest = SchemaManifest(
         version="v2",
-        tables=(explicit_schema, inferable_schema),
-        views=(view_schema,),
+        tables=(schemas["explicit"], schemas["inferable"]),
+        views=(schemas["view"],),
         table_provenance={
-            explicit_key: TableProvenance(
-                schema_hash=schema_hash(explicit_schema),
+            table_keys["explicit"]: TableProvenance(
+                schema_hash=schema_hash(schemas["explicit"]),
                 derivation_kind="explicit_override",
                 derivation_source="test",
             ),
-            inferable_key: _provenance_for_schema(inferable_schema),
+            table_keys["inferable"]: _provenance_for_schema(schemas["inferable"]),
         },
         view_provenance={
-            view_key: TableProvenance(
-                schema_hash=schema_hash(view_schema),
+            table_keys["view"]: TableProvenance(
+                schema_hash=schema_hash(schemas["view"]),
                 derivation_kind="view_inferred",
                 derivation_source="duckdb",
-            )
+            ),
         },
     )
 
@@ -325,8 +324,7 @@ def test_registry_health_snapshot_reflects_latest_manifest(
     )
 
     health = fresh_gateway.schemas.registry_health_snapshot()
-    status = cast("str", health.get("status"))
-    expect_equal(status, "ok", label="health_status")
+    expect_equal(cast("str", health.get("status")), "ok", label="health_status")
 
     latest_manifest = expect_is_not_none(
         cast("dict[str, object] | None", health.get("latest_manifest")),
@@ -348,25 +346,30 @@ def test_registry_health_snapshot_reflects_latest_manifest(
         label="latest_manifest_commit",
     )
 
-    registry_rows = cast("int", health.get("registry_rows"))
-    expect_equal(registry_rows, 3, label="registry_rows")
+    expect_equal(cast("int", health.get("registry_rows")), 3, label="registry_rows")
+    expect_equal(
+        cast("int", health.get("override_registry_rows")),
+        refresh_result.tables,
+        label="override_registry_rows",
+    )
+    expect_equal(cast("int", health.get("inferable_total")), 1, label="inferable_total")
+    expect_equal(cast("int", health.get("inferred_count")), 1, label="inferred_count")
+    expect_equal(
+        cast("int", health.get("inference_error_count")),
+        0,
+        label="inference_error_count",
+    )
+    expect_equal(
+        cast("float | None", health.get("inference_success_rate")),
+        1.0,
+        label="inference_success_rate",
+    )
+    expect_equal(
+        cast("bool", health.get("registry_stale")),
+        expected=False,
+        label="registry_stale",
+    )
 
-    override_registry_rows = cast("int", health.get("override_registry_rows"))
-    expect_equal(override_registry_rows, refresh_result.tables, label="override_registry_rows")
-
-    inferable_total = cast("int", health.get("inferable_total"))
-    inferred_count = cast("int", health.get("inferred_count"))
-    inference_error_count = cast("int", health.get("inference_error_count"))
-    inference_success_rate = cast("float | None", health.get("inference_success_rate"))
-
-    expect_equal(inferable_total, 1, label="inferable_total")
-    expect_equal(inferred_count, 1, label="inferred_count")
-    expect_equal(inference_error_count, 0, label="inference_error_count")
-    expect_equal(inference_success_rate, 1.0, label="inference_success_rate")
-
-    registry_stale = cast("bool", health.get("registry_stale"))
-    expect_equal(registry_stale, False, label="registry_stale")
-
-    for table_key in (inferable_key, explicit_key, view_key):
+    for table_key in table_keys.values():
         loaded_schema = fresh_gateway.schemas.load_table_schema(table_key)
         expect_is_not_none(loaded_schema, label=f"schema_digest_{table_key}")

@@ -31,6 +31,7 @@ import pyarrow as pa
 from duckdb import ColumnExpression, ConstantExpression, Expression
 
 from codeintel.core.repository import PagedResult
+from codeintel.storage.duckdb_types import DuckDBCatalogException
 from codeintel.storage.query_results import records_from_arrow_table
 from codeintel.storage.validation.pandera_df import validate_df
 
@@ -47,7 +48,7 @@ def _combine_predicates(predicates: Sequence[Expression]) -> Expression | None:
         return None
     combined = predicates[0]
     for predicate in predicates[1:]:
-        combined = combined & predicate
+        combined &= predicate
     return combined
 
 
@@ -92,7 +93,14 @@ class BaseRepository:
         DuckDBRelation
             Relation scoped to the repository snapshot when applicable.
         """
-        relation = self.gateway.relation_from_table_key(table_key)
+        try:
+            relation = self.gateway.relation_from_table_key(table_key)
+        except DuckDBCatalogException:
+            if table_key.startswith("docs."):
+                self.gateway.policy.ensure_all_views(overwrite=True, strict=False)
+                relation = self.gateway.relation_from_table_key(table_key)
+            else:
+                raise
         columns = set(relation.columns)
         if "repo" in columns and "commit" in columns:
             predicate = (ColumnExpression("repo") == ConstantExpression(self.repo)) & (
@@ -101,12 +109,19 @@ class BaseRepository:
             relation = relation.filter(predicate)
         return relation
 
+    @staticmethod
     def _relation_to_arrow(
-        self,
         relation: DuckDBRelation,
         *,
         table_key: str | None = None,
     ) -> pa.Table:
+        """Return an Arrow table from a relation, optionally validated.
+
+        Returns
+        -------
+        pa.Table
+            Arrow table fetched (and validated when table_key is provided).
+        """
         table = relation.fetch_arrow_table()
         if table_key is None:
             return table
@@ -114,12 +129,19 @@ class BaseRepository:
         validated = validate_df(table_key, df)
         return pa.Table.from_pandas(validated, preserve_index=False)
 
+    @staticmethod
     def _relation_to_df(
-        self,
         relation: DuckDBRelation,
         *,
         table_key: str | None = None,
     ) -> pd.DataFrame:
+        """Return a DataFrame from a relation, optionally validated.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame fetched (and validated when table_key is provided).
+        """
         table = relation.fetch_arrow_table()
         df = table.to_pandas()
         if table_key:
@@ -142,8 +164,15 @@ class BaseRepository:
         dicts = self._relation_to_dicts(relation.limit(1), table_key)
         return dicts[0] if dicts else None
 
-    def _relation_exists(self, relation: DuckDBRelation) -> bool:
-        """Check if at least one row exists in the relation result."""
+    @staticmethod
+    def _relation_exists(relation: DuckDBRelation) -> bool:
+        """Check if at least one row exists in the relation result.
+
+        Returns
+        -------
+        bool
+            True when the relation yields at least one row.
+        """
         return relation.limit(1).fetchone() is not None
 
     def _relation_paginated(
@@ -158,6 +187,11 @@ class BaseRepository:
 
         Fetch limit+1 rows to detect if more data exists beyond the page,
         returning a PagedResult with truncation metadata.
+
+        Returns
+        -------
+        PagedResult[RowDict]
+            Page of results with truncation metadata.
         """
         fetch_limit = limit + 1
         limited = relation.limit(fetch_limit)
@@ -179,7 +213,13 @@ class BaseRepository:
         table_key: str,
         relation: DuckDBRelation,
     ) -> list[RowDict]:
-        """Execute a relation and return validated row dictionaries."""
+        """Execute a relation and return validated row dictionaries.
+
+        Returns
+        -------
+        list[RowDict]
+            Validated records from the relation.
+        """
         table = relation.fetch_arrow_table()
         df = table.to_pandas()
         validated = validate_df(table_key, df)
@@ -188,11 +228,27 @@ class BaseRepository:
 
     @staticmethod
     def _predicate_eq(column: str, value: object) -> Expression:
-        return ColumnExpression(column) == ConstantExpression(value)
+        return ColumnExpression(column) == BaseRepository._constant_expression(value)
 
     @staticmethod
     def _predicate_ge(column: str, value: object) -> Expression:
-        return ColumnExpression(column) >= ConstantExpression(value)
+        return ColumnExpression(column) >= BaseRepository._constant_expression(value)
+
+    @staticmethod
+    def _constant_expression(value: object) -> Expression:
+        literal = BaseRepository._literal_sql(value)
+        return ConstantExpression(literal)
+
+    @staticmethod
+    def _literal_sql(value: object) -> str:
+        if value is None:
+            return "NULL"
+        if isinstance(value, bool):
+            return "TRUE" if value else "FALSE"
+        if isinstance(value, (int, float)):
+            return str(value)
+        escaped = str(value).replace("'", "''")
+        return f"'{escaped}'"
 
     @staticmethod
     def _apply_predicates(

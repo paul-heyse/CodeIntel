@@ -18,6 +18,10 @@
     "db_path": { "type": "string" },
     "semantic_registry_path": { "type": "string" },
     "schema_manifest_path": { "type": "string" },
+    "dataset_manifest_paths": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "buildspec_path": { "type": "string" },
     "repo": { "type": "string" },
     "commit": { "type": "string" },

@@ -43,6 +43,12 @@ def _row_model_class_name(*, schema: str, name: str) -> str:
     return f"{schema_part}__{name}__Row"
 
 
+def _register_row_model(name: str, model: type[object]) -> None:
+    if globals().get(name) is model:
+        return
+    globals()[name] = model
+
+
 def _python_type_for_column_type(col_type: ColumnType) -> type[object]:
     if col_type in {"INTEGER", "BIGINT", "DECIMAL(38,0)"}:
         return int
@@ -81,7 +87,9 @@ def _row_model_cached(
         annotated: object = base | None if nullable else base
         fields.append((col_name, annotated))
 
-    return make_dataclass(class_name, fields=fields, frozen=True, slots=True)
+    model = make_dataclass(class_name, fields=fields, frozen=True, slots=True, module=__name__)
+    _register_row_model(class_name, model)
+    return model
 
 
 def row_model_for_table_schema(*, table_schema: TableSchema) -> type[object]:
@@ -230,6 +238,33 @@ def row_serializer_for_table_schema(*, table_schema: TableSchema) -> RowSerializ
         Function that serializes a row mapping into an ordered tuple.
     """
     return _row_serializer_cached(_row_model_signature(table_schema))
+
+
+def _row_model_name_parts(name: str) -> tuple[str, str] | None:
+    parts = name.split("__")
+    if len(parts) != 3 or parts[2] != "Row":
+        return None
+    schema_part, table_name, _suffix = parts
+    if not schema_part or not table_name:
+        return None
+    schema = f"{schema_part[:1].lower()}{schema_part[1:]}"
+    return schema, table_name
+
+
+def __getattr__(name: str) -> object:
+    from codeintel.core.schemas.table_registry import TABLE_SCHEMAS
+
+    parts = _row_model_name_parts(name)
+    if parts is None:
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+    schema, table_name = parts
+    table_key = f"{schema}.{table_name}"
+    table_schema = TABLE_SCHEMAS.get(table_key)
+    if table_schema is None:
+        msg = f"module {__name__!r} has no attribute {name!r}"
+        raise AttributeError(msg)
+    return row_model_for_table_schema(table_schema=table_schema)
 
 
 @dataclass(frozen=True)

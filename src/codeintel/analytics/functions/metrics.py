@@ -21,8 +21,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, TypedDict
 
-from duckdb import ColumnExpression, ConstantExpression
-
 from codeintel.analytics.compute.functions import (
     compute_complexity,
 )
@@ -40,8 +38,12 @@ from codeintel.analytics.functions.parsing import parse_python_file
 from codeintel.analytics.parsing.span_resolver import SpanResolutionError, resolve_span
 from codeintel.core.parsing import SourceSpan
 from codeintel.core.validation.reporters import FunctionValidationReporter
-from codeintel.storage.duckdb_types import DuckDBRelation
-from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBRelation
+from codeintel.storage.query_results import (
+    coerce_int,
+    coerce_optional_int,
+    records_from_relation,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -445,7 +447,7 @@ def _load_goids_from_relation(
     for record in rows:
         rel_path = str(record["rel_path"]).replace("\\", "/")
         goid_row: GoidRow = {
-            "goid_h128": int(record["goid_h128"]),
+            "goid_h128": coerce_int(record["goid_h128"], ctx="goid_h128"),
             "urn": str(record["urn"]),
             "repo": str(record["repo"]),
             "commit": str(record["commit"]),
@@ -453,8 +455,8 @@ def _load_goids_from_relation(
             "language": str(record["language"]),
             "kind": str(record["kind"]),
             "qualname": str(record["qualname"]),
-            "start_line": int(record["start_line"]),
-            "end_line": int(record["end_line"]) if record["end_line"] is not None else None,
+            "start_line": coerce_int(record["start_line"], ctx="start_line"),
+            "end_line": coerce_optional_int(record.get("end_line"), ctx="end_line"),
         }
         goids_by_file.setdefault(rel_path, []).append(goid_row)
     return goids_by_file
@@ -481,14 +483,18 @@ def _load_goids(gateway: StorageGateway, snapshot: SnapshotRef) -> dict[str, lis
 
 def _meta_from_goid_row(info: GoidRow) -> FunctionMeta:
     end_line_raw = info["end_line"]
-    end_line = int(end_line_raw) if end_line_raw is not None else int(info["start_line"])
+    end_line = (
+        coerce_int(end_line_raw, ctx="end_line")
+        if end_line_raw is not None
+        else coerce_int(info["start_line"], ctx="start_line")
+    )
     return FunctionMeta(
-        goid=int(info["goid_h128"]),
+        goid=coerce_int(info["goid_h128"], ctx="goid_h128"),
         urn=str(info["urn"]),
         language=str(info["language"]),
         kind=str(info["kind"]),
         qualname=str(info["qualname"]),
-        start_line=int(info["start_line"]),
+        start_line=coerce_int(info["start_line"], ctx="start_line"),
         end_line=end_line,
         rel_path=str(info["rel_path"]),
     )
@@ -502,10 +508,14 @@ def _build_span_index(
         abs_path = (repo_root / rel_path).resolve()
         for row in rows:
             end_line_raw = row["end_line"]
-            end_line = int(end_line_raw) if end_line_raw is not None else int(row["start_line"])
-            span_index[int(row["goid_h128"])] = SourceSpan(
+            end_line = (
+                coerce_int(end_line_raw, ctx="end_line")
+                if end_line_raw is not None
+                else coerce_int(row["start_line"], ctx="start_line")
+            )
+            span_index[coerce_int(row["goid_h128"], ctx="goid_h128")] = SourceSpan(
                 path=abs_path,
-                start_line=int(row["start_line"]),
+                start_line=coerce_int(row["start_line"], ctx="start_line"),
                 start_col=0,
                 end_line=end_line,
                 end_col=0,

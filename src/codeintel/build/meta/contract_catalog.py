@@ -14,12 +14,11 @@ from codeintel.core.schemas.contract_service import (
     get_enriched_contract_service,
 )
 from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
+from codeintel.storage.duckdb_types import DuckDBConnection
 from codeintel.storage.metadata.catalogs import build_catalog_entry, upsert_canonical_catalog
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    from duckdb import DuckDBPyConnection
 
     from codeintel.storage.gateway.protocol import StorageGateway
 
@@ -38,7 +37,7 @@ class ContractCatalogResult:
 
 @dataclass(frozen=True, slots=True)
 class _CatalogConnectionGateway:
-    con: DuckDBPyConnection
+    con: DuckDBConnection
 
 
 def _resolve_contract_service() -> ContractServiceProtocol:
@@ -64,7 +63,7 @@ def build_contract_catalog_payload() -> dict[str, object]:
 
 
 def persist_contract_catalog_to_connection(
-    con: DuckDBPyConnection,
+    con: DuckDBConnection,
     *,
     inputs: Mapping[str, object] | None = None,
 ) -> ContractCatalogResult:

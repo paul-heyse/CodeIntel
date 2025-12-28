@@ -20,6 +20,7 @@ from codeintel.core.catalog.function_span import FunctionSpan
 from codeintel.core.catalog.span_index import SpanIndex
 from codeintel.core.paths import normalize_path
 from codeintel.storage.helpers.module_index import load_module_map
+from codeintel.storage.helpers.sql_params import render_sql
 from codeintel.storage.query_results import records_from_relation
 
 if TYPE_CHECKING:
@@ -76,14 +77,16 @@ def _load_function_rows(
         columns.insert(1, "urn")
     select_cols = ", ".join(columns)
     relation = gateway.con.sql(
-        f"""
-        SELECT {select_cols}
-        FROM core.goids
-        WHERE repo = $repo
-          AND commit = $commit
-          AND kind IN ('function', 'method')
-        """,
-        {"repo": repo, "commit": commit},
+        render_sql(
+            f"""
+            SELECT {select_cols}
+            FROM core.goids
+            WHERE repo = $repo
+              AND commit = $commit
+              AND kind IN ('function', 'method')
+            """,
+            {"repo": repo, "commit": commit},
+        )
     )
     return cast("list[dict[str, Any]]", records_from_relation(relation))
 

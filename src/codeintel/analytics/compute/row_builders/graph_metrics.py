@@ -6,15 +6,15 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from duckdb import ColumnExpression, ConstantExpression
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsFunctionsRow as GraphMetricsFunctionsRow,
 )
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsGraphMetricsModulesRow as GraphMetricsModulesRow,
 )
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression
 from codeintel.storage.gateway import DuckDBError
-from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.query_results import coerce_optional_int, records_from_relation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -126,14 +126,14 @@ def component_metadata_from_import_table(
     layer_by_module: dict[str, int] = {}
     for record in rows:
         name = str(record["module"])
-        scc_id = record["scc_id"]
-        component_size = record["component_size"]
-        layer = record["layer"]
-        comp_id[name] = int(scc_id) if scc_id is not None else -1
-        size = int(component_size) if component_size is not None else 0
+        scc_id = coerce_optional_int(record.get("scc_id"), ctx="scc_id")
+        component_size = coerce_optional_int(record.get("component_size"), ctx="component_size")
+        layer = coerce_optional_int(record.get("layer"), ctx="layer")
+        comp_id[name] = scc_id if scc_id is not None else -1
+        size = component_size or 0
         in_cycle[name] = size > 1
         if layer is not None:
-            layer_by_module[name] = int(layer)
+            layer_by_module[name] = layer
     return {
         "component_id": {node: int(val) for node, val in comp_id.items()},
         "in_cycle": {node: bool(flag) for node, flag in in_cycle.items()},

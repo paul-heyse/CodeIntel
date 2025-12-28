@@ -199,6 +199,8 @@ def discover_view_builders(
         dr=dr,
         modules=modules,
     )
+    if modules:
+        discovered.extend(_discover_from_modules(modules=modules))
 
     # De-duplicate by table_key (prefer later modules in the input list).
     by_table: dict[str, DiscoveredViewBuilder] = {d.table_key: d for d in discovered}

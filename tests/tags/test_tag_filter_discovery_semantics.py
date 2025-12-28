@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 import types
-from collections.abc import Callable, Iterable
-from typing import ParamSpec, TypeVar, cast
+from collections.abc import Iterable
+from typing import ParamSpec, TypeVar
 
 import hamilton.driver as h_driver
 from hamilton.function_modifiers import tag
@@ -21,9 +22,6 @@ from codeintel.core.hamilton.tag_query import TagQuery
 
 P = ParamSpec("P")
 R = TypeVar("R")
-TagDecorator = Callable[[Callable[P, R]], Callable[P, R]]
-TagFactory = Callable[..., TagDecorator]
-_TAG_ANY = cast("TagFactory", tag)
 
 
 @tag(node_type=ht.NODE_TYPE_DATASET, table_key="core.modules")
@@ -62,17 +60,13 @@ def artifact_semantic_registry() -> int:
     return 1
 
 
-_SAVER_TAGS = cast(
-    "dict[str, object]",
-    {
-        "hamilton.data_saver": True,
-        "output_role": "contract",
-        "hamilton.data_saver.sink": "duckdb",
-    },
-)
+_SAVER_TAGS: dict[str, object] = {
+    "hamilton.data_saver": True,
+    "output_role": "contract",
+    "hamilton.data_saver.sink": "duckdb",
+}
 
 
-@_TAG_ANY(**_SAVER_TAGS)
 def saver_duckdb() -> int:
     """Return sentinel value for a duckdb saver node.
 
@@ -110,8 +104,23 @@ def _build_driver() -> h_driver.Driver:
         saver_duckdb,
         semantic_view_example,
     ):
+        fn.__module__ = module.__name__
         setattr(module, fn.__name__, fn)
-    return h_driver.Builder().with_modules(module).build()
+    sys.modules[module.__name__] = module
+    dr = h_driver.Builder().with_modules(module).build()
+    _apply_saver_tags(dr)
+    return dr
+
+
+def _apply_saver_tags(dr: h_driver.Driver) -> None:
+    node = dr.graph.nodes.get("saver_duckdb")
+    if node is None:
+        raise KeyError("saver_duckdb node missing from driver graph")
+    if isinstance(node.tags, dict):
+        node.tags.update(_SAVER_TAGS)
+        return
+    msg = "Expected node tags to be a dict for saver tag injection"
+    raise TypeError(msg)
 
 
 def _names(variables: Iterable[object]) -> set[str]:

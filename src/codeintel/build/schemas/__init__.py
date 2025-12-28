@@ -56,11 +56,6 @@ from codeintel.build.schemas.diff import (
     compute_manifest_diffs,
     compute_schema_diff,
 )
-from codeintel.build.schemas.infer_duckdb import (
-    infer_table_schema_from_relation,
-    infer_view_schema,
-    normalize_duckdb_type,
-)
 from codeintel.build.schemas.json_schema_registry import (
     clear_json_schema_cache,
     compute_json_schema_digest,
@@ -185,14 +180,11 @@ __all__ = [
     "get_row_binding",
     "get_schema_provider",
     "get_schema_service",
-    "infer_table_schema_from_relation",
-    "infer_view_schema",
     "is_view",
     "iter_contracts",
     "iter_contracts_by_table_key",
     "iter_row_bindings",
     "iter_table_schemas",
-    "normalize_duckdb_type",
     "require_table_schema",
     "unified_schema_provider",
 ]

@@ -16,6 +16,7 @@ from codeintel.storage.duckdb.context import DuckDBContext
 from codeintel.storage.duckdb_policy_backend import DuckDBPolicyBackend
 from codeintel.storage.exports import ExportService
 from codeintel.storage.gateway.base_accessor import BaseTableAccessor
+from codeintel.storage.gateway.relation import relation_from_table_key as _relation_from_table_key
 from codeintel.storage.tracking.asset_tracking import AssetTracking
 from codeintel.storage.tracking.build_tracking import BuildTracking
 from codeintel.storage.tracking.run_tracking import PipelineRunTracking
@@ -447,7 +448,7 @@ class DuckDBGateway:
         DuckDBRelation
             Relation bound to the requested table/view.
         """
-        return self.con.table(table_key)
+        return _relation_from_table_key(self.con, table_key)
 
     def export_database(self, *, directory: Path) -> None:
         """Export the database to a directory via DuckDB EXPORT DATABASE."""

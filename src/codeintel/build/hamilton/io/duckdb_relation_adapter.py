@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from duckdb import ColumnExpression, ConstantExpression
-
 from codeintel.build.hamilton.io.dataset_ref import DatasetRef
-from codeintel.storage.duckdb_types import DuckDBRelation
+from codeintel.storage.duckdb_types import ColumnExpression, ConstantExpression, DuckDBRelation
 from codeintel.storage.gateway import StorageGateway
 
 
