@@ -202,7 +202,7 @@ class DuckDBStorageAdapter(IngestStoragePort):
         repo: str | None = None,
         commit: str | None = None,
     ) -> int:
-        """Delete rows filtered by path and optional repo/commit via ibis.
+        """Delete rows filtered by path and optional repo/commit via DuckDB relations.
 
         Returns
         -------

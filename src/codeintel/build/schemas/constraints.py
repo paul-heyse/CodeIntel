@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from pandera.pandas import DataFrameSchema
+    from codeintel.core.schemas.primitives import TableSchema
 
 __all__ = [
     "Constraint",
     "ConstraintKind",
     "ConstraintSet",
-    "extract_constraints_from_pandera",
+    "extract_constraints_from_table_schema",
 ]
 
 
@@ -99,81 +99,68 @@ class ConstraintSet:
         return {c.column for c in self.constraints if c.column is not None}
 
 
-def extract_constraints_from_pandera(
-    table_key: str,
-    schema: DataFrameSchema,
+def extract_constraints_from_table_schema(
+    table_schema: TableSchema,
 ) -> ConstraintSet:
-    """Extract ConstraintSet from a Pandera schema.
+    """Extract a ConstraintSet from a TableSchema definition.
 
     Returns
     -------
     ConstraintSet
         Aggregated constraints inferred from the schema.
     """
-    cs = ConstraintSet(table_key=table_key)
+    cs = ConstraintSet(table_key=table_schema.table_key)
 
-    for col_name, column in schema.columns.items():
+    for column in table_schema.columns:
         cs.add(
             Constraint(
                 kind=ConstraintKind.TYPE,
-                column=col_name,
-                expression=f"{col_name}: {column.dtype}",
-                source="pandera.column.dtype",
+                column=column.name,
+                expression=f"{column.name}: {column.type}",
+                source="table_schema.column.type",
             )
         )
-
         nullable_str = "nullable" if column.nullable else "required"
         cs.add(
             Constraint(
                 kind=ConstraintKind.NULLABILITY,
-                column=col_name,
-                expression=f"{col_name} {nullable_str}",
-                source="pandera.column.nullable",
+                column=column.name,
+                expression=f"{column.name} {nullable_str}",
+                source="table_schema.column.nullable",
             )
         )
 
-        if not column.checks:
-            continue
-
-        for check in column.checks:
-            check_str = str(check)
-            if ">= 0" in check_str or "(s >= 0)" in check_str:
-                cs.add(
-                    Constraint(
-                        kind=ConstraintKind.RANGE,
-                        column=col_name,
-                        expression=f"{col_name} >= 0",
-                        source="pandera.check.non_negative",
-                    )
-                )
-            elif ">= 1" in check_str or "(s >= 1)" in check_str:
-                cs.add(
-                    Constraint(
-                        kind=ConstraintKind.RANGE,
-                        column=col_name,
-                        expression=f"{col_name} >= 1",
-                        source="pandera.check.min_value",
-                    )
-                )
-            elif "<= 1" in check_str and ">= 0" in check_str:
-                cs.add(
-                    Constraint(
-                        kind=ConstraintKind.RANGE,
-                        column=col_name,
-                        expression=f"0 <= {col_name} <= 1",
-                        source="pandera.check.unit_interval",
-                    )
-                )
-
-    if schema.checks:
-        for check in schema.checks:
+    if table_schema.primary_key:
+        pk_expr = ", ".join(table_schema.primary_key)
+        cs.add(
+            Constraint(
+                kind=ConstraintKind.UNIQUENESS,
+                column=None,
+                expression=f"primary key({pk_expr})",
+                source="table_schema.primary_key",
+            )
+        )
+        for column_name in table_schema.primary_key:
             cs.add(
                 Constraint(
-                    kind=ConstraintKind.CROSS_COLUMN,
-                    column=None,
-                    expression=str(check),
-                    source="pandera.check.dataframe",
+                    kind=ConstraintKind.UNIQUENESS,
+                    column=column_name,
+                    expression=f"{column_name} unique",
+                    source="table_schema.primary_key",
                 )
             )
+
+    for index in table_schema.indexes:
+        if not index.unique:
+            continue
+        columns = ", ".join(index.columns)
+        cs.add(
+            Constraint(
+                kind=ConstraintKind.UNIQUENESS,
+                column=None,
+                expression=f"unique index {index.name}({columns})",
+                source="table_schema.index.unique",
+            )
+        )
 
     return cs

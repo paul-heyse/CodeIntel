@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import polars as pl
+
 from codeintel.analytics.history.history_timeseries import (
     HISTORY_TIMESERIES_TABLE_KEY,
     build_history_timeseries_rows,
@@ -11,10 +13,15 @@ from codeintel.analytics.history.history_timeseries import (
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
+from codeintel.build.hamilton.native.ingestion.frame_utils import empty_lazyframe_for_table
 from codeintel.build.hamilton.native.materialization_records import (
     record_from_duckdb_materialization,
 )
-from codeintel.build.hamilton.native.patterns import SaverContext, TableSaveSpec, save_rows
+from codeintel.build.hamilton.native.patterns import (
+    RelationTableSaveSpec,
+    SaverContext,
+    save_relation_table,
+)
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.run_records import TargetRunRecord
 
@@ -27,23 +34,23 @@ HISTORY_TIMESERIES_SAVE_CONTEXT = SaverContext(
 )
 
 
-@save_rows(
+@save_relation_table(
     context=HISTORY_TIMESERIES_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=HISTORY_TIMESERIES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=HISTORY_TIMESERIES_TABLE_KEY),
 )
-def history_timeseries__rows(env: BuildEnv) -> tuple[tuple[object, ...], ...]:
-    """Build rows for analytics.history_timeseries.
+def history_timeseries__rows(env: BuildEnv) -> pl.LazyFrame:
+    """Build a frame for analytics.history_timeseries.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Row tuples for analytics.history_timeseries.
+    pl.LazyFrame
+        Lazy frame for analytics.history_timeseries.
     """
     options = env.history_options
     resolver = env.history_db_resolver
     if options is None or resolver is None:
         LOG.info("history_timeseries skipped: history options or resolver not provided.")
-        return ()
+        return empty_lazyframe_for_table(HISTORY_TIMESERIES_TABLE_KEY)
     return build_history_timeseries_rows(
         snapshot=env.snapshot,
         gateway_resolver=resolver,

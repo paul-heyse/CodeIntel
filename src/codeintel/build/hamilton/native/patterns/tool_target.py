@@ -24,10 +24,10 @@ from codeintel.build.hamilton.native.patterns.materialization_collectors import 
 )
 from codeintel.build.hamilton.native.patterns.savers import (
     ArtifactSaveSpec,
+    RelationTableSaveSpec,
     SaverContext,
-    TableSaveSpec,
     save_artifact,
-    save_rows,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.patterns.specs import ToolTargetSpec
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
@@ -37,12 +37,13 @@ from codeintel.build.hamilton.nodes.signature_tools import set_signature
 from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.tag_spec import TagSpec
 from codeintel.build.hamilton.tagging import tag_compute, tag_tool
+from codeintel.build.tabular.types import TabularInput
 from codeintel.core.errors import CodeIntelError
 
 if TYPE_CHECKING:
     from codeintel.build.hamilton.native.patterns.specs import ArtifactOutputSpec, TableOutputSpec
 
-TRowsByTable = Mapping[str, tuple[tuple[object, ...], ...]]
+TabularByTable = Mapping[str, TabularInput]
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -230,7 +231,7 @@ def attach_tool_target_template(
     *,
     spec: ToolTargetSpec,
     run_fn: Callable[..., ToolStepOutput],
-    ingest_fn: Callable[..., IngestStep[TRowsByTable]] | None = None,
+    ingest_fn: Callable[..., IngestStep[TabularByTable]] | None = None,
 ) -> None:
     """Attach a tool-backed target scaffold to a module.
 
@@ -394,7 +395,7 @@ def _attach_table_rows_node(
     table_spec: TableOutputSpec,
     ingest_node: str,
 ) -> None:
-    def rows_fn(**kwargs: object) -> tuple[tuple[object, ...], ...] | None:
+    def rows_fn(**kwargs: object) -> TabularInput | None:
         ingest_result = kwargs.get(ingest_node)
         if not isinstance(ingest_result, IngestStep):
             msg = f"Expected IngestStep for {ingest_node}, got {type(ingest_result)}"
@@ -405,30 +406,29 @@ def _attach_table_rows_node(
         if payload is None:
             msg = f"Missing ingest payload for {table_spec.table_key}"
             raise ValueError(msg)
-        rows = payload.get(table_spec.table_key)
-        if rows is None:
-            msg = f"Missing rows for {table_spec.table_key}"
+        frame = payload.get(table_spec.table_key)
+        if frame is None:
+            msg = f"Missing frame for {table_spec.table_key}"
             raise ValueError(msg)
-        return rows
+        return frame
 
     signature = inspect.Signature(
         [
             inspect.Parameter(
                 ingest_node,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=IngestStep[TRowsByTable],
+                annotation=IngestStep[TabularByTable],
             )
         ],
-        return_annotation=tuple[tuple[object, ...], ...] | None,
+        return_annotation=TabularInput | None,
     )
     rows_fn = set_signature(rows_fn, signature)
     node_name = f"{context.target_name}__{table_spec.table_key.replace('.', '__')}_rows"
     rows_fn.__name__ = node_name
-    decorator = save_rows(
+    decorator = save_relation_table(
         context=context.saver_context,
-        spec=TableSaveSpec(
+        spec=RelationTableSaveSpec(
             table_key=table_spec.table_key,
-            columns=table_spec.columns,
             output_role=table_spec.output_role,
         ),
     )
@@ -494,7 +494,7 @@ def _build_anchor(*, inputs: _AnchorInputs) -> Callable[..., TargetRunRecord]:
             inspect.Parameter(
                 inputs.ingest_node,
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                annotation=IngestStep[TRowsByTable],
+                annotation=IngestStep[TabularByTable],
             )
         )
     params.append(

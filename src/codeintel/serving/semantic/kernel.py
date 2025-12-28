@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.core.exports import apply_ipc_metadata, default_ipc_write_options, iter_ipc_stream
 from codeintel.serving.errors import LineageMetadataMissingError, SearchIndexMissingError
 from codeintel.serving.meta.models import ServingKernelMetaResponse
 from codeintel.serving.meta.service import build_kernel_meta_payload
@@ -100,6 +101,23 @@ def _sanitize_rows(rows: list[dict[str, object]]) -> list[dict[str, object]]:
 def _raise_if_cancelled(cancel_check: CancelCheck | None) -> None:
     if cancel_check is not None:
         cancel_check()
+
+
+def _build_ipc_metadata(
+    *,
+    table_key: str,
+    snapshot_id: str,
+    query_hash: str,
+    schema_hash: str | None,
+) -> dict[str, object]:
+    metadata: dict[str, object] = {
+        "codeintel.table_key": table_key,
+        "codeintel.snapshot_id": snapshot_id,
+        "codeintel.query_hash": query_hash,
+    }
+    if schema_hash is not None:
+        metadata["codeintel.schema_hash"] = schema_hash
+    return metadata
 
 
 @dataclass
@@ -443,6 +461,74 @@ class SemanticQueryKernel:
             schema_hash=schema_hash_value,
             sql_fingerprint=sql_fingerprint,
         )
+
+    def query_ipc_stream(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Generator[bytes]:
+        """Execute a semantic query and return Arrow IPC stream bytes.
+
+        Parameters
+        ----------
+        request
+            Query request with filters, selection, and pagination.
+        cancel_check
+            Optional cancellation hook invoked during query execution.
+
+        Returns
+        -------
+        Generator[bytes, None, None]
+            Iterator of Arrow IPC stream bytes.
+        """
+
+        def _stream() -> Generator[bytes]:
+            with self.db.connect() as (warehouse, pointer):
+                resolved = self._planner.resolve_view_context(
+                    pointer=pointer,
+                    view_id=request.view_id,
+                )
+                inputs, effective_limit = self._planner.plan_inputs_for_query(
+                    ctx=resolved, request=request
+                )
+                spec = self._planner.build_spec(
+                    ctx=resolved,
+                    inputs=inputs,
+                    limit=effective_limit,
+                )
+                engine_ctx = self._engine_context(
+                    pointer=pointer,
+                    context=self._planner.snapshot_context(pointer),
+                    warehouse=warehouse,
+                )
+                engine = self._engine_registry.select(
+                    preference=self.settings.query_engine,
+                    spec=spec,
+                    ctx=engine_ctx,
+                )
+                plan = engine.compile(spec, ctx=engine_ctx)
+                try:
+                    _raise_if_cancelled(cancel_check)
+                    reader = plan.to_reader(batch_size=self.settings.export_batch_size)
+                    query_hash, schema_hash_value = self._fingerprint_semantic_plan(
+                        pointer=resolved.pointer,
+                        view_id=resolved.view.id,
+                        spec=spec,
+                        inventory=resolved.inventory,
+                    )
+                    metadata = _build_ipc_metadata(
+                        table_key=resolved.view.table_key,
+                        snapshot_id=resolved.pointer.run_id,
+                        query_hash=query_hash,
+                        schema_hash=schema_hash_value,
+                    )
+                    yield from iter_ipc_stream(
+                        reader,
+                        metadata=metadata,
+                        cancel_check=cancel_check,
+                    )
+                finally:
+                    plan.cleanup()
+
+        return _stream()
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
         """Return compiled SQL and DuckDB EXPLAIN plan for a semantic query.
@@ -802,12 +888,26 @@ class SemanticQueryKernel:
             try:
                 _raise_if_cancelled(cancel_check)
                 reader = plan.to_reader(batch_size=self.settings.export_batch_size)
+                query_hash, schema_hash_value = self._fingerprint_semantic_plan(
+                    pointer=resolved.pointer,
+                    view_id=resolved.view.id,
+                    spec=spec,
+                    inventory=resolved.inventory,
+                )
+                metadata = _build_ipc_metadata(
+                    table_key=resolved.view.table_key,
+                    snapshot_id=resolved.pointer.run_id,
+                    query_hash=query_hash,
+                    schema_hash=schema_hash_value,
+                )
+                schema = apply_ipc_metadata(reader.schema, metadata)
                 rows_written = 0
                 with (
                     output_path.open("wb") as handle,
-                    pa.ipc.new_file(
+                    pa.ipc.new_stream(
                         handle,
-                        reader.schema,
+                        schema,
+                        options=default_ipc_write_options(),
                     ) as writer,
                 ):
                     for batch in reader:

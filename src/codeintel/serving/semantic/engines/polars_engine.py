@@ -21,12 +21,16 @@ from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.view_registry import ViewInputs
 
 if TYPE_CHECKING:
-    from polars import LazyFrame
+    from collections.abc import Iterable, Iterator
+
+    from polars import DataFrame, LazyFrame
 
     from codeintel.serving.semantic.datasets import DatasetManifestEntry
 
+    type PolarsDataFrame = DataFrame
     type PolarsLazyFrame = LazyFrame
 else:
+    type PolarsDataFrame = object
     type PolarsLazyFrame = object
 
 try:
@@ -55,11 +59,16 @@ class PolarsExecutablePlan:
         pyarrow.RecordBatchReader
             Reader over the plan output.
         """
-        table = self.to_table()
-        return pa.RecordBatchReader.from_batches(
-            table.schema,
-            table.to_batches(max_chunksize=batch_size),
+        if pl is None:  # pragma: no cover
+            msg = "polars is required for Polars query execution"
+            raise PolarsQueryBuilderError(msg)
+        batches = self.lazyframe.collect_batches(
+            chunk_size=batch_size,
+            engine="streaming",
         )
+        schema = self.lazyframe.collect_schema().to_arrow()
+        record_batches = _record_batches_from_frames(batches)
+        return pa.RecordBatchReader.from_batches(schema, record_batches)
 
     def to_table(self) -> pa.Table:
         """Execute the plan and return a fully materialized Arrow table.
@@ -103,6 +112,15 @@ class PolarsExecutablePlan:
         """Release temporary resources after execution."""
         if self.explain_plan is not None:
             return
+
+
+def _record_batches_from_frames(
+    frames: Iterable[PolarsDataFrame],
+) -> Iterator[pa.RecordBatch]:
+    for frame in frames:
+        table = frame.to_arrow()
+        for batch in table.to_batches():
+            yield batch
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-from ibis.common.exceptions import IbisError
 from sqlglot.errors import SqlglotError
 
 from codeintel.serving.semantic.duckdb_relation_builder import (
@@ -14,13 +13,11 @@ from codeintel.serving.semantic.duckdb_relation_builder import (
     build_relation_plan,
 )
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
-from codeintel.serving.semantic.query_builder import QueryBuilderError, build_query
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.semantic.sqlglot_query_builder import (
     SqlglotQueryBuilderError,
     build_sqlglot_query,
 )
-from codeintel.storage.gateway import ibis_facade
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
@@ -33,12 +30,16 @@ if TYPE_CHECKING:
 
 
 def cleanup_temp_tables_if_needed(*, con: DuckDBPyConnection, temp_tables: Sequence[str]) -> None:
-    """Unregister Ibis temp tables when supported by the backend."""
+    """Unregister temp tables when supported by the backend."""
     unregister = getattr(con, "unregister", None)
     if not callable(unregister):
         return
     for table_name in temp_tables:
         unregister(table_name)
+
+
+class QueryBuilderError(ValueError):
+    """Raised when query construction fails."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,7 +144,7 @@ class DuckDBSqlPlan:
 
 @dataclass(frozen=True, slots=True)
 class DuckDBQueryEngine:
-    """DuckDB engine backed by relations with Ibis fallback."""
+    """DuckDB engine backed by relations with SQLGlot fallback."""
 
     name: str = "duckdb"
 
@@ -187,6 +188,7 @@ class DuckDBQueryEngine:
         if ctx.warehouse is None:
             msg = f"{self.name} engine requires a warehouse connection"
             raise QueryBuilderError(msg)
+        relation_error: DuckDBRelationQueryBuilderError | None = None
         try:
             relation = build_relation_plan(
                 con=ctx.warehouse.gateway.con,
@@ -221,30 +223,13 @@ class DuckDBQueryEngine:
                 warehouse=ctx.warehouse,
             )
 
-        ibis_con = ibis_facade.backend(ctx.warehouse.gateway)
-        bound = build_query(ibis_con=ibis_con, spec=spec, column_types=spec.column_types)
-        try:
-            sql = bound.compile_sql(ibis_con)
-            policy = _sql_policy_for_spec(spec, temp_tables=bound.temp_tables)
-            validated = _validate_sql(sql, policy=policy)
-        except UnsafeSqlError as exc:
-            cleanup_temp_tables_if_needed(
-                con=ctx.warehouse.gateway.con,
-                temp_tables=bound.temp_tables,
-            )
-            raise QueryBuilderError(str(exc)) from exc
-        except (IbisError, SqlglotError, TypeError, ValueError) as exc:
-            cleanup_temp_tables_if_needed(
-                con=ctx.warehouse.gateway.con,
-                temp_tables=bound.temp_tables,
-            )
-            msg = f"DuckDB relation plan failed: {relation_error}; SQLGlot error: {sqlglot_error}"
-            raise QueryBuilderError(msg) from exc
-        return DuckDBSqlPlan(
-            sql=validated,
-            temp_tables=bound.temp_tables,
-            warehouse=ctx.warehouse,
-        )
+        if relation_error is None:
+            msg = "DuckDB relation plan failed with an unknown error"
+            raise QueryBuilderError(msg)
+        msg = f"DuckDB relation plan failed: {relation_error}; SQLGlot error: {sqlglot_error}"
+        if sqlglot_error is not None:
+            raise QueryBuilderError(msg) from sqlglot_error
+        raise QueryBuilderError(msg) from relation_error
 
 
 def _sql_policy_for_spec(

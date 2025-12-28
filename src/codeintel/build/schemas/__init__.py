@@ -39,7 +39,7 @@ from codeintel.build.schemas.constraints import (
     Constraint,
     ConstraintKind,
     ConstraintSet,
-    extract_constraints_from_pandera,
+    extract_constraints_from_table_schema,
 )
 from codeintel.build.schemas.contract_service import (
     ContractProvider,
@@ -169,7 +169,7 @@ __all__ = [
     "configure_schema_service",
     "declared_schema_provider",
     "deferred_columns_for_table_key",
-    "extract_constraints_from_pandera",
+    "extract_constraints_from_table_schema",
     "get_composite_schemas",
     "get_contract_for_table_key",
     "get_contract_provider",

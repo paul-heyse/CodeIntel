@@ -127,6 +127,14 @@ class _DummyKernel:
         )
 
     @staticmethod
+    def query_ipc_stream(
+        request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Iterator[bytes]:
+        _ = cancel_check
+        _ = request
+        return iter(())
+
+    @staticmethod
     def explain(request: SemanticQueryRequest) -> SemanticExplainResponse:
         return SemanticExplainResponse(
             view_id=request.view_id,

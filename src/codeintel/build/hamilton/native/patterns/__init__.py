@@ -23,13 +23,10 @@ from codeintel.build.hamilton.native.patterns.savers import (
     DatasetSaveSpec,
     RelationTableSaveSpec,
     SaverContext,
-    TableSaveSpec,
     save_artifact,
     save_artifact_internal,
     save_dataset,
     save_relation_table,
-    save_rows,
-    save_rows_internal,
 )
 from codeintel.build.hamilton.native.patterns.specs import (
     ArtifactOutputSpec,
@@ -57,7 +54,6 @@ __all__ = [
     "RelationTableSaveSpec",
     "SaverContext",
     "TableOutputSpec",
-    "TableSaveSpec",
     "ToolFinalizeContext",
     "ToolRunContext",
     "ToolTargetSpec",
@@ -79,6 +75,4 @@ __all__ = [
     "save_artifact_internal",
     "save_dataset",
     "save_relation_table",
-    "save_rows",
-    "save_rows_internal",
 ]

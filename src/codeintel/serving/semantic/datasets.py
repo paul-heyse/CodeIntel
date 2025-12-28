@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from codeintel.storage.datasets.manifests import read_dataset_manifest
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
-    from pathlib import Path
+    from collections.abc import Mapping
 
-    from codeintel.core.manifests import ArrowDatasetManifest
+    from codeintel.core.manifests import ArrowDatasetManifest, ServingSnapshotManifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,8 +60,10 @@ class DatasetManifestIndex:
         return tuple(self.by_table_key.keys())
 
 
-def load_dataset_manifests(paths: Iterable[Path]) -> DatasetManifestIndex:
-    """Load dataset manifests from a sequence of paths.
+def load_dataset_manifests(
+    snapshot_manifest: ServingSnapshotManifest,
+) -> DatasetManifestIndex:
+    """Load dataset manifests from a snapshot manifest.
 
     Returns
     -------
@@ -69,11 +71,27 @@ def load_dataset_manifests(paths: Iterable[Path]) -> DatasetManifestIndex:
         Loaded dataset manifest index keyed by table key.
     """
     by_table: dict[str, DatasetManifestEntry] = {}
-    for path in paths:
-        manifest = read_dataset_manifest(path)
-        by_table[manifest.table_key] = DatasetManifestEntry(
+    for table_key, entry in snapshot_manifest.datasets.items():
+        manifest_path = Path(entry.manifest_path)
+        manifest = read_dataset_manifest(manifest_path)
+        if manifest.table_key != table_key:
+            msg = f"Dataset manifest table_key mismatch: {table_key} != {manifest.table_key}"
+            raise ValueError(msg)
+        if entry.schema_hash is None:
+            msg = f"Snapshot dataset entry missing schema_hash for {table_key}"
+            raise ValueError(msg)
+        if manifest.schema_hash is None:
+            msg = f"Dataset manifest missing schema_hash for {table_key}"
+            raise ValueError(msg)
+        if entry.schema_hash != manifest.schema_hash:
+            msg = (
+                "Dataset manifest schema hash mismatch for "
+                f"{table_key}: {entry.schema_hash} != {manifest.schema_hash}"
+            )
+            raise ValueError(msg)
+        by_table[table_key] = DatasetManifestEntry(
             manifest=manifest,
-            manifest_path=path,
+            manifest_path=manifest_path,
         )
     return DatasetManifestIndex(by_table_key=by_table)
 

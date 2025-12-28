@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 
 from codeintel.core.manifests import ArrowDatasetManifest
 from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
@@ -31,6 +32,20 @@ class ArrowDatasetStats:
     """Summary statistics for an Arrow dataset snapshot."""
 
     row_count: int | None
+    row_group_count: int | None = None
+    file_count: int | None = None
+    rows_from_metadata: int | None = None
+
+    def to_mapping(self) -> dict[str, object] | None:
+        """Return a stats mapping suitable for manifest storage."""
+        stats: dict[str, object] = {}
+        if self.row_group_count is not None:
+            stats["row_groups"] = self.row_group_count
+        if self.file_count is not None:
+            stats["file_count"] = self.file_count
+        if self.rows_from_metadata is not None:
+            stats["rows_from_metadata"] = self.rows_from_metadata
+        return stats or None
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +188,14 @@ def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
     ArrowDatasetStats
         Statistics derived from the dataset.
     """
-    return ArrowDatasetStats(row_count=_count_rows(dataset))
+    files = tuple(dataset.files)
+    parquet_stats = _parquet_stats(files)
+    return ArrowDatasetStats(
+        row_count=_count_rows(dataset),
+        row_group_count=parquet_stats.row_group_count if parquet_stats else None,
+        file_count=parquet_stats.file_count if parquet_stats else None,
+        rows_from_metadata=parquet_stats.rows_from_metadata if parquet_stats else None,
+    )
 
 
 def build_dataset_manifest(
@@ -209,6 +231,7 @@ def build_dataset_manifest(
         partition_columns=tuple(str(column) for column in request.partition_columns),
         files=files,
         row_count=stats.row_count,
+        stats=stats.to_mapping(),
         created_at=request.created_at or datetime.now(tz=UTC).isoformat(),
         extras=dict(request.extras) if request.extras else None,
     )
@@ -274,6 +297,31 @@ def _coerce_int(value: object) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class _ParquetStats:
+    row_group_count: int
+    file_count: int
+    rows_from_metadata: int
+
+
+def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
+    if not files:
+        return None
+    row_groups = 0
+    rows = 0
+    for path in files:
+        parquet_file = pq.ParquetFile(path)
+        row_groups += parquet_file.num_row_groups
+        metadata = parquet_file.metadata
+        if metadata is not None:
+            rows += metadata.num_rows
+    return _ParquetStats(
+        row_group_count=row_groups,
+        file_count=len(files),
+        rows_from_metadata=rows,
+    )
 
 
 __all__ = [

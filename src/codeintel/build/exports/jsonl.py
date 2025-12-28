@@ -172,10 +172,13 @@ def export_repo_map_json(
             first = True
             reader = rel.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
             for batch in reader:
-                payload = batch.to_pydict()
-                columns = list(payload.keys())
-                for idx in range(batch.num_rows):
-                    record = {name: payload[name][idx] for name in columns}
+                columns = batch.schema.names
+                arrays = [batch.column(idx) for idx in range(batch.num_columns)]
+                for row_idx in range(batch.num_rows):
+                    record = {
+                        name: arrays[idx][row_idx].as_py()
+                        for idx, name in enumerate(columns)
+                    }
                     if first:
                         first = False
                     else:

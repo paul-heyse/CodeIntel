@@ -4,28 +4,29 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+import polars as pl
 from hamilton.function_modifiers import pipe_input, resolve_from_config, step, value
 from hamilton.function_modifiers.base import NodeTransformLifecycle
 
 
 def _drop_null_rows(
-    rows: tuple[tuple[object, ...], ...],
+    frame: pl.LazyFrame,
     *,
-    required_indices: tuple[int, ...],
-) -> tuple[tuple[object, ...], ...]:
-    if not required_indices:
-        return rows
-    return tuple(row for row in rows if all(row[idx] is not None for idx in required_indices))
+    required_cols: tuple[str, ...],
+) -> pl.LazyFrame:
+    if not required_cols:
+        return frame
+    return frame.drop_nulls(list(required_cols))
 
 
 def _pipe_ingest_rows(
     _clean_mode: str,
     *,
-    required_indices: tuple[int, ...],
+    required_cols: tuple[str, ...],
     input_name: str,
 ) -> NodeTransformLifecycle:
     return pipe_input(
-        step(_drop_null_rows, required_indices=value(required_indices)).when(clean_mode="strict"),
+        step(_drop_null_rows, required_cols=value(required_cols)).when(clean_mode="strict"),
         on_input=input_name,
         namespace="prep",
     )
@@ -33,15 +34,15 @@ def _pipe_ingest_rows(
 
 def pipe_ingest_rows(
     *,
-    required_indices: Sequence[int] = (),
+    required_cols: Sequence[str] = (),
     input_name: str = "rows",
 ) -> NodeTransformLifecycle:
-    """Return a resolve_from_config pipe_input decorator for ingestion rows.
+    """Return a resolve_from_config pipe_input decorator for ingestion frames.
 
     Parameters
     ----------
-    required_indices
-        Tuple of column indices required for strict-mode filtering.
+    required_cols
+        Column names required for strict-mode filtering.
     input_name
         Input parameter name to target for ingestion row cleanup.
 
@@ -50,12 +51,12 @@ def pipe_ingest_rows(
     DecoratorFactory
         Decorator applying ingestion row cleanup steps.
     """
-    required_tuple = tuple(int(idx) for idx in required_indices)
+    required_tuple = tuple(str(name) for name in required_cols)
 
     def _factory(clean_mode: str) -> NodeTransformLifecycle:
         return _pipe_ingest_rows(
             clean_mode,
-            required_indices=required_tuple,
+            required_cols=required_tuple,
             input_name=input_name,
         )
 

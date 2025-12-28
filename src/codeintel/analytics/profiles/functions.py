@@ -6,11 +6,8 @@ import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import ibis
-
-from codeintel.analytics.compute.ibis_utils import zero_if_null
 from codeintel.analytics.profiles.graph_features import summarize_graph_for_function_profile
 from codeintel.analytics.profiles.types import (
     CoverageSummary,
@@ -37,33 +34,19 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.core.ibis_typing import (
-    and_predicates,
-    cast_dtype,
-    col_count,
-    col_nunique,
-    filter_by,
-    get_column,
-    gt,
-    ibis_bool,
-    isin_values,
-    ne,
-    window_over,
-)
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Iterable
 
-    import ibis.expr.types as it
-
-    from codeintel.analytics.profiles.types import (
-        FunctionGraphFeatures,
-    )
+    from codeintel.analytics.profiles.types import FunctionGraphFeatures
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.schemas.generated_rows.analytics import (
         AnalyticsFunctionProfileRow as FunctionProfileRowModel,
     )
+    from codeintel.storage.duckdb_types import DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -90,11 +73,11 @@ class FunctionProfileViews:
 class _FunctionBaseTables:
     """Filtered tables needed to assemble function base info."""
 
-    metrics: it.Table
-    types: it.Table
-    modules: it.Table
-    typedness: it.Table
-    diagnostics: it.Table
+    metrics: DuckDBRelation
+    types: DuckDBRelation
+    modules: DuckDBRelation
+    typedness: DuckDBRelation
+    diagnostics: DuckDBRelation
 
 
 def _load_function_base_tables(
@@ -106,30 +89,30 @@ def _load_function_base_tables(
     commit = inputs.commit
 
     try:
-        metrics_table = ibis_facade.table(gw, "analytics.function_metrics")
-        metrics = filter_by(
-            metrics_table,
-            metrics_table.repo == repo,
-            metrics_table.commit == commit,
+        metrics = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.function_metrics"),
+            repo=repo,
+            commit=commit,
         )
-        types_table = ibis_facade.table(gw, "analytics.function_types")
-        types = filter_by(
-            types_table,
-            types_table.repo == repo,
-            types_table.commit == commit,
+        types = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.function_types"),
+            repo=repo,
+            commit=commit,
         )
-        modules = ibis_facade.table(gw, module_table)
-        typedness_table = ibis_facade.table(gw, "analytics.typedness")
-        typedness = filter_by(
-            typedness_table,
-            typedness_table.repo == repo,
-            typedness_table.commit == commit,
+        modules = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key(module_table),
+            repo=repo,
+            commit=commit,
         )
-        diagnostics_table = ibis_facade.table(gw, "analytics.static_diagnostics")
-        diagnostics = filter_by(
-            diagnostics_table,
-            diagnostics_table.repo == repo,
-            diagnostics_table.commit == commit,
+        typedness = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.typedness"),
+            repo=repo,
+            commit=commit,
+        )
+        diagnostics = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.static_diagnostics"),
+            repo=repo,
+            commit=commit,
         )
     except DuckDBError as exc:
         log.warning("function_profile: failed to access base tables: %s", exc)
@@ -205,163 +188,86 @@ def load_function_base_info(
     if tables is None:
         return {}
 
-    joined = (
-        tables.metrics.left_join(
-            tables.types,
-            predicates=[
-                (tables.metrics.function_goid_h128, tables.types.function_goid_h128),
-                (tables.metrics.repo, tables.types.repo),
-                (tables.metrics.commit, tables.types.commit),
-            ],
-        )
-        .select(
-            tables.metrics,
-            tables.types.total_params,
-            tables.types.annotated_params,
-            tables.types.return_type,
-            tables.types.param_types,
-            tables.types.fully_typed,
-            tables.types.partial_typed,
-            tables.types.untyped,
-            tables.types.typedness_bucket,
-            tables.types.typedness_source,
-        )
-        .view()
-    )
-    joined = (
-        joined.left_join(
-            tables.modules,
-            predicates=[
-                and_predicates(
-                    tables.modules.path == joined.rel_path,
-                    (tables.modules.repo.isnull()) | (tables.modules.repo == joined.repo),
-                    (tables.modules.commit.isnull()) | (tables.modules.commit == joined.commit),
-                )
-            ],
-        )
-        .select(
-            joined,
-            tables.modules.module,
-        )
-        .view()
-    )
-    joined = (
-        joined.left_join(
-            tables.typedness,
-            predicates=[
-                (joined.rel_path, tables.typedness.path),
-                (joined.repo, tables.typedness.repo),
-                (joined.commit, tables.typedness.commit),
-            ],
-        )
-        .select(
-            joined,
-            tables.typedness.annotation_ratio.name("file_typed_ratio"),
-        )
-        .view()
-    )
-    joined = (
-        joined.left_join(
-            tables.diagnostics,
-            predicates=[
-                (joined.rel_path, tables.diagnostics.rel_path),
-                (joined.repo, tables.diagnostics.repo),
-                (joined.commit, tables.diagnostics.commit),
-            ],
-        )
-        .select(
-            joined,
-            tables.diagnostics.total_errors.name("static_error_count"),
-            tables.diagnostics.has_errors.name("has_static_errors"),
-        )
-        .view()
-    )
-
     try:
-        df = joined.select(
-            joined.function_goid_h128,
-            joined.urn,
-            joined.repo,
-            joined.commit,
-            joined.rel_path,
-            joined.module,
-            joined.language,
-            joined.kind,
-            joined.qualname,
-            joined.start_line,
-            joined.end_line,
-            joined.loc,
-            joined.logical_loc,
-            joined.cyclomatic_complexity,
-            joined.complexity_bucket,
-            joined.param_count,
-            joined.positional_params,
-            joined.keyword_only_params.name("keyword_params"),
-            joined.has_varargs.name("vararg"),
-            joined.has_varkw.name("kwarg"),
-            joined.max_nesting_depth,
-            joined.stmt_count,
-            joined.decorator_count,
-            joined.has_docstring,
-            joined.total_params,
-            joined.annotated_params,
-            joined.return_type,
-            joined.param_types,
-            joined.fully_typed,
-            joined.partial_typed,
-            joined.untyped,
-            joined.typedness_bucket,
-            joined.typedness_source,
-            joined.file_typed_ratio,
-            joined.static_error_count,
-            joined.has_static_errors,
-        ).execute()
+        types_rel = tables.types.select(
+            "function_goid_h128",
+            "repo",
+            "commit",
+            "total_params",
+            "annotated_params",
+            "return_type",
+            "param_types",
+            "fully_typed",
+            "partial_typed",
+            "untyped",
+            "typedness_bucket",
+            "typedness_source",
+        )
+        joined = tables.metrics.join(
+            types_rel,
+            ["function_goid_h128", "repo", "commit"],
+            how="left",
+        )
+        modules_rel = tables.modules.select(
+            "repo",
+            "commit",
+            "path as rel_path",
+            "module",
+        )
+        joined = joined.join(modules_rel, ["repo", "commit", "rel_path"], how="left")
+        typedness_rel = tables.typedness.select(
+            "repo",
+            "commit",
+            "path as rel_path",
+            "annotation_ratio",
+        )
+        joined = joined.join(typedness_rel, ["repo", "commit", "rel_path"], how="left")
+        joined = joined.join(tables.diagnostics, ["repo", "commit", "rel_path"], how="left")
+        selected = joined.select(
+            "function_goid_h128",
+            "urn",
+            "repo",
+            "commit",
+            "rel_path",
+            "module",
+            "language",
+            "kind",
+            "qualname",
+            "start_line",
+            "end_line",
+            "loc",
+            "logical_loc",
+            "cyclomatic_complexity",
+            "complexity_bucket",
+            "param_count",
+            "positional_params",
+            "keyword_only_params as keyword_params",
+            "has_varargs as vararg",
+            "has_varkw as kwarg",
+            "max_nesting_depth",
+            "stmt_count",
+            "decorator_count",
+            "has_docstring",
+            "total_params",
+            "annotated_params",
+            "return_type",
+            "param_types",
+            "fully_typed",
+            "partial_typed",
+            "untyped",
+            "typedness_bucket",
+            "typedness_source",
+            "cast(json_extract(annotation_ratio, '$.params') as double) as file_typed_ratio",
+            "total_errors as static_error_count",
+            "has_errors as has_static_errors",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load base info: %s", exc)
         return {}
 
-    columns = [
-        "function_goid_h128",
-        "urn",
-        "repo",
-        "commit",
-        "rel_path",
-        "module",
-        "language",
-        "kind",
-        "qualname",
-        "start_line",
-        "end_line",
-        "loc",
-        "logical_loc",
-        "cyclomatic_complexity",
-        "complexity_bucket",
-        "param_count",
-        "positional_params",
-        "keyword_params",
-        "vararg",
-        "kwarg",
-        "max_nesting_depth",
-        "stmt_count",
-        "decorator_count",
-        "has_docstring",
-        "total_params",
-        "annotated_params",
-        "return_type",
-        "param_types",
-        "fully_typed",
-        "partial_typed",
-        "untyped",
-        "typedness_bucket",
-        "typedness_source",
-        "file_typed_ratio",
-        "static_error_count",
-        "has_static_errors",
-    ]
-
     result: dict[int, FunctionBaseInfo] = {}
-    for row in df.itertuples(index=False, name=None):
-        record = dict(zip(columns, row, strict=False))
+    for record in records:
         goid_int = int(record["function_goid_h128"])
         result[goid_int] = FunctionBaseInfo(
             function_goid_h128=goid_int,
@@ -414,79 +320,68 @@ def join_function_risk(inputs: FunctionProfileInputs) -> Mapping[int, FunctionRi
         Mapping keyed by function GOID.
     """
     try:
-        fm_table = ibis_facade.table(inputs.gateway, "analytics.function_metrics")
-        fm = filter_by(fm_table, fm_table.repo == inputs.repo, fm_table.commit == inputs.commit)
-        rf_table = ibis_facade.table(inputs.gateway, "analytics.goid_risk_factors")
-        rf = filter_by(rf_table, rf_table.repo == inputs.repo, rf_table.commit == inputs.commit)
-        modules = ibis_facade.table(inputs.gateway, DEFAULT_MODULE_TABLE)
-        hotspots = ibis_facade.table(inputs.gateway, "analytics.hotspots")
-        joined = (
-            fm.left_join(
-                rf,
-                predicates=[
-                    (fm.function_goid_h128, rf.function_goid_h128),
-                    (fm.repo, rf.repo),
-                    (fm.commit, rf.commit),
-                ],
-            )
-            .select(
-                fm.function_goid_h128,
-                fm.repo,
-                fm.commit,
-                fm.rel_path,
-                rf.risk_score,
-                rf.risk_level,
-            )
-            .view()
+        fm = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.function_metrics"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        joined = (
-            joined.left_join(
-                modules,
-                predicates=[
-                    and_predicates(
-                        modules.path == joined.rel_path,
-                        (modules.repo.isnull()) | (modules.repo == joined.repo),
-                        (modules.commit.isnull()) | (modules.commit == joined.commit),
-                    )
-                ],
-            )
-            .select(
-                joined,
-                modules.tags,
-                modules.owners,
-            )
-            .view()
+        rf = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.goid_risk_factors"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        joined = joined.left_join(
-            hotspots,
-            predicates=[(joined.rel_path, hotspots.rel_path)],
-        ).select(
-            joined,
-            hotspots.score.name("hotspot_score"),
+        modules = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key(DEFAULT_MODULE_TABLE),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        df = joined.select(
-            joined.function_goid_h128,
-            joined.risk_score,
-            joined.risk_level,
-            joined.hotspot_score,
-            joined.tags,
-            joined.owners,
-        ).execute()
+        hotspots = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.hotspots"),
+            repo=inputs.repo,
+            commit=inputs.commit,
+        )
+        joined = fm.join(
+            rf,
+            ["function_goid_h128", "repo", "commit"],
+            how="left",
+        )
+        modules_rel = modules.select(
+            "repo",
+            "commit",
+            "path as rel_path",
+            "tags",
+            "owners",
+        )
+        joined = joined.join(modules_rel, ["repo", "commit", "rel_path"], how="left")
+        hotspots_rel = hotspots.select(
+            "rel_path",
+            "score as hotspot_score",
+        )
+        joined = joined.join(hotspots_rel, ["rel_path"], how="left")
+        selected = joined.select(
+            "function_goid_h128",
+            "risk_score",
+            "risk_level",
+            "hotspot_score",
+            "tags",
+            "owners",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load risk factors: %s", exc)
         return {}
     result: dict[int, FunctionRiskView] = {}
-    for function_goid_h128, risk_score, risk_level, hotspot_score, tags, owners in df.itertuples(
-        index=False, name=None
-    ):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = FunctionRiskView(
             function_goid_h128=goid,
-            risk_score=float(risk_score or 0.0),
-            risk_level=str(risk_level) if risk_level is not None else None,
-            hotspot_score=float(hotspot_score) if hotspot_score is not None else None,
-            tags=tags if tags is not None else "[]",
-            owners=owners if owners is not None else "[]",
+            risk_score=float(record["risk_score"] or 0.0),
+            risk_level=optional_str(record["risk_level"]),
+            hotspot_score=(
+                float(record["hotspot_score"]) if record["hotspot_score"] is not None else None
+            ),
+            tags=record["tags"] if record["tags"] is not None else "[]",
+            owners=record["owners"] if record["owners"] is not None else "[]",
         )
     return result
 
@@ -509,141 +404,128 @@ def join_function_coverage(inputs: FunctionProfileInputs) -> Mapping[int, Covera
             edges, catalog, slow_threshold_ms=inputs.slow_test_threshold_ms
         )
 
-        cf = filter_by(
-            ibis_facade.table(inputs.gateway, "analytics.coverage_functions"),
-            ibis_facade.table(inputs.gateway, "analytics.coverage_functions").repo == repo,
-            ibis_facade.table(inputs.gateway, "analytics.coverage_functions").commit == commit,
+        cf = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.coverage_functions"),
+            repo=repo,
+            commit=commit,
         )
-
-        df = (
-            cf.left_join(
-                t_stats,
-                predicates=[(cf.function_goid_h128, t_stats.function_goid_h128)],
-            )
-            .left_join(
-                status_top,
-                predicates=[(cf.function_goid_h128, status_top.function_goid_h128)],
-            )
-            .select(
-                cf.function_goid_h128,
-                cf.executable_lines,
-                cf.covered_lines,
-                cf.coverage_ratio,
-                cf.tested,
-                cf.untested_reason,
-                zero_if_null(t_stats.tests_touching).name("tests_touching"),
-                zero_if_null(t_stats.failing_tests).name("failing_tests"),
-                zero_if_null(t_stats.slow_tests).name("slow_tests"),
-                zero_if_null(t_stats.flaky_tests).name("flaky_tests"),
-                ibis.coalesce(
-                    status_top.dominant_test_status,
-                    ibis.literal("untested"),
-                ).name("last_test_status"),
-                status_top.dominant_test_status.name("dominant_test_status"),
-            )
-            .execute()
+        joined = (
+            cf.join(t_stats, ["function_goid_h128"], how="left")
+            .join(status_top, ["function_goid_h128"], how="left")
         )
+        selected = joined.select(
+            "function_goid_h128",
+            "executable_lines",
+            "covered_lines",
+            "coverage_ratio",
+            "tested",
+            "untested_reason",
+            "coalesce(tests_touching, 0) as tests_touching",
+            "coalesce(failing_tests, 0) as failing_tests",
+            "coalesce(slow_tests, 0) as slow_tests",
+            "coalesce(flaky_tests, 0) as flaky_tests",
+            "coalesce(dominant_test_status, 'untested') as last_test_status",
+            "dominant_test_status",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load coverage: %s", exc)
         return {}
     result: dict[int, CoverageSummary] = {}
-    for (
-        function_goid_h128,
-        executable_lines,
-        covered_lines,
-        coverage_ratio,
-        tested,
-        untested_reason,
-        tests_touching,
-        failing_tests,
-        slow_tests,
-        flaky_tests,
-        last_test_status,
-        dominant_test_status,
-    ) in df.itertuples(index=False, name=None):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = CoverageSummary(
             function_goid_h128=goid,
-            executable_lines=int(executable_lines or 0),
-            covered_lines=int(covered_lines or 0),
-            coverage_ratio=float(coverage_ratio) if coverage_ratio is not None else None,
-            tested=bool(tested),
-            untested_reason=str(untested_reason) if untested_reason is not None else None,
-            tests_touching=int(tests_touching or 0),
-            failing_tests=int(failing_tests or 0),
-            slow_tests=int(slow_tests or 0),
-            flaky_tests=int(flaky_tests or 0),
-            last_test_status=str(last_test_status) if last_test_status is not None else None,
+            executable_lines=int(record["executable_lines"] or 0),
+            covered_lines=int(record["covered_lines"] or 0),
+            coverage_ratio=(
+                float(record["coverage_ratio"]) if record["coverage_ratio"] is not None else None
+            ),
+            tested=bool(record["tested"]),
+            untested_reason=optional_str(record["untested_reason"]),
+            tests_touching=int(record["tests_touching"] or 0),
+            failing_tests=int(record["failing_tests"] or 0),
+            slow_tests=int(record["slow_tests"] or 0),
+            flaky_tests=int(record["flaky_tests"] or 0),
+            last_test_status=optional_str(record["last_test_status"]),
             dominant_test_status=(
-                str(dominant_test_status) if dominant_test_status is not None else None
+                optional_str(record["dominant_test_status"])
             ),
         )
     return result
 
 
-def _load_test_tables(gateway: StorageGateway, repo: str, commit: str) -> tuple[it.Table, it.Table]:
+def _load_test_tables(
+    gateway: StorageGateway, repo: str, commit: str
+) -> tuple[DuckDBRelation, DuckDBRelation]:
     """Load coverage edge and catalog tables with repo/commit filtering.
 
     Returns
     -------
-    tuple[it.Table, it.Table]
+    tuple[DuckDBRelation, DuckDBRelation]
         Filtered coverage edge table and catalog table.
     """
-    edges_table = ibis_facade.table(gateway, "analytics.test_coverage_edges")
-    edges = filter_by(edges_table, edges_table.repo == repo, edges_table.commit == commit)
-
-    catalog_table = ibis_facade.table(gateway, "analytics.test_catalog")
-    catalog = filter_by(
-        catalog_table,
-        catalog_table.repo == repo,
-        catalog_table.commit == commit,
+    edges = maybe_scope_by_repo_commit(
+        gateway.relation_from_table_key("analytics.test_coverage_edges"),
+        repo=repo,
+        commit=commit,
+    )
+    catalog = maybe_scope_by_repo_commit(
+        gateway.relation_from_table_key("analytics.test_catalog"),
+        repo=repo,
+        commit=commit,
     )
     return edges, catalog
 
 
 def _compute_test_stats(
-    edges: it.Table,
-    catalog: it.Table,
+    edges: DuckDBRelation,
+    catalog: DuckDBRelation,
     *,
     slow_threshold_ms: float,
-) -> tuple[it.Table, it.Table]:
+) -> tuple[DuckDBRelation, DuckDBRelation]:
     """Compute per-function test stats and dominant status.
 
     Returns
     -------
-    tuple[it.Table, it.Table]
+    tuple[DuckDBRelation, DuckDBRelation]
         Aggregated coverage stats and status summaries.
     """
-    failing_predicate = isin_values(catalog.status, ["failed", "error"])
-    slow_predicate = gt(cast("it.Value", catalog.duration_ms), slow_threshold_ms)
-    flaky_predicate = ibis_bool(catalog.flaky)
-
-    joined = edges.left_join(
+    joined = edges.join(
         catalog,
-        predicates=[
-            (edges.test_id, catalog.test_id),
-            (edges.repo, catalog.repo),
-            (edges.commit, catalog.commit),
-        ],
+        ["test_id", "repo", "commit"],
+        how="left",
     )
 
-    t_stats = joined.group_by(joined.function_goid_h128).aggregate(
-        tests_touching=col_nunique(joined.test_id),
-        failing_tests=col_nunique(ibis.ifelse(failing_predicate, joined.test_id, ibis.null())),
-        slow_tests=col_nunique(ibis.ifelse(slow_predicate, joined.test_id, ibis.null())),
-        flaky_tests=col_nunique(ibis.ifelse(flaky_predicate, joined.test_id, ibis.null())),
+    slow_threshold = float(slow_threshold_ms)
+    t_stats = joined.group_by("function_goid_h128").aggregate(
+        [
+            "count(distinct test_id) as tests_touching",
+            (
+                "count(distinct case when status in ('failed', 'error') "
+                "then test_id end) as failing_tests"
+            ),
+            (
+                "count(distinct case when duration_ms > "
+                f"{slow_threshold} then test_id end) as slow_tests"
+            ),
+            "count(distinct case when flaky then test_id end) as flaky_tests",
+        ]
     )
 
-    status_counts = joined.group_by(joined.function_goid_h128, catalog.status).aggregate(
-        status_count=col_count(joined.test_id)
+    status_counts = joined.group_by("function_goid_h128", "status").aggregate(
+        "count(test_id) as status_count"
     )
-    status_window = window_over(
-        partition_by=[status_counts.function_goid_h128],
-        order_by=[ibis.desc(status_counts.status_count), status_counts.status],
+    status_ranked = status_counts.select(
+        "*",
+        (
+            "row_number() over (partition by function_goid_h128 "
+            "order by status_count desc, status) as status_rank"
+        ),
     )
-    status_ranked = status_counts.mutate(rank=ibis.row_number().over(status_window))
-    status_top = filter_by(status_ranked, status_ranked.rank == 0).select(
-        status_counts.function_goid_h128, status_counts.status.name("dominant_test_status")
+    status_top = status_ranked.filter("status_rank = 1").select(
+        "function_goid_h128",
+        "status as dominant_test_status",
     )
     return t_stats, status_top
 
@@ -658,55 +540,47 @@ def join_function_effects(inputs: FunctionProfileInputs) -> Mapping[int, Functio
         Mapping keyed by function GOID.
     """
     try:
-        effects_table = ibis_facade.table(inputs.gateway, "analytics.function_effects")
-        effects = filter_by(
-            effects_table,
-            effects_table.repo == inputs.repo,
-            effects_table.commit == inputs.commit,
+        effects = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.function_effects"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        df = effects.select(
-            effects.function_goid_h128,
-            effects.is_pure,
-            effects.uses_io,
-            effects.touches_db,
-            effects.uses_time,
-            effects.uses_randomness,
-            effects.modifies_globals,
-            effects.modifies_closure,
-            effects.spawns_threads_or_tasks,
-            effects.has_transitive_effects,
-            effects.purity_confidence,
-        ).execute()
+        selected = effects.select(
+            "function_goid_h128",
+            "is_pure",
+            "uses_io",
+            "touches_db",
+            "uses_time",
+            "uses_randomness",
+            "modifies_globals",
+            "modifies_closure",
+            "spawns_threads_or_tasks",
+            "has_transitive_effects",
+            "purity_confidence",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load effects: %s", exc)
         return {}
     result: dict[int, FunctionEffectsView] = {}
-    for (
-        function_goid_h128,
-        is_pure,
-        uses_io,
-        touches_db,
-        uses_time,
-        uses_randomness,
-        modifies_globals,
-        modifies_closure,
-        spawns_threads_or_tasks,
-        has_transitive_effects,
-        purity_confidence,
-    ) in df.itertuples(index=False, name=None):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = FunctionEffectsView(
             function_goid_h128=goid,
-            is_pure=bool(is_pure),
-            uses_io=bool(uses_io),
-            touches_db=bool(touches_db),
-            uses_time=bool(uses_time),
-            uses_randomness=bool(uses_randomness),
-            modifies_globals=bool(modifies_globals),
-            modifies_closure=bool(modifies_closure),
-            spawns_threads_or_tasks=bool(spawns_threads_or_tasks),
-            has_transitive_effects=bool(has_transitive_effects),
-            purity_confidence=float(purity_confidence) if purity_confidence is not None else None,
+            is_pure=bool(record["is_pure"]),
+            uses_io=bool(record["uses_io"]),
+            touches_db=bool(record["touches_db"]),
+            uses_time=bool(record["uses_time"]),
+            uses_randomness=bool(record["uses_randomness"]),
+            modifies_globals=bool(record["modifies_globals"]),
+            modifies_closure=bool(record["modifies_closure"]),
+            spawns_threads_or_tasks=bool(record["spawns_threads_or_tasks"]),
+            has_transitive_effects=bool(record["has_transitive_effects"]),
+            purity_confidence=(
+                float(record["purity_confidence"])
+                if record["purity_confidence"] is not None
+                else None
+            ),
         )
     return result
 
@@ -721,48 +595,39 @@ def join_function_contracts(inputs: FunctionProfileInputs) -> Mapping[int, Funct
         Mapping keyed by function GOID.
     """
     try:
-        contracts_table = ibis_facade.table(inputs.gateway, "analytics.function_contracts")
-        contracts = filter_by(
-            contracts_table,
-            contracts_table.repo == inputs.repo,
-            contracts_table.commit == inputs.commit,
+        contracts = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.function_contracts"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        preconditions = cast_dtype(get_column(contracts, "preconditions_json"), "string")
-        postconditions = cast_dtype(get_column(contracts, "postconditions_json"), "string")
-        raises_json = cast_dtype(get_column(contracts, "raises_json"), "string")
-        df = contracts.select(
-            contracts.function_goid_h128,
-            contracts.param_nullability_json,
-            contracts.return_nullability,
-            ne(preconditions, "").name("has_preconditions"),
-            ne(postconditions, "").name("has_postconditions"),
-            ne(raises_json, "").name("has_raises"),
-            contracts.contract_confidence,
-        ).execute()
+        selected = contracts.select(
+            "function_goid_h128",
+            "param_nullability_json",
+            "return_nullability",
+            "coalesce(cast(preconditions_json as varchar), '') <> '' as has_preconditions",
+            "coalesce(cast(postconditions_json as varchar), '') <> '' as has_postconditions",
+            "coalesce(cast(raises_json as varchar), '') <> '' as has_raises",
+            "contract_confidence",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load contracts: %s", exc)
         return {}
     result: dict[int, FunctionContractView] = {}
-    for (
-        function_goid_h128,
-        param_nullability_json,
-        return_nullability,
-        has_preconditions,
-        has_postconditions,
-        has_raises,
-        contract_confidence,
-    ) in df.itertuples(index=False, name=None):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = FunctionContractView(
             function_goid_h128=goid,
-            param_nullability_json=param_nullability_json,
-            return_nullability=str(return_nullability) if return_nullability is not None else None,
-            has_preconditions=bool(has_preconditions),
-            has_postconditions=bool(has_postconditions),
-            has_raises=bool(has_raises),
-            contract_confidence=float(contract_confidence)
-            if contract_confidence is not None
-            else None,
+            param_nullability_json=record["param_nullability_json"],
+            return_nullability=optional_str(record["return_nullability"]),
+            has_preconditions=bool(record["has_preconditions"]),
+            has_postconditions=bool(record["has_postconditions"]),
+            has_raises=bool(record["has_raises"]),
+            contract_confidence=(
+                float(record["contract_confidence"])
+                if record["contract_confidence"] is not None
+                else None
+            ),
         )
     return result
 
@@ -777,33 +642,37 @@ def join_function_roles(inputs: FunctionProfileInputs) -> Mapping[int, FunctionR
         Mapping keyed by function GOID.
     """
     try:
-        roles_table = ibis_facade.table(inputs.gateway, "analytics.semantic_roles_functions")
-        roles = filter_by(
-            roles_table,
-            roles_table.repo == inputs.repo,
-            roles_table.commit == inputs.commit,
+        roles = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.semantic_roles_functions"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        df = roles.select(
-            roles.function_goid_h128,
-            roles.role,
-            roles.framework,
-            roles.role_confidence,
-            roles.role_sources_json,
-        ).execute()
+        selected = roles.select(
+            "function_goid_h128",
+            "role",
+            "framework",
+            "role_confidence",
+            "role_sources_json",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load roles: %s", exc)
         return {}
     result: dict[int, FunctionRoleView] = {}
-    for function_goid_h128, role, framework, role_confidence, role_sources_json in df.itertuples(
-        index=False, name=None
-    ):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = FunctionRoleView(
             function_goid_h128=goid,
-            role=str(role) if role is not None else None,
-            framework=str(framework) if framework is not None else None,
-            role_confidence=float(role_confidence) if role_confidence is not None else None,
-            role_sources_json=role_sources_json if role_sources_json is not None else "[]",
+            role=optional_str(record["role"]),
+            framework=optional_str(record["framework"]),
+            role_confidence=(
+                float(record["role_confidence"])
+                if record["role_confidence"] is not None
+                else None
+            ),
+            role_sources_json=(
+                record["role_sources_json"] if record["role_sources_json"] is not None else "[]"
+            ),
         )
     return result
 
@@ -818,47 +687,41 @@ def join_function_docs(inputs: FunctionProfileInputs) -> Mapping[int, FunctionDo
         Mapping keyed by function GOID.
     """
     try:
-        fm_table = ibis_facade.table(inputs.gateway, "analytics.function_metrics")
-        fm = filter_by(fm_table, fm_table.repo == inputs.repo, fm_table.commit == inputs.commit)
-        docs = ibis_facade.table(inputs.gateway, "core.docstrings")
-        df = (
-            (
-                fm.left_join(
-                    docs,
-                    predicates=[
-                        and_predicates(
-                            docs.repo == fm.repo,
-                            docs.commit == fm.commit,
-                            docs.rel_path == fm.rel_path,
-                            docs.qualname == fm.qualname,
-                            docs.kind == fm.kind,
-                        )
-                    ],
-                )
-            )
-            .select(
-                fm.function_goid_h128,
-                docs.short_desc.name("doc_short"),
-                docs.long_desc.name("doc_long"),
-                docs.params.name("doc_params"),
-                docs.returns.name("doc_returns"),
-            )
-            .execute()
+        fm = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.function_metrics"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
+        docs = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("core.docstrings"),
+            repo=inputs.repo,
+            commit=inputs.commit,
+        )
+        joined = fm.join(
+            docs,
+            ["repo", "commit", "rel_path", "qualname", "kind"],
+            how="left",
+        )
+        selected = joined.select(
+            "function_goid_h128",
+            "short_desc as doc_short",
+            "long_desc as doc_long",
+            "params as doc_params",
+            "returns as doc_returns",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load docs: %s", exc)
         return {}
     result: dict[int, FunctionDocView] = {}
-    for function_goid_h128, doc_short, doc_long, doc_params, doc_returns in df.itertuples(
-        index=False, name=None
-    ):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = FunctionDocView(
             function_goid_h128=goid,
-            doc_short=str(doc_short) if doc_short is not None else None,
-            doc_long=str(doc_long) if doc_long is not None else None,
-            doc_params=doc_params,
-            doc_returns=doc_returns,
+            doc_short=optional_str(record["doc_short"]),
+            doc_long=optional_str(record["doc_long"]),
+            doc_params=record["doc_params"],
+            doc_returns=record["doc_returns"],
         )
     return result
 
@@ -873,60 +736,47 @@ def join_function_history(inputs: FunctionProfileInputs) -> Mapping[int, Functio
         Mapping keyed by function GOID.
     """
     try:
-        history_table = ibis_facade.table(inputs.gateway, "analytics.function_history")
-        history = filter_by(
-            history_table,
-            history_table.repo == inputs.repo,
-            history_table.commit == inputs.commit,
+        history = maybe_scope_by_repo_commit(
+            inputs.gateway.relation_from_table_key("analytics.function_history"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        df = history.select(
-            history.function_goid_h128,
-            history.created_in_commit,
-            history.created_at,
-            history.last_modified_commit,
-            history.last_modified_at,
-            history.age_days,
-            history.commit_count,
-            history.author_count,
-            history.lines_added,
-            history.lines_deleted,
-            history.churn_score,
-            history.stability_bucket,
-        ).execute()
+        selected = history.select(
+            "function_goid_h128",
+            "created_in_commit",
+            "created_at",
+            "last_modified_commit",
+            "last_modified_at",
+            "age_days",
+            "commit_count",
+            "author_count",
+            "lines_added",
+            "lines_deleted",
+            "churn_score",
+            "stability_bucket",
+        )
+        records = records_from_relation(selected)
     except DuckDBError as exc:
         log.warning("function_profile: failed to load history: %s", exc)
         return {}
     result: dict[int, FunctionHistoryView] = {}
-    for (
-        function_goid_h128,
-        created_in_commit,
-        created_at_history,
-        last_modified_commit,
-        last_modified_at,
-        age_days,
-        commit_count,
-        author_count,
-        lines_added,
-        lines_deleted,
-        churn_score,
-        stability_bucket,
-    ) in df.itertuples(index=False, name=None):
-        goid = int(function_goid_h128)
+    for record in records:
+        goid = int(record["function_goid_h128"])
         result[goid] = FunctionHistoryView(
             function_goid_h128=goid,
-            created_in_commit=str(created_in_commit) if created_in_commit is not None else None,
-            created_at_history=created_at_history,
-            last_modified_commit=str(last_modified_commit)
-            if last_modified_commit is not None
-            else None,
-            last_modified_at=last_modified_at,
-            age_days=int(age_days) if age_days is not None else None,
-            commit_count=int(commit_count or 0),
-            author_count=int(author_count or 0),
-            lines_added=int(lines_added or 0),
-            lines_deleted=int(lines_deleted or 0),
-            churn_score=float(churn_score) if churn_score is not None else None,
-            stability_bucket=str(stability_bucket) if stability_bucket is not None else None,
+            created_in_commit=optional_str(record["created_in_commit"]),
+            created_at_history=record["created_at"],
+            last_modified_commit=optional_str(record["last_modified_commit"]),
+            last_modified_at=record["last_modified_at"],
+            age_days=optional_int(record["age_days"]),
+            commit_count=int(record["commit_count"] or 0),
+            author_count=int(record["author_count"] or 0),
+            lines_added=int(record["lines_added"] or 0),
+            lines_deleted=int(record["lines_deleted"] or 0),
+            churn_score=(
+                float(record["churn_score"]) if record["churn_score"] is not None else None
+            ),
+            stability_bucket=optional_str(record["stability_bucket"]),
         )
     return result
 

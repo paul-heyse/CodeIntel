@@ -55,7 +55,7 @@ def function_metrics__base(q__core__goids: TabularInput) -> pl.LazyFrame:
     pl.LazyFrame
         Lazy frame with function metrics columns.
     """
-    frame = relation_to_polars(q__core__goids, lazy=True)
+    frame = relation_to_polars(q__core__goids)
     end_line = pl.coalesce([pl.col("end_line"), pl.col("start_line")])
     frame = frame.rename({"goid_h128": "function_goid_h128"})
     frame = frame.with_columns(

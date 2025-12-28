@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+import polars as pl
 import pyarrow as pa
 import sqlglot
 from hamilton.function_modifiers import source, value
@@ -28,7 +29,7 @@ from hamilton.function_modifiers import source, value
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
+from codeintel.build.hamilton.materializers import DuckDBRelationSaver, FileArtifactSaver
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.materialization_records import (
     MaterializationRecordContext,
@@ -39,18 +40,20 @@ from codeintel.build.hamilton.run_records import TargetRunRecord
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 from codeintel.build.hamilton.tagging import tag_compute, tag_helper
 from codeintel.build.meta.contract_catalog import persist_contract_catalog
-from codeintel.build.schemas import deferred_columns_for_table_key, get_schema_provider
+from codeintel.build.schemas import get_schema_provider
 from codeintel.build.schemas.compile import (
     SchemaManifestContext,
     SchemaManifestRequest,
     compile_schema_manifest,
 )
 from codeintel.build.schemas.schema_index import SchemaIndex
+from codeintel.build.schemas.service import get_schema_service
 from codeintel.build.serving.semantic_compile import (
     compile_semantic_registry_from_tag_query,
 )
 from codeintel.build.spec import BuildSpecCompileOptions, compile_buildspec
 from codeintel.build.spec.serdes import buildspec_to_json
+from codeintel.build.tabular.conversion import lazyframe_from_rows
 from codeintel.core.execution.ids import new_run_id
 from codeintel.core.hamilton.tag_query import TagQuery
 from codeintel.core.schemas.row_serialization import row_to_tuple
@@ -372,13 +375,12 @@ def serving_artifacts__dataset_manifest_paths(env: BuildEnv, catalog: DagCatalog
 
 
 @SaveToObjectMetadataDecorator(
-    [DuckDBRowsSaver],
+    [DuckDBRelationSaver],
     output_name_=materialize_node(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
     env=source("env"),
     catalog=source("catalog"),
     target_name=value(SERVING_ARTIFACTS_TARGET_NAME),
     table_key=value(SCHEMA_INFERENCE_ERRORS_TABLE_KEY),
-    columns=value(deferred_columns_for_table_key(SCHEMA_INFERENCE_ERRORS_TABLE_KEY)),
 )
 @tag_compute(
     domain="export",
@@ -389,18 +391,18 @@ def serving_artifacts__schema_inference_errors_rows(
     env: BuildEnv,
     serving_artifacts__schema_manifest: str,
     schema_index: SchemaIndex,
-) -> tuple[tuple[object, ...], ...]:
+) -> pl.LazyFrame:
     """Persist schema inference errors recorded during schema compile.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...]
-        Row tuples for the schema inference errors table.
+    pl.LazyFrame
+        Lazy frame for the schema inference errors table.
     """
     _ = serving_artifacts__schema_manifest
     run_context = env.run_context
     run_id = run_context.run_id if run_context is not None else "unknown"
-    return tuple(
+    rows = tuple(
         row_to_tuple(
             SCHEMA_INFERENCE_ERRORS_TABLE_KEY,
             row,
@@ -411,6 +413,8 @@ def serving_artifacts__schema_inference_errors_rows(
             run_id=run_id,
         )
     )
+    schema = get_schema_service().require_table_schema(SCHEMA_INFERENCE_ERRORS_TABLE_KEY)
+    return lazyframe_from_rows(rows=rows, columns=tuple(schema.column_names()))
 
 
 @SaveToObjectMetadataDecorator(

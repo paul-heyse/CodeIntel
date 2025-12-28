@@ -18,23 +18,26 @@ from numbers import Integral
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
+import polars as pl
+
 from codeintel.build.hamilton.boundary_types import MaterializationResult
 from codeintel.build.hamilton.dag_catalog import DagCatalog
 from codeintel.build.hamilton.env import BuildEnv
 from codeintel.build.hamilton.execution_result import ExecutionResult
+from codeintel.build.hamilton.native.ingestion.frame_utils import lazyframe_for_table
 from codeintel.build.hamilton.native.ingestion.ingest_targets import ModuleToolOutput
 from codeintel.build.hamilton.native.options.ingestion import ScipIngestOptions
 from codeintel.build.hamilton.native.patterns import (
     ArtifactSaveSpec,
     IngestStep,
+    RelationTableSaveSpec,
     SaverContext,
-    TableSaveSpec,
     ToolFinalizeContext,
     ToolRunContext,
     finalize_target_from_materializations,
     run_tool_step,
     save_artifact,
-    save_rows,
+    save_relation_table,
 )
 from codeintel.build.hamilton.native.table_counts import normalize_table_counts
 from codeintel.build.hamilton.native.target_decorators import (
@@ -125,7 +128,7 @@ SCIP_TABLE_KEYS = (
     SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
     SCIP_MODULE_STATE_TABLE_KEY,
 )
-_FILE_STATE_ROW_MIN_COLUMNS = 7
+FILE_STATE_TABLE_KEY = "core.file_state"
 
 SCIP_SAVE_CONTEXT = SaverContext(
     domain="ingestion",
@@ -145,12 +148,18 @@ class ScipRunResult(ToolStepOutput):
 class ScipRowPayload:
     """Row payloads for SCIP ingestion tables."""
 
-    symbol_rows: tuple[tuple[object, ...], ...]
-    occurrence_rows: tuple[tuple[object, ...], ...]
-    symbol_info_rows: tuple[tuple[object, ...], ...]
-    relationship_rows: tuple[tuple[object, ...], ...]
-    diagnostic_rows: tuple[tuple[object, ...], ...]
-    external_symbol_rows: tuple[tuple[object, ...], ...]
+    symbol_rows: pl.LazyFrame
+    occurrence_rows: pl.LazyFrame
+    symbol_info_rows: pl.LazyFrame
+    relationship_rows: pl.LazyFrame
+    diagnostic_rows: pl.LazyFrame
+    external_symbol_rows: pl.LazyFrame
+    symbol_row_count: int
+    occurrence_row_count: int
+    symbol_info_row_count: int
+    relationship_row_count: int
+    diagnostic_row_count: int
+    external_symbol_row_count: int
 
 
 @dataclass(frozen=True)
@@ -314,11 +323,10 @@ def _load_module_state_rows(env: BuildEnv) -> list[dict[str, object]]:
         "SELECT * FROM core.scip_module_state WHERE repo = ? AND commit = ?",
         [env.snapshot.repo, env.snapshot.commit],
     )
-    frame = relation.df()
-    if frame.empty:
+    frame = relation.pl()
+    if frame.is_empty():
         return []
-    rows = frame.to_dict(orient="records")
-    return cast("list[dict[str, object]]", rows)
+    return cast("list[dict[str, object]]", frame.to_dicts())
 
 
 def _manifest_records_match(
@@ -389,16 +397,14 @@ def _ensure_manifest_from_module_state(env: BuildEnv, scip_dir: Path) -> None:
 
 
 def _build_file_state_map(
-    file_state_rows: tuple[tuple[object, ...], ...],
+    file_state_rows: pl.LazyFrame,
 ) -> dict[str, FileDigest]:
     digest_by_path: dict[str, FileDigest] = {}
-    for row in file_state_rows:
-        if len(row) < _FILE_STATE_ROW_MIN_COLUMNS:
-            continue
-        rel_path_raw = row[2]
-        size_raw = row[4]
-        mtime_raw = row[5]
-        hash_raw = row[6]
+    for row in file_state_rows.collect().to_dicts():
+        rel_path_raw = row.get("rel_path")
+        size_raw = row.get("size_bytes")
+        mtime_raw = row.get("mtime_ns")
+        hash_raw = row.get("content_hash")
         if rel_path_raw is None or hash_raw is None:
             continue
         rel_path = str(rel_path_raw)
@@ -494,7 +500,11 @@ def _execute_scip_incremental(
         run_id=run_id,
         options_hash=options_hash,
     )
-    file_state_rows = module_inputs.scan.file_state_rows or tuple(change_set.state_rows)
+    file_state_rows = module_inputs.scan.file_state_rows
+    if module_inputs.scan.file_state_row_count == 0:
+        fallback_rows = list(change_set.state_rows)
+        if fallback_rows:
+            file_state_rows = lazyframe_for_table(FILE_STATE_TABLE_KEY, fallback_rows)
     file_state_by_path = _build_file_state_map(file_state_rows)
     try:
         config = ScipIncrementalConfig(
@@ -694,77 +704,74 @@ def _build_scip_row_payload(
         include_references=options.should_include_references(),
         include_implementations=options.should_include_implementations(),
     )
-    symbol_rows = tuple(
-        build_symbol_rows(
-            parsed.documents,
-            row_context,
-            serializer=row_serializer_for_table_key(SCIP_SYMBOLS_TABLE_KEY),
-        )
+    symbol_rows = build_symbol_rows(
+        parsed.documents,
+        row_context,
+        serializer=row_serializer_for_table_key(SCIP_SYMBOLS_TABLE_KEY),
     )
-    occurrence_rows = tuple(
-        build_occurrence_rows(
-            parsed.documents,
-            row_context,
-            serializer=row_serializer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY),
-        )
+    occurrence_rows = build_occurrence_rows(
+        parsed.documents,
+        row_context,
+        serializer=row_serializer_for_table_key(SCIP_OCCURRENCES_TABLE_KEY),
     )
-    symbol_info_rows = tuple(
-        build_symbol_information_rows(
-            parsed.symbol_infos,
-            row_context,
-            serializer=row_serializer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY),
-        )
+    symbol_info_rows = build_symbol_information_rows(
+        parsed.symbol_infos,
+        row_context,
+        serializer=row_serializer_for_table_key(SCIP_SYMBOL_INFO_TABLE_KEY),
     )
-    relationship_rows = tuple(
-        build_symbol_relationship_rows(
-            parsed.relationships,
-            row_context,
-            serializer=row_serializer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY),
-        )
+    relationship_rows = build_symbol_relationship_rows(
+        parsed.relationships,
+        row_context,
+        serializer=row_serializer_for_table_key(SCIP_RELATIONSHIPS_TABLE_KEY),
     )
-    diagnostic_rows = tuple(
-        build_diagnostic_rows(
-            parsed.diagnostics,
-            row_context,
-            serializer=row_serializer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY),
-        )
+    diagnostic_rows = build_diagnostic_rows(
+        parsed.diagnostics,
+        row_context,
+        serializer=row_serializer_for_table_key(SCIP_DIAGNOSTICS_TABLE_KEY),
     )
-    external_symbol_rows = tuple(
-        build_external_symbol_rows(
-            parsed.external_symbols,
-            row_context,
-            serializer=row_serializer_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
-        )
+    external_symbol_rows = build_external_symbol_rows(
+        parsed.external_symbols,
+        row_context,
+        serializer=row_serializer_for_table_key(SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
     )
     return ScipRowPayload(
-        symbol_rows=symbol_rows,
-        occurrence_rows=occurrence_rows,
-        symbol_info_rows=symbol_info_rows,
-        relationship_rows=relationship_rows,
-        diagnostic_rows=diagnostic_rows,
-        external_symbol_rows=external_symbol_rows,
+        symbol_rows=lazyframe_for_table(SCIP_SYMBOLS_TABLE_KEY, symbol_rows),
+        occurrence_rows=lazyframe_for_table(SCIP_OCCURRENCES_TABLE_KEY, occurrence_rows),
+        symbol_info_rows=lazyframe_for_table(SCIP_SYMBOL_INFO_TABLE_KEY, symbol_info_rows),
+        relationship_rows=lazyframe_for_table(SCIP_RELATIONSHIPS_TABLE_KEY, relationship_rows),
+        diagnostic_rows=lazyframe_for_table(SCIP_DIAGNOSTICS_TABLE_KEY, diagnostic_rows),
+        external_symbol_rows=lazyframe_for_table(
+            SCIP_EXTERNAL_SYMBOLS_TABLE_KEY,
+            external_symbol_rows,
+        ),
+        symbol_row_count=len(symbol_rows),
+        occurrence_row_count=len(occurrence_rows),
+        symbol_info_row_count=len(symbol_info_rows),
+        relationship_row_count=len(relationship_rows),
+        diagnostic_row_count=len(diagnostic_rows),
+        external_symbol_row_count=len(external_symbol_rows),
     )
 
 
 def _scip_table_counts(
     payload: ScipRowPayload,
-    module_state_rows: tuple[tuple[object, ...], ...],
+    module_state_count: int,
 ) -> dict[str, int]:
     return {
-        SCIP_SYMBOLS_TABLE_KEY: len(payload.symbol_rows),
-        SCIP_OCCURRENCES_TABLE_KEY: len(payload.occurrence_rows),
-        SCIP_SYMBOL_INFO_TABLE_KEY: len(payload.symbol_info_rows),
-        SCIP_RELATIONSHIPS_TABLE_KEY: len(payload.relationship_rows),
-        SCIP_DIAGNOSTICS_TABLE_KEY: len(payload.diagnostic_rows),
-        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: len(payload.external_symbol_rows),
-        SCIP_MODULE_STATE_TABLE_KEY: len(module_state_rows),
+        SCIP_SYMBOLS_TABLE_KEY: payload.symbol_row_count,
+        SCIP_OCCURRENCES_TABLE_KEY: payload.occurrence_row_count,
+        SCIP_SYMBOL_INFO_TABLE_KEY: payload.symbol_info_row_count,
+        SCIP_RELATIONSHIPS_TABLE_KEY: payload.relationship_row_count,
+        SCIP_DIAGNOSTICS_TABLE_KEY: payload.diagnostic_row_count,
+        SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: payload.external_symbol_row_count,
+        SCIP_MODULE_STATE_TABLE_KEY: module_state_count,
     }
 
 
-def _build_module_state_rows(
+def _build_module_state_frame(
     env: BuildEnv,
     run: ScipRunResult,
-) -> tuple[tuple[object, ...], ...]:
+) -> tuple[pl.LazyFrame, int]:
     index_path = _scip_index_output(run)
     scip_dir = index_path.parent if index_path is not None else env.paths.scip_dir
     manifest = load_manifest(manifest_path(scip_dir))
@@ -774,13 +781,15 @@ def _build_module_state_rows(
         env.snapshot.commit,
         serializer=row_serializer_for_table_key(SCIP_MODULE_STATE_TABLE_KEY),
     )
-    return tuple(rows)
+    rows_list = list(rows)
+    frame = lazyframe_for_table(SCIP_MODULE_STATE_TABLE_KEY, rows_list)
+    return frame, len(rows_list)
 
 
 def _build_scip_ingest_result(
     env: BuildEnv,
     inputs: ScipIngestInputs,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     precheck = _scip_ingest_precheck(inputs)
     if precheck is not None:
         return IngestStep(result=precheck)
@@ -794,13 +803,13 @@ def _build_scip_ingest_result(
         log.exception("SCIP ingestion failed")
         return IngestStep(result=ExecutionResult.failed("SCIP ingestion failed with exception"))
 
-    if not payload.symbol_rows or not payload.occurrence_rows:
+    if payload.symbol_row_count == 0 or payload.occurrence_row_count == 0:
         return IngestStep(
             result=ExecutionResult.failed("SCIP ingestion produced empty symbols or occurrences")
         )
 
-    module_state_rows = _build_module_state_rows(env, inputs.run)
-    table_counts = _scip_table_counts(payload, module_state_rows)
+    module_state_frame, module_state_count = _build_module_state_frame(env, inputs.run)
+    table_counts = _scip_table_counts(payload, module_state_count)
     result = ExecutionResult.ok(
         table_counts=normalize_table_counts(SCIP_TABLE_KEYS, table_counts),
     )
@@ -811,7 +820,7 @@ def _build_scip_ingest_result(
         SCIP_RELATIONSHIPS_TABLE_KEY: payload.relationship_rows,
         SCIP_DIAGNOSTICS_TABLE_KEY: payload.diagnostic_rows,
         SCIP_EXTERNAL_SYMBOLS_TABLE_KEY: payload.external_symbol_rows,
-        SCIP_MODULE_STATE_TABLE_KEY: module_state_rows,
+        SCIP_MODULE_STATE_TABLE_KEY: module_state_frame,
     }
     return IngestStep(result=result, payload=payload_by_table)
 
@@ -820,158 +829,158 @@ def _build_scip_ingest_result(
 def t__scip__ingest(
     env: BuildEnv,
     scip__ingest_inputs: ScipIngestInputs,
-) -> IngestStep[dict[str, tuple[tuple[object, ...], ...]]]:
+) -> IngestStep[dict[str, pl.LazyFrame]]:
     """Build SCIP row payloads for core.scip_* tables.
 
     Returns
     -------
-    IngestStep[dict[str, tuple[tuple[object, ...], ...]]]
-        Ingestion status and row payloads.
+    IngestStep[dict[str, pl.LazyFrame]]
+        Ingestion status and frame payloads.
     """
     return _build_scip_ingest_result(env, scip__ingest_inputs)
 
 
-def _scip_payload_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+def _scip_payload_frame(
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
     table_key: str,
-) -> tuple[tuple[object, ...], ...] | None:
+) -> pl.LazyFrame | None:
     if t__scip__ingest.result.skipped or not t__scip__ingest.result.success:
         return None
     payload = t__scip__ingest.payload
     if payload is None:
         msg = "Missing SCIP ingest payload"
         raise ValueError(msg)
-    rows = payload.get(table_key)
-    if rows is None:
-        msg = f"Missing rows for {table_key}"
+    frame = payload.get(table_key)
+    if frame is None:
+        msg = f"Missing frame for {table_key}"
         raise ValueError(msg)
-    return rows
+    return frame
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_SYMBOLS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_SYMBOLS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_rows")
 def scip__symbol_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_symbols.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_symbols, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_symbols, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOLS_TABLE_KEY)
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_OCCURRENCES_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_OCCURRENCES_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__occurrence_rows")
 def scip__occurrence_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_occurrences.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_occurrences, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_occurrences, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_OCCURRENCES_TABLE_KEY)
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_SYMBOL_INFO_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_SYMBOL_INFO_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__symbol_info_rows")
 def scip__symbol_info_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_symbol_information.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_symbol_information, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_symbol_information, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_SYMBOL_INFO_TABLE_KEY)
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_RELATIONSHIPS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_RELATIONSHIPS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__relationship_rows")
 def scip__relationship_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_symbol_relationships.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_symbol_relationships, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_symbol_relationships, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_RELATIONSHIPS_TABLE_KEY)
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_DIAGNOSTICS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_DIAGNOSTICS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__diagnostic_rows")
 def scip__diagnostic_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_diagnostics.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_diagnostics, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_diagnostics, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_DIAGNOSTICS_TABLE_KEY)
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_EXTERNAL_SYMBOLS_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__external_symbol_rows")
 def scip__external_symbol_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_external_symbols.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_external_symbols, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_external_symbols, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_EXTERNAL_SYMBOLS_TABLE_KEY)
 
 
-@save_rows(
+@save_relation_table(
     context=SCIP_SAVE_CONTEXT,
-    spec=TableSaveSpec(table_key=SCIP_MODULE_STATE_TABLE_KEY),
+    spec=RelationTableSaveSpec(table_key=SCIP_MODULE_STATE_TABLE_KEY),
 )
 @tag_compute(domain="ingestion", target=SCIP_TARGET_NAME, target_="scip__module_state_rows")
 def scip__module_state_rows(
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
-) -> tuple[tuple[object, ...], ...] | None:
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
+) -> pl.LazyFrame | None:
     """Return rows for core.scip_module_state.
 
     Returns
     -------
-    tuple[tuple[object, ...], ...] | None
-        Row tuples for core.scip_module_state, or None when ingestion skipped or failed.
+    pl.LazyFrame | None
+        Lazy frame for core.scip_module_state, or None when ingestion skipped or failed.
     """
-    return _scip_payload_rows(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
+    return _scip_payload_frame(t__scip__ingest, SCIP_MODULE_STATE_TABLE_KEY)
 
 
 @tag_helper(domain="ingestion", target=SCIP_TARGET_NAME)
@@ -1171,7 +1180,7 @@ def _emit_scip_teardown_safe(
 def t__scip(
     scip__finalize_context: ToolFinalizeContext,
     t__scip__run: ScipRunResult,
-    t__scip__ingest: IngestStep[dict[str, tuple[tuple[object, ...], ...]]],
+    t__scip__ingest: IngestStep[dict[str, pl.LazyFrame]],
     scip__materializations: dict[str, MaterializationResult],
     scip__table_materializations: dict[str, MaterializationResult],
 ) -> TargetRunRecord:

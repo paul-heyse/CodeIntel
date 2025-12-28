@@ -32,7 +32,6 @@ from codeintel.core.config.settings import (
 )
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
-    table_schema_from_polars_dataframe,
     table_schema_from_polars_lazyframe,
 )
 from codeintel.core.schemas.primitives import TableSchema
@@ -104,9 +103,7 @@ def _is_tabular_annotation(annotation: object) -> bool:
                 "pyarrow.Table",
                 "pa.RecordBatchReader",
                 "pyarrow.RecordBatchReader",
-                "pl.DataFrame",
                 "pl.LazyFrame",
-                "polars.DataFrame",
                 "polars.LazyFrame",
             )
         )
@@ -119,9 +116,7 @@ def _is_tabular_annotation(annotation: object) -> bool:
             "pyarrow.Table",
             "pa.RecordBatchReader",
             "pyarrow.RecordBatchReader",
-            "pl.DataFrame",
             "pl.LazyFrame",
-            "polars.DataFrame",
             "polars.LazyFrame",
         )
     )
@@ -602,8 +597,6 @@ def _table_schema_from_tabular(obj: InferableTabularInput, *, table_key: str) ->
         return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
     if isinstance(obj, pa.RecordBatchReader):
         return table_schema_from_arrow_schema(arrow_schema=obj.schema, table_key=table_key)
-    if isinstance(obj, pl.DataFrame):
-        return table_schema_from_polars_dataframe(frame=obj, table_key=table_key)
     if isinstance(obj, pl.LazyFrame):
         return table_schema_from_polars_lazyframe(frame=obj, table_key=table_key)
     msg = f"Unsupported tabular output for schema inference: {type(obj)}"

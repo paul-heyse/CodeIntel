@@ -6,8 +6,6 @@ import logging
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-import ibis
-
 from codeintel.analytics.profiles.types import FileProfileInputs
 from codeintel.analytics.profiles.utils import (
     CATALOG_MODULE_TABLE,
@@ -22,24 +20,18 @@ from codeintel.analytics.utilities.type_coercion import (
     optional_int,
     optional_str,
 )
-from codeintel.core.ibis_typing import (
-    bool_not,
-    col_count,
-    col_max,
-    col_mean,
-    col_sum,
-    filter_by,
-    ibis_bool,
-)
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsFileProfileRow as FileProfileRowModel,
 )
-from codeintel.storage.gateway import DuckDBError, ibis_facade
+from codeintel.storage.gateway import DuckDBError
+from codeintel.storage.query_results import records_from_relation
+from codeintel.storage.snapshot_scoping import maybe_scope_by_repo_commit
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from codeintel.config.primitives import SnapshotRef
+    from codeintel.storage.duckdb_types import DuckDBRelation
     from codeintel.storage.gateway import StorageGateway
 
 log = logging.getLogger(__name__)
@@ -75,40 +67,53 @@ def compute_file_profile_inputs(
 
 def _load_file_profile_tables(
     inputs: FileProfileInputs, module_table: str
-) -> tuple[ibis.Table, ibis.Table, ibis.Table, ibis.Table, ibis.Table, ibis.Table] | None:
+) -> tuple[
+    DuckDBRelation,
+    DuckDBRelation,
+    DuckDBRelation,
+    DuckDBRelation,
+    DuckDBRelation,
+    DuckDBRelation,
+] | None:
     """
     Load filtered profile source tables.
 
     Returns
     -------
-    tuple[ibis.Table, ...] | None
+    tuple[DuckDBRelation, ...] | None
         Filtered source tables or None on access failure.
     """
     gw = inputs.gateway
     try:
-        fp_table = ibis_facade.table(gw, "analytics.function_profile")
-        fp = filter_by(fp_table, fp_table.repo == inputs.repo, fp_table.commit == inputs.commit)
-        ast_table = ibis_facade.table(gw, "core.ast_metrics")
-        ast_metrics = ast_table
-        hotspots_table = ibis_facade.table(gw, "analytics.hotspots")
-        hotspots = hotspots_table
-        typedness_table = ibis_facade.table(gw, "analytics.typedness")
-        typedness = filter_by(
-            typedness_table,
-            typedness_table.repo == inputs.repo,
-            typedness_table.commit == inputs.commit,
+        fp = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.function_profile"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        static_diag_table = ibis_facade.table(gw, "analytics.static_diagnostics")
-        static_diag = filter_by(
-            static_diag_table,
-            static_diag_table.repo == inputs.repo,
-            static_diag_table.commit == inputs.commit,
+        ast_metrics = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("core.ast_metrics"),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
-        module_table_expr = ibis_facade.table(gw, module_table)
-        modules = filter_by(
-            module_table_expr,
-            module_table_expr.repo == inputs.repo,
-            module_table_expr.commit == inputs.commit,
+        hotspots = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.hotspots"),
+            repo=inputs.repo,
+            commit=inputs.commit,
+        )
+        typedness = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.typedness"),
+            repo=inputs.repo,
+            commit=inputs.commit,
+        )
+        static_diag = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key("analytics.static_diagnostics"),
+            repo=inputs.repo,
+            commit=inputs.commit,
+        )
+        modules = maybe_scope_by_repo_commit(
+            gw.relation_from_table_key(module_table),
+            repo=inputs.repo,
+            commit=inputs.commit,
         )
     except DuckDBError as exc:
         log.warning("file_profile: failed to access tables: %s", exc)
@@ -145,127 +150,98 @@ def build_file_profile_rows(
 
     fp, ast_metrics, hotspots, typedness, static_diag, modules = tables
 
-    fm = fp.group_by(fp.repo, fp.commit, fp.rel_path).aggregate(
-        total_functions=col_count(fp.rel_path),
-        public_functions=col_sum(fp.call_is_public),
-        avg_loc=col_mean(fp.loc),
-        max_loc=col_max(fp.loc),
-        avg_cyclomatic_complexity=col_mean(fp.cyclomatic_complexity),
-        max_cyclomatic_complexity=col_max(fp.cyclomatic_complexity),
-        high_risk_function_count=col_sum(ibis_bool(fp.risk_level == "high")),
-        medium_risk_function_count=col_sum(ibis_bool(fp.risk_level == "medium")),
-        max_risk_score=col_max(fp.risk_score),
-        sum_covered_lines=col_sum(fp.covered_lines),
-        sum_exec_lines=col_sum(fp.executable_lines),
-        tested_function_count=col_sum(fp.tested),
-        untested_function_count=col_sum(bool_not(fp.tested)),
-        tests_touching=col_sum(fp.tests_touching),
+    fm = fp.group_by("repo", "commit", "rel_path").aggregate(
+        [
+            "count(rel_path) as total_functions",
+            "sum(case when call_is_public then 1 else 0 end) as public_functions",
+            "avg(loc) as avg_loc",
+            "max(loc) as max_loc",
+            "avg(cyclomatic_complexity) as avg_cyclomatic_complexity",
+            "max(cyclomatic_complexity) as max_cyclomatic_complexity",
+            "sum(case when risk_level = 'high' then 1 else 0 end) as high_risk_function_count",
+            "sum(case when risk_level = 'medium' then 1 else 0 end) as medium_risk_function_count",
+            "max(risk_score) as max_risk_score",
+            "sum(covered_lines) as sum_covered_lines",
+            "sum(executable_lines) as sum_exec_lines",
+            "sum(case when tested then 1 else 0 end) as tested_function_count",
+            "sum(case when tested then 0 else 1 end) as untested_function_count",
+            "sum(tests_touching) as tests_touching",
+        ]
     )
-
-    joined = (
-        fm.left_join(ast_metrics, [fm.rel_path == ast_metrics.rel_path])
-        .left_join(hotspots, [fm.rel_path == hotspots.rel_path])
-        .left_join(typedness, [fm.rel_path == typedness.path])
-        .left_join(static_diag, [fm.rel_path == static_diag.rel_path])
-        .left_join(
-            modules,
-            [
-                (fm.repo == modules.repo)
-                & (fm.commit == modules.commit)
-                & (fm.rel_path == modules.path)
-            ],
-        )
-    )
-
-    try:
-        df = joined.select(
-            fm.repo,
-            fm.commit,
-            fm.rel_path,
-            modules.module,
-            modules.language,
-            ast_metrics.node_count,
-            ast_metrics.function_count,
-            ast_metrics.class_count,
-            ast_metrics.avg_depth,
-            ast_metrics.max_depth,
-            ast_metrics.complexity.name("ast_complexity"),
-            hotspots.score.name("hotspot_score"),
-            hotspots.commit_count,
-            hotspots.author_count,
-            hotspots.lines_added,
-            hotspots.lines_deleted,
-            typedness.annotation_ratio["params"].cast("float64").name("annotation_ratio"),
-            typedness.untyped_defs,
-            typedness.overlay_needed,
-            typedness.type_error_count,
-            static_diag.total_errors.name("static_error_count"),
-            static_diag.has_errors.name("has_static_errors"),
-            fm.total_functions,
-            fm.public_functions,
-            fm.avg_loc,
-            fm.max_loc,
-            fm.avg_cyclomatic_complexity,
-            fm.max_cyclomatic_complexity,
-            fm.high_risk_function_count,
-            fm.medium_risk_function_count,
-            fm.max_risk_score,
-            (fm.sum_covered_lines.cast("float64") / fm.sum_exec_lines.nullif(ibis.literal(0))).name(
-                "file_coverage_ratio"
-            ),
-            fm.tested_function_count,
-            fm.untested_function_count,
-            fm.tests_touching,
-            modules.tags,
-            modules.owners,
-            ibis.literal(inputs.created_at).name("created_at"),
-        ).execute()
-    except DuckDBError as exc:
-        log.warning("file_profile: failed to execute aggregation: %s", exc)
-        return
-    columns = [
+    typedness_rel = typedness.select(
         "repo",
         "commit",
-        "rel_path",
-        "module",
-        "language",
-        "node_count",
-        "function_count",
-        "class_count",
-        "avg_depth",
-        "max_depth",
-        "ast_complexity",
-        "hotspot_score",
-        "commit_count",
-        "author_count",
-        "lines_added",
-        "lines_deleted",
+        "path as rel_path",
         "annotation_ratio",
         "untyped_defs",
         "overlay_needed",
         "type_error_count",
-        "static_error_count",
-        "has_static_errors",
-        "total_functions",
-        "public_functions",
-        "avg_loc",
-        "max_loc",
-        "avg_cyclomatic_complexity",
-        "max_cyclomatic_complexity",
-        "high_risk_function_count",
-        "medium_risk_function_count",
-        "max_risk_score",
-        "file_coverage_ratio",
-        "tested_function_count",
-        "untested_function_count",
-        "tests_touching",
+    )
+    modules_rel = modules.select(
+        "repo",
+        "commit",
+        "path as rel_path",
+        "module",
+        "language",
         "tags",
         "owners",
-        "created_at",
-    ]
+    )
 
-    for row in df.itertuples(index=False, name=None):
-        record = dict(zip(columns, row, strict=False))
+    joined = (
+        fm.join(ast_metrics, ["rel_path"], how="left")
+        .join(hotspots, ["rel_path"], how="left")
+        .join(typedness_rel, ["repo", "commit", "rel_path"], how="left")
+        .join(static_diag, ["repo", "commit", "rel_path"], how="left")
+        .join(modules_rel, ["repo", "commit", "rel_path"], how="left")
+    )
+
+    try:
+        selected = joined.select(
+            "repo",
+            "commit",
+            "rel_path",
+            "module",
+            "language",
+            "node_count",
+            "function_count",
+            "class_count",
+            "avg_depth",
+            "max_depth",
+            "complexity as ast_complexity",
+            "score as hotspot_score",
+            "commit_count",
+            "author_count",
+            "lines_added",
+            "lines_deleted",
+            "cast(json_extract(annotation_ratio, '$.params') as double) as annotation_ratio",
+            "untyped_defs",
+            "overlay_needed",
+            "type_error_count",
+            "total_errors as static_error_count",
+            "has_errors as has_static_errors",
+            "total_functions",
+            "public_functions",
+            "avg_loc",
+            "max_loc",
+            "avg_cyclomatic_complexity",
+            "max_cyclomatic_complexity",
+            "high_risk_function_count",
+            "medium_risk_function_count",
+            "max_risk_score",
+            "cast(sum_covered_lines as double) / nullif(sum_exec_lines, 0) as file_coverage_ratio",
+            "tested_function_count",
+            "untested_function_count",
+            "tests_touching",
+            "tags",
+            "owners",
+        )
+        records = records_from_relation(selected)
+    except DuckDBError as exc:
+        log.warning("file_profile: failed to execute aggregation: %s", exc)
+        return
+
+    for record in records:
+        record["created_at"] = inputs.created_at
         yield _row_to_file_profile_model(record, inputs)
 
 

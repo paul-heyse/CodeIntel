@@ -15,7 +15,6 @@ from typing import Final
 _DEFAULT_TOOL_NAMES: Final[tuple[str, ...]] = (
     "codeintel",
     "duckdb",
-    "ibis-framework",
     "sqlglot",
     "pyarrow",
 )

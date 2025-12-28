@@ -1,7 +1,6 @@
 """Serving snapshot manifest dataclass.
 
-The manifest is written to `current.json` as an atomic pointer to the active
-serving snapshot.
+The manifest is written to ``snapshot_manifest.json`` within each snapshot.
 """
 
 from codeintel.core.manifests import ServingSnapshotManifest

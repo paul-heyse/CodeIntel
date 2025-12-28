@@ -171,6 +171,31 @@ class ArrowDatasetManifest(ManifestBase):
 
 
 @dataclass(frozen=True)
+class SnapshotDatasetEntry(ManifestBase):
+    """Summary pointer to a dataset manifest within a serving snapshot."""
+
+    manifest_path: str
+    schema_hash: str | None
+    partition_columns: tuple[str, ...]
+    row_count: int | None = None
+    stats: Mapping[str, Any] | None = None
+
+    def to_json_obj(self) -> dict[str, object]:
+        """Return a JSON-serializable dataset entry payload."""
+        payload: dict[str, object] = {
+            "manifest_path": self.manifest_path,
+            "partition_columns": list(self.partition_columns),
+        }
+        if self.schema_hash is not None:
+            payload["schema_hash"] = self.schema_hash
+        if self.row_count is not None:
+            payload["row_count"] = self.row_count
+        if self.stats:
+            payload["stats"] = dict(self.stats)
+        return payload
+
+
+@dataclass(frozen=True)
 class IncrementalMarker(ManifestBase):
     """Metadata persisted to decide if an export can be reused."""
 
@@ -242,8 +267,8 @@ class ServingSnapshotManifest(ManifestBase):
         Path to semantic_registry.json.
     schema_manifest_path
         Path to schema_manifest.json.
-    dataset_manifest_paths
-        Paths to dataset manifest files (Arrow datasets).
+    datasets
+        Mapping of table key to dataset manifest metadata.
     buildspec_path
         Path to buildspec.json.
     semantic_layer_version
@@ -259,7 +284,7 @@ class ServingSnapshotManifest(ManifestBase):
     schema_manifest_path: str
     buildspec_path: str
     semantic_layer_version: str
-    dataset_manifest_paths: tuple[str, ...] = ()
+    datasets: dict[str, SnapshotDatasetEntry] = field(default_factory=dict)
 
     def to_json_obj(self) -> dict[str, object]:
         """Return a JSON-serializable manifest payload.
@@ -278,8 +303,12 @@ class ServingSnapshotManifest(ManifestBase):
             "semantic_registry_path": self.semantic_registry_path,
             "schema_manifest_path": self.schema_manifest_path,
             **(
-                {"dataset_manifest_paths": list(self.dataset_manifest_paths)}
-                if self.dataset_manifest_paths
+                {
+                    "datasets": {
+                        table_key: entry.to_json_obj() for table_key, entry in self.datasets.items()
+                    }
+                }
+                if self.datasets
                 else {}
             ),
             "buildspec_path": self.buildspec_path,
@@ -301,9 +330,88 @@ class ServingSnapshotManifest(ManifestBase):
             Loaded manifest instance.
         """
         data = read_manifest_json(path)
-        raw_paths = data.get("dataset_manifest_paths") or ()
-        data["dataset_manifest_paths"] = tuple(str(path) for path in raw_paths)
+        raw_datasets = data.get("datasets") or {}
+        if not isinstance(raw_datasets, dict):
+            msg = "Snapshot manifest datasets must be a mapping"
+            raise TypeError(msg)
+        datasets: dict[str, SnapshotDatasetEntry] = {}
+        for table_key, raw_entry in raw_datasets.items():
+            datasets[str(table_key)] = _parse_snapshot_dataset_entry(
+                raw_entry,
+                table_key=str(table_key),
+            )
+        data["datasets"] = datasets
         return cls(**data)
+
+
+def _parse_snapshot_dataset_entry(
+    raw_entry: object,
+    *,
+    table_key: str,
+) -> SnapshotDatasetEntry:
+    if not isinstance(raw_entry, dict):
+        msg = f"Snapshot dataset entry must be an object: {table_key}"
+        raise TypeError(msg)
+    manifest_path = raw_entry.get("manifest_path")
+    if not isinstance(manifest_path, str) or not manifest_path:
+        msg = f"Snapshot dataset entry manifest_path is required: {table_key}"
+        raise TypeError(msg)
+    partition_columns = _parse_optional_str_list(
+        raw_entry.get("partition_columns"),
+        ctx=f"datasets[{table_key}].partition_columns",
+    )
+    schema_hash = _optional_str(raw_entry.get("schema_hash"))
+    row_count = _optional_int(raw_entry.get("row_count"))
+    stats = _coerce_mapping(raw_entry.get("stats"))
+    return SnapshotDatasetEntry(
+        manifest_path=manifest_path,
+        schema_hash=schema_hash,
+        partition_columns=partition_columns,
+        row_count=row_count,
+        stats=stats,
+    )
+
+
+def _parse_optional_str_list(value: object, *, ctx: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        msg = f"Expected list for {ctx}"
+        raise TypeError(msg)
+    return tuple(str(item) for item in value)
+
+
+def _optional_str(value: object | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _optional_int(value: object | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        msg = "row_count must be an integer"
+        raise TypeError(msg)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    msg = f"row_count must be an integer, got {type(value).__name__}"
+    raise TypeError(msg)
+
+
+def _coerce_mapping(value: object | None) -> dict[str, object] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {str(key): val for key, val in value.items()}
+    msg = "Snapshot dataset stats must be an object"
+    raise TypeError(msg)
 
 
 ExportArtifactKind = Literal["parquet", "jsonl", "json", "csv"]
@@ -537,6 +645,7 @@ __all__ = [
     "SchemaManifest",
     "ServingSnapshotManifest",
     "SkipCriteria",
+    "SnapshotDatasetEntry",
     "TableProvenance",
     "read_manifest_json",
     "write_manifest_json",

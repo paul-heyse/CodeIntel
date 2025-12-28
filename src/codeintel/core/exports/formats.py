@@ -45,7 +45,7 @@ EXPORT_FORMATS: Final[dict[CanonicalExportFormat, ExportFormatSpec]] = {
     ),
     "arrow": ExportFormatSpec(
         format="arrow",
-        mime_type="application/vnd.apache.arrow.file",
+        mime_type="application/vnd.apache.arrow.stream",
         suffix=".arrow",
     ),
 }

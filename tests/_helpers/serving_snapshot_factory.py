@@ -18,9 +18,12 @@ from codeintel.build.serving.publisher import (
 )
 from codeintel.config.primitives import BuildPaths
 from codeintel.core.hashing import stable_hash
+from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
+from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
+from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
-from codeintel.storage.datasets.manifests import dataset_manifest_path
+from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table
@@ -40,6 +43,8 @@ class ServingSnapshot:
     """Serving snapshot paths and identity metadata."""
 
     serve_dir: Path
+    snapshot_root: Path
+    snapshot_manifest_path: Path
     db_path: Path
     registry_path: Path
     schema_manifest_path: Path
@@ -169,9 +174,13 @@ class ServingSnapshotFactory:
             serve_dir=resolved_serve_dir,
             tables=tables,
         )
+        snapshot_root = resolved_serve_dir
+        snapshot_manifest_path = resolved_serve_dir / "snapshot_manifest.json"
 
         snapshot = ServingSnapshot(
             serve_dir=resolved_serve_dir,
+            snapshot_root=snapshot_root,
+            snapshot_manifest_path=snapshot_manifest_path,
             db_path=db_path,
             registry_path=registry_path,
             schema_manifest_path=schema_manifest_path,
@@ -190,7 +199,23 @@ class ServingSnapshotFactory:
                 serve_dir=snapshot.serve_dir,
             )
 
-        _write_pointer(snapshot, use_production_pointer_model=use_production_pointer_model)
+        published_at = datetime.now(tz=UTC)
+        semantic_layer_version = _semantic_version(
+            snapshot.registry_path,
+            snapshot.schema_manifest_path,
+            snapshot.buildspec_path,
+        )
+        _write_snapshot_manifest(
+            snapshot,
+            published_at=published_at,
+            semantic_layer_version=semantic_layer_version,
+        )
+        _write_pointer(
+            snapshot,
+            use_production_pointer_model=use_production_pointer_model,
+            published_at=published_at,
+            semantic_layer_version=semantic_layer_version,
+        )
         return snapshot
 
     @staticmethod
@@ -306,7 +331,8 @@ def _write_schema_manifest(path: Path, *, tables: list[dict[str, object]]) -> No
         repo_root=path.parent,
         paths=BuildPaths.from_explicit(build_dir=path.parent),
     )
-    artifacts.write_schema_manifest(path=path, tables=tables)
+    enriched = [_ensure_table_schema_hash(dict(table)) for table in tables]
+    artifacts.write_schema_manifest(path=path, tables=enriched)
 
 
 def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None:
@@ -314,11 +340,19 @@ def _write_buildspec(path: Path, *, tables: Iterable[dict[str, object]]) -> None
         repo_root=path.parent,
         paths=BuildPaths.from_explicit(build_dir=path.parent),
     )
+    datasets = []
+    for table in tables:
+        table_key = str(table.get("table_key", "")).strip()
+        if not table_key:
+            continue
+        schema_hash = table.get("schema_hash") or _schema_hash_for_table_entry(table)
+        if schema_hash is None:
+            msg = f"schema_hash is required for buildspec dataset: {table_key}"
+            raise ValueError(msg)
+        datasets.append({"table_key": table_key, "schema_hash": schema_hash})
     artifacts.write_buildspec(
         path=path,
-        datasets=[
-            {"table_key": table["table_key"], "schema_hash": "schema_v_demo"} for table in tables
-        ],
+        datasets=datasets,
     )
 
 
@@ -348,12 +382,16 @@ def _write_dataset_manifests(
                 ).fetch_arrow_table()
             except duckdb.Error:
                 continue
+            schema_hash = table.get("schema_hash") or _schema_hash_for_table_entry(table)
+            if schema_hash is None:
+                msg = f"schema_hash is required for dataset manifest: {table_key}"
+                raise ValueError(msg)
             write_dataset(
                 dataset_root=dataset_root,
                 table_key=table_key,
                 snapshot_id=run_id,
                 data=arrow_table,
-                options=ArrowDatasetWriteOptions(),
+                options=ArrowDatasetWriteOptions(schema_hash=schema_hash),
             )
             manifest_path = dataset_manifest_path(
                 dataset_root=dataset_root,
@@ -367,15 +405,98 @@ def _write_dataset_manifests(
     return tuple(manifest_paths)
 
 
-def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: bool) -> None:
-    published_at = datetime.now(tz=UTC)
-    semantic_layer_version = _semantic_version(
-        snapshot.registry_path,
-        snapshot.schema_manifest_path,
-        snapshot.buildspec_path,
+def _write_snapshot_manifest(
+    snapshot: ServingSnapshot,
+    *,
+    published_at: datetime,
+    semantic_layer_version: str,
+) -> None:
+    manifest = ServingSnapshotManifest(
+        run_id=snapshot.run_id,
+        repo=snapshot.repo,
+        commit=snapshot.commit,
+        published_at=published_at.isoformat(),
+        db_path=str(snapshot.db_path),
+        semantic_registry_path=str(snapshot.registry_path),
+        schema_manifest_path=str(snapshot.schema_manifest_path),
+        buildspec_path=str(snapshot.buildspec_path),
+        semantic_layer_version=semantic_layer_version,
+        datasets=_snapshot_dataset_entries(snapshot.dataset_manifest_paths),
     )
+    manifest.write_json(snapshot.snapshot_manifest_path)
+
+
+def _snapshot_dataset_entries(
+    manifest_paths: Iterable[Path],
+) -> dict[str, SnapshotDatasetEntry]:
+    datasets: dict[str, SnapshotDatasetEntry] = {}
+    for manifest_path in manifest_paths:
+        manifest = read_dataset_manifest(manifest_path)
+        datasets[manifest.table_key] = SnapshotDatasetEntry(
+            manifest_path=str(manifest_path),
+            schema_hash=manifest.schema_hash,
+            partition_columns=manifest.partition_columns,
+            row_count=manifest.row_count,
+            stats=manifest.stats,
+        )
+    return datasets
+
+
+def _ensure_table_schema_hash(table: dict[str, object]) -> dict[str, object]:
+    schema_hash = table.get("schema_hash") or _schema_hash_for_table_entry(table)
+    if schema_hash is None:
+        table_key = table.get("table_key")
+        msg = f"schema_hash is required for schema manifest table: {table_key}"
+        raise ValueError(msg)
+    table["schema_hash"] = schema_hash
+    return table
+
+
+def _schema_hash_for_table_entry(table: Mapping[str, object]) -> str | None:
+    schema = table.get("schema")
+    name = table.get("name")
+    if not isinstance(schema, str) or not schema.strip():
+        return None
+    if not isinstance(name, str) or not name.strip():
+        return None
+    columns_raw = table.get("columns")
+    if not isinstance(columns_raw, list):
+        return None
+    columns: list[Column] = []
+    for col in columns_raw:
+        if not isinstance(col, dict):
+            return None
+        col_name = col.get("name")
+        col_type = col.get("type")
+        if not isinstance(col_name, str) or not isinstance(col_type, str):
+            return None
+        description = col.get("description")
+        description_str = description if isinstance(description, str) else None
+        columns.append(
+            Column(
+                name=col_name,
+                type=col_type,
+                nullable=bool(col.get("nullable", True)),
+                description=description_str,
+            )
+        )
+    if not columns:
+        return None
+    table_schema = TableSchema(schema=schema, name=name, columns=columns)
+    return compute_schema_hash(table_schema)
+
+
+def _write_pointer(
+    snapshot: ServingSnapshot,
+    *,
+    use_production_pointer_model: bool,
+    published_at: datetime,
+    semantic_layer_version: str,
+) -> None:
     if use_production_pointer_model:
         pointer = ServingSnapshotPointer(
+            snapshot_root=snapshot.snapshot_root,
+            snapshot_manifest_path=snapshot.snapshot_manifest_path,
             db_path=snapshot.db_path,
             semantic_registry_path=snapshot.registry_path,
             schema_manifest_path=snapshot.schema_manifest_path,
@@ -385,11 +506,12 @@ def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: b
             run_id=snapshot.run_id,
             published_at=published_at,
             semantic_layer_version=semantic_layer_version,
-            dataset_manifest_paths=snapshot.dataset_manifest_paths,
         )
         snapshot.pointer_path.write_text(pointer.to_json(), encoding="utf-8")
         return
     payload: dict[str, object] = {
+        "snapshot_root": str(snapshot.snapshot_root),
+        "snapshot_manifest_path": str(snapshot.snapshot_manifest_path),
         "db_path": str(snapshot.db_path),
         "semantic_registry_path": str(snapshot.registry_path),
         "schema_manifest_path": str(snapshot.schema_manifest_path),
@@ -400,8 +522,6 @@ def _write_pointer(snapshot: ServingSnapshot, *, use_production_pointer_model: b
         "published_at": published_at.isoformat(),
         "semantic_layer_version": semantic_layer_version,
     }
-    if snapshot.dataset_manifest_paths:
-        payload["dataset_manifest_paths"] = [str(path) for path in snapshot.dataset_manifest_paths]
     snapshot.pointer_path.write_text(_json_dump(payload), encoding="utf-8")
 
 
@@ -431,6 +551,7 @@ def _publish_snapshot(snapshot: ServingSnapshot) -> None:
             semantic_registry_path=snapshot.registry_path,
             schema_manifest_path=snapshot.schema_manifest_path,
             buildspec_path=snapshot.buildspec_path,
+            dataset_manifest_paths=snapshot.dataset_manifest_paths,
             keep_last=2,
         )
         publish_serving_snapshot(gateway=gateway, request=request)
@@ -440,8 +561,14 @@ def _publish_snapshot(snapshot: ServingSnapshot) -> None:
 
 def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSnapshot:
     pointer = ServingSnapshotPointer.load(pointer_path)
+    snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
+    dataset_manifest_paths = tuple(
+        Path(entry.manifest_path) for _, entry in sorted(snapshot_manifest.datasets.items())
+    )
     return ServingSnapshot(
         serve_dir=serve_dir,
+        snapshot_root=pointer.snapshot_root,
+        snapshot_manifest_path=pointer.snapshot_manifest_path,
         db_path=pointer.db_path,
         registry_path=pointer.semantic_registry_path,
         schema_manifest_path=pointer.schema_manifest_path,
@@ -450,7 +577,7 @@ def _snapshot_from_pointer(*, pointer_path: Path, serve_dir: Path) -> ServingSna
         repo=pointer.repo,
         commit=pointer.commit,
         run_id=pointer.run_id,
-        dataset_manifest_paths=pointer.dataset_manifest_paths,
+        dataset_manifest_paths=dataset_manifest_paths,
     )
 
 

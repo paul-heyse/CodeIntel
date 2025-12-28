@@ -2,20 +2,17 @@
 
 This module wires the canonical SchemaService to build-specific providers:
 - Unified table schema provider (Hamilton inference + declared schemas)
-- Pandera schemas rendered from TableSchema for boundary validation.
+- Arrow schema generation for boundary validation.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from codeintel.core.imports.lazy import lazy_import
 from codeintel.core.schemas import (
-    DatasetSchemaLike,
     SchemaService,
     clear_schema_service,
-    pandera_schema_from_table_schema,
     set_schema_service,
 )
 from codeintel.core.schemas import (
@@ -24,10 +21,6 @@ from codeintel.core.schemas import (
 from codeintel.core.schemas.row_models import row_binding_for_table_schema
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
-
-    from pandera.pandas import DataFrameSchema
-
     from codeintel.core.schemas.authority import SchemaDerivation
     from codeintel.core.schemas.primitives import TableSchema
     from codeintel.core.schemas.provider import SchemaProvider
@@ -42,53 +35,6 @@ class _SchemaDerivationProvider(Protocol):
     def derivation(self, table_key: str) -> SchemaDerivation | None:
         """Return derivation metadata for the table key."""
         ...
-
-
-@dataclass(slots=True)
-class _DerivedDatasetSchema:
-    """DatasetSchema-like payload derived from TableSchema."""
-
-    name: str
-    pandera_schema: DataFrameSchema
-    ddl_schema: TableSchema | None
-
-
-@dataclass(frozen=True, slots=True)
-class _DerivedDatasetSchemaProvider:
-    """Adapter that renders DatasetSchema-like objects from TableSchema definitions."""
-
-    schema_provider: SchemaProvider
-
-    def get_dataset_schema(self, table_key: str) -> DatasetSchemaLike | None:
-        table_schema = self.schema_provider.get_table_schema(table_key)
-        if table_schema is None:
-            return None
-        pandera_schema = pandera_schema_from_table_schema(
-            table_key=table_key,
-            table_schema=table_schema,
-        )
-        return _DerivedDatasetSchema(
-            name=table_key,
-            pandera_schema=pandera_schema,
-            ddl_schema=table_schema,
-        )
-
-    def iter_dataset_schemas(self) -> Iterable[DatasetSchemaLike]:
-        schemas: list[DatasetSchemaLike] = []
-        for schema in self.schema_provider.iter_table_schemas():
-            table_key = schema.table_key
-            pandera_schema = pandera_schema_from_table_schema(
-                table_key=table_key,
-                table_schema=schema,
-            )
-            schemas.append(
-                _DerivedDatasetSchema(
-                    name=table_key,
-                    pandera_schema=pandera_schema,
-                    ddl_schema=schema,
-                )
-            )
-        return schemas
 
 
 _DECLARED_SOURCE_KIND = "declared_source"
@@ -139,7 +85,6 @@ def configure_schema_service(*, runtime: RuntimeBundle) -> SchemaService:
 
     service = SchemaService(
         table_provider=schema_provider,
-        dataset_provider=_DerivedDatasetSchemaProvider(schema_provider),
         row_binding_factory=_row_binding_factory,
     )
     set_schema_service(service)

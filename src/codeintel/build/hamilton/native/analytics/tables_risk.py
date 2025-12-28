@@ -58,7 +58,7 @@ def risk_factors__base(q__analytics__function_metrics: TabularInput) -> pl.LazyF
     pl.LazyFrame
         Lazy frame with risk factor columns.
     """
-    frame = relation_to_polars(q__analytics__function_metrics, lazy=True)
+    frame = relation_to_polars(q__analytics__function_metrics)
     risk_score = pl.col("cyclomatic_complexity").fill_null(0).cast(pl.Int64)
     risk_level = (
         pl.when(risk_score >= RISK_LEVEL_HIGH_THRESHOLD)

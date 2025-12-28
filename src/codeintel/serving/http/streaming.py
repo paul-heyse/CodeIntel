@@ -1,20 +1,22 @@
 """Streaming response utilities for large resultsets.
 
 This module provides utilities for streaming query results as newline-delimited
-JSON (JSONL) to support efficient export of large datasets.
+JSON (JSONL) or Arrow IPC streams to support efficient export of large datasets.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 from starlette.responses import StreamingResponse
 
+from codeintel.core.exports import ARROW_IPC_STREAM_MIME, iter_ipc_stream
 from codeintel.serving.export.formats import mime_type_for_export_format
 from codeintel.serving.export.ndjson import iter_ndjson_bytes
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Callable, Iterable, Iterator, Mapping
 
 
 def ndjson_stream(rows: Iterable[dict[str, object]]) -> Iterator[bytes]:
@@ -67,4 +69,46 @@ def ndjson_response(
     )
 
 
-__all__ = ["ndjson_response", "ndjson_stream"]
+def arrow_ipc_response(
+    source: pa.RecordBatchReader | Iterable[bytes],
+    *,
+    filename: str | None = None,
+    headers: Mapping[str, str] | None = None,
+    metadata: Mapping[str, object] | None = None,
+    cancel_check: Callable[[], None] | None = None,
+) -> StreamingResponse:
+    """Create an Arrow IPC streaming response.
+
+    Parameters
+    ----------
+    reader
+        Arrow record batch reader to stream.
+    filename
+        Optional filename for Content-Disposition header.
+    headers
+        Optional extra response headers.
+    metadata
+        Optional schema metadata to inject into the stream.
+
+    Returns
+    -------
+    StreamingResponse
+        Streaming response with Arrow IPC stream content type.
+    """
+    response_headers: dict[str, str] = {}
+    if filename:
+        response_headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    if headers is not None:
+        response_headers.update({str(k): str(v) for k, v in headers.items()})
+    if isinstance(source, pa.RecordBatchReader):
+        payload = iter_ipc_stream(source, metadata=metadata, cancel_check=cancel_check)
+    else:
+        payload = source
+    return StreamingResponse(
+        payload,
+        media_type=ARROW_IPC_STREAM_MIME,
+        headers=response_headers,
+    )
+
+
+__all__ = ["arrow_ipc_response", "ndjson_response", "ndjson_stream"]

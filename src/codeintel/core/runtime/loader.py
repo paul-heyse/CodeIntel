@@ -138,9 +138,7 @@ def _load_serving_settings() -> ServingSettings:
             return default_when_unset
         return get_int(name, default=None)
 
-    def get_optional_float(
-        name: str, *, default_when_unset: float | None = None
-    ) -> float | None:
+    def get_optional_float(name: str, *, default_when_unset: float | None = None) -> float | None:
         if not is_set(name):
             return default_when_unset
         return get_float(name, default=None)

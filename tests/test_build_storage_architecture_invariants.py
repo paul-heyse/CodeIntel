@@ -16,8 +16,6 @@ _POLICY_WRITE_PATTERN = re.compile(
 )
 
 _ALLOWLIST_IBIS_TABLE_FILES = {
-    "src/codeintel/storage/gateway/ibis_facade.py",
-    "src/codeintel/storage/ibis_adapter.py",
     "src/codeintel/build/hamilton/validate.py",
 }
 

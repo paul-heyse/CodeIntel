@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
     from pathlib import Path
 
     from codeintel.serving.meta.models import ServingKernelMetaResponse
@@ -46,13 +46,18 @@ class ServingSnapshotPointerProtocol(Protocol):
         ...
 
     @property
-    def schema_manifest_path(self) -> Path:
-        """Path to the schema manifest for the snapshot."""
+    def snapshot_root(self) -> Path:
+        """Root directory for the snapshot."""
         ...
 
     @property
-    def dataset_manifest_paths(self) -> tuple[Path, ...]:
-        """Paths to dataset manifests for the snapshot."""
+    def snapshot_manifest_path(self) -> Path:
+        """Path to snapshot_manifest.json for the snapshot."""
+        ...
+
+    @property
+    def schema_manifest_path(self) -> Path:
+        """Path to the schema manifest for the snapshot."""
         ...
 
     @property
@@ -97,6 +102,12 @@ class ServingKernelProtocol(Protocol):
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
     ) -> SemanticQueryResponse:
         """Execute a semantic query and return typed results."""
+        ...
+
+    def query_ipc_stream(
+        self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
+    ) -> Generator[bytes]:
+        """Execute a semantic query and return Arrow IPC stream bytes."""
         ...
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:

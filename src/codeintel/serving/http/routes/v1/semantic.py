@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
+from starlette.responses import StreamingResponse
 
 from codeintel.serving.http.dependencies import Ops, require_api_key
 from codeintel.serving.http.route_utils import (
     ThreadpoolMetricsContext,
     run_in_threadpool_with_metrics,
 )
+from codeintel.serving.http.streaming import arrow_ipc_response
 from codeintel.serving.metrics import QueryMetrics
 from codeintel.serving.operations.cancellation import CancelToken
 from codeintel.serving.semantic.models import (
     SemanticCatalogResponse,
     SemanticExplainResponse,
     SemanticQueryRequest,
-    SemanticQueryResponse,
     SemanticViewDescriptionResponse,
 )
 
@@ -138,13 +139,13 @@ async def describe_view(
     return await run_in_threadpool_with_metrics(context, ops.describe, view_id)
 
 
-@router.post("/query", response_model=SemanticQueryResponse)
+@router.post("/query")
 async def query_view(
     payload: SemanticQueryRequest,
     background: BackgroundTasks,
     request: Request,
     ops: Ops,
-) -> SemanticQueryResponse:
+) -> StreamingResponse:
     """Execute a semantic query against a view.
 
     Parameters
@@ -160,23 +161,21 @@ async def query_view(
 
     Returns
     -------
-    SemanticQueryResponse
-        Query results.
+    StreamingResponse
+        Arrow IPC stream response.
     """
 
-    def _success(
-        response: SemanticQueryResponse, duration_ms: float, correlation_id: str
-    ) -> QueryMetrics:
+    def _success(_: object, duration_ms: float, correlation_id: str) -> QueryMetrics:
         return QueryMetrics(
             endpoint="/v1/semantic/query",
             correlation_id=correlation_id,
             duration_ms=duration_ms,
             view_id=payload.view_id,
             query=None,
-            row_count=len(response.rows),
-            truncated=response.truncated,
-            query_hash=response.query_hash,
-            schema_hash=response.schema_hash,
+            row_count=0,
+            truncated=False,
+            query_hash=None,
+            schema_hash=None,
         )
 
     def _error(duration_ms: float, correlation_id: str) -> QueryMetrics:
@@ -199,10 +198,15 @@ async def query_view(
         timeout_s=ops.settings.query_timeout_s,
         cancel_token=cancel_token,
     )
-    return await run_in_threadpool_with_metrics(
+    stream = await run_in_threadpool_with_metrics(
         context,
-        ops.query,
+        ops.query_ipc_stream,
         payload,
+        cancel_check=cancel_token.raise_if_cancelled,
+    )
+    return arrow_ipc_response(
+        stream,
+        filename=f"{payload.view_id}.arrow",
         cancel_check=cancel_token.raise_if_cancelled,
     )
 

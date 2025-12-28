@@ -32,7 +32,7 @@ forcing SQL into the core compute pipeline.
 
 4. **Complex queries**
    - Prefer DuckDB relational API as the primary complex-query path.
-   - Use Ibis only when relations are insufficient; validate/transform Ibis SQL via SQLGlot.
+   - Use SQLGlot AST builders when relations are insufficient (no Ibis fallback).
    - Avoid raw SQL strings; keep DuckDB optional and fed by Arrow scanners.
 
 5. **Validation + cleanup**
@@ -235,13 +235,13 @@ Deliverables:
 
 Acceptance:
 - At least one Hamilton target writes Arrow datasets and registers manifests.
-- No pandas/Ibis conversions inside saver paths.
+- No pandas conversions inside saver paths.
 
 ---
 
 ## Phase 3: Polars/Arrow-First Serving Engine
 
-Objective: replace Ibis query paths with Polars/Arrow query plans.
+Objective: replace legacy query paths with Polars/Arrow query plans.
 
 Tasks:
 - Introduce a `SemanticQuerySpec` (or similar) independent of backend.
@@ -253,7 +253,7 @@ Tasks:
 - Add a ViewSpec-style registry (Polars view functions + tags) to replace SQL view maps.
 - Prefer scan-time row index injection when stable row IDs are required.
 - Update `src/codeintel/serving/semantic/kernel.py` to use the Polars engine by default.
-- Replace Ibis-specific template types in `templates.py` with backend-neutral specs.
+- Replace legacy template types in `templates.py` with backend-neutral specs.
 - Add engine-plugin dispatch contract:
   - `QueryEngine.can_run(spec)`, `compile(spec) -> ExecutablePlan`, `ExecutablePlan.to_reader()`.
   - Register Polars and DuckDB engines via a registry (avoid if/else routing).
@@ -267,22 +267,21 @@ Deliverables:
 - Query builder that validates columns and builds Polars expressions.
 
 Acceptance:
-- Semantic queries execute without Ibis in the default path.
+- Semantic queries execute via Polars/Arrow in the default path.
 - MCP responses stream Arrow with consistent schema and null handling.
 
 ---
 
-## Phase 4: Complex Query Engine (DuckDB Relations + Ibis + SQLGlot)
+## Phase 4: Complex Query Engine (DuckDB Relations + SQLGlot)
 
 Objective: add a complex-query engine without raw SQL strings, preferring DuckDB relations and
-using Ibis + SQLGlot only when the relational API is insufficient.
+using SQLGlot only when the relational API is insufficient.
 
 Tasks:
 - Implement a DuckDB serving engine that attaches Arrow datasets via `read_parquet` or
   `parquet_scan` and executes relational API query plans.
-- Use DuckDB relational API as the default complex-query path; prefer relations over Ibis.
-- Use Ibis only for complex relational features that the DuckDB relational API cannot express.
-- Use SQLGlot to validate/transform Ibis-generated SQL and enforce allowlists.
+- Use DuckDB relational API as the default complex-query path.
+- Use SQLGlot to build/validate SQL when the relational API cannot express the query.
 - Add a query router in `serving/semantic` that selects Polars vs DuckDB based on:
   - explicit request preference, or
   - capability detection (window functions, complex joins, CTEs).
@@ -329,26 +328,23 @@ Acceptance:
 
 ---
 
-## Phase 6: Decommission Legacy Paths (Keep Ibis in Complex Query Engine Only)
+## Phase 6: Decommission Legacy Paths (Remove Ibis Fully)
 
-Objective: remove Ibis from compute/data-plane paths while retaining it in the complex-query
-engine where needed to avoid raw SQL.
+Objective: remove Ibis entirely and rely on DuckDB relations + SQLGlot for complex queries,
+keeping raw SQL out of the serving layer.
 
 Tasks:
-- Delete Ibis usage in compute/data-plane paths (analytics/build) once Polars/Arrow
-  materializers and dataset store paths are authoritative.
-- Keep Ibis only inside the complex-query engine (DuckDB + Ibis + SQLGlot) as a
-  no-raw-SQL safety layer.
-- Replace `serving/semantic/query_builder.py` + `templates.py` with backend-neutral specs,
-  then plug in the complex-query engine where needed.
-- Update docs to clarify Ibis scope and the relation-first preference.
+- Delete all remaining Ibis usage across compute/serving paths.
+- Remove the Ibis query builder and related shims in serving.
+- Ensure complex-query execution uses DuckDB relations first, SQLGlot AST fallback second.
+- Update docs to clarify the relation-first preference and SQLGlot-only fallback.
 
 Deliverables:
-- Codebase no longer imports or depends on Ibis.
+- Codebase no longer imports or depends on Ibis (dependencies + runtime).
 - Serving and compute paths fully Polars/Arrow + DuckDB (optional).
 
 Acceptance:
-- Ruff/Pyright/Pyrefly report zero Ibis imports outside the complex-query engine.
+- Ruff/Pyright/Pyrefly report zero Ibis imports anywhere.
 - All non-complex semantic queries execute via Polars/Arrow engine.
 
 ---
@@ -429,7 +425,10 @@ Create/update a short “decommission registry” table in this doc during imple
 
 | Shim/Legacy Path | Location | Introduced In Phase | Removal Phase | Removal Criteria |
 | --- | --- | --- | --- | --- |
-| (add as discovered) | (path/module) | P# | P# | (tests/gates to pass) |
+| Ibis query builder + temp table staging | `src/codeintel/serving/semantic/query_builder.py` | legacy | P6 | Removed; serving query tests pass with relation + SQLGlot fallback. |
+| Ibis gateway facade | `src/codeintel/storage/gateway/ibis_facade.py` | legacy | P6 | Removed; no Ibis imports in codebase. |
+| Ibis analytics helpers | `src/codeintel/analytics/compute/ibis_utils.py`, `src/codeintel/core/ibis_typing.py` | legacy | P6 | Removed; analytics profiles use DuckDB relations. |
+| Ibis dependency | `pyproject.toml` | legacy | P6 | Dependency removed; tooling metadata updated. |
 
 ## Phase-Specific Decommissioning Scope
 
