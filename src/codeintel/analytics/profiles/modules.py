@@ -98,51 +98,81 @@ def build_module_profile_rows(
         log.warning("module_profile: failed to access tables: %s", exc)
         return
 
-    joined = (
-        modules_scoped.join(func_stats, ["repo", "commit", "module"], how="left")
-        .join(files, ["repo", "commit", "module"], how="left")
-        .join(imports, ["repo", "commit", "module"], how="left")
-        .join(roles, ["repo", "commit", "module"], how="left")
-    )
+    base = modules_scoped.set_alias("base")
+    func_rel = func_stats.set_alias("func_stats")
+    files_rel = files.set_alias("files")
+    imports_rel = imports.set_alias("imports")
+    roles_rel = roles.set_alias("roles")
+
+    joined = base.join(
+        func_rel,
+        (
+            "base.repo = func_stats.repo "
+            "AND base.commit = func_stats.commit "
+            "AND base.module = func_stats.module"
+        ),
+        how="left",
+    ).set_alias("base")
+    joined = joined.join(
+        files_rel,
+        "base.repo = files.repo AND base.commit = files.commit AND base.module = files.module",
+        how="left",
+    ).set_alias("base")
+    joined = joined.join(
+        imports_rel,
+        (
+            "base.repo = imports.repo "
+            "AND base.commit = imports.commit "
+            "AND base.module = imports.module"
+        ),
+        how="left",
+    ).set_alias("base")
+    joined = joined.join(
+        roles_rel,
+        "base.repo = roles.repo AND base.commit = roles.commit AND base.module = roles.module",
+        how="left",
+    ).set_alias("base")
 
     try:
         selected = joined.select(
-            "repo",
-            "commit",
-            "module",
-            "path",
-            "language",
-            "coalesce(file_count, 0) as file_count",
-            "coalesce(total_loc, 0) as total_loc",
-            "coalesce(total_logical_loc, 0) as total_logical_loc",
-            "coalesce(function_count, 0) as function_count",
-            "coalesce(class_count, 0) as class_count",
-            "avg_file_complexity",
-            "max_file_complexity",
-            "coalesce(high_risk_function_count, 0) as high_risk_function_count",
-            "coalesce(medium_risk_function_count, 0) as medium_risk_function_count",
-            "coalesce(low_risk_function_count, 0) as low_risk_function_count",
-            "max_risk_score",
-            "avg_risk_score",
+            "base.repo as repo",
+            "base.commit as commit",
+            "base.module as module",
+            "base.path as path",
+            "base.language as language",
+            "coalesce(base.file_count, 0) as file_count",
+            "coalesce(base.total_loc, 0) as total_loc",
+            "coalesce(base.total_logical_loc, 0) as total_logical_loc",
+            "coalesce(base.function_count, 0) as function_count",
+            "coalesce(base.class_count, 0) as class_count",
+            "base.avg_file_complexity as avg_file_complexity",
+            "base.max_file_complexity as max_file_complexity",
+            "coalesce(base.high_risk_function_count, 0) as high_risk_function_count",
+            "coalesce(base.medium_risk_function_count, 0) as medium_risk_function_count",
+            "coalesce(base.low_risk_function_count, 0) as low_risk_function_count",
+            "base.max_risk_score as max_risk_score",
+            "base.avg_risk_score as avg_risk_score",
             (
                 "case when "
-                "(coalesce(tested_function_count, 0) + coalesce(untested_function_count, 0)) = 0 "
+                "(coalesce(base.tested_function_count, 0) + "
+                "coalesce(base.untested_function_count, 0)) = 0 "
                 "then NULL "
-                "else cast(coalesce(tested_function_count, 0) as double) / "
-                "(coalesce(tested_function_count, 0) + coalesce(untested_function_count, 0)) "
+                "else cast(coalesce(base.tested_function_count, 0) as double) / "
+                "(coalesce(base.tested_function_count, 0) + "
+                "coalesce(base.untested_function_count, 0)) "
                 "end as module_coverage_ratio"
             ),
-            "coalesce(tested_function_count, 0) as tested_function_count",
-            "coalesce(untested_function_count, 0) as untested_function_count",
-            "coalesce(import_fan_in, 0) as import_fan_in",
-            "coalesce(import_fan_out, 0) as import_fan_out",
-            "cycle_group",
-            "coalesce(in_cycle_flag, 0) > 0 as in_cycle",
-            "role",
-            "role_confidence",
-            "role_sources_json",
-            "tags",
-            "owners",
+            "coalesce(base.tested_function_count, 0) as tested_function_count",
+            "coalesce(base.untested_function_count, 0) as untested_function_count",
+            "coalesce(base.import_fan_in, 0) as import_fan_in",
+            "coalesce(base.import_fan_out, 0) as import_fan_out",
+            "base.cycle_group as cycle_group",
+            "coalesce(base.in_cycle_flag, 0) > 0 as in_cycle",
+            "base.role as role",
+            "base.role_confidence as role_confidence",
+            "base.role_sources_json as role_sources_json",
+            "base.tags as tags",
+            "base.owners as owners",
         )
         records = records_from_relation(selected)
     except DuckDBError as exc:
@@ -224,19 +254,28 @@ def _load_module_aggregates(
         repo=repo,
         commit=commit,
     )
-    func_stats = func_profile.group_by("repo", "commit", "module").aggregate(
-        [
-            "count(function_goid_h128) as function_count",
-            "sum(loc) as total_loc",
-            "sum(logical_loc) as total_logical_loc",
-            "sum(case when risk_level = 'high' then 1 else 0 end) as high_risk_function_count",
-            "sum(case when risk_level = 'medium' then 1 else 0 end) as medium_risk_function_count",
-            "sum(case when risk_level = 'low' then 1 else 0 end) as low_risk_function_count",
-            "max(risk_score) as max_risk_score",
-            "avg(risk_score) as avg_risk_score",
-            "sum(case when tested then 1 else 0 end) as tested_function_count",
-            "sum(case when tested then 0 else 1 end) as untested_function_count",
-        ]
+    func_stats = func_profile.aggregate(
+        ", ".join(
+            [
+                "count(function_goid_h128) as function_count",
+                "sum(loc) as total_loc",
+                "sum(logical_loc) as total_logical_loc",
+                (
+                    "sum(case when risk_level = 'high' then 1 else 0 end) "
+                    "as high_risk_function_count"
+                ),
+                (
+                    "sum(case when risk_level = 'medium' then 1 else 0 end) "
+                    "as medium_risk_function_count"
+                ),
+                ("sum(case when risk_level = 'low' then 1 else 0 end) as low_risk_function_count"),
+                "max(risk_score) as max_risk_score",
+                "avg(risk_score) as avg_risk_score",
+                "sum(case when tested then 1 else 0 end) as tested_function_count",
+                "sum(case when tested then 0 else 1 end) as untested_function_count",
+            ]
+        ),
+        "repo, commit, module",
     )
 
     file_profile = maybe_scope_by_repo_commit(
@@ -244,13 +283,16 @@ def _load_module_aggregates(
         repo=repo,
         commit=commit,
     )
-    files = file_profile.group_by("repo", "commit", "module").aggregate(
-        [
-            "count(rel_path) as file_count",
-            "sum(class_count) as class_count",
-            "avg(ast_complexity) as avg_file_complexity",
-            "max(ast_complexity) as max_file_complexity",
-        ]
+    files = file_profile.aggregate(
+        ", ".join(
+            [
+                "count(rel_path) as file_count",
+                "sum(class_count) as class_count",
+                "avg(ast_complexity) as avg_file_complexity",
+                "max(ast_complexity) as max_file_complexity",
+            ]
+        ),
+        "repo, commit, module",
     )
 
     imports_table = maybe_scope_by_repo_commit(
@@ -258,14 +300,24 @@ def _load_module_aggregates(
         repo=repo,
         commit=commit,
     )
-    imports = imports_table.group_by("repo", "commit", "src_module").aggregate(
-        [
-            "src_module as module",
-            "max(src_fan_out) as import_fan_out",
-            "max(dst_fan_in) as import_fan_in",
-            "max(cycle_group) as cycle_group",
-            "sum(case when cycle_group is null then 0 else 1 end) as in_cycle_flag",
-        ]
+    imports = imports_table.aggregate(
+        ", ".join(
+            [
+                "max(src_fan_out) as import_fan_out",
+                "max(dst_fan_in) as import_fan_in",
+                "max(cycle_group) as cycle_group",
+                "sum(case when cycle_group is null then 0 else 1 end) as in_cycle_flag",
+            ]
+        ),
+        "repo, commit, src_module",
+    ).select(
+        "repo",
+        "commit",
+        "src_module as module",
+        "import_fan_out",
+        "import_fan_in",
+        "cycle_group",
+        "in_cycle_flag",
     )
 
     roles_table = maybe_scope_by_repo_commit(

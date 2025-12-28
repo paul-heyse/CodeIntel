@@ -51,10 +51,10 @@ EXPORT_FORMATS: Final[dict[CanonicalExportFormat, ExportFormatSpec]] = {
 }
 
 _EXPORT_FORMAT_ORDER: Final[tuple[CanonicalExportFormat, ...]] = (
+    "arrow",
+    "parquet",
     "jsonl",
     "json",
-    "parquet",
-    "arrow",
 )
 _TEXT_EXPORT_FORMATS: Final[frozenset[CanonicalExportFormat]] = frozenset({"jsonl", "json"})
 _BINARY_EXPORT_FORMATS: Final[frozenset[CanonicalExportFormat]] = frozenset({"parquet", "arrow"})
@@ -137,7 +137,7 @@ def default_export_format() -> CanonicalExportFormat:
     CanonicalExportFormat
         Default export format identifier.
     """
-    return "jsonl"
+    return "arrow"
 
 
 def is_text_export_format(fmt: str) -> bool:

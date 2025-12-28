@@ -6,11 +6,12 @@ from collections.abc import Callable, Mapping
 from types import ModuleType
 
 import hamilton.driver as h_driver
+import polars as pl
 import pytest
 from hamilton.function_modifiers import source, value
 
 from codeintel.build.hamilton.dag_catalog_compiler import compile_dag_catalog
-from codeintel.build.hamilton.materializers import DuckDBRowsSaver, FileArtifactSaver
+from codeintel.build.hamilton.materializers import DuckDBRelationSaver, FileArtifactSaver
 from codeintel.build.hamilton.native.target_decorators import codeintel_target
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
 
@@ -33,17 +34,16 @@ def _module_with_saver_outputs() -> ModuleType:
     module = ModuleType("saver_inventory_module")
 
     @SaveToObjectMetadataDecorator(
-        [DuckDBRowsSaver],
+        [DuckDBRelationSaver],
         output_name_="m__core__alpha",
         env=source("env"),
         catalog=source("catalog"),
         target_name=value("alpha"),
         table_key=value("core.alpha"),
-        columns=value(("id",)),
         json_schema_id=value("schema:alpha"),
     )
-    def alpha_rows() -> tuple[tuple[int, ...], ...]:
-        return ()
+    def alpha_rows() -> pl.LazyFrame:
+        return pl.DataFrame({"id": [1]}).lazy()
 
     @SaveToObjectMetadataDecorator(
         [FileArtifactSaver],
@@ -54,13 +54,13 @@ def _module_with_saver_outputs() -> ModuleType:
         artifact_name=value("alpha_meta"),
         path_template=value("{build_dir}/alpha_meta.json"),
     )
-    def alpha_meta(alpha_rows: tuple[tuple[int, ...], ...]) -> bytes:
+    def alpha_meta(alpha_rows: pl.LazyFrame) -> bytes:
         _ = alpha_rows
         return b"ok"
 
     @codeintel_target(domain="analytics", target="alpha")
     def t__alpha(
-        alpha_rows: tuple[tuple[int, ...], ...],
+        alpha_rows: pl.LazyFrame,
         alpha_meta: bytes,
     ) -> int:
         _ = (alpha_rows, alpha_meta)

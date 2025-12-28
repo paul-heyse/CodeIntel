@@ -34,7 +34,8 @@ class _ChunkedIpcSink:
         return len(chunk)
 
     def flush(self) -> None:
-        return
+        if self._closed:
+            return
 
     def close(self) -> None:
         self._closed = True
@@ -49,12 +50,17 @@ class _ChunkedIpcSink:
     def drain(self) -> Iterator[bytes]:
         chunks = self._chunks
         self._chunks = []
-        for chunk in chunks:
-            yield chunk
+        yield from chunks
 
 
 def default_ipc_write_options() -> pa.ipc.IpcWriteOptions:
-    """Return default Arrow IPC write options."""
+    """Return default Arrow IPC write options.
+
+    Returns
+    -------
+    pyarrow.ipc.IpcWriteOptions
+        Default IPC write options with compression and metadata version.
+    """
     return pa.ipc.IpcWriteOptions(
         metadata_version=pa.ipc.MetadataVersion.V5,
         compression="zstd",
@@ -69,8 +75,7 @@ def _encode_metadata_value(value: object) -> bytes:
 
 def _encode_metadata(metadata: Mapping[str, object]) -> dict[bytes, bytes]:
     return {
-        str(key).encode("utf-8"): _encode_metadata_value(value)
-        for key, value in metadata.items()
+        str(key).encode("utf-8"): _encode_metadata_value(value) for key, value in metadata.items()
     }
 
 
@@ -82,7 +87,20 @@ def _merge_schema_metadata(schema: pa.Schema, metadata: Mapping[str, object]) ->
 
 
 def apply_ipc_metadata(schema: pa.Schema, metadata: Mapping[str, object] | None) -> pa.Schema:
-    """Return schema with serialized metadata applied."""
+    """Return schema with serialized metadata applied.
+
+    Parameters
+    ----------
+    schema
+        Base Arrow schema.
+    metadata
+        Optional metadata to inject into the schema.
+
+    Returns
+    -------
+    pyarrow.Schema
+        Schema with merged metadata.
+    """
     if not metadata:
         return schema
     return _merge_schema_metadata(schema, metadata)
@@ -105,6 +123,8 @@ def iter_ipc_stream(
         Optional schema metadata to inject into the IPC stream.
     options
         Optional IPC write options. Uses default options when omitted.
+    cancel_check
+        Optional cancellation hook invoked between record batches.
 
     Yields
     ------

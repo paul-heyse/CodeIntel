@@ -126,7 +126,7 @@ def build_test_profile_result(
     """Compute test profile rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
 
     Parameters
     ----------

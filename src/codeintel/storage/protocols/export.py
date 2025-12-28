@@ -20,9 +20,32 @@ class RecordBatch(Protocol):
     """Protocol for record batches emitted by export relations."""
 
     num_rows: int
+    num_columns: int
 
-    def to_pydict(self) -> dict[str, list[object]]:
-        """Return a columnar mapping for the batch."""
+    @property
+    def schema(self) -> pa.Schema:
+        """Return the Arrow schema for the batch.
+
+        Returns
+        -------
+        pyarrow.Schema
+            Schema describing the batch columns.
+        """
+        ...
+
+    def column(self, i: int) -> pa.Array:
+        """Return the i-th column array.
+
+        Parameters
+        ----------
+        i
+            Column index.
+
+        Returns
+        -------
+        pyarrow.Array
+            Column array at the requested index.
+        """
         ...
 
 

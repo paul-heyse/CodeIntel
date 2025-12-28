@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import polars as pl
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -88,11 +88,11 @@ def seed_catalog_modules(
         for path, module in module_by_path.items()
     ]
 
-    df = pd.DataFrame(rows)
+    frame = pl.from_dicts(rows)
 
     gateway.execute(f"DROP TABLE IF EXISTS {CATALOG_MODULE_TABLE}")
     temp_name = "catalog_modules_seed"
-    gateway.register(temp_name, df)
+    gateway.register(temp_name, frame)
     try:
         gateway.execute(
             f"CREATE OR REPLACE TEMP TABLE catalog_modules AS SELECT * FROM {temp_name}"

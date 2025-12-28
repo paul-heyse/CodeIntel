@@ -16,11 +16,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from codeintel.core.schemas.arrow_gen import arrow_schema_from_table_schema
 from codeintel.core.schemas.hashing import schema_hash
-from codeintel.core.schemas.json_schema_gen import (
-    json_schema_from_table_schema,
-    pandera_to_json_schema,
-)
-from codeintel.core.schemas.pandera_gen import pandera_schema_from_table_schema
+from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
 from codeintel.core.schemas.primitives import TableSchema
 from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.core.schemas.row_models import GeneratedRowBinding, row_binding_for_table_schema
@@ -30,14 +26,13 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     import pyarrow as pa
-    from pandera.pandas import DataFrameSchema
 
 
 class DatasetSchemaLike(Protocol):
     """Protocol for build-owned DatasetSchema metadata."""
 
     name: str
-    pandera_schema: DataFrameSchema
+    json_schema: dict[str, Any] | None
     ddl_schema: TableSchema | None
 
 
@@ -99,7 +94,6 @@ class SchemaService:
     _table_cache: dict[str, TableSchema | None] = field(default_factory=dict, repr=False)
     _dataset_cache: dict[str, DatasetSchemaLike | None] = field(default_factory=dict, repr=False)
     _json_cache: dict[str, dict[str, Any] | None] = field(default_factory=dict, repr=False)
-    _pandera_cache: dict[str, DataFrameSchema | None] = field(default_factory=dict, repr=False)
     _arrow_cache: dict[str, pa.Schema | None] = field(default_factory=dict, repr=False)
     _row_cache: dict[str, GeneratedRowBinding | None] = field(default_factory=dict, repr=False)
     _record_cache: dict[str, SchemaRecord] = field(default_factory=dict, repr=False)
@@ -237,32 +231,6 @@ class SchemaService:
             raise KeyError(msg)
         return binding
 
-    def get_pandera_schema(self, table_key: str) -> DataFrameSchema | None:
-        """Return a Pandera schema rendered from the TableSchema.
-
-        Parameters
-        ----------
-        table_key
-            Fully qualified table key (schema.table).
-
-        Returns
-        -------
-        DataFrameSchema | None
-            Pandera schema derived from the TableSchema when available.
-        """
-        if table_key in self._pandera_cache:
-            return self._pandera_cache[table_key]
-        table_schema = self.get_table_schema(table_key)
-        if table_schema is None:
-            self._pandera_cache[table_key] = None
-            return None
-        pandera_schema = pandera_schema_from_table_schema(
-            table_key=table_key,
-            table_schema=table_schema,
-        )
-        self._pandera_cache[table_key] = pandera_schema
-        return pandera_schema
-
     def get_arrow_schema(self, table_key: str) -> pa.Schema | None:
         """Return a PyArrow schema rendered from the TableSchema.
 
@@ -303,9 +271,9 @@ class SchemaService:
             return self._json_cache[table_key]
         schema_id = f"urn:codeintel:schema:{table_key}"
         dataset_schema = self.get_dataset_schema(table_key)
-        if dataset_schema is not None:
-            json_schema = pandera_to_json_schema(dataset_schema.pandera_schema)
-            json_schema["$id"] = schema_id
+        if dataset_schema is not None and dataset_schema.json_schema is not None:
+            json_schema = dict(dataset_schema.json_schema)
+            json_schema.setdefault("$id", schema_id)
             self._json_cache[table_key] = json_schema
             return json_schema
 
@@ -377,7 +345,6 @@ class SchemaService:
         self._table_cache.clear()
         self._dataset_cache.clear()
         self._json_cache.clear()
-        self._pandera_cache.clear()
         self._arrow_cache.clear()
         self._row_cache.clear()
         self._record_cache.clear()

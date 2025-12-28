@@ -113,7 +113,7 @@ def test_log_query_metrics_search_endpoint(caplog: LogCaptureFixture) -> None:
         truncated=False,
         duration_ms=8.5,
         correlation_id="cid-search",
-        engine="pandas",
+        engine="polars",
     )
 
     with caplog.at_level(logging.INFO, logger="codeintel.serving.metrics"):
@@ -121,5 +121,5 @@ def test_log_query_metrics_search_endpoint(caplog: LogCaptureFixture) -> None:
 
     record = caplog.records[0]
     expect_equal(getattr(record, "query", None), "authentication handler")
-    expect_equal(getattr(record, "engine", None), "pandas")
+    expect_equal(getattr(record, "engine", None), "polars")
     expect_true(getattr(record, "view_id", None) is None)

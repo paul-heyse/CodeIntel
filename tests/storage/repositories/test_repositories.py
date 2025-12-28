@@ -107,35 +107,15 @@ def _repos(
     )
 
 
-@pytest.fixture
-def subsystem_repo_ctx(test_ctx: TestContext) -> TestContext:
-    """
-    Provide a TestContext seeded with subsystem analytics data.
-
-    Returns
-    -------
-    TestContext
-        Context with subsystem analytics seeds applied.
-    """
-    return test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
-
-
-def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
-    """
-    Function repository should resolve GOIDs and surface summaries.
-
-    Raises
-    ------
-    AssertionError
-        If required rows are missing from repositories.
-    """
-    functions, _, tests_repo, graphs, _, datasets = _repos(docs_export_gateway)
-
+def _require_function_goid(functions: FunctionRepository) -> int:
     goid = functions.resolve_function_goid(urn="urn:foo")
     if goid is None:
         message = "resolve_function_goid should return goid"
         raise AssertionError(message)
+    return goid
 
+
+def _assert_function_summary(functions: FunctionRepository, goid: int) -> None:
     summary = functions.get_function_summary_by_goid(goid)
     if summary is None:
         message = "function summary exists"
@@ -151,10 +131,14 @@ def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
     _expect_in(goid, [row["function_goid_h128"] for row in high_risk], "goid missing")
     _expect_in(goid, functions.list_function_goids(), "goid missing from list_function_goids")
 
+
+def _assert_tests_for_function(tests_repo: TestRepository, goid: int) -> None:
     tests_for_fn = tests_repo.get_tests_for_function(goid, limit=5)
     _expect_equal(len(tests_for_fn), 1, "tests_for_function length mismatch")
     _expect_equal(tests_for_fn[0]["test_id"], "t1", "unexpected test id")
 
+
+def _assert_graph_neighbors(graphs: GraphRepository, goid: int) -> None:
     outgoing = graphs.get_outgoing_callgraph_neighbors(goid, limit=5)
     _expect_equal(len(outgoing), 1, "outgoing neighbor count mismatch")
     _expect_equal(outgoing[0]["callee_goid_h128"], goid, "callee id mismatch")
@@ -163,14 +147,41 @@ def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
     _expect_equal(len(incoming), 1, "incoming neighbor count mismatch")
     _expect_equal(incoming[0]["caller_goid_h128"], goid, "caller id mismatch")
 
+
+def _assert_dataset_reads(datasets: DatasetReadRepository, goid: int) -> None:
     dataset_rows = datasets.read_dataset_rows("analytics.function_metrics", limit=10, offset=0)
     if not dataset_rows:
         message = "dataset rows should be readable"
         raise AssertionError(message)
     _expect_equal(dataset_rows[0]["function_goid_h128"], goid, "dataset goid mismatch")
     dataset_df = datasets.read_dataset_dataframe("analytics.function_metrics", limit=10, offset=0)
-    _expect_true(not dataset_df.empty, "dataset dataframe should not be empty")
-    _expect_equal(int(dataset_df.iloc[0]["function_goid_h128"]), goid, "dataframe goid mismatch")
+    _expect_true(not dataset_df.is_empty(), "dataset dataframe should not be empty")
+    first_row = dataset_df.row(0, named=True)
+    _expect_equal(int(first_row["function_goid_h128"]), goid, "dataframe goid mismatch")
+
+
+@pytest.fixture
+def subsystem_repo_ctx(test_ctx: TestContext) -> TestContext:
+    """
+    Provide a TestContext seeded with subsystem analytics data.
+
+    Returns
+    -------
+    TestContext
+        Context with subsystem analytics seeds applied.
+    """
+    return test_ctx.require(SUBSYSTEM_ANALYTICS_PACK)
+
+
+def test_function_repository_reads(docs_export_gateway: TestContext) -> None:
+    """Function repository should resolve GOIDs and surface summaries."""
+    functions, _, tests_repo, graphs, _, datasets = _repos(docs_export_gateway)
+
+    goid = _require_function_goid(functions)
+    _assert_function_summary(functions, goid)
+    _assert_tests_for_function(tests_repo, goid)
+    _assert_graph_neighbors(graphs, goid)
+    _assert_dataset_reads(datasets, goid)
 
 
 def test_module_repository_reads(docs_export_gateway: TestContext) -> None:

@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import polars as pl
 from sqlglot import exp
 
 if TYPE_CHECKING:
@@ -27,7 +27,7 @@ from codeintel.build.schemas import (
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from codeintel.core.schemas.service import get_schema_service
-from codeintel.storage.validation.pandera_df import validate_df
+from codeintel.storage.validation.columnar import validate_table
 
 _FULL_CONTRACT_SETTINGS = ContractResolutionSettings(mode=ContractResolutionMode.FULL)
 
@@ -200,20 +200,41 @@ def validate_contract_rows(
     table_key: str, rows: Sequence[Mapping[str, object]]
 ) -> list[dict[str, object]]:
     """
-    Validate rows for a dataset using Pandera and return normalized dicts.
+    Validate rows for a dataset using Arrow/Polars checks and return normalized dicts.
 
     Missing values are normalized to ``None`` for safe DuckDB insertion.
 
     Returns
     -------
     list[dict[str, object]]
-        Pandera-validated rows coerced to serializable dictionaries.
+        Validated rows coerced to serializable dictionaries.
+
+    Raises
+    ------
+    ValueError
+        If rows include columns that are not present in the dataset schema.
     """
     if not rows:
         return []
-    df = validate_df(table_key, pd.DataFrame(rows))
-    records = df.to_dict(orient="records")
     table_schema = get_schema_service().get_table_schema(table_key)
+    records: list[dict[str, object]]
+    if table_schema is None:
+        frame = pl.from_dicts(rows)
+        records = frame.to_dicts()
+    else:
+        expected_columns = [col.name for col in table_schema.columns]
+        frame = pl.from_dicts(rows)
+        extra = [name for name in frame.columns if name not in expected_columns]
+        if extra:
+            extras = ", ".join(sorted(extra))
+            message = f"Unexpected columns for {table_key}: {extras}"
+            raise ValueError(message)
+        missing = [name for name in expected_columns if name not in frame.columns]
+        for name in missing:
+            frame = frame.with_columns(pl.lit(None).alias(name))
+        frame = frame.select(expected_columns)
+        validate_table(table_key, frame.to_arrow(), table_schema=table_schema, mode="strict")
+        records = frame.to_dicts()
     column_types: dict[str, ColumnType] = (
         {col.name: col.type for col in table_schema.columns} if table_schema is not None else {}
     )

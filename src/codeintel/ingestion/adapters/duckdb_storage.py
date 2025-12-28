@@ -5,7 +5,7 @@ for the ingestion layer. The adapter routes operations through the established
 storage infrastructure:
 
 - Writes/deletes: ``DuckDBPolicyBackend`` for type-safe bulk operations
-- Reads: ``StorageGateway`` for query execution and DataFrame retrieval
+- Reads: ``StorageGateway`` for query execution and Arrow batch retrieval
 - Schema management: ``DuckDBPolicyBackend.ensure_schemas_preserve()``
 
 Why This Adapter Exists
@@ -28,12 +28,13 @@ from typing import TYPE_CHECKING, ClassVar, cast
 
 from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.schemas.service import get_schema_service
-from codeintel.ingestion.ports.storage import BatchResult, IngestStoragePort, QueryResult
+from codeintel.ingestion.ports.storage import BatchResult, QueryResult
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import pandas as pd
+    import pyarrow as pa
 
     from codeintel.storage.gateway import DuckDBConnection, StorageGateway
 
@@ -72,7 +73,7 @@ def build_delete_in_query(table_sql: str, column_sql: str, count: int) -> str:
     return " ".join(part for part in ("DELETE FROM", table_sql, "WHERE", delete_clause) if part)
 
 
-class DuckDBStorageAdapter(IngestStoragePort):
+class DuckDBStorageAdapter:
     """Production storage adapter implementing IngestStoragePort.
 
     This adapter wraps ``StorageGateway`` and ``DuckDBPolicyBackend`` to provide
@@ -263,20 +264,23 @@ class DuckDBStorageAdapter(IngestStoragePort):
         columns = tuple(desc[0] for desc in result.description) if result.description else ()
         return QueryResult.from_rows([tuple(row) for row in rows], columns=columns)
 
-    def fetch_dataframe(
+    def fetch_arrow_reader(
         self,
         sql: str,
         params: Sequence[object] | None = None,
-    ) -> pd.DataFrame:
-        """Execute a query and return results as a DataFrame.
+        *,
+        batch_size: int | None = None,
+    ) -> pa.RecordBatchReader:
+        """Execute a query and return results as a record batch reader.
 
         Returns
         -------
-        pandas.DataFrame
-            Resulting dataframe from the query execution.
+        pa.RecordBatchReader
+            Arrow record batch reader for the query results.
         """
         param_list = list(params) if params else []
-        return self._gateway.execute(sql, param_list).fetch_df()
+        resolved_batch_size = batch_size or DEFAULT_ARROW_BATCH_SIZE
+        return self._gateway.execute(sql, param_list).fetch_record_batch(resolved_batch_size)
 
 
 __all__ = ["SNAPSHOT_PARAM_LEN", "DuckDBStorageAdapter", "build_delete_in_query"]

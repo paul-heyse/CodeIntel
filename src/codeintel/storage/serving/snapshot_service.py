@@ -167,34 +167,7 @@ class ServingSnapshotService:
     @staticmethod
     def _validate_datasets(snapshot_manifest: ServingSnapshotManifest) -> None:
         try:
-            schema_hashes = _load_schema_hashes(Path(snapshot_manifest.schema_manifest_path))
-            for table_key, entry in snapshot_manifest.datasets.items():
-                manifest_path = Path(entry.manifest_path)
-                manifest = read_dataset_manifest(manifest_path)
-                if manifest.table_key != table_key:
-                    msg = (
-                        f"Dataset manifest table_key mismatch: {table_key} != {manifest.table_key}"
-                    )
-                    raise ValueError(msg)
-                if entry.schema_hash is None:
-                    msg = f"Dataset schema hash missing for {table_key}"
-                    raise ValueError(msg)
-                expected = schema_hashes.get(table_key)
-                if expected is None:
-                    msg = f"Schema manifest missing hash for {table_key}"
-                    raise KeyError(msg)
-                if entry.schema_hash != expected:
-                    msg = (
-                        "Dataset schema hash mismatch for "
-                        f"{table_key}: {entry.schema_hash} != {expected}"
-                    )
-                    raise ValueError(msg)
-                if manifest.schema_hash is not None and manifest.schema_hash != entry.schema_hash:
-                    msg = (
-                        "Dataset manifest schema hash mismatch for "
-                        f"{table_key}: {manifest.schema_hash} != {entry.schema_hash}"
-                    )
-                    raise ValueError(msg)
+            _validate_dataset_entries(snapshot_manifest)
         except (OSError, ValueError, KeyError, TypeError) as exc:
             msg = "Dataset manifest validation failed"
             raise DatasetManifestError(msg) from exc
@@ -238,6 +211,32 @@ def _load_schema_hashes(schema_manifest_path: Path) -> dict[str, str]:
             raise ValueError(msg)
         combined[table_key] = schema_hash
     return combined
+
+
+def _validate_dataset_entries(snapshot_manifest: ServingSnapshotManifest) -> None:
+    schema_hashes = _load_schema_hashes(Path(snapshot_manifest.schema_manifest_path))
+    for table_key, entry in snapshot_manifest.datasets.items():
+        manifest_path = Path(entry.manifest_path)
+        manifest = read_dataset_manifest(manifest_path)
+        if manifest.table_key != table_key:
+            msg = f"Dataset manifest table_key mismatch: {table_key} != {manifest.table_key}"
+            raise ValueError(msg)
+        if entry.schema_hash is None:
+            msg = f"Dataset schema hash missing for {table_key}"
+            raise ValueError(msg)
+        expected = schema_hashes.get(table_key)
+        if expected is None:
+            msg = f"Schema manifest missing hash for {table_key}"
+            raise KeyError(msg)
+        if entry.schema_hash != expected:
+            msg = f"Dataset schema hash mismatch for {table_key}: {entry.schema_hash} != {expected}"
+            raise ValueError(msg)
+        if manifest.schema_hash is not None and manifest.schema_hash != entry.schema_hash:
+            msg = (
+                "Dataset manifest schema hash mismatch for "
+                f"{table_key}: {manifest.schema_hash} != {entry.schema_hash}"
+            )
+            raise ValueError(msg)
 
 
 def _extract_schema_hashes(items: object, *, ctx: str) -> dict[str, str]:

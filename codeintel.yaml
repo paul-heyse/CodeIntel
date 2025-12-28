@@ -1,0 +1,10 @@
+repo: github.com/paul-heyse/CodeIntel
+default_profile: full
+ingest:
+  recipe: builtin.default
+analytics:
+  profile: full
+graphs:
+  recipe: builtin.full
+storage:
+  db_path: .codeintel/duckdb.db

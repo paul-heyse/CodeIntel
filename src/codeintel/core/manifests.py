@@ -181,7 +181,13 @@ class SnapshotDatasetEntry(ManifestBase):
     stats: Mapping[str, Any] | None = None
 
     def to_json_obj(self) -> dict[str, object]:
-        """Return a JSON-serializable dataset entry payload."""
+        """Return a JSON-serializable dataset entry payload.
+
+        Returns
+        -------
+        dict[str, object]
+            JSON-serializable dataset entry payload.
+        """
         payload: dict[str, object] = {
             "manifest_path": self.manifest_path,
             "partition_columns": list(self.partition_columns),
@@ -328,6 +334,11 @@ class ServingSnapshotManifest(ManifestBase):
         -------
         ServingSnapshotManifest
             Loaded manifest instance.
+
+        Raises
+        ------
+        TypeError
+            If the datasets payload is not a mapping.
         """
         data = read_manifest_json(path)
         raw_datasets = data.get("datasets") or {}

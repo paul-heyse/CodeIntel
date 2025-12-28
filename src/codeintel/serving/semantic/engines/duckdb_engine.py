@@ -18,6 +18,7 @@ from codeintel.serving.semantic.sqlglot_query_builder import (
     SqlglotQueryBuilderError,
     build_sqlglot_query,
 )
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
@@ -67,7 +68,8 @@ class DuckDBRelationPlan:
         pyarrow.Table
             Materialized Arrow table.
         """
-        return self.relation.fetch_arrow_table()
+        reader = self.relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        return pa.Table.from_batches(list(reader), schema=reader.schema)
 
     def explain(self) -> QueryExplain:
         """Return an EXPLAIN plan for the relation.
@@ -113,10 +115,7 @@ class DuckDBSqlPlan:
             Materialized Arrow table.
         """
         result = self._execute()
-        fetcher = getattr(result, "fetch_arrow_table", None)
-        if callable(fetcher):
-            return fetcher()
-        reader = result.fetch_record_batch(10_000)
+        reader = result.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
         return pa.Table.from_batches(list(reader), schema=reader.schema)
 
     def explain(self) -> QueryExplain:

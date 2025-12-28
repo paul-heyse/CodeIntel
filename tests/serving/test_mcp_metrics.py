@@ -130,7 +130,7 @@ def test_log_query_metrics_extra_fields() -> None:
             truncated=True,
             duration_ms=500.123,
             correlation_id="corr-abc",
-            engine="pandas",
+            engine="polars",
         )
         log_query_metrics(metrics)
 
@@ -143,7 +143,7 @@ def test_log_query_metrics_extra_fields() -> None:
         expect_true(record.__dict__["truncated"])
         expect_equal(record.__dict__["duration_ms"], 500.123)
         expect_equal(record.__dict__["correlation_id"], "corr-abc")
-        expect_equal(record.__dict__["engine"], "pandas")
+        expect_equal(record.__dict__["engine"], "polars")
     finally:
         logger.removeHandler(capture)
 

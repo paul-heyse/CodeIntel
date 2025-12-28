@@ -683,7 +683,7 @@ def compute_function_analytics_result(
     Compute pure function analytics result without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
 
     Parameters
     ----------

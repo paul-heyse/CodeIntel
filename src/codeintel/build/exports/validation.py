@@ -145,10 +145,10 @@ def _validate_parquet(path: Path, validator: jsonschema.Draft202012Validator) ->
 def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, Any]]:
     columns = batch.schema.names
     arrays = [batch.column(idx) for idx in range(batch.num_columns)]
-    records: list[dict[str, Any]] = []
-    for row_idx in range(batch.num_rows):
-        records.append({name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)})
-    return records
+    return [
+        {name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)}
+        for row_idx in range(batch.num_rows)
+    ]
 
 
 def validate_export_files(

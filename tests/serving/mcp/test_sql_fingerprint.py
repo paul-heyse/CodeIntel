@@ -28,7 +28,7 @@ async def test_mcp_sql_fingerprint_is_stable_for_same_request(
     harness = ServingAppHarness.from_snapshot(snapshot)
     settings_overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
         "query_engine": "duckdb",
@@ -55,7 +55,7 @@ async def test_mcp_sql_fingerprint_changes_when_limit_changes(
     harness = ServingAppHarness.from_snapshot(snapshot)
     settings_overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
         "query_engine": "duckdb",

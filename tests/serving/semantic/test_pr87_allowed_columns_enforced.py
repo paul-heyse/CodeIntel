@@ -100,7 +100,7 @@ async def test_strict_mode_rejects_unknown_columns(tmp_path: Path) -> None:
                 pool_size=1,
                 poll_interval_s=0.01,
                 schema_enforcement="strict",
-                result_engine="pandas",
+                result_engine="polars",
             ),
         )
         with pytest.raises(ValueError, match=r"exposes unknown columns"):
@@ -129,7 +129,7 @@ async def test_warn_mode_intersects_unknown_columns(tmp_path: Path) -> None:
                 pool_size=1,
                 poll_interval_s=0.01,
                 schema_enforcement="warn",
-                result_engine="pandas",
+                result_engine="polars",
             ),
         )
         res = kernel.query(SemanticQueryRequest(view_id="demo.view"))

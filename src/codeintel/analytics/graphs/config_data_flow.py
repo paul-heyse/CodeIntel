@@ -328,7 +328,7 @@ def compute_config_data_flow_result(
     """Compute config data flow rows without persisting.
 
     This is the pure compute path for Hamilton DAG-visible I/O. It returns
-    rows ready for materialization via SaveToDecorator/DuckDBRowsSaver.
+    rows ready for materialization via SaveToDecorator/DuckDBRelationSaver.
 
     Parameters
     ----------

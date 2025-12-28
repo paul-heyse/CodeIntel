@@ -27,7 +27,7 @@ from sqlglot.errors import ParseError
 
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.row_models import normalize_row_value_for_type
-from codeintel.storage.constants import DUCKDB_DIALECT
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.helpers.json import encode_json_compact
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import coerce_int
@@ -804,7 +804,8 @@ def _write_relation(
         select_expr = _relation_select_expr(relation, columns=columns)
         _apply_select(select_expr)
     except ParseError:
-        table = relation.fetch_arrow_table()
+        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        table = pa.Table.from_batches(list(reader), schema=reader.schema)
         with registered_temp_relation(gateway.con, table, prefix="ci_rel_") as name:
             select_expr = exp.Select(
                 expressions=[exp.Column(this=exp.to_identifier(column)) for column in columns],

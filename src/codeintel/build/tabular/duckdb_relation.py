@@ -125,15 +125,12 @@ def relation_to_polars(relation: TabularInput) -> pl.LazyFrame:
     if isinstance(relation, pl.LazyFrame):
         return relation
     if isinstance(relation, pa.Table):
-        frame = table_to_lazyframe(relation)
-        return frame
+        return table_to_lazyframe(relation)
     if isinstance(relation, pa.RecordBatchReader):
         reader = cast("pa.RecordBatchReader", relation)
-        frame = arrow_reader_to_lazyframe(reader)
-        return frame
+        return arrow_reader_to_lazyframe(reader)
     reader = relation.fetch_arrow_reader()
-    frame = arrow_reader_to_lazyframe(reader)
-    return frame
+    return arrow_reader_to_lazyframe(reader)
 
 
 __all__ = [

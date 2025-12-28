@@ -10,16 +10,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-import pandas as pd
 import polars as pl
 
 from codeintel.build.hamilton.dag_catalog import DagCatalog
-from codeintel.build.hamilton.materializers import (
-    ArrowDatasetSaver,
-    DuckDBRelationSaver,
-    DuckDBRowsSaver,
-)
-from codeintel.build.schemas.column_resolution import deferred_columns_for_table_key
+from codeintel.build.hamilton.materializers import ArrowDatasetSaver, DuckDBRelationSaver
 from codeintel.build.schemas.service import get_schema_service
 from codeintel.core.hashing import stable_hash
 from codeintel.storage.datasets.manifests import read_dataset_manifest
@@ -34,7 +28,7 @@ if TYPE_CHECKING:
     from codeintel.core.schemas.primitives import Column
 
 
-def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
+def _modules_rows(*, repo: str, commit: str, count: int) -> pl.DataFrame:
     rows = []
     for idx in range(count):
         row = {
@@ -48,7 +42,7 @@ def _modules_rows(*, repo: str, commit: str, count: int) -> pd.DataFrame:
         }
         row["row_hash"] = stable_hash(row)
         rows.append(row)
-    return pd.DataFrame(rows)
+    return pl.DataFrame(rows)
 
 
 def _make_graph() -> DagCatalog:
@@ -164,13 +158,13 @@ def test_materialize_table_validates_when_schema_available(
     rel = env.gateway.con.table("tmp_modules_validate")
     meta = saver.save_data(rel)
     expect_equal(meta["status"], expected="succeeded")
-    expect_equal(meta["row_count"], expected=len(df))
+    expect_equal(meta["row_count"], expected=df.height)
 
 
-def test_rows_saver_resolves_deferred_columns(
+def test_relation_saver_accepts_lazyframe(
     build_harness: HamiltonBuildHarness,
 ) -> None:
-    """DuckDBRowsSaver should resolve deferred columns at execution time."""
+    """DuckDBRelationSaver should persist LazyFrame inputs."""
     harness = build_harness.with_force_targets("modules")
     env = harness.build_env()
     repo = env.snapshot.repo
@@ -183,16 +177,17 @@ def test_rows_saver_resolves_deferred_columns(
         commit=commit,
         schema_columns=tuple(schema.columns),
     )
+    column_names = tuple(column.name for column in schema.columns)
+    frame = pl.DataFrame([row], schema=list(column_names)).lazy()
 
-    saver = DuckDBRowsSaver(
+    saver = DuckDBRelationSaver(
         env=env,
         catalog=graph,
         target_name="modules",
         table_key=table_key,
-        columns=deferred_columns_for_table_key(table_key),
     )
 
-    meta = saver.save_data((row,))
+    meta = saver.save_data(frame.lazy())
 
     expect_equal(meta["status"], expected="succeeded")
     expect_equal(meta["row_count"], expected=1)

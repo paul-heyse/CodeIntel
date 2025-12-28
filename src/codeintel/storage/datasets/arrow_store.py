@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -35,9 +36,18 @@ class ArrowDatasetStats:
     row_group_count: int | None = None
     file_count: int | None = None
     rows_from_metadata: int | None = None
+    total_bytes: int | None = None
+    sort_keys: tuple[str, ...] | None = None
+    column_min_max: Mapping[str, Mapping[str, object]] | None = None
 
     def to_mapping(self) -> dict[str, object] | None:
-        """Return a stats mapping suitable for manifest storage."""
+        """Return a stats mapping suitable for manifest storage.
+
+        Returns
+        -------
+        dict[str, object] | None
+            Manifest-ready stats mapping or None when no stats are present.
+        """
         stats: dict[str, object] = {}
         if self.row_group_count is not None:
             stats["row_groups"] = self.row_group_count
@@ -45,6 +55,14 @@ class ArrowDatasetStats:
             stats["file_count"] = self.file_count
         if self.rows_from_metadata is not None:
             stats["rows_from_metadata"] = self.rows_from_metadata
+        if self.total_bytes is not None:
+            stats["total_bytes"] = self.total_bytes
+        if self.sort_keys:
+            stats["sort_keys"] = list(self.sort_keys)
+        if self.column_min_max:
+            stats["min_max"] = {
+                column: dict(values) for column, values in self.column_min_max.items()
+            }
         return stats or None
 
 
@@ -190,11 +208,18 @@ def dataset_stats(dataset: ds.Dataset) -> ArrowDatasetStats:
     """
     files = tuple(dataset.files)
     parquet_stats = _parquet_stats(files)
+    sort_keys = parquet_stats.sort_keys if parquet_stats and parquet_stats.sort_keys else None
+    column_min_max = (
+        parquet_stats.column_min_max if parquet_stats and parquet_stats.column_min_max else None
+    )
     return ArrowDatasetStats(
         row_count=_count_rows(dataset),
         row_group_count=parquet_stats.row_group_count if parquet_stats else None,
         file_count=parquet_stats.file_count if parquet_stats else None,
         rows_from_metadata=parquet_stats.rows_from_metadata if parquet_stats else None,
+        total_bytes=parquet_stats.total_bytes if parquet_stats else None,
+        sort_keys=sort_keys,
+        column_min_max=column_min_max,
     )
 
 
@@ -304,6 +329,9 @@ class _ParquetStats:
     row_group_count: int
     file_count: int
     rows_from_metadata: int
+    total_bytes: int
+    sort_keys: tuple[str, ...]
+    column_min_max: dict[str, dict[str, object]]
 
 
 def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
@@ -311,17 +339,164 @@ def _parquet_stats(files: tuple[str, ...]) -> _ParquetStats | None:
         return None
     row_groups = 0
     rows = 0
+    total_bytes = 0
+    sort_keys: list[str] = []
+    sort_key_seen: set[str] = set()
+    min_max: dict[str, tuple[object, object]] = {}
     for path in files:
-        parquet_file = pq.ParquetFile(path)
+        file_path = Path(path)
+        try:
+            total_bytes += file_path.stat().st_size
+        except OSError:
+            continue
+        try:
+            parquet_file = pq.ParquetFile(file_path)
+        except (OSError, pa.ArrowInvalid):
+            continue
         row_groups += parquet_file.num_row_groups
         metadata = parquet_file.metadata
         if metadata is not None:
             rows += metadata.num_rows
+            _extend_sort_keys(
+                sort_keys,
+                sort_key_seen,
+                metadata=metadata,
+                schema=parquet_file.schema_arrow,
+            )
+            _merge_min_max(metadata, min_max)
     return _ParquetStats(
         row_group_count=row_groups,
         file_count=len(files),
         rows_from_metadata=rows,
+        total_bytes=total_bytes,
+        sort_keys=tuple(sort_keys),
+        column_min_max=_min_max_to_mapping(min_max),
     )
+
+
+def _extend_sort_keys(
+    keys: list[str],
+    seen: set[str],
+    *,
+    metadata: pq.FileMetaData,
+    schema: pa.Schema,
+) -> None:
+    sort_columns = getattr(metadata, "sorting_columns", None)
+    if not sort_columns:
+        return
+    names = schema.names
+    for column in sort_columns:
+        index = getattr(column, "column_idx", None)
+        if index is None or index < 0 or index >= len(names):
+            continue
+        name = names[index]
+        if name in seen:
+            continue
+        seen.add(name)
+        keys.append(name)
+
+
+def _merge_min_max(
+    metadata: pq.FileMetaData,
+    accumulator: dict[str, tuple[object, object]],
+) -> None:
+    for group_index in range(metadata.num_row_groups):
+        row_group = metadata.row_group(group_index)
+        for column_index in range(row_group.num_columns):
+            column = row_group.column(column_index)
+            stats = column.statistics
+            if stats is None or not getattr(stats, "has_min_max", False):
+                continue
+            min_value, max_value = _extract_min_max(stats)
+            if min_value is None or max_value is None:
+                continue
+            column_name = column.path_in_schema
+            accumulator[column_name] = _merge_min_max_pair(
+                accumulator.get(column_name),
+                min_value=min_value,
+                max_value=max_value,
+            )
+
+
+def _extract_min_max(stats: object) -> tuple[object | None, object | None]:
+    min_value = _normalize_stat_value(getattr(stats, "min", None))
+    max_value = _normalize_stat_value(getattr(stats, "max", None))
+    if min_value is None or max_value is None:
+        return None, None
+    return min_value, max_value
+
+
+def _normalize_stat_value(value: object) -> object | None:
+    if value is None:
+        return None
+    if isinstance(value, pa.Scalar):
+        return value.as_py()
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return item()
+        except (TypeError, ValueError, OverflowError):
+            return value
+    return value
+
+
+def _merge_min_max_pair(
+    current: tuple[object, object] | None,
+    *,
+    min_value: object,
+    max_value: object,
+) -> tuple[object, object]:
+    if current is None:
+        return min_value, max_value
+    current_min, current_max = current
+    return _safe_min(current_min, min_value), _safe_max(current_max, max_value)
+
+
+def _safe_min(current: object, candidate: object) -> object:
+    try:
+        return candidate if candidate < current else current
+    except TypeError:
+        return current
+
+
+def _safe_max(current: object, candidate: object) -> object:
+    try:
+        return candidate if candidate > current else current
+    except TypeError:
+        return current
+
+
+def _min_max_to_mapping(
+    min_max: dict[str, tuple[object, object]],
+) -> dict[str, dict[str, object]]:
+    return {
+        column: {
+            "min": _json_safe_value(values[0]),
+            "max": _json_safe_value(values[1]),
+        }
+        for column, values in min_max.items()
+    }
+
+
+def _json_safe_value(value: object) -> object:
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, bytes):
+        return value.hex()
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return str(value)
+    as_py = getattr(value, "as_py", None)
+    if callable(as_py):
+        return _json_safe_value(as_py())
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            return _json_safe_value(item())
+        except (TypeError, ValueError, OverflowError):
+            return str(value)
+    return str(value)
 
 
 __all__ = [

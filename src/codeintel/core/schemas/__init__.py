@@ -23,7 +23,6 @@ from codeintel.core.schemas.authority import (
 from codeintel.core.schemas.contract_primitives import DatasetContract
 from codeintel.core.schemas.hashing import canonical_type, schema_hash
 from codeintel.core.schemas.json_schema_gen import json_schema_from_table_schema
-from codeintel.core.schemas.pandera_gen import pandera_schema_from_table_schema
 from codeintel.core.schemas.primitives import Column, ColumnType, Index, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider, SchemaProvider
 from codeintel.core.schemas.row_models import (
@@ -62,7 +61,6 @@ __all__ = [
     "clear_schema_service",
     "get_schema_service",
     "json_schema_from_table_schema",
-    "pandera_schema_from_table_schema",
     "row_binding_for_table_schema",
     "schema_hash",
     "set_schema_service",

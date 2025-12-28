@@ -176,8 +176,7 @@ def export_repo_map_json(
                 arrays = [batch.column(idx) for idx in range(batch.num_columns)]
                 for row_idx in range(batch.num_rows):
                     record = {
-                        name: arrays[idx][row_idx].as_py()
-                        for idx, name in enumerate(columns)
+                        name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)
                     }
                     if first:
                         first = False

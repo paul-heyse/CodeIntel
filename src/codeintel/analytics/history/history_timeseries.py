@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, SupportsFloat, SupportsIndex
 
 import polars as pl
 
+from codeintel.build.hamilton.native.ingestion.frame_utils import empty_lazyframe_for_table
 from codeintel.core.hashing import sha256_short
 from codeintel.core.schemas import get_schema_service
 from codeintel.core.schemas.row_serialization import row_serializer_for_table_key
@@ -151,12 +152,12 @@ def build_history_timeseries_rows(
     """
     if not options.commits:
         log.info("No commits provided for history_timeseries; skipping.")
-        return ()
+        return empty_lazyframe_for_table(HISTORY_TIMESERIES_TABLE_KEY)
 
     selection = _select_entities(snapshot, options, gateway_resolver)
     if not selection.functions and not selection.modules:
         log.info("No entities selected for history_timeseries; skipping.")
-        return ()
+        return empty_lazyframe_for_table(HISTORY_TIMESERIES_TABLE_KEY)
 
     now = datetime.now(tz=UTC)
     serializer = row_serializer_for_table_key(HISTORY_TIMESERIES_TABLE_KEY)

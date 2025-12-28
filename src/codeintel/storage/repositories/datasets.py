@@ -5,10 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import pandas as pd
+import polars as pl
 
 from codeintel.storage.repositories.base import BaseRepository
-from codeintel.storage.validation.pandera_df import validate_df
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.validation.columnar import validate_record_batch_reader
 
 if TYPE_CHECKING:
     from codeintel.storage.repositories.base import RowDict
@@ -26,9 +27,9 @@ class DatasetReadRepository(BaseRepository):
         *,
         limit: int | None = None,
         offset: int = 0,
-    ) -> pd.DataFrame:
+    ) -> pl.DataFrame:
         """
-        Return dataset rows as a Pandas DataFrame validated by Pandera.
+        Return dataset rows as a Polars DataFrame validated by Arrow checks.
 
         Parameters
         ----------
@@ -41,7 +42,7 @@ class DatasetReadRepository(BaseRepository):
 
         Returns
         -------
-        pandas.DataFrame
+        polars.DataFrame
             Validated dataset slice.
         """
         relation = self._relation(table_key)
@@ -50,9 +51,12 @@ class DatasetReadRepository(BaseRepository):
             limit_value = limit if limit is not None else MAX_ROW_LIMIT
             relation = relation.limit(limit_value, offset=offset)
 
-        table = relation.fetch_arrow_table()
-        df = table.to_pandas()
-        return validate_df(table_key, df)
+        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+        validated = validate_record_batch_reader(table_key, reader)
+        frame = pl.from_arrow(validated)
+        if isinstance(frame, pl.Series):
+            frame = frame.to_frame()
+        return frame
 
     def read_dataset_rows(self, table_key: str, *, limit: int, offset: int) -> list[RowDict]:
         """

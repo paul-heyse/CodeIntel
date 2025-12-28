@@ -277,10 +277,7 @@ def dataset_info_structured(
     schema_service = get_schema_service()
     record = schema_service.get_record(table_key)
     table_schema = record.table_schema
-    if table_schema is not None:
-        columns = tuple(table_schema.column_names())
-    else:
-        columns = ()
+    columns = tuple(table_schema.column_names()) if table_schema is not None else ()
 
     contracts = list(
         iter_contracts(settings=ContractResolutionSettings(mode=ContractResolutionMode.FULL))

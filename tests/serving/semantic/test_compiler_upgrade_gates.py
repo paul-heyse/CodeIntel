@@ -143,7 +143,7 @@ async def test_compiler_upgrade_gate_numeric_filter_sql_is_stable(tmp_path: Path
                 hot_swap=False,
                 pool_size=1,
                 poll_interval_s=0.01,
-                result_engine="pandas",
+                result_engine="polars",
                 schema_enforcement="strict",
             ),
         )
@@ -188,7 +188,7 @@ async def test_compiler_upgrade_gate_string_contains_sql_is_stable(tmp_path: Pat
                 hot_swap=False,
                 pool_size=1,
                 poll_interval_s=0.01,
-                result_engine="pandas",
+                result_engine="polars",
                 schema_enforcement="strict",
             ),
         )

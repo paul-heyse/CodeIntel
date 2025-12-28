@@ -81,14 +81,16 @@ def arrow_ipc_response(
 
     Parameters
     ----------
-    reader
-        Arrow record batch reader to stream.
+    source
+        RecordBatchReader or pre-encoded IPC byte chunks to stream.
     filename
         Optional filename for Content-Disposition header.
     headers
         Optional extra response headers.
     metadata
         Optional schema metadata to inject into the stream.
+    cancel_check
+        Optional cancellation hook invoked between record batches.
 
     Returns
     -------

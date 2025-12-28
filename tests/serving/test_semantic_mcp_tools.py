@@ -47,7 +47,7 @@ async def test_mcp_tools_catalog_describe_and_query(tmp_path: Path) -> None:
     harness = _make_harness(tmp_path)
     overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
     }
@@ -97,7 +97,7 @@ async def test_mcp_tool_annotations_present(tmp_path: Path) -> None:
     harness = _make_harness(tmp_path)
     overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
     }
 
@@ -126,7 +126,7 @@ async def test_mcp_tool_error_handling(tmp_path: Path) -> None:
     harness = _make_harness(tmp_path)
     overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
         "mcp_mask_errors": False,
     }
@@ -153,7 +153,7 @@ async def test_mcp_typed_response_structure(tmp_path: Path) -> None:
     harness = _make_harness(tmp_path)
     overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
     }
 
@@ -199,7 +199,7 @@ async def test_mcp_query_response_has_result_data(tmp_path: Path) -> None:
     harness = _make_harness(tmp_path)
     overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
     }
 
@@ -241,7 +241,7 @@ async def test_mcp_serving_meta_typed_response(tmp_path: Path) -> None:
     harness = _make_harness(tmp_path)
     overrides: ServingSettingsOverrides = {
         "hot_swap": False,
-        "result_engine": "pandas",
+        "result_engine": "polars",
         "schema_enforcement": "strict",
     }
 
