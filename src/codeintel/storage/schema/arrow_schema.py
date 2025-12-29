@@ -100,6 +100,7 @@ def _apply_runtime_metadata(
     fields: list[pa.Field] = []
     for field in schema:
         updates: dict[str, object] = {}
+        updated_field = field
         if pii_by_column is not None:
             pii_class = pii_by_column.get(field.name)
             if pii_class is not None:
@@ -109,8 +110,8 @@ def _apply_runtime_metadata(
             if lineage:
                 updates["codeintel.lineage_edges"] = _lineage_payload(lineage)
         if updates:
-            field = _merge_field_metadata(field, updates)
-        fields.append(field)
+            updated_field = _merge_field_metadata(field, updates)
+        fields.append(updated_field)
     return pa.schema(fields, metadata=schema.metadata)
 
 

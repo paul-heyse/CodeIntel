@@ -57,8 +57,7 @@ async def test_query_scan_metrics_from_manifest(tmp_path: Path) -> None:
             ),
         )
         result = kernel.query(SemanticQueryRequest(view_id="demo.view", limit=2))
-        metrics = result.scan_metrics
-        expect_is_not_none(metrics)
+        metrics = expect_is_not_none(result.scan_metrics)
         expect_equal(metrics.row_count, expected_row_count)
         expect_equal(metrics.file_count, expected_file_count)
         expect_equal(metrics.total_bytes, expected_total_bytes)

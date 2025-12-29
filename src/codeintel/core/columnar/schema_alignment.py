@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 
 import pyarrow as pa
+import pyarrow.compute as pc
 
 from codeintel.core.schemas.arrow_gen import (
     DEFAULT_EXTRAS_COLUMN,
+    DEFAULT_EXTRAS_POLICY,
     EXTRAS_POLICIES,
     ExtrasPolicy,
 )
@@ -16,12 +19,22 @@ from codeintel.core.schemas.arrow_gen import (
 _JSON_SEPARATORS = (",", ":")
 
 
+@dataclass(frozen=True, slots=True)
+class _AlignmentContext:
+    """Shared alignment context for contract enforcement."""
+
+    extras_policy: ExtrasPolicy
+    extras_column: str
+    extra_fields: set[str]
+    promote_options: pc.CastOptions | None
+
+
 def align_reader_to_contract(
     reader: pa.RecordBatchReader,
     contract_schema: pa.Schema,
     *,
     extras_policy: ExtrasPolicy,
-    promote_options: pa.compute.CastOptions | None = None,
+    promote_options: pc.CastOptions | None = None,
 ) -> pa.RecordBatchReader:
     """Align a RecordBatchReader to a contract schema.
 
@@ -54,13 +67,16 @@ def align_reader_to_contract(
     if extras_policy == "reject" and extra_fields:
         msg = f"Unexpected columns for contract: {sorted(extra_fields)}"
         raise ValueError(msg)
-    target_schema = _target_schema(
-        contract_schema=contract_schema,
-        incoming_schema=reader.schema,
+    context = _AlignmentContext(
         extras_policy=extras_policy,
         extras_column=extras_column,
         extra_fields=extra_fields,
         promote_options=promote_options,
+    )
+    target_schema = _target_schema(
+        contract_schema=contract_schema,
+        incoming_schema=reader.schema,
+        context=context,
     )
 
     def _aligned_batches() -> Iterator[pa.RecordBatch]:
@@ -68,38 +84,57 @@ def align_reader_to_contract(
             yield _align_batch(
                 batch=batch,
                 target_schema=target_schema,
-                contract_names=contract_names,
-                extras_policy=extras_policy,
-                extras_column=extras_column,
-                extra_fields=extra_fields,
-                promote_options=promote_options,
+                context=context,
             )
 
     return pa.RecordBatchReader.from_batches(target_schema, _aligned_batches())
+
+
+def extras_policy_from_schema(
+    schema: pa.Schema,
+    *,
+    default: ExtrasPolicy = DEFAULT_EXTRAS_POLICY,
+) -> ExtrasPolicy:
+    """Resolve the extras policy from Arrow schema metadata.
+
+    Parameters
+    ----------
+    schema
+        Arrow schema with optional contract metadata.
+    default
+        Fallback extras policy when metadata is missing or invalid.
+
+    Returns
+    -------
+    ExtrasPolicy
+        Resolved extras policy.
+    """
+    metadata = _decode_metadata(schema.metadata)
+    raw = metadata.get("codeintel.extras_policy")
+    if isinstance(raw, str) and raw in EXTRAS_POLICIES:
+        return raw
+    return default
 
 
 def _target_schema(
     *,
     contract_schema: pa.Schema,
     incoming_schema: pa.Schema,
-    extras_policy: ExtrasPolicy,
-    extras_column: str,
-    extra_fields: set[str],
-    promote_options: pa.compute.CastOptions | None,
+    context: _AlignmentContext,
 ) -> pa.Schema:
     base_schema = contract_schema
-    if promote_options is not None:
+    if context.promote_options is not None:
         unified = pa.unify_schemas(
             [contract_schema, incoming_schema],
-            promote_options=promote_options,
+            promote_options=context.promote_options,
         )
         resolved_fields = [_resolved_field(field, unified) for field in contract_schema]
         base_schema = pa.schema(resolved_fields, metadata=contract_schema.metadata)
-    if extras_column in base_schema.names:
+    if context.extras_column in base_schema.names:
         return base_schema
-    if extras_policy != "retain" or not extra_fields:
+    if context.extras_policy != "retain" or not context.extra_fields:
         return base_schema
-    return base_schema.append(_extras_field(extras_column))
+    return base_schema.append(_extras_field(context.extras_column))
 
 
 def _resolved_field(field: pa.Field, unified: pa.Schema) -> pa.Field:
@@ -114,24 +149,20 @@ def _align_batch(
     *,
     batch: pa.RecordBatch,
     target_schema: pa.Schema,
-    contract_names: set[str],
-    extras_policy: ExtrasPolicy,
-    extras_column: str,
-    extra_fields: set[str],
-    promote_options: pa.compute.CastOptions | None,
+    context: _AlignmentContext,
 ) -> pa.RecordBatch:
     arrays: list[pa.Array] = []
     batch_schema = batch.schema
     extras_array: pa.Array | None = None
-    if extras_policy == "retain" and extra_fields:
-        extras_array = _extras_array(batch, extra_fields)
+    if context.extras_policy == "retain" and context.extra_fields:
+        extras_array = _extras_array(batch, context.extra_fields)
     for field in target_schema:
-        if field.name == extras_column and extras_array is not None:
-            arrays.append(_cast_array(extras_array, field.type, promote_options))
+        if field.name == context.extras_column and extras_array is not None:
+            arrays.append(_coerce_array(field, extras_array, context.promote_options))
             continue
         if field.name in batch_schema.names:
             index = batch_schema.get_field_index(field.name)
-            arrays.append(_cast_array(batch.column(index), field.type, promote_options))
+            arrays.append(_coerce_array(field, batch.column(index), context.promote_options))
             continue
         arrays.append(pa.nulls(batch.num_rows, type=field.type))
     return pa.record_batch(arrays, schema=target_schema)
@@ -155,13 +186,46 @@ def _extras_array(batch: pa.RecordBatch, extra_fields: set[str]) -> pa.Array:
 def _cast_array(
     array: pa.Array,
     target_type: pa.DataType,
-    promote_options: pa.compute.CastOptions | None,
+    promote_options: pc.CastOptions | None,
 ) -> pa.Array:
     if array.type == target_type:
         return array
     if promote_options is None:
-        return pa.compute.cast(array, target_type)
-    return pa.compute.cast(array, target_type, options=promote_options)
+        return pc.cast(array, target_type)
+    return pc.cast(array, target_type, options=promote_options)
+
+
+def _coerce_array(
+    field: pa.Field,
+    array: pa.Array,
+    promote_options: pc.CastOptions | None,
+) -> pa.Array:
+    try:
+        return _cast_array(array, field.type, promote_options)
+    except (pa.ArrowInvalid, pa.ArrowTypeError):
+        if _is_json_field(field) and pa.types.is_string(field.type):
+            return _json_string_array(array)
+        raise
+
+
+def _is_json_field(field: pa.Field) -> bool:
+    metadata = _decode_metadata(field.metadata)
+    return metadata.get("codeintel.column_type") == "JSON"
+
+
+def _json_string_array(array: pa.Array) -> pa.Array:
+    return pa.array(
+        [_json_string_value(value) for value in array.to_pylist()],
+        type=pa.string(),
+    )
+
+
+def _json_string_value(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, sort_keys=True, separators=_JSON_SEPARATORS)
 
 
 def _extras_field(name: str) -> pa.Field:
@@ -212,4 +276,4 @@ def _validate_extras_policy(extras_policy: ExtrasPolicy) -> None:
         raise ValueError(msg)
 
 
-__all__ = ["align_reader_to_contract"]
+__all__ = ["align_reader_to_contract", "extras_policy_from_schema"]

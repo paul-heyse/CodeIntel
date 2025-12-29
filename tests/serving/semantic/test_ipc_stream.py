@@ -12,8 +12,12 @@ from codeintel.serving.db.manager import ServingDBManager
 from codeintel.serving.semantic.kernel import SemanticQueryKernel
 from codeintel.serving.semantic.models import SemanticQueryRequest
 from codeintel.serving.settings import ServingSettings
+from codeintel.storage.contracts.provider import load_contract_catalog_from_connection
+from codeintel.storage.gateway import StorageConfig, open_gateway
+from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.gateway.pool import PoolConfig
 from tests._helpers.assertions.expectation_assertions import expect_equal, expect_true
+from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.serving_snapshot_factory import ServingSnapshotFactory
 
 if TYPE_CHECKING:
@@ -24,6 +28,23 @@ def _decode_metadata(metadata: dict[bytes, bytes]) -> dict[str, object]:
     return {
         key.decode("utf-8"): json.loads(value.decode("utf-8")) for key, value in metadata.items()
     }
+
+
+def _seed_contract_catalog(snapshot: ServingSnapshotFactory, db_path: Path, repo: str, commit: str) -> None:
+    config = StorageConfig(
+        db_path=db_path,
+        read_only=False,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        repo=repo,
+        commit=commit,
+    )
+    gateway = open_gateway(config, seed_contract_catalog=seed_contract_catalog)
+    try:
+        load_contract_catalog_from_connection(gateway.con)
+    finally:
+        gateway.close()
 
 
 @pytest.mark.anyio

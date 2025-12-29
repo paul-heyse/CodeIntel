@@ -61,44 +61,42 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
         schema_index = runtime_bundle.schema_index
         if schema_index is None:
             return fail_execution_failed("meta", "Runtime schema_index is required")
-        schema_provider = get_schema_provider()
-        request = SchemaManifestRequest(
-            all_targets=True,
-            stable=True,
-            version="v2",
-            include_views=True,
-            include_artifacts=True,
-            include_provenance=True,
-        )
-
         manifest = compile_schema_manifest(
-            provider=schema_provider,
+            provider=get_schema_provider(),
             context=SchemaManifestContext(
                 catalog=runtime_bundle.catalog,
                 schema_index=schema_index,
                 tag_query=runtime_bundle.tag_query,
             ),
-            request=request,
+            request=SchemaManifestRequest(
+                all_targets=True,
+                stable=True,
+                version="v2",
+                include_views=True,
+                include_artifacts=True,
+                include_provenance=True,
+            ),
         )
     except (KeyError, RuntimeError, TypeError, ValueError) as exc:
         return fail_execution_failed("meta", str(exc), status=500)
     finally:
         inference_gateway.close()
 
-    config = StorageConfig(
-        db_path=ctx.runtime.db_path,
-        read_only=False,
-        apply_schema=False,
-        ensure_views=False,
-        validate_schema=False,
-        repo=snapshot.repo,
-        commit=snapshot.commit,
-    )
-
     def _seed_contract_catalog(con: DuckDBConnection) -> None:
         persist_contract_catalog_to_connection(con, inputs={"source": "meta.sync"})
 
-    gateway = open_gateway(config, seed_contract_catalog=_seed_contract_catalog)
+    gateway = open_gateway(
+        StorageConfig(
+            db_path=ctx.runtime.db_path,
+            read_only=False,
+            apply_schema=False,
+            ensure_views=False,
+            validate_schema=False,
+            repo=snapshot.repo,
+            commit=snapshot.commit,
+        ),
+        seed_contract_catalog=_seed_contract_catalog,
+    )
     try:
         run_id = new_run_id("meta")
         catalog_request = SchemaCatalogRequest(
@@ -116,6 +114,10 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
             request=catalog_request,
             catalog_hash=schema_result.catalog_hash,
         )
+        backfill_rows = gateway.schemas.backfill_renderer_cache(
+            manifest,
+            include_views=catalog_request.include_views,
+        )
         contract_result = persist_contract_catalog(
             gateway,
             inputs={"source": "meta.sync"},
@@ -125,27 +127,29 @@ def meta_sync_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:
     finally:
         gateway.close()
 
-    payload: dict[str, object] = {
-        "run_id": run_id,
-        "repo": snapshot.repo,
-        "commit": snapshot.commit,
-        "schema_manifest_hash": schema_result.catalog_hash,
-        "schema_manifest_tables": schema_result.tables,
-        "schema_manifest_views": schema_result.views,
-        "schema_versions_rows": schema_result.schema_versions_rows,
-        "table_schema_registry_rows": schema_result.table_schema_registry_rows,
-        "schema_manifest_runs_rows": schema_result.schema_manifest_runs_rows,
-        "override_refresh_status": override_result.status,
-        "override_refresh_reason": override_result.reason,
-        "override_refresh_version_id": override_result.version_id,
-        "override_refresh_tables": override_result.tables,
-        "override_refresh_schema_versions_rows": override_result.schema_versions_rows,
-        "override_refresh_versions_rows": override_result.override_versions_rows,
-        "override_refresh_registry_rows": override_result.override_registry_rows,
-        "contract_catalog_hash": contract_result.catalog_hash,
-        "contract_count": contract_result.contract_count,
-    }
-    return CliResult.ok(payload)
+    return CliResult.ok(
+        {
+            "run_id": run_id,
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "schema_manifest_hash": schema_result.catalog_hash,
+            "schema_manifest_tables": schema_result.tables,
+            "schema_manifest_views": schema_result.views,
+            "schema_versions_rows": schema_result.schema_versions_rows,
+            "table_schema_registry_rows": schema_result.table_schema_registry_rows,
+            "schema_manifest_runs_rows": schema_result.schema_manifest_runs_rows,
+            "override_refresh_status": override_result.status,
+            "override_refresh_reason": override_result.reason,
+            "override_refresh_version_id": override_result.version_id,
+            "override_refresh_tables": override_result.tables,
+            "override_refresh_schema_versions_rows": override_result.schema_versions_rows,
+            "override_refresh_versions_rows": override_result.override_versions_rows,
+            "override_refresh_registry_rows": override_result.override_registry_rows,
+            "renderer_cache_backfill_rows": backfill_rows,
+            "contract_catalog_hash": contract_result.catalog_hash,
+            "contract_count": contract_result.contract_count,
+        }
+    )
 
 
 def meta_override_pin_handler(ctx: CommandContext) -> CliResult[dict[str, object]]:

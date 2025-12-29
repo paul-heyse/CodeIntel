@@ -25,11 +25,18 @@ from duckdb import ColumnExpression, ConstantExpression, ExplainType
 from sqlglot import parse_one
 from sqlglot.errors import ParseError
 
-from codeintel.core.columnar import ColumnarStream, coerce_arrow_reader, coerce_arrow_table
+from codeintel.core.columnar import (
+    ColumnarStream,
+    align_reader_to_contract,
+    coerce_arrow_reader,
+    coerce_arrow_table,
+    extras_policy_from_schema,
+)
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE, DUCKDB_DIALECT
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.query_results import coerce_int
+from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.snapshot_scoping import RepoCommitScope
 from codeintel.storage.staging import registered_temp_relation
 from codeintel.storage.upsert import UpsertSpec
@@ -40,7 +47,6 @@ if TYPE_CHECKING:
     from codeintel.config.primitives import SnapshotRef
     from codeintel.core.hamilton.tag_query import TagQuery
     from codeintel.core.schemas.contract_primitives import DatasetContract
-    from codeintel.core.columnar import SupportsArrowCStream, SupportsDataFrameInterop
     from codeintel.storage.duckdb_types import DuckDBConnection
     from codeintel.storage.gateway import StorageGateway
 
@@ -48,14 +54,8 @@ from codeintel.storage.duckdb_types import DuckDBCatalogException, DuckDBError, 
 
 WriteMode = Literal["append", "replace", "upsert"]
 ReplaceScope = Literal["snapshot", "table"]
-TabularInput = (
-    DuckDBRelation
-    | pa.Table
-    | pa.RecordBatchReader
-    | ColumnarStream
-    | SupportsArrowCStream
-    | SupportsDataFrameInterop
-)
+
+type TabularInput = DuckDBRelation | pa.Table | pa.RecordBatchReader | ColumnarStream | object
 
 _PROFILE_DIR_ENV = "CODEINTEL_WAREHOUSE_PROFILING_DIR"
 
@@ -221,7 +221,7 @@ class Warehouse:
     def materialize_table(
         self,
         table_key: str,
-        relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
+        relation: TabularInput,
         *,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:
@@ -247,10 +247,14 @@ class Warehouse:
         )
 
         def _write() -> int | None:
+            coerced = _coerce_tabular_input(
+                relation,
+                batch_size=DEFAULT_ARROW_BATCH_SIZE,
+            )
             return _write_tabular(
                 gateway=self.gateway,
                 table_key=table_key,
-                relation=relation,
+                relation=coerced,
                 options=active,
             )
 
@@ -787,6 +791,13 @@ def _write_tabular(
     relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
     options: MaterializeOptions,
 ) -> int | None:
+    table_row_count: int | None = relation.num_rows if isinstance(relation, pa.Table) else None
+    contract_schema = _contract_schema_for_table(gateway, table_key=table_key)
+    if contract_schema is not None:
+        relation = _align_tabular_input(
+            relation,
+            contract_schema=contract_schema,
+        )
     if isinstance(relation, DuckDBRelation):
         return _write_relation(
             gateway=gateway,
@@ -817,9 +828,62 @@ def _write_tabular(
                 table_key=table_key,
                 relation=rel,
                 options=options,
-                write_state=RelationWriteState(row_count=None, skip_row_count=True),
+                write_state=RelationWriteState(row_count=table_row_count, skip_row_count=True),
             )
     msg = f"Unsupported tabular input for {table_key}: {type(relation)!r}"
+    raise TypeError(msg)
+
+
+def _contract_schema_for_table(
+    gateway: StorageGateway,
+    *,
+    table_key: str,
+) -> pa.Schema | None:
+    try:
+        return arrow_schema_for_table_key(gateway.con, table_key=table_key)
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _align_tabular_input(
+    relation: DuckDBRelation | pa.Table | pa.RecordBatchReader,
+    *,
+    contract_schema: pa.Schema,
+) -> DuckDBRelation | pa.RecordBatchReader:
+    if isinstance(relation, DuckDBRelation):
+        return relation
+    reader: pa.RecordBatchReader
+    if isinstance(relation, pa.Table):
+        reader = pa.RecordBatchReader.from_batches(relation.schema, relation.to_batches())
+    else:
+        reader = relation
+    return align_reader_to_contract(
+        reader,
+        contract_schema,
+        extras_policy=extras_policy_from_schema(contract_schema),
+    )
+
+
+def _coerce_tabular_input(
+    value: TabularInput,
+    *,
+    batch_size: int,
+) -> DuckDBRelation | pa.Table | pa.RecordBatchReader:
+    if isinstance(value, DuckDBRelation):
+        return value
+    if isinstance(value, pa.Table):
+        return value
+    if isinstance(value, pa.RecordBatchReader):
+        return value
+    if isinstance(value, ColumnarStream):
+        return value.to_reader(batch_size=batch_size)
+    reader = coerce_arrow_reader(value, batch_size=batch_size)
+    if reader is not None:
+        return reader
+    table = coerce_arrow_table(value)
+    if table is not None:
+        return table
+    msg = f"Unsupported tabular input: {type(value)!r}"
     raise TypeError(msg)
 
 
@@ -827,6 +891,7 @@ __all__ = [
     "MaterializationResult",
     "MaterializeOptions",
     "ReplaceScope",
+    "TabularInput",
     "UpsertConfig",
     "Warehouse",
     "WriteMode",

@@ -57,7 +57,8 @@ def _select_columns(lazyframe: PolarsLazyFrame, *, columns: list[str]) -> Polars
         return lazyframe.select(columns)
     by_name = getattr(selectors, "by_name", None)
     if callable(by_name):
-        return lazyframe.select(by_name(columns))
+        selector = cast("PolarsExpr", by_name(columns))
+        return lazyframe.select(selector)
     return lazyframe.select(columns)
 
 

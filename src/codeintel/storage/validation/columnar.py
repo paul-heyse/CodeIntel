@@ -164,7 +164,11 @@ def _all_valid(values: pa.Array | pa.ChunkedArray) -> bool:
         mask = is_valid(values)
         all_fn = getattr(pc, "all", None)
         if callable(all_fn):
-            return bool(all_fn(mask).as_py())
+            result = all_fn(mask)
+            as_py = getattr(result, "as_py", None)
+            if callable(as_py):
+                value = as_py()
+                return bool(value) if value is not None else False
         return not _has_nulls(values)
     except (TypeError, pa.ArrowInvalid):
         return not _has_nulls(values)

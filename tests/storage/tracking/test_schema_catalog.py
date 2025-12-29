@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import base64
 from typing import TYPE_CHECKING, cast
+
+import pyarrow as pa
+import pytest
 
 from codeintel.build.schemas.inference_service import SchemaInferenceService
 from codeintel.build.schemas.manifest import SchemaManifest, TableProvenance
 from codeintel.build.schemas.schema_index import SchemaDerivation, SchemaIndex
+from codeintel.core.hashing.fingerprint import fingerprint
 from codeintel.core.schemas.hashing import schema_hash
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.helpers.json import decode_json_dict
 from codeintel.storage.helpers.table_key import split_table_key
+from codeintel.storage.metadata.meta_catalog import meta_table_ref
 from codeintel.storage.tracking.schema_catalog import SchemaCatalogRequest
 from tests._helpers.assertions import expect_equal, expect_is_none, expect_is_not_none
 
@@ -34,6 +41,12 @@ def _provenance_for_schema(table_schema: TableSchema) -> TableProvenance:
         derivation_source="test",
         inference_status="inferred",
     )
+
+
+def _decode_arrow_schema(payload: str) -> pa.Schema:
+    raw = base64.b64decode(payload)
+    buffer = pa.py_buffer(raw)
+    return pa.ipc.read_schema(pa.BufferReader(buffer))
 
 
 def test_schema_manifest_roundtrip_from_metadata(fresh_gateway: StorageGateway) -> None:
@@ -373,3 +386,94 @@ def test_registry_health_snapshot_reflects_latest_manifest(
     for table_key in table_keys.values():
         loaded_schema = fresh_gateway.schemas.load_table_schema(table_key)
         expect_is_not_none(loaded_schema, label=f"schema_digest_{table_key}")
+
+
+def test_schema_versions_persist_arrow_contract_payload(
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Schema versions should store Arrow contract payloads in renderer_cache."""
+    table_key = "analytics.arrow_contract_payload"
+    table_schema = _schema_for_key(table_key)
+    manifest = SchemaManifest(
+        version="v2",
+        tables=(table_schema,),
+        table_provenance={table_key: _provenance_for_schema(table_schema)},
+    )
+
+    fresh_gateway.schemas.persist_schema_manifest(
+        manifest,
+        request=SchemaCatalogRequest(
+            run_id="run-arrow-contract",
+            repo="org/repo",
+            commit="deadbeef",
+        ),
+    )
+
+    schema_digest = fingerprint(table_schema.to_json_obj())
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    row = expect_is_not_none(
+        fresh_gateway.con.execute(
+            f"SELECT renderer_cache FROM {versions_ref} WHERE schema_digest = ?",
+            [schema_digest],
+        ).fetchone(),
+        label="renderer_cache_row",
+    )
+    renderer_cache = decode_json_dict(row[0])
+    payload = renderer_cache.get("arrow_schema_ipc_b64")
+    if not isinstance(payload, str):
+        pytest.fail("Expected arrow_schema_ipc_b64 in renderer_cache")
+
+    schema = _decode_arrow_schema(payload)
+    metadata = schema.metadata or {}
+    schema_hash_value = metadata.get(b"codeintel.schema_hash")
+    if schema_hash_value is None or schema_hash_value.decode("utf-8") != schema_hash(
+        table_schema
+    ):
+        pytest.fail("Arrow contract schema_hash metadata mismatch")
+    schema_digest_value = metadata.get(b"codeintel.schema_digest")
+    if schema_digest_value is None or schema_digest_value.decode("utf-8") != schema_digest:
+        pytest.fail("Arrow contract schema_digest metadata mismatch")
+
+
+def test_schema_versions_backfill_renderer_cache(
+    fresh_gateway: StorageGateway,
+) -> None:
+    """Backfill should populate missing renderer_cache entries."""
+    table_key = "analytics.arrow_contract_backfill"
+    table_schema = _schema_for_key(table_key)
+    manifest = SchemaManifest(
+        version="v2",
+        tables=(table_schema,),
+        table_provenance={table_key: _provenance_for_schema(table_schema)},
+    )
+
+    fresh_gateway.schemas.persist_schema_manifest(
+        manifest,
+        request=SchemaCatalogRequest(
+            run_id="run-arrow-backfill",
+            repo="org/repo",
+            commit="deadbeef",
+        ),
+    )
+
+    schema_digest = fingerprint(table_schema.to_json_obj())
+    versions_ref = meta_table_ref("metadata.schema_versions")
+    fresh_gateway.con.execute(
+        f"UPDATE {versions_ref} SET renderer_cache = NULL WHERE schema_digest = ?",
+        [schema_digest],
+    )
+
+    updated = fresh_gateway.schemas.backfill_renderer_cache(manifest)
+    expect_equal(updated, 1, label="backfill_rows")
+
+    row = expect_is_not_none(
+        fresh_gateway.con.execute(
+            f"SELECT renderer_cache FROM {versions_ref} WHERE schema_digest = ?",
+            [schema_digest],
+        ).fetchone(),
+        label="renderer_cache_row",
+    )
+    renderer_cache = decode_json_dict(row[0])
+    payload = renderer_cache.get("arrow_schema_ipc_b64")
+    if not isinstance(payload, str) or not payload:
+        pytest.fail("Expected arrow_schema_ipc_b64 after backfill")

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
-from sqlglot import parse_one
+from sqlglot import exp, parse_one
 
 from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.datasets import DatasetManifestIndex
@@ -70,7 +70,7 @@ def _serving_query(ast_sql: str, *, view: SemanticViewSpec) -> ServingQuery:
         offset=0,
         column_types=None,
     )
-    ast = parse_one(ast_sql, dialect=DUCKDB_DIALECT)
+    ast = cast("exp.Select", parse_one(ast_sql, dialect=DUCKDB_DIALECT))
     return ServingQuery(spec=spec, ast=ast)
 
 

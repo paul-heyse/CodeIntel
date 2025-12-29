@@ -81,20 +81,6 @@ class ColumnarStream(Protocol):
         ...
 
 
-@runtime_checkable
-class SupportsArrowCStream(Protocol):
-    """Protocol for Arrow C Data Interface stream providers."""
-
-    def __arrow_c_stream__(self) -> object: ...
-
-
-@runtime_checkable
-class SupportsDataFrameInterop(Protocol):
-    """Protocol for dataframe interchange providers."""
-
-    def __dataframe__(self, *args: object, **kwargs: object) -> object: ...
-
-
 @dataclass(frozen=True, slots=True)
 class RecordBatchReaderStream:
     """ColumnarStream adapter for Arrow RecordBatchReader."""
@@ -360,6 +346,7 @@ def _table_from_interchange(value: object) -> pa.Table | None:
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
 
+
 __all__ = [
     "ColumnarStream",
     "ColumnarStreamAdapter",
@@ -367,6 +354,4 @@ __all__ = [
     "RecordBatchReaderStream",
     "coerce_arrow_reader",
     "coerce_arrow_table",
-    "SupportsArrowCStream",
-    "SupportsDataFrameInterop",
 ]

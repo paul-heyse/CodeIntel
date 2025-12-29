@@ -101,6 +101,14 @@ def _schema_service_mismatches() -> list[str]:
     return mismatches
 
 
+def _schema_service_available() -> bool:
+    try:
+        get_schema_service()
+    except RuntimeError:
+        return False
+    return True
+
+
 def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection) -> None:
     load_contract_catalog_from_connection(con)
     clear_contract_validation_cache()
@@ -114,10 +122,17 @@ def _ensure_contract_catalog(con: duckdb.DuckDBPyConnection) -> None:
 
     mismatches = _schema_service_mismatches()
     if mismatches:
-        LOG.warning(
-            "Contract catalog mismatch detected for %d tables; using stored catalog",
-            len(mismatches),
-        )
+        if _schema_service_available():
+            LOG.warning(
+                "Contract catalog mismatch detected for %d tables; "
+                "runtime schema service will be preferred",
+                len(mismatches),
+            )
+        else:
+            LOG.warning(
+                "Contract catalog mismatch detected for %d tables; using stored catalog",
+                len(mismatches),
+            )
     clear_schema_provider_cache()
     clear_contract_validation_cache()
 
@@ -202,6 +217,37 @@ def _apply_contract_validation(
     )
 
 
+def _log_registry_health(gateway: StorageGateway) -> None:
+    try:
+        snapshot = gateway.schemas.registry_health_snapshot()
+    except (RuntimeError, TypeError, ValueError, duckdb.Error):
+        return
+    if snapshot.get("registry_stale"):
+        LOG.warning(
+            "Schema registry appears stale (latest_manifest=%s)",
+            snapshot.get("latest_manifest"),
+        )
+    drift = snapshot.get("contract_drift")
+    if not isinstance(drift, dict):
+        return
+    missing_contracts = int(drift.get("missing_contracts", 0) or 0)
+    missing_metadata = int(drift.get("missing_contract_metadata", 0) or 0)
+    hash_mismatches = int(drift.get("hash_mismatches", 0) or 0)
+    digest_mismatches = int(drift.get("digest_mismatches", 0) or 0)
+    if not any((missing_contracts, missing_metadata, hash_mismatches, digest_mismatches)):
+        return
+    samples = drift.get("mismatch_samples") or drift.get("missing_contract_samples") or []
+    preview = ", ".join(samples[:ISSUE_PREVIEW_LIMIT]) if samples else ""
+    LOG.warning(
+        "Arrow contract drift detected (missing=%d missing_metadata=%d hash=%d digest=%d)%s",
+        missing_contracts,
+        missing_metadata,
+        hash_mismatches,
+        digest_mismatches,
+        f": {preview}" if preview else "",
+    )
+
+
 def open_gateway(
     config: StorageConfig,
     *,
@@ -259,6 +305,7 @@ def open_gateway(
             config=config,
             include_views=include_views,
         )
+        _log_registry_health(gateway)
     except duckdb.Error as exc:
         raise StorageConnectionError(str(exc), cause=exc) from exc
     return gateway
@@ -372,8 +419,9 @@ def open_memory_gateway(
     """
     if seed_contract_catalog is None:
         msg = (
-            "open_memory_gateway requires seed_contract_catalog to populate metadata.canonical_catalogs. "
-            "Pass an explicit seed callback or use open_inference_gateway for schema-only workflows."
+            "open_memory_gateway requires seed_contract_catalog to populate "
+            "metadata.canonical_catalogs. Pass an explicit seed callback or use "
+            "open_inference_gateway for schema-only workflows."
         )
         raise RuntimeError(msg)
     resolved = options or MemoryGatewayOptions()

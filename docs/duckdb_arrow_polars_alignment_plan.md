@@ -13,6 +13,10 @@ hand-written SQL in serving paths.
 - SQLGlot is the canonical query AST for routing and compilation.
 - Streaming IPC is the serving boundary; avoid eager `to_table()` / `rel.arrow()` for
   large results.
+- Arrow schema contracts from the registry are the runtime authority; runtime inference
+  and schema unification are alignment-only and never canonical.
+- Extras policy and JSON/struct typing are enforced from contract metadata (not inferred
+  ad-hoc at runtime).
 
 ## Non-Goals
 - Re-introducing raw SQL as a primary interface.
@@ -22,7 +26,8 @@ hand-written SQL in serving paths.
 ## Target Architecture
 ### Data Plane
 - **Storage**: Parquet/IPC datasets with Arrow schemas and metadata.
-- **Schema**: TableSchema is the source of truth; Arrow schema mirrors TableSchema.
+- **Schema**: TableSchema is the build-time source of truth; runtime uses Arrow contract
+  schema bytes from the registry.
 - **Ingestion**: Produce Arrow/Polars directly; avoid pandas conversions.
 
 ### Query Plane
@@ -60,6 +65,8 @@ hand-written SQL in serving paths.
   Polars lazy sources.
 - **Partitioning**: Standardize Hive-style partitions (repo/commit/target).
 - **Schema metadata**: Persist Arrow schema metadata (schema hash, column order).
+- **Contract loading**: Prefer Arrow schema contract from registry for reads/writes;
+  align incoming data to contract prior to scan materialization.
 
 ### Phase 2: Polars Query Engine
 - **Compiler**: SQLGlot AST → Polars expressions + LazyFrame plan.
@@ -78,22 +85,29 @@ hand-written SQL in serving paths.
   - Materialize only for persistence, not serving.
 - **Streaming**: `rel.fetch_arrow_reader()` → Arrow IPC stream.
 - **UDFs**: Use Arrow-vectorized UDFs (`type="arrow"`) for custom compute when needed.
+- **Contract schema enforcement**: register Arrow readers/tables with explicit contract
+  schema to avoid runtime inference; handle STRUCT/MAP columns based on contract metadata.
 
 ### Phase 4: IPC Streaming Unification
 - **IPC writer**: Standardize on `pyarrow.ipc.new_stream` with per-batch metadata.
 - **Reader compatibility**: Use `RecordBatchReader.from_stream` for inbound IPC.
 - **Memory control**: Prefer buffered stream readers over full table materialization.
+- **Contract schema bytes**: IPC responses use registry contract schema bytes; only
+  append metadata (schema_hash, schema_digest, extras policy, contract version).
 
 ### Phase 5: Schema + Type Discipline
-- **Arrow schema unification**: `pyarrow.unify_schemas` on merge paths.
+- **Arrow schema unification**: `pyarrow.unify_schemas` only for alignment against
+  the contract (never as a canonical source).
 - **DuckDB types**: Explicit `duckdb.sqltypes` for DECIMAL/TIMESTAMP/STRUCT/LIST/MAP.
 - **Polars dtypes**: Use `collect_schema()` at plan boundaries where required.
 - **Metadata round-trip**: Maintain schema hash + version in IPC metadata.
+- **Contract drift**: warn when runtime schema hash/digest mismatches contract metadata.
 
 ### Phase 6: Observability and Guardrails
 - **Profiling**: DuckDB `EXPLAIN ANALYZE`, Polars `profile`/`show_graph`.
 - **Metrics**: Track route decisions (Polars vs DuckDB), scan sizes, batch sizes.
 - **Guardrails**: Detect eager materialization in serving code paths.
+- **Contract guardrails**: warn on missing contract metadata or fallback to inference.
 
 ## Integration Points (Current Code)
 - Serving kernel and query compiler layers.
@@ -106,6 +120,8 @@ hand-written SQL in serving paths.
 - **Contract**: Ensure view schemas derived from Arrow/Polars match TableSchema.
 - **IPC**: Round-trip tests for streaming with metadata.
 - **Parity**: Golden queries executed via Polars and DuckDB produce identical results.
+- **Contract schema**: IPC schema bytes match registry contract; STRUCT/JSON columns
+  round-trip through Polars and DuckDB without inference.
 
 ## Acceptance Criteria
 - All serving queries are compiled from SQLGlot AST; no hand-written SQL.
@@ -113,9 +129,22 @@ hand-written SQL in serving paths.
 - DuckDB path handles complex queries and streams IPC without eager materialization.
 - TableSchema ↔ Arrow ↔ DuckDB types align with no drift across pipelines.
 - Observability captures route decisions and batch-level performance metrics.
+- Runtime IPC uses registry Arrow contract schema bytes; inference is alignment-only.
+
+## Checklist (Execution)
+- [ ] Load Arrow schema contract bytes from registry for dataset reads/writes.
+- [ ] Align incoming Arrow readers to contract before materialization/scans.
+- [ ] Enforce extras policy + JSON/struct typing from contract metadata (no ad-hoc inference).
+- [ ] Register DuckDB relations with explicit contract schema (avoid runtime inference).
+- [ ] Handle STRUCT/MAP/LIST types in DuckDB relation builder via explicit type mapping.
+- [ ] Update IPC streaming to emit contract schema bytes + contract metadata keys.
+- [ ] Guardrail: warn on missing contract metadata or contract drift (hash/digest mismatch).
+- [ ] Add tests for contract-based struct/JSON round-trip through Polars/DuckDB.
+- [ ] Add IPC test: schema bytes match registry contract, metadata keys present.
+- [ ] Add parity test: golden query yields identical results in Polars vs DuckDB.
+- [ ] Run targeted serving tests, then full `tests/serving`, then quality report.
 
 ## Risks and Mitigations
 - **Polars gaps**: router falls back to DuckDB with deterministic reasoning.
 - **Type drift**: enforce explicit type mapping and Arrow schema unification.
 - **Memory pressure**: prefer stream readers/sinks and avoid `to_table()` in serving.
-

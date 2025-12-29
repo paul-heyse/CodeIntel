@@ -23,4 +23,36 @@ def warn_eager_materialization(*, engine: str, context: str) -> None:
     )
 
 
-__all__ = ["warn_eager_materialization"]
+def warn_missing_contract_schema(*, table_key: str) -> None:
+    """Log a warning when the Arrow contract schema is missing."""
+    LOG.warning("Missing Arrow contract schema", extra={"table_key": table_key})
+
+
+def warn_contract_metadata_missing(*, table_key: str, field: str) -> None:
+    """Log a warning when contract metadata is missing expected fields."""
+    LOG.warning(
+        "Arrow contract metadata missing",
+        extra={"table_key": table_key, "field": field},
+    )
+
+
+def warn_contract_metadata_mismatch(
+    *,
+    table_key: str,
+    field: str,
+    expected: str,
+    actual: str,
+) -> None:
+    """Log a warning when contract metadata mismatches expected values."""
+    LOG.warning(
+        "Arrow contract metadata mismatch",
+        extra={"table_key": table_key, "field": field, "expected": expected, "actual": actual},
+    )
+
+
+__all__ = [
+    "warn_contract_metadata_mismatch",
+    "warn_contract_metadata_missing",
+    "warn_eager_materialization",
+    "warn_missing_contract_schema",
+]

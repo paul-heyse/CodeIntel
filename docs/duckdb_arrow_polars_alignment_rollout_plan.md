@@ -27,6 +27,43 @@ with explicit decision points and "only if" gates for the risky items.
 
 ## Prioritized Phases
 
+### Phase -1 (P-1): Arrow Contract Foundation (Required)
+
+Objective: establish the Arrow schema contract as the runtime authority before
+enabling streaming, IPC, or validation changes.
+
+Scope:
+- Canonical Arrow contract generation with metadata keys.
+- Persist contract IPC bytes in renderer_cache for every table/view.
+- Runtime schema loading prefers contract over DuckDB metadata.
+- Contract-aligned ingest alignment with extras policy.
+
+Files:
+- `src/codeintel/core/schemas/arrow_gen.py`
+- `src/codeintel/core/schemas/arrow_polars.py`
+- `src/codeintel/storage/tracking/schema_catalog_compile.py`
+- `src/codeintel/storage/tracking/schema_catalog.py`
+- `src/codeintel/storage/schema/arrow_schema.py`
+- `src/codeintel/core/columnar/schema_alignment.py` (new)
+- `src/codeintel/build/hamilton/native/ingestion/frame_utils.py`
+- `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
+- `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`
+- `src/codeintel/core/exports/arrow_ipc.py`
+
+Exit criteria:
+- All tables and views have renderer_cache Arrow schema IPC bytes.
+- IPC responses emit the contract schema with contract metadata intact.
+- External ingest aligns to contract and retains extras in `_ci_extras`.
+
+Decision point:
+- Proceed only if contract round-trip is verified for at least one serving
+  dataset and one ingestion flow.
+
+Only-if gates:
+- Only enable any streaming/IPC/validation features if contract is present
+  in renderer_cache and schema hash matches.
+
+
 ### Phase 0 (P0): Baseline, Metrics, and Guardrails
 
 Objective: establish consistent metrics and test scaffolding so the next phases
@@ -71,6 +108,7 @@ Exit criteria:
   reduction in scanned rows.
 - Write path uses streaming sink for non-partitioned writes and falls back
   correctly for partitioned datasets.
+- Arrow schema emitted on writes matches the contract schema from renderer_cache.
 
 Decision point:
 - Proceed only if scan metrics show actual pruning (row group or fragment) and
@@ -81,6 +119,7 @@ Only-if gates:
   and filter translation is validated by tests.
 - Only enable `sink_parquet` if row-group sizing and ordering controls are
   compatible with existing downstream readers.
+- Only enable streaming reads/writes if contract schema load succeeds.
 
 
 ### Phase 2 (P2): IPC Control Plane (Medium Risk)
@@ -99,6 +138,7 @@ Files:
 Exit criteria:
 - Defaults remain unchanged for existing clients.
 - IPC round-trip succeeds with new options enabled in a controlled test.
+- IPC schema bytes match renderer_cache contract schema.
 
 Decision point:
 - Proceed only if client compatibility is verified for at least one Arrow IPC
@@ -108,6 +148,7 @@ Only-if gates:
 - Only expose advanced options via config flags (no new required params).
 - Only enable custom compression or recursion-depth changes if verified against
   large nested payloads.
+- Only enable IPC options if contract schema is loaded from renderer_cache.
 
 
 ### Phase 3 (P3): Vectorized Validation (Medium Risk)
@@ -127,6 +168,7 @@ Files:
 Exit criteria:
 - Validation time reduced on sample Parquet exports.
 - Error messages remain actionable and stable.
+- Contract nullability and type metadata are enforced in validation.
 
 Decision point:
 - Proceed only if parity is achieved for the top 80 percent of constraints in
@@ -134,6 +176,7 @@ Decision point:
 
 Only-if gates:
 - Only skip JSON Schema for a table when constraint coverage is proven by tests.
+- Only enable contract-based validation if renderer_cache contract is present.
 
 
 ### Phase 4 (P4): Polars Execution Control Plane (Low Risk)
@@ -225,6 +268,7 @@ Files:
 
 Exit criteria:
 - End-to-end data flow with zero-copy inputs works without memory leaks.
+- Interop inputs are aligned to contract schema via schema_alignment utilities.
 
 Decision point:
 - Proceed only if lifetime/ownership semantics are well-defined and tested.
@@ -232,6 +276,7 @@ Decision point:
 Only-if gates:
 - Only enable for known-good producers (feature flag per adapter).
 - Only accept capsules when schema compatibility is explicitly validated.
+- Only enable if contract-based alignment is in place for external ingest.
 
 
 ## Decision Matrix for Risky Items
@@ -257,3 +302,25 @@ Only-if gates:
 - Validation runtime and error parity.
 - CPU time for joins and aggregations.
 
+## Follow-up Implementation Checklist (Code Changes)
+
+- Implement contract metadata injection in Arrow schema generation:
+  `src/codeintel/core/schemas/arrow_gen.py`
+- Add contract-aware Arrow schema reuse and validation:
+  `src/codeintel/core/schemas/arrow_polars.py`
+- Persist IPC schema bytes into renderer_cache for each table/view:
+  `src/codeintel/storage/tracking/schema_catalog_compile.py`
+- Load contract schema from renderer_cache at runtime:
+  `src/codeintel/storage/schema/arrow_schema.py`
+- Ensure schema_versions writes always include renderer_cache payload:
+  `src/codeintel/storage/tracking/schema_catalog.py`
+- Update IPC streaming to emit contract schema and metadata:
+  `src/codeintel/core/exports/arrow_ipc.py`
+- Add schema_alignment module with align_reader_to_contract:
+  `src/codeintel/core/columnar/schema_alignment.py`
+- Wire ingest/extract paths through contract alignment and extras policy:
+  `src/codeintel/build/hamilton/native/ingestion/frame_utils.py`
+  `src/codeintel/build/hamilton/native/ingestion/ingest_targets.py`
+  `src/codeintel/build/hamilton/native/ingestion/extraction_targets.py`
+- Add contract round-trip tests and renderer_cache assertions:
+  `tests/*` (arrow_gen/arrow_polars/schema_catalog/ingestion alignment)

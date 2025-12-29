@@ -55,10 +55,6 @@ def lazyframe_for_table_columns(
     pl.LazyFrame
         LazyFrame with columns aligned to the schema order.
 
-    Raises
-    ------
-    ValueError
-        If input columns contain unexpected names under a reject policy.
     """
     if not columns:
         return empty_lazyframe_for_table(table_key)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import cast
 
 import polars as pl
 import polars.datatypes as pl_datatypes
@@ -94,7 +95,7 @@ def _selector_by_name(names: Sequence[str]) -> pl.Expr | list[str]:
         return list(names)
     by_name = getattr(selectors, "by_name", None)
     if callable(by_name):
-        return by_name(list(names))
+        return cast("pl.Expr", by_name(list(names)))
     return list(names)
 
 
