@@ -9,7 +9,6 @@ import polars as pl
 
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.repositories.base import BaseRepository
-from codeintel.storage.validation.columnar import validate_record_batch_reader
 
 if TYPE_CHECKING:
     from codeintel.storage.repositories.base import RowDict
@@ -51,9 +50,12 @@ class DatasetReadRepository(BaseRepository):
             limit_value = limit if limit is not None else MAX_ROW_LIMIT
             relation = relation.limit(limit_value, offset=offset)
 
-        reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
-        validated = validate_record_batch_reader(table_key, reader)
-        frame = pl.from_arrow(validated)
+        reader = self._relation_to_reader(
+            relation,
+            table_key=table_key,
+            batch_size=DEFAULT_ARROW_BATCH_SIZE,
+        )
+        frame = pl.from_arrow(reader)
         if isinstance(frame, pl.Series):
             frame = frame.to_frame()
         return frame

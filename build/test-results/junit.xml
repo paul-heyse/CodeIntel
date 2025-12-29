@@ -1,1 +1,264 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="6" time="25.027" timestamp="2025-12-28T23:09:01.339236-05:00" hostname="MacBookPro"><testcase classname="tests.serving.semantic.test_query_builder" name="test_polars_ast_builder_validates_operators" time="0.007" /><testcase classname="tests.serving.semantic.test_query_builder" name="test_polars_ast_builder_rejects_unknown_column" time="0.014" /><testcase classname="tests.serving.semantic.test_duckdb_relation_builder" name="test_duckdb_ast_builder_filters_orders_and_paginates" time="0.026" /><testcase classname="tests.serving.semantic.test_duckdb_relation_builder" name="test_duckdb_ast_builder_rejects_invalid_operator" time="0.020" /><testcase classname="tests.serving.semantic.test_duckdb_relation_builder" name="test_duckdb_ast_builder_rejects_unknown_column" time="0.028" /><testcase classname="tests.serving.semantic.test_query_builder" name="test_polars_ast_builder_filters_orders_and_paginates" time="0.026" /></testsuite></testsuites>
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="5" skipped="0" tests="13" time="54.736" timestamp="2025-12-29T13:12:24.647409-05:00" hostname="MacBookPro"><testcase classname="tests.build.serving.test_publisher" name="test_publish_serving_snapshot_fails_on_empty_search_docs" time="22.630"><failure message="pyarrow.lib.ArrowInvalid: Error creating dataset. Could not read schema from '/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-435/popen-gw9/test_publish_serving_snapshot_0/datasets/core/modules/snapshot_id=c1/dataset_manifest.json'. Is this a 'parquet' file?: Could not open Parquet input source '/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-435/popen-gw9/test_publish_serving_snapshot_0/datasets/core/modules/snapshot_id=c1/dataset_manifest.json': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.">tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-435/popen-gw9/test_publish_serving_snapshot_0')
+
+    def test_publish_serving_snapshot_fails_on_empty_search_docs(tmp_path: Path) -&gt; None:
+        """Publisher fails when docs.search_documents is empty."""
+        db_path = tmp_path / "build.duckdb"
+        con = duckdb.connect(str(db_path))
+        ensure_production_schemas(con)
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS core.modules (
+                repo VARCHAR,
+                commit VARCHAR,
+                module VARCHAR,
+                path VARCHAR,
+                row_hash VARCHAR
+            )
+            """
+        )
+        modules_dataset = _prepare_modules_dataset(
+            tmp_path,
+            con=con,
+            commit="c1",
+        )
+    
+        gateway = _StubGateway(
+            config=StorageConfig(db_path=db_path, repo="demo/repo", commit="c1"), con=con
+        )
+    
+        specs = _write_publisher_specs(
+            tmp_path,
+            modules_entry=modules_dataset.modules_entry,
+            modules_hash=modules_dataset.modules_hash,
+        )
+    
+        serve_dir = tmp_path / "serve"
+        with pytest.raises(RuntimeError, match="Search index build failed"):
+&gt;           publish_serving_snapshot(
+                gateway=gateway,
+                request=PublishServingSnapshotRequest(
+                    run_id="run-empty",
+                    serve_dir=serve_dir,
+                    semantic_registry_path=specs.semantic_registry,
+                    schema_manifest_path=specs.schema_manifest,
+                    buildspec_path=specs.buildspec,
+                    dataset_manifest_paths=modules_dataset.dataset_manifest_paths,
+                    keep_last=10,
+                ),
+            )
+
+tests/build/serving/test_publisher.py:359: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/codeintel/build/serving/publisher.py:295: in publish_serving_snapshot
+    _prepare_snapshot_tables(
+src/codeintel/build/serving/publisher.py:128: in _prepare_snapshot_tables
+    service.prepare_snapshot(db_path=snap_db, snapshot_manifest=snapshot_manifest)
+src/codeintel/storage/serving/snapshot_service.py:164: in prepare_snapshot
+    self._register_dataset_views(con, snapshot_manifest=snapshot_manifest)
+src/codeintel/storage/serving/snapshot_service.py:218: in _register_dataset_views
+    _create_dataset_view(
+src/codeintel/storage/serving/snapshot_service.py:323: in _create_dataset_view
+    relation = _dataset_read_parquet_relation(
+src/codeintel/storage/serving/snapshot_service.py:348: in _dataset_read_parquet_relation
+    dataset = ds.dataset(str(dataset_dir), format="parquet", partitioning=partitioning)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pyarrow/dataset.py:790: in dataset
+    return _filesystem_dataset(source, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pyarrow/dataset.py:482: in _filesystem_dataset
+    return factory.finish(schema)
+           ^^^^^^^^^^^^^^^^^^^^^^
+pyarrow/_dataset.pyx:3226: in pyarrow._dataset.DatasetFactory.finish
+    ???
+pyarrow/error.pxi:155: in pyarrow.lib.pyarrow_internal_check_status
+    ???
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+&gt;   ???
+E   pyarrow.lib.ArrowInvalid: Error creating dataset. Could not read schema from '/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-435/popen-gw9/test_publish_serving_snapshot_0/datasets/core/modules/snapshot_id=c1/dataset_manifest.json'. Is this a 'parquet' file?: Could not open Parquet input source '/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-435/popen-gw9/test_publish_serving_snapshot_0/datasets/core/modules/snapshot_id=c1/dataset_manifest.json': Parquet magic bytes not found in footer. Either the file is corrupted or this is not a parquet file.
+
+pyarrow/error.pxi:92: ArrowInvalid</failure></testcase><testcase classname="tests.build.serving.test_publisher" name="test_publish_serving_snapshot_creates_snapshot_and_pointer" time="22.996" /><testcase classname="tests.build.serving.test_pr90_search_index_builds" name="test_pr90_ensure_fts_index_creates_schema" time="21.799" /><testcase classname="tests.build.serving.test_pr84_semantic_view_hamilton_tags" name="test_semantic_view_decorator_applies_hamilton_tags" time="21.746" /><testcase classname="tests.build.serving.test_semantic_compile" name="test_compile_registry_uses_explicit_columns_when_present" time="0.028" /><testcase classname="tests.build.serving.test_publisher" name="test_publish_serving_snapshot_fails_on_missing_lineage_tables" time="23.258" /><testcase classname="tests.build.serving.test_pr85_semantic_registry_compiles_from_tags" name="test_semantic_registry_compiles_from_hamilton_tags" time="22.294" /><testcase classname="tests.build.serving.test_publisher" name="test_publish_serving_snapshot_retention" time="23.807" /><testcase classname="tests.build.serving.test_pilot_end_to_end" name="test_pilot_end_to_end_function_metrics_snapshot" time="27.491"><failure message="RuntimeError: Duplicate contract table output: core.ast_metrics">serving_target_harness = ServingTargetHarness(harness=HamiltonBuildHarness(ctx=TestContext(snapshot=SnapshotRef(repo='demo/repo', commit='deadb...est-435/popen-gw3/test_pilot_end_to_end_function0/repo/pkg/util.py')), last_result=None, runtime=None, _owns_ctx=True))
+
+    def test_pilot_end_to_end_function_metrics_snapshot(
+        serving_target_harness: ServingTargetHarness,
+    ) -&gt; None:
+        """Pilot path should produce serving snapshot data for function metrics."""
+&gt;       records = serving_target_harness.run_targets(["function_metrics", "serving_artifacts"])
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/build/serving/test_pilot_end_to_end.py:22: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_helpers/harnesses/serving_harness.py:91: in run_targets
+    result = self.harness.run_targets(requested)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/harnesses/hamilton_build.py:385: in run_targets
+    result = self.executor.run(env=self.env, targets=list(targets))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/executor.py:1218: in run
+    runtime, telemetry_hook = self._build_runtime(
+src/codeintel/build/hamilton/executor.py:1397: in _build_runtime
+    composition = compose_runtime(
+src/codeintel/runtime/compose.py:189: in compose_runtime
+    base_catalog = _build_base_catalog(
+src/codeintel/runtime/compose.py:567: in _build_base_catalog
+    return compile_dag_catalog(base_driver, strict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:94: in compile_dag_catalog
+    outputs = _compile_output_inventory(driver.graph.nodes, strict=strict)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:256: in _compile_output_inventory
+    _record_table_output(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _record_table_output(
+        *,
+        output: OutputDescriptor,
+        table_outputs: dict[str, OutputDescriptor],
+        table_by_target: dict[str, list[OutputDescriptor]],
+    ) -&gt; None:
+        if output.role != "contract":
+            return
+        if output.key in table_outputs:
+            msg = f"Duplicate contract table output: {output.key}"
+&gt;           raise RuntimeError(msg)
+E           RuntimeError: Duplicate contract table output: core.ast_metrics
+
+src/codeintel/build/hamilton/dag_catalog_compiler.py:360: RuntimeError</failure></testcase><testcase classname="tests.build.serving.test_pr84_semantic_view_hamilton_tags" name="test_serving_harness_emits_semantic_artifacts" time="28.844"><failure message="RuntimeError: Duplicate contract table output: core.ast_metrics">serving_target_harness = ServingTargetHarness(harness=HamiltonBuildHarness(ctx=TestContext(snapshot=SnapshotRef(repo='demo/repo', commit='deadb...est-435/popen-gw2/test_serving_harness_emits_sem0/repo/pkg/util.py')), last_result=None, runtime=None, _owns_ctx=True))
+
+    def test_serving_harness_emits_semantic_artifacts(
+        serving_target_harness: ServingTargetHarness,
+    ) -&gt; None:
+        """Serving harness should emit semantic registry artifacts."""
+&gt;       records = serving_target_harness.run_targets([SERVING_ARTIFACTS_TARGET_NAME])
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/build/serving/test_pr84_semantic_view_hamilton_tags.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_helpers/harnesses/serving_harness.py:91: in run_targets
+    result = self.harness.run_targets(requested)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/harnesses/hamilton_build.py:385: in run_targets
+    result = self.executor.run(env=self.env, targets=list(targets))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/executor.py:1218: in run
+    runtime, telemetry_hook = self._build_runtime(
+src/codeintel/build/hamilton/executor.py:1397: in _build_runtime
+    composition = compose_runtime(
+src/codeintel/runtime/compose.py:189: in compose_runtime
+    base_catalog = _build_base_catalog(
+src/codeintel/runtime/compose.py:567: in _build_base_catalog
+    return compile_dag_catalog(base_driver, strict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:94: in compile_dag_catalog
+    outputs = _compile_output_inventory(driver.graph.nodes, strict=strict)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:256: in _compile_output_inventory
+    _record_table_output(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _record_table_output(
+        *,
+        output: OutputDescriptor,
+        table_outputs: dict[str, OutputDescriptor],
+        table_by_target: dict[str, list[OutputDescriptor]],
+    ) -&gt; None:
+        if output.role != "contract":
+            return
+        if output.key in table_outputs:
+            msg = f"Duplicate contract table output: {output.key}"
+&gt;           raise RuntimeError(msg)
+E           RuntimeError: Duplicate contract table output: core.ast_metrics
+
+src/codeintel/build/hamilton/dag_catalog_compiler.py:360: RuntimeError</failure></testcase><testcase classname="tests.build.serving.test_pr90_search_index_builds" name="test_pr90_search_index_with_serving_harness" time="28.911"><failure message="RuntimeError: Duplicate contract table output: core.ast_metrics">serving_target_harness = ServingTargetHarness(harness=HamiltonBuildHarness(ctx=TestContext(snapshot=SnapshotRef(repo='demo/repo', commit='deadb...est-435/popen-gw5/test_pr90_search_index_with_se0/repo/pkg/util.py')), last_result=None, runtime=None, _owns_ctx=True))
+
+    def test_pr90_search_index_with_serving_harness(
+        serving_target_harness: ServingTargetHarness,
+    ) -&gt; None:
+        """Ensure search index schema can be created in a harness-backed gateway."""
+&gt;       records = serving_target_harness.run_targets()
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/build/serving/test_pr90_search_index_builds.py:53: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_helpers/harnesses/serving_harness.py:91: in run_targets
+    result = self.harness.run_targets(requested)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/harnesses/hamilton_build.py:385: in run_targets
+    result = self.executor.run(env=self.env, targets=list(targets))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/executor.py:1218: in run
+    runtime, telemetry_hook = self._build_runtime(
+src/codeintel/build/hamilton/executor.py:1397: in _build_runtime
+    composition = compose_runtime(
+src/codeintel/runtime/compose.py:189: in compose_runtime
+    base_catalog = _build_base_catalog(
+src/codeintel/runtime/compose.py:567: in _build_base_catalog
+    return compile_dag_catalog(base_driver, strict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:94: in compile_dag_catalog
+    outputs = _compile_output_inventory(driver.graph.nodes, strict=strict)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:256: in _compile_output_inventory
+    _record_table_output(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _record_table_output(
+        *,
+        output: OutputDescriptor,
+        table_outputs: dict[str, OutputDescriptor],
+        table_by_target: dict[str, list[OutputDescriptor]],
+    ) -&gt; None:
+        if output.role != "contract":
+            return
+        if output.key in table_outputs:
+            msg = f"Duplicate contract table output: {output.key}"
+&gt;           raise RuntimeError(msg)
+E           RuntimeError: Duplicate contract table output: core.ast_metrics
+
+src/codeintel/build/hamilton/dag_catalog_compiler.py:360: RuntimeError</failure></testcase><testcase classname="tests.build.serving.test_semantic_compile" name="test_compile_registry_filters_non_semantic_and_hidden" time="0.005" /><testcase classname="tests.build.serving.test_publisher" name="test_serving_harness_publishes_snapshot" time="3.353"><failure message="RuntimeError: Duplicate contract table output: core.ast_metrics">serving_target_harness = ServingTargetHarness(harness=HamiltonBuildHarness(ctx=TestContext(snapshot=SnapshotRef(repo='demo/repo', commit='deadb...est-435/popen-gw3/test_serving_harness_publishes0/repo/pkg/util.py')), last_result=None, runtime=None, _owns_ctx=True))
+
+    def test_serving_harness_publishes_snapshot(
+        serving_target_harness: ServingTargetHarness,
+    ) -&gt; None:
+        """Run serving_artifacts and publish a snapshot via the harness."""
+&gt;       records = serving_target_harness.run_targets([SERVING_ARTIFACTS_TARGET_NAME])
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/build/serving/test_publisher.py:420: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/_helpers/harnesses/serving_harness.py:91: in run_targets
+    result = self.harness.run_targets(requested)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/harnesses/hamilton_build.py:385: in run_targets
+    result = self.executor.run(env=self.env, targets=list(targets))
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/executor.py:1218: in run
+    runtime, telemetry_hook = self._build_runtime(
+src/codeintel/build/hamilton/executor.py:1397: in _build_runtime
+    composition = compose_runtime(
+src/codeintel/runtime/compose.py:189: in compose_runtime
+    base_catalog = _build_base_catalog(
+src/codeintel/runtime/compose.py:567: in _build_base_catalog
+    return compile_dag_catalog(base_driver, strict=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:94: in compile_dag_catalog
+    outputs = _compile_output_inventory(driver.graph.nodes, strict=strict)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/build/hamilton/dag_catalog_compiler.py:256: in _compile_output_inventory
+    _record_table_output(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _record_table_output(
+        *,
+        output: OutputDescriptor,
+        table_outputs: dict[str, OutputDescriptor],
+        table_by_target: dict[str, list[OutputDescriptor]],
+    ) -&gt; None:
+        if output.role != "contract":
+            return
+        if output.key in table_outputs:
+            msg = f"Duplicate contract table output: {output.key}"
+&gt;           raise RuntimeError(msg)
+E           RuntimeError: Duplicate contract table output: core.ast_metrics
+
+src/codeintel/build/hamilton/dag_catalog_compiler.py:360: RuntimeError</failure></testcase></testsuite></testsuites>

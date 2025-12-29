@@ -15,6 +15,7 @@ from codeintel.build.hamilton.variants import variant_config_from_build_config
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.execution import ExecutionContext
 from codeintel.storage import StorageFacade
+from codeintel.storage.validation import ContractValidationMode
 
 if TYPE_CHECKING:
     from collections.abc import Mapping as MappingABC
@@ -36,6 +37,7 @@ class BuildRunContextOverrides:
     config_overrides: BuildConfigOverrides | None = None
     force_targets: frozenset[str] | None = None
     validate_outputs: bool = False
+    validation_mode: ContractValidationMode | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
@@ -57,6 +59,7 @@ class BuildRunContext:
     execution_options: BuildExecutionOptions | None = None
     force_targets: frozenset[str] = field(default_factory=frozenset)
     validate_outputs: bool = False
+    validation_mode: ContractValidationMode | None = None
     manifest_index: MappingABC[str, OutputManifest] | None = None
     fingerprint_policy: FingerprintPolicy | None = None
     history_options: HistoryTimeseriesOptions | None = None
@@ -112,6 +115,7 @@ class BuildRunContext:
         registry_service = None
         _ = load_schema_service
         storage_facade = StorageFacade.from_gateway(self.gateway)
+        validation_mode = self.validation_mode or ContractValidationMode.LENIENT
         return BuildEnv(
             gateway=self.gateway,
             storage=storage_facade,
@@ -126,6 +130,7 @@ class BuildRunContext:
             force_targets=self.force_targets,
             manifest_index=self.manifest_index,
             validate_outputs=self.validate_outputs,
+            validation_mode=validation_mode,
             history_options=self.history_options,
             history_db_resolver=self.history_db_resolver,
             fingerprint_policy=fingerprint_policy,
@@ -211,6 +216,7 @@ class BuildRunContext:
             execution_options=resolved.execution_options,
             force_targets=resolved.force_targets or frozenset(),
             validate_outputs=resolved.validate_outputs,
+            validation_mode=resolved.validation_mode,
             manifest_index=resolved.manifest_index,
             fingerprint_policy=resolved.fingerprint_policy,
             history_options=resolved.history_options,

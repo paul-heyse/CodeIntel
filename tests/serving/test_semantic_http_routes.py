@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pyarrow as pa
 from fastapi import status
 
 from tests._helpers.assertions import assert_http_success
@@ -39,7 +40,8 @@ def test_semantic_routes_end_to_end(tmp_path: Path) -> None:
             },
         )
         expect_equal(query.status_code, status.HTTP_200_OK)
-        rows = query.json()["rows"]
+        reader = pa.ipc.open_stream(pa.BufferReader(query.content))
+        rows = reader.read_all().to_pylist()
         expect_equal([row["id"] for row in rows], [3, 2])
 
 

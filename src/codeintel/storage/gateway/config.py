@@ -28,6 +28,7 @@ class StorageConfig:
     validate_schema: bool = False
     validation_mode: ContractValidationMode = ContractValidationMode.LENIENT
     validation_summary_path: Path | None = None
+    suppress_registry_health_log: bool = False
     attach_history: bool = False
     history_db_path: Path | None = None
     attach_meta: bool = True

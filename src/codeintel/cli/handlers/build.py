@@ -66,6 +66,7 @@ from codeintel.cli.errors.results import (
     fail_invalid_module,
     fail_invalid_target_selection,
     fail_invalid_targets,
+    fail_invalid_value,
     fail_project_error,
 )
 from codeintel.cli.handlers._utilities import runtime_gateway
@@ -75,6 +76,7 @@ from codeintel.cli.handlers.runtime_helpers import (
     compose_cli_runtime_bundle_with_env,
     planning_config,
 )
+from codeintel.cli.handlers.tag_filters import filter_targets_by_tags, parse_tag_filters
 from codeintel.cli.rendering.types import OutputFormat
 from codeintel.cli.resolution.errors import ResolutionError
 from codeintel.core.registry.service import RegistryService
@@ -497,6 +499,7 @@ def _execute_build_hamilton(
         execution_options=execution_options,
         force_targets=frozenset(execution.force or ()),
         validate_outputs=execution.validate_outputs,
+        validation_mode=execution.validation_mode,
         manifest_index=manifest_index,
     )
     context = BuildRunContext.from_execution_context(
@@ -818,6 +821,8 @@ class _BuildRunParams:
     """Extracted build run parameters."""
 
     targets: list[str] | None
+    tag_filters: list[str] | None
+    show_tags: bool
     module: str | None
     all_targets: bool
     dry_run: bool
@@ -899,6 +904,8 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     """
     targets_list = ctx.params.get_list("targets")
     targets: list[str] | None = targets_list if targets_list else None
+    tag_list = ctx.params.get_list("tags")
+    tag_filters: list[str] | None = tag_list if tag_list else None
 
     force_list = ctx.params.get_list("force")
     force: list[str] | None = force_list if force_list else None
@@ -920,6 +927,8 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
 
     return _BuildRunParams(
         targets=targets,
+        tag_filters=tag_filters,
+        show_tags=ctx.params.get_bool("show_tags"),
         module=ctx.params.get_str("module"),
         all_targets=ctx.params.get_bool("all_targets"),
         dry_run=ctx.params.get_bool("dry_run"),
@@ -960,10 +969,15 @@ def _validate_build_run_params(
         error = fail_invalid_module(params.module, _VALID_MODULES)
 
     if error is None:
-        provided = [bool(params.targets), params.module is not None, params.all_targets]
-        if sum(provided) != 1:
+        selection_flags = [bool(params.targets), params.module is not None, params.all_targets]
+        selection_count = sum(selection_flags)
+        if selection_count > 1:
             error = fail_invalid_target_selection(
                 "Provide exactly one of targets, --module, or --all."
+            )
+        elif selection_count == 0 and not params.tag_filters:
+            error = fail_invalid_target_selection(
+                "Provide targets, --module, --all, or at least one --tag filter."
             )
 
     if error is None and params.publish_serving_snapshot and params.dry_run:
@@ -1039,6 +1053,37 @@ def build_run_handler(
     return result
 
 
+def _resolve_goals_for_params(
+    *,
+    params: _BuildRunParams,
+    runtime_bundle: RuntimeBundle,
+) -> tuple[list[str], CliResult[BuildRunResult] | None]:
+    raw_tags = params.tag_filters or ()
+    try:
+        tag_filter = parse_tag_filters(raw_tags)
+    except ValidationError as exc:
+        return [], fail_invalid_value("tag", ",".join(raw_tags), str(exc))
+
+    scope = TargetScope.REQUESTED
+    if params.all_targets or (tag_filter and not params.targets and params.module is None):
+        scope = TargetScope.ALL
+    try:
+        goals = _resolve_goals(params.targets, params.module, scope, runtime_bundle.catalog)
+    except ValidationError as exc:
+        return [], fail_invalid_targets(str(exc))
+
+    if tag_filter:
+        goals = filter_targets_by_tags(
+            runtime_bundle,
+            targets=goals,
+            tag_filter=tag_filter,
+        )
+        if not goals:
+            return [], fail_invalid_targets("No targets matched the requested tag filters.")
+
+    return goals, None
+
+
 def _build_run_result(
     ctx: CommandContext,
     *,
@@ -1067,17 +1112,17 @@ def _build_run_result(
             gateway=gateway,
             config_overrides=config_overrides,
         )
-        catalog = runtime_bundle.catalog
-        scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
-        try:
-            goals = _resolve_goals(params.targets, params.module, scope, catalog)
-        except ValidationError as exc:
-            return fail_invalid_targets(str(exc)), runtime, goals
+        goals, error = _resolve_goals_for_params(
+            params=params,
+            runtime_bundle=runtime_bundle,
+        )
+        if error is not None:
+            return error, runtime, goals
 
         if params.publish_serving_snapshot and "serving_artifacts" not in goals:
             goals.append("serving_artifacts")
 
-        domain = _resolve_domain_for_goals(goals, catalog)
+        domain = _resolve_domain_for_goals(goals, runtime_bundle.catalog)
         telemetry_state.domain = domain
 
         LOG.info(
@@ -1111,6 +1156,7 @@ def _build_run_result(
             gateway=gateway,
             telemetry_state=telemetry_state,
         )
+
     return result, runtime, goals
 
 

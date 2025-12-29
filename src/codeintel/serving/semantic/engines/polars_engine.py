@@ -725,9 +725,10 @@ def _log_drift_if_present(ctx: EngineContext, *, table_key: str) -> None:
     if ctx.warehouse is None:
         return
     try:
-        observation = ctx.warehouse.gateway.schemas.load_latest_schema_observation(
-            table_key=table_key
-        )
+        schemas = getattr(ctx.warehouse.gateway, "schemas", None)
+        if schemas is None:
+            return
+        observation = schemas.load_latest_schema_observation(table_key=table_key)
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return
     if observation is None or observation.drift_summary is None:

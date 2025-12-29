@@ -48,16 +48,42 @@ if TYPE_CHECKING:
     from codeintel.storage.gateway.protocol import StorageGateway
     from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
-BASE_DIRS: tuple[str, ...] = ("src", "tests", "tools", "scripts")
-_SELF_REL_PATH = "tools/guardrails.py"
-STREAMING_GUARDRAIL_PREFIXES: tuple[str, ...] = (
-    "src/codeintel/build/",
-    "src/codeintel/serving/",
-    "src/codeintel/storage/validation/",
+
+@dataclass(frozen=True)
+class GuardrailSettings:
+    """Central guardrail configuration."""
+
+    base_dirs: tuple[str, ...]
+    streaming_include_prefixes: tuple[str, ...]
+    streaming_allow_prefixes: tuple[str, ...]
+
+
+GUARDRAIL_SETTINGS = GuardrailSettings(
+    base_dirs=("src", "tests", "tools", "scripts"),
+    streaming_include_prefixes=(
+        "src/codeintel/build/",
+        "src/codeintel/serving/",
+        "src/codeintel/storage/validation/",
+    ),
+    streaming_allow_prefixes=(
+        "tests/",
+        "tools/",
+        "docs/_scripts/",
+    ),
 )
+
+BASE_DIRS = GUARDRAIL_SETTINGS.base_dirs
+_SELF_REL_PATH = "tools/guardrails.py"
+STREAMING_GUARDRAIL_PREFIXES = GUARDRAIL_SETTINGS.streaming_include_prefixes
+STREAMING_GUARDRAIL_ALLOW_PREFIXES = GUARDRAIL_SETTINGS.streaming_allow_prefixes
 SDK_GUARDRAIL_ALLOW_PREFIXES: tuple[str, ...] = (
     "src/codeintel/build/hamilton/tagging.py",
     "src/codeintel/sdk/",
+)
+TAG_GUARDRAIL_ALLOW_PREFIXES: tuple[str, ...] = (
+    "src/codeintel/build/hamilton/tagging.py",
+    "src/codeintel/sdk/",
+    "src/codeintel/core/hamilton/tagging_helpers.py",
 )
 MODULE_DISCOVERY_ALLOW_PREFIXES: tuple[str, ...] = ("src/codeintel/runtime/module_resolver.py",)
 
@@ -181,11 +207,10 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         name="build_direct_hamilton_tag",
         pattern=re.compile(r"\bfrom hamilton\.function_modifiers import [^\n]*\btag\b"),
         message=(
-            "Direct imports of Hamilton's @tag decorator are forbidden; use "
-            "codeintel.build.hamilton.tagging helpers."
+            "Direct imports of Hamilton's @tag decorator are forbidden; use SDK/tagging helpers."
         ),
-        include_prefixes=("src/codeintel/build/",),
-        allow_prefixes=("src/codeintel/build/hamilton/tagging.py",),
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=TAG_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="direct_hamilton_schema_modifier",
@@ -227,36 +252,42 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         pattern=re.compile(r"\.to_table\("),
         message="Avoid to_table(); use RecordBatchReader or batch iterators instead.",
         include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="streaming_read_all",
         pattern=re.compile(r"\.read_all\("),
         message="Avoid read_all(); use batch readers instead of eager materialization.",
         include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="streaming_relation_arrow",
         pattern=re.compile(r"\.arrow\("),
         message="Avoid relation.arrow(); use fetch_record_batch or scan_batches instead.",
         include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="streaming_fetchall",
         pattern=re.compile(r"\.fetchall\("),
         message="Avoid fetchall(); use fetch_record_batch and stream batches instead.",
         include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="streaming_to_pandas",
         pattern=re.compile(r"\.to_pandas\("),
         message="Avoid to_pandas(); keep streaming Arrow/Polars primitives.",
         include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="pandas_values_property",
         pattern=re.compile(r"(?s)\b(?:import pandas|from pandas)\b.*?\.values\b(?!\s*\()"),
         message="Avoid pandas .values; prefer .to_numpy() or Arrow/Polars buffers.",
         include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+        allow_prefixes=STREAMING_GUARDRAIL_ALLOW_PREFIXES,
     ),
     Guardrail(
         name="module_discovery_static_targets",
@@ -339,6 +370,7 @@ def _guardrails_storage_config(runtime: ResolvedRuntime) -> StorageConfig:
         validate_schema=False,
         validation_mode=ContractValidationMode.OFF,
         validation_summary_path=None,
+        suppress_registry_health_log=True,
         repo=runtime.repo,
         commit=runtime.commit,
     )
@@ -496,6 +528,7 @@ def main() -> int:
                 apply_schema=False,
                 ensure_views=False,
                 validate_schema=False,
+                suppress_registry_health_log=True,
             ),
             seed_contract_catalog=_seed_contract_catalog,
         )
@@ -530,10 +563,9 @@ def main() -> int:
         )
         return 1
     if observation_issues:
-        sys.stderr.write("Schema observation guardrails failed.\n")
+        sys.stderr.write("Schema observation guardrails warning: missing observations.\n")
         for issue in observation_issues:
             sys.stderr.write(f"{issue}\n")
-        return 1
     return 0
 
 

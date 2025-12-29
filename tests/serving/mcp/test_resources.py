@@ -609,7 +609,7 @@ async def test_mcp_resource_export_meta(tmp_path: Path) -> None:
         expect_equal(data.get("export_id"), export_id)
         expect_equal(data.get("status"), "ready")
         expect_true("created_at" in data, message="Should have created_at")
-        expect_equal(data.get("format"), "arrow")
+        expect_equal(data.get("format"), "jsonl")
         expect_equal(data.get("row_count"), 3)  # Demo view has 3 rows
 
         # Verify snapshot info

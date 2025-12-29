@@ -11,7 +11,7 @@ from codeintel.serving.semantic.query_ast import ServingQuery
 if TYPE_CHECKING:
     from codeintel.serving.semantic.engines.protocol import EngineContext
 
-_POLARS_ALLOWED_FUNCTIONS = frozenset({"contains", "starts_with"})
+_POLARS_ALLOWED_FUNCTIONS = frozenset({"coalesce", "contains", "lower", "starts_with", "upper"})
 _POLARS_UNSUPPORTED_NODES: tuple[type[exp.Expression], ...] = (
     exp.Join,
     exp.Subquery,
@@ -39,9 +39,9 @@ def ast_supports_polars(ast: exp.Expression) -> bool:
     for node_type in _POLARS_UNSUPPORTED_NODES:
         if ast.find(node_type) is not None:
             return False
-    for func in ast.find_all(exp.Anonymous):
-        func_name = func.name or ""
-        if func_name.lower() not in _POLARS_ALLOWED_FUNCTIONS:
+    for func in ast.find_all(exp.Func):
+        func_name = func.sql_name().lower()
+        if func_name not in _POLARS_ALLOWED_FUNCTIONS:
             return False
     return True
 

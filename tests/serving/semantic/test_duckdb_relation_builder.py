@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import duckdb
 import pytest
-from sqlglot import exp
+from sqlglot import exp, parse_one
 
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
@@ -53,6 +53,26 @@ def test_duckdb_ast_builder_filters_orders_and_paginates() -> None:
             column_types=spec.column_types,
         ).fetchall()
         expect_equal(rows, expected=[(3, "three"), (2, "two")])
+    finally:
+        con.close()
+
+
+def test_duckdb_ast_builder_supports_alias_and_lower() -> None:
+    """DuckDB AST builder supports projection aliases and lower()."""
+    con = _demo_connection()
+    try:
+        relation = con.table("demo")
+        ast = parse_one(
+            "SELECT lower(label) AS label_lower FROM main.demo",
+            dialect="duckdb",
+        )
+        rows = apply_query_ast(
+            relation,
+            ast=ast,
+            allowed_columns=frozenset({"label"}),
+            column_types={"label": "VARCHAR"},
+        ).fetchall()
+        expect_equal(rows, expected=[("one",), ("two",), ("three",)])
     finally:
         con.close()
 

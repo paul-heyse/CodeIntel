@@ -84,6 +84,7 @@ def register_prompts(
     _register_explore_prompt(mcp)
     _register_export_wizard(mcp, settings=settings)
     _register_query_wizard(mcp, settings=settings, kernel=kernel)
+    _register_snapshot_diff_prompt(mcp)
 
 
 def _tool_invocation(tool: str, /, **arguments: object) -> dict[str, object]:
@@ -284,6 +285,40 @@ def _register_query_wizard(
                     "If sampling is enabled server-side and supported client-side, "
                     "large results may include a summary. "
                     f"sampling_enabled={feature_set.enable_mcp_sampling}"
+                ),
+                role="assistant",
+            ),
+        ]
+
+
+def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
+    _prompt_registry(mcp).register("what_changed_between_snapshots")
+
+    @mcp.prompt(
+        name="what_changed_between_snapshots",
+        description="Workflow: compare what changed between two serving snapshots.",
+        tags={"semantic", "snapshot"},
+        meta={"version": 1},
+    )
+    def what_changed_between_snapshots() -> list[PromptMessage]:
+        return [
+            Message(
+                "Capture the active snapshot metadata first:",
+                role="assistant",
+            ),
+            Message(_tool_invocation_json("serving_meta"), role="assistant"),
+            Message(
+                (
+                    "Then switch to the other snapshot (or rerun with its pointer) and capture "
+                    "serving_meta again."
+                ),
+                role="assistant",
+            ),
+            Message(
+                (
+                    "Compare schema/view changes with `semantic_catalog` + `semantic_describe`, "
+                    "then validate row-level diffs using `semantic_query` or `semantic_export` for "
+                    "the affected views."
                 ),
                 role="assistant",
             ),

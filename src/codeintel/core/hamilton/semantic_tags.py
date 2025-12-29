@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Literal, Required, TypedDict, TypeVar, Unpack, cast
-
-from hamilton.function_modifiers import tag as h_tag
+from typing import Literal, Required, TypedDict, TypeVar, Unpack
 
 from codeintel.core.hamilton import tags as ht
+from codeintel.core.hamilton.tagging_helpers import apply_raw_tags
 
 SEMANTIC_VIEW_TAG_ATTR = "__codeintel_semantic_view_tags__"
 
@@ -170,46 +169,18 @@ def semantic_view(
         If required spec keys are missing.
     """
     try:
-        semantic_id = spec["semantic_id"]
-        table_key = spec["table_key"]
-        entity = spec["entity"]
-        grain = spec["grain"]
+        _ = (
+            spec["semantic_id"],
+            spec["table_key"],
+            spec["entity"],
+            spec["grain"],
+        )
     except KeyError as exc:
         raise SemanticViewSpecError from exc
     tags = _build_semantic_tags(spec)
 
     def decorator(func: _TFunc) -> _TFunc:
-        tagged = cast(
-            "_TFunc",
-            h_tag(
-                output_kind=ht.OUTPUT_KIND_SEMANTIC_VIEW,
-                semantic_id=semantic_id,
-                table_key=table_key,
-                entity=entity,
-                grain=grain,
-                layer=tags[TAG_LAYER],
-                kind=tags[TAG_KIND],
-                version=tags[TAG_VERSION],
-                mcp_visible=tags[TAG_MCP_VISIBLE],
-                semantic_default_limit=tags[TAG_DEFAULT_LIMIT],
-                semantic_default_order_by=tags[TAG_DEFAULT_ORDER],
-                semantic_kind=tags[TAG_SEMANTIC_KIND],
-                semantic_primary_key=tags[TAG_SEMANTIC_PK],
-                semantic_sensitivity=tags[TAG_SENSITIVITY],
-            )(func),
-        )
-        if TAG_SEMANTIC_COLS in tags:
-            tagged = cast("_TFunc", h_tag(semantic_columns=tags[TAG_SEMANTIC_COLS])(tagged))
-        if TAG_SEMANTIC_DESC in tags:
-            tagged = cast("_TFunc", h_tag(semantic_description=tags[TAG_SEMANTIC_DESC])(tagged))
-        if TAG_SEMANTIC_JOINS in tags:
-            tagged = cast("_TFunc", h_tag(semantic_joins=tags[TAG_SEMANTIC_JOINS])(tagged))
-        if TAG_SCHEMA_REF in tags:
-            tagged = cast("_TFunc", h_tag(schema_ref=tags[TAG_SCHEMA_REF])(tagged))
-        if TAG_ENTITY_KEYS in tags:
-            tagged = cast("_TFunc", h_tag(entity_keys=tags[TAG_ENTITY_KEYS])(tagged))
-        if TAG_JOIN_KEYS in tags:
-            tagged = cast("_TFunc", h_tag(join_keys=tags[TAG_JOIN_KEYS])(tagged))
+        tagged = apply_raw_tags(func, tags=tags)
         setattr(tagged, SEMANTIC_VIEW_TAG_ATTR, tags)
         return tagged
 

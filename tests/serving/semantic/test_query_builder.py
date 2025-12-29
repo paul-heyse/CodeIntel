@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from sqlglot import exp
+from sqlglot import exp, parse_one
 
 from codeintel.serving.semantic.models import FilterSpec
 from codeintel.serving.semantic.polars_query_builder import (
@@ -44,6 +44,23 @@ def test_polars_ast_builder_filters_orders_and_paginates() -> None:
         column_types=spec.column_types,
     ).collect()
     expect_equal(result.to_dicts(), [{"id": 3, "label": "three"}, {"id": 2, "label": "two"}])
+
+
+def test_polars_ast_builder_supports_alias_and_lower() -> None:
+    """AST builder supports projection aliases and lower()."""
+    pl = pytest.importorskip("polars")
+    lazy = pl.DataFrame({"label": ["One", "Two"]}).lazy()
+    ast = parse_one(
+        "SELECT lower(label) AS label_lower FROM docs.v_demo",
+        dialect="duckdb",
+    )
+    result = apply_query_ast(
+        lazy,
+        ast=ast,
+        allowed_columns=frozenset({"label"}),
+        column_types={"label": "VARCHAR"},
+    ).collect()
+    expect_equal(result.to_dicts(), [{"label_lower": "one"}, {"label_lower": "two"}])
 
 
 def test_polars_ast_builder_rejects_unknown_column() -> None:

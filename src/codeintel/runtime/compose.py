@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
     from hamilton.caching.adapter import HamiltonCacheAdapter
     from hamilton.execution.executors import TaskExecutor
+    from hamilton.io.materialization import ExtractorFactory, MaterializerFactory
     from hamilton.lifecycle.base import LifecycleAdapter
 
 log = logging.getLogger(__name__)
@@ -173,6 +174,7 @@ def compose_runtime(
         Composed runtime bundle with driver, catalog, and settings.
     """
     with _composition_guard():
+        resolved_options = options or BuildDriverOptions()
         resolved_config = _resolve_runtime_config(env=env, config=config)
         resolved_modules = _resolve_modules_for_runtime(
             env=env,
@@ -194,7 +196,7 @@ def compose_runtime(
         )
         cache_profile = _cache_profile(merged_config)
         adapters, cache_adapter, cache_store = _resolve_driver_resources(
-            options=options,
+            options=resolved_options,
             base_catalog=base_catalog,
             modules_fingerprint=resolved_modules.fingerprint,
             cache_profile=cache_profile,
@@ -207,6 +209,7 @@ def compose_runtime(
             config=merged_config,
             modules=resolved_modules.modules,
             adapters=adapters,
+            materializers=resolved_options.materializers,
             dynamic_config=resolved_config.dynamic_execution,
         )
         runtime_bundle = _build_runtime_bundle(
@@ -619,11 +622,14 @@ def _build_driver_with_adapters(
     config: Mapping[str, Any],
     modules: Sequence[ModuleType],
     adapters: Sequence[LifecycleAdapter],
+    materializers: Sequence[ExtractorFactory | MaterializerFactory] | None,
     dynamic_config: _DynamicExecutionConfig,
 ) -> h_driver.Driver:
     builder = (
         h_driver.Builder().with_config(dict(config)).with_modules(*modules).allow_module_overrides()
     )
+    if materializers:
+        builder = builder.with_materializers(*materializers)
     builder = _apply_dynamic_execution(builder=builder, config=dynamic_config)
     return builder.with_adapters(*adapters).build()
 

@@ -239,6 +239,8 @@ class SemanticQueryFingerprintInput:
         Effective offset.
     schema_hash
         Optional schema fingerprint for stability across schema changes.
+    ast_hash
+        Optional canonical SQLGlot AST fingerprint for semantic stability.
     """
 
     snapshot: Mapping[str, str]
@@ -250,6 +252,7 @@ class SemanticQueryFingerprintInput:
     limit: int
     offset: int
     schema_hash: str | None = None
+    ast_hash: str | None = None
 
     def canonical_payload(self) -> dict[str, object]:
         """Return a canonical JSON payload for hashing.
@@ -270,6 +273,7 @@ class SemanticQueryFingerprintInput:
             "limit": int(self.limit),
             "offset": int(self.offset),
             "schema_hash": self.schema_hash,
+            "ast_hash": self.ast_hash,
         }
 
 

@@ -22,6 +22,7 @@ from codeintel.build.assets.fingerprinting import (
 )
 from codeintel.core.config.settings import BuildSettings, HamiltonExecutionSettings
 from codeintel.core.runtime.variants import VariantConfig
+from codeintel.storage.validation import ContractValidationMode
 from codeintel.storage.warehouse import Warehouse
 
 if TYPE_CHECKING:
@@ -83,6 +84,8 @@ class BuildEnv:
         When True, validate produced datasets against their Pandera schemas
         after write. Validation failures will mark the target as failed and
         block downstream targets.
+    validation_mode
+        Validation mode to apply to output validation (lenient or strict).
     history_options
         Optional options for multi-commit history aggregation targets.
     history_db_resolver
@@ -124,6 +127,7 @@ class BuildEnv:
     force_targets: frozenset[str] = field(default_factory=frozenset)
     manifest_index: Mapping[str, OutputManifest] | None = None
     validate_outputs: bool = False
+    validation_mode: ContractValidationMode = ContractValidationMode.LENIENT
     history_options: HistoryTimeseriesOptions | None = None
     history_db_resolver: Callable[[str], StorageGateway] | None = None
     fingerprint_policy: FingerprintPolicy = field(

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, ParamSpec, TypeVar, cast
 
-from hamilton.function_modifiers import source, value
+from hamilton.function_modifiers import check_output_custom, resolve_from_config, source, value
+from hamilton.function_modifiers.base import NodeTransformLifecycle
 
+from codeintel.build.hamilton.data_quality import build_table_schema_validators
 from codeintel.build.hamilton.materializers import (
     ArrowDatasetSaver,
     DuckDBRelationSaver,
@@ -16,11 +18,9 @@ from codeintel.build.hamilton.materializers import (
 from codeintel.build.hamilton.naming import materialize_node
 from codeintel.build.hamilton.native.patterns.specs import OutputRole
 from codeintel.build.hamilton.save_to import SaveToObjectMetadataDecorator
-from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute
+from codeintel.build.hamilton.tagging import TagKey, TagValue, tag_compute, tag_dataset
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from hamilton.function_modifiers.dependencies import ParametrizedDependency
 
 P = ParamSpec("P")
@@ -53,6 +53,7 @@ class DatasetSaveSpec:
     table_key: str
     partition_columns: tuple[str, ...] = ()
     collect_group: str | None = None
+    validation_profile: str | None = "lenient"
     output_role: OutputRole | None = None
     output_name: str | None = None
 
@@ -62,12 +63,98 @@ class RelationTableSaveSpec:
     """Specification for saving a DuckDB relation table."""
 
     table_key: str
+    validation_profile: str | None = "lenient"
     output_role: OutputRole | None = None
     output_name: str | None = None
 
 
 def _dep(value: object) -> ParametrizedDependency:
     return cast("ParametrizedDependency", value)
+
+
+class _NoOpTransform(NodeTransformLifecycle):
+    """No-op decorator used when validation is disabled."""
+
+    @classmethod
+    def get_lifecycle_name(cls) -> str:
+        return "codeintel_noop_validation"
+
+    @classmethod
+    def allows_multiple(cls) -> bool:
+        return True
+
+    def validate(self, fn: Callable[..., object]) -> None:
+        _ = (self, fn)
+
+    def __call__(self, fn: Callable[..., object]) -> Callable[..., object]:
+        return fn
+
+
+def _resolve_validation_profile(
+    *,
+    default_profile: str | None,
+    config_mode: str,
+) -> str | None:
+    if not isinstance(config_mode, str):
+        return default_profile
+    normalized = config_mode.strip().lower()
+    if normalized in {"strict", "lenient"}:
+        return normalized
+    if normalized in {"off", "none", ""}:
+        return None
+    return default_profile
+
+
+def _resolve_min_rows(
+    *,
+    table_key: str,
+    base_min_rows: int,
+    overrides: Mapping[str, int] | None,
+) -> int:
+    if not overrides or not isinstance(overrides, Mapping):
+        return base_min_rows
+    override = overrides.get(table_key)
+    if isinstance(override, int) and override >= 0:
+        return override
+    return base_min_rows
+
+
+def _validation_from_config(
+    *,
+    table_key: str,
+    default_profile: str | None,
+) -> NodeTransformLifecycle:
+    def _factory(
+        *,
+        ci_validate_outputs: bool = False,
+        ci_validation_mode: str = "lenient",
+        ci_validation_min_rows: int = 0,
+        ci_validation_min_rows_by_table: Mapping[str, int] | None = None,
+    ) -> NodeTransformLifecycle:
+        if not ci_validate_outputs:
+            return _NoOpTransform()
+        profile = _resolve_validation_profile(
+            default_profile=default_profile,
+            config_mode=ci_validation_mode,
+        )
+        if profile is None:
+            return _NoOpTransform()
+        base_min_rows = ci_validation_min_rows if isinstance(ci_validation_min_rows, int) else 0
+        min_rows = _resolve_min_rows(
+            table_key=table_key,
+            base_min_rows=base_min_rows,
+            overrides=ci_validation_min_rows_by_table,
+        )
+        validators = build_table_schema_validators(
+            table_key=table_key,
+            profile=profile,
+            min_rows=min_rows,
+        )
+        if not validators:
+            return _NoOpTransform()
+        return check_output_custom(*validators)
+
+    return resolve_from_config(decorate_with=_factory)
 
 
 def save_artifact(
@@ -139,16 +226,23 @@ def save_dataset(
         table_key=_dep(value(spec.table_key)),
         partition_columns=_dep(value(spec.partition_columns)),
         collect_group=_dep(value(spec.collect_group)),
+        validation_profile=_dep(value(spec.validation_profile)),
         output_role=_dep(value(spec.output_role)),
+    )
+    validator = _validation_from_config(
+        table_key=spec.table_key,
+        default_profile=spec.validation_profile,
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
-        tagged = tag_compute(
+        tagged = tag_dataset(
             domain=context.domain,
             target=context.target,
+            table_key=spec.table_key,
             extra_tags=context.extra_tags,
         )(fn)
-        return decorator(tagged)
+        validated = validator(tagged)
+        return decorator(validated)
 
     return apply
 
@@ -179,16 +273,23 @@ def save_relation_table(
         catalog=_dep(source("catalog")),
         target_name=_dep(value(context.target)),
         table_key=_dep(value(spec.table_key)),
+        validation_profile=_dep(value(spec.validation_profile)),
         output_role=_dep(value(spec.output_role)),
+    )
+    validator = _validation_from_config(
+        table_key=spec.table_key,
+        default_profile=spec.validation_profile,
     )
 
     def apply(fn: Callable[P, R]) -> Callable[P, R]:
-        tagged = tag_compute(
+        tagged = tag_dataset(
             domain=context.domain,
             target=context.target,
+            table_key=spec.table_key,
             extra_tags=context.extra_tags,
         )(fn)
-        return decorator(tagged)
+        validated = validator(tagged)
+        return decorator(validated)
 
     return apply
 

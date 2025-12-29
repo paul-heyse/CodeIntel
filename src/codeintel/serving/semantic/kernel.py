@@ -60,8 +60,9 @@ from codeintel.serving.semantic.models import (
     SemanticViewDescriptionResponse,
 )
 from codeintel.serving.semantic.planner import SemanticQueryPlanner
-from codeintel.serving.semantic.query_ast import ServingQuery
+from codeintel.serving.semantic.query_ast import ServingQuery, build_serving_query
 from codeintel.serving.semantic.specs import SemanticQuerySpec
+from codeintel.serving.semantic.sqlglot_query_builder import SqlglotQueryBuilderError
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import DUCKDB_DIALECT, META_CATALOG_NAME
 from codeintel.storage.duckdb_types import DuckDBError
@@ -72,7 +73,11 @@ from codeintel.storage.queries.safe import (
     assert_select_perimeter,
 )
 from codeintel.storage.schema import arrow_schema_for_table_key
-from codeintel.storage.sqlglot_tools import semantic_diff_sql_duckdb
+from codeintel.storage.sqlglot_tools import (
+    extract_column_lineage_duckdb,
+    extract_table_keys_duckdb,
+    semantic_diff_sql_duckdb,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
@@ -105,6 +110,8 @@ class UnknownViewIdError(KeyError):
         self.view_id = view_id
 
 
+MIN_COLUMN_LINEAGE_PARTS = 2
+
 LOG = logging.getLogger(__name__)
 
 
@@ -125,6 +132,18 @@ def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, object]]:
         {name: arrays[idx][row_idx].as_py() for idx, name in enumerate(columns)}
         for row_idx in range(batch.num_rows)
     ]
+
+
+def _column_lineage_refs(entries: Iterable[str]) -> list[ColumnLineageRef]:
+    refs: list[ColumnLineageRef] = []
+    for entry in entries:
+        parts = [part for part in entry.split(".") if part]
+        if len(parts) < MIN_COLUMN_LINEAGE_PARTS:
+            continue
+        table_key = ".".join(parts[:-1])
+        refs.append(ColumnLineageRef(table_key=table_key, column=parts[-1]))
+    refs.sort(key=lambda ref: (ref.table_key, ref.column))
+    return refs
 
 
 def _raise_if_cancelled(cancel_check: CancelCheck | None) -> None:
@@ -364,6 +383,7 @@ class SemanticQueryKernel:
         schema_hash_value = self._planner.schema_hash_for_table_key(
             inventory=inventory, table_key=spec.table_key
         )
+        ast_hash = self._ast_hash_for_spec(spec=spec)
         inputs = SemanticQueryFingerprintInput(
             snapshot=self._snapshot_dict(pointer).model_dump(mode="json"),
             view_id=view_id,
@@ -374,6 +394,7 @@ class SemanticQueryKernel:
             limit=spec.limit,
             offset=spec.offset,
             schema_hash=schema_hash_value,
+            ast_hash=ast_hash,
         )
         query_hash = fingerprint_semantic_query(inputs)
         return query_hash, schema_hash_value
@@ -384,6 +405,15 @@ class SemanticQueryKernel:
         if schema is None:
             return None
         return schema_digest(schema)
+
+    @staticmethod
+    def _ast_hash_for_spec(*, spec: SemanticQuerySpec) -> str | None:
+        try:
+            serving_query = build_serving_query(spec=spec)
+            sql = serving_query.ast.sql(dialect=DUCKDB_DIALECT)
+            return sqlglot_canonical_sha256(sql)
+        except (SqlglotError, SqlglotQueryBuilderError, TypeError, ValueError):
+            return None
 
     def _engine_context(
         self,
@@ -766,8 +796,6 @@ class SemanticQueryKernel:
                 )
                 compiled_plan = engine.compile(plan.serving_query, ctx=engine_ctx)
                 try:
-                    _raise_if_cancelled(cancel_check)
-                    reader = compiled_plan.to_reader(batch_size=plan.batch_size)
                     contract_schema = _contract_schema_for_table(
                         warehouse.gateway.con,
                         table_key=plan.resolved.view.table_key,
@@ -782,6 +810,9 @@ class SemanticQueryKernel:
                             schema_hash_value=plan.schema_hash,
                             schema_digest_value=plan.schema_digest,
                         )
+                    _raise_if_cancelled(cancel_check)
+                    reader = compiled_plan.to_reader(batch_size=plan.batch_size)
+                    if contract_schema is not None:
                         reader = align_reader_to_contract(
                             reader,
                             contract_schema,
@@ -849,8 +880,6 @@ class SemanticQueryKernel:
         )
         plan = engine.compile(serving_query, ctx=engine_ctx)
         try:
-            _raise_if_cancelled(cancel_check)
-            reader = plan.to_reader(batch_size=self.settings.export_batch_size)
             query_hash, schema_hash_value = self._fingerprint_semantic_plan(
                 pointer=resolved.pointer,
                 view_id=resolved.view.id,
@@ -875,6 +904,9 @@ class SemanticQueryKernel:
                     schema_hash_value=schema_hash_value,
                     schema_digest_value=schema_digest_value,
                 )
+            _raise_if_cancelled(cancel_check)
+            reader = plan.to_reader(batch_size=self.settings.export_batch_size)
+            if contract_schema is not None:
                 reader = align_reader_to_contract(
                     reader,
                     contract_schema,
@@ -939,11 +971,26 @@ class SemanticQueryKernel:
                 explain = plan.explain()
             finally:
                 plan.cleanup()
+            table_keys: list[str] = []
+            column_lineage: dict[str, list[ColumnLineageRef]] = {}
+            try:
+                ast_sql = serving_query.ast.sql(dialect=DUCKDB_DIALECT)
+                table_keys = sorted(extract_table_keys_duckdb(ast_sql))
+                raw_lineage = extract_column_lineage_duckdb(ast_sql)
+                column_lineage = {
+                    column: _column_lineage_refs(entries)
+                    for column, entries in raw_lineage.items()
+                }
+            except (SqlglotError, TypeError, ValueError):
+                table_keys = []
+                column_lineage = {}
             return SemanticExplainResponse(
                 view_id=request.view_id,
                 sql=explain.sql or "",
                 plan=explain.plan or "",
                 snapshot=self._snapshot_dict(pointer),
+                table_keys=table_keys,
+                column_lineage=column_lineage,
             )
 
     def compile_query_sql(self, request: SemanticQueryRequest) -> str:

@@ -534,6 +534,8 @@ class BuildRunResult:
         Total duration in seconds.
     cache
         Optional cache report for the run (hit/miss summary and per-node outcomes).
+    target_tags
+        Optional tag metadata keyed by target name.
     """
 
     executed: list[str]
@@ -541,6 +543,7 @@ class BuildRunResult:
     failed: list[str]
     duration_seconds: float
     cache: dict[str, object] | None = None
+    target_tags: dict[str, dict[str, object]] | None = None
 
     def to_dict(self) -> dict[str, object]:
         """Convert to dictionary for JSON serialization.
@@ -558,6 +561,8 @@ class BuildRunResult:
         }
         if self.cache is not None:
             result["cache"] = self.cache
+        if self.target_tags is not None:
+            result["target_tags"] = self.target_tags
         return result
 
 
@@ -1831,6 +1836,7 @@ class TargetOriginInfo:
     anchor_module: str | None
     origin: str | None
     plugin_name: str | None
+    tags: dict[str, object] | None = None
 
 
 @result_type

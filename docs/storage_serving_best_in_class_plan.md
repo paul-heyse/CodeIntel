@@ -32,6 +32,24 @@
 
 ## Phase 0: Baseline inventory and boundaries
 
+### Current State
+
+- Serving entrypoints: FastAPI routes (semantic query/explain/export) and FastMCP tools call into
+  `SemanticQueryKernel` which builds a `ServingQuery` (SQLGlot AST) via
+  `serving/semantic/planner.py` → `serving/semantic/query_ast.py`.
+- Routing: `serving/semantic/engines/registry.py` uses `serving/semantic/routing.py` to select
+  Polars for compatible ASTs; view-backed queries without Polars view specs default to DuckDB.
+- Polars execution: `serving/semantic/engines/polars_engine.py` applies AST filters/order/limit
+  over LazyFrames sourced from Arrow datasets via `serving/semantic/datasets.py`.
+- DuckDB execution: `serving/semantic/engines/duckdb_engine.py` builds a relation plan from AST
+  using `serving/semantic/duckdb_relation_builder.py`, and streams Arrow readers.
+- Storage views: `storage/views/sqlglot_views.py` loads `view_sql_map.json` to build SQLGlot view
+  expressions for materialization/inference; lineage sync uses SQLGlot lineage helpers.
+- Dataset storage: `storage/datasets/arrow_store.py` writes Parquet datasets + manifests; serving
+  reads use PyArrow dataset scanners with manifest-derived stats in `serving/semantic/datasets.py`.
+- Metadata: schema contracts/lineage are stored in DuckDB metadata tables and surfaced via
+  `storage/schema/arrow_schema.py` into serving contracts.
+
 Deliverables
 - Inventory of current storage and serving flows and their engine usage.
 - Explicit feature envelope definitions for Polars vs DuckDB.

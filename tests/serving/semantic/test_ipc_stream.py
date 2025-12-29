@@ -28,10 +28,22 @@ if TYPE_CHECKING:
     from tests._helpers.serving_snapshot_factory import ServingSnapshot
 
 
-def _decode_metadata(metadata: dict[bytes, bytes]) -> dict[str, object]:
-    return {
-        key.decode("utf-8"): json.loads(value.decode("utf-8")) for key, value in metadata.items()
-    }
+def _decode_metadata(metadata: dict[bytes, bytes] | None) -> dict[str, object]:
+    if not metadata:
+        return {}
+    decoded: dict[str, object] = {}
+    for key, raw in metadata.items():
+        key_str = key.decode("utf-8")
+        raw_str = raw.decode("utf-8")
+        decoded[key_str] = _decode_metadata_value(raw_str)
+    return decoded
+
+
+def _decode_metadata_value(raw: str) -> object:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
 
 
 def _schema_manifest_from_path(path: Path) -> SchemaManifest:

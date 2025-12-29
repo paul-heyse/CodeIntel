@@ -103,6 +103,7 @@ from codeintel.cli.options.registry import (
     BUILD_RUN_PARALLEL_BACKEND,
     BUILD_RUN_PROGRESS,
     BUILD_RUN_PUBLISH_SNAPSHOT,
+    BUILD_RUN_SHOW_TAGS,
     BUILD_RUN_TARGETS,
     BUILD_RUN_VALIDATE_OUTPUTS,
     BUILD_RUN_VALIDATION_MODE,
@@ -114,6 +115,7 @@ from codeintel.cli.options.registry import (
     REGISTRY_OUTPUTS_PILOT_ONLY,
     REGISTRY_OUTPUTS_TABLE_KEY,
     REGISTRY_OUTPUTS_TARGETS,
+    TAG_FILTERS,
 )
 from codeintel.cli.options.shared_flags import SharedFlagsProtocol, shared_flags_field
 from codeintel.cli.options.types import CommandPath, option_param
@@ -202,6 +204,10 @@ class BuildRunCommand:
         list[str] | None,
         option_param(BUILD_RUN_TARGETS, command_path=BUILD_RUN_PATH),
     ] = None
+    tags: Annotated[
+        list[str] | None,
+        option_param(TAG_FILTERS, command_path=BUILD_RUN_PATH),
+    ] = None
     module: Annotated[
         str | None,
         option_param(BUILD_RUN_MODULE, command_path=BUILD_RUN_PATH),
@@ -229,6 +235,10 @@ class BuildRunCommand:
     publish_serving_snapshot: Annotated[
         bool,
         option_param(BUILD_RUN_PUBLISH_SNAPSHOT, command_path=BUILD_RUN_PATH),
+    ] = False
+    show_tags: Annotated[
+        bool,
+        option_param(BUILD_RUN_SHOW_TAGS, command_path=BUILD_RUN_PATH),
     ] = False
     parallel_backend: Annotated[
         str,

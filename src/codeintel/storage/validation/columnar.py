@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Iterator
-from typing import Literal
+from collections.abc import Callable, Iterator, Mapping
+from typing import TYPE_CHECKING, Literal
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -12,6 +12,9 @@ import pyarrow.compute as pc
 from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
+
+if TYPE_CHECKING:
+    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 ValidationMode = Literal["strict", "warn", "skip"]
 
@@ -206,6 +209,7 @@ def validate_table(
     table: pa.Table,
     *,
     table_schema: TableSchema | None = None,
+    schema_observation: SchemaObservationRecord | None = None,
     mode: ValidationMode = "strict",
 ) -> pa.Table:
     """Validate an Arrow table against the registered TableSchema.
@@ -218,6 +222,8 @@ def validate_table(
         Arrow table to validate.
     table_schema
         Optional schema override to use instead of the registry lookup.
+    schema_observation
+        Optional schema observation record for inferred constraint checks.
     mode
         Validation behavior: ``"strict"`` raises, ``"warn"`` logs, ``"skip"`` ignores.
 
@@ -234,6 +240,7 @@ def validate_table(
     errors.extend(_schema_errors(schema, table.schema))
     errors.extend(_arrow_validation_errors(table))
     errors.extend(_nullability_errors_for_table(schema, table))
+    errors.extend(_observation_errors_for_table(schema, table, schema_observation))
     _handle_errors(table_key, errors, mode)
     return table
 
@@ -243,9 +250,23 @@ def validate_record_batch_reader(
     reader: pa.RecordBatchReader,
     *,
     table_schema: TableSchema | None = None,
+    schema_observation: SchemaObservationRecord | None = None,
     mode: ValidationMode = "strict",
 ) -> pa.RecordBatchReader:
     """Validate a RecordBatchReader stream against the registered TableSchema.
+
+    Parameters
+    ----------
+    table_key
+        Fully qualified table key (schema.table).
+    reader
+        RecordBatchReader to validate.
+    table_schema
+        Optional schema override to use instead of the registry lookup.
+    schema_observation
+        Optional schema observation record for inferred constraint checks.
+    mode
+        Validation behavior: ``"strict"`` raises, ``"warn"`` logs, ``"skip"`` ignores.
 
     Returns
     -------
@@ -265,9 +286,122 @@ def validate_record_batch_reader(
             batch_errors = []
             batch_errors.extend(_arrow_batch_validation_errors(batch))
             batch_errors.extend(_nullability_errors_for_batch(schema, batch))
+            batch_errors.extend(
+                _observation_errors_for_batch(schema, batch, schema_observation)
+            )
             if batch_errors:
                 batch_errors = [f"batch {batch_index}: {error}" for error in batch_errors]
                 _handle_errors(table_key, batch_errors, mode)
             yield batch
 
     return pa.RecordBatchReader.from_batches(reader.schema, _iter_batches())
+
+
+def _observation_errors_for_table(
+    table_schema: TableSchema,
+    table: pa.Table,
+    observation: SchemaObservationRecord | None,
+) -> list[str]:
+    stats_by_name = _column_stats_lookup(observation)
+    if not stats_by_name:
+        return []
+    errors: list[str] = []
+    for column in table_schema.columns:
+        if column.name not in table.column_names:
+            continue
+        stats = stats_by_name.get(column.name)
+        if stats is None:
+            continue
+        errors.extend(_range_errors(column.name, table.column(column.name), stats))
+    return errors
+
+
+def _observation_errors_for_batch(
+    table_schema: TableSchema,
+    batch: pa.RecordBatch,
+    observation: SchemaObservationRecord | None,
+) -> list[str]:
+    stats_by_name = _column_stats_lookup(observation)
+    if not stats_by_name:
+        return []
+    errors: list[str] = []
+    names = list(batch.schema.names)
+    for column in table_schema.columns:
+        if column.name not in names:
+            continue
+        stats = stats_by_name.get(column.name)
+        if stats is None:
+            continue
+        index = names.index(column.name)
+        errors.extend(_range_errors(column.name, batch.column(index), stats))
+    return errors
+
+
+def _range_errors(
+    name: str,
+    values: pa.Array | pa.ChunkedArray,
+    stats: Mapping[str, object],
+) -> list[str]:
+    errors: list[str] = []
+    min_value = stats.get("min")
+    max_value = stats.get("max")
+    if min_value is not None and _any_out_of_range(values, min_value, op="lt"):
+        errors.append(f"Column {name} has values below observed min {min_value}")
+    if max_value is not None and _any_out_of_range(values, max_value, op="gt"):
+        errors.append(f"Column {name} has values above observed max {max_value}")
+    return errors
+
+
+def _any_out_of_range(
+    values: pa.Array | pa.ChunkedArray,
+    bound: object,
+    *,
+    op: Literal["lt", "gt"],
+) -> bool:
+    scalar = _coerce_scalar(bound, values.type)
+    if scalar is None:
+        return False
+    less = getattr(pc, "less", None)
+    greater = getattr(pc, "greater", None)
+    compare = less if op == "lt" else greater
+    if not callable(compare):
+        return False
+    try:
+        mask = compare(values, scalar)
+    except (TypeError, pa.ArrowInvalid, pa.ArrowNotImplementedError):
+        return False
+    return _any_true(mask)
+
+
+def _any_true(values: pa.Array | pa.ChunkedArray) -> bool:
+    any_fn = getattr(pc, "any", None)
+    if callable(any_fn):
+        result = any_fn(values)
+        as_py = getattr(result, "as_py", None)
+        if callable(as_py):
+            value = as_py()
+            return bool(value) if value is not None else False
+    return any(values.to_pylist())
+
+
+def _coerce_scalar(value: object, data_type: pa.DataType) -> pa.Scalar | None:
+    try:
+        return pa.scalar(value, type=data_type)
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+
+
+def _column_stats_lookup(
+    observation: SchemaObservationRecord | None,
+) -> dict[str, Mapping[str, object]]:
+    if observation is None:
+        return {}
+    raw_stats = observation.column_stats
+    if not isinstance(raw_stats, Mapping):
+        return {}
+    stats: dict[str, Mapping[str, object]] = {}
+    for name, payload in raw_stats.items():
+        if not isinstance(name, str) or not isinstance(payload, Mapping):
+            continue
+        stats[name] = payload
+    return stats

@@ -89,6 +89,12 @@ def test_ast_supports_polars_rejects_join() -> None:
     assert not ast_supports_polars(ast)
 
 
+def test_ast_supports_polars_rejects_unknown_function() -> None:
+    """Unsupported functions should route away from Polars."""
+    ast = parse_one("SELECT foo(id) FROM docs.v_demo", dialect=DUCKDB_DIALECT)
+    assert not ast_supports_polars(ast)
+
+
 def test_auto_preference_prefers_duckdb_for_unregistered_views(tmp_path: Path) -> None:
     """Views without a registered Polars spec should route to DuckDB first."""
     view = SemanticViewSpec(

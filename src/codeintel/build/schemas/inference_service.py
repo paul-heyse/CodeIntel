@@ -24,9 +24,11 @@ from codeintel.build.run_context import BuildRunContext
 from codeintel.build.schemas.observations import (
     SchemaObservationAccumulator,
     SchemaObservationBundle,
+    SchemaObservationInputs,
     merge_table_schema_hints,
     observe_batches,
-    schema_hints_from_tags,
+    schema_hints_from_tag_sets,
+    table_schema_from_tag_sets,
 )
 from codeintel.build.schemas.seed_harness import MiniSeedHarness
 from codeintel.build.tabular.types import InferableTabularInput, TabularInput
@@ -37,6 +39,7 @@ from codeintel.core.config.settings import (
     ExportAuditSettings,
     HamiltonExecutionSettings,
 )
+from codeintel.core.hamilton import tags as hamilton_tags
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
@@ -46,12 +49,13 @@ from codeintel.core.schemas.provider import SchemaProvider
 from codeintel.storage.gateway import open_inference_gateway
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator, Mapping
+    from collections.abc import Iterable, Iterator, Mapping, Sequence
 
     from codeintel.build.hamilton.dag_catalog import DagCatalog
     from codeintel.build.hamilton.env import BuildEnv
     from codeintel.build.providers import Providers
     from codeintel.build.schemas.observations import SchemaHints
+    from codeintel.core.schemas.arrow_gen import ExtrasPolicy
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
@@ -68,6 +72,8 @@ __all__ = [
     "observe_schema_from_reader",
     "table_schema_from_tabular",
 ]
+
+_SCHEMA_OUTPUT_TAG = "hamilton.internal.schema_output"
 
 
 @dataclass(frozen=True)
@@ -174,10 +180,51 @@ def _schema_hints_for_table_key(
     catalog: DagCatalog,
     table_key: str,
 ) -> SchemaHints | None:
+    tag_sets = _schema_tag_sets_for_table(catalog=catalog, table_key=table_key)
+    return schema_hints_from_tag_sets(tag_sets)
+
+
+def _schema_tag_sets_for_table(
+    *,
+    catalog: DagCatalog,
+    table_key: str,
+) -> tuple[Mapping[str, object], ...]:
+    tag_sets: list[Mapping[str, object]] = []
     output = catalog.table_outputs.get(table_key)
-    if output is None:
-        return None
-    return schema_hints_from_tags(output.tags)
+    if output is not None:
+        tag_sets.append(output.tags)
+        tag_sets.extend(_schema_output_tag_sets(catalog=catalog, saver_node=output.saver_node))
+    tag_sets.extend(
+        node.tags
+        for node in catalog.nodes.values()
+        if node.tags.get(hamilton_tags.TAG_TABLE_KEY) == table_key
+    )
+    return tuple(tag_sets)
+
+
+def _schema_output_tag_sets(
+    *,
+    catalog: DagCatalog,
+    saver_node: str,
+) -> list[Mapping[str, object]]:
+    node = catalog.nodes.get(saver_node)
+    if node is None:
+        return []
+    visited: set[str] = set()
+    stack = list(node.deps)
+    tag_sets: list[Mapping[str, object]] = []
+    while stack:
+        node_name = stack.pop()
+        if node_name in visited:
+            continue
+        visited.add(node_name)
+        candidate = catalog.nodes.get(node_name)
+        if candidate is None:
+            continue
+        if _SCHEMA_OUTPUT_TAG in candidate.tags:
+            tag_sets.append(candidate.tags)
+        stack.extend(candidate.deps)
+    return tag_sets
 
 
 def _resolve_inference_job(
@@ -396,8 +443,14 @@ def infer_schema_for_table_key(
             declared_provider=declared_provider,
             job=job,
         )
+        tag_sets = _schema_tag_sets_for_table(catalog=catalog, table_key=table_key)
         declared_schema = declared_provider.get_table_schema(table_key)
-        schema_hints = _schema_hints_for_table_key(catalog=catalog, table_key=table_key)
+        if declared_schema is None:
+            declared_schema = table_schema_from_tag_sets(
+                table_key=table_key,
+                tag_sets=tag_sets,
+            )
+        schema_hints = schema_hints_from_tag_sets(tag_sets)
         return merge_table_schema_hints(
             inferred,
             declared_schema,
@@ -427,6 +480,8 @@ class SchemaObservationContext:
     repo: str | None = None
     commit: str | None = None
     target_name: str | None = None
+    extras_policy: ExtrasPolicy | None = None
+    drift_history: Sequence[Mapping[str, object] | None] | None = None
 
 
 @dataclass
@@ -693,12 +748,14 @@ def observe_schema_from_reader(
         schema_hints=resolved.schema_hints,
     )
     observe_batches(reader, accumulator=accumulator)
-    return accumulator.finalize(
-        arrow_schema=reader.schema,
+    inputs = SchemaObservationInputs(
         repo=resolved.repo,
         commit=resolved.commit,
         target_name=resolved.target_name,
+        extras_policy=resolved.extras_policy,
+        drift_history=resolved.drift_history,
     )
+    return accumulator.finalize(arrow_schema=reader.schema, inputs=inputs)
 
 
 def observe_schema_from_batches(
@@ -733,12 +790,14 @@ def observe_schema_from_batches(
         schema_hints=resolved.schema_hints,
     )
     observe_batches(batches, accumulator=accumulator)
-    return accumulator.finalize(
-        arrow_schema=schema,
+    inputs = SchemaObservationInputs(
         repo=resolved.repo,
         commit=resolved.commit,
         target_name=resolved.target_name,
+        extras_policy=resolved.extras_policy,
+        drift_history=resolved.drift_history,
     )
+    return accumulator.finalize(arrow_schema=schema, inputs=inputs)
 
 
 @dataclass(frozen=True, slots=True)
