@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import cast
 
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -112,7 +114,7 @@ def extras_policy_from_schema(
     metadata = _decode_metadata(schema.metadata)
     raw = metadata.get("codeintel.extras_policy")
     if isinstance(raw, str) and raw in EXTRAS_POLICIES:
-        return raw
+        return cast("ExtrasPolicy", raw)
     return default
 
 
@@ -202,9 +204,13 @@ def _coerce_array(
 ) -> pa.Array:
     try:
         return _cast_array(array, field.type, promote_options)
-    except (pa.ArrowInvalid, pa.ArrowTypeError):
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, pa.ArrowTypeError):
         if _is_json_field(field) and pa.types.is_string(field.type):
             return _json_string_array(array)
+        if pa.types.is_timestamp(field.type) and _is_string_array(array):
+            parsed = _timestamp_string_array(array, field.type)
+            if parsed is not None:
+                return parsed
         raise
 
 
@@ -226,6 +232,47 @@ def _json_string_value(value: object) -> str | None:
     if isinstance(value, str):
         return value
     return json.dumps(value, sort_keys=True, separators=_JSON_SEPARATORS)
+
+
+def _is_string_array(array: pa.Array) -> bool:
+    return pa.types.is_string(array.type) or pa.types.is_large_string(array.type)
+
+
+def _timestamp_string_array(
+    array: pa.Array,
+    target_type: pa.TimestampType,
+) -> pa.Array | None:
+    values: list[datetime | None] = []
+    for raw in array.to_pylist():
+        if raw is None:
+            values.append(None)
+            continue
+        if not isinstance(raw, str):
+            return None
+        parsed = _parse_iso_timestamp(raw, target_type)
+        if parsed is None:
+            return None
+        values.append(parsed)
+    return pa.array(values, type=target_type)
+
+
+def _parse_iso_timestamp(value: str, target_type: pa.TimestampType) -> datetime | None:
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if target_type.tz is None:
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+        return parsed
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _extras_field(name: str) -> pa.Field:

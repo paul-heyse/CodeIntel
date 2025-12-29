@@ -81,8 +81,8 @@ def test_load_module_map_filters_by_language(
                 "repo": repo,
                 "commit": commit,
                 "language": "python",
-                "tags": "[]",
-                "owners": "[]",
+                "tags": [],
+                "owners": [],
             },
             {
                 "module": "js.module",
@@ -90,8 +90,8 @@ def test_load_module_map_filters_by_language(
                 "repo": repo,
                 "commit": commit,
                 "language": "javascript",
-                "tags": "[]",
-                "owners": "[]",
+                "tags": [],
+                "owners": [],
             },
         ],
     )

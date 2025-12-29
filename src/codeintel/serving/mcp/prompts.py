@@ -23,7 +23,6 @@ from codeintel.serving.operations.ops import ServingOperations
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type, parse_filter_value
 from codeintel.serving.semantic.models import Op
 from codeintel.serving.settings import ServingSettings
-from codeintel.serving.uris import META_VIEWS_SQL_DIFF_URI, META_VIEWS_SQL_URI
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,7 +84,6 @@ def register_prompts(
     _register_explore_prompt(mcp)
     _register_export_wizard(mcp, settings=settings)
     _register_query_wizard(mcp, settings=settings, kernel=kernel)
-    _register_snapshot_diff_prompt(mcp)
 
 
 def _tool_invocation(tool: str, /, **arguments: object) -> dict[str, object]:
@@ -286,31 +284,6 @@ def _register_query_wizard(
                     "If sampling is enabled server-side and supported client-side, "
                     "large results may include a summary. "
                     f"sampling_enabled={feature_set.enable_mcp_sampling}"
-                ),
-                role="assistant",
-            ),
-        ]
-
-
-def _register_snapshot_diff_prompt(mcp: FastMCP) -> None:
-    _prompt_registry(mcp).register("what_changed_between_snapshots")
-
-    @mcp.prompt(
-        name="what_changed_between_snapshots",
-        description="Workflow: review semantic view SQL diffs between snapshots.",
-        tags={"ops", "meta"},
-        meta={"version": 1},
-    )
-    def what_changed_between_snapshots() -> list[PromptMessage]:
-        return [
-            Message(
-                f"Call `resources/read` on `{META_VIEWS_SQL_DIFF_URI}` (if present).",
-                role="assistant",
-            ),
-            Message(
-                (
-                    f"Then use `resources/read` on `{META_VIEWS_SQL_URI}` "
-                    "for full compiled SQL if needed."
                 ),
                 role="assistant",
             ),

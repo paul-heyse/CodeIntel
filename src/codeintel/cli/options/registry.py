@@ -144,6 +144,22 @@ BUILD_RUN_PROGRESS = OptionSpec(
     negative=("--no-progress",),
     env_name="progress",
 )
+BUILD_RUN_ENABLE_PLUGIN = OptionSpec(
+    arg_name="enable_plugin",
+    names=("--enable-plugin",),
+    help="Enable plugin packs by name (repeatable).",
+)
+BUILD_RUN_DISABLE_PLUGIN = OptionSpec(
+    arg_name="disable_plugin",
+    names=("--disable-plugin",),
+    help="Disable plugin packs by name (repeatable).",
+)
+BUILD_RUN_NO_WORKSPACE_TARGETS = OptionSpec(
+    arg_name="no_workspace_targets",
+    names=("--no-workspace-targets",),
+    help="Disable loading workspace targets from codeintel_targets/.",
+    negative=(),
+)
 
 BUILD_STATUS_MODULE = OptionSpec(
     arg_name="module",
@@ -532,6 +548,23 @@ BUILD_SPEC_OUTPUT = OptionSpec(
 
 
 # ---------------------------------------------------------------------------
+# Semantic registry command options
+# ---------------------------------------------------------------------------
+
+SEMANTIC_REGISTRY_OUTPUT = OptionSpec(
+    arg_name="output_file",
+    names=("--output", "-o"),
+    help="Output file path for semantic registry JSON (stdout if not specified).",
+    env_name="output",
+)
+SEMANTIC_REGISTRY_VERSION = OptionSpec(
+    arg_name="version",
+    names=("--version",),
+    help="Semantic registry version label.",
+)
+
+
+# ---------------------------------------------------------------------------
 # Dataset ops command options
 # ---------------------------------------------------------------------------
 
@@ -627,6 +660,11 @@ META_OVERRIDE_VERSION_ID = OptionSpec(
     arg_name="version_id",
     names=("--version-id",),
     help="Override version id to pin for the override registry.",
+)
+META_DRIFT_LIMIT = OptionSpec(
+    arg_name="limit",
+    names=("--limit", "-n"),
+    help="Maximum number of drift entries to return.",
 )
 
 
@@ -843,6 +881,18 @@ PLUGINS_PATH = OptionSpec(
 
 
 # ---------------------------------------------------------------------------
+# Targets command options
+# ---------------------------------------------------------------------------
+
+TARGETS_SHOW_ORIGIN = OptionSpec(
+    arg_name="show_origin",
+    names=("--show-origin",),
+    help="Include module origin and plugin attribution.",
+    negative=(),
+)
+
+
+# ---------------------------------------------------------------------------
 # Registry command options
 # ---------------------------------------------------------------------------
 
@@ -927,6 +977,16 @@ STORAGE_DB_PATH = OptionSpec(
     arg_name="db_path",
     names=("--db-path",),
     help="Path to DuckDB database.",
+)
+STORAGE_CACHE_LOG_DIR = OptionSpec(
+    arg_name="cache_dir",
+    names=("--cache-dir",),
+    help="Directory containing Hamilton cache JSONL logs.",
+)
+STORAGE_CACHE_LOG_PATHS = OptionSpec(
+    arg_name="jsonl_paths",
+    names=("--jsonl-path",),
+    help="Cache log JSONL file path (repeatable).",
 )
 STORAGE_VALIDATION_MODE = OptionSpec(
     arg_name="validation_mode",
@@ -1052,11 +1112,14 @@ __all__ = [
     "BUILD_RUN_CACHE_DIR",
     "BUILD_RUN_CACHE_REPORT",
     "BUILD_RUN_CLEAR_CACHE",
+    "BUILD_RUN_DISABLE_PLUGIN",
     "BUILD_RUN_DRY_RUN",
     "BUILD_RUN_ENABLE_CACHE",
+    "BUILD_RUN_ENABLE_PLUGIN",
     "BUILD_RUN_FORCE",
     "BUILD_RUN_MAX_WORKERS",
     "BUILD_RUN_MODULE",
+    "BUILD_RUN_NO_WORKSPACE_TARGETS",
     "BUILD_RUN_PARALLEL_BACKEND",
     "BUILD_RUN_PROGRESS",
     "BUILD_RUN_PUBLISH_SNAPSHOT",
@@ -1136,6 +1199,7 @@ __all__ = [
     "JOBS_MAX_AGE_DAYS",
     "JOBS_STATUS_FILTER",
     "JSON_FLAG",
+    "META_DRIFT_LIMIT",
     "META_OVERRIDE_SCHEMA_DIGEST",
     "META_OVERRIDE_VERSION_ID",
     "OUTPUT_FORMAT",
@@ -1143,14 +1207,19 @@ __all__ = [
     "PLUGINS_OUTPUT_DIR",
     "PLUGINS_PATH",
     "PROJECT_ROOT",
+    "SEMANTIC_REGISTRY_OUTPUT",
+    "SEMANTIC_REGISTRY_VERSION",
     "SERVE_HOST",
     "SERVE_PORT",
     "SERVE_RELOAD",
     "SHARED_FLAGS",
+    "STORAGE_CACHE_LOG_DIR",
+    "STORAGE_CACHE_LOG_PATHS",
     "STORAGE_DB_PATH",
     "STORAGE_INCLUDE_VIEWS",
     "STORAGE_INPUT_DIR",
     "STORAGE_OUTPUT_DIR",
     "STORAGE_VALIDATION_MODE",
+    "TARGETS_SHOW_ORIGIN",
     "VERBOSE",
 ]

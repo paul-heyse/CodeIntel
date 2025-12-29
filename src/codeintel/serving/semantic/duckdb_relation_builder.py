@@ -8,14 +8,20 @@ from typing import TYPE_CHECKING
 import duckdb
 import pyarrow as pa
 import pyarrow.dataset as ds
+from sqlglot import exp
 
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    extras_policy_from_schema,
+)
 from codeintel.serving.semantic.datasets import (
+    DatasetScannerOptions,
     dataset_filter_expression,
     dataset_for_entry,
     dataset_scanner_for_entry,
 )
 from codeintel.serving.semantic.filter_ops import allowed_ops_for_column_type
-from codeintel.serving.semantic.models import FilterSpec, FilterValue
+from codeintel.serving.semantic.models import FilterValue
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.storage.duckdb_types import (
     ColumnExpression,
@@ -29,12 +35,13 @@ from codeintel.storage.duckdb_types import (
 from codeintel.storage.helpers.json import normalize_duckdb_json_value
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from duckdb.typing import DuckDBPyType
 
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.semantic.datasets import DatasetManifestEntry, DatasetManifestIndex
+    from codeintel.serving.semantic.models import FilterScalar
 
 
 class DuckDBRelationQueryBuilderError(ValueError):
@@ -53,14 +60,31 @@ class RelationScanOptions:
     metrics_enabled: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class RelationBuildContext:
+    """Context required to build DuckDB relation plans."""
+
+    dataset_manifests: DatasetManifestIndex
+    scan_options: RelationScanOptions
+    column_types: Mapping[str, ColumnType] | None = None
+    contract_schema: pa.Schema | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _AstQueryComponents:
+    columns: list[str]
+    predicate: Expression | None
+    order_by: list[tuple[str, bool]]
+    limit: int | None
+    offset: int
+
+
 def build_relation_plan(
     *,
     con: DuckDBConnection,
     spec: SemanticQuerySpec,
-    dataset_manifests: DatasetManifestIndex,
-    scan_options: RelationScanOptions,
-    column_types: Mapping[str, ColumnType] | None = None,
-    contract_schema: pa.Schema | None = None,
+    ast: exp.Select,
+    context: RelationBuildContext,
 ) -> DuckDBRelation:
     """Build a DuckDB relation plan for a semantic query spec.
 
@@ -71,59 +95,57 @@ def build_relation_plan(
     """
     filter_expression = dataset_filter_expression(
         filters=spec.filters,
-        column_types=column_types,
+        column_types=context.column_types,
     )
     relation = _resolve_relation(
         con=con,
         table_key=spec.table_key,
-        manifests=dataset_manifests,
-        scan_options=scan_options,
+        context=context,
         filter_expression=filter_expression,
-        contract_schema=contract_schema,
     )
-    return apply_query_spec(
+    return apply_query_ast(
         relation,
-        spec=spec,
+        ast=ast,
         allowed_columns=spec.allowed_columns,
-        column_types=column_types,
+        column_types=context.column_types,
     )
 
 
-def apply_query_spec(
+def apply_query_ast(
     relation: DuckDBRelation,
     *,
-    spec: SemanticQuerySpec,
+    ast: exp.Select,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None = None,
 ) -> DuckDBRelation:
-    """Apply a semantic query spec to a DuckDB relation.
+    """Apply a SQLGlot AST to a DuckDB relation.
 
     Returns
     -------
     DuckDBRelation
-        Updated relation reflecting the applied filters, ordering, and limits.
+        Updated relation reflecting filters, ordering, and limits from the AST.
+
+    Raises
+    ------
+    DuckDBRelationQueryBuilderError
+        When the AST is invalid, uses unsupported constructs, or specifies an
+        OFFSET without a LIMIT.
     """
-    _validate_pagination(limit=spec.limit, offset=spec.offset)
-
-    for col in spec.columns:
-        _require_allowed_column(column=col, allowed_columns=allowed_columns, ctx="select")
-
-    predicates = _build_predicates(
-        filters=spec.filters,
+    components = _parse_ast_components(
+        ast=ast,
         allowed_columns=allowed_columns,
         column_types=column_types,
     )
-    if predicates is not None:
-        relation = relation.filter(predicates)
-
-    if spec.order_by:
-        relation = relation.order(_order_by_expr(spec.order_by, allowed_columns=allowed_columns))
-
-    relation = relation.select(*spec.columns)
-
-    if spec.limit or spec.offset:
-        relation = relation.limit(spec.limit, offset=spec.offset)
-
+    if components.predicate is not None:
+        relation = relation.filter(components.predicate)
+    if components.order_by:
+        relation = relation.order(_order_by_from_components(components.order_by))
+    relation = relation.select(*components.columns)
+    if components.limit is not None or components.offset:
+        if components.limit is None:
+            msg = "OFFSET requires a LIMIT for DuckDB relation plans"
+            raise DuckDBRelationQueryBuilderError(msg)
+        relation = relation.limit(components.limit, offset=components.offset)
     return relation
 
 
@@ -131,19 +153,16 @@ def _resolve_relation(
     *,
     con: DuckDBConnection,
     table_key: str,
-    manifests: DatasetManifestIndex,
-    scan_options: RelationScanOptions,
+    context: RelationBuildContext,
     filter_expression: ds.Expression | None,
-    contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
-    entry = manifests.get(table_key)
+    entry = context.dataset_manifests.get(table_key)
     if entry is not None:
         return _scan_dataset(
             con=con,
             entry=entry,
-            scan_options=scan_options,
+            context=context,
             filter_expression=filter_expression,
-            contract_schema=contract_schema,
         )
     try:
         return con.table(table_key)
@@ -156,19 +175,32 @@ def _scan_dataset(
     *,
     con: DuckDBConnection,
     entry: DatasetManifestEntry,
-    scan_options: RelationScanOptions,
+    context: RelationBuildContext,
     filter_expression: ds.Expression | None,
-    contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
     dataset = dataset_for_entry(entry)
+    options = DatasetScannerOptions(
+        batch_size=context.scan_options.batch_size,
+        fragment_readahead=context.scan_options.fragment_readahead,
+        filter_expression=filter_expression,
+        metrics_enabled=context.scan_options.metrics_enabled,
+        schema=context.contract_schema,
+    )
     scanner = dataset_scanner_for_entry(
         entry,
-        batch_size=scan_options.batch_size,
-        fragment_readahead=scan_options.fragment_readahead,
-        filter_expression=filter_expression,
-        metrics_enabled=scan_options.metrics_enabled,
-        schema=contract_schema,
+        options=options,
     )
+    if context.contract_schema is not None:
+        reader = scanner.to_reader()
+        aligned = align_reader_to_contract(
+            reader,
+            context.contract_schema,
+            extras_policy=extras_policy_from_schema(context.contract_schema),
+        )
+        try:
+            return con.from_arrow(aligned)
+        except (TypeError, ValueError):
+            return con.from_arrow(scanner)
     try:
         return con.from_arrow(scanner)
     except (TypeError, ValueError):
@@ -194,69 +226,470 @@ def _require_allowed_column(*, column: str, allowed_columns: frozenset[str], ctx
         raise DuckDBRelationQueryBuilderError(msg)
 
 
-def _build_predicates(
+def _parse_ast_components(
     *,
-    filters: list[FilterSpec],
+    ast: exp.Select,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> _AstQueryComponents:
+    if not isinstance(ast, exp.Select):
+        msg = "Expected SQLGlot Select expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    columns = _select_columns_from_ast(ast, allowed_columns=allowed_columns)
+    predicate = _where_predicate_from_ast(
+        ast=ast,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    order_by = _order_by_from_ast(ast, allowed_columns=allowed_columns)
+    limit, offset = _limit_offset_from_ast(ast)
+    _validate_pagination(limit=limit or 0, offset=offset)
+    return _AstQueryComponents(
+        columns=columns,
+        predicate=predicate,
+        order_by=order_by,
+        limit=limit,
+        offset=offset,
+    )
+
+
+def _select_columns_from_ast(
+    ast: exp.Select,
+    *,
+    allowed_columns: frozenset[str],
+) -> list[str]:
+    columns: list[str] = []
+    for expr in ast.expressions:
+        if isinstance(expr, exp.Column):
+            column = _column_name(expr)
+            _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="select")
+            columns.append(column)
+            continue
+        msg = f"Unsupported select expression: {type(expr).__name__}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if not columns:
+        msg = "Select expression must include at least one column"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return columns
+
+
+def _where_predicate_from_ast(
+    *,
+    ast: exp.Select,
     allowed_columns: frozenset[str],
     column_types: Mapping[str, ColumnType] | None,
 ) -> Expression | None:
-    if not filters:
+    where = ast.args.get("where")
+    if where is None:
         return None
-    predicates: list[Expression] = []
-    for filt in filters:
-        _require_allowed_column(
-            column=filt.column,
-            allowed_columns=allowed_columns,
-            ctx="filter",
-        )
-        predicates.append(_build_predicate(filt=filt, column_types=column_types))
-    combined = _combine_predicates(predicates)
-    if combined is None:
+    predicate = where.this
+    if predicate is None:
         return None
-    return combined
+    return _build_predicate_expr_ast(
+        predicate,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
 
 
-def _build_predicate(
-    *, filt: FilterSpec, column_types: Mapping[str, ColumnType] | None
-) -> Expression:
-    column_type = column_types.get(filt.column) if column_types is not None else None
-    allowed_ops = allowed_ops_for_column_type(column_type)
-    if filt.op not in allowed_ops:
-        msg = (
-            "Operator "
-            f"{filt.op} is not supported for column type {column_type or _UNKNOWN_COLUMN_TYPE}"
-        )
+def _order_by_from_ast(
+    ast: exp.Select,
+    *,
+    allowed_columns: frozenset[str],
+) -> list[tuple[str, bool]]:
+    order = ast.args.get("order")
+    if order is None:
+        return []
+    items: list[tuple[str, bool]] = []
+    for expr in order.expressions:
+        if not isinstance(expr, exp.Ordered):
+            msg = f"Unsupported order_by expression: {type(expr).__name__}"
+            raise DuckDBRelationQueryBuilderError(msg)
+        if not isinstance(expr.this, exp.Column):
+            msg = "Order by expressions must be columns"
+            raise DuckDBRelationQueryBuilderError(msg)
+        column = _column_name(expr.this)
+        _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="order_by")
+        items.append((column, bool(expr.args.get("desc"))))
+    return items
+
+
+def _order_by_from_components(order_by: Sequence[tuple[str, bool]]) -> str:
+    parts: list[str] = []
+    for column, desc in order_by:
+        suffix = " DESC" if desc else ""
+        parts.append(f"{column}{suffix}")
+    return ", ".join(parts)
+
+
+def _limit_offset_from_ast(ast: exp.Select) -> tuple[int | None, int]:
+    limit_expr = ast.args.get("limit")
+    offset_expr = ast.args.get("offset")
+    limit_value: int | None = None
+    offset_value = 0
+    if limit_expr is not None:
+        expression = limit_expr.expression
+        if expression is None:
+            expression = limit_expr.this
+        limit_value = _literal_as_int(expression)
+    if offset_expr is not None:
+        expression = offset_expr.expression
+        if expression is None:
+            expression = offset_expr.this
+        offset_value = _literal_as_int(expression)
+    return limit_value, offset_value
+
+
+def _literal_as_int(expr: exp.Expression | None) -> int:
+    if expr is None:
+        msg = "Expected literal for limit/offset"
         raise DuckDBRelationQueryBuilderError(msg)
-
-    col_expr = ColumnExpression(filt.column)
-    op = filt.op
-    value = filt.value
-
-    if op in _COMPARISON_OPS:
-        return _build_comparison_predicate(
-            col_expr=col_expr,
-            op=op,
-            value=value,
-            column_type=column_type,
-        )
-    if op == "in":
-        return _build_in_predicate(col_expr=col_expr, value=value, column_type=column_type)
-    if op in _STRING_OPS:
-        return _build_string_predicate(
-            col_expr=col_expr,
-            op=op,
-            value=value,
-            column_type=column_type,
-        )
-
-    msg = f"Unsupported operator: {op}"
+    if isinstance(expr, exp.Literal):
+        raw = expr.this
+        if raw is None:
+            msg = "Limit/offset literal is empty"
+            raise DuckDBRelationQueryBuilderError(msg)
+        try:
+            return int(raw)
+        except (TypeError, ValueError) as exc:
+            msg = "Limit/offset literal must be an integer"
+            raise DuckDBRelationQueryBuilderError(msg) from exc
+    msg = f"Unsupported limit/offset expression: {type(expr).__name__}"
     raise DuckDBRelationQueryBuilderError(msg)
 
 
+def _build_predicate_expr_ast(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    handler = _AST_PREDICATE_DISPATCH.get(type(expr))
+    if handler is not None:
+        return handler(expr, allowed_columns=allowed_columns, column_types=column_types)
+    if isinstance(expr, exp.In):
+        return _build_in_expr_ast(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, exp.Anonymous):
+        return _build_string_expr_ast(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    if isinstance(expr, _AST_COMPARISON_TYPES):
+        return _build_comparison_expr_ast(
+            expr,
+            allowed_columns=allowed_columns,
+            column_types=column_types,
+        )
+    msg = f"Unsupported predicate expression: {type(expr).__name__}"
+    raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _build_paren_predicate_ast(
+    expr: exp.Paren,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None:
+        msg = "Expected predicate inside parentheses"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return _build_predicate_expr_ast(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+def _build_and_predicate_ast(
+    expr: exp.And,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None or expr.expression is None:
+        msg = "AND predicate requires two expressions"
+        raise DuckDBRelationQueryBuilderError(msg)
+    left = _build_predicate_expr_ast(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    right = _build_predicate_expr_ast(
+        expr.expression,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return left & right
+
+
+def _build_or_predicate_ast(
+    expr: exp.Or,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None or expr.expression is None:
+        msg = "OR predicate requires two expressions"
+        raise DuckDBRelationQueryBuilderError(msg)
+    left = _build_predicate_expr_ast(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    right = _build_predicate_expr_ast(
+        expr.expression,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+    return left | right
+
+
+def _build_not_predicate_ast(
+    expr: exp.Not,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None:
+        msg = "NOT predicate requires an expression"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return ~_build_predicate_expr_ast(
+        expr.this,
+        allowed_columns=allowed_columns,
+        column_types=column_types,
+    )
+
+
+_AST_PREDICATE_DISPATCH: dict[type[exp.Expression], Callable[..., Expression]] = {
+    exp.Paren: _build_paren_predicate_ast,
+    exp.And: _build_and_predicate_ast,
+    exp.Or: _build_or_predicate_ast,
+    exp.Not: _build_not_predicate_ast,
+}
+
+
+_AST_COMPARISON_TYPES: tuple[type[exp.Expression], ...] = (
+    exp.EQ,
+    exp.NEQ,
+    exp.LT,
+    exp.LTE,
+    exp.GT,
+    exp.GTE,
+)
+_AST_COMPARISON_OPS: dict[type[exp.Expression], str] = {
+    exp.EQ: "eq",
+    exp.NEQ: "ne",
+    exp.LT: "lt",
+    exp.LTE: "lte",
+    exp.GT: "gt",
+    exp.GTE: "gte",
+}
+_REVERSED_OPS: dict[str, str] = {
+    "eq": "eq",
+    "ne": "ne",
+    "lt": "gt",
+    "lte": "gte",
+    "gt": "lt",
+    "gte": "lte",
+}
+
+
+def _build_comparison_expr_ast(
+    expr: exp.Expression,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    op = _AST_COMPARISON_OPS[type(expr)]
+    left = expr.this
+    right = expr.expression
+    if left is None or right is None:
+        msg = "Comparison predicates require two expressions"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if isinstance(left, exp.Column) and _is_literal(right):
+        column = _column_name(left)
+        value = _literal_value(right)
+    elif isinstance(right, exp.Column) and _is_literal(left):
+        column = _column_name(right)
+        value = _literal_value(left)
+        op = _REVERSED_OPS[op]
+    else:
+        msg = "Comparison predicates must compare a column to a literal"
+        raise DuckDBRelationQueryBuilderError(msg)
+    _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
+    column_type = column_types.get(column) if column_types is not None else None
+    _validate_operator(op=op, column_type=column_type)
+    return _build_comparison_predicate(
+        col_expr=ColumnExpression(column),
+        op=op,
+        value=value,
+        column_type=column_type,
+    )
+
+
+def _build_in_expr_ast(
+    expr: exp.In,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    if expr.this is None or not isinstance(expr.this, exp.Column):
+        msg = "IN operator requires a column on the left"
+        raise DuckDBRelationQueryBuilderError(msg)
+    column = _column_name(expr.this)
+    _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
+    column_type = column_types.get(column) if column_types is not None else None
+    _validate_operator(op="in", column_type=column_type)
+    values = [_literal_value(item) for item in expr.expressions]
+    return _build_in_predicate(
+        col_expr=ColumnExpression(column),
+        value=values,
+        column_type=column_type,
+    )
+
+
+def _build_string_expr_ast(
+    expr: exp.Anonymous,
+    *,
+    allowed_columns: frozenset[str],
+    column_types: Mapping[str, ColumnType] | None,
+) -> Expression:
+    func_name = (expr.name or "").lower()
+    if func_name == "starts_with":
+        op = "startswith"
+    elif func_name == "contains":
+        op = "contains"
+    else:
+        msg = f"Unsupported function: {func_name or '<unknown>'}"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if len(expr.expressions) != _STRING_FUNC_ARG_COUNT:
+        msg = f"{op} requires column and string literal arguments"
+        raise DuckDBRelationQueryBuilderError(msg)
+    column_expr = expr.expressions[0]
+    value_expr = expr.expressions[1]
+    if not isinstance(column_expr, exp.Column):
+        msg = f"{op} requires a column argument"
+        raise DuckDBRelationQueryBuilderError(msg)
+    column = _column_name(column_expr)
+    _require_allowed_column(column=column, allowed_columns=allowed_columns, ctx="filter")
+    column_type = column_types.get(column) if column_types is not None else None
+    _validate_operator(op=op, column_type=column_type)
+    value = _literal_value(value_expr)
+    if not isinstance(value, str):
+        msg = f"{op} operator requires string value"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return _build_string_predicate(
+        col_expr=ColumnExpression(column),
+        op=op,
+        value=value,
+        column_type=column_type,
+    )
+
+
+def _validate_operator(*, op: str, column_type: ColumnType | None) -> None:
+    allowed_ops = allowed_ops_for_column_type(column_type)
+    if op not in allowed_ops:
+        msg = (
+            f"Operator {op} is not supported for column type {column_type or _UNKNOWN_COLUMN_TYPE}"
+        )
+        raise DuckDBRelationQueryBuilderError(msg)
+    if op in _ORDERING_OPS and column_type == "VARCHAR":
+        msg = f"Operator {op} is not supported for string columns"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if op == "in" and column_type == "JSON":
+        msg = "IN operator is not supported for JSON columns"
+        raise DuckDBRelationQueryBuilderError(msg)
+    if op in _STRING_OPS and column_type is not None and column_type != "VARCHAR":
+        msg = f"{op} operator is only supported for VARCHAR columns"
+        raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _is_literal(expr: exp.Expression | None) -> bool:
+    return isinstance(expr, (exp.Literal, exp.Boolean))
+
+
+def _literal_value(expr: exp.Expression | None) -> FilterScalar:
+    if expr is None:
+        msg = "Expected literal value"
+        raise DuckDBRelationQueryBuilderError(msg)
+    value = _literal_from_to_py(expr)
+    if value is not None:
+        return value
+    value = _literal_from_boolean(expr)
+    if value is not None:
+        return value
+    value = _literal_from_literal(expr)
+    if value is not None:
+        return value
+    msg = f"Unsupported literal type: {type(expr).__name__}"
+    raise DuckDBRelationQueryBuilderError(msg)
+
+
+def _literal_from_to_py(expr: exp.Expression) -> FilterScalar | None:
+    to_py = getattr(expr, "to_py", None)
+    if callable(to_py):
+        try:
+            value = to_py()
+        except (TypeError, ValueError):
+            return None
+        if isinstance(value, (bool, int, float, str)):
+            return value
+    return None
+
+
+def _literal_from_boolean(expr: exp.Expression) -> FilterScalar | None:
+    if not isinstance(expr, exp.Boolean):
+        return None
+    raw = expr.this
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        lowered = raw.lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+    return None
+
+
+def _literal_from_literal(expr: exp.Expression) -> FilterScalar | None:
+    result: FilterScalar | None = None
+    if isinstance(expr, exp.Literal):
+        raw = expr.this
+        if getattr(expr, "is_string", False):
+            result = str(raw)
+        else:
+            try:
+                result = int(raw)
+            except (TypeError, ValueError):
+                try:
+                    result = float(raw)
+                except (TypeError, ValueError):
+                    result = None
+    return result
+
+
+def _column_name(column: exp.Column) -> str:
+    identifier = column.this
+    if isinstance(identifier, exp.Identifier):
+        name = identifier.this
+    else:
+        name = getattr(column, "name", None)
+        if name is None:
+            name = str(identifier)
+    if not isinstance(name, str) or not name:
+        msg = "Column name is missing"
+        raise DuckDBRelationQueryBuilderError(msg)
+    return name
+
+
 _UNKNOWN_COLUMN_TYPE = "UNKNOWN"
-_COMPARISON_OPS = frozenset({"eq", "ne", "lt", "lte", "gt", "gte"})
 _ORDERING_OPS = frozenset({"lt", "lte", "gt", "gte"})
 _STRING_OPS = frozenset({"contains", "startswith"})
+_STRING_FUNC_ARG_COUNT = 2
 _DECIMAL_38_0 = "DECIMAL(38,0)"
 
 
@@ -336,6 +769,8 @@ def _build_in_predicate(
     if column_type == "JSON":
         msg = "IN operator is not supported for JSON columns"
         raise DuckDBRelationQueryBuilderError(msg)
+    if not value:
+        return ConstantExpression(0) == ConstantExpression(1)
     constants = [_typed_constant(item, column_type=column_type) for item in value]
     return col_expr.isin(*constants)
 
@@ -369,18 +804,10 @@ def _order_by_expr(order_by: list[str], *, allowed_columns: frozenset[str]) -> s
     return ", ".join(order_parts)
 
 
-def _combine_predicates(predicates: Sequence[Expression]) -> Expression | None:
-    if not predicates:
-        return None
-    combined = predicates[0]
-    for predicate in predicates[1:]:
-        combined &= predicate
-    return combined
-
-
 __all__ = [
     "DuckDBRelationQueryBuilderError",
+    "RelationBuildContext",
     "RelationScanOptions",
-    "apply_query_spec",
+    "apply_query_ast",
     "build_relation_plan",
 ]

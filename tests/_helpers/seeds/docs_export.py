@@ -296,7 +296,7 @@ class DocsExportPack:
                 start_line=1,
                 end_line=1,
                 kind="entry",
-                stmts_json="[]",
+                stmts_json=[],
                 in_degree=0,
                 out_degree=0,
             )
@@ -357,10 +357,10 @@ class DocsExportPack:
                 style="auto",
                 short_desc="demo",
                 long_desc="",
-                params_json="[]",
-                returns_json='{"type": "str"}',
-                raises_json="[]",
-                examples_json="[]",
+                params_json=[],
+                returns_json={"type": "str"},
+                raises_json=[],
+                examples_json=[],
                 created_at=now,
             )
         ]
@@ -433,7 +433,7 @@ class DocsExportPack:
                 return_type="str",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json="{}",
+                param_types_json={},
                 fully_typed=True,
                 partial_typed=False,
                 untyped=False,

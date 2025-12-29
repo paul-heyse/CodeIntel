@@ -28,11 +28,20 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.observations import (
+    SchemaObservationAccumulator,
+    instrument_reader_for_observation,
+    merge_table_schema_hints,
+    observe_batches,
+    persist_observation_bundle,
+    schema_hints_from_tags,
+)
 from codeintel.core.columnar import (
     LazyFrameStream,
+    align_reader_to_contract,
+    extras_policy_from_schema,
 )
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
-from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
@@ -48,12 +57,14 @@ from codeintel.storage.datasets.arrow_store import (
 )
 from codeintel.storage.datasets.manifests import dataset_manifest_path, write_dataset_manifest
 from codeintel.storage.datasets.paths import dataset_snapshot_dir
+from codeintel.storage.duckdb_types import DuckDBError
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from pyarrow import RecordBatchReader
 
+    from codeintel.build.schemas.observations import SchemaHints
     from codeintel.core.config.settings import ArrowDatasetSettings
     from codeintel.core.manifests import ArrowDatasetManifest
 
@@ -165,6 +176,16 @@ class _DatasetWriteContext:
     snapshot_id: str
     options: ArrowDatasetWriteOptions
     arrow_settings: ArrowDatasetSettings
+
+
+@dataclass(frozen=True, slots=True)
+class _MaterializationPlan:
+    arrow_schema: pa.Schema
+    observation: SchemaObservationAccumulator
+    contract_schema: pa.Schema | None
+    options: ArrowDatasetWriteOptions
+    snapshot_id: str
+    dataset_root: Path
 
 
 @dataclass(frozen=True)
@@ -296,80 +317,133 @@ def _materialize_dataset(
     ctx: _MaterializeContext,
     data: TabularData,
 ) -> tuple[ArrowDatasetManifest, Path]:
-    table_schema = _table_schema_for_data(table_key=ctx.table_key, data=data)
-    contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
-    resolved_partitions = _resolve_partition_columns(
-        table_schema=table_schema,
-        requested=ctx.partition_columns,
-    )
-    schema_hash_value = schema_hash(table_schema)
-    extras = _manifest_extras(table_schema=table_schema, table_key=ctx.table_key)
-    options = _build_write_options(
-        ctx=ctx,
-        partition_columns=resolved_partitions,
-        schema_hash_value=schema_hash_value,
-        extras=extras,
-    )
-    snapshot_id = _snapshot_id(ctx.env)
-    dataset_root = ctx.env.paths.dataset_root_dir
+    plan = _build_materialization_plan(ctx=ctx, data=data)
 
     if isinstance(data, pl.LazyFrame):
         write_ctx = _DatasetWriteContext(
-            dataset_root=dataset_root,
+            dataset_root=plan.dataset_root,
             table_key=ctx.table_key,
-            snapshot_id=snapshot_id,
-            options=options,
+            snapshot_id=plan.snapshot_id,
+            options=plan.options,
             arrow_settings=ctx.env.settings.arrow_dataset,
         )
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
             data=data,
-            contract_schema=contract_schema,
+            contract_schema=plan.contract_schema,
+            observation=plan.observation,
         )
         manifest_path = dataset_manifest_path(
-            dataset_root=dataset_root,
+            dataset_root=plan.dataset_root,
             table_key=ctx.table_key,
-            snapshot_id=snapshot_id,
+            snapshot_id=plan.snapshot_id,
+        )
+        _persist_observation_if_ready(
+            ctx=ctx,
+            observation=plan.observation,
+            arrow_schema=plan.arrow_schema,
         )
         return manifest, manifest_path
 
     arrow_input = _coerce_arrow_input(data)
-    aligned_reader = _align_reader_to_contract(arrow_input, contract_schema=contract_schema)
+    observed_reader = instrument_reader_for_observation(
+        _align_reader_to_contract(arrow_input, contract_schema=plan.contract_schema),
+        accumulator=plan.observation,
+    )
     manifest = write_dataset(
-        dataset_root=dataset_root,
+        dataset_root=plan.dataset_root,
         table_key=ctx.table_key,
-        snapshot_id=snapshot_id,
-        data=aligned_reader,
-        options=options,
+        snapshot_id=plan.snapshot_id,
+        data=observed_reader,
+        options=plan.options,
     )
     manifest_path = dataset_manifest_path(
-        dataset_root=dataset_root,
+        dataset_root=plan.dataset_root,
         table_key=ctx.table_key,
-        snapshot_id=snapshot_id,
+        snapshot_id=plan.snapshot_id,
+    )
+    _persist_observation_if_ready(
+        ctx=ctx,
+        observation=plan.observation,
+        arrow_schema=plan.arrow_schema,
     )
     return manifest, manifest_path
 
 
-def _build_write_options(
+def _build_materialization_plan(
     *,
     ctx: _MaterializeContext,
+    data: TabularData,
+) -> _MaterializationPlan:
+    schema_hints = _schema_hints_for_table(
+        catalog=ctx.catalog,
+        table_key=ctx.table_key,
+    )
+    declared_schema = _declared_schema_hint(table_key=ctx.table_key)
+    table_schema = _table_schema_for_data(
+        table_key=ctx.table_key,
+        data=data,
+        declared_schema=declared_schema,
+        schema_hints=schema_hints,
+    )
+    arrow_schema = _arrow_schema_for_data(data=data)
+    observation = SchemaObservationAccumulator(
+        table_key=ctx.table_key,
+        declared_schema=declared_schema,
+        schema_hints=schema_hints,
+    )
+    contract_schema = arrow_schema
+    resolved_partitions = _resolve_partition_columns(
+        table_schema=table_schema,
+        requested=ctx.partition_columns,
+    )
+    schema_hash_value = schema_hash(table_schema)
+    inferred_settings = _load_inferred_settings(ctx=ctx)
+    write_settings = _build_write_settings(
+        ctx=ctx,
+        inferred_settings=inferred_settings,
+    )
+    extras = _manifest_extras(
+        table_schema=table_schema,
+        table_key=ctx.table_key,
+        inferred_settings=inferred_settings,
+        write_settings=write_settings,
+    )
+    options = _build_write_options(
+        partition_columns=resolved_partitions,
+        schema_hash_value=schema_hash_value,
+        extras=extras,
+        write_settings=write_settings,
+    )
+    return _MaterializationPlan(
+        arrow_schema=arrow_schema,
+        observation=observation,
+        contract_schema=contract_schema,
+        options=options,
+        snapshot_id=_snapshot_id(ctx.env),
+        dataset_root=ctx.env.paths.dataset_root_dir,
+    )
+
+
+def _build_write_options(
+    *,
     partition_columns: tuple[str, ...],
     schema_hash_value: str,
     extras: dict[str, object],
+    write_settings: dict[str, object],
 ) -> ArrowDatasetWriteOptions:
-    settings = ctx.env.settings.arrow_dataset
-    dictionary_max = settings.dictionary_max_cardinality if settings.dictionary_encode else None
     return ArrowDatasetWriteOptions(
         partition_columns=partition_columns,
         schema_hash=schema_hash_value,
         manifest_extras=extras,
-        max_rows_per_file=settings.max_rows_per_file,
-        row_group_size=settings.row_group_size,
-        data_page_size=settings.data_page_size,
-        compression=settings.compression,
-        dictionary_encode=settings.dictionary_encode,
-        dictionary_max_cardinality=dictionary_max,
-        unify_dictionaries=settings.unify_dictionaries,
+        max_rows_per_file=_int_setting(write_settings, "max_rows_per_file"),
+        row_group_size=_int_setting(write_settings, "row_group_size"),
+        data_page_size=_int_setting(write_settings, "data_page_size"),
+        compression=_str_setting(write_settings, "compression"),
+        dictionary_encode=_bool_setting(write_settings, "dictionary_encode") or False,
+        dictionary_max_cardinality=_int_setting(write_settings, "dictionary_max_cardinality"),
+        dictionary_encode_columns=_tuple_setting(write_settings, "dictionary_encode_columns"),
+        unify_dictionaries=_bool_setting(write_settings, "unify_dictionaries") or False,
     )
 
 
@@ -378,6 +452,7 @@ def _write_lazyframe_dataset(
     ctx: _DatasetWriteContext,
     data: pl.LazyFrame,
     contract_schema: pa.Schema | None,
+    observation: SchemaObservationAccumulator | None,
 ) -> ArrowDatasetManifest:
     snapshot_dir = dataset_snapshot_dir(
         ctx.dataset_root,
@@ -388,6 +463,8 @@ def _write_lazyframe_dataset(
     if contract_schema is not None:
         reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
         aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
+        if observation is not None:
+            aligned = instrument_reader_for_observation(aligned, accumulator=observation)
         return write_dataset(
             dataset_root=ctx.dataset_root,
             table_key=ctx.table_key,
@@ -398,6 +475,8 @@ def _write_lazyframe_dataset(
     partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
     if partition_by or not ctx.arrow_settings.enable_sink_parquet:
         reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        if observation is not None:
+            reader = instrument_reader_for_observation(reader, accumulator=observation)
         return write_dataset(
             dataset_root=ctx.dataset_root,
             table_key=ctx.table_key,
@@ -424,6 +503,12 @@ def _write_lazyframe_dataset(
             options=ctx.options,
         )
     dataset = ds.dataset(str(snapshot_dir), format="parquet")
+    if observation is not None:
+        try:
+            scanner = dataset.scanner(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+            observe_batches(scanner.to_reader(), accumulator=observation)
+        except (TypeError, ValueError, pa.ArrowInvalid, OSError):
+            LOG.warning("Schema observation scan failed for %s", ctx.table_key)
     request = ArrowDatasetManifestRequest(
         table_key=ctx.table_key,
         snapshot_id=ctx.snapshot_id,
@@ -569,14 +654,30 @@ def _partitioning_from_schema(
     return ds.partitioning(schema=pa.schema(fields))
 
 
-def _table_schema_for_data(*, table_key: str, data: TabularData) -> TableSchema:
+def _table_schema_for_data(
+    *,
+    table_key: str,
+    data: TabularData,
+    declared_schema: TableSchema | None,
+    schema_hints: SchemaHints | None,
+) -> TableSchema:
     if isinstance(data, pl.LazyFrame):
-        return table_schema_from_polars_lazyframe(frame=data, table_key=table_key)
+        inferred = table_schema_from_polars_lazyframe(frame=data, table_key=table_key)
+        return merge_table_schema_hints(
+            inferred,
+            declared_schema,
+            schema_hints=schema_hints,
+        )
     if isinstance(data, pa.RecordBatchReader):
         arrow_reader = cast("RecordBatchReader", data)
-        return table_schema_from_arrow_schema(
+        inferred = table_schema_from_arrow_schema(
             arrow_schema=arrow_reader.schema,
             table_key=table_key,
+        )
+        return merge_table_schema_hints(
+            inferred,
+            declared_schema,
+            schema_hints=schema_hints,
         )
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
@@ -603,11 +704,22 @@ def _validate_partition_columns(table_schema: TableSchema, columns: tuple[str, .
         raise ValueError(msg)
 
 
-def _manifest_extras(*, table_schema: TableSchema, table_key: str) -> dict[str, object]:
+def _manifest_extras(
+    *,
+    table_schema: TableSchema,
+    table_key: str,
+    inferred_settings: dict[str, object] | None,
+    write_settings: dict[str, object],
+) -> dict[str, object]:
     extras: dict[str, object] = {"table_schema": table_schema.to_json_obj()}
     provenance = _schema_provenance(table_key)
     if provenance:
         extras["provenance"] = provenance
+    if inferred_settings:
+        extras["inferred_settings"] = dict(inferred_settings)
+    settings_payload = _write_settings_payload(write_settings)
+    if settings_payload:
+        extras["write_settings"] = settings_payload
     return extras
 
 
@@ -653,6 +765,164 @@ def _align_reader_to_contract(
         contract_schema,
         extras_policy=extras_policy_from_schema(contract_schema),
     )
+
+
+def _declared_schema_hint(table_key: str) -> TableSchema | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        return None
+    return provider.get_table_schema(table_key)
+
+
+def _schema_hints_for_table(*, catalog: DagCatalog, table_key: str) -> SchemaHints | None:
+    output = catalog.table_outputs.get(table_key)
+    if output is None:
+        return None
+    return schema_hints_from_tags(output.tags)
+
+
+def _arrow_schema_for_data(*, data: TabularData) -> pa.Schema:
+    if isinstance(data, pl.LazyFrame):
+        return data.collect_schema().to_arrow()
+    if isinstance(data, pa.RecordBatchReader):
+        return data.schema
+    msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
+    raise TypeError(msg)
+
+
+def _load_inferred_settings(*, ctx: _MaterializeContext) -> dict[str, object] | None:
+    try:
+        observation = ctx.env.gateway.schemas.load_latest_schema_observation(
+            table_key=ctx.table_key
+        )
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
+    if observation is None or observation.derived_settings is None:
+        return None
+    return dict(observation.derived_settings)
+
+
+def _build_write_settings(
+    *,
+    ctx: _MaterializeContext,
+    inferred_settings: dict[str, object] | None,
+) -> dict[str, object]:
+    settings = ctx.env.settings.arrow_dataset
+    dictionary_encode = settings.dictionary_encode
+    dictionary_max = settings.dictionary_max_cardinality if settings.dictionary_encode else None
+    dictionary_columns: tuple[str, ...] | None = None
+    unify_dictionaries = settings.unify_dictionaries
+    row_group_size = settings.row_group_size
+    data_page_size = settings.data_page_size
+    if inferred_settings is not None:
+        inferred_columns = _coerce_tuple(inferred_settings.get("dictionary_encode_columns"))
+        inferred_max = _coerce_int(inferred_settings.get("dictionary_max_cardinality"))
+        inferred_unify = _coerce_bool(inferred_settings.get("unify_dictionaries"))
+        inferred_row_group = _coerce_int(inferred_settings.get("row_group_size"))
+        inferred_page = _coerce_int(inferred_settings.get("data_page_size"))
+        if inferred_columns is not None:
+            dictionary_columns = inferred_columns
+            dictionary_encode = True
+        if inferred_max is not None:
+            dictionary_max = inferred_max
+        if inferred_unify is not None:
+            unify_dictionaries = inferred_unify
+        elif dictionary_columns is not None:
+            unify_dictionaries = True
+        if inferred_row_group is not None:
+            row_group_size = inferred_row_group
+        if inferred_page is not None:
+            data_page_size = inferred_page
+    if dictionary_columns is not None and dictionary_max is None:
+        dictionary_max = settings.dictionary_max_cardinality
+    return {
+        "compression": settings.compression,
+        "max_rows_per_file": settings.max_rows_per_file,
+        "row_group_size": row_group_size,
+        "data_page_size": data_page_size,
+        "dictionary_encode": dictionary_encode,
+        "dictionary_max_cardinality": dictionary_max,
+        "dictionary_encode_columns": dictionary_columns,
+        "unify_dictionaries": unify_dictionaries,
+    }
+
+
+def _write_settings_payload(write_settings: dict[str, object]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    for key, value in write_settings.items():
+        if value is None:
+            continue
+        if isinstance(value, tuple):
+            payload[key] = list(value)
+        else:
+            payload[key] = value
+    return payload
+
+
+def _int_setting(settings: dict[str, object], key: str) -> int | None:
+    return _coerce_int(settings.get(key))
+
+
+def _str_setting(settings: dict[str, object], key: str) -> str | None:
+    value = settings.get(key)
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _bool_setting(settings: dict[str, object], key: str) -> bool | None:
+    return _coerce_bool(settings.get(key))
+
+
+def _tuple_setting(settings: dict[str, object], key: str) -> tuple[str, ...] | None:
+    return _coerce_tuple(settings.get(key))
+
+
+def _coerce_int(value: object | None) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _coerce_bool(value: object | None) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def _coerce_tuple(value: object | None) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return None
+        return tuple(str(item) for item in value)
+    return None
+
+
+def _persist_observation_if_ready(
+    *,
+    ctx: _MaterializeContext,
+    observation: SchemaObservationAccumulator,
+    arrow_schema: pa.Schema,
+) -> None:
+    try:
+        bundle = observation.finalize(
+            arrow_schema=arrow_schema,
+            repo=ctx.env.repo,
+            commit=ctx.env.commit,
+            target_name=ctx.target_name,
+        )
+        persist_observation_bundle(gateway=ctx.env.gateway, bundle=bundle)
+    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
+        LOG.warning("Schema observation persistence failed for %s: %s", ctx.table_key, exc)
 
 
 __all__ = ["ArrowDatasetSaver"]

@@ -6,29 +6,29 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
-from sqlglot.errors import SqlglotError
 
 from codeintel.core.columnar.schema import unify_schema_for_batches
 from codeintel.serving.semantic.duckdb_relation_builder import (
     DuckDBRelationQueryBuilderError,
+    RelationBuildContext,
     RelationScanOptions,
     build_relation_plan,
 )
 from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
-from codeintel.serving.semantic.guardrails import warn_eager_materialization
+from codeintel.serving.semantic.guardrails import (
+    warn_eager_materialization,
+    warn_schema_drift_observed,
+)
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.duckdb_types import DuckDBError
-from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
 from codeintel.storage.schema import arrow_schema_for_table_key
-from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from duckdb import DuckDBPyConnection, DuckDBPyRelation
 
-    from codeintel.serving.semantic.specs import SemanticQuerySpec
     from codeintel.storage.warehouse import Warehouse
 
 
@@ -62,6 +62,7 @@ def _contract_schema_for_table(
 ) -> pa.Schema | None:
     if ctx.warehouse is None:
         return None
+    _log_drift_if_present(ctx, table_key=table_key)
     try:
         return arrow_schema_for_table_key(
             ctx.warehouse.gateway.con,
@@ -71,6 +72,20 @@ def _contract_schema_for_table(
         )
     except (DuckDBError, RuntimeError, TypeError, ValueError):
         return None
+
+
+def _log_drift_if_present(ctx: EngineContext, *, table_key: str) -> None:
+    if ctx.warehouse is None:
+        return
+    try:
+        observation = ctx.warehouse.gateway.schemas.load_latest_schema_observation(
+            table_key=table_key
+        )
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return
+    if observation is None or observation.drift_summary is None:
+        return
+    warn_schema_drift_observed(table_key=table_key, drift_summary=observation.drift_summary)
 
 
 class QueryBuilderError(ValueError):
@@ -125,65 +140,8 @@ class DuckDBRelationPlan:
 
 
 @dataclass(frozen=True, slots=True)
-class DuckDBSqlPlan:
-    """Executable DuckDB SQL plan wrapper."""
-
-    sql: str
-    temp_tables: tuple[str, ...]
-    warehouse: Warehouse
-
-    def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
-        """Execute the plan and return a RecordBatchReader.
-
-        Returns
-        -------
-        pyarrow.RecordBatchReader
-            Reader over the plan output.
-        """
-        result = self._execute()
-        return _fetch_arrow_reader(result, batch_size=batch_size)
-
-    def to_table(self) -> pa.Table:
-        """Execute the plan and return an Arrow table.
-
-        Returns
-        -------
-        pyarrow.Table
-            Materialized Arrow table.
-        """
-        warn_eager_materialization(engine="duckdb", context="duckdb_sql_plan")
-        result = self._execute()
-        reader = _fetch_arrow_reader(result, batch_size=DEFAULT_ARROW_BATCH_SIZE)
-        batches = list(reader)
-        schema = unify_schema_for_batches(batches, base_schema=reader.schema)
-        return pa.Table.from_batches(batches, schema=schema)
-
-    def explain(self) -> QueryExplain:
-        """Return an EXPLAIN plan for the SQL.
-
-        Returns
-        -------
-        QueryExplain
-            Explain payload with SQL and plan text.
-        """
-        relation = self.warehouse.gateway.con.sql(self.sql)
-        plan_text = relation.explain()
-        return QueryExplain(sql=self.sql, plan=plan_text)
-
-    def cleanup(self) -> None:
-        """Release temporary resources after execution."""
-        cleanup_temp_tables_if_needed(
-            con=self.warehouse.gateway.con,
-            temp_tables=self.temp_tables,
-        )
-
-    def _execute(self) -> DuckDBPyConnection:
-        return self.warehouse.gateway.policy.execute_sql(self.sql)
-
-
-@dataclass(frozen=True, slots=True)
 class DuckDBQueryEngine:
-    """DuckDB engine backed by relations with SQLGlot fallback."""
+    """DuckDB engine backed by relations."""
 
     name: str = "duckdb"
 
@@ -223,101 +181,37 @@ class DuckDBQueryEngine:
         Raises
         ------
         QueryBuilderError
-            If the warehouse is unavailable or SQL is unsafe.
+            If the warehouse is unavailable or the relation plan fails.
         """
         if ctx.warehouse is None:
             msg = f"{self.name} engine requires a warehouse connection"
             raise QueryBuilderError(msg)
         spec = query.spec
-        relation_error: DuckDBRelationQueryBuilderError | None = None
         contract_schema = _contract_schema_for_table(ctx, table_key=spec.table_key)
         try:
             relation = build_relation_plan(
                 con=ctx.warehouse.gateway.con,
                 spec=spec,
-                dataset_manifests=ctx.dataset_manifests,
-                scan_options=RelationScanOptions(
-                    batch_size=ctx.settings.export_batch_size,
-                    fragment_readahead=ctx.settings.dataset_fragment_readahead,
-                    metrics_enabled=ctx.settings.dataset_scan_metrics_enabled,
+                ast=query.ast,
+                context=RelationBuildContext(
+                    dataset_manifests=ctx.dataset_manifests,
+                    scan_options=RelationScanOptions(
+                        batch_size=ctx.settings.export_batch_size,
+                        fragment_readahead=ctx.settings.dataset_fragment_readahead,
+                        metrics_enabled=ctx.settings.dataset_scan_metrics_enabled,
+                    ),
+                    column_types=spec.column_types,
+                    contract_schema=contract_schema,
                 ),
-                column_types=spec.column_types,
-                contract_schema=contract_schema,
             )
             return DuckDBRelationPlan(relation=relation, warehouse=ctx.warehouse)
         except DuckDBRelationQueryBuilderError as exc:
-            relation_error = exc
-
-        sqlglot_error: Exception | None = None
-        try:
-            sql = render_sql_duckdb(query.ast)
-            policy = _sql_policy_for_spec(spec, temp_tables=())
-            validated = _validate_sql(sql, policy=policy)
-        except UnsafeSqlError as exc:
-            raise QueryBuilderError(str(exc)) from exc
-        except (SqlglotError, TypeError, ValueError) as exc:
-            sqlglot_error = exc
-        else:
-            return DuckDBSqlPlan(
-                sql=validated,
-                temp_tables=(),
-                warehouse=ctx.warehouse,
-            )
-
-        if relation_error is None:
-            msg = "DuckDB relation plan failed with an unknown error"
-            raise QueryBuilderError(msg)
-        msg = f"DuckDB relation plan failed: {relation_error}; SQLGlot error: {sqlglot_error}"
-        if sqlglot_error is not None:
-            raise QueryBuilderError(msg) from sqlglot_error
-        raise QueryBuilderError(msg) from relation_error
-
-
-def _sql_policy_for_spec(
-    spec: SemanticQuerySpec, *, temp_tables: tuple[str, ...]
-) -> SqlIngressPolicy:
-    allowed_tables = {spec.table_key.lower(), *{name.lower() for name in temp_tables}}
-    return SqlIngressPolicy(
-        allowed_tables=frozenset(allowed_tables),
-        allowed_functions=_SEMANTIC_SQL_ALLOWED_FUNCTIONS,
-    )
-
-
-def _validate_sql(sql: str, *, policy: SqlIngressPolicy) -> str:
-    root = assert_select_perimeter(sql, policy=policy)
-    return render_sql_duckdb(root)
-
-
-_SEMANTIC_SQL_ALLOWED_FUNCTIONS = frozenset(
-    {
-        "abs",
-        "cast",
-        "coalesce",
-        "contains",
-        "date_add",
-        "date_diff",
-        "date_sub",
-        "date_trunc",
-        "floor",
-        "length",
-        "lower",
-        "ltrim",
-        "nullif",
-        "round",
-        "rtrim",
-        "starts_with",
-        "strftime",
-        "substr",
-        "substring",
-        "trim",
-        "upper",
-    }
-)
+            msg = f"DuckDB relation plan failed: {exc}"
+            raise QueryBuilderError(msg) from exc
 
 
 __all__ = [
     "DuckDBQueryEngine",
     "DuckDBRelationPlan",
-    "DuckDBSqlPlan",
     "cleanup_temp_tables_if_needed",
 ]

@@ -32,7 +32,7 @@ def test_core_modules_table_matches_golden(tmp_path: Path) -> None:
     snapshot = ServingSnapshotFactory(tmp_path, serve_dir=tmp_path).demo_snapshot(row_count=1)
     gateway = _open_snapshot_gateway(snapshot)
     try:
-        golden_path = Path("tests/fixtures/goldens/tables/core_modules.json")
+        golden_path = Path("tests/fixtures/goldens/tables/core_modules.arrow")
         assert_table_matches_golden(gateway, "core.modules", golden_path=golden_path)
     finally:
         gateway.close()

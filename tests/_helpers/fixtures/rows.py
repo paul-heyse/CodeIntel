@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
-from dataclasses import MISSING, dataclass, is_dataclass
+from dataclasses import MISSING, dataclass, field, is_dataclass
 from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime
 from decimal import Decimal
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
-from codeintel.config.datasets.columns import load_columns_by_table
 from codeintel.core.catalog import FunctionSpan
+from codeintel.core.columnar.rows import ColumnarRowBuffer, ColumnarRows
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsBehavioralCoverageRow as BehavioralCoverageRowModel,
 )
@@ -28,6 +29,8 @@ from codeintel.core.schemas.generated_rows.analytics import (
 from codeintel.core.schemas.generated_rows.analytics import (
     AnalyticsTestProfileRow as ProfileRowModel,
 )
+from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
+from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from tests._helpers.builders import (
     AstMetricsRow,
     CallGraphEdgeRow,
@@ -68,14 +71,19 @@ from tests._helpers.builders import (
 )
 from tests._helpers.builders.row_protocol import InsertableRow
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
+from tests._helpers.schemas import ensure_schema_service
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-@lru_cache(maxsize=1)
-def _columns_by_table() -> dict[str, list[str]]:
-    return load_columns_by_table()
+@lru_cache(maxsize=256)
+def _table_schema_for_key(table_key: str) -> TableSchema:
+    schema = ensure_schema_service().get_table_schema(table_key)
+    if schema is None:
+        msg = f"Unknown table schema: {table_key}"
+        raise KeyError(msg)
+    return schema
 
 
 @dataclass(frozen=True)
@@ -129,11 +137,116 @@ class RowCoercions:
         return datetime.now(tz=UTC)
 
 
+_JSON_LIST_COLUMNS: set[str] = {
+    "entrypoints_json",
+    "examples",
+    "examples_json",
+    "includes",
+    "markers",
+    "matches",
+    "modules_json",
+    "owners",
+    "params",
+    "params_json",
+    "raises",
+    "raises_json",
+    "reference_modules",
+    "reference_paths",
+    "returns",
+    "returns_json",
+    "role_sources_json",
+    "stmts_json",
+    "tags",
+    "usage_modes",
+}
+_JSON_DICT_COLUMNS: set[str] = {
+    "annotation_ratio",
+    "evidence_json",
+    "metadata",
+    "modules",
+    "overlays",
+    "span",
+}
+
+
+def _looks_like_json(value: str) -> bool:
+    raw = value.strip()
+    if not raw:
+        return False
+    if raw[0] not in {"{", "[", '"'}:
+        return False
+    try:
+        json.loads(raw)
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+def _guard_json_stringification(schema: TableSchema, row: Mapping[str, object]) -> None:
+    json_columns = {column.name for column in schema.columns if column.type == "JSON"}
+    for name in json_columns:
+        value = row.get(name)
+        if isinstance(value, str) and _looks_like_json(value):
+            msg = f"JSON stringification detected for column {name}; pass dict/list instead."
+            raise ValueError(msg)
+
+
+def _json_default_for_column(column_name: str) -> object:
+    if column_name in _JSON_DICT_COLUMNS:
+        return {}
+    if column_name in _JSON_LIST_COLUMNS or column_name.endswith("_json"):
+        return []
+    return {}
+
+
+def _default_for_column(column: Column) -> object:
+    column_type = column.type
+    if column_type == "BOOLEAN":
+        value: object = False
+    elif column_type in {"INTEGER", "BIGINT"}:
+        value = 0
+    elif column_type == "DOUBLE":
+        value = 0.0
+    elif column_type in {"DECIMAL", "DECIMAL(38,0)"}:
+        value = Decimal(0)
+    elif column_type == "VARCHAR":
+        value = ""
+    elif column_type in {"TIMESTAMP", "TIMESTAMPTZ"}:
+        value = datetime(1970, 1, 1, tzinfo=UTC)
+    elif column_type == "JSON":
+        value = _json_default_for_column(column.name)
+    else:
+        value = None
+    return value
+
+
+def _row_defaults(
+    schema: TableSchema,
+    *,
+    fill_non_nullable: bool,
+) -> dict[str, object]:
+    row: dict[str, object] = {column.name: None for column in schema.columns}
+    if not fill_non_nullable:
+        return row
+    for column in schema.columns:
+        if not column.nullable:
+            row[column.name] = _default_for_column(column)
+    return row
+
+
+def _normalize_row(schema: TableSchema, row: Mapping[str, object]) -> dict[str, object]:
+    column_types: dict[str, ColumnType] = {column.name: column.type for column in schema.columns}
+    return {
+        name: normalize_row_value_for_type(value, column_types.get(name))
+        for name, value in row.items()
+    }
+
+
 class RowFactory:
     """Create schema-aligned row dictionaries for tests."""
 
     @staticmethod
-    def blank_row(table_key: str) -> Mapping[str, object]:
+    def blank_row(table_key: str, *, fill_non_nullable: bool = True) -> Mapping[str, object]:
         """Create a blank row mapping for a table.
 
         Returns
@@ -141,11 +254,19 @@ class RowFactory:
         Mapping[str, object]
             Mapping populated with table columns set to None.
         """
-        columns = tuple(_columns_by_table()[table_key])
-        return cast("Mapping[str, object]", dict.fromkeys(columns))
+        schema = _table_schema_for_key(table_key)
+        return cast(
+            "Mapping[str, object]",
+            _row_defaults(schema, fill_non_nullable=fill_non_nullable),
+        )
 
     @staticmethod
-    def row_for(table_key: str, **fields: object) -> Mapping[str, object]:
+    def row_for(
+        table_key: str,
+        *,
+        fill_non_nullable: bool = True,
+        **fields: object,
+    ) -> Mapping[str, object]:
         """Create a row mapping with provided field overrides.
 
         Returns
@@ -153,14 +274,18 @@ class RowFactory:
         Mapping[str, object]
             Row mapping with overrides applied.
         """
-        row = dict(RowFactory.blank_row(table_key))
+        schema = _table_schema_for_key(table_key)
+        row = _row_defaults(schema, fill_non_nullable=fill_non_nullable)
         row.update(fields)
-        return row
+        _guard_json_stringification(schema, row)
+        return _normalize_row(schema, row)
 
     @staticmethod
     def rows_for(
         table_key: str,
         count: int,
+        *,
+        fill_non_nullable: bool = True,
         **overrides: object,
     ) -> list[Mapping[str, object]]:
         """Create multiple row mappings for a table.
@@ -170,7 +295,42 @@ class RowFactory:
         list[Mapping[str, object]]
             List of row mappings with overrides applied.
         """
-        return [RowFactory.row_for(table_key, **overrides) for _ in range(count)]
+        return [
+            RowFactory.row_for(
+                table_key,
+                fill_non_nullable=fill_non_nullable,
+                **overrides,
+            )
+            for _ in range(count)
+        ]
+
+    @staticmethod
+    def columnar_rows(
+        table_key: str,
+        rows: Sequence[Mapping[str, object]],
+        *,
+        fill_non_nullable: bool = True,
+    ) -> ColumnarRows:
+        """Create columnar row payloads for a table.
+
+        Returns
+        -------
+        ColumnarRows
+            Column-oriented mapping aligned with the table schema.
+        """
+        schema = _table_schema_for_key(table_key)
+        buffer = ColumnarRowBuffer(
+            table_key=table_key,
+            columns=tuple(schema.column_names()),
+            column_types=tuple(column.type for column in schema.columns),
+            data={column.name: [] for column in schema.columns},
+        )
+        for row in rows:
+            resolved = _row_defaults(schema, fill_non_nullable=fill_non_nullable)
+            resolved.update(row)
+            _guard_json_stringification(schema, resolved)
+            buffer.append(resolved)
+        return buffer.data
 
 
 def list_public_exports(module: object) -> tuple[str, ...]:
@@ -187,7 +347,7 @@ def list_public_exports(module: object) -> tuple[str, ...]:
     return tuple(sorted(name for name in dir(module) if not name.startswith("_")))
 
 
-def blank_row(table_key: str) -> Mapping[str, object]:
+def blank_row(table_key: str, *, fill_non_nullable: bool = True) -> Mapping[str, object]:
     """Return a blank row mapping for a table key.
 
     Returns
@@ -195,10 +355,15 @@ def blank_row(table_key: str) -> Mapping[str, object]:
     Mapping[str, object]
         Mapping populated with table columns set to None.
     """
-    return RowFactory.blank_row(table_key)
+    return RowFactory.blank_row(table_key, fill_non_nullable=fill_non_nullable)
 
 
-def row_for(table_key: str, **fields: object) -> Mapping[str, object]:
+def row_for(
+    table_key: str,
+    *,
+    fill_non_nullable: bool = True,
+    **fields: object,
+) -> Mapping[str, object]:
     """Return a row mapping with provided field overrides.
 
     Returns
@@ -206,12 +371,14 @@ def row_for(table_key: str, **fields: object) -> Mapping[str, object]:
     Mapping[str, object]
         Row mapping with overrides applied.
     """
-    return RowFactory.row_for(table_key, **fields)
+    return RowFactory.row_for(table_key, fill_non_nullable=fill_non_nullable, **fields)
 
 
 def row_list_for(
     table_key: str,
     count: int,
+    *,
+    fill_non_nullable: bool = True,
     **overrides: object,
 ) -> list[Mapping[str, object]]:
     """Return multiple row mappings with overrides applied.
@@ -221,7 +388,32 @@ def row_list_for(
     list[Mapping[str, object]]
         List of row mappings.
     """
-    return RowFactory.rows_for(table_key, count, **overrides)
+    return RowFactory.rows_for(
+        table_key,
+        count,
+        fill_non_nullable=fill_non_nullable,
+        **overrides,
+    )
+
+
+def columnar_rows_for(
+    table_key: str,
+    rows: Sequence[Mapping[str, object]],
+    *,
+    fill_non_nullable: bool = True,
+) -> ColumnarRows:
+    """Return columnar rows for a table key.
+
+    Returns
+    -------
+    ColumnarRows
+        Column-oriented mapping aligned with schema.
+    """
+    return RowFactory.columnar_rows(
+        table_key,
+        rows,
+        fill_non_nullable=fill_non_nullable,
+    )
 
 
 def _row_defaults_for(row_type: type[InsertableRow]) -> Mapping[str, object]:
@@ -231,7 +423,12 @@ def _row_defaults_for(row_type: type[InsertableRow]) -> Mapping[str, object]:
     return {}
 
 
-def dataclass_row[RowType: InsertableRow](row_type: type[RowType], **fields: object) -> RowType:
+def dataclass_row[RowType: InsertableRow](
+    row_type: type[RowType],
+    *,
+    fill_non_nullable: bool = True,
+    **fields: object,
+) -> RowType:
     """Create an InsertableRow dataclass from RowFactory defaults.
 
     Returns
@@ -242,6 +439,7 @@ def dataclass_row[RowType: InsertableRow](row_type: type[RowType], **fields: obj
     row_defaults = _row_defaults_for(row_type)
     row = RowFactory.row_for(
         row_type.__table__,
+        fill_non_nullable=fill_non_nullable,
         **{**row_defaults, **fields},
     )
     if not is_dataclass(row_type):
@@ -341,8 +539,8 @@ def sample_function_profile_rows(repo: str, commit: str) -> list[FunctionProfile
                 "language": "python",
                 "kind": "function",
                 "qualname": "pkg.alpha.helper",
-                "tags": '["io","auth"]',
-                "owners": '["team-data"]',
+                "tags": ["io", "auth"],
+                "owners": ["team-data"],
                 "created_at": None,
             },
         ),
@@ -357,7 +555,7 @@ def sample_function_profile_rows(repo: str, commit: str) -> list[FunctionProfile
                 "language": "python",
                 "kind": "method",
                 "qualname": "pkg.beta.B.process",
-                "tags": "[]",
+                "tags": [],
                 "owners": None,
                 "created_at": None,
             },
@@ -373,8 +571,8 @@ def sample_function_profile_rows(repo: str, commit: str) -> list[FunctionProfile
                 "language": "python",
                 "kind": "function",
                 "qualname": "pkg.unicode.delta.fn",
-                "tags": '["unicode","core"]',
-                "owners": '["team-delta"]',
+                "tags": ["unicode", "core"],
+                "owners": ["team-delta"],
                 "created_at": None,
             },
         ),
@@ -397,8 +595,8 @@ def sample_file_profile_rows(repo: str, commit: str) -> list[FileProfileRowModel
                 "commit": commit,
                 "rel_path": "pkg/alpha.py",
                 "module": "pkg.alpha_mod",
-                "tags": '["core","io"]',
-                "owners": '["team-analytics"]',
+                "tags": ["core", "io"],
+                "owners": ["team-analytics"],
                 "created_at": None,
             },
         ),
@@ -409,7 +607,7 @@ def sample_file_profile_rows(repo: str, commit: str) -> list[FileProfileRowModel
                 "commit": commit,
                 "rel_path": "pkg/beta.py",
                 "module": "pkg.beta",
-                "tags": "[]",
+                "tags": [],
                 "owners": None,
                 "created_at": None,
             },
@@ -421,7 +619,7 @@ def sample_file_profile_rows(repo: str, commit: str) -> list[FileProfileRowModel
                 "commit": commit,
                 "rel_path": "pkg/unicode/delta.py",
                 "module": "pkg.unicode.delta",
-                "tags": '["unicode"]',
+                "tags": ["unicode"],
                 "owners": None,
                 "created_at": None,
             },
@@ -485,7 +683,7 @@ def sample_test_profile_rows(repo: str, commit: str) -> list[ProfileRowModel]:
                 "status": "passed",
                 "kind": "unit",
                 "duration_ms": 150,
-                "markers": "[]",
+                "markers": [],
                 "uses_parametrize": False,
                 "flaky": False,
                 "created_at": None,
@@ -502,7 +700,7 @@ def sample_test_profile_rows(repo: str, commit: str) -> list[ProfileRowModel]:
                 "status": "passed",
                 "kind": "unit",
                 "duration_ms": 200,
-                "markers": '["slow"]',
+                "markers": ["slow"],
                 "uses_parametrize": False,
                 "flaky": False,
                 "created_at": None,
@@ -1295,8 +1493,8 @@ class SubsystemSeed:
     commit: str = DEFAULT_VARIANT.commit
     description: str | None = None
     module_count: int = 0
-    entrypoints_json: str | None = None
-    modules_json: str = "[]"
+    entrypoints_json: Sequence[str] = field(default_factory=list)
+    modules_json: Sequence[str] = field(default_factory=list)
     internal_edge_count: int = 0
     external_edge_count: int = 0
     fan_in: int = 0
@@ -1304,7 +1502,7 @@ class SubsystemSeed:
     avg_risk_score: float | None = None
     max_risk_score: float | None = None
     high_risk_function_count: int = 0
-    created_at: str | None = None
+    created_at: datetime | None = None
 
 
 def subsystem_row(
@@ -1316,8 +1514,8 @@ def subsystem_row(
     str,
     str | None,
     int,
-    str,
-    str | None,
+    list[str],
+    list[str],
     int,
     int,
     int,
@@ -1326,8 +1524,8 @@ def subsystem_row(
     float | None,
     float | None,
     int,
-    str | None,
     str,
+    datetime | None,
 ]:
     """Row for analytics.subsystems.
 
@@ -1343,8 +1541,8 @@ def subsystem_row(
         seed.name,
         seed.description,
         seed.module_count,
-        seed.modules_json,
-        seed.entrypoints_json,
+        list(seed.modules_json),
+        list(seed.entrypoints_json),
         seed.internal_edge_count,
         seed.external_edge_count,
         seed.fan_in,
@@ -1354,7 +1552,7 @@ def subsystem_row(
         seed.max_risk_score,
         seed.high_risk_function_count,
         seed.risk_level,
-        seed.created_at or datetime.now(tz=UTC).isoformat(),
+        seed.created_at or datetime.now(tz=UTC),
     )
 
 
@@ -1469,7 +1667,7 @@ def data_model_row(seed: DataModelSeed) -> tuple[object, ...]:
         seed.base_classes_json or [],
         seed.doc_short,
         seed.doc_long,
-        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+        seed.created_at or datetime.now(tz=UTC),
     )
 
 
@@ -1511,7 +1709,7 @@ def data_model_field_row(seed: DataModelFieldSeed) -> tuple[object, ...]:
         seed.source,
         seed.rel_path,
         seed.lineno,
-        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+        seed.created_at or datetime.now(tz=UTC),
     )
 
 
@@ -1555,7 +1753,7 @@ def data_model_relationship_row(seed: DataModelRelationshipSeed) -> tuple[object
         seed.evidence_json or {},
         seed.rel_path,
         seed.lineno,
-        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+        seed.created_at or datetime.now(tz=UTC),
     )
 
 
@@ -1571,7 +1769,7 @@ class AstMetricSeed:
     created_at: datetime | None = None
 
 
-def ast_metric_row(seed: AstMetricSeed) -> tuple[str, int, int, int, float, int, float, str]:
+def ast_metric_row(seed: AstMetricSeed) -> tuple[str, int, int, int, float, int, float, datetime]:
     """Row for analytics.ast_metrics.
 
     Returns
@@ -1587,7 +1785,7 @@ def ast_metric_row(seed: AstMetricSeed) -> tuple[str, int, int, int, float, int,
         seed.avg_depth,
         seed.max_depth,
         seed.complexity,
-        (seed.created_at or datetime.now(tz=UTC)).isoformat(),
+        seed.created_at or datetime.now(tz=UTC),
     )
 
 
@@ -1639,10 +1837,10 @@ class TestCatalogSeed:
     kind: str
     status: str
     duration_ms: int
-    markers: str
+    markers: list[str]
     parametrized: bool
     flaky: bool
-    created_at: str
+    created_at: datetime
 
 
 def test_catalog_row(
@@ -1658,16 +1856,18 @@ def test_catalog_row(
     str,
     str,
     int,
-    str,
+    list[str],
     bool,
     bool,
-    str,
+    datetime,
 ]:
     """Row for analytics.test_catalog.
 
     Returns
     -------
-    tuple[str, int, str, str, str, str, str, str, str, int, str, bool, bool, str]
+    tuple[
+        str, int, str, str, str, str, str, str, str, int, list[str], bool, bool, datetime
+    ]
         Row values in schema order.
     """
     return (
@@ -1694,12 +1894,12 @@ class TypednessSeed:
     commit: str
     path: str
     type_error_count: int
-    annotation_ratio_json: str
+    annotation_ratio_json: dict[str, float]
     untyped_defs: int
     overlay_needed: bool
 
 
-def typedness_row(seed: TypednessSeed) -> tuple[str, str, str, int, str, int, bool]:
+def typedness_row(seed: TypednessSeed) -> tuple[str, str, str, int, dict[str, float], int, bool]:
     """Row for analytics.typedness.
 
     Returns
@@ -2095,6 +2295,7 @@ __all__ = [
     "blank_module_profile_row",
     "blank_row",
     "blank_test_profile_row",
+    "columnar_rows_for",
     "compute_dep_id",
     "config_value_row",
     "coverage_line_row",

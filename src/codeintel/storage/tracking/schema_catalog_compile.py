@@ -211,12 +211,27 @@ def arrow_contract_renderer_cache(
 
 def _serialize_schema_ipc(schema: pa.Schema) -> bytes:
     serialize_schema = getattr(pa.ipc, "serialize_schema", None)
-    if not callable(serialize_schema):
-        msg = "pyarrow.ipc.serialize_schema is unavailable"
-        raise TypeError(msg)
-    result = serialize_schema(schema)
-    buffer = cast("pa.Buffer", result)
-    return buffer.to_pybytes()
+    if callable(serialize_schema):
+        result = serialize_schema(schema)
+        buffer = cast("pa.Buffer", result)
+        return buffer.to_pybytes()
+    write_schema = getattr(pa.ipc, "write_schema", None)
+    if callable(write_schema):
+        sink = pa.BufferOutputStream()
+        write_schema(schema, sink)
+        buffer = sink.getvalue()
+        return buffer.to_pybytes()
+    new_stream = getattr(pa.ipc, "new_stream", None)
+    if callable(new_stream):
+        sink = pa.BufferOutputStream()
+        writer = new_stream(sink, schema)
+        close = getattr(writer, "close", None)
+        if callable(close):
+            close()
+        buffer = sink.getvalue()
+        return buffer.to_pybytes()
+    msg = "pyarrow.ipc.serialize_schema, write_schema, and new_stream are unavailable"
+    raise TypeError(msg)
 
 
 def _build_registry_record(

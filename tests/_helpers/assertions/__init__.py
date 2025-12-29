@@ -14,6 +14,10 @@ from tests._helpers.assertions.cli import (
     expect_handler_success,
     expect_handler_warnings,
 )
+from tests._helpers.assertions.columnar_assertions import (
+    assert_reader_matches_contract,
+    assert_table_matches_contract,
+)
 from tests._helpers.assertions.common import (
     SUBPROCESS_ALLOWLIST,
     HasRowCounts,
@@ -199,6 +203,7 @@ __all__ = [
     "assert_partial_failure",
     "assert_problem_detail_response",
     "assert_profile_payload",
+    "assert_reader_matches_contract",
     "assert_record_has_artifacts",
     "assert_record_has_datasets",
     "assert_record_row_counts",
@@ -210,6 +215,7 @@ __all__ = [
     "assert_success",
     "assert_success_meta",
     "assert_table_has_rows",
+    "assert_table_matches_contract",
     "assert_table_schema_valid",
     "assert_target_ok",
     "assert_typedness_bucket",

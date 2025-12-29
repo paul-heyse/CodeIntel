@@ -227,6 +227,9 @@ class BuildExecutionArgs:
     clear_cache: bool
     cache_report: bool
     validation_mode: ContractValidationMode
+    plugins_enabled: tuple[str, ...] | None
+    plugins_disabled: tuple[str, ...] | None
+    allow_workspace_modules: bool | None
 
     @property
     def is_dry_run(self) -> bool:
@@ -486,6 +489,9 @@ def _execute_build_hamilton(
         max_workers=execution.max_workers,
         enable_hamilton_cache=execution.enable_cache,
         cache_dir=str(cache_dir),
+        plugins_enabled=execution.plugins_enabled,
+        plugins_disabled=execution.plugins_disabled,
+        allow_workspace_modules=execution.allow_workspace_modules,
     )
     overrides = BuildRunContextOverrides(
         execution_options=execution_options,
@@ -512,6 +518,9 @@ def _execute_build_hamilton(
         max_workers=execution_options.max_workers,
         enable_cache=execution_options.enable_hamilton_cache,
         cache_dir=str(cache_dir),
+        plugins_enabled=execution.plugins_enabled,
+        plugins_disabled=execution.plugins_disabled,
+        allow_workspace_modules=execution.allow_workspace_modules,
     )
     hamilton_result = executor.run(
         env=env,
@@ -822,6 +831,9 @@ class _BuildRunParams:
     clear_cache: bool
     cache_report: bool
     validation_mode: ContractValidationMode
+    plugins_enabled: tuple[str, ...] | None
+    plugins_disabled: tuple[str, ...] | None
+    allow_workspace_modules: bool | None
 
 
 def resolve_parallel_backend(*, parallel_backend: str | None, max_workers: int | None) -> str:
@@ -861,6 +873,17 @@ def _resolve_validation_mode(raw: str | None) -> ContractValidationMode:
         raise ValidationError(msg) from exc
 
 
+def _plugin_overrides_from_params(params: _BuildRunParams) -> dict[str, object]:
+    overrides: dict[str, object] = {}
+    if params.plugins_enabled is not None:
+        overrides["ci.plugins.enabled"] = list(params.plugins_enabled)
+    if params.plugins_disabled is not None:
+        overrides["ci.plugins.disabled"] = list(params.plugins_disabled)
+    if params.allow_workspace_modules is not None:
+        overrides["ci.plugins.allow_workspace_modules"] = params.allow_workspace_modules
+    return overrides
+
+
 def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
     """Extract and normalize build run parameters from context.
 
@@ -887,6 +910,13 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         parallel_backend=parallel_backend_raw,
         max_workers=max_workers,
     )
+    enabled_plugins_raw = ctx.params.get_list("enable_plugin")
+    enabled_plugins = tuple(enabled_plugins_raw) if enabled_plugins_raw else None
+    disabled_plugins_raw = ctx.params.get_list("disable_plugin")
+    disabled_plugins = tuple(disabled_plugins_raw) if disabled_plugins_raw else None
+    allow_workspace_modules = None
+    if ctx.params.get_bool("no_workspace_targets"):
+        allow_workspace_modules = False
 
     return _BuildRunParams(
         targets=targets,
@@ -903,6 +933,9 @@ def _extract_build_run_params(ctx: CommandContext) -> _BuildRunParams:
         clear_cache=ctx.params.get_bool("clear_cache"),
         cache_report=ctx.params.get_bool("cache_report"),
         validation_mode=_resolve_validation_mode(ctx.params.get_str("validation_mode")),
+        plugins_enabled=enabled_plugins,
+        plugins_disabled=disabled_plugins,
+        allow_workspace_modules=allow_workspace_modules,
     )
 
 
@@ -1028,7 +1061,12 @@ def _build_run_result(
         return fail_project_error("build", str(exc)), runtime, goals
 
     with ctx.storage.write_gateway() as gateway:
-        runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
+        config_overrides = _plugin_overrides_from_params(params)
+        runtime_bundle = compose_cli_runtime_bundle(
+            runtime=runtime,
+            gateway=gateway,
+            config_overrides=config_overrides,
+        )
         catalog = runtime_bundle.catalog
         scope = TargetScope.ALL if params.all_targets else TargetScope.REQUESTED
         try:
@@ -1063,6 +1101,9 @@ def _build_run_result(
             clear_cache=params.clear_cache,
             cache_report=params.cache_report,
             validation_mode=params.validation_mode,
+            plugins_enabled=params.plugins_enabled,
+            plugins_disabled=params.plugins_disabled,
+            allow_workspace_modules=params.allow_workspace_modules,
         )
         result = _execute_and_format_result(
             runtime,

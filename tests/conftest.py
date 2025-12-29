@@ -23,9 +23,21 @@ from codeintel.config.models import ToolsConfig
 from codeintel.observability.runtime import shutdown_observability
 from codeintel.runtime.compose import compose_runtime
 from codeintel.runtime.runtime_bundle import RuntimeBundle
-from tests._helpers import GatewayOptions, ProvisioningConfig, TestScenario, provisioned_gateway
+from tests._helpers import (
+    GatewayOptions,
+    ProvisioningConfig,
+    TestScenario,
+    provisioned_gateway,
+)
 from tests._helpers.build import TEST_BUILD_SETTINGS
+from tests._helpers.columnar_streams import (
+    contract_schema_for_table_key as contract_schema_for_table_key_fn,
+)
+from tests._helpers.columnar_streams import (
+    reader_for_rows as reader_for_rows_fn,
+)
 from tests._helpers.env import create_provisioned_test_env
+from tests._helpers.fixtures.rows import columnar_rows_for as columnar_rows_for_fn
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import GatewayFactory
 from tests._helpers.harnesses.analytics_harness import AnalyticsTargetHarness
@@ -45,18 +57,26 @@ from tests._helpers.orchestration.provisioning import (
     provision_graph_ready_repo,
 )
 from tests._helpers.pytest_options import apply_pytest_options, register_pytest_options
-from tests._helpers.schemas import ensure_storage_contract_catalog
+from tests._helpers.schemas import ensure_schema_service, ensure_storage_contract_catalog
 from tests._helpers.seeds.architecture import open_seeded_architecture_gateway
 from tests._helpers.serving_snapshot_factory import ServingSnapshot, ServingSnapshotFactory
 from tests._helpers.tooling_audit import ToolCallLog
 from tests._helpers.tooling_audit import require_tooling as _require_tooling
-from tests._helpers.waiting import eventually as eventually_fn
-from tests._helpers.waiting import eventually_async as eventually_async_fn
+from tests._helpers.waiting import (
+    eventually as eventually_fn,
+)
+from tests._helpers.waiting import (
+    eventually_async as eventually_async_fn,
+)
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Mapping, Sequence
     from pathlib import Path
 
+    import pyarrow as pa
+
+    from codeintel.core.columnar.rows import ColumnarRows
+    from codeintel.core.schemas import SchemaService
     from codeintel.storage.gateway import StorageGateway
     from tests._helpers.configs import CoverageEdgeEnv, ProvisionedGateway, SpanTestEnv
     from tests._helpers.context import TestContext
@@ -314,6 +334,63 @@ def _session_schema_service(request: pytest.FixtureRequest) -> None:
     configure_schema_service(runtime=runtime)
     configure_contract_service(runtime=runtime)
     ensure_storage_contract_catalog()
+
+
+@pytest.fixture(scope="session")
+def schema_service() -> SchemaService:
+    """Provide the configured SchemaService for contract-aware helpers.
+
+    Returns
+    -------
+    SchemaService
+        Initialized schema service instance.
+    """
+    return ensure_schema_service()
+
+
+@pytest.fixture(scope="session")
+def contract_schema_for(
+    schema_service: SchemaService,
+) -> Callable[[str], pa.Schema]:
+    """Provide a contract schema resolver for table keys.
+
+    Returns
+    -------
+    Callable[[str], pyarrow.Schema]
+        Resolver that returns an Arrow contract schema.
+    """
+    _ = schema_service
+    return contract_schema_for_table_key_fn
+
+
+@pytest.fixture
+def columnar_rows_for(
+    schema_service: SchemaService,
+) -> Callable[[str, Sequence[Mapping[str, object]]], ColumnarRows]:
+    """Provide a columnar row factory aligned to schema contracts.
+
+    Returns
+    -------
+    Callable[[str, Sequence[Mapping[str, object]]], ColumnarRows]
+        Columnar row factory for table keys.
+    """
+    _ = schema_service
+    return columnar_rows_for_fn
+
+
+@pytest.fixture
+def reader_for_rows(
+    schema_service: SchemaService,
+) -> Callable[..., pa.RecordBatchReader]:
+    """Provide a RecordBatchReader factory aligned to schema contracts.
+
+    Returns
+    -------
+    Callable[..., pyarrow.RecordBatchReader]
+        Reader factory for table keys.
+    """
+    _ = schema_service
+    return reader_for_rows_fn
 
 
 @pytest.fixture

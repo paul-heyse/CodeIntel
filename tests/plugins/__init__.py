@@ -1,0 +1,1 @@
+"""Plugin-focused test coverage."""

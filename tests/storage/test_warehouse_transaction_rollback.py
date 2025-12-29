@@ -35,7 +35,15 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
     materialize_table_from_rows(
         warehouse,
         table_key,
-        [(snapshot.repo, snapshot.commit, "[]", None, created_at)],
+        [
+            {
+                "repo": snapshot.repo,
+                "commit": snapshot.commit,
+                "modules": [],
+                "overlays": None,
+                "generated_at": created_at,
+            }
+        ],
         columns=columns,
         options=options,
     )
@@ -51,8 +59,20 @@ def test_materialize_rows_replace_rolls_back_on_write_failure(
         pytest.fail("Expected baseline core.repo_map row to exist")
 
     bad_rows = [
-        (snapshot.repo, snapshot.commit, '["new"]', None, created_at),
-        (snapshot.repo, snapshot.commit, '["dupe"]', None, created_at),
+        {
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "modules": ["new"],
+            "overlays": None,
+            "generated_at": created_at,
+        },
+        {
+            "repo": snapshot.repo,
+            "commit": snapshot.commit,
+            "modules": ["dupe"],
+            "overlays": None,
+            "generated_at": created_at,
+        },
     ]
     with pytest.raises(DuckDBError):
         materialize_table_from_rows(

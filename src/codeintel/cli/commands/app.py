@@ -19,9 +19,12 @@ from codeintel.cli.commands.help_commands import help_commands_app
 from codeintel.cli.commands.history import history_app
 from codeintel.cli.commands.jobs import jobs_app
 from codeintel.cli.commands.meta import meta_app
+from codeintel.cli.commands.plugins import plugins_app
 from codeintel.cli.commands.registry import registry_app
+from codeintel.cli.commands.semantic import semantic_app
 from codeintel.cli.commands.serve import serve_app
 from codeintel.cli.commands.storage import storage_app
+from codeintel.cli.commands.targets import targets_app
 from codeintel.cli.errors import OutputFormat
 from codeintel.observability.cli import run_cli_with_telemetry
 
@@ -54,6 +57,9 @@ app.command(health_app, name="health")
 app.command(jobs_app, name="jobs")
 app.command(meta_app, name="meta")
 app.command(registry_app, name="registry")
+app.command(semantic_app, name="semantic")
+app.command(plugins_app, name="plugins")
+app.command(targets_app, name="targets")
 app.command(completions_app, name="completions")
 app.command(help_commands_app, name="help-ops")
 
@@ -99,7 +105,10 @@ __all__ = [
     "history_app",
     "jobs_app",
     "meta_app",
+    "plugins_app",
     "registry_app",
+    "semantic_app",
     "serve_app",
     "storage_app",
+    "targets_app",
 ]

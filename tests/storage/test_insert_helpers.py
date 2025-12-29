@@ -20,7 +20,7 @@ def test_insert_rows_normalizes_mapping(fresh_gateway: StorageGateway) -> None:
     row = {
         "repo": "r1",
         "commit": "c1",
-        "modules": "[]",
+        "modules": [],
         "overlays": None,
         "generated_at": now,
     }
@@ -51,7 +51,7 @@ def test_insert_rows_raises_on_missing_column(fresh_gateway: StorageGateway) -> 
                 {
                     "repo": "r1",
                     "commit": "c1",
-                    "modules": "[]",
+                    "modules": [],
                     "overlays": None,
                 },
             ],

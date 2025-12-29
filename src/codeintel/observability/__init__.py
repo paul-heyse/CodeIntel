@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from codeintel.observability.cache_log_ingest import (
+    CacheLogIngestResult,
+    ingest_cache_log_jsonl,
+)
 from codeintel.observability.db_tracing import RedactedSQL, SQLStatementMode, redact_sql
 from codeintel.observability.duckdb_tracing import maybe_instrument_duckdb_connection
 from codeintel.observability.lifecycle import ObservabilityLifecycle
@@ -26,6 +30,7 @@ from codeintel.observability.telemetry_context import (
 )
 
 __all__ = [
+    "CacheLogIngestResult",
     "ConfigResolver",
     "McpOpenTelemetryMiddleware",
     "ObservabilityConfig",
@@ -36,6 +41,7 @@ __all__ = [
     "bootstrap_observability",
     "current_telemetry_context",
     "get_observability",
+    "ingest_cache_log_jsonl",
     "maybe_instrument_duckdb_connection",
     "observe_operation",
     "record_operation_metrics",

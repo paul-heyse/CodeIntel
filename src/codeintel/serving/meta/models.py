@@ -18,8 +18,6 @@ from codeintel.serving.uris import (
     META_ENVIRONMENT_URI,
     META_RESOURCES_URI,
     META_SERVING_URI,
-    META_VIEWS_SQL_DIFF_URI,
-    META_VIEWS_SQL_URI,
     SEMANTIC_VIEW_URI_TEMPLATE,
     SEMANTIC_VIEWS_URI,
 )
@@ -149,18 +147,6 @@ DEFAULT_RESOURCE_TEMPLATES: tuple[ResourceTemplate, ...] = (
     ResourceTemplate(
         uri=META_ENVIRONMENT_URI,
         description="Snapshot environment metadata (tool versions) plus runtime mismatch warnings.",
-        mime_type="application/json",
-        tags=("meta",),
-    ),
-    ResourceTemplate(
-        uri=META_VIEWS_SQL_URI,
-        description="Compiled SQL for semantic views in the mounted snapshot (select-only).",
-        mime_type="application/json",
-        tags=("meta",),
-    ),
-    ResourceTemplate(
-        uri=META_VIEWS_SQL_DIFF_URI,
-        description="Diff summary for compiled semantic view SQL vs prior snapshot (if available).",
         mime_type="application/json",
         tags=("meta",),
     ),

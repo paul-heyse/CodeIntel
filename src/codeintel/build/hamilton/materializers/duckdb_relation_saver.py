@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import types
 import typing
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Literal, get_args, get_origin
 
 import polars as pl
 import pyarrow as pa
@@ -21,10 +22,21 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.hamilton.materializers.write_policy import resolve_materialize_options
+from codeintel.build.schemas import get_schema_provider
+from codeintel.build.schemas.observations import (
+    SchemaObservationAccumulator,
+    observe_batches,
+    persist_observation_bundle,
+    schema_hints_from_tags,
+)
 from codeintel.build.tabular.duckdb_relation import register_ephemeral
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
 from codeintel.storage.duckdb_types import DuckDBRelation
 from codeintel.storage.warehouse import MaterializeOptions, Warehouse
+
+if TYPE_CHECKING:
+    from codeintel.build.schemas.observations import SchemaHints
+    from codeintel.core.schemas.primitives import TableSchema
 
 _RECOVERABLE_EXCEPTIONS = (
     ValueError,
@@ -40,6 +52,8 @@ _TABULAR_TYPES: tuple[type, ...] = (
     pa.Table,
     pl.LazyFrame,
 )
+
+LOG = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -120,6 +134,7 @@ class DuckDBRelationSaver(DataSaver):
         input_hash: str | None = None
         result: MaterializationResult | None = None
         temp_name: str | None = None
+        relation: DuckDBRelation | None = None
 
         try:
             prepared = resolve_materialization_context(
@@ -168,6 +183,13 @@ class DuckDBRelationSaver(DataSaver):
                         duration_ms=duration_ms(start),
                         input_hash=input_hash or "",
                         row_count=row_count,
+                    )
+                    _persist_schema_observation(
+                        env=self.env,
+                        target_name=self.target_name,
+                        table_key=self.table_key,
+                        relation=relation,
+                        catalog=self.catalog,
                     )
         except _RECOVERABLE_EXCEPTIONS as exc:
             result = failed_table_result(
@@ -235,6 +257,50 @@ def _materialize_relation(
 ) -> int:
     result = warehouse.materialize_table(table_key, relation, options=options)
     return result.rows_written or 0
+
+
+def _declared_schema_hint(table_key: str) -> TableSchema | None:
+    try:
+        provider = get_schema_provider()
+    except RuntimeError:
+        return None
+    return provider.get_table_schema(table_key)
+
+
+def _schema_hints_for_table(*, catalog: DagCatalog, table_key: str) -> SchemaHints | None:
+    output = catalog.table_outputs.get(table_key)
+    if output is None:
+        return None
+    return schema_hints_from_tags(output.tags)
+
+
+def _persist_schema_observation(
+    *,
+    env: BuildEnv,
+    target_name: str,
+    table_key: str,
+    relation: DuckDBRelation,
+    catalog: DagCatalog,
+) -> None:
+    declared_schema = _declared_schema_hint(table_key)
+    schema_hints = _schema_hints_for_table(catalog=catalog, table_key=table_key)
+    accumulator = SchemaObservationAccumulator(
+        table_key=table_key,
+        declared_schema=declared_schema,
+        schema_hints=schema_hints,
+    )
+    try:
+        reader = relation.fetch_arrow_reader()
+        observe_batches(reader, accumulator=accumulator)
+        bundle = accumulator.finalize(
+            arrow_schema=reader.schema,
+            repo=env.repo,
+            commit=env.commit,
+            target_name=target_name,
+        )
+        persist_observation_bundle(gateway=env.gateway, bundle=bundle)
+    except (TypeError, ValueError, pa.ArrowInvalid) as exc:
+        LOG.warning("Schema observation failed for %s: %s", table_key, exc)
 
 
 __all__ = ["DuckDBRelationSaver"]

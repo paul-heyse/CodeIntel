@@ -106,6 +106,7 @@ class ArrowDatasetWriteOptions:
     compression: str | None = None
     dictionary_encode: bool = False
     dictionary_max_cardinality: int | None = None
+    dictionary_encode_columns: tuple[str, ...] | None = None
     unify_dictionaries: bool = False
 
 
@@ -449,7 +450,9 @@ def _parquet_write_options(
         kwargs["compression"] = options.compression
     if options.data_page_size and "data_page_size" in signature.parameters:
         kwargs["data_page_size"] = options.data_page_size
-    if options.dictionary_encode and "use_dictionary" in signature.parameters:
+    if (options.dictionary_encode or options.dictionary_encode_columns) and "use_dictionary" in (
+        signature.parameters
+    ):
         kwargs["use_dictionary"] = True
     if kwargs:
         return parquet_format, cast("FileWriteOptions", make_options(**kwargs))
@@ -460,14 +463,23 @@ def _apply_dictionary_options(
     data: ArrowDatasetInput,
     options: ArrowDatasetWriteOptions,
 ) -> ArrowDatasetInput:
-    if not options.dictionary_encode and not options.unify_dictionaries:
+    if (
+        not options.dictionary_encode
+        and not options.dictionary_encode_columns
+        and not (options.unify_dictionaries)
+    ):
         return data
+    encode_columns = (
+        set(options.dictionary_encode_columns) if options.dictionary_encode_columns else None
+    )
+    encode_enabled = options.dictionary_encode or encode_columns is not None
     if isinstance(data, pa.Table):
         table = data
-        if options.dictionary_encode:
+        if encode_enabled:
             table = _dictionary_encode_table(
                 table,
                 max_cardinality=options.dictionary_max_cardinality,
+                encode_columns=encode_columns,
             )
         if options.unify_dictionaries:
             table = _unify_dictionaries(table)
@@ -483,6 +495,7 @@ def _dictionary_encode_table(
     table: pa.Table,
     *,
     max_cardinality: int | None,
+    encode_columns: set[str] | None,
 ) -> pa.Table:
     if max_cardinality is None or max_cardinality <= 0:
         return table
@@ -490,7 +503,10 @@ def _dictionary_encode_table(
     fields: list[pa.Field] = []
     for name in table.schema.names:
         column = table.column(name)
-        encoded = _maybe_dictionary_encode_array(column, max_cardinality=max_cardinality)
+        if encode_columns is not None and name not in encode_columns:
+            encoded = column
+        else:
+            encoded = _maybe_dictionary_encode_array(column, max_cardinality=max_cardinality)
         arrays.append(encoded)
         fields.append(pa.field(name, encoded.type))
     return pa.Table.from_arrays(arrays, schema=pa.schema(fields))

@@ -51,6 +51,25 @@ class SchemaManifestRunRecord:
 
 
 @dataclass(frozen=True)
+class SchemaObservationRecord:
+    """Observed schema payload persisted for inference tracking."""
+
+    table_key: str
+    schema_digest: str
+    schema_hash: str
+    arrow_schema_ipc_b64: str
+    repo: str | None = None
+    commit: str | None = None
+    target_name: str | None = None
+    column_stats: Mapping[str, object] | None = None
+    dataset_stats: Mapping[str, object] | None = None
+    derived_settings: Mapping[str, object] | None = None
+    drift_summary: Mapping[str, object] | None = None
+    observed_at: datetime | None = None
+    observation_id: str | None = None
+
+
+@dataclass(frozen=True)
 class TableSchemaOverrideVersionRecord:
     """Record of a schema override version for an inferable table."""
 
@@ -107,6 +126,7 @@ __all__ = [
     "OverrideRegistryRefreshResult",
     "SchemaCatalogRequest",
     "SchemaManifestRunRecord",
+    "SchemaObservationRecord",
     "SchemaVersionRecord",
     "TableSchemaOverrideRegistryRecord",
     "TableSchemaOverrideVersionRecord",

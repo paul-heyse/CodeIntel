@@ -7,7 +7,6 @@ consistent defaults.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -19,6 +18,7 @@ from tests._helpers.builders.row_protocol import insert_rows
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from codeintel.core.serialization.converters import JsonValue
     from codeintel.storage.gateway import StorageGateway
 
 __all__ = [
@@ -105,11 +105,11 @@ class CallGraphEdgeRow:
     kind: str
     resolved_via: str
     confidence: float
-    evidence: dict[str, object] | str | None = None
+    evidence: JsonValue | None = None
 
     def to_tuple(
         self,
-    ) -> tuple[str, str, int, int | None, str, int, int, str, str, str, float, str]:
+    ) -> tuple[str, str, int, int | None, str, int, int, str, str, str, float, JsonValue]:
         """Serialize row to database insert order.
 
         Returns
@@ -117,13 +117,7 @@ class CallGraphEdgeRow:
         tuple
             Values in column order for INSERT.
         """
-        evidence_json: str
-        if self.evidence is None:
-            evidence_json = "{}"
-        elif isinstance(self.evidence, str):
-            evidence_json = self.evidence
-        else:
-            evidence_json = json.dumps(self.evidence)
+        evidence_json: JsonValue = self.evidence if self.evidence is not None else {}
         return (
             self.repo,
             self.commit,
@@ -310,13 +304,13 @@ class CFGBlockRow:
     start_line: int
     end_line: int
     kind: str
-    stmts_json: str
+    stmts_json: JsonValue
     in_degree: int
     out_degree: int
 
     def to_tuple(
         self,
-    ) -> tuple[int, int, str, str, str, int, int, str, str, int, int]:
+    ) -> tuple[int, int, str, str, str, int, int, str, JsonValue, int, int]:
         """Serialize row to database insert order.
 
         Returns

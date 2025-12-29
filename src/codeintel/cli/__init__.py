@@ -22,9 +22,12 @@ from codeintel.cli.commands import (
     graphs_app,
     history_app,
     main,
+    plugins_app,
     registry_app,
+    semantic_app,
     serve_app,
     storage_app,
+    targets_app,
 )
 
 __all__ = [
@@ -36,7 +39,10 @@ __all__ = [
     "graphs_app",
     "history_app",
     "main",
+    "plugins_app",
     "registry_app",
+    "semantic_app",
     "serve_app",
     "storage_app",
+    "targets_app",
 ]

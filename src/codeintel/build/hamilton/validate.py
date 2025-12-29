@@ -9,12 +9,16 @@ from __future__ import annotations
 import ast
 import inspect
 import json
-from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from textwrap import dedent
 from types import FunctionType, MethodType
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
+from codeintel.core.hamilton.semantic_tags import (
+    TAG_SEMANTIC_ENTITY,
+    TAG_SEMANTIC_GRAIN,
+    TAG_SEMANTIC_KIND,
+)
 from codeintel.core.hamilton.tags import (
     NODE_TYPE_ARTIFACT,
     NODE_TYPE_COMPUTE,
@@ -23,21 +27,49 @@ from codeintel.core.hamilton.tags import (
     NODE_TYPE_LOADER_QUERY,
     NODE_TYPE_MATERIALIZE,
     NODE_TYPE_TOOL,
+    OUTPUT_KIND_SEMANTIC_VIEW,
     TAG_ARTIFACT,
     TAG_ARTIFACT_PATH_TEMPLATE,
     TAG_DOMAIN,
+    TAG_ENTITY,
+    TAG_ENTITY_KEYS,
+    TAG_GRAIN,
+    TAG_JOIN_KEYS,
+    TAG_KIND,
+    TAG_LAYER,
     TAG_MCP_VISIBLE,
     TAG_NODE_TYPE,
+    TAG_OUTPUT_KIND,
+    TAG_SCHEMA_REF,
+    TAG_SEMANTIC_ID,
     TAG_TABLE_KEY,
     TAG_TARGET,
     TAG_TARGET_SPEC_VERSION,
+    TAG_VERSION,
 )
 from codeintel.core.imports.lazy import lazy_getattr
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from codeintel.core.schemas.provider import SchemaProvider
+
+    class ModuleProvenanceLike(Protocol):
+        @property
+        def origin(self) -> str: ...
+
+        @property
+        def module_import(self) -> str: ...
+
+        @property
+        def plugin_name(self) -> str | None: ...
+
+        @property
+        def dist_name(self) -> str | None: ...
+
+        @property
+        def dist_version(self) -> str | None: ...
+
 
 _SCHEMA_PROVIDER_FACTORY = cast(
     "Callable[[], SchemaProvider]",
@@ -78,6 +110,12 @@ class GraphValidationIssue:
     target: str | None = None
     table_key: str | None = None
     artifact: str | None = None
+    module: str | None = None
+    origin: str | None = None
+    module_import: str | None = None
+    plugin_name: str | None = None
+    dist_name: str | None = None
+    dist_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,20 +143,33 @@ class _ValidationInputs:
     saver_issues: list[GraphValidationIssue]
 
 
-def _issue_to_obj(issue: GraphValidationIssue) -> dict[str, object]:
+def _issue_to_obj(
+    issue: GraphValidationIssue,
+    *,
+    node_provenance: Mapping[str, Mapping[str, object]] | None,
+) -> dict[str, object]:
     obj: dict[str, object] = {
         "severity": issue.severity,
         "code": issue.code,
         "message": issue.message,
     }
-    if issue.node is not None:
-        obj["node"] = issue.node
-    if issue.target is not None:
-        obj["target"] = issue.target
-    if issue.table_key is not None:
-        obj["table_key"] = issue.table_key
-    if issue.artifact is not None:
-        obj["artifact"] = issue.artifact
+    optional_fields = {
+        "node": issue.node,
+        "target": issue.target,
+        "table_key": issue.table_key,
+        "artifact": issue.artifact,
+        "module": issue.module,
+        "origin": issue.origin,
+        "module_import": issue.module_import,
+        "plugin_name": issue.plugin_name,
+        "dist_name": issue.dist_name,
+        "dist_version": issue.dist_version,
+    }
+    obj.update({key: value for key, value in optional_fields.items() if value is not None})
+    if issue.node is not None and node_provenance is not None:
+        provenance = node_provenance.get(issue.node)
+        if provenance:
+            obj["node_provenance"] = dict(provenance)
     return obj
 
 
@@ -126,6 +177,7 @@ def validation_result_to_json(
     result: GraphValidationResult,
     *,
     indent: int | None = 2,
+    node_provenance: Mapping[str, Mapping[str, object]] | None = None,
 ) -> str:
     """Serialize a graph validation result to deterministic JSON text.
 
@@ -135,6 +187,8 @@ def validation_result_to_json(
         Graph validation result.
     indent
         JSON indentation level. When None, emits compact JSON.
+    node_provenance
+        Optional mapping of node name to provenance metadata.
 
     Returns
     -------
@@ -142,8 +196,8 @@ def validation_result_to_json(
         Newline-terminated JSON payload.
     """
     obj: dict[str, object] = {
-        "errors": [_issue_to_obj(i) for i in result.errors],
-        "warnings": [_issue_to_obj(i) for i in result.warnings],
+        "errors": [_issue_to_obj(i, node_provenance=node_provenance) for i in result.errors],
+        "warnings": [_issue_to_obj(i, node_provenance=node_provenance) for i in result.warnings],
         "summary": {
             "error_count": len(result.errors),
             "warning_count": len(result.warnings),
@@ -241,6 +295,156 @@ def _tag_type_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue
                         node=node.name,
                     )
                 )
+
+    return issues
+
+
+def _tag_str_value(tags: Mapping[str, object], key: str) -> str | None:
+    value = tags.get(key)
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _semantic_tag_value(
+    tags: Mapping[str, object],
+    keys: Sequence[str],
+) -> str | None:
+    for key in keys:
+        value = _tag_str_value(tags, key)
+        if value is not None:
+            return value
+    return None
+
+
+def _semantic_kind(tags: Mapping[str, object]) -> str | None:
+    return _semantic_tag_value(tags, (TAG_KIND, TAG_SEMANTIC_KIND))
+
+
+def _semantic_entity(tags: Mapping[str, object]) -> str | None:
+    return _semantic_tag_value(tags, (TAG_ENTITY, TAG_SEMANTIC_ENTITY))
+
+
+def _semantic_grain(tags: Mapping[str, object]) -> str | None:
+    return _semantic_tag_value(tags, (TAG_GRAIN, TAG_SEMANTIC_GRAIN))
+
+
+def _is_semantic_output(tags: Mapping[str, object]) -> bool:
+    output_kind = _tag_str_value(tags, TAG_OUTPUT_KIND)
+    layer = _tag_str_value(tags, TAG_LAYER)
+    return output_kind == OUTPUT_KIND_SEMANTIC_VIEW or layer == "semantic"
+
+
+def _missing_semantic_tag_issue(
+    *,
+    node: NodeLike,
+    target: str | None,
+    message: str,
+    code: str = "missing_semantic_tag",
+) -> GraphValidationIssue:
+    return GraphValidationIssue(
+        severity="error",
+        code=code,
+        message=message,
+        node=node.name,
+        target=target,
+    )
+
+
+def _semantic_layer_issue(
+    *,
+    node: NodeLike,
+    tags: Mapping[str, object],
+    target: str | None,
+) -> GraphValidationIssue | None:
+    layer = _tag_str_value(tags, TAG_LAYER)
+    if layer == "semantic":
+        return None
+    code = "missing_semantic_tag" if layer is None else "invalid_semantic_tag"
+    detail = "missing layer tag" if layer is None else f"layer tag must be 'semantic' (got {layer})"
+    return _missing_semantic_tag_issue(
+        node=node,
+        target=target,
+        message=f"Semantic output {detail}",
+        code=code,
+    )
+
+
+def _semantic_required_tag_issues(
+    *,
+    node: NodeLike,
+    tags: Mapping[str, object],
+    target: str | None,
+    kind: str | None,
+) -> list[GraphValidationIssue]:
+    required = (
+        (_tag_str_value(tags, TAG_SEMANTIC_ID), "Semantic output missing semantic_id tag"),
+        (kind, "Semantic output missing kind tag"),
+        (_semantic_entity(tags), "Semantic output missing entity tag"),
+        (_semantic_grain(tags), "Semantic output missing grain tag"),
+        (_tag_str_value(tags, TAG_VERSION), "Semantic output missing version tag"),
+    )
+    issues: list[GraphValidationIssue] = []
+    for value, message in required:
+        if value is None:
+            issues.append(_missing_semantic_tag_issue(node=node, target=target, message=message))
+    return issues
+
+
+def _semantic_table_tag_issues(
+    *,
+    node: NodeLike,
+    tags: Mapping[str, object],
+    target: str | None,
+    kind: str | None,
+) -> list[GraphValidationIssue]:
+    if kind != "table":
+        return []
+    required = (
+        (TAG_SCHEMA_REF, "Semantic table missing schema_ref tag"),
+        (TAG_ENTITY_KEYS, "Semantic table missing entity_keys tag"),
+        (TAG_JOIN_KEYS, "Semantic table missing join_keys tag"),
+    )
+    issues: list[GraphValidationIssue] = []
+    for key, message in required:
+        if _tag_str_value(tags, key) is None:
+            issues.append(_missing_semantic_tag_issue(node=node, target=target, message=message))
+    return issues
+
+
+def _semantic_tag_issues(nodes: Mapping[str, NodeLike]) -> list[GraphValidationIssue]:
+    issues: list[GraphValidationIssue] = []
+
+    for node_name in sorted(nodes):
+        node = nodes[node_name]
+        tags = _tags_mapping(node)
+        if tags is None:
+            continue
+        if not _is_semantic_output(tags):
+            continue
+
+        target = _target_tag_value(tags)
+        layer_issue = _semantic_layer_issue(node=node, tags=tags, target=target)
+        if layer_issue is not None:
+            issues.append(layer_issue)
+        kind = _semantic_kind(tags)
+        issues.extend(
+            _semantic_required_tag_issues(
+                node=node,
+                tags=tags,
+                target=target,
+                kind=kind,
+            )
+        )
+        issues.extend(
+            _semantic_table_tag_issues(
+                node=node,
+                tags=tags,
+                target=target,
+                kind=kind,
+            )
+        )
 
     return issues
 
@@ -376,7 +580,9 @@ def _collect_produced_tables(
                 GraphValidationIssue(
                     severity="error",
                     code="duplicate_table_key",
-                    message=f"table_key produced by multiple targets: {existing}, {producer_target}",
+                    message=(
+                        f"table_key produced by multiple targets: {existing}, {producer_target}"
+                    ),
                     node=node.name,
                     table_key=table_key,
                     target=producer_target,
@@ -808,6 +1014,63 @@ def _compute_node_origin_fn(node: NodeLike) -> FunctionType | MethodType | None:
     return None
 
 
+def _node_module_name(node: NodeLike) -> str | None:
+    originating_module = getattr(node, "originating_module", None)
+    if isinstance(originating_module, str) and originating_module:
+        return originating_module
+    fn = _compute_node_origin_fn(node)
+    if fn is None:
+        return None
+    module = getattr(fn, "__module__", None)
+    if isinstance(module, str) and module:
+        return module
+    return None
+
+
+def _issue_with_provenance(
+    issue: GraphValidationIssue,
+    *,
+    nodes: Mapping[str, NodeLike],
+    module_provenance: Mapping[str, ModuleProvenanceLike],
+) -> GraphValidationIssue:
+    if issue.node is None:
+        return issue
+    node = nodes.get(issue.node)
+    if node is None:
+        return issue
+    module_name = _node_module_name(node)
+    if module_name is None:
+        return issue
+    provenance = module_provenance.get(module_name)
+    if provenance is None:
+        return replace(issue, module=module_name)
+    return replace(
+        issue,
+        module=module_name,
+        origin=provenance.origin,
+        module_import=provenance.module_import,
+        plugin_name=provenance.plugin_name,
+        dist_name=provenance.dist_name,
+        dist_version=provenance.dist_version,
+    )
+
+
+def _attach_issue_provenance(
+    issues: list[GraphValidationIssue],
+    *,
+    nodes: Mapping[str, NodeLike],
+    module_provenance: Mapping[str, ModuleProvenanceLike],
+) -> list[GraphValidationIssue]:
+    return [
+        _issue_with_provenance(
+            issue,
+            nodes=nodes,
+            module_provenance=module_provenance,
+        )
+        for issue in issues
+    ]
+
+
 def _async_node_issue(
     *,
     node: NodeLike,
@@ -944,7 +1207,9 @@ def _duplicate_materialize_issues(
                 GraphValidationIssue(
                     severity="error",
                     code="duplicate_materialize",
-                    message=f"Multiple materialize nodes declared for target: {', '.join(node_names)}",
+                    message=(
+                        f"Multiple materialize nodes declared for target: {', '.join(node_names)}"
+                    ),
                     target=target,
                 )
             )
@@ -979,6 +1244,7 @@ def validate_nodes(
     schema_provider: SchemaProvider | None = None,
     validate_schema: bool = True,
     enforce_compute_io_purity: bool = False,
+    module_provenance: Mapping[str, ModuleProvenanceLike] | None = None,
 ) -> GraphValidationResult:
     """Validate Hamilton FunctionGraph nodes against build invariants.
 
@@ -993,6 +1259,8 @@ def validate_nodes(
     enforce_compute_io_purity
         When True, validate that nodes tagged ``node_type="compute"`` do not contain direct I/O
         calls (e.g., ``.execute()``, ``.execute_scalar()``, or ``.ibis.table()``).
+    module_provenance
+        Optional mapping of module name to provenance metadata for diagnostics.
 
     Returns
     -------
@@ -1012,6 +1280,7 @@ def validate_nodes(
         *inputs.saver_issues,
     ]
     errors.extend(_tag_type_issues(nodes))
+    errors.extend(_semantic_tag_issues(nodes))
     errors.extend(
         _orphan_saver_issues(
             nodes=nodes,
@@ -1047,6 +1316,18 @@ def validate_nodes(
         io_issues = _compute_io_purity_issues(nodes)
         errors.extend(i for i in io_issues if i.severity == "error")
         warnings.extend(i for i in io_issues if i.severity == "warning")
+
+    if module_provenance:
+        errors = _attach_issue_provenance(
+            errors,
+            nodes=nodes,
+            module_provenance=module_provenance,
+        )
+        warnings = _attach_issue_provenance(
+            warnings,
+            nodes=nodes,
+            module_provenance=module_provenance,
+        )
 
     errors_sorted = tuple(sorted(errors, key=lambda i: (i.code, i.message, i.node or "")))
     warnings_sorted = tuple(sorted(warnings, key=lambda i: (i.code, i.message, i.node or "")))

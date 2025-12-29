@@ -9,7 +9,6 @@ realistic type annotation data.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
@@ -120,7 +119,7 @@ class FunctionTypesPack:
                     return_type="int",
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json=json.dumps({"x": "int", "y": "int"}),
+                    param_types_json={"x": "int", "y": "int"},
                     fully_typed=True,
                     partial_typed=False,
                     untyped=False,
@@ -152,7 +151,7 @@ class FunctionTypesPack:
                     return_type="int",
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json=json.dumps({"value": "int"}),
+                    param_types_json={"value": "int"},
                     fully_typed=True,
                     partial_typed=False,
                     untyped=False,
@@ -185,7 +184,7 @@ class FunctionTypesPack:
                     return_type="int",
                     return_type_source="annotation",
                     type_comment=None,
-                    param_types_json=json.dumps({}),
+                    param_types_json={},
                     fully_typed=False,
                     partial_typed=True,
                     untyped=False,
@@ -218,7 +217,7 @@ class FunctionTypesPack:
                     return_type="",
                     return_type_source="none",
                     type_comment=None,
-                    param_types_json=json.dumps({}),
+                    param_types_json={},
                     fully_typed=False,
                     partial_typed=False,
                     untyped=True,

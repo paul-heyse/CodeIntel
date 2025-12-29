@@ -34,6 +34,9 @@ from codeintel.serving.db.pointer import ServingSnapshotPointer
 from codeintel.serving.semantic.datasets import DatasetManifestIndex, load_dataset_manifests
 from codeintel.serving.semantic.inventory import SchemaInventory
 from codeintel.serving.semantic.view_registry import ViewRegistry, view_spec_modules
+from codeintel.storage.backend import DuckDBSession
+from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.gateway.config import StorageConfig
 from codeintel.storage.gateway.pool import PoolConfig, ReadPoolWarehouse
 
 if TYPE_CHECKING:
@@ -391,6 +394,23 @@ def _resolve_environment_path(
     return None
 
 
+def _load_inventory_from_registry(pointer: ServingSnapshotPointer) -> SchemaInventory | None:
+    session = DuckDBSession(StorageConfig.for_readonly(pointer.db_path))
+    con = None
+    inventory: SchemaInventory | None = None
+    try:
+        con = session.open_reader()
+        inventory = SchemaInventory.from_registry(con)
+    except (DuckDBError, OSError, RuntimeError, TypeError, ValueError):
+        return None
+    finally:
+        if con is not None:
+            con.close()
+    if inventory is None or not inventory.schemas:
+        return None
+    return inventory
+
+
 def _load_snapshot_context(
     pointer: ServingSnapshotPointer,
     *,
@@ -401,7 +421,11 @@ def _load_snapshot_context(
     if registry is None:
         msg = "Semantic registry was not loaded for the serving snapshot"
         raise ValueError(msg)
-    inventory = SchemaInventory.load(pointer.schema_manifest_path)
+    inventory = _load_inventory_from_registry(pointer)
+    inventory_source = "registry"
+    if inventory is None:
+        inventory = SchemaInventory.load(pointer.schema_manifest_path)
+        inventory_source = "manifest"
     buildspec_payload = pointer.buildspec_path.read_text(encoding="utf-8")
     buildspec = buildspec_from_json(buildspec_payload)
     snapshot_manifest = ServingSnapshotManifest.from_path(pointer.snapshot_manifest_path)
@@ -422,6 +446,7 @@ def _load_snapshot_context(
         "semantic_layer_version": pointer.semantic_layer_version,
         "semantic_registry_version": registry.version,
         "schema_inventory": inventory.summary(),
+        "schema_inventory_source": inventory_source,
         "buildspec_version": buildspec.spec_version,
         "dataset_tables": len(dataset_manifests.by_table_key),
     }

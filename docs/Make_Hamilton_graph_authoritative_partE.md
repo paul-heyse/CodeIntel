@@ -335,6 +335,10 @@ Re-export canonical plugin API:
 * `from .tags import *`
 * `from .target import target_anchor`
 * `from .save_to import save_to_table, save_to_artifact`
+* `from .annotations import schema_output, tag, tag_output`
+* `from .validation import check_output_warn, check_output_fail`
+* `from .io import dataloader, datasaver, load_from, save_to`
+* `from .columns import with_columns_lazy, pipe_input, pipe_output`
 * optionally: `table_contract` / `pipe_clean_df` / `with_features` if you want plugin authors to use your canonical transforms
 
 ## 2.2 `src/codeintel/sdk/tags.py`
@@ -365,6 +369,40 @@ Re-export stable saver wrappers that:
 * apply `hamilton.data_saver=True`,
 * apply `output_role`, `table_key`/`artifact`, sink metadata,
 * and preserve your Phase (3) inventory semantics.
+
+## 2.5 Advanced modifier wrappers (schema hints, validation, I/O, columns)
+
+To keep plugins on a stable ABI while still using Hamilton's advanced surface,
+add SDK wrappers for the function modifier families you expect authors to use.
+These should remain "hint-only" in line with the inference-first plan.
+
+### Files CREATED
+
+* `src/codeintel/sdk/annotations.py`
+
+  * `schema_output(...)` wrapper for `@schema.output` (stored as soft hints only)
+  * `tag(...)` and `tag_output(...)` wrappers (enforce canonical key taxonomy)
+
+* `src/codeintel/sdk/validation.py`
+
+  * `check_output_warn(...)` wrapper for `@check_output(importance="warn")`
+  * `check_output_fail(...)` wrapper for explicit opt-in failure
+
+* `src/codeintel/sdk/io.py`
+
+  * `dataloader(...)`, `datasaver(...)`, `load_from.<format>(...)`,
+    `save_to.<format>(...)` re-exports with stable defaults
+
+* `src/codeintel/sdk/columns.py`
+
+  * `with_columns_lazy(...)` wrapper for `h_polars_lazyframe.with_columns`
+  * optional `pipe_input(...)` / `pipe_output(...)` shims for graph-local pipelines
+
+### Files MODIFIED
+
+* `src/codeintel/sdk/__init__.py`
+
+  * export the above wrappers so plugin authors never import Hamilton internals directly
 
 ---
 
@@ -440,6 +478,33 @@ def fingerprint(modules: Sequence[ModuleType], packs: Sequence[TargetPack], cfg_
     return h.hexdigest()
 ```
 
+## 3.2 Config-driven DAG shaping (when/resolve)
+
+Make configuration-driven DAG shaping a first-class behavior (no bespoke
+"target toggles"). Hamilton's `@config.when` and `@resolve` let packs emit
+nodes conditionally without changing module inventories.
+
+### Files MODIFIED
+
+* `src/codeintel/runtime/compose.py`
+
+  * pass `Builder.with_config(runtime_cfg.hamilton_config)` so config is applied
+    before DAG construction
+  * enforce `config_namespace` for plugin packs when set (prevents collisions)
+
+* `src/codeintel/runtime/plugins/config.py`
+
+  * add `hamilton_config: Mapping[str, object]` bucket for config-driven DAG rules
+  * apply pack-scoped overrides under `config_namespace` (if defined)
+
+### Definition
+
+* “Module set = what can exist.”
+* “Config = what does exist for this run.”
+
+This keeps the graph authoritative while allowing environment-specific
+structure changes.
+
 ---
 
 # 4) Composition root consumes `ResolvedModuleSet` and publishes provenance
@@ -471,6 +536,41 @@ Add:
 * `module_provenance: Mapping[str, ModuleProvenance]`
 * `modules_fingerprint: str`
 
+## 4.3 Standard execution profiles (cache + structured logs)
+
+Make caching and audit logs first-class execution profiles aligned with
+Hamilton's cache semantics.
+
+### Files MODIFIED
+
+* `src/codeintel/runtime/compose.py`
+
+  * set `code_version` to `modules_fingerprint`
+  * expose a cache profile (opt-in caching + JSONL logs) via
+    `Builder.with_cache(log_to_file=True, default_behavior="disable")`
+
+* `src/codeintel/observability/*` or a new cache-log ingester module
+
+  * ingest `dr.cache.logs(...)` JSONL into DuckDB tables for run audits
+  * add a `cache_lineage` table for deterministic data version tracing
+
+## 4.4 Telemetry + semantic registry compiler (UI-aligned)
+
+Integrate the HamiltonTracker and the tag taxonomy so the UI becomes a first-class
+source of truth alongside the runtime graph.
+
+### Files MODIFIED
+
+* `src/codeintel/runtime/compose.py`
+
+  * optionally attach `HamiltonTracker` with a stable `dag_name`
+  * include `repo`, `commit`, `run_kind`, `modules_fingerprint` as tracker tags
+
+* `src/codeintel/serving/semantic/registry_compiler.py` (or equivalent)
+
+  * compile `semantic_registry.json` from DAG tags (`layer="semantic"`)
+  * enforce required tags (`semantic_id`, `kind`, `grain`, `schema_ref`, etc.)
+
 ---
 
 # 5) Configuration surface for plugins (enable/disable, strictness, namespace isolation)
@@ -488,6 +588,7 @@ Define:
   * `strict: bool = True` (fail-fast on load incompatibility/import errors)
   * `namespace_enforcement: bool = True` (if pack.config_namespace required)
   * `allow_workspace_modules: bool = True` (toggle repo-local scanning)
+  * `hamilton_config: Mapping[str, object] = {}` (config for @config.when/@resolve)
 
 ### Files MODIFIED
 
@@ -530,6 +631,26 @@ Commands:
 
 ---
 
+# 6.5 Optional dynamic execution profile (Parallelizable/Collect)
+
+Add a configurable execution mode for high-fan-out targets that benefit from
+Hamilton's dynamic task model.
+
+### Files MODIFIED
+
+* `src/codeintel/runtime/compose.py`
+
+  * allow `enable_dynamic_execution(allow_experimental_mode=True)`
+  * wire `with_remote_executor(...)` and `with_local_executor(...)`
+  * gate behind config to avoid accidental activation
+
+### Decision gate
+
+* Enable only for DAGs that emit large parallelizable workloads (e.g., per-file
+  ingestion or per-module analysis).
+
+---
+
 # 7) Validation hardening with provenance-aware error messages
 
 You already validate duplicate table keys / artifacts / target anchors in catalog compilation and node validation. This phase adds **provenance correlation** so the error says “who declared it”.
@@ -544,6 +665,11 @@ You already validate duplicate table keys / artifacts / target anchors in catalo
     * duplicate `table_key`
     * duplicate `artifact`
     * duplicate `target` anchors
+  * validate semantic tag taxonomy for public outputs:
+
+    * required: `layer`, `semantic_id`, `kind`, `entity`, `grain`, `version`
+    * if `kind="table"`: `schema_ref`, `entity_keys`, `join_keys`
+    * include provenance in tag validation errors
   * include module origin:
 
     * `module = node.originating_module` (if available) else best effort (search callable `__module__`)
@@ -567,7 +693,7 @@ To make “adding a new target = adding a module” ergonomic inside the repo, e
 
 * `src/codeintel_targets/__init__.py` (empty marker package)
 * `src/codeintel_targets/README.md` (contract + examples)
-* `src/codeintel_targets/example/hello_target.py` (minimal sample)
+* `src/codeintel_targets/analytics/hello_target.py` (minimal sample)
 
 ### Files MODIFIED
 
@@ -657,6 +783,86 @@ and delete those modules and call sites.
 * re-resolve modules
 * assert new target anchor appears in catalog
 
+5. `tests/validation/test_semantic_tag_taxonomy.py`
+
+* assert required semantic tags are enforced for public outputs
+* assert provenance is included in tag validation errors
+
+6. `tests/semantic_registry/test_registry_compiler.py`
+
+* compile registry from DAG tags and validate expected output schema
+
+7. `tests/observability/test_cache_log_ingest.py`
+
+* emit cache JSONL logs and assert they ingest into DuckDB tables
+
+8. `tests/runtime/test_dynamic_execution_profile.py`
+
+* verify dynamic execution is gated by config and composes remote/local executors
+
+---
+
+# 11.5 Executable Implementation Checklist (new additions)
+
+Use this checklist to implement the added Hamilton-advanced alignment items in
+order. Each step lists exact file edits.
+
+1) SDK wrappers for advanced modifiers
+   - Create `src/codeintel/sdk/annotations.py` with `schema_output`, `tag`,
+     `tag_output` wrappers (hint-only; no runtime enforcement).
+   - Create `src/codeintel/sdk/validation.py` with `check_output_warn` and
+     `check_output_fail` wrappers.
+   - Create `src/codeintel/sdk/io.py` with `dataloader`, `datasaver`,
+     `load_from`, `save_to` re-exports and stable defaults.
+   - Create `src/codeintel/sdk/columns.py` with `with_columns_lazy` plus optional
+     `pipe_input`/`pipe_output` shims.
+   - Update `src/codeintel/sdk/__init__.py` to export these wrappers.
+
+2) Config-driven DAG shaping
+   - Update `src/codeintel/runtime/plugins/config.py` to add
+     `hamilton_config: Mapping[str, object] = {}`.
+   - Update `src/codeintel/build/config.py` (or runtime config module) to
+     surface `hamilton_config` under plugins/runtime config.
+   - Update `src/codeintel/runtime/compose.py` to call
+     `Builder.with_config(runtime_cfg.plugins.hamilton_config)` and enforce
+     `config_namespace` isolation.
+
+3) Cache profile + JSONL audit logs
+   - Update `src/codeintel/runtime/compose.py` to set
+     `code_version = modules_fingerprint` and enable
+     `Builder.with_cache(log_to_file=True, default_behavior="disable")` under a
+     config-controlled profile.
+   - Create `src/codeintel/observability/cache_log_ingest.py` to ingest cache
+     JSONL into DuckDB (run_id, node, event, data_version).
+   - Wire ingestion entry points (CLI or observability runner) as needed.
+
+4) Telemetry + registry compiler
+   - Update `src/codeintel/runtime/compose.py` to attach `HamiltonTracker`
+     (self-hosted) with stable `dag_name` and tags
+     (`repo`, `commit`, `run_kind`, `modules_fingerprint`).
+   - Create `src/codeintel/serving/semantic/registry_compiler.py` to compile
+     `semantic_registry.json` from DAG tags and enforce required tag schema.
+   - Add a CLI entry to run the compiler (e.g., `codeintel semantic compile`).
+
+5) Semantic tag taxonomy enforcement
+   - Update `src/codeintel/build/hamilton/validate.py` to enforce required tag
+     keys for semantic outputs and include module provenance in error messages.
+
+6) Dynamic execution profile (optional)
+   - Update `src/codeintel/runtime/compose.py` to gate
+     `enable_dynamic_execution(allow_experimental_mode=True)` behind config.
+   - Wire `with_remote_executor(...)` and `with_local_executor(...)` from config.
+
+7) Tests for new additions
+   - Add `tests/validation/test_semantic_tag_taxonomy.py`.
+   - Add `tests/semantic_registry/test_registry_compiler.py`.
+   - Add `tests/observability/test_cache_log_ingest.py`.
+   - Add `tests/runtime/test_dynamic_execution_profile.py`.
+
+8) Doc + rollout alignment
+   - Keep `docs/hamilton_inference_first_alignment_plan.md` cross‑linked to
+     the above steps (see “Plan Alignment” section).
+
 ---
 
 # 12) File index summary (additions / modifications / deletions)
@@ -671,20 +877,27 @@ and delete those modules and call sites.
 * `src/codeintel/sdk/tags.py`
 * `src/codeintel/sdk/target.py`
 * `src/codeintel/sdk/save_to.py`
+* `src/codeintel/sdk/annotations.py`
+* `src/codeintel/sdk/validation.py`
+* `src/codeintel/sdk/io.py`
+* `src/codeintel/sdk/columns.py`
 * `src/codeintel_targets/__init__.py`
 * `src/codeintel_targets/README.md`
-* `src/codeintel_targets/example/hello_target.py`
+* `src/codeintel_targets/analytics/hello_target.py`
 * `src/codeintel/cli/handlers/plugins.py`
+* `src/codeintel/serving/semantic/registry_compiler.py`
+* `src/codeintel/observability/cache_log_ingest.py`
 * `examples/target_packs/hello_pack/**` (pyproject + plugin + targets)
-* tests under `tests/plugins/**`, `tests/workspace/**`
+* tests under `tests/plugins/**`, `tests/workspace/**`, `tests/validation/**`,
+  `tests/semantic_registry/**`, `tests/observability/**`, `tests/runtime/**`
 
 ## Modified
 
 * `src/codeintel/runtime/module_resolver.py` (merge core/workspace/plugin modules + fingerprint + provenance)
-* `src/codeintel/runtime/compose.py` (consume ResolvedModuleSet; publish packs/provenance)
+* `src/codeintel/runtime/compose.py` (consume ResolvedModuleSet; publish packs/provenance; cache/telemetry profiles)
 * `src/codeintel/runtime/runtime_bundle.py` (store packs/provenance/modules_fingerprint)
-* `src/codeintel/build/config.py` or runtime config module (add PluginConfig; delete legacy target list config)
-* `src/codeintel/build/hamilton/validate.py` (provenance-aware diagnostics)
+* `src/codeintel/build/config.py` or runtime config module (add PluginConfig + hamilton config; delete legacy target list config)
+* `src/codeintel/build/hamilton/validate.py` (provenance-aware diagnostics + semantic tag taxonomy)
 * `src/codeintel/cli/handlers/build.py` (flags + show-origin)
 * CLI router wiring
 
@@ -701,7 +914,11 @@ and delete those modules and call sites.
 3. **Determinism:** module resolution order and runtime fingerprint are stable for identical inputs; two runs yield identical `modules_fingerprint`.
 4. **Cache correctness:** changing any workspace/plugin module file contents changes `modules_fingerprint` and thus invalidates cache keys/fingerprints.
 5. **Provenance:** `codeintel plugins list` and `codeintel targets list --show-origin` clearly attribute targets/outputs to core/workspace/plugin modules.
-6. **No static registries:** there is no code path where targets are enumerated outside Hamilton module import + tag semantics.
+6. **Tag taxonomy:** semantic outputs fail validation if required tags are missing or malformed.
+7. **Telemetry:** registry compiler output is derived from DAG tags and matches UI contract.
+8. **Caching:** cache logs are emitted in JSONL and ingestable into DuckDB with stable run IDs.
+9. **Dynamic execution (optional):** when enabled, dynamic execution is gated by config and uses explicit remote/local executors.
+10. **No static registries:** there is no code path where targets are enumerated outside Hamilton module import + tag semantics.
 
 ---
 

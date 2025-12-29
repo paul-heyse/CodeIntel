@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import ast
 import json
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from codeintel.analytics.functions.function_contracts import build_function_contracts_rows
 from codeintel.analytics.parsing.ast_cache import FunctionAst
+from codeintel.storage.warehouse import Warehouse
 from tests._helpers import TestScenario
 from tests._helpers.assertions import (
     expect_equal,
@@ -28,6 +30,7 @@ from tests._helpers.fakes.function_catalogs import (
     MockFunctionCatalog,
     MockFunctionSpan,
 )
+from tests._helpers.fixtures.rows import RowFactory
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 
 if TYPE_CHECKING:
@@ -167,26 +170,22 @@ def _seed_docstrings(
     returns
         Return documentation.
     """
-    gateway.con.execute(
-        """
-        INSERT INTO core.docstrings (
-            repo, commit, rel_path, module, qualname, kind,
-            params, returns, raises, examples, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """,
-        [
-            DEFAULT_VARIANT.repo,
-            DEFAULT_VARIANT.commit,
-            rel_path,
-            rel_path.replace("/", ".").replace(".py", ""),
-            qualname,
-            "function",
-            json.dumps(params),
-            json.dumps(returns) if returns else "{}",
-            "[]",
-            "[]",
-        ],
+    now = datetime.now(tz=UTC)
+    row = RowFactory.row_for(
+        "core.docstrings",
+        repo=DEFAULT_VARIANT.repo,
+        commit=DEFAULT_VARIANT.commit,
+        rel_path=rel_path,
+        module=rel_path.replace("/", ".").replace(".py", ""),
+        qualname=qualname,
+        kind="function",
+        params=params,
+        returns=returns or {},
+        raises=[],
+        examples=[],
+        created_at=now,
     )
+    Warehouse(gateway).materialize_mappings("core.docstrings", [row])
 
 
 def _seed_function_types(
@@ -208,20 +207,17 @@ def _seed_function_types(
     param_types
         Parameter type annotations.
     """
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.function_types (
-            repo, commit, function_goid_h128, return_type, param_types, created_at
-        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        """,
-        [
-            DEFAULT_VARIANT.repo,
-            DEFAULT_VARIANT.commit,
-            goid,
-            return_type,
-            json.dumps(param_types) if param_types else "{}",
-        ],
+    now = datetime.now(tz=UTC)
+    row = RowFactory.row_for(
+        "analytics.function_types",
+        repo=DEFAULT_VARIANT.repo,
+        commit=DEFAULT_VARIANT.commit,
+        function_goid_h128=goid,
+        return_type=return_type,
+        param_types=param_types or {},
+        created_at=now,
     )
+    Warehouse(gateway).materialize_mappings("analytics.function_types", [row])
 
 
 def _build_and_write_contract_rows(

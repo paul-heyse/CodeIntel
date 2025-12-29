@@ -13,8 +13,6 @@ Resource URI Scheme (Canonical Taxonomy)
 - ``codeintel://exports/{export_id}/lines{?offset,limit}`` - NDJSON line chunks
 - ``codeintel://exports/{export_id}/bytes{?offset,limit}`` - Binary byte chunks
 - ``codeintel://meta/environment`` - Snapshot build environment
-- ``codeintel://meta/views_sql`` - Snapshot compiled SQL for semantic views (validated select-only)
-- ``codeintel://meta/views_sql_diff`` - Snapshot diff vs previous compiled view SQL (if available)
 """
 
 from __future__ import annotations

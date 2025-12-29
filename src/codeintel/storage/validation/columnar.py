@@ -9,6 +9,7 @@ from typing import Literal
 import pyarrow as pa
 import pyarrow.compute as pc
 
+from codeintel.core.schemas.arrow_gen import DEFAULT_EXTRAS_COLUMN
 from codeintel.core.schemas.primitives import Column, TableSchema
 from codeintel.storage.contracts.schema_provider import get_schema_provider
 
@@ -91,7 +92,7 @@ def _is_compatible_type(column: Column, actual_type: pa.DataType) -> bool:
 def _schema_errors(table_schema: TableSchema, actual_schema: pa.Schema) -> list[str]:
     errors: list[str] = []
     expected_names = [column.name for column in table_schema.columns]
-    actual_names = list(actual_schema.names)
+    actual_names = [name for name in actual_schema.names if name != DEFAULT_EXTRAS_COLUMN]
 
     missing = [name for name in expected_names if name not in actual_names]
     extra = [name for name in actual_names if name not in expected_names]

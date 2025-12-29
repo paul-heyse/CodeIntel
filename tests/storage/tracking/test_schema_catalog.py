@@ -426,9 +426,7 @@ def test_schema_versions_persist_arrow_contract_payload(
     schema = _decode_arrow_schema(payload)
     metadata = schema.metadata or {}
     schema_hash_value = metadata.get(b"codeintel.schema_hash")
-    if schema_hash_value is None or schema_hash_value.decode("utf-8") != schema_hash(
-        table_schema
-    ):
+    if schema_hash_value is None or schema_hash_value.decode("utf-8") != schema_hash(table_schema):
         pytest.fail("Arrow contract schema_hash metadata mismatch")
     schema_digest_value = metadata.get(b"codeintel.schema_digest")
     if schema_digest_value is None or schema_digest_value.decode("utf-8") != schema_digest:

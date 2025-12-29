@@ -37,8 +37,8 @@ def _modules_rows(*, repo: str, commit: str, count: int) -> pl.DataFrame:
             "repo": repo,
             "commit": commit,
             "language": "python",
-            "tags": "[]",
-            "owners": "[]",
+            "tags": [],
+            "owners": [],
         }
         row["row_hash"] = stable_hash(row)
         rows.append(row)
@@ -83,7 +83,7 @@ def _module_row_for_schema(
         col_name = column.name
         col_type = column.type
         if col_type == "JSON":
-            values_by_column[col_name] = "[]"
+            values_by_column[col_name] = []
         elif col_type in {"INTEGER", "BIGINT", "DECIMAL(38,0)"}:
             values_by_column[col_name] = 1
         elif col_type == "DOUBLE":

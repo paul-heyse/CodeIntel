@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from codeintel.core.schemas.contract_primitives import DatasetContract
+from codeintel.storage.contracts.schema_provider import get_schema_provider
 from codeintel.storage.datasets.registry import DatasetRegistry
+from tests._helpers.schemas import ensure_storage_contract_catalog
 
 
 def sample_dataset_registry(tmp_path: Path | None = None) -> DatasetRegistry:
@@ -21,13 +23,24 @@ def sample_dataset_registry(tmp_path: Path | None = None) -> DatasetRegistry:
     -------
     DatasetRegistry
         Registry containing a single ast_nodes dataset with file bindings.
+
+    Raises
+    ------
+    ValueError
+        If the schema registry is missing the requested table schema.
     """
     base_path = tmp_path if tmp_path is not None else Path.cwd()
     table_key = "core.ast_nodes"
+    ensure_storage_contract_catalog()
+    provider = get_schema_provider()
+    table_schema = provider.get_table_schema(table_key)
+    if table_schema is None:
+        msg = f"Missing schema for {table_key}"
+        raise ValueError(msg)
     contract = DatasetContract(
         table_key=table_key,
         name="ast_nodes",
-        schema=None,
+        schema=table_schema,
         json_schema_id="ast_nodes",
         jsonl_filename="ast_nodes.jsonl",
         parquet_filename="ast_nodes.parquet",

@@ -9,12 +9,14 @@ from cyclopts import App
 
 from codeintel.cli.commands.decorators import CommandConfig, cli_command
 from codeintel.cli.handlers.meta import (
+    meta_drift_report_handler,
     meta_override_pin_handler,
     meta_registry_health_handler,
     meta_sync_handler,
 )
 from codeintel.cli.options.registry import (
     DATASET_TABLE_KEY,
+    META_DRIFT_LIMIT,
     META_OVERRIDE_SCHEMA_DIGEST,
     META_OVERRIDE_VERSION_ID,
 )
@@ -31,9 +33,11 @@ _META_OVERRIDE_CONFIG = CommandConfig(require_runtime=False, require_gateway=Tru
 
 META_SYNC_PATH: CommandPath = ("meta", "sync")
 META_HEALTH_PATH: CommandPath = ("meta", "health")
+META_DRIFT_PATH: CommandPath = ("meta", "drift")
 META_OVERRIDE_PIN_PATH: CommandPath = ("meta", "override-pin")
 _META_SYNC_FLAGS_FIELD = shared_flags_field(META_SYNC_PATH)
 _META_HEALTH_FLAGS_FIELD = shared_flags_field(META_HEALTH_PATH)
+_META_DRIFT_FLAGS_FIELD = shared_flags_field(META_DRIFT_PATH)
 _META_OVERRIDE_FLAGS_FIELD = shared_flags_field(META_OVERRIDE_PIN_PATH)
 
 
@@ -53,6 +57,19 @@ class MetaHealthCommand:
     """Report schema registry health for the attached meta catalog."""
 
     flags: SharedFlagsProtocol = _META_HEALTH_FLAGS_FIELD
+
+
+@cli_command("meta.drift", handler=meta_drift_report_handler, config=_META_OVERRIDE_CONFIG)
+@meta_app.command(name="drift")
+@dataclass
+class MetaDriftCommand:
+    """Report latest schema drift summaries from observations."""
+
+    limit: Annotated[
+        int | None,
+        option_param(META_DRIFT_LIMIT, command_path=META_DRIFT_PATH),
+    ] = None
+    flags: SharedFlagsProtocol = _META_DRIFT_FLAGS_FIELD
 
 
 @cli_command("meta.override-pin", handler=meta_override_pin_handler, config=_META_OVERRIDE_CONFIG)

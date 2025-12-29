@@ -182,8 +182,8 @@ class ProfilePack:
                 path=path,
                 repo=self.repo,
                 commit=self.commit,
-                tags='["server"]',
-                owners='["team@example.com"]',
+                tags=["server"],
+                owners=["team@example.com"],
             )
             for module, path in sorted(module_map.items())
         ]
@@ -279,10 +279,10 @@ class ProfilePack:
                 style="auto",
                 short_desc="Short doc",
                 long_desc="Longer doc",
-                params_json="[]",
-                returns_json='{"return": "int"}',
-                raises_json="[]",
-                examples_json="[]",
+                params_json=[],
+                returns_json={"return": "int"},
+                raises_json=[],
+                examples_json=[],
                 created_at=now,
             )
         ]
@@ -367,7 +367,7 @@ class ProfilePack:
                 return_type="int",
                 return_type_source="annotation",
                 type_comment=None,
-                param_types_json="[]",
+                param_types_json=[],
                 fully_typed=True,
                 partial_typed=False,
                 untyped=False,
@@ -418,7 +418,7 @@ class ProfilePack:
                 kind="function",
                 status="failed",
                 duration_ms=1500,
-                markers="[]",
+                markers=[],
                 parametrized=False,
                 flaky=True,
                 created_at=now,

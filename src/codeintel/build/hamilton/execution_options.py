@@ -29,6 +29,9 @@ class BuildExecutionOptions:
     enable_telemetry: bool = True
     enable_progress: bool = False
     enable_timing: bool = False
+    plugins_enabled: tuple[str, ...] | None = None
+    plugins_disabled: tuple[str, ...] | None = None
+    allow_workspace_modules: bool | None = None
 
     def resolved_profile(self, *, env: BuildEnv) -> str:
         """Resolve the effective profile for this run.
@@ -85,6 +88,23 @@ class BuildExecutionOptions:
             enable_progress=self.enable_progress,
             enable_timing=self.enable_timing,
         )
+
+    def plugin_overrides(self) -> dict[str, object]:
+        """Return config overrides for plugin selection.
+
+        Returns
+        -------
+        dict[str, object]
+            Mapping of config overrides for plugin selection.
+        """
+        overrides: dict[str, object] = {}
+        if self.plugins_enabled is not None:
+            overrides["ci.plugins.enabled"] = list(self.plugins_enabled)
+        if self.plugins_disabled is not None:
+            overrides["ci.plugins.disabled"] = list(self.plugins_disabled)
+        if self.allow_workspace_modules is not None:
+            overrides["ci.plugins.allow_workspace_modules"] = self.allow_workspace_modules
+        return overrides
 
 
 __all__ = ["BuildExecutionOptions"]

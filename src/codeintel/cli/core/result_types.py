@@ -1621,6 +1621,47 @@ class ProfileStorageResult:
 
 
 @dataclass(frozen=True)
+class CacheLogIngestSummary:
+    """Result from ingesting cache JSONL logs into DuckDB.
+
+    Parameters
+    ----------
+    db_path
+        Path to the DuckDB database.
+    cache_dir
+        Cache directory used for discovery (if provided).
+    inserted_events
+        Number of events inserted into DuckDB.
+    run_ids
+        Run identifiers observed in the logs.
+    jsonl_files
+        JSONL files that were ingested.
+    """
+
+    db_path: str
+    cache_dir: str | None
+    inserted_events: int
+    run_ids: list[str]
+    jsonl_files: list[str]
+
+    def to_dict(self) -> dict[str, object]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns
+        -------
+        dict[str, object]
+            Dictionary representation.
+        """
+        return {
+            "db_path": self.db_path,
+            "cache_dir": self.cache_dir,
+            "inserted_events": self.inserted_events,
+            "run_ids": self.run_ids,
+            "jsonl_files": self.jsonl_files,
+        }
+
+
+@dataclass(frozen=True)
 class HistoryTimeseriesResult:
     """Result from history timeseries aggregation command.
 
@@ -1735,6 +1776,72 @@ class HealthCheckResult:
         }
 
 
+@result_type
+@dataclass(frozen=True)
+class PluginModuleInfo:
+    """Module metadata for a plugin pack."""
+
+    import_path: str
+    file_path: str | None
+    content_hash: str | None
+
+
+@result_type
+@dataclass(frozen=True)
+class PluginPackInfo:
+    """Summary metadata for a plugin pack."""
+
+    name: str
+    version: str
+    enabled: bool
+    default_enabled: bool
+    modules: list[str]
+    requires_codeintel: str
+    config_namespace: str | None
+    dist_name: str | None
+    dist_version: str | None
+    capabilities: list[str]
+
+
+@result_type
+@dataclass(frozen=True)
+class PluginPackDetail:
+    """Detailed metadata for a plugin pack."""
+
+    name: str
+    version: str
+    enabled: bool
+    default_enabled: bool
+    modules: list[PluginModuleInfo]
+    requires_codeintel: str
+    config_namespace: str | None
+    dist_name: str | None
+    dist_version: str | None
+    capabilities: list[str]
+    entry_point: str | None
+
+
+@result_type
+@dataclass(frozen=True)
+class TargetOriginInfo:
+    """Origin metadata for a runtime target."""
+
+    target: str
+    domain: str
+    anchor_module: str | None
+    origin: str | None
+    plugin_name: str | None
+
+
+@result_type
+@dataclass(frozen=True)
+class TargetOriginListResult:
+    """Result from listing runtime targets with provenance."""
+
+    targets: list[TargetOriginInfo]
+    count: int
+
+
 __all__ = [
     "ActionResult",
     "BuildAssetsResult",
@@ -1745,6 +1852,7 @@ __all__ = [
     "BuildRunResult",
     "BuildStatusResult",
     "BuildTargetInfo",
+    "CacheLogIngestSummary",
     "ConfigShowResult",
     "DatasetConstraintsResult",
     "DatasetDescribeResult",
@@ -1771,6 +1879,9 @@ __all__ = [
     "ListResult",
     "OperationCallResult",
     "OperationListResult",
+    "PluginModuleInfo",
+    "PluginPackDetail",
+    "PluginPackInfo",
     "ProfileStorageResult",
     "ServeStartResult",
     "StatusResult",
@@ -1780,5 +1891,7 @@ __all__ = [
     "StorageStatusResult",
     "SubsystemDetailResult",
     "SubsystemListResult",
+    "TargetOriginInfo",
+    "TargetOriginListResult",
     "ValidateMacrosResult",
 ]

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from codeintel.core.schemas.row_models import normalize_row_value_for_type
 from tests._helpers.fixtures.repos import (
     GOID_FUNC_A,
     GOID_FUNC_B,
@@ -258,7 +259,7 @@ class TestMeta:
     status: str = "passed"
     kind: str = "unit"
     duration_ms: int = 0
-    markers: str = "[]"
+    markers: list[str] = field(default_factory=list)
     parametrized: bool = False
     flaky: bool = False
 
@@ -273,12 +274,20 @@ class TestMeta:
         """
         if meta is None:
             return cls(status=status)
-        markers_raw = meta.get("markers", "[]")
+        markers_raw = meta.get("markers", [])
+        normalized_markers = normalize_row_value_for_type(markers_raw, "JSON")
+        markers: list[str]
+        if isinstance(normalized_markers, list):
+            markers = [str(marker) for marker in normalized_markers]
+        elif normalized_markers is None:
+            markers = []
+        else:
+            markers = [str(normalized_markers)]
         return cls(
             status=str(meta.get("status", status)),
             kind=str(meta.get("kind", "unit")),
             duration_ms=_coerce_int(meta.get("duration_ms"), default=0),
-            markers=str(markers_raw),
+            markers=markers,
             parametrized=bool(meta.get("parametrized", False)),
             flaky=bool(meta.get("flaky", False)),
         )
@@ -342,7 +351,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             status=test_statuses[0],
             kind="unit",
             duration_ms=_coerce_int((spec.test_meta or {}).get("duration_ms"), default=150),
-            markers="[]",
+            markers=[],
             parametrized=False,
             flaky=False,
             created_at=now,
@@ -356,7 +365,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             status=test_statuses[1],
             kind="unit",
             duration_ms=_coerce_int((spec.test_meta or {}).get("duration_ms"), default=200),
-            markers='["slow"]',
+            markers=["slow"],
             parametrized=False,
             flaky=False,
             created_at=now,
@@ -370,7 +379,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             status=test_statuses[2],
             kind="integration",
             duration_ms=_coerce_int((spec.test_meta or {}).get("duration_ms"), default=500),
-            markers="[]",
+            markers=[],
             parametrized=True,
             flaky=False,
             created_at=now,
@@ -384,7 +393,7 @@ def _seed_test_catalog(ctx: TestContext, spec: CoverageFixtureSpec) -> None:
             status=test_statuses[3],
             kind="unit",
             duration_ms=_coerce_int((spec.test_meta or {}).get("duration_ms"), default=50),
-            markers="[]",
+            markers=[],
             parametrized=False,
             flaky=True,
             created_at=now,

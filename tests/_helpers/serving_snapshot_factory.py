@@ -17,16 +17,24 @@ from codeintel.build.serving.publisher import (
     publish_serving_snapshot,
 )
 from codeintel.config.primitives import BuildPaths
+from codeintel.core.columnar.schema_alignment import (
+    align_reader_to_contract,
+    extras_policy_from_schema,
+)
 from codeintel.core.hashing import stable_hash
 from codeintel.core.manifests import ServingSnapshotManifest, SnapshotDatasetEntry
+from codeintel.core.schemas import table_schema_from_json_obj
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.hashing import schema_hash as compute_schema_hash
 from codeintel.core.schemas.primitives import Column, ColumnType, TableSchema
 from codeintel.serving.db.pointer import ServingSnapshotPointer
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.datasets.arrow_store import ArrowDatasetWriteOptions, write_dataset
 from codeintel.storage.datasets.manifests import dataset_manifest_path, read_dataset_manifest
 from codeintel.storage.gateway import StorageConfig, open_gateway
 from codeintel.storage.helpers.table_key import split_table_key
 from codeintel.storage.serving.search_index import build_search_documents_table
+from tests._helpers.columnar_streams import contract_schema_for_table_key
 from tests._helpers.fixtures.snapshots import DEFAULT_VARIANT
 from tests._helpers.gateway import seed_contract_catalog
 from tests._helpers.hamilton_harness_artifacts import HarnessArtifacts
@@ -383,20 +391,31 @@ def _write_dataset_manifests(
             except ValueError:
                 continue
             try:
-                arrow_table = con.execute(
-                    f'SELECT * FROM "{schema_name}"."{table_name}"'
-                ).fetch_arrow_table()
+                relation = con.sql(f'SELECT * FROM "{schema_name}"."{table_name}"')
+                reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
             except duckdb.Error:
                 continue
             schema_hash = _schema_hash_from_table(table)
             if schema_hash is None:
                 msg = f"schema_hash is required for dataset manifest: {table_key}"
                 raise ValueError(msg)
+            try:
+                contract_schema = contract_schema_for_table_key(table_key)
+            except ValueError:
+                table_schema = _table_schema_from_entry(table)
+                if table_schema is None:
+                    raise
+                contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+            aligned = align_reader_to_contract(
+                reader,
+                contract_schema,
+                extras_policy=extras_policy_from_schema(contract_schema),
+            )
             write_dataset(
                 dataset_root=dataset_root,
                 table_key=table_key,
                 snapshot_id=run_id,
-                data=arrow_table,
+                data=aligned,
                 options=ArrowDatasetWriteOptions(schema_hash=schema_hash),
             )
             manifest_path = dataset_manifest_path(
@@ -480,6 +499,13 @@ def _schema_hash_for_table_entry(table: Mapping[str, object]) -> str | None:
         return None
     table_schema = TableSchema(schema=schema, name=name, columns=columns)
     return compute_schema_hash(table_schema)
+
+
+def _table_schema_from_entry(table: Mapping[str, object]) -> TableSchema | None:
+    try:
+        return table_schema_from_json_obj(table)
+    except (TypeError, ValueError):
+        return None
 
 
 def _columns_from_raw(columns_raw: list[object]) -> list[Column] | None:

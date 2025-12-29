@@ -877,16 +877,6 @@
           "kind": null,
           "name": "semantic_registry",
           "path_template": "{build_dir}/serving/artifacts/semantic_registry.json"
-        },
-        {
-          "kind": null,
-          "name": "views_sql",
-          "path_template": "{build_dir}/serving/artifacts/views_sql.json"
-        },
-        {
-          "kind": null,
-          "name": "views_sql_diff",
-          "path_template": "{build_dir}/serving/artifacts/views_sql_diff.json"
         }
       ],
       "deps": [],

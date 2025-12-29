@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar
 
 from tests._helpers.builders._common import _iso
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+    from codeintel.core.serialization.converters import JsonValue
 
 __all__ = [
     "ConfigValueRow",
@@ -222,7 +223,7 @@ class FunctionTypesRow:
     return_type: str
     return_type_source: str
     type_comment: str | None
-    param_types_json: str
+    param_types_json: JsonValue | None
     fully_typed: bool
     partial_typed: bool
     untyped: bool
@@ -251,7 +252,7 @@ class FunctionTypesRow:
         str,
         str,
         str | None,
-        str,
+        JsonValue | None,
         bool,
         bool,
         bool,
@@ -527,7 +528,7 @@ class TestCatalogRow:
     test_goid_h128: int | None = None
     urn: str | None = None
     duration_ms: int | None = None
-    markers: str = "[]"
+    markers: list[str] = field(default_factory=list)
     parametrized: bool = False
     flaky: bool = False
 
@@ -544,7 +545,7 @@ class TestCatalogRow:
         str,
         str,
         int | None,
-        str,
+        list[str],
         bool,
         bool,
         str,
@@ -850,7 +851,7 @@ class ConfigValueRow:
     reference_modules: list[str]
     reference_count: int
 
-    def to_tuple(self) -> tuple[str, str, str, str, str, str, str, int]:
+    def to_tuple(self) -> tuple[str, str, str, str, str, list[str], list[str], int]:
         """Serialize row to database insert order.
 
         Returns
@@ -864,8 +865,8 @@ class ConfigValueRow:
             self.config_path,
             self.format,
             self.key,
-            json.dumps(self.reference_paths),
-            json.dumps(self.reference_modules),
+            self.reference_paths,
+            self.reference_modules,
             self.reference_count,
         )
 
@@ -1100,8 +1101,8 @@ class SubsystemRow:
     name: str
     description: str
     module_count: int
-    modules_json: str
-    entrypoints_json: str
+    modules_json: list[str]
+    entrypoints_json: list[str]
     internal_edge_count: int
     external_edge_count: int
     fan_in: int
@@ -1122,8 +1123,8 @@ class SubsystemRow:
         str,
         str,
         int,
-        str,
-        str,
+        list[str],
+        list[str],
         int,
         int,
         int,

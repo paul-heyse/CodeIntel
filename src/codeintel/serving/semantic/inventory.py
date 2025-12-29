@@ -11,10 +11,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from codeintel.core.schemas.primitives import Column, Index, TableSchema
+from codeintel.storage.schema.registry_provider import RegistrySchemaProvider
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
+
+    from duckdb import DuckDBPyConnection
 
     from codeintel.core.schemas.primitives import ColumnType
 
@@ -177,6 +180,24 @@ class SchemaInventory:
             schema = _parse_table(view_obj)
             schemas[schema.table_key] = schema
 
+        return cls(schemas=schemas)
+
+    @classmethod
+    def from_registry(cls, con: DuckDBPyConnection) -> SchemaInventory:
+        """Load inventory from the schema registry tables.
+
+        Parameters
+        ----------
+        con
+            DuckDB connection with metadata catalog attached.
+
+        Returns
+        -------
+        SchemaInventory
+            Inventory constructed from metadata.table_schema_registry.
+        """
+        provider = RegistrySchemaProvider(con)
+        schemas = {schema.table_key: schema for schema in provider.iter_table_schemas()}
         return cls(schemas=schemas)
 
     def get(self, table_key: str) -> TableSchema | None:

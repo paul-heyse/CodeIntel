@@ -10,12 +10,13 @@ tag/contract drift is caught without requiring a full test run.
 
 from __future__ import annotations
 
+import inspect
 import re
 import sys
 import traceback
-from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING, Protocol
 
 from codeintel.build.hamilton.graph_validation import (
     validate_graph,
@@ -26,6 +27,7 @@ from codeintel.build.schemas.contract_service import configure_contract_service
 from codeintel.cli.handlers.runtime_helpers import compose_cli_runtime_bundle
 from codeintel.cli.resolution import resolve_from_params
 from codeintel.core.schemas.provider import MappingSchemaProvider
+from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.gateway import (
     DuckDBConnection,
     MemoryGatewayOptions,
@@ -35,9 +37,29 @@ from codeintel.storage.gateway import (
     open_inference_gateway,
     open_memory_gateway,
 )
+from codeintel.storage.validation import ContractValidationMode
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from codeintel.build.hamilton.validate import GraphValidationResult
+    from codeintel.cli.resolution.types import ResolvedRuntime
+    from codeintel.runtime.runtime_bundle import RuntimeBundle
+    from codeintel.storage.gateway.protocol import StorageGateway
+    from codeintel.storage.tracking.schema_catalog_models import SchemaObservationRecord
 
 BASE_DIRS: tuple[str, ...] = ("src", "tests", "tools", "scripts")
 _SELF_REL_PATH = "tools/guardrails.py"
+STREAMING_GUARDRAIL_PREFIXES: tuple[str, ...] = (
+    "src/codeintel/build/",
+    "src/codeintel/serving/",
+    "src/codeintel/storage/validation/",
+)
+SDK_GUARDRAIL_ALLOW_PREFIXES: tuple[str, ...] = (
+    "src/codeintel/build/hamilton/tagging.py",
+    "src/codeintel/sdk/",
+)
+MODULE_DISCOVERY_ALLOW_PREFIXES: tuple[str, ...] = ("src/codeintel/runtime/module_resolver.py",)
 
 
 @dataclass(frozen=True)
@@ -49,6 +71,20 @@ class Guardrail:
     message: str
     include_prefixes: tuple[str, ...] = ()
     allow_prefixes: tuple[str, ...] = ()
+
+
+class _SchemaObservationSource(Protocol):
+    """Schema observation accessor used by guardrail checks."""
+
+    def load_latest_schema_observation(
+        self,
+        *,
+        table_key: str,
+    ) -> SchemaObservationRecord | None: ...
+
+    def drift_summary_report(self, *, limit: int = 50) -> dict[str, object]: ...
+
+    def has_contract_arrow_schema(self, *, table_key: str) -> bool: ...
 
 
 GUARDRAILS: tuple[Guardrail, ...] = (
@@ -81,7 +117,10 @@ GUARDRAILS: tuple[Guardrail, ...] = (
     Guardrail(
         name="direct_ibis_table_calls",
         pattern=re.compile(r"\.ibis\.table\("),
-        message="Direct `.ibis.table(...)` is forbidden; use codeintel.storage.gateway.ibis_facade.table.",
+        message=(
+            "Direct `.ibis.table(...)` is forbidden; use "
+            "codeintel.storage.gateway.ibis_facade.table."
+        ),
         allow_prefixes=(
             "src/codeintel/storage/gateway/ibis_facade.py",
             "src/codeintel/storage/ibis_adapter.py",
@@ -106,7 +145,8 @@ GUARDRAILS: tuple[Guardrail, ...] = (
     Guardrail(
         name="hamilton_save_to_decorator",
         pattern=re.compile(
-            r"\b(from hamilton\.function_modifiers\.adapters import SaveToDecorator|@SaveToDecorator\b)"
+            r"\b(from hamilton\.function_modifiers\.adapters import SaveToDecorator|"
+            r"@SaveToDecorator\b)"
         ),
         message=(
             "Hamilton SaveToDecorator is forbidden; use SaveToObjectMetadataDecorator "
@@ -148,10 +188,89 @@ GUARDRAILS: tuple[Guardrail, ...] = (
         allow_prefixes=("src/codeintel/build/hamilton/tagging.py",),
     ),
     Guardrail(
+        name="direct_hamilton_schema_modifier",
+        pattern=re.compile(
+            r"\bfrom hamilton\.function_modifiers import [^\n]*\bschema\b"
+            r"|\bimport hamilton\.function_modifiers\.schema\b"
+        ),
+        message=(
+            "Direct imports of Hamilton schema modifiers are forbidden; use "
+            "codeintel.build.hamilton.tagging helpers or codeintel.sdk annotations."
+        ),
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=SDK_GUARDRAIL_ALLOW_PREFIXES,
+    ),
+    Guardrail(
+        name="direct_hamilton_check_output_modifier",
+        pattern=re.compile(
+            r"\bfrom hamilton\.function_modifiers import [^\n]*\bcheck_output\b"
+            r"|\bimport hamilton\.function_modifiers\.check_output\b"
+        ),
+        message=(
+            "Direct imports of Hamilton check_output modifiers are forbidden; use "
+            "codeintel.sdk validation helpers."
+        ),
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=SDK_GUARDRAIL_ALLOW_PREFIXES,
+    ),
+    Guardrail(
         name="removed_build_registry_module",
         pattern=re.compile(r"\bcodeintel\.build\.registry\b"),
-        message="codeintel.build.registry is removed; use codeintel.build.target_system.load_target_system().",
+        message=(
+            "codeintel.build.registry is removed; use "
+            "codeintel.build.target_system.load_target_system()."
+        ),
         include_prefixes=("src/", "tests/", "tools/"),
+    ),
+    Guardrail(
+        name="streaming_to_table",
+        pattern=re.compile(r"\.to_table\("),
+        message="Avoid to_table(); use RecordBatchReader or batch iterators instead.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+    ),
+    Guardrail(
+        name="streaming_read_all",
+        pattern=re.compile(r"\.read_all\("),
+        message="Avoid read_all(); use batch readers instead of eager materialization.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+    ),
+    Guardrail(
+        name="streaming_relation_arrow",
+        pattern=re.compile(r"\.arrow\("),
+        message="Avoid relation.arrow(); use fetch_record_batch or scan_batches instead.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+    ),
+    Guardrail(
+        name="streaming_fetchall",
+        pattern=re.compile(r"\.fetchall\("),
+        message="Avoid fetchall(); use fetch_record_batch and stream batches instead.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+    ),
+    Guardrail(
+        name="streaming_to_pandas",
+        pattern=re.compile(r"\.to_pandas\("),
+        message="Avoid to_pandas(); keep streaming Arrow/Polars primitives.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+    ),
+    Guardrail(
+        name="pandas_values_property",
+        pattern=re.compile(r"(?s)\b(?:import pandas|from pandas)\b.*?\.values\b(?!\s*\()"),
+        message="Avoid pandas .values; prefer .to_numpy() or Arrow/Polars buffers.",
+        include_prefixes=STREAMING_GUARDRAIL_PREFIXES,
+    ),
+    Guardrail(
+        name="module_discovery_static_targets",
+        pattern=re.compile(r"(?m)^\s*TARGETS\s*=\s*\["),
+        message="Static target registries are forbidden; targets are discovered via modules.",
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=MODULE_DISCOVERY_ALLOW_PREFIXES,
+    ),
+    Guardrail(
+        name="module_discovery_codeintel_targets_import",
+        pattern=re.compile(r"\bcodeintel_targets\."),
+        message="Direct codeintel_targets imports are forbidden; use module resolver discovery.",
+        include_prefixes=("src/codeintel/",),
+        allow_prefixes=MODULE_DISCOVERY_ALLOW_PREFIXES,
     ),
 )
 
@@ -199,6 +318,146 @@ def find_violations(repo_root: Path) -> list[str]:
     return violations
 
 
+def _guardrails_storage_config(runtime: ResolvedRuntime) -> StorageConfig:
+    """Build a storage config for guardrail checks.
+
+    Parameters
+    ----------
+    runtime
+        Resolved runtime containing database and snapshot paths.
+
+    Returns
+    -------
+    StorageConfig
+        Read-only config with contract validation disabled.
+    """
+    return StorageConfig(
+        db_path=runtime.db_path,
+        read_only=True,
+        apply_schema=False,
+        ensure_views=False,
+        validate_schema=False,
+        validation_mode=ContractValidationMode.OFF,
+        validation_summary_path=None,
+        repo=runtime.repo,
+        commit=runtime.commit,
+    )
+
+
+def _module_name_for_node(node: object) -> str | None:
+    originators = getattr(node, "originating_functions", None)
+    if not isinstance(originators, (list, tuple)) or not originators:
+        return None
+    fn = originators[0]
+    if not callable(fn):
+        return None
+    unwrapped = inspect.unwrap(fn)
+    module_name = getattr(unwrapped, "__module__", None)
+    return module_name if isinstance(module_name, str) else None
+
+
+def _node_provenance_map(runtime_bundle: RuntimeBundle) -> dict[str, dict[str, object]]:
+    mapping: dict[str, dict[str, object]] = {}
+    for node in runtime_bundle.dr.graph.nodes.values():
+        node_name = getattr(node, "name", None)
+        if not isinstance(node_name, str):
+            continue
+        module_name = _module_name_for_node(node)
+        if module_name is None:
+            continue
+        entry: dict[str, object] = {"module": module_name}
+        provenance = runtime_bundle.module_provenance.get(module_name)
+        if provenance is not None:
+            entry["origin"] = provenance.origin
+            entry["file_path"] = provenance.file_path
+            entry["plugin_name"] = provenance.plugin_name
+            entry["dist_name"] = provenance.dist_name
+            entry["dist_version"] = provenance.dist_version
+        mapping[node_name] = entry
+    return mapping
+
+
+def schema_observations_available(schemas: _SchemaObservationSource) -> bool:
+    """Return True when schema observations can be queried.
+
+    Parameters
+    ----------
+    schemas
+        Schema observation accessor.
+
+    Returns
+    -------
+    bool
+        True when observation summaries are queryable.
+    """
+    try:
+        summary = schemas.drift_summary_report()
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return False
+    total_tables = summary.get("total_tables", 0)
+    try:
+        int(total_tables)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _has_observation_or_contract(
+    schemas: _SchemaObservationSource,
+    *,
+    table_key: str,
+) -> bool:
+    observation = schemas.load_latest_schema_observation(table_key=table_key)
+    if observation is not None and observation.arrow_schema_ipc_b64.strip():
+        return True
+    return schemas.has_contract_arrow_schema(table_key=table_key)
+
+
+def _schema_observation_issues(
+    runtime_bundle: RuntimeBundle,
+    *,
+    gateway: StorageGateway,
+) -> list[str]:
+    table_targets: dict[str, str] = {
+        table_key: output.producer_target
+        for table_key, output in runtime_bundle.catalog.table_outputs.items()
+        if output.role == "contract"
+    }
+    if not table_targets:
+        return []
+    if not schema_observations_available(gateway.schemas):
+        sys.stderr.write("Schema observations unavailable; skipping observation guardrails.\n")
+        return []
+    return missing_schema_observations(table_targets, schemas=gateway.schemas)
+
+
+def missing_schema_observations(
+    table_targets: Mapping[str, str],
+    *,
+    schemas: _SchemaObservationSource,
+) -> list[str]:
+    """Return table keys missing observation or renderer cache payloads.
+
+    Parameters
+    ----------
+    table_targets
+        Mapping of table key to producing target name.
+    schemas
+        Schema observation accessor.
+
+    Returns
+    -------
+    list[str]
+        Missing table keys with target context.
+    """
+    missing: list[str] = []
+    for table_key, target in sorted(table_targets.items()):
+        if _has_observation_or_contract(schemas, table_key=table_key):
+            continue
+        missing.append(f"{table_key} (target={target})")
+    return missing
+
+
 def main() -> int:
     """Entry point for the guardrail scanner.
 
@@ -218,7 +477,7 @@ def main() -> int:
         {"project_root": repo_root, "repo_root": repo_root},
         allow_fallback=True,
     )
-    config = StorageConfig.for_readonly(runtime.db_path)
+    config = _guardrails_storage_config(runtime)
     try:
         gateway = open_gateway(config)
     except (FileNotFoundError, StorageConnectionError):
@@ -240,9 +499,13 @@ def main() -> int:
             ),
             seed_contract_catalog=_seed_contract_catalog,
         )
+    runtime_bundle: RuntimeBundle | None = None
+    graph_result: GraphValidationResult | None = None
+    observation_issues: list[str] = []
     try:
         runtime_bundle = compose_cli_runtime_bundle(runtime=runtime, gateway=gateway)
-        graph_result = validate_graph(runtime=runtime_bundle)
+        graph_result = validate_graph(runtime=runtime_bundle, validate_schema=False)
+        observation_issues = _schema_observation_issues(runtime_bundle, gateway=gateway)
     except ImportError as exc:
         sys.stderr.write("Hamilton graph validation could not run due to an import error.\n")
         sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
@@ -250,9 +513,26 @@ def main() -> int:
         return 1
     finally:
         gateway.close()
+    if graph_result is None:
+        sys.stderr.write("Hamilton graph validation did not run.\n")
+        return 1
     if graph_result.has_errors:
         sys.stderr.write("Hamilton graph validation failed.\n")
-        sys.stderr.write(validation_result_to_json(graph_result, indent=2))
+        node_provenance = (
+            _node_provenance_map(runtime_bundle) if runtime_bundle is not None else None
+        )
+        sys.stderr.write(
+            validation_result_to_json(
+                graph_result,
+                indent=2,
+                node_provenance=node_provenance,
+            )
+        )
+        return 1
+    if observation_issues:
+        sys.stderr.write("Schema observation guardrails failed.\n")
+        for issue in observation_issues:
+            sys.stderr.write(f"{issue}\n")
         return 1
     return 0
 

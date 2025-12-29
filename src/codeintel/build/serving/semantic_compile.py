@@ -136,6 +136,7 @@ def compile_semantic_registry_from_views(
             continue
 
         explicit_cols = _split_csv(tags.get(TAG_SEMANTIC_COLS))
+        columns_dynamic = not explicit_cols
         if explicit_cols:
             cols = explicit_cols
         else:
@@ -153,6 +154,7 @@ def compile_semantic_registry_from_views(
             "description": tags.get(TAG_SEMANTIC_DESC),
             "primary_key": _split_csv(tags.get(TAG_SEMANTIC_PK)),
             "columns": cols,
+            "columns_dynamic": columns_dynamic,
             "joins": _parse_joins(tags.get(TAG_SEMANTIC_JOINS)),
             "defaults": {
                 "limit": int(tags.get(TAG_DEFAULT_LIMIT, "200")),

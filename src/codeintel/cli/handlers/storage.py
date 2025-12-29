@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from codeintel.cli.core import CliResult
 from codeintel.cli.core.result_types import (
+    CacheLogIngestSummary,
     ProfileStorageResult,
     StorageDatabaseExportResult,
     StorageDatabaseImportResult,
@@ -26,10 +27,16 @@ from codeintel.cli.errors import ValidationError, validation_error
 from codeintel.cli.errors.results import (
     fail_macro_validation,
     fail_missing_output_path,
+    fail_missing_required,
+    fail_storage,
     fail_storage_connection,
 )
 from codeintel.core.errors.storage import StorageConnectionError
 from codeintel.core.errors.taxonomy import INVALID_FORMAT
+from codeintel.observability.cache_log_ingest import (
+    CacheLogIngestConfigError,
+    ingest_cache_log_jsonl,
+)
 from codeintel.storage.backend import DuckDBSession
 from codeintel.storage.contracts.provider import iter_contracts
 from codeintel.storage.gateway import StorageConfig, open_gateway
@@ -283,6 +290,51 @@ def profile_storage_handler(
     )
 
 
+def ingest_cache_logs_handler(ctx: CommandContext) -> CliResult[CacheLogIngestSummary]:
+    """Ingest Hamilton cache JSONL logs into DuckDB.
+
+    Parameters
+    ----------
+    ctx
+        Command context with params:
+        - db_path: Path to database (optional, uses runtime if not provided)
+        - cache_dir: Cache directory to scan for JSONL files
+        - jsonl_paths: Explicit JSONL files to ingest
+
+    Returns
+    -------
+    CliResult[CacheLogIngestSummary]
+        Ingestion summary payload.
+    """
+    db_path = _resolve_storage_db_path(ctx)
+    cache_dir = ctx.params.get_path("cache_dir")
+    jsonl_paths = _resolve_jsonl_paths(ctx)
+    if cache_dir is None and not jsonl_paths:
+        return fail_missing_required(
+            "cache_dir",
+            detail="Provide --cache-dir or at least one --jsonl-path.",
+        )
+    try:
+        result = ingest_cache_log_jsonl(
+            duckdb_path=db_path,
+            cache_dir=cache_dir,
+            jsonl_paths=jsonl_paths,
+        )
+    except CacheLogIngestConfigError as exc:
+        return fail_missing_required("cache_dir", detail=str(exc))
+    except DuckDBError as exc:
+        return fail_storage(str(exc))
+    return CliResult.ok(
+        CacheLogIngestSummary(
+            db_path=str(db_path),
+            cache_dir=str(cache_dir) if cache_dir is not None else None,
+            inserted_events=result.inserted_events,
+            run_ids=list(result.run_ids),
+            jsonl_files=list(result.jsonl_files),
+        )
+    )
+
+
 def export_database_handler(
     ctx: CommandContext,
 ) -> CliResult[StorageDatabaseExportResult]:
@@ -370,16 +422,27 @@ def _resolve_profile_output_dir(ctx: CommandContext) -> Path | None:
     return Path(output_dir_str)
 
 
-def _resolve_profile_db_path(ctx: CommandContext) -> Path:
-    db_path_str = ctx.params.get_str("db_path")
-    if db_path_str is not None:
-        return Path(db_path_str)
+def _resolve_storage_db_path(ctx: CommandContext) -> Path:
+    db_path = ctx.params.get_path("db_path")
+    if db_path is not None:
+        return db_path
     if ctx.has_runtime:
         return ctx.runtime.paths.db_path
     gateway_db_path = getattr(getattr(ctx.gateway, "config", None), "db_path", None)
     if isinstance(gateway_db_path, (str, Path)):
         return Path(gateway_db_path)
     return Path(":memory:")
+
+
+def _resolve_profile_db_path(ctx: CommandContext) -> Path:
+    return _resolve_storage_db_path(ctx)
+
+
+def _resolve_jsonl_paths(ctx: CommandContext) -> list[Path] | None:
+    values = ctx.params.get_list("jsonl_paths")
+    if not values:
+        return None
+    return [Path(value) for value in values]
 
 
 def _select_profile_gateway(ctx: CommandContext, db_path: Path) -> StorageGateway | None:
@@ -397,12 +460,14 @@ def _select_profile_gateway(ctx: CommandContext, db_path: Path) -> StorageGatewa
 
 
 __all__ = [
+    "CacheLogIngestSummary",
     "ProfileStorageResult",
     "StorageDatabaseExportResult",
     "StorageDatabaseImportResult",
     "ValidateMacrosResult",
     "export_database_handler",
     "import_database_handler",
+    "ingest_cache_logs_handler",
     "profile_storage_handler",
     "validate_macros_handler",
 ]

@@ -6,12 +6,12 @@ import difflib
 import json
 import os
 import re
-from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
-from uuid import UUID
 
+import pyarrow as pa
+
+from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
 from codeintel.storage.helpers.table_key import split_table_key
 
 if TYPE_CHECKING:
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 def dump_table(
     gateway: StorageGateway,
     table_key: str,
-) -> list[dict[str, object]]:
-    """Load and normalize a table into stable, JSON-friendly records.
+) -> pa.Table:
+    """Load a table into an Arrow table for golden comparisons.
 
     Parameters
     ----------
@@ -33,8 +33,8 @@ def dump_table(
 
     Returns
     -------
-    list[dict[str, object]]
-        Sorted, normalized row dictionaries.
+    pyarrow.Table
+        Arrow table for the requested dataset.
 
     Raises
     ------
@@ -46,12 +46,9 @@ def dump_table(
         message = f"Unsafe identifier in table_key: {table_key!r}"
         raise ValueError(message)
     relation = gateway.con.table(f"{schema}.{table}")
-    rows = relation.fetchall()
-    columns = list(relation.columns)
-    records = [
-        {columns[idx]: _normalize_value(value) for idx, value in enumerate(row)} for row in rows
-    ]
-    return sorted(records, key=_sort_key)
+    reader = relation.fetch_record_batch(DEFAULT_ARROW_BATCH_SIZE)
+    batches = list(reader)
+    return pa.Table.from_batches(batches, schema=reader.schema)
 
 
 def assert_table_matches_golden(
@@ -60,8 +57,8 @@ def assert_table_matches_golden(
     *,
     golden_path: Path,
     update_mode: bool | None = None,
-) -> list[dict[str, object]]:
-    """Assert a table dump matches a golden JSON file.
+) -> pa.Table:
+    """Assert a table dump matches a golden IPC file.
 
     Parameters
     ----------
@@ -70,47 +67,82 @@ def assert_table_matches_golden(
     table_key
         Schema-qualified table key.
     golden_path
-        Expected golden JSON file path.
+        Expected golden IPC file path.
     update_mode
         When True, overwrite golden files with current output.
 
     Returns
     -------
-    list[dict[str, object]]
-        Normalized rows used for the comparison.
+    pyarrow.Table
+        Table payload used for the comparison.
 
     Raises
     ------
     AssertionError
         If the golden file is missing or differs from current output.
     """
-    records = dump_table(gateway, table_key)
-    actual = _format_json(records)
+    actual_table = dump_table(gateway, table_key)
+    actual_payload = _ipc_bytes_for_table(actual_table)
     should_update = update_mode if update_mode is not None else _update_enabled()
 
     if should_update:
         golden_path.parent.mkdir(parents=True, exist_ok=True)
-        golden_path.write_text(actual, encoding="utf-8")
-        return records
+        golden_path.write_bytes(actual_payload)
+        return actual_table
 
     if not golden_path.exists():
         message = (
             f"Golden file not found: {golden_path}\n"
             "Run with UPDATE_GOLDEN=1 to create it.\n"
-            f"Actual output:\n{actual}"
+            f"Schema:\n{_format_schema(actual_table.schema)}"
         )
         raise AssertionError(message)
 
-    expected = _format_json(json.loads(golden_path.read_text(encoding="utf-8")))
-    if actual != expected:
-        diff = _format_diff(expected, actual)
+    expected_table = _table_from_ipc(golden_path)
+    if not actual_table.schema.equals(expected_table.schema, check_metadata=True):
+        message = (
+            f"Schema mismatch for {table_key}: {golden_path}\n"
+            f"Expected:\n{_format_schema(expected_table.schema)}\n"
+            f"Actual:\n{_format_schema(actual_table.schema)}"
+        )
+        raise AssertionError(message)
+
+    actual_rows = actual_table.to_pylist()
+    expected_rows = expected_table.to_pylist()
+    if actual_rows != expected_rows:
+        diff = _format_diff(_format_rows(expected_rows), _format_rows(actual_rows))
         message = f"Table output differs from golden: {golden_path}\nTable: {table_key}\n{diff}"
         raise AssertionError(message)
-    return records
+    return actual_table
 
 
-def _format_json(payload: object) -> str:
-    return json.dumps(payload, indent=2, sort_keys=True).strip() + "\n"
+def _ipc_bytes_for_table(table: pa.Table) -> bytes:
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, table.schema) as writer:
+        writer.write_table(table)
+    return sink.getvalue().to_pybytes()
+
+
+def _table_from_ipc(path: Path) -> pa.Table:
+    with path.open("rb") as handle:
+        reader = pa.ipc.open_stream(handle)
+        return reader.read_all()
+
+
+def _format_rows(rows: list[dict[str, object]]) -> str:
+    return json.dumps(rows, indent=2, default=str).strip() + "\n"
+
+
+def _format_schema(schema: pa.Schema) -> str:
+    metadata = schema.metadata or {}
+    decoded_metadata = {
+        key.decode("utf-8"): value.decode("utf-8") for key, value in metadata.items()
+    }
+    base = schema.to_string(show_metadata=False) if hasattr(schema, "to_string") else str(schema)
+    if not decoded_metadata:
+        return base
+    payload = json.dumps(decoded_metadata, indent=2, sort_keys=True)
+    return f"{base}\nmetadata: {payload}"
 
 
 def _format_diff(expected: str, actual: str) -> str:
@@ -126,28 +158,6 @@ def _format_diff(expected: str, actual: str) -> str:
 
 def _update_enabled() -> bool:
     return os.environ.get("UPDATE_GOLDEN", "").lower() in {"1", "true"}
-
-
-def _normalize_value(value: object) -> object:
-    if isinstance(value, datetime):
-        normalized: object = value.isoformat()
-    elif isinstance(value, date):
-        normalized = value.isoformat()
-    elif isinstance(value, (Decimal, Path, UUID)):
-        normalized = str(value)
-    elif isinstance(value, bytes):
-        normalized = value.hex()
-    elif isinstance(value, dict):
-        normalized = {key: _normalize_value(val) for key, val in value.items()}
-    elif isinstance(value, (tuple, list)):
-        normalized = [_normalize_value(item) for item in value]
-    else:
-        normalized = value
-    return normalized
-
-
-def _sort_key(record: dict[str, object]) -> str:
-    return json.dumps(record, sort_keys=True, default=str)
 
 
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")

@@ -92,11 +92,14 @@ from codeintel.cli.options.registry import (
     BUILD_RUN_CACHE_DIR,
     BUILD_RUN_CACHE_REPORT,
     BUILD_RUN_CLEAR_CACHE,
+    BUILD_RUN_DISABLE_PLUGIN,
     BUILD_RUN_DRY_RUN,
     BUILD_RUN_ENABLE_CACHE,
+    BUILD_RUN_ENABLE_PLUGIN,
     BUILD_RUN_FORCE,
     BUILD_RUN_MAX_WORKERS,
     BUILD_RUN_MODULE,
+    BUILD_RUN_NO_WORKSPACE_TARGETS,
     BUILD_RUN_PARALLEL_BACKEND,
     BUILD_RUN_PROGRESS,
     BUILD_RUN_PUBLISH_SNAPSHOT,
@@ -250,6 +253,18 @@ class BuildRunCommand:
     cache_report: Annotated[
         bool,
         option_param(BUILD_RUN_CACHE_REPORT, command_path=BUILD_RUN_PATH),
+    ] = False
+    enable_plugin: Annotated[
+        list[str] | None,
+        option_param(BUILD_RUN_ENABLE_PLUGIN, command_path=BUILD_RUN_PATH),
+    ] = None
+    disable_plugin: Annotated[
+        list[str] | None,
+        option_param(BUILD_RUN_DISABLE_PLUGIN, command_path=BUILD_RUN_PATH),
+    ] = None
+    no_workspace_targets: Annotated[
+        bool,
+        option_param(BUILD_RUN_NO_WORKSPACE_TARGETS, command_path=BUILD_RUN_PATH),
     ] = False
     enable_progress: Annotated[
         bool,

@@ -49,6 +49,8 @@ class SemanticViewSpec(BaseModel):
         Column names forming the primary key.
     columns
         Exposed column names.
+    columns_dynamic
+        When True, resolve columns from the active schema inventory.
     joins
         Optional join hints for agents.
     defaults
@@ -67,6 +69,7 @@ class SemanticViewSpec(BaseModel):
     description: str | None = None
     primary_key: list[str] = Field(default_factory=list)
     columns: list[str] = Field(default_factory=list)
+    columns_dynamic: bool = False
     joins: list[dict[str, object]] = Field(default_factory=list)
     defaults: SemanticViewDefaults = Field(default_factory=SemanticViewDefaults)
     sensitivity: str = "internal"

@@ -119,7 +119,7 @@ def _seed_call_graph_data(
                 kind="direct",
                 resolved_via="callee",
                 confidence=1.0,
-                evidence="{}",
+                evidence={},
             )
         ],
     )
@@ -302,7 +302,7 @@ def test_get_outgoing_callgraph_neighbors_respects_limit(
                     kind="direct",
                     resolved_via=f"callee{i}",
                     confidence=1.0,
-                    evidence="{}",
+                    evidence={},
                 ),
             ],
         )

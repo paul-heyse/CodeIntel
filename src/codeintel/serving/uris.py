@@ -7,8 +7,6 @@ RESOURCE_URI_SCHEME = "codeintel://"
 META_SERVING_URI = "codeintel://meta/serving"
 META_RESOURCES_URI = "codeintel://meta/resources"
 META_ENVIRONMENT_URI = "codeintel://meta/environment"
-META_VIEWS_SQL_URI = "codeintel://meta/views_sql"
-META_VIEWS_SQL_DIFF_URI = "codeintel://meta/views_sql_diff"
 
 SEMANTIC_VIEWS_URI = "codeintel://semantic/views"
 SEMANTIC_VIEW_URI_TEMPLATE = "codeintel://semantic/views/{view_id}"
@@ -110,8 +108,6 @@ __all__ = [
     "META_ENVIRONMENT_URI",
     "META_RESOURCES_URI",
     "META_SERVING_URI",
-    "META_VIEWS_SQL_DIFF_URI",
-    "META_VIEWS_SQL_URI",
     "RESOURCE_URI_SCHEME",
     "SEMANTIC_VIEWS_URI",
     "SEMANTIC_VIEW_URI_TEMPLATE",

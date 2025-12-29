@@ -86,9 +86,9 @@ class DocstringPack:
         now
             Timestamp for created_at fields.
         """
-        params_json = "[]" if not self.include_params else '[{"name": "x", "type": "int"}]'
-        returns_json = "null" if not self.include_returns else '{"type": "int", "desc": "Result"}'
-        raises_json = "[]" if not self.include_raises else '[{"type": "ValueError"}]'
+        params_json = [] if not self.include_params else [{"name": "x", "type": "int"}]
+        returns_json = None if not self.include_returns else {"type": "int", "desc": "Result"}
+        raises_json = [] if not self.include_raises else [{"type": "ValueError"}]
 
         rows = [
             dataclass_row(
@@ -108,7 +108,7 @@ class DocstringPack:
                 params_json=params_json,
                 returns_json=returns_json,
                 raises_json=raises_json,
-                examples_json="[]",
+                examples_json=[],
                 created_at=now,
             ),
             dataclass_row(
@@ -127,8 +127,8 @@ class DocstringPack:
                 long_desc="",
                 params_json=params_json,
                 returns_json=returns_json,
-                raises_json="[]",
-                examples_json="[]",
+                raises_json=[],
+                examples_json=[],
                 created_at=now,
             ),
             dataclass_row(
@@ -147,8 +147,8 @@ class DocstringPack:
                 long_desc="A simple passthrough helper function.",
                 params_json=params_json,
                 returns_json=returns_json,
-                raises_json="[]",
-                examples_json='[{"code": "helper(5)", "output": "5"}]',
+                raises_json=[],
+                examples_json=[{"code": "helper(5)", "output": "5"}],
                 created_at=now,
             ),
         ]

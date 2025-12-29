@@ -164,6 +164,18 @@ MODULES_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     ),
 )
 
+EXAMPLE_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
+    TableSchema(
+        schema="analytics",
+        name="hello_example",
+        columns=[
+            Column("message", "VARCHAR", nullable=False),
+            Column("value", "INTEGER", nullable=False),
+        ],
+        description="Example analytics output for local dev targets.",
+    ),
+)
+
 GOIDS_OVERRIDE_TABLES: tuple[TableSchema, ...] = (
     TableSchema(
         schema="core",
@@ -2119,6 +2131,7 @@ def _all_output_tables() -> tuple[TableSchema, ...]:
         *DATA_MODEL_USAGE_OVERRIDE_TABLES,
         *DFG_OVERRIDE_TABLES,
         *DOCSTRINGS_OVERRIDE_TABLES,
+        *EXAMPLE_OVERRIDE_TABLES,
         *ENTRYPOINTS_OVERRIDE_TABLES,
         *EXTERNAL_DEPS_OVERRIDE_TABLES,
         *FUNCTION_AST_FEATURES_OVERRIDE_TABLES,
@@ -2182,6 +2195,7 @@ __all__ = [
     "DFG_OVERRIDE_TABLES",
     "DOCSTRINGS_OVERRIDE_TABLES",
     "ENTRYPOINTS_OVERRIDE_TABLES",
+    "EXAMPLE_OVERRIDE_TABLES",
     "EXTERNAL_DEPS_OVERRIDE_TABLES",
     "FUNCTION_AST_FEATURES_OVERRIDE_TABLES",
     "FUNCTION_CONTRACTS_OVERRIDE_TABLES",

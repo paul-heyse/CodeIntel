@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -26,6 +26,8 @@ from tests._helpers.orchestration import seed_coverage_rows
 from tests._helpers.orchestration.coverage_orchestration import CoverageSeedOptions
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from codeintel.storage.gateway import StorageGateway
 
 
@@ -35,6 +37,24 @@ def _table_columns(gateway: StorageGateway, table_key: str) -> tuple[str, ...]:
         msg = "StorageGateway.policy requires schema_provider for test seeding"
         raise RuntimeError(msg)
     return tuple(col.name for col in schema_provider.require_table_schema(table_key).columns)
+
+
+def _row_mapping(columns: Sequence[str], values: Sequence[object]) -> dict[str, object]:
+    return dict(zip(columns, values, strict=True))
+
+
+@dataclass(frozen=True)
+class _ArchitectureSeedContext:
+    gateway: StorageGateway
+    repo: str
+    commit: str
+    now: datetime
+    warehouse: Warehouse
+    append: MaterializeOptions
+    repo_root: Path | None
+    rel_path: str
+    module_import: str
+    module_map: dict[str, str]
 
 
 def _clear_architecture_seed(*, gateway: StorageGateway, repo: str, commit: str) -> None:
@@ -181,145 +201,200 @@ def seed_architecture(
     apply_all_schemas(gateway.con)
     _clear_architecture_seed(gateway=gateway, repo=repo, commit=commit)
     now = datetime.now(UTC)
-    now_iso = now.isoformat()
-    warehouse = Warehouse(gateway)
-    append = MaterializeOptions(mode="append")
     seed = CoverageSeedConfig(test_goid=10)
     rel_path = Path(seed.module_import.replace(".", "/")).with_suffix(".py").as_posix()
-
     module_map = _resolve_architecture_module_map(repo_root, rel_path, seed.module_import)
+    context = _ArchitectureSeedContext(
+        gateway=gateway,
+        repo=repo,
+        commit=commit,
+        now=now,
+        warehouse=Warehouse(gateway),
+        append=MaterializeOptions(mode="append"),
+        repo_root=repo_root,
+        rel_path=rel_path,
+        module_import=seed.module_import,
+        module_map=module_map,
+    )
+    _seed_core_tables(context, seed)
+    _seed_function_metrics(context)
+    _seed_graph_metrics(context)
+    _seed_additional_analytics(context)
+    _seed_graph_tables(context)
+    return gateway
+
+
+def _seed_core_tables(context: _ArchitectureSeedContext, seed: CoverageSeedConfig) -> None:
+    repo_map_columns = _table_columns(context.gateway, "core.repo_map")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "core.repo_map",
-        [(repo, commit, json.dumps(module_map), "{}", now_iso)],
-        columns=_table_columns(gateway, "core.repo_map"),
-        options=append,
+        [
+            _row_mapping(
+                repo_map_columns,
+                (context.repo, context.commit, context.module_map, {}, context.now),
+            )
+        ],
+        columns=repo_map_columns,
+        options=context.append,
     )
     seed_coverage_rows(
-        gateway=gateway,
-        rel_path=rel_path,
+        gateway=context.gateway,
+        rel_path=context.rel_path,
         seed=seed,
         options=CoverageSeedOptions(
             include_test_catalog=False,
             seed_repo_map=False,
         ),
     )
-    core_module_map = dict(module_map)
-    core_module_map.pop(seed.module_import, None)
-    warehouse.materialize_mappings(
+    core_module_map = dict(context.module_map)
+    core_module_map.pop(context.module_import, None)
+    context.warehouse.materialize_mappings(
         "core.modules",
         [
             {
                 "module": module,
                 "path": path,
-                "repo": repo,
-                "commit": commit,
+                "repo": context.repo,
+                "commit": context.commit,
                 "language": "python",
-                "tags": "[]",
-                "owners": "[]",
+                "tags": [],
+                "owners": [],
             }
             for module, path in sorted(core_module_map.items())
         ],
-        options=append,
+        options=context.append,
     )
-    snapshot = SnapshotRef(repo=repo, commit=commit, repo_root=repo_root or Path.cwd())
-    ModulesAssertions(gateway, snapshot).inventory_consistent()
+    snapshot = SnapshotRef(
+        repo=context.repo,
+        commit=context.commit,
+        repo_root=context.repo_root or Path.cwd(),
+    )
+    ModulesAssertions(context.gateway, snapshot).inventory_consistent()
+
+
+def _seed_function_metrics(context: _ArchitectureSeedContext) -> None:
+    function_metrics_columns = _table_columns(context.gateway, "analytics.function_metrics")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.function_metrics",
         [
-            (
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "python",
-                "function",
-                "pkg.mod.func",
-                1,
-                2,
-                2,
-                2,
-                0,
-                0,
-                0,
-                False,
-                False,
-                False,
-                False,
-                0,
-                0,
-                0,
-                1,
-                1,
-                0,
-                0,
-                False,
-                "low",
-                now_iso,
+            _row_mapping(
+                function_metrics_columns,
+                (
+                    1,
+                    "goid:demo/repo#python:function:pkg.mod.func",
+                    context.repo,
+                    context.commit,
+                    "pkg/mod.py",
+                    "python",
+                    "function",
+                    "pkg.mod.func",
+                    1,
+                    2,
+                    2,
+                    2,
+                    0,
+                    0,
+                    0,
+                    False,
+                    False,
+                    False,
+                    False,
+                    0,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    0,
+                    False,
+                    "low",
+                    context.now,
+                ),
             )
         ],
-        columns=_table_columns(gateway, "analytics.function_metrics"),
-        options=append,
+        columns=function_metrics_columns,
+        options=context.append,
     )
+    goid_risk_columns = _table_columns(context.gateway, "analytics.goid_risk_factors")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.goid_risk_factors",
         [
-            (
-                1,
-                repo,
-                commit,
-                1,
-                "low",
-                1,
-                0,
-                0,
-                False,
+            _row_mapping(
+                goid_risk_columns,
+                (
+                    1,
+                    context.repo,
+                    context.commit,
+                    1,
+                    "low",
+                    1,
+                    0,
+                    0,
+                    False,
+                ),
             )
         ],
-        columns=_table_columns(gateway, "analytics.goid_risk_factors"),
-        options=append,
+        columns=goid_risk_columns,
+        options=context.append,
     )
+    call_graph_columns = _table_columns(context.gateway, "graph.call_graph_edges")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "graph.call_graph_edges",
         [
-            (
-                repo,
-                commit,
-                1,
-                1,
-                "pkg/mod.py",
-                1,
-                1,
-                "python",
-                "direct",
-                "local",
-                0.9,
-                "{}",
+            _row_mapping(
+                call_graph_columns,
+                (
+                    context.repo,
+                    context.commit,
+                    1,
+                    1,
+                    "pkg/mod.py",
+                    1,
+                    1,
+                    "python",
+                    "direct",
+                    "local",
+                    0.9,
+                    {},
+                ),
             )
         ],
-        columns=_table_columns(gateway, "graph.call_graph_edges"),
-        options=append,
+        columns=call_graph_columns,
+        options=context.append,
     )
-    function_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_functions")
-    module_contract = get_analytics_dataset_contract(gateway, "analytics.graph_metrics_modules")
+
+
+def _seed_graph_metrics(context: _ArchitectureSeedContext) -> None:
+    function_contract = get_analytics_dataset_contract(
+        context.gateway,
+        "analytics.graph_metrics_functions",
+    )
+    module_contract = get_analytics_dataset_contract(
+        context.gateway,
+        "analytics.graph_metrics_modules",
+    )
     function_ext_contract = get_analytics_dataset_contract(
-        gateway, "analytics.graph_metrics_functions_ext"
+        context.gateway,
+        "analytics.graph_metrics_functions_ext",
     )
     module_ext_contract = get_analytics_dataset_contract(
-        gateway, "analytics.graph_metrics_modules_ext"
+        context.gateway,
+        "analytics.graph_metrics_modules_ext",
     )
+    delete_scope = DeleteScope(repo=context.repo, commit=context.commit)
+    scope = f"{context.repo}@{context.commit}"
     insert_analytics_rows(
-        gateway,
+        context.gateway,
         function_contract,
         [
             RowFactory.row_for(
                 "analytics.graph_metrics_functions",
-                repo=repo,
-                commit=commit,
+                repo=context.repo,
+                commit=context.commit,
                 function_goid_h128=1,
                 call_fan_in=2,
                 call_fan_out=3,
@@ -331,20 +406,20 @@ def seed_architecture(
                 call_cycle_member=False,
                 call_cycle_id=0,
                 call_layer=1,
-                created_at=now,
+                created_at=context.now,
             )
         ],
-        delete_scope=DeleteScope(repo=repo, commit=commit),
-        scope=f"{repo}@{commit}",
+        delete_scope=delete_scope,
+        scope=scope,
     )
     insert_analytics_rows(
-        gateway,
+        context.gateway,
         module_contract,
         [
             RowFactory.row_for(
                 "analytics.graph_metrics_modules",
-                repo=repo,
-                commit=commit,
+                repo=context.repo,
+                commit=context.commit,
                 module="pkg.mod",
                 import_fan_in=3,
                 import_fan_out=2,
@@ -358,20 +433,20 @@ def seed_architecture(
                 import_layer=1,
                 symbol_fan_in=5,
                 symbol_fan_out=4,
-                created_at=now,
+                created_at=context.now,
             )
         ],
-        delete_scope=DeleteScope(repo=repo, commit=commit),
-        scope=f"{repo}@{commit}",
+        delete_scope=delete_scope,
+        scope=scope,
     )
     insert_analytics_rows(
-        gateway,
+        context.gateway,
         function_ext_contract,
         [
             RowFactory.row_for(
                 "analytics.graph_metrics_functions_ext",
-                repo=repo,
-                commit=commit,
+                repo=context.repo,
+                commit=context.commit,
                 function_goid_h128=1,
                 call_betweenness=0.1,
                 call_closeness=0.2,
@@ -390,20 +465,20 @@ def seed_architecture(
                 call_ancestor_count=None,
                 call_descendant_count=None,
                 call_community_id=None,
-                created_at=now,
+                created_at=context.now,
             )
         ],
-        delete_scope=DeleteScope(repo=repo, commit=commit),
-        scope=f"{repo}@{commit}",
+        delete_scope=delete_scope,
+        scope=scope,
     )
     insert_analytics_rows(
-        gateway,
+        context.gateway,
         module_ext_contract,
         [
             RowFactory.row_for(
                 "analytics.graph_metrics_modules_ext",
-                repo=repo,
-                commit=commit,
+                repo=context.repo,
+                commit=context.commit,
                 module="pkg.mod",
                 import_betweenness=0.1,
                 import_closeness=0.1,
@@ -419,13 +494,20 @@ def seed_architecture(
                 import_component_size=1,
                 import_scc_id=1,
                 import_scc_size=1,
-                created_at=now,
+                created_at=context.now,
             )
         ],
-        delete_scope=DeleteScope(repo=repo, commit=commit),
-        scope=f"{repo}@{commit}",
+        delete_scope=delete_scope,
+        scope=scope,
     )
-    gateway.con.execute(
+
+
+def _seed_additional_analytics(context: _ArchitectureSeedContext) -> None:
+    repo = context.repo
+    commit = context.commit
+    now = context.now
+    con = context.gateway.con
+    con.execute(
         """
         INSERT INTO analytics.test_graph_metrics_functions (
             repo, commit, function_goid_h128, tests_degree, tests_weighted_degree,
@@ -433,9 +515,9 @@ def seed_architecture(
             proj_betweenness, created_at
         ) VALUES (?, ?, ?, 1, 1, 0.1, 1, 1, 0.1, 0.1, ?)
         """,
-        [repo, commit, 1, now_iso],
+        [repo, commit, 1, now],
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.cfg_function_metrics (
             repo, commit, function_goid_h128, rel_path, module, qualname, cfg_block_count,
@@ -446,12 +528,13 @@ def seed_architecture(
             cfg_bc_betweenness_max, cfg_bc_betweenness_mean, cfg_bc_closeness_mean,
             cfg_bc_eigenvector_max, created_at
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, 1, 1, FALSE, 1, 1, 1.0, 1.0, 1.0, 0.1, 1, 0.1, 0.1, 1, 1, 0.1, 0.1, 0.1, 0.1, ?
+            ?, ?, ?, ?, ?, ?, 1, 1, FALSE, 1, 1, 1.0, 1.0, 1.0, 0.1, 1,
+            0.1, 0.1, 1, 1, 0.1, 0.1, 0.1, 0.1, ?
         )
         """,
-        [repo, commit, 1, "pkg/mod.py", "pkg.mod", "pkg.mod.func", now_iso],
+        [repo, commit, 1, "pkg/mod.py", "pkg.mod", "pkg.mod.func", now],
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.dfg_function_metrics (
             repo, commit, function_goid_h128, rel_path, module, qualname, dfg_block_count,
@@ -461,73 +544,102 @@ def seed_architecture(
             dfg_branchy_block_fraction, dfg_bc_betweenness_max, dfg_bc_betweenness_mean,
             dfg_bc_eigenvector_max, created_at
         ) VALUES (
-            ?, ?, ?, ?, ?, ?, 1, 1, 0, 1, 1, 1, FALSE, 1, 1.0, 1.0, 1.0, 1.0, 1.0, 0.1, 0.1, 0.1, 0.1, ?
+            ?, ?, ?, ?, ?, ?, 1, 1, 0, 1, 1, 1, FALSE, 1, 1.0, 1.0, 1.0,
+            1.0, 1.0, 0.1, 0.1, 0.1, 0.1, ?
         )
         """,
-        [repo, commit, 1, "pkg/mod.py", "pkg.mod", "pkg.mod.func", now_iso],
+        [repo, commit, 1, "pkg/mod.py", "pkg.mod", "pkg.mod.func", now],
     )
-    # Module graph metrics extensions are seeded via insert_analytics_rows above; no manual inserts.
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.subsystem_graph_metrics (
             repo, commit, subsystem_id, import_in_degree, import_out_degree, import_pagerank,
             import_betweenness, import_closeness, import_layer, created_at
         ) VALUES (?, ?, ?, 1, 1, 0.1, 0.1, 0.1, 0, ?)
         """,
-        [repo, commit, "subsysdemo", now_iso],
+        [repo, commit, "subsysdemo", now],
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.subsystem_agreement (
             repo, commit, module, import_community_id, agrees, created_at
         ) VALUES (?, ?, ?, 1, TRUE, ?)
         """,
-        [repo, commit, "pkg.mod", now_iso],
+        [repo, commit, "pkg.mod", now],
     )
-    gateway.con.execute(
-        """
-        INSERT INTO analytics.function_profile (
-            function_goid_h128, repo, commit, urn, rel_path, module, language, kind, qualname,
-            loc, logical_loc, cyclomatic_complexity, param_count, total_params, annotated_params,
-            return_type, typedness_bucket, file_typed_ratio, coverage_ratio, tested, tests_touching,
-            failing_tests, slow_tests, risk_score, risk_level, tags, owners, created_at
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, 'python', 'function', ?, 2, 2, 1, 0, 0, 0,
-            'int', 'typed', 1.0, 1.0, TRUE, 1, 0, 0, 0.1, 'low', '[]', '[]', ?
-        )
-        """,
+    context.warehouse.materialize_mappings(
+        "analytics.function_profile",
         [
-            1,
-            repo,
-            commit,
-            "goid:demo/repo#python:function:pkg.mod.func",
-            "pkg/mod.py",
-            "pkg.mod",
-            "pkg.mod.func",
-            now_iso,
+            RowFactory.row_for(
+                "analytics.function_profile",
+                function_goid_h128=1,
+                repo=repo,
+                commit=commit,
+                urn="goid:demo/repo#python:function:pkg.mod.func",
+                rel_path="pkg/mod.py",
+                module="pkg.mod",
+                language="python",
+                kind="function",
+                qualname="pkg.mod.func",
+                loc=2,
+                logical_loc=2,
+                cyclomatic_complexity=1,
+                param_count=0,
+                total_params=0,
+                annotated_params=0,
+                return_type="int",
+                typedness_bucket="typed",
+                file_typed_ratio=1.0,
+                coverage_ratio=1.0,
+                tested=True,
+                tests_touching=1,
+                failing_tests=0,
+                slow_tests=0,
+                risk_score=0.1,
+                risk_level="low",
+                tags=[],
+                owners=[],
+                created_at=now,
+            )
         ],
+        options=context.append,
     )
+
+
+def _seed_graph_tables(context: _ArchitectureSeedContext) -> None:
+    repo = context.repo
+    commit = context.commit
+    now = context.now
+    con = context.gateway.con
+    import_graph_columns = _table_columns(context.gateway, "graph.import_graph_edges")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "graph.import_graph_edges",
         [
-            (repo, commit, "pkg.alpha", "pkg.beta", 1, 1, 0, None),
-            (repo, commit, "pkg.beta", "pkg.alpha", 1, 1, 0, None),
+            _row_mapping(
+                import_graph_columns,
+                (repo, commit, "pkg.alpha", "pkg.beta", 1, 1, 0, None),
+            ),
+            _row_mapping(
+                import_graph_columns,
+                (repo, commit, "pkg.beta", "pkg.alpha", 1, 1, 0, None),
+            ),
         ],
-        columns=_table_columns(gateway, "graph.import_graph_edges"),
-        options=append,
+        columns=import_graph_columns,
+        options=context.append,
     )
+    subsystem_modules_columns = _table_columns(context.gateway, "analytics.subsystem_modules")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.subsystem_modules",
         [
-            (repo, commit, "sub1", "pkg.alpha", "core"),
-            (repo, commit, "sub2", "pkg.beta", "core"),
+            _row_mapping(subsystem_modules_columns, (repo, commit, "sub1", "pkg.alpha", "core")),
+            _row_mapping(subsystem_modules_columns, (repo, commit, "sub2", "pkg.beta", "core")),
         ],
-        columns=_table_columns(gateway, "analytics.subsystem_modules"),
-        options=append,
+        columns=subsystem_modules_columns,
+        options=context.append,
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.module_profile (
             repo, commit, module, avg_risk_score, max_risk_score, module_coverage_ratio,
@@ -535,117 +647,136 @@ def seed_architecture(
             in_cycle, cycle_group, created_at
         ) VALUES (?, ?, ?, 0.1, 0.2, 1.0, 1, 0, 1, 1, FALSE, 0, ?)
         """,
-        [repo, commit, "pkg.mod", now_iso],
+        [repo, commit, "pkg.mod", now],
     )
+    subsystem_columns = _table_columns(context.gateway, "analytics.subsystems")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.subsystems",
         [
-            (
-                repo,
-                commit,
-                "subsysdemo",
-                "api_pkg",
-                "Subsystem api_pkg covering 1 modules",
-                1,
-                '["pkg.mod"]',
-                "[]",
-                1,
-                0,
-                0,
-                0,
-                1,
-                0.1,
-                0.1,
-                0,
-                "low",
-                now_iso,
+            _row_mapping(
+                subsystem_columns,
+                (
+                    repo,
+                    commit,
+                    "subsysdemo",
+                    "api_pkg",
+                    "Subsystem api_pkg covering 1 modules",
+                    1,
+                    ["pkg.mod"],
+                    [],
+                    1,
+                    0,
+                    0,
+                    0,
+                    1,
+                    0.1,
+                    0.1,
+                    0,
+                    "low",
+                    now,
+                ),
             )
         ],
-        columns=_table_columns(gateway, "analytics.subsystems"),
-        options=append,
+        columns=subsystem_columns,
+        options=context.append,
     )
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.subsystem_modules",
-        [(repo, commit, "subsysdemo", "pkg.mod", "api")],
-        columns=_table_columns(gateway, "analytics.subsystem_modules"),
-        options=append,
+        [_row_mapping(subsystem_modules_columns, (repo, commit, "subsysdemo", "pkg.mod", "api"))],
+        columns=subsystem_modules_columns,
+        options=context.append,
     )
+    test_catalog_columns = _table_columns(context.gateway, "analytics.test_catalog")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.test_catalog",
         [
-            (
-                "pkg/mod.py::test_func",
-                10,
-                "goid:demo/repo#python:function:pkg.mod.test_func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "pkg.mod.test_func",
-                "test",
-                "passed",
-                1,
-                "[]",
-                False,
-                False,
-                now_iso,
+            _row_mapping(
+                test_catalog_columns,
+                (
+                    "pkg/mod.py::test_func",
+                    10,
+                    "goid:demo/repo#python:function:pkg.mod.test_func",
+                    repo,
+                    commit,
+                    "pkg/mod.py",
+                    "pkg.mod.test_func",
+                    "test",
+                    "passed",
+                    1,
+                    [],
+                    False,
+                    False,
+                    now,
+                ),
             )
         ],
-        columns=_table_columns(gateway, "analytics.test_catalog"),
-        options=append,
+        columns=test_catalog_columns,
+        options=context.append,
     )
+    test_coverage_columns = _table_columns(context.gateway, "analytics.test_coverage_edges")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.test_coverage_edges",
         [
-            (
-                "pkg/mod.py::test_func",
-                10,
-                1,
-                "goid:demo/repo#python:function:pkg.mod.func",
-                repo,
-                commit,
-                "pkg/mod.py",
-                "pkg.mod.func",
-                2,
-                2,
-                1.0,
-                "passed",
-                now_iso,
+            _row_mapping(
+                test_coverage_columns,
+                (
+                    "pkg/mod.py::test_func",
+                    10,
+                    1,
+                    "goid:demo/repo#python:function:pkg.mod.func",
+                    repo,
+                    commit,
+                    "pkg/mod.py",
+                    "pkg.mod.func",
+                    2,
+                    2,
+                    1.0,
+                    "passed",
+                    now,
+                ),
             )
         ],
-        columns=_table_columns(gateway, "analytics.test_coverage_edges"),
-        options=append,
+        columns=test_coverage_columns,
+        options=context.append,
     )
+    typedness_columns = _table_columns(context.gateway, "analytics.typedness")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.typedness",
-        [(repo, commit, "pkg/mod.py", 0, '{"params":1.0}', 0, False)],
-        columns=_table_columns(gateway, "analytics.typedness"),
-        options=append,
+        [
+            _row_mapping(
+                typedness_columns,
+                (repo, commit, "pkg/mod.py", 0, {"params": 1.0}, 0, False),
+            )
+        ],
+        columns=typedness_columns,
+        options=context.append,
     )
+    diagnostics_columns = _table_columns(context.gateway, "analytics.static_diagnostics")
     materialize_table_from_rows(
-        warehouse,
+        context.warehouse,
         "analytics.static_diagnostics",
-        [(repo, commit, "pkg/mod.py", 0, 0, 0, 0, False)],
-        columns=_table_columns(gateway, "analytics.static_diagnostics"),
-        options=append,
+        [_row_mapping(diagnostics_columns, (repo, commit, "pkg/mod.py", 0, 0, 0, 0, False))],
+        columns=diagnostics_columns,
+        options=context.append,
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.hotspots VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         ("pkg/mod.py", 1, 1, 1, 1, 1.0, 0.1),
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO core.ast_metrics VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         ("pkg/mod.py", 1, 1, 0, 1.0, 1, 0.1, now),
     )
-    gateway.con.execute(
+    con.execute(
         """
         INSERT INTO analytics.function_validation (
             repo, commit, function_goid_h128, rel_path, qualname, issue, detail, created_at
@@ -662,7 +793,6 @@ def seed_architecture(
             now,
         ),
     )
-    return gateway
 
 
 def _resolve_architecture_module_map(

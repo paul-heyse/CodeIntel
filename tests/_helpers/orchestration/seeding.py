@@ -86,11 +86,11 @@ def seed_cfg_dfg_for_metrics(
         Relative path for the seeded blocks.
     """
     cfg_blocks = [
-        CFGBlockRow(1, 0, "1:block0", "entry", rel_path, 1, 1, "entry", "[]", 0, 1),
-        CFGBlockRow(1, 1, "1:block1", "body", rel_path, 2, 3, "body", "[]", 1, 1),
-        CFGBlockRow(1, 2, "1:block2", "loop_head", rel_path, 4, 4, "loop_head", "[]", 1, 2),
-        CFGBlockRow(1, 3, "1:block3", "unreachable", rel_path, 10, 10, "body", "[]", 0, 0),
-        CFGBlockRow(1, 4, "1:block4", "exit", rel_path, 11, 11, "exit", "[]", 1, 0),
+        CFGBlockRow(1, 0, "1:block0", "entry", rel_path, 1, 1, "entry", [], 0, 1),
+        CFGBlockRow(1, 1, "1:block1", "body", rel_path, 2, 3, "body", [], 1, 1),
+        CFGBlockRow(1, 2, "1:block2", "loop_head", rel_path, 4, 4, "loop_head", [], 1, 2),
+        CFGBlockRow(1, 3, "1:block3", "unreachable", rel_path, 10, 10, "body", [], 0, 0),
+        CFGBlockRow(1, 4, "1:block4", "exit", rel_path, 11, 11, "exit", [], 1, 0),
     ]
     insert_rows(gateway, cfg_blocks)
     cfg_edges = [
@@ -402,8 +402,9 @@ def seed_graph_validation_gaps(
             path, node_type, name, qualname, lineno, end_lineno, col_offset, end_col_offset,
             parent_qualname, decorators, docstring, hash
         ) VALUES ('pkg/a.py', 'FunctionDef', 'foo', 'pkg.a.foo', 1, 2, 0, 0, 'pkg.a',
-                  '[]', NULL, 'h1')
-        """
+                  ?, NULL, 'h1')
+        """,
+        [[]],
     )
     if include_modules:
         con.execute(
@@ -456,9 +457,9 @@ def seed_graph_validation_gaps(
             repo, commit, caller_goid_h128, callee_goid_h128, callsite_path, callsite_line,
             callsite_col, language, kind, resolved_via, confidence, evidence_json
         ) VALUES (?, ?, 1, NULL, 'pkg/b.py', 50, 0, 'python', 'unresolved', 'unresolved',
-                  0.0, '{}')
+                  0.0, ?)
         """,
-        [repo, commit],
+        [repo, commit, {}],
     )
 
 
@@ -677,9 +678,9 @@ def seed_docs_export_invalid_profile(
     gateway.con.execute(
         """
         INSERT INTO core.repo_map (repo, commit, modules, overlays, generated_at)
-        VALUES (?, ?, '{}', '{}', CURRENT_TIMESTAMP)
+        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
         """,
-        [repo, commit],
+        [repo, commit, {}, {}],
     )
 
 
