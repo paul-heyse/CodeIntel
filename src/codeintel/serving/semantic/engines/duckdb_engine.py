@@ -18,7 +18,9 @@ from codeintel.serving.semantic.engines.protocol import EngineContext, Executabl
 from codeintel.serving.semantic.guardrails import warn_eager_materialization
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.storage.constants import DEFAULT_ARROW_BATCH_SIZE
+from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.queries.safe import SqlIngressPolicy, UnsafeSqlError, assert_select_perimeter
+from codeintel.storage.schema import arrow_schema_for_table_key
 from codeintel.storage.sqlglot_tools import render_sql_duckdb
 
 if TYPE_CHECKING:
@@ -51,6 +53,24 @@ def _fetch_arrow_reader(
         except TypeError:
             return fetcher()
     return relation_or_con.fetch_record_batch(batch_size)
+
+
+def _contract_schema_for_table(
+    ctx: EngineContext,
+    *,
+    table_key: str,
+) -> pa.Schema | None:
+    if ctx.warehouse is None:
+        return None
+    try:
+        return arrow_schema_for_table_key(
+            ctx.warehouse.gateway.con,
+            table_key=table_key,
+            repo=ctx.pointer.repo,
+            commit=ctx.pointer.commit,
+        )
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
 
 
 class QueryBuilderError(ValueError):
@@ -210,6 +230,7 @@ class DuckDBQueryEngine:
             raise QueryBuilderError(msg)
         spec = query.spec
         relation_error: DuckDBRelationQueryBuilderError | None = None
+        contract_schema = _contract_schema_for_table(ctx, table_key=spec.table_key)
         try:
             relation = build_relation_plan(
                 con=ctx.warehouse.gateway.con,
@@ -221,6 +242,7 @@ class DuckDBQueryEngine:
                     metrics_enabled=ctx.settings.dataset_scan_metrics_enabled,
                 ),
                 column_types=spec.column_types,
+                contract_schema=contract_schema,
             )
             return DuckDBRelationPlan(relation=relation, warehouse=ctx.warehouse)
         except DuckDBRelationQueryBuilderError as exc:

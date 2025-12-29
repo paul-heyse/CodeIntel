@@ -28,8 +28,11 @@ from codeintel.build.hamilton.materializers.base import (
     resolve_materialization_context,
 )
 from codeintel.build.schemas import get_schema_provider
-from codeintel.core.columnar import LazyFrameStream
+from codeintel.core.columnar import (
+    LazyFrameStream,
+)
 from codeintel.core.execution.materialization import failed_table_result, succeeded_table_result
+from codeintel.core.schemas.arrow_gen import arrow_contract_for_table_schema
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_lazyframe,
@@ -294,6 +297,7 @@ def _materialize_dataset(
     data: TabularData,
 ) -> tuple[ArrowDatasetManifest, Path]:
     table_schema = _table_schema_for_data(table_key=ctx.table_key, data=data)
+    contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
     resolved_partitions = _resolve_partition_columns(
         table_schema=table_schema,
         requested=ctx.partition_columns,
@@ -320,6 +324,7 @@ def _materialize_dataset(
         manifest = _write_lazyframe_dataset(
             ctx=write_ctx,
             data=data,
+            contract_schema=contract_schema,
         )
         manifest_path = dataset_manifest_path(
             dataset_root=dataset_root,
@@ -329,11 +334,12 @@ def _materialize_dataset(
         return manifest, manifest_path
 
     arrow_input = _coerce_arrow_input(data)
+    aligned_reader = _align_reader_to_contract(arrow_input, contract_schema=contract_schema)
     manifest = write_dataset(
         dataset_root=dataset_root,
         table_key=ctx.table_key,
         snapshot_id=snapshot_id,
-        data=arrow_input,
+        data=aligned_reader,
         options=options,
     )
     manifest_path = dataset_manifest_path(
@@ -371,6 +377,7 @@ def _write_lazyframe_dataset(
     *,
     ctx: _DatasetWriteContext,
     data: pl.LazyFrame,
+    contract_schema: pa.Schema | None,
 ) -> ArrowDatasetManifest:
     snapshot_dir = dataset_snapshot_dir(
         ctx.dataset_root,
@@ -378,6 +385,16 @@ def _write_lazyframe_dataset(
         snapshot_id=ctx.snapshot_id,
     )
     _prepare_snapshot_dir(snapshot_dir, behavior=ctx.options.existing_data_behavior)
+    if contract_schema is not None:
+        reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
+        aligned = _align_reader_to_contract(reader, contract_schema=contract_schema)
+        return write_dataset(
+            dataset_root=ctx.dataset_root,
+            table_key=ctx.table_key,
+            snapshot_id=ctx.snapshot_id,
+            data=aligned,
+            options=ctx.options,
+        )
     partition_by = list(ctx.options.partition_columns) if ctx.options.partition_columns else None
     if partition_by or not ctx.arrow_settings.enable_sink_parquet:
         reader = LazyFrameStream(data).to_reader(batch_size=DEFAULT_ARROW_BATCH_SIZE)
@@ -622,6 +639,20 @@ def _coerce_arrow_input(data: TabularData) -> ArrowDatasetInput:
         return cast("RecordBatchReader", data)
     msg = f"Unsupported Arrow dataset input type: {type(data).__name__}"
     raise TypeError(msg)
+
+
+def _align_reader_to_contract(
+    reader: ArrowDatasetInput,
+    *,
+    contract_schema: pa.Schema | None,
+) -> ArrowDatasetInput:
+    if contract_schema is None:
+        return reader
+    return align_reader_to_contract(
+        reader,
+        contract_schema,
+        extras_policy=extras_policy_from_schema(contract_schema),
+    )
 
 
 __all__ = ["ArrowDatasetSaver"]

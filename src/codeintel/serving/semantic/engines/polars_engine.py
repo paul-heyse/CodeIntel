@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
@@ -25,11 +26,14 @@ from codeintel.serving.semantic.polars_query_builder import (
 from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.routing import ast_supports_polars
 from codeintel.serving.semantic.view_registry import ViewInputs
+from codeintel.storage.duckdb_types import DuckDBError
+from codeintel.storage.schema import arrow_schema_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Mapping
+    from typing import Literal
 
-    from polars import DataFrame, LazyFrame
+    from polars import DataFrame, LazyFrame, QueryOptFlags
 
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.semantic.datasets import DatasetManifestEntry
@@ -39,9 +43,13 @@ if TYPE_CHECKING:
 
     type PolarsDataFrame = DataFrame
     type PolarsLazyFrame = LazyFrame
+    type PolarsQueryOptFlags = QueryOptFlags
+    type PolarsEngineType = Literal["auto", "in-memory", "streaming", "gpu"]
 else:
     type PolarsDataFrame = object
     type PolarsLazyFrame = object
+    type PolarsQueryOptFlags = object
+    type PolarsEngineType = str
 
 try:
     import polars as pl
@@ -55,6 +63,9 @@ except ImportError:  # pragma: no cover
 LOG = logging.getLogger(__name__)
 
 
+_STREAMING_ENGINE: PolarsEngineType = "streaming"
+
+
 @dataclass(frozen=True, slots=True)
 class PolarsExecutablePlan:
     """Executable Polars plan wrapper."""
@@ -62,7 +73,7 @@ class PolarsExecutablePlan:
     lazyframe: PolarsLazyFrame
     settings: ServingSettings
     explain_plan: str | None = None
-    query_opt_flags: object | None = None
+    query_opt_flags: PolarsQueryOptFlags | None = None
 
     def to_reader(self, *, batch_size: int) -> pa.RecordBatchReader:
         """Return an Arrow RecordBatchReader for the plan results.
@@ -172,7 +183,7 @@ def _collect_batches(
     *,
     batch_size: int,
     settings: ServingSettings,
-    query_opt_flags: object | None,
+    query_opt_flags: PolarsQueryOptFlags | None,
 ) -> Iterable[PolarsDataFrame]:
     def _collect(*, streaming: bool) -> Iterable[PolarsDataFrame]:
         _maybe_inspect(lazyframe, settings=settings)
@@ -182,7 +193,9 @@ def _collect_batches(
             streaming=streaming,
             query_opt_flags=query_opt_flags,
         )
-        return lazyframe.collect_batches(**kwargs)
+        collect_batches = cast("Callable[..., object]", lazyframe.collect_batches)
+        result = collect_batches(**kwargs)
+        return cast("Iterable[PolarsDataFrame]", result)
 
     if settings.polars_streaming:
         try:
@@ -202,7 +215,7 @@ def _collect_frame(
     lazyframe: PolarsLazyFrame,
     *,
     settings: ServingSettings,
-    query_opt_flags: object | None,
+    query_opt_flags: PolarsQueryOptFlags | None,
 ) -> PolarsDataFrame:
     def _collect(*, streaming: bool) -> PolarsDataFrame:
         _maybe_inspect(lazyframe, settings=settings)
@@ -212,7 +225,8 @@ def _collect_frame(
             query_opt_flags=query_opt_flags,
             profile=settings.polars_profile,
         )
-        result = lazyframe.collect(**kwargs)
+        collect = cast("Callable[..., object]", lazyframe.collect)
+        result = collect(**kwargs)
         return _unwrap_profile_result(result)
 
     if settings.polars_streaming:
@@ -261,7 +275,7 @@ def _collect_batch_kwargs(
     *,
     batch_size: int,
     streaming: bool,
-    query_opt_flags: object | None,
+    query_opt_flags: PolarsQueryOptFlags | None,
 ) -> dict[str, object]:
     signature = _signature(func)
     if signature is None:
@@ -271,8 +285,16 @@ def _collect_batch_kwargs(
         kwargs["chunk_size"] = batch_size
     elif "batch_size" in signature.parameters:
         kwargs["batch_size"] = batch_size
-    kwargs.update(_streaming_kwargs(signature, streaming=streaming))
-    kwargs.update(_opt_flag_kwargs(signature, query_opt_flags=query_opt_flags))
+    if "engine" in signature.parameters:
+        if streaming:
+            kwargs["engine"] = _STREAMING_ENGINE
+    elif "streaming" in signature.parameters:
+        kwargs["streaming"] = streaming
+    if query_opt_flags is not None:
+        if "optimization_flags" in signature.parameters:
+            kwargs["optimization_flags"] = query_opt_flags
+        elif "query_opt_flags" in signature.parameters:
+            kwargs["query_opt_flags"] = query_opt_flags
     return kwargs
 
 
@@ -280,15 +302,23 @@ def _collect_kwargs(
     func: object,
     *,
     streaming: bool,
-    query_opt_flags: object | None,
+    query_opt_flags: PolarsQueryOptFlags | None,
     profile: bool,
 ) -> dict[str, object]:
     signature = _signature(func)
     if signature is None:
         return {}
     kwargs: dict[str, object] = {}
-    kwargs.update(_streaming_kwargs(signature, streaming=streaming))
-    kwargs.update(_opt_flag_kwargs(signature, query_opt_flags=query_opt_flags))
+    if "engine" in signature.parameters:
+        if streaming:
+            kwargs["engine"] = _STREAMING_ENGINE
+    elif "streaming" in signature.parameters:
+        kwargs["streaming"] = streaming
+    if query_opt_flags is not None:
+        if "optimization_flags" in signature.parameters:
+            kwargs["optimization_flags"] = query_opt_flags
+        elif "query_opt_flags" in signature.parameters:
+            kwargs["query_opt_flags"] = query_opt_flags
     if profile and "profile" in signature.parameters:
         kwargs["profile"] = True
     return kwargs
@@ -298,7 +328,7 @@ def _explain_plan(
     lazyframe: PolarsLazyFrame,
     *,
     optimized: bool,
-    query_opt_flags: object | None,
+    query_opt_flags: PolarsQueryOptFlags | None,
 ) -> str | None:
     explain_fn = getattr(lazyframe, "explain", None)
     if not callable(explain_fn):
@@ -309,7 +339,11 @@ def _explain_plan(
     kwargs: dict[str, object] = {}
     if "optimized" in signature.parameters:
         kwargs["optimized"] = optimized
-    kwargs.update(_opt_flag_kwargs(signature, query_opt_flags=query_opt_flags))
+    if query_opt_flags is not None:
+        if "optimization_flags" in signature.parameters:
+            kwargs["optimization_flags"] = query_opt_flags
+        elif "query_opt_flags" in signature.parameters:
+            kwargs["query_opt_flags"] = query_opt_flags
     try:
         result = explain_fn(**kwargs)
     except PolarsError:
@@ -324,39 +358,13 @@ def _signature(func: object) -> inspect.Signature | None:
         return None
 
 
-def _streaming_kwargs(
-    signature: inspect.Signature,
-    *,
-    streaming: bool,
-) -> dict[str, object]:
-    if "engine" in signature.parameters:
-        return {"engine": "streaming" if streaming else "auto"}
-    if "streaming" in signature.parameters:
-        return {"streaming": streaming}
-    return {}
-
-
-def _opt_flag_kwargs(
-    signature: inspect.Signature,
-    *,
-    query_opt_flags: object | None,
-) -> dict[str, object]:
-    if query_opt_flags is None:
-        return {}
-    if "optimization_flags" in signature.parameters:
-        return {"optimization_flags": query_opt_flags}
-    if "query_opt_flags" in signature.parameters:
-        return {"query_opt_flags": query_opt_flags}
-    return {}
-
-
-def _resolve_query_opt_flags(flags: tuple[str, ...]) -> object | None:
+def _resolve_query_opt_flags(flags: tuple[str, ...]) -> PolarsQueryOptFlags | None:
     if pl is None or not flags:
         return None
     opt_flags = getattr(pl, "QueryOptFlags", None)
     if opt_flags is None:
         return None
-    resolved: object | None = None
+    resolved: PolarsQueryOptFlags | None = None
     for raw_flag in flags:
         name = raw_flag.upper()
         candidate = getattr(opt_flags, name, None)
@@ -365,7 +373,15 @@ def _resolve_query_opt_flags(flags: tuple[str, ...]) -> object | None:
         if candidate is None:
             LOG.debug("Unknown Polars QueryOptFlags value: %s", raw_flag)
             continue
-        resolved = candidate if resolved is None else resolved | candidate
+        resolved_flag = cast("PolarsQueryOptFlags", candidate)
+        if resolved is None:
+            resolved = resolved_flag
+            continue
+        or_fn = getattr(resolved, "__or__", None)
+        if callable(or_fn):
+            resolved = cast("PolarsQueryOptFlags", or_fn(resolved_flag))
+        else:
+            resolved = resolved_flag
     return resolved
 
 
@@ -384,7 +400,8 @@ def _maybe_to_string(value: object) -> str | None:
         return None
     text_fn = getattr(value, "to_string", None)
     if callable(text_fn):
-        return text_fn()
+        text = text_fn()
+        return text if isinstance(text, str) else str(text)
     return str(value)
 
 
@@ -393,6 +410,7 @@ def _scan_arrow_dataset(
     *,
     filter_expression: ds.Expression | None,
     settings: ServingSettings,
+    contract_schema: pa.Schema | None,
 ) -> PolarsLazyFrame | None:
     if pl is None:  # pragma: no cover
         msg = "polars is required for Polars query execution"
@@ -404,16 +422,19 @@ def _scan_arrow_dataset(
         fragment_readahead=settings.dataset_fragment_readahead,
         filter_expression=filter_expression,
         metrics_enabled=settings.dataset_scan_metrics_enabled,
+        schema=contract_schema,
     )
     scan_pyarrow_dataset = getattr(pl, "scan_pyarrow_dataset", None)
     if not callable(scan_pyarrow_dataset):
         LOG.debug("Polars scan_pyarrow_dataset unavailable; falling back to scan_parquet.")
         return None
     try:
-        return scan_pyarrow_dataset(scanner)
+        scan = cast(Callable[..., PolarsLazyFrame], scan_pyarrow_dataset)
+        return scan(scanner)
     except TypeError:
         try:
-            return scan_pyarrow_dataset(dataset)
+            scan = cast(Callable[..., PolarsLazyFrame], scan_pyarrow_dataset)
+            return scan(dataset)
         except TypeError:
             return None
 
@@ -433,10 +454,13 @@ def _apply_sortedness(
     if not callable(set_sorted):
         return lazyframe
     try:
-        return set_sorted(sort_keys)
+        result = set_sorted(sort_keys)
     except PolarsError:
         LOG.debug("Polars set_sorted failed; continuing without sortedness.")
         return lazyframe
+    if pl is not None and isinstance(result, pl.LazyFrame):
+        return result
+    return lazyframe
 
 
 def _manifest_sort_keys(entry: DatasetManifestEntry) -> tuple[str, ...] | None:
@@ -565,11 +589,13 @@ class PolarsQueryEngine:
         if entry is None:
             msg = f"No dataset manifest found for {spec.table_key}"
             raise PolarsQueryBuilderError(msg)
+        contract_schema = _contract_schema_for_table(ctx, table_key=spec.table_key)
         return self._scan_entry(
             entry,
             filters=spec.filters,
             column_types=spec.column_types,
             settings=ctx.settings,
+            contract_schema=contract_schema,
         )
 
     @staticmethod
@@ -579,6 +605,7 @@ class PolarsQueryEngine:
         filters: list[FilterSpec] | None,
         column_types: Mapping[str, ColumnType] | None,
         settings: ServingSettings,
+        contract_schema: pa.Schema | None,
     ) -> PolarsLazyFrame:
         if pl is None:  # pragma: no cover
             msg = "polars is required for Polars query execution"
@@ -593,6 +620,7 @@ class PolarsQueryEngine:
                 entry,
                 filter_expression=filter_expression,
                 settings=settings,
+                contract_schema=contract_schema,
             )
         hive_partitioning = bool(entry.manifest.partition_columns)
         if lazyframe is None:
@@ -626,11 +654,13 @@ class PolarsQueryEngine:
         if entry is None:
             msg = f"No dataset manifest found for {table_key}"
             raise PolarsQueryBuilderError(msg)
+        contract_schema = _contract_schema_for_table(ctx, table_key=table_key)
         lazyframe = self._scan_entry(
             entry,
             filters=None,
             column_types=None,
             settings=ctx.settings,
+            contract_schema=contract_schema,
         )
         if row_index:
             lazyframe = lazyframe.with_row_index(name=row_index)
@@ -649,7 +679,7 @@ def _scan_parquet(
     if pl is None:  # pragma: no cover
         msg = "polars is required for Polars query execution"
         raise PolarsQueryBuilderError(msg)
-    scan_parquet = pl.scan_parquet
+    scan_parquet = cast(Callable[..., PolarsLazyFrame], pl.scan_parquet)
     kwargs: dict[str, object] = {}
     if hive_partitioning:
         kwargs["hive_partitioning"] = True
@@ -662,6 +692,20 @@ def _scan_parquet(
         return scan_parquet(paths, **kwargs)
     except TypeError:
         return scan_parquet(paths)
+
+
+def _contract_schema_for_table(ctx: EngineContext, *, table_key: str) -> pa.Schema | None:
+    if ctx.warehouse is None:
+        return None
+    try:
+        return arrow_schema_for_table_key(
+            ctx.warehouse.gateway.con,
+            table_key=table_key,
+            repo=ctx.pointer.repo,
+            commit=ctx.pointer.commit,
+        )
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
 
 
 __all__ = ["PolarsExecutablePlan", "PolarsQueryEngine"]

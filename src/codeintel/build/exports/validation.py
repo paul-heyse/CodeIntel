@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
 import jsonschema
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from referencing import Registry
 
@@ -253,39 +256,51 @@ def _validate_batch_constraints(
     return errors
 
 
+def _has_nulls(values: pa.Array | pa.ChunkedArray) -> bool:
+    null_count = values.null_count
+    if null_count is not None and null_count >= 0:
+        return null_count > 0
+    if isinstance(values, pa.ChunkedArray):
+        return any((chunk.null_count or 0) > 0 for chunk in values.chunks)
+    return False
+
+
 def _arrow_type_matches(types: tuple[str, ...], data_type: pa.DataType) -> bool:
     normalized = data_type
     if pa.types.is_dictionary(normalized):
         normalized = normalized.value_type
-    for json_type in types:
-        if _matches_json_type(json_type, normalized):
-            return True
-    return False
+    return any(_matches_json_type(json_type, normalized) for json_type in types)
 
 
 def _matches_json_type(json_type: str, data_type: pa.DataType) -> bool:
-    if json_type == "null":
-        return pa.types.is_null(data_type)
-    if json_type == "boolean":
-        return pa.types.is_boolean(data_type)
-    if json_type == "integer":
-        return pa.types.is_integer(data_type) or pa.types.is_decimal(data_type)
-    if json_type == "number":
-        return (
-            pa.types.is_floating(data_type)
-            or pa.types.is_integer(data_type)
-            or pa.types.is_decimal(data_type)
-        )
-    if json_type == "string":
-        return pa.types.is_string(data_type) or pa.types.is_large_string(data_type)
     if json_type in {"object", "array"}:
         return True
-    return True
+    predicates: dict[str, Callable[[pa.DataType], bool]] = {
+        "null": pa.types.is_null,
+        "boolean": pa.types.is_boolean,
+        "integer": lambda dtype: pa.types.is_integer(dtype) or pa.types.is_decimal(dtype),
+        "number": lambda dtype: (
+            pa.types.is_floating(dtype)
+            or pa.types.is_integer(dtype)
+            or pa.types.is_decimal(dtype)
+        ),
+        "string": lambda dtype: pa.types.is_string(dtype) or pa.types.is_large_string(dtype),
+    }
+    predicate = predicates.get(json_type)
+    if predicate is None:
+        return True
+    return predicate(data_type)
 
 
-def _validate_enum(constraint: _ArrowFieldConstraint, array: pa.Array | pa.ChunkedArray) -> list[str]:
+def _validate_enum(
+    constraint: _ArrowFieldConstraint,
+    array: pa.Array | pa.ChunkedArray,
+) -> list[str]:
+    func = getattr(pc, "is_in", None)
+    if not callable(func):
+        return []
     try:
-        mask = pc.is_in(array, value_set=constraint.enum)
+        mask = func(array, value_set=constraint.enum)
     except (TypeError, pa.ArrowInvalid):
         return []
     mask = _apply_nullable_mask(mask, array, nullable=constraint.nullable)
@@ -306,11 +321,15 @@ def _validate_range(
     mask: pa.Array | pa.ChunkedArray | None = None
     try:
         if constraint.minimum is not None:
-            minimum_mask = pc.greater_equal(array, constraint.minimum)
-            mask = minimum_mask if mask is None else pc.and_(mask, minimum_mask)
+            minimum_mask = _binary_compute("greater_equal", array, constraint.minimum)
+            if minimum_mask is None:
+                return []
+            mask = minimum_mask if mask is None else _binary_compute("and_", mask, minimum_mask)
         if constraint.maximum is not None:
-            maximum_mask = pc.less_equal(array, constraint.maximum)
-            mask = maximum_mask if mask is None else pc.and_(mask, maximum_mask)
+            maximum_mask = _binary_compute("less_equal", array, constraint.maximum)
+            if maximum_mask is None:
+                return []
+            mask = maximum_mask if mask is None else _binary_compute("and_", mask, maximum_mask)
     except (TypeError, pa.ArrowInvalid):
         return []
     if mask is None:
@@ -340,11 +359,15 @@ def _validate_length(
     mask: pa.Array | pa.ChunkedArray | None = None
     try:
         if constraint.min_length is not None:
-            min_mask = pc.greater_equal(lengths, constraint.min_length)
-            mask = min_mask if mask is None else pc.and_(mask, min_mask)
+            min_mask = _binary_compute("greater_equal", lengths, constraint.min_length)
+            if min_mask is None:
+                return []
+            mask = min_mask if mask is None else _binary_compute("and_", mask, min_mask)
         if constraint.max_length is not None:
-            max_mask = pc.less_equal(lengths, constraint.max_length)
-            mask = max_mask if mask is None else pc.and_(mask, max_mask)
+            max_mask = _binary_compute("less_equal", lengths, constraint.max_length)
+            if max_mask is None:
+                return []
+            mask = max_mask if mask is None else _binary_compute("and_", mask, max_mask)
     except (TypeError, pa.ArrowInvalid):
         return []
     if mask is None:
@@ -369,8 +392,11 @@ def _apply_nullable_mask(
     if not nullable:
         return mask
     try:
-        nulls = pc.is_null(array)
-        return pc.or_(nulls, mask)
+        nulls = _unary_compute("is_null", array)
+        if nulls is None:
+            return mask
+        combined = _binary_compute("or_", nulls, mask)
+        return combined if combined is not None else mask
     except (TypeError, pa.ArrowInvalid):
         return mask
 
@@ -380,7 +406,10 @@ def _all_true(mask: pa.Array | pa.ChunkedArray) -> bool:
     if callable(all_fn):
         try:
             result = all_fn(mask)
-            return bool(result.as_py())
+            as_py = getattr(result, "as_py", None)
+            if callable(as_py):
+                value = as_py()
+                return bool(value) if value is not None else False
         except (TypeError, pa.ArrowInvalid):
             pass
     try:
@@ -440,6 +469,8 @@ def _validate_parquet(
     ----------
     path
         Path to Parquet file.
+    schema
+        JSON Schema used for validation.
     validator
         JSON Schema validator instance.
 
@@ -464,6 +495,33 @@ def _validate_parquet(
             records = _records_from_batch(batch)
             errors.extend(_validate_records(records, validator))
     return errors
+
+
+def _binary_compute(
+    name: str,
+    left: pa.Array | pa.ChunkedArray,
+    right: object,
+) -> pa.Array | pa.ChunkedArray | None:
+    func = getattr(pc, name, None)
+    if not callable(func):
+        return None
+    try:
+        return func(left, right)
+    except (TypeError, pa.ArrowInvalid):
+        return None
+
+
+def _unary_compute(
+    name: str,
+    array: pa.Array | pa.ChunkedArray,
+) -> pa.Array | pa.ChunkedArray | None:
+    func = getattr(pc, name, None)
+    if not callable(func):
+        return None
+    try:
+        return func(array)
+    except (TypeError, pa.ArrowInvalid):
+        return None
 
 
 def _records_from_batch(batch: pa.RecordBatch) -> list[dict[str, Any]]:

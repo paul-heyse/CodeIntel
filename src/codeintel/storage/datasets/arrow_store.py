@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -22,7 +23,7 @@ from codeintel.storage.datasets.paths import dataset_snapshot_dir
 from codeintel.storage.schema import arrow_schema_hash
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Mapping, Sequence
 
     from pyarrow import RecordBatchReader, Table
     from pyarrow.dataset import FileWriteOptions
@@ -106,6 +107,15 @@ class ArrowDatasetWriteOptions:
     dictionary_encode: bool = False
     dictionary_max_cardinality: int | None = None
     unify_dictionaries: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ArrowDatasetScanOptions:
+    """Options for streaming dataset scans."""
+
+    batch_size: int
+    fragment_readahead: int | None = None
+    filter_expression: ds.Expression | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,9 +254,7 @@ def scan_dataset_scanner(
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-    batch_size: int,
-    fragment_readahead: int | None = None,
-    filter_expression: ds.Expression | None = None,
+    options: ArrowDatasetScanOptions,
 ) -> ds.Scanner:
     """Return a dataset scanner for streaming reads.
 
@@ -258,12 +266,8 @@ def scan_dataset_scanner(
         Fully qualified table key (schema.table).
     snapshot_id
         Snapshot identifier used to scope the dataset.
-    batch_size
-        Target batch size for scanned record batches.
-    fragment_readahead
-        Optional fragment readahead hint for the scanner.
-    filter_expression
-        Optional dataset filter expression for pushdown.
+    options
+        Batch size and filter options for the scanner.
 
     Returns
     -------
@@ -275,12 +279,12 @@ def scan_dataset_scanner(
         table_key=table_key,
         snapshot_id=snapshot_id,
     )
-    scan_kwargs: dict[str, object] = {"batch_size": batch_size}
-    if fragment_readahead is not None:
-        scan_kwargs["fragment_readahead"] = fragment_readahead
+    scan_kwargs: dict[str, object] = {"batch_size": options.batch_size}
+    if options.fragment_readahead is not None:
+        scan_kwargs["fragment_readahead"] = options.fragment_readahead
     return _build_scanner(
         dataset,
-        filter_expression=filter_expression,
+        filter_expression=options.filter_expression,
         scan_kwargs=scan_kwargs,
     )
 
@@ -290,9 +294,7 @@ def scan_dataset_reader(
     dataset_root: Path,
     table_key: str,
     snapshot_id: str,
-    batch_size: int,
-    fragment_readahead: int | None = None,
-    filter_expression: ds.Expression | None = None,
+    options: ArrowDatasetScanOptions,
 ) -> pa.RecordBatchReader:
     """Return a RecordBatchReader for a dataset snapshot.
 
@@ -305,9 +307,7 @@ def scan_dataset_reader(
         dataset_root=dataset_root,
         table_key=table_key,
         snapshot_id=snapshot_id,
-        batch_size=batch_size,
-        fragment_readahead=fragment_readahead,
-        filter_expression=filter_expression,
+        options=options,
     )
     return scanner.to_reader()
 
@@ -428,7 +428,10 @@ def _fragments_for_filter(
     if not callable(get_fragments):
         return None
     try:
-        return tuple(get_fragments(filter=filter_expression))
+        fragments = get_fragments(filter=filter_expression)
+        if not isinstance(fragments, Iterable):
+            return None
+        return tuple(fragments)
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
 
@@ -762,6 +765,7 @@ def _json_safe_value(value: object) -> object:
 __all__ = [
     "ArrowDatasetInput",
     "ArrowDatasetManifestRequest",
+    "ArrowDatasetScanOptions",
     "ArrowDatasetStats",
     "ArrowDatasetWriteOptions",
     "ExistingDataBehavior",

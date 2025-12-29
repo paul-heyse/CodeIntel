@@ -6,12 +6,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from codeintel.storage.exports.service import ExportService
-from codeintel.storage.warehouse import MaterializationResult, MaterializeOptions, Warehouse
+from codeintel.storage.warehouse import (
+    MaterializationResult,
+    MaterializeOptions,
+    TabularInput,
+    Warehouse,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
-
-    import pyarrow as pa
 
     from codeintel.config.primitives import SnapshotRef
     from codeintel.storage.datasets.registry import DatasetRegistry
@@ -77,7 +80,7 @@ class StorageFacade:
     def materialize_table(
         self,
         table_key: str,
-        expr: DuckDBRelation | pa.RecordBatchReader | pa.Table,
+        expr: TabularInput,
         *,
         options: MaterializeOptions | None = None,
     ) -> MaterializationResult:

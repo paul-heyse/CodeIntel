@@ -72,6 +72,8 @@ def ndjson_response(
 
 @dataclass(frozen=True, slots=True)
 class ArrowIpcResponseOptions:
+    """Options for Arrow IPC streaming responses."""
+
     filename: str | None = None
     headers: Mapping[str, str] | None = None
     metadata: Mapping[str, object] | None = None

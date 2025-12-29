@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import base64
+import binascii
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol
+
+import pyarrow as pa
 
 from codeintel.core.execution.ids import new_uuid_str
 from codeintel.core.hashing.fingerprint import fingerprint
@@ -88,6 +92,43 @@ class _InferableStats:
     inferred: int
     errors: int
     success_rate: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ContractDriftReport:
+    """Summary of Arrow contract drift versus registry metadata."""
+
+    total_tables: int
+    missing_contracts: int
+    missing_contract_metadata: int
+    hash_mismatches: int
+    digest_mismatches: int
+    missing_contract_samples: tuple[str, ...]
+    missing_metadata_samples: tuple[str, ...]
+    mismatch_samples: tuple[str, ...]
+
+
+@dataclass(slots=True)
+class _ContractDriftAccumulator:
+    total_tables: int = 0
+    missing_contracts: int = 0
+    missing_contract_metadata: int = 0
+    hash_mismatches: int = 0
+    digest_mismatches: int = 0
+    missing_contract_samples: list[str] = field(default_factory=list)
+    missing_metadata_samples: list[str] = field(default_factory=list)
+    mismatch_samples: list[str] = field(default_factory=list)
+
+    def record_missing_contract(self, table_key: str, *, limit: int) -> None:
+        self.missing_contracts += 1
+        _append_sample(self.missing_contract_samples, table_key, limit=limit)
+
+    def record_missing_metadata(self, table_key: str, *, limit: int) -> None:
+        self.missing_contract_metadata += 1
+        _append_sample(self.missing_metadata_samples, table_key, limit=limit)
+
+    def record_mismatch(self, table_key: str, *, limit: int) -> None:
+        _append_sample(self.mismatch_samples, table_key, limit=limit)
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,6 +479,7 @@ class SchemaCatalogTracking:
         if inferable_stats.errors:
             status = "warn"
 
+        drift = self.contract_drift_report(limit=10)
         return {
             "status": status,
             "latest_manifest": {
@@ -459,6 +501,7 @@ class SchemaCatalogTracking:
             "inferred_count": inferable_stats.inferred,
             "inference_error_count": inferable_stats.errors,
             "inference_success_rate": inferable_stats.success_rate,
+            "contract_drift": drift,
         }
 
     def prefill_schema_index(
@@ -522,6 +565,167 @@ class SchemaCatalogTracking:
 
         schema_index.prefill_cache(schemas)
         return len(schemas)
+
+    def contract_drift_report(self, *, limit: int = 10) -> dict[str, object]:
+        """Return Arrow contract drift metadata for the schema registry.
+
+        Parameters
+        ----------
+        limit
+            Maximum number of example table keys to include per category.
+
+        Returns
+        -------
+        dict[str, object]
+            Drift summary comparing Arrow contract metadata to registry metadata.
+        """
+        registry_ref = meta_table_ref("metadata.table_schema_registry")
+        versions_ref = meta_table_ref("metadata.schema_versions")
+        rows = self._con.execute(
+            f"""
+            SELECT r.table_key, r.schema_hash, r.schema_digest, v.renderer_cache
+            FROM {registry_ref} AS r
+            JOIN {versions_ref} AS v
+              ON r.schema_digest = v.schema_digest
+            ORDER BY r.table_key
+            """
+        ).fetchall()
+        if not rows:
+            return _contract_drift_payload(_ContractDriftReport(0, 0, 0, 0, 0, (), (), ()))
+
+        accumulator = _ContractDriftAccumulator()
+        for table_key, schema_hash, schema_digest, renderer_cache_raw in rows:
+            contract_schema = _schema_from_renderer_cache(renderer_cache_raw)
+            table_name = str(table_key)
+            if contract_schema is None:
+                accumulator.record_missing_contract(table_name, limit=limit)
+                continue
+            contract_hash = _schema_metadata_value(contract_schema, "codeintel.schema_hash")
+            contract_digest = _schema_metadata_value(contract_schema, "codeintel.schema_digest")
+            if contract_hash is None or contract_digest is None:
+                accumulator.record_missing_metadata(table_name, limit=limit)
+                continue
+            registry_hash = str(schema_hash) if schema_hash is not None else None
+            registry_digest = str(schema_digest) if schema_digest is not None else None
+            mismatch = False
+            if registry_hash != contract_hash:
+                accumulator.hash_mismatches += 1
+                mismatch = True
+            if registry_digest != contract_digest:
+                accumulator.digest_mismatches += 1
+                mismatch = True
+            if mismatch:
+                accumulator.record_mismatch(table_name, limit=limit)
+
+        report = _ContractDriftReport(
+            total_tables=len(rows),
+            missing_contracts=accumulator.missing_contracts,
+            missing_contract_metadata=accumulator.missing_contract_metadata,
+            hash_mismatches=accumulator.hash_mismatches,
+            digest_mismatches=accumulator.digest_mismatches,
+            missing_contract_samples=tuple(accumulator.missing_contract_samples),
+            missing_metadata_samples=tuple(accumulator.missing_metadata_samples),
+            mismatch_samples=tuple(accumulator.mismatch_samples),
+        )
+        return _contract_drift_payload(report)
+
+    def backfill_renderer_cache(
+        self,
+        manifest: SchemaManifest,
+        *,
+        include_views: bool = True,
+    ) -> int:
+        """Backfill Arrow contract renderer_cache entries for existing schema versions.
+
+        Parameters
+        ----------
+        manifest
+            Schema manifest providing table schemas and provenance metadata.
+        include_views
+            Whether to include view schemas from the manifest in the backfill.
+
+        Returns
+        -------
+        int
+            Number of schema version rows updated with contract payloads.
+
+        Raises
+        ------
+        RuntimeError
+            If the gateway is read-only.
+        """
+        if getattr(self._gateway, "config", None) is not None and self._gateway.config.read_only:
+            msg = "Cannot backfill renderer cache in a read-only storage gateway"
+            raise RuntimeError(msg)
+
+        payloads = self._renderer_cache_payloads(manifest, include_views=include_views)
+        if not payloads:
+            return 0
+
+        digests = tuple(payloads)
+        placeholders = ", ".join(["?"] * len(digests))
+        versions_ref = meta_table_ref("metadata.schema_versions")
+        rows = self._con.execute(
+            f"""
+            SELECT schema_digest, renderer_cache
+            FROM {versions_ref}
+            WHERE schema_digest IN ({placeholders})
+            """,
+            list(digests),
+        ).fetchall()
+        if not rows:
+            return 0
+
+        updates: list[tuple[object, str]] = []
+        for schema_digest, renderer_cache_raw in rows:
+            digest = str(schema_digest)
+            payload = payloads.get(digest)
+            if payload is None:
+                continue
+            renderer_cache = decode_json_dict(renderer_cache_raw)
+            if _renderer_cache_has_arrow_schema(renderer_cache):
+                continue
+            merged = dict(renderer_cache) if renderer_cache else {}
+            merged.update(payload)
+            updates.append((normalize_duckdb_json_value(merged), digest))
+
+        if not updates:
+            return 0
+
+        self._con.executemany(
+            f"UPDATE {versions_ref} SET renderer_cache = ? WHERE schema_digest = ?",
+            updates,
+        )
+        return len(updates)
+
+    @staticmethod
+    def _renderer_cache_payloads(
+        manifest: SchemaManifest,
+        *,
+        include_views: bool,
+    ) -> dict[str, dict[str, object]]:
+        schemas = sorted(manifest.tables, key=lambda schema: schema.table_key)
+        if include_views:
+            schemas.extend(sorted(manifest.views, key=lambda schema: schema.table_key))
+        if not schemas:
+            return {}
+
+        provenance_by_table_key = dict(manifest.table_provenance)
+        if include_views:
+            provenance_by_table_key.update(manifest.view_provenance)
+
+        payloads: dict[str, dict[str, object]] = {}
+        for table_schema in schemas:
+            schema_json = table_schema.to_json_obj()
+            schema_digest = fingerprint(schema_json)
+            if schema_digest in payloads:
+                continue
+            provenance = provenance_by_table_key.get(table_schema.table_key)
+            payloads[schema_digest] = arrow_contract_renderer_cache(
+                table_schema,
+                provenance=provenance,
+            )
+        return payloads
 
     def persist_schema_manifest(
         self,
@@ -912,6 +1116,59 @@ def _schema_hash_for_override(
         )
         raise ValueError(msg)
     return provenance_hash
+
+
+def _schema_from_renderer_cache(renderer_cache_raw: object) -> pa.Schema | None:
+    renderer_cache = decode_json_dict(renderer_cache_raw)
+    payload = renderer_cache.get("arrow_schema_ipc_b64")
+    if not isinstance(payload, str):
+        return None
+    return _schema_from_ipc_payload(payload)
+
+
+def _renderer_cache_has_arrow_schema(renderer_cache: Mapping[str, object]) -> bool:
+    payload = renderer_cache.get("arrow_schema_ipc_b64")
+    return isinstance(payload, str) and bool(payload)
+
+
+def _schema_from_ipc_payload(payload: str) -> pa.Schema | None:
+    try:
+        raw = base64.b64decode(payload)
+    except (ValueError, binascii.Error):
+        return None
+    try:
+        buffer = pa.py_buffer(raw)
+        return pa.ipc.read_schema(pa.BufferReader(buffer))
+    except (OSError, pa.ArrowInvalid, ValueError):
+        return None
+
+
+def _schema_metadata_value(schema: pa.Schema, key: str) -> str | None:
+    metadata = schema.metadata
+    if not metadata:
+        return None
+    raw = metadata.get(key.encode("utf-8"))
+    if raw is None:
+        return None
+    return raw.decode("utf-8")
+
+
+def _append_sample(target: list[str], value: str, *, limit: int) -> None:
+    if len(target) < limit:
+        target.append(value)
+
+
+def _contract_drift_payload(report: _ContractDriftReport) -> dict[str, object]:
+    return {
+        "total_tables": report.total_tables,
+        "missing_contracts": report.missing_contracts,
+        "missing_contract_metadata": report.missing_contract_metadata,
+        "hash_mismatches": report.hash_mismatches,
+        "digest_mismatches": report.digest_mismatches,
+        "missing_contract_samples": list(report.missing_contract_samples),
+        "missing_metadata_samples": list(report.missing_metadata_samples),
+        "mismatch_samples": list(report.mismatch_samples),
+    }
 
 
 __all__ = [

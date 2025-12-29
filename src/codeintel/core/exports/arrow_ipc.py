@@ -129,7 +129,7 @@ def build_ipc_read_options(
         Read options when supported, otherwise None.
     """
     read_options = getattr(pa.ipc, "IpcReadOptions", None)
-    if read_options is None:
+    if read_options is None or not callable(read_options):
         return None
     kwargs: dict[str, object] = {}
     if use_threads is not None:
@@ -153,7 +153,10 @@ def _parse_metadata_version(value: str | None) -> pa.ipc.MetadataVersion | None:
     return getattr(pa.ipc.MetadataVersion, normalized, None)
 
 
-def _filter_kwargs(target: object, kwargs: Mapping[str, object]) -> dict[str, object]:
+def _filter_kwargs(
+    target: Callable[..., object],
+    kwargs: Mapping[str, object],
+) -> dict[str, object]:
     try:
         params = signature(target).parameters
     except (TypeError, ValueError):

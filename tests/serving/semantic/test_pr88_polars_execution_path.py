@@ -108,3 +108,37 @@ async def test_polars_execution_path_matches_expected_rows(tmp_path: Path) -> No
         expect_equal([row["id"] for row in res.rows], [1, 2, 3])
     finally:
         await manager.stop()
+
+
+@pytest.mark.anyio
+async def test_polars_profile_inspect_flags_do_not_change_results(tmp_path: Path) -> None:
+    """Polars profile/inspect flags do not alter query results."""
+    pytest.importorskip("polars")
+    snapshot = _make_snapshot(ServingSnapshotFactory(tmp_path))
+    manager = ServingDBManager(
+        pointer_path=snapshot.pointer_path,
+        pool_cfg=PoolConfig(size=1),
+        hot_swap=False,
+    )
+    await manager.start()
+    try:
+        kernel = SemanticQueryKernel(
+            db=manager,
+            settings=ServingSettings(
+                serve_dir=snapshot.serve_dir,
+                hot_swap=False,
+                pool_size=1,
+                poll_interval_s=0.01,
+                schema_enforcement="strict",
+                query_engine="polars",
+                result_engine="polars",
+                polars_profile=True,
+                polars_inspect=True,
+                polars_streaming=True,
+                polars_streaming_fallback=True,
+            ),
+        )
+        res = kernel.query(SemanticQueryRequest(view_id="demo.view", limit=10))
+        expect_equal([row["id"] for row in res.rows], [1, 2, 3])
+    finally:
+        await manager.stop()

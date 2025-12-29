@@ -6,6 +6,7 @@ both FastAPI routes and MCP tools.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, cast
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from codeintel.core.columnar import align_reader_to_contract, extras_policy_from_schema
 from codeintel.core.exports import (
     apply_ipc_metadata,
     build_ipc_write_options,
@@ -33,13 +35,18 @@ from codeintel.serving.search.engine import (
 from codeintel.serving.search.models import SearchQueryResponse, SearchResult
 from codeintel.serving.semantic.engines.duckdb_engine import DuckDBQueryEngine
 from codeintel.serving.semantic.engines.polars_engine import PolarsQueryEngine
-from codeintel.serving.semantic.engines.protocol import EngineContext, QueryExplain
+from codeintel.serving.semantic.engines.protocol import EngineContext, ExecutablePlan, QueryExplain
 from codeintel.serving.semantic.engines.registry import QueryEngineRegistry, build_engine_registry
 from codeintel.serving.semantic.fingerprints import (
     SemanticQueryFingerprintInput,
     fingerprint_search,
     fingerprint_semantic_query,
     sqlglot_canonical_sha256,
+)
+from codeintel.serving.semantic.guardrails import (
+    warn_contract_metadata_mismatch,
+    warn_contract_metadata_missing,
+    warn_missing_contract_schema,
 )
 from codeintel.serving.semantic.models import (
     ColumnLineageRef,
@@ -55,16 +62,20 @@ from codeintel.serving.semantic.query_ast import ServingQuery
 from codeintel.serving.semantic.specs import SemanticQuerySpec
 from codeintel.serving.snapshot.models import ServingSnapshotIdentity
 from codeintel.storage.constants import META_CATALOG_NAME
+from codeintel.storage.duckdb_types import DuckDBError
 from codeintel.storage.metadata import load_derived_lineage_columns
 from codeintel.storage.queries.safe import (
     SqlIngressPolicy,
     UnsafeSqlError,
     assert_select_perimeter,
 )
+from codeintel.storage.schema import arrow_schema_for_table_key
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
     from pathlib import Path
+
+    from duckdb import DuckDBPyConnection
 
     from codeintel.serving.db.manager import ServingDBManager, ServingSnapshotContext
     from codeintel.serving.db.pointer import ServingSnapshotPointer
@@ -156,6 +167,26 @@ class _SemanticQueryStream:
         return next(self.stream)
 
 
+@dataclass(frozen=True, slots=True)
+class _IpcQueryPlan:
+    snapshot_context: ServingSnapshotContext
+    resolved: ResolvedViewContext
+    serving_query: ServingQuery
+    engine_name: str
+    scan_metrics: QueryScanMetrics | None
+    batch_size: int
+    query_hash: str
+    schema_hash: str | None
+    schema_digest: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _IpcExportPlan:
+    plan: ExecutablePlan
+    reader: pa.RecordBatchReader
+    metadata: dict[str, object]
+
+
 def _build_ipc_metadata(input_data: _IpcMetadataInput) -> dict[str, object]:
     metadata: dict[str, object] = {
         "codeintel.table_key": input_data.table_key,
@@ -172,6 +203,69 @@ def _build_ipc_metadata(input_data: _IpcMetadataInput) -> dict[str, object]:
     if input_data.engine is not None:
         metadata["codeintel.query_engine"] = input_data.engine
     return metadata
+
+
+def _contract_schema_for_table(
+    con: DuckDBPyConnection,
+    *,
+    table_key: str,
+    pointer: ServingSnapshotPointer,
+) -> pa.Schema | None:
+    try:
+        return arrow_schema_for_table_key(
+            con,
+            table_key=table_key,
+            repo=pointer.repo,
+            commit=pointer.commit,
+        )
+    except (DuckDBError, RuntimeError, TypeError, ValueError):
+        return None
+
+
+def _check_contract_metadata(
+    *,
+    contract_schema: pa.Schema,
+    table_key: str,
+    schema_hash_value: str | None,
+    schema_digest_value: str | None,
+) -> None:
+    metadata = _decode_arrow_metadata(contract_schema.metadata)
+    contract_hash = metadata.get("codeintel.schema_hash")
+    contract_digest = metadata.get("codeintel.schema_digest")
+    if schema_hash_value and isinstance(contract_hash, str) and contract_hash != schema_hash_value:
+        warn_contract_metadata_mismatch(
+            table_key=table_key,
+            field="schema_hash",
+            expected=schema_hash_value,
+            actual=contract_hash,
+        )
+    if (
+        schema_digest_value
+        and isinstance(contract_digest, str)
+        and contract_digest != schema_digest_value
+    ):
+        warn_contract_metadata_mismatch(
+            table_key=table_key,
+            field="schema_digest",
+            expected=schema_digest_value,
+            actual=contract_digest,
+        )
+    if "codeintel.schema_contract_version" not in metadata:
+        warn_contract_metadata_missing(table_key=table_key, field="schema_contract_version")
+
+
+def _decode_arrow_metadata(metadata: dict[bytes, bytes] | None) -> dict[str, object]:
+    if not metadata:
+        return {}
+    decoded: dict[str, object] = {}
+    for key, value in metadata.items():
+        key_str = key.decode("utf-8")
+        value_str = value.decode("utf-8")
+        try:
+            decoded[key_str] = json.loads(value_str)
+        except json.JSONDecodeError:
+            decoded[key_str] = value_str
+    return decoded
 
 
 def _ipc_write_options(settings: ServingSettings) -> pa.ipc.IpcWriteOptions:
@@ -536,6 +630,48 @@ class SemanticQueryKernel:
             sql_fingerprint=sql_fingerprint,
         )
 
+    def _plan_ipc_stream(self, request: SemanticQueryRequest) -> _IpcQueryPlan:
+        pointer = self.db.current_pointer()
+        snapshot_context = self._planner.snapshot_context(pointer)
+        resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+        inputs, effective_limit = self._planner.plan_inputs_for_query(ctx=resolved, request=request)
+        serving_query = self._planner.build_query(
+            ctx=resolved,
+            inputs=inputs,
+            limit=effective_limit,
+        )
+        query_hash, schema_hash_value = self._fingerprint_semantic_plan(
+            pointer=resolved.pointer,
+            view_id=resolved.view.id,
+            spec=serving_query.spec,
+            inventory=resolved.inventory,
+        )
+        return _IpcQueryPlan(
+            snapshot_context=snapshot_context,
+            resolved=resolved,
+            serving_query=serving_query,
+            engine_name=self._engine_registry.select(
+                preference=self.settings.query_engine,
+                query=serving_query,
+                ctx=self._engine_context(
+                    pointer=pointer,
+                    context=snapshot_context,
+                    warehouse=cast("Warehouse", object()),
+                ),
+            ).name.lower(),
+            scan_metrics=self._scan_metrics_for_table_key(
+                table_key=serving_query.spec.table_key,
+                dataset_manifests=snapshot_context.dataset_manifests,
+            ),
+            batch_size=self.settings.export_batch_size,
+            query_hash=query_hash,
+            schema_hash=schema_hash_value,
+            schema_digest=self._schema_digest_for_table_key(
+                inventory=resolved.inventory,
+                table_key=resolved.view.table_key,
+            ),
+        )
+
     def query_ipc_stream(
         self, request: SemanticQueryRequest, *, cancel_check: CancelCheck | None = None
     ) -> Iterable[bytes]:
@@ -553,65 +689,51 @@ class SemanticQueryKernel:
         Iterable[bytes]
             Iterable of Arrow IPC stream bytes.
         """
-        pointer = self.db.current_pointer()
-        snapshot_context = self._planner.snapshot_context(pointer)
-        resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-        inputs, effective_limit = self._planner.plan_inputs_for_query(ctx=resolved, request=request)
-        serving_query = self._planner.build_query(
-            ctx=resolved,
-            inputs=inputs,
-            limit=effective_limit,
-        )
-        engine_ctx = self._engine_context(
-            pointer=pointer,
-            context=snapshot_context,
-            warehouse=cast("Warehouse", object()),
-        )
-        engine_name = self._engine_registry.select(
-            preference=self.settings.query_engine,
-            query=serving_query,
-            ctx=engine_ctx,
-        ).name.lower()
-        scan_metrics = self._scan_metrics_for_table_key(
-            table_key=serving_query.spec.table_key,
-            dataset_manifests=snapshot_context.dataset_manifests,
-        )
-        batch_size = self.settings.export_batch_size
-        query_hash, schema_hash_value = self._fingerprint_semantic_plan(
-            pointer=resolved.pointer,
-            view_id=resolved.view.id,
-            spec=serving_query.spec,
-            inventory=resolved.inventory,
-        )
-        schema_digest_value = self._schema_digest_for_table_key(
-            inventory=resolved.inventory,
-            table_key=resolved.view.table_key,
-        )
+        plan = self._plan_ipc_stream(request)
 
         def _stream() -> Generator[bytes]:
             with self.db.connect() as (warehouse, live_pointer):
                 engine_ctx = self._engine_context(
                     pointer=live_pointer,
-                    context=snapshot_context,
+                    context=plan.snapshot_context,
                     warehouse=warehouse,
                 )
                 engine = self._engine_registry.select(
                     preference=self.settings.query_engine,
-                    query=serving_query,
+                    query=plan.serving_query,
                     ctx=engine_ctx,
                 )
-                plan = engine.compile(serving_query, ctx=engine_ctx)
+                compiled_plan = engine.compile(plan.serving_query, ctx=engine_ctx)
                 try:
                     _raise_if_cancelled(cancel_check)
-                    reader = plan.to_reader(batch_size=batch_size)
+                    reader = compiled_plan.to_reader(batch_size=plan.batch_size)
+                    contract_schema = _contract_schema_for_table(
+                        warehouse.gateway.con,
+                        table_key=plan.resolved.view.table_key,
+                        pointer=live_pointer,
+                    )
+                    if contract_schema is None:
+                        warn_missing_contract_schema(table_key=plan.resolved.view.table_key)
+                    else:
+                        _check_contract_metadata(
+                            contract_schema=contract_schema,
+                            table_key=plan.resolved.view.table_key,
+                            schema_hash_value=plan.schema_hash,
+                            schema_digest_value=plan.schema_digest,
+                        )
+                        reader = align_reader_to_contract(
+                            reader,
+                            contract_schema,
+                            extras_policy=extras_policy_from_schema(contract_schema),
+                        )
                     metadata = _build_ipc_metadata(
                         _IpcMetadataInput(
                             pointer=live_pointer,
-                            table_key=resolved.view.table_key,
-                            view_id=resolved.view.id,
-                            query_hash=query_hash,
-                            schema_hash=schema_hash_value,
-                            schema_digest=schema_digest_value,
+                            table_key=plan.resolved.view.table_key,
+                            view_id=plan.resolved.view.id,
+                            query_hash=plan.query_hash,
+                            schema_hash=plan.schema_hash,
+                            schema_digest=plan.schema_digest,
                             engine=engine.name.lower(),
                         )
                     )
@@ -623,17 +745,99 @@ class SemanticQueryKernel:
                         cancel_check=cancel_check,
                     )
                 finally:
-                    plan.cleanup()
+                    compiled_plan.cleanup()
 
         return _SemanticQueryStream(
             stream=_stream(),
-            engine=engine_name,
-            query_hash=query_hash,
-            schema_hash=schema_hash_value,
-            schema_digest=schema_digest_value,
-            scan_metrics=scan_metrics,
-            batch_size=batch_size,
+            engine=plan.engine_name,
+            query_hash=plan.query_hash,
+            schema_hash=plan.schema_hash,
+            schema_digest=plan.schema_digest,
+            scan_metrics=plan.scan_metrics,
+            batch_size=plan.batch_size,
         )
+
+    def _build_ipc_export_plan(
+        self,
+        *,
+        warehouse: Warehouse,
+        pointer: ServingSnapshotPointer,
+        request: SemanticExportRequest,
+        cancel_check: CancelCheck | None,
+    ) -> _IpcExportPlan:
+        snapshot_context = self._planner.snapshot_context(pointer)
+        resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
+        inputs, effective_limit = self._planner.plan_inputs_for_export(
+            ctx=resolved,
+            request=request,
+        )
+        serving_query = self._planner.build_query(
+            ctx=resolved,
+            inputs=inputs,
+            limit=effective_limit,
+        )
+        engine_ctx = self._engine_context(
+            pointer=pointer,
+            context=snapshot_context,
+            warehouse=warehouse,
+        )
+        engine = self._engine_registry.select(
+            preference=self.settings.query_engine,
+            query=serving_query,
+            ctx=engine_ctx,
+        )
+        plan = engine.compile(serving_query, ctx=engine_ctx)
+        try:
+            _raise_if_cancelled(cancel_check)
+            reader = plan.to_reader(batch_size=self.settings.export_batch_size)
+            query_hash, schema_hash_value = self._fingerprint_semantic_plan(
+                pointer=resolved.pointer,
+                view_id=resolved.view.id,
+                spec=serving_query.spec,
+                inventory=resolved.inventory,
+            )
+            schema_digest_value = self._schema_digest_for_table_key(
+                inventory=resolved.inventory,
+                table_key=resolved.view.table_key,
+            )
+            contract_schema = _contract_schema_for_table(
+                warehouse.gateway.con,
+                table_key=resolved.view.table_key,
+                pointer=pointer,
+            )
+            if contract_schema is None:
+                warn_missing_contract_schema(table_key=resolved.view.table_key)
+            else:
+                _check_contract_metadata(
+                    contract_schema=contract_schema,
+                    table_key=resolved.view.table_key,
+                    schema_hash_value=schema_hash_value,
+                    schema_digest_value=schema_digest_value,
+                )
+                reader = align_reader_to_contract(
+                    reader,
+                    contract_schema,
+                    extras_policy=extras_policy_from_schema(contract_schema),
+                )
+            metadata = _build_ipc_metadata(
+                _IpcMetadataInput(
+                    pointer=resolved.pointer,
+                    table_key=resolved.view.table_key,
+                    view_id=resolved.view.id,
+                    query_hash=query_hash,
+                    schema_hash=schema_hash_value,
+                    schema_digest=schema_digest_value,
+                    engine=engine.name.lower(),
+                )
+            )
+            return _IpcExportPlan(
+                plan=plan,
+                reader=reader,
+                metadata=metadata,
+            )
+        except Exception:
+            plan.cleanup()
+            raise
 
     def explain(self, request: SemanticQueryRequest) -> SemanticExplainResponse:
         """Return compiled SQL and DuckDB EXPLAIN plan for a semantic query.
@@ -998,52 +1202,15 @@ class SemanticQueryKernel:
             Number of rows written.
         """
         with self.db.connect_export() as (warehouse, pointer):
-            snapshot_context = self._planner.snapshot_context(pointer)
-            resolved = self._planner.resolve_view_context(pointer=pointer, view_id=request.view_id)
-            inputs, effective_limit = self._planner.plan_inputs_for_export(
-                ctx=resolved, request=request
-            )
-            serving_query = self._planner.build_query(
-                ctx=resolved,
-                inputs=inputs,
-                limit=effective_limit,
-            )
-            engine_ctx = self._engine_context(
-                pointer=pointer,
-                context=snapshot_context,
+            export_plan = self._build_ipc_export_plan(
                 warehouse=warehouse,
+                pointer=pointer,
+                request=request,
+                cancel_check=cancel_check,
             )
-            engine = self._engine_registry.select(
-                preference=self.settings.query_engine,
-                query=serving_query,
-                ctx=engine_ctx,
-            )
-            plan = engine.compile(serving_query, ctx=engine_ctx)
             try:
                 _raise_if_cancelled(cancel_check)
-                reader = plan.to_reader(batch_size=self.settings.export_batch_size)
-                query_hash, schema_hash_value = self._fingerprint_semantic_plan(
-                    pointer=resolved.pointer,
-                    view_id=resolved.view.id,
-                    spec=serving_query.spec,
-                    inventory=resolved.inventory,
-                )
-                schema_digest_value = self._schema_digest_for_table_key(
-                    inventory=resolved.inventory,
-                    table_key=resolved.view.table_key,
-                )
-                metadata = _build_ipc_metadata(
-                    _IpcMetadataInput(
-                        pointer=resolved.pointer,
-                        table_key=resolved.view.table_key,
-                        view_id=resolved.view.id,
-                        query_hash=query_hash,
-                        schema_hash=schema_hash_value,
-                        schema_digest=schema_digest_value,
-                        engine=engine.name.lower(),
-                    )
-                )
-                schema = apply_ipc_metadata(reader.schema, metadata)
+                schema = apply_ipc_metadata(export_plan.reader.schema, export_plan.metadata)
                 write_options = _ipc_write_options(self.settings)
                 rows_written = 0
                 with (
@@ -1054,13 +1221,13 @@ class SemanticQueryKernel:
                         options=write_options,
                     ) as writer,
                 ):
-                    for batch in reader:
+                    for batch in export_plan.reader:
                         _raise_if_cancelled(cancel_check)
                         rows_written += batch.num_rows
                         writer.write_batch(batch)
                 return rows_written
             finally:
-                plan.cleanup()
+                export_plan.plan.cleanup()
 
 
 __all__ = ["SemanticQueryKernel"]

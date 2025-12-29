@@ -1,547 +1,643 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="263" time="80.611" timestamp="2025-12-28T15:26:17.501408-05:00" hostname="MacBookPro"><testcase classname="tests.serving.db.test_pointer" name="test_pointer_load_requires_published_at" time="25.689" /><testcase classname="tests.serving.http.test_export" name="test_export_with_filters" time="9.377" /><testcase classname="tests.serving.db.test_manager" name="test_manager_hot_swap_on_pointer_change[asyncio]" time="25.911" /><testcase classname="tests.serving.export.test_formats" name="test_export_format_capability_classification" time="0.001" /><testcase classname="tests.serving.http.test_export" name="test_export_respects_api_key" time="9.529" /><testcase classname="tests.serving.db.test_manager" name="test_manager_initial_load_and_connect[asyncio]" time="26.575" /><testcase classname="tests.serving.export.test_formats" name="test_default_export_format_is_registered" time="0.001" /><testcase classname="tests.serving.http.test_export_dispatch" name="test_http_export_dispatch_returns_row_count_for_parquet[asyncio]" time="0.010" /><testcase classname="tests.serving.http.test_mcp_mount" name="test_mcp_health_at_mcp_path" time="1.238" /><testcase classname="tests.serving.db.test_pointer" name="test_pointer_roundtrip" time="26.794" /><testcase classname="tests.serving.http.test_export" name="test_export_jsonl_content_disposition" time="9.681" /><testcase classname="tests.serving.http.test_mcp_mount" name="test_mcp_ready_at_mcp_path" time="1.166" /><testcase classname="tests.serving.db.test_pool" name="test_pool_acquire_release_cycle" time="28.218" /><testcase classname="tests.serving.http.test_export" name="test_export_with_order_by" time="9.384" /><testcase classname="tests.serving.db.test_manager" name="test_manager_export_pool_isolated_from_query_pool[asyncio]" time="28.780" /><testcase classname="tests.serving.http.test_export" name="test_export_jsonl_format" time="9.827" /><testcase classname="tests.serving.contracts.test_operation_contracts" name="test_operation_contracts_check_passes" time="28.963" /><testcase classname="tests.serving.export.test_formats" name="test_export_format_choices_are_supported_and_stable" time="0.001" /><testcase classname="tests.serving.http.test_metrics" name="test_log_query_metrics_rounds_duration" time="0.003" /><testcase classname="tests.serving.http.test_metrics" name="test_log_query_metrics_search_endpoint" time="0.002" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_catalog_codes_are_locked_in" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_catalog_has_25_codes" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_catalog_codes_match_keys" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_catalog_all_have_messages" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_catalog_all_have_error_codes" time="0.005" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_kind_has_expected_values" time="0.001" /><testcase classname="tests.serving.http.test_metrics" name="test_query_metrics_dataclass_is_frozen" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_info_model_validates" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_response_model_validates" time="0.002" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_from_code_returns_valid_response" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_from_code_with_params" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_from_code_with_context" time="0.002" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_from_code_with_extra_details" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_from_code_unknown_code_falls_back" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_from_code_retryable_preserved" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_exception_to_error_response_timeout" time="0.002" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_exception_to_error_response_keyerror_with_view_id" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_exception_to_error_response_generic_exception" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_exception_to_error_response_domain_exception" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_semantic_view_not_found_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_semantic_column_not_found_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_semantic_invalid_filter_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_semantic_limit_exceeded_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_export_expired_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_export_corrupt_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_serving_snapshot_not_mounted_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_serving_db_locked_error" time="0.002" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_auth_forbidden_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_domain_exception_to_error_response" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_template_renders_with_missing_params" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_template_renders_hint" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_error_response_json_serialization" time="0.002" /><testcase classname="tests.serving.db.test_pool" name="test_pool_close_gracefully_closes_available" time="29.179" /><testcase classname="tests.serving.mcp.test_meta_sql_resources" name="test_mcp_meta_views_sql_resources_round_trip[asyncio]" time="1.461" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_export_not_found_error" time="0.001" /><testcase classname="tests.serving.mcp.test_error_catalog" name="test_export_too_large_error" time="0.001" /><testcase classname="tests.serving.mcp.test_middleware_logging_smoke" name="test_mcp_middleware_logging_smoke[asyncio]" time="1.465" /><testcase classname="tests.serving.http.test_export" name="test_export_view_not_found" time="9.392" /><testcase classname="tests.serving.db.test_pool" name="test_pool_creates_configured_size" time="29.316" /><testcase classname="tests.serving.http.test_export" name="test_export_with_select_columns" time="9.676" /><testcase classname="tests.serving.db.test_manager" name="test_manager_same_path_no_swap_optimization[asyncio]" time="29.841" /><testcase classname="tests.serving.http.test_export" name="test_export_json_format" time="9.604" /><testcase classname="tests.serving.mcp.test_meta_sql_resources" name="test_mcp_meta_views_sql_rejects_unsafe_sql[asyncio]" time="1.178" /><testcase classname="tests.serving.mcp.test_prompts" name="test_register_prompts_adds_prompts" time="0.005" /><testcase classname="tests.serving.mcp.test_prompts" name="test_prompts_have_all_expected_names" time="0.005" /><testcase classname="tests.serving.mcp.test_prompts_advanced" name="test_mcp_list_prompts_includes_tags_and_version_meta[asyncio]" time="1.305" /><testcase classname="tests.serving.mcp.test_prompts" name="test_what_changed_between_snapshots_prompt_registered" time="0.028" /><testcase classname="tests.serving.mcp.test_resource_store_ttl" name="test_resource_store_cleanup_expired_deletes_artifacts" time="0.027" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_put_and_get_json" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_put_and_get_jsonl" time="0.005" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_jsonl_encoding_is_utf8" time="0.013" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_jsonl_stream_encoding_is_utf8" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_get_unknown_token" time="0.003" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_creates_directory" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_stored_artifact_is_frozen" time="0.003" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_put_with_metadata" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_get_meta" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_get_meta_not_found" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_get_preview" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_resource_store_get_preview_small_dataset" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_stored_metadata_is_frozen" time="0.001" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_semantic_export_returns_uri[asyncio]" time="1.241" /><testcase classname="tests.serving.mcp.test_prompts_advanced" name="test_mcp_get_prompt_wizard_query_view_uses_elicitation[asyncio]" time="1.148" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_semantic_export_with_filters[asyncio]" time="1.158" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_semantic_export_json_format[asyncio]" time="1.425" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_semantic_export_error_invalid_view[asyncio]" time="1.331" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_static_resources_available[asyncio]" time="1.141" /><testcase classname="tests.serving.http.test_export" name="test_export_invalid_filter_column" time="5.390" /><testcase classname="tests.serving.http.test_export" name="test_export_v1_route" time="5.423" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_read_semantic_views[asyncio]" time="1.185" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_read_meta_serving[asyncio]" time="1.204" /><testcase classname="tests.serving.http.test_mcp_mount" name="test_mcp_not_mounted_when_disabled" time="1.160" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_meta_environment[asyncio]" time="1.323" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_export_meta[asyncio]" time="1.604" /><testcase classname="tests.serving.http.test_metrics" name="test_query_metrics_default_engine" time="0.002" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_export_bytes_chunk_for_arrow[asyncio]" time="2.105" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_export_preview[asyncio]" time="2.045" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_export_lines_chunk[asyncio]" time="1.483" /><testcase classname="tests.serving.mcp.test_prompts" name="test_explore_codebase_prompt_registered" time="0.023" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_export_meta_row_count_for_parquet[asyncio]" time="1.426" /><testcase classname="tests.serving.mcp.test_response_models" name="test_snapshot_ref_forbids_extra_fields" time="0.002" /><testcase classname="tests.serving.http.test_metrics" name="test_log_query_metrics_logs_structured_data" time="0.003" /><testcase classname="tests.serving.mcp.test_response_models" name="test_resource_template_optional_fields" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_semantic_layer_info_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_semantic_layer_info_view_count_validation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_buildspec_info_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_query_limits_creation" time="0.002" /><testcase classname="tests.serving.mcp.test_response_models" name="test_query_limits_defaults" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_query_limits_validation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_snapshot_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_uris_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_uris_optional_fields" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_query_spec_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_query_spec_defaults" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_schema_summary_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_handle_response_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_handle_response_with_optional_fields" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_meta_response_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_meta_response_status_values[expired]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_meta_response_status_values[ready]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_meta_response_status_values[missing]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_meta_response_status_values[error]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_query_preview_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_query_preview_defaults" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_semantic_query_tool_response_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_semantic_query_tool_response_with_export" time="0.002" /><testcase classname="tests.serving.mcp.test_response_models" name="test_serving_meta_response_creation" time="0.002" /><testcase classname="tests.serving.mcp.test_response_models" name="test_serving_meta_response_with_all_fields" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_resource_templates_response_creation" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_default_resource_templates_count" time="0.003" /><testcase classname="tests.serving.mcp.test_response_models" name="test_resource_templates_response_with_templates" time="0.003" /><testcase classname="tests.serving.mcp.test_response_models" name="test_default_resource_templates_uris" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_default_resource_templates_structure" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_format_values[jsonl]" time="0.002" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_format_values[json]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_format_values[parquet]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_format_values[arrow]" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_serving_meta_response_json_round_trip" time="0.003" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_format_rejects_invalid" time="0.002" /><testcase classname="tests.serving.mcp.test_response_models" name="test_snapshot_ref_is_frozen" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_export_meta_response_json_round_trip" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_resource_template_is_frozen" time="0.001" /><testcase classname="tests.serving.mcp.test_response_models" name="test_query_limits_is_frozen" time="0.001" /><testcase classname="tests.serving.mcp.test_runtime" name="test_query_limiter_max_concurrent" time="0.001" /><testcase classname="tests.serving.mcp.test_runtime" name="test_query_limiter_run_sync_function[asyncio]" time="0.005" /><testcase classname="tests.serving.mcp.test_runtime" name="test_query_limiter_concurrency[asyncio]" time="0.118" /><testcase classname="tests.serving.mcp.test_runtime" name="test_query_limiter_run_async_function[asyncio]" time="0.016" /><testcase classname="tests.serving.mcp.test_runtime" name="test_query_limiter_higher_concurrency[asyncio]" time="0.048" /><testcase classname="tests.serving.mcp.test_sampling" name="test_mcp_sampling_opt_in_adds_summary[asyncio]" time="1.962" /><testcase classname="tests.serving.mcp.test_runtime" name="test_query_limiter_run_async_concurrency[asyncio]" time="0.119" /><testcase classname="tests.serving.mcp.test_server" name="test_create_mcp_server_creates_own_db_manager" time="0.159" /><testcase classname="tests.serving.mcp.test_prompts" name="test_wizard_export_data_prompt_registered" time="0.048" /><testcase classname="tests.serving.mcp.test_server" name="test_create_mcp_server_does_not_start_injected_db_manager" time="0.083" /><testcase classname="tests.serving.mcp.test_server" name="test_create_mcp_server_accepts_injected_db_manager" time="0.068" /><testcase classname="tests.serving.mcp.test_server" name="test_create_mcp_server_with_default_settings" time="0.110" /><testcase classname="tests.serving.mcp.test_sql_fingerprint" name="test_mcp_sql_fingerprint_is_stable_for_same_request[asyncio]" time="1.643" /><testcase classname="tests.serving.mcp.test_sql_fingerprint" name="test_mcp_sql_fingerprint_changes_when_limit_changes[asyncio]" time="1.633" /><testcase classname="tests.serving.mcp.test_prompts" name="test_wizard_query_view_prompt_registered" time="0.016" /><testcase classname="tests.serving.semantic.test_compiler_upgrade_gates" name="test_compiler_upgrade_gate_numeric_filter_sql_is_stable[asyncio]" time="5.735" /><testcase classname="tests.serving.mcp.test_response_models" name="test_snapshot_ref_json_round_trip" time="0.001" /><testcase classname="tests.serving.semantic.test_inventory" name="test_inventory_load_and_lookup" time="0.002" /><testcase classname="tests.serving.semantic.test_inventory" name="test_inventory_summary_counts_docs_views" time="0.002" /><testcase classname="tests.serving.semantic.test_ipc_stream" name="test_query_ipc_stream_includes_metadata_and_rows[asyncio]" time="1.041" /><testcase classname="tests.serving.mcp.test_response_models" name="test_snapshot_ref_creation" time="0.002" /><testcase classname="tests.serving.semantic.test_kernel" name="test_kernel_describe_includes_lineage[asyncio]" time="6.681" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_export_sql[asyncio]" time="1.477" /><testcase classname="tests.serving.mcp.test_response_models" name="test_resource_template_creation" time="0.001" /><testcase classname="tests.serving.semantic.test_pr87_allowed_columns_enforced" name="test_warn_mode_intersects_unknown_columns[asyncio]" time="11.103" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_export_tool_has_annotations[asyncio]" time="1.456" /><testcase classname="tests.serving.semantic.test_kernel" name="test_kernel_catalog_describe_query_meta[asyncio]" time="10.847" /><testcase classname="tests.serving.mcp.test_sampling" name="test_mcp_sampling_disabled_does_not_sample[asyncio]" time="1.573" /><testcase classname="tests.serving.mcp.test_tasks" name="test_mcp_export_task_mode_completes[asyncio]" time="2.273" /><testcase classname="tests.serving.mcp.test_resources" name="test_mcp_resource_meta_resources[asyncio]" time="1.514" /><testcase classname="tests.serving.mcp.test_tasks" name="test_mcp_export_task_cancellation_cleans_up_artifacts[asyncio]" time="2.453" /><testcase classname="tests.serving.semantic.test_pr87_allowed_columns_enforced" name="test_strict_mode_rejects_unknown_columns[asyncio]" time="5.662" /><testcase classname="tests.serving.semantic.test_query_builder" name="test_polars_query_builder_filters_orders_and_paginates" time="0.051" /><testcase classname="tests.serving.test_auth_enforcement" name="test_fails_without_auth_on_ipv6_any" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_fails_without_auth_on_empty_host" time="0.003" /><testcase classname="tests.serving.test_auth_enforcement" name="test_error_message_mentions_env_vars" time="0.003" /><testcase classname="tests.serving.test_auth_enforcement" name="test_error_message_mentions_api_key" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_error_message_mentions_disable_option" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_succeeds_with_auth_token_on_0000" time="0.003" /><testcase classname="tests.serving.test_auth_enforcement" name="test_succeeds_with_api_key_on_0000" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_succeeds_with_both_auth_methods" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_localhost_ipv4_no_auth_required" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_localhost_name_no_auth_required" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_localhost_ipv6_no_auth_required" time="0.002" /><testcase classname="tests.serving.test_auth_enforcement" name="test_disabled_allows_public_bind_without_auth" time="0.003" /><testcase classname="tests.serving.test_auth_enforcement" name="test_disabled_via_env_var" time="0.003" /><testcase classname="tests.serving.test_auth_enforcement" name="test_auth_required_for_remote_default_true" time="0.004" /><testcase classname="tests.serving.test_auth_enforcement" name="test_auth_required_for_remote_from_env" time="0.004" /><testcase classname="tests.serving.test_http_mcp_integration" name="test_fastapi_app_mounts_mcp" time="1.366" /><testcase classname="tests.serving.semantic.test_query_builder" name="test_polars_query_builder_validates_operators" time="0.003" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_disable_search_via_env" time="0.007" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_disable_explain_via_env" time="0.010" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_disable_meta_via_env" time="0.011" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_disable_export_via_env" time="0.004" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_disable_multiple_tools_via_env" time="0.006" /><testcase classname="tests.serving.semantic.test_registry" name="test_registry_unknown_view_raises" time="0.010" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_enable_all_explicitly_via_env" time="0.003" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_enable_search_explicitly_via_env" time="0.003" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_disable_all_optional_tools" time="0.005" /><testcase classname="tests.serving.test_mcp_metrics" name="test_query_metrics_dataclass" time="0.001" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_constructor_override" time="0.003" /><testcase classname="tests.serving.test_mcp_metrics" name="test_query_metrics_optional_engine" time="0.001" /><testcase classname="tests.serving.test_mcp_metrics" name="test_query_metrics_with_search_query" time="0.002" /><testcase classname="tests.serving.test_mcp_metrics" name="test_log_query_metrics_emits_info" time="0.001" /><testcase classname="tests.serving.test_mcp_metrics" name="test_log_query_metrics_extra_fields" time="0.001" /><testcase classname="tests.serving.test_mcp_metrics" name="test_metrics_endpoint_naming_mcp_semantic" time="0.001" /><testcase classname="tests.serving.test_mcp_metrics" name="test_metrics_correlation_id_fallback" time="0.001" /><testcase classname="tests.serving.test_mcp_metrics" name="test_metrics_truncated_flag" time="0.001" /><testcase classname="tests.serving.test_mcp_middleware_rate_limit" name="test_mcp_rate_limiting_applies_to_list_tools[asyncio]" time="1.371" /><testcase classname="tests.serving.test_problem_detail_adapter" name="test_problem_detail_adapter_matches_http_conversion" time="0.003" /><testcase classname="tests.serving.test_semantic_http_routes" name="test_semantic_route_invalid_filter_returns_400" time="1.301"><failure message="RuntimeError: Caught handled exception, but response already started.">+ Exception Group Traceback (most recent call last):
-  |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 79, in collapse_excgroups
-  |     yield
-  |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 270, in __call__
-  |     async with anyio.create_task_group() as task_group:
-  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
-  |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 783, in __aexit__
-  |     raise BaseExceptionGroup(
-  |         "unhandled errors in a TaskGroup", self._exceptions
-  |     ) from None
-  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
-  +-+---------------- 1 ----------------
-    | Traceback (most recent call last):
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
-    |     await app(scope, receive, sender)
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
-    |     await response(scope, receive, send)
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
-    |     with collapse_excgroups():
-    |          ~~~~~~~~~~~~~~~~~~^^
-    |   File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
-    |     self.gen.throw(value)
-    |     ~~~~~~~~~~~~~~^^^^^^^
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
-    |     raise exc
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
-    |     await func()
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
-    |     async for chunk in self.body_iterator:
-    |     ...&lt;2 lines&gt;...
-    |         await send({"type": "http.response.body", "body": chunk, "more_body": True})
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 55, in iterate_in_threadpool
-    |     yield await anyio.to_thread.run_sync(_next, as_iterator)
-    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 61, in run_sync
-    |     return await get_async_backend().run_sync_in_worker_thread(
-    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |         func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |     )
-    |     ^
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2525, in run_sync_in_worker_thread
-    |     return await future
-    |            ^^^^^^^^^^^^
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 986, in run
-    |     result = context.run(func, *args)
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 44, in _next
-    |     return next(iterator)
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/semantic/kernel.py", line 454, in _stream
-    |     inputs, effective_limit = self._planner.plan_inputs_for_query(
-    |                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-    |         ctx=resolved, request=request
-    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |     )
-    |     ^
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/semantic/planner.py", line 133, in plan_inputs_for_query
-    |     _validate_filters(filters=request.filters, allowed_columns=ctx.allowed_columns)
-    |     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    |   File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/semantic/planner.py", line 277, in _validate_filters
-    |     raise SemanticInvalidFilterError(reason=f"Unknown filter column: {filt.column}")
-    | codeintel.serving.errors.exceptions.SemanticInvalidFilterError
-    +------------------------------------
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="6" failures="0" skipped="0" tests="6" time="44.172" timestamp="2025-12-28T18:22:02.042015-05:00" hostname="MacBookPro"><testcase classname="tests.serving.semantic.test_routing" name="test_auto_preference_prefers_polars_for_tables" time="20.177"><error message="failed on setup with &quot;_duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported&quot;">fixturedef = &lt;FixtureDef argname='_session_schema_service' scope='session' baseid='tests'&gt;
+request = &lt;SubRequest '_session_schema_service' for &lt;Function test_auto_preference_prefers_polars_for_tables&gt;&gt;
 
-During handling of the above exception, another exception occurred:
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -&gt; object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+&gt;               return (yield)
+                        ^^^^^
 
-Traceback (most recent call last):
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
-    await app(scope, receive, sender)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 106, in app
-    await response(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 269, in __call__
-    with collapse_excgroups():
-         ~~~~~~~~~~~~~~~~~~^^
-  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
-    self.gen.throw(value)
-    ~~~~~~~~~~~~~~^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
-    raise exc
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 273, in wrap
-    await func()
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/responses.py", line 253, in stream_response
-    async for chunk in self.body_iterator:
-    ...&lt;2 lines&gt;...
-        await send({"type": "http.response.body", "body": chunk, "more_body": True})
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 55, in iterate_in_threadpool
-    yield await anyio.to_thread.run_sync(_next, as_iterator)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/to_thread.py", line 61, in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2525, in run_sync_in_worker_thread
-    return await future
-           ^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 986, in run
-    result = context.run(func, *args)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/concurrency.py", line 44, in _next
-    return next(iterator)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/semantic/kernel.py", line 454, in _stream
-    inputs, effective_limit = self._planner.plan_inputs_for_query(
-                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        ctx=resolved, request=request
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/semantic/planner.py", line 133, in plan_inputs_for_query
-    _validate_filters(filters=request.filters, allowed_columns=ctx.allowed_columns)
-    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/semantic/planner.py", line 277, in _validate_filters
-    raise SemanticInvalidFilterError(reason=f"Unknown filter column: {filt.column}")
-codeintel.serving.errors.exceptions.SemanticInvalidFilterError
-
-The above exception was the direct cause of the following exception:
-
-Traceback (most recent call last):
-  File "/Users/paulheyse/CodeIntel/CodeIntel/tests/serving/test_semantic_http_routes.py", line 53, in test_semantic_route_invalid_filter_returns_400
-    query = client.post(
-        "/v1/semantic/query",
-    ...&lt;5 lines&gt;...
-        },
-    )
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/testclient.py", line 546, in post
-    return super().post(
-           ~~~~~~~~~~~~^
-        url,
-        ^^^^
-    ...&lt;10 lines&gt;...
-        extensions=extensions,
-        ^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1144, in post
-    return self.request(
-           ~~~~~~~~~~~~^
-        "POST",
-        ^^^^^^^
-    ...&lt;11 lines&gt;...
-        extensions=extensions,
-        ^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/testclient.py", line 445, in request
-    return super().request(
-           ~~~~~~~~~~~~~~~^
-        method,
-        ^^^^^^^
-    ...&lt;11 lines&gt;...
-        extensions=extensions,
-        ^^^^^^^^^^^^^^^^^^^^^^
-    )
-    ^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/httpx/_client.py", line 825, in request
-    return self.send(request, auth=auth, follow_redirects=follow_redirects)
-           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/httpx/_client.py", line 914, in send
-    response = self._send_handling_auth(
-        request,
-    ...&lt;2 lines&gt;...
-        history=[],
-    )
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/httpx/_client.py", line 942, in _send_handling_auth
-    response = self._send_handling_redirects(
-        request,
-        follow_redirects=follow_redirects,
-        history=history,
-    )
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/httpx/_client.py", line 979, in _send_handling_redirects
-    response = self._send_single_request(request)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/httpx/_client.py", line 1014, in _send_single_request
-    response = transport.handle_request(request)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/testclient.py", line 348, in handle_request
-    raise exc
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/testclient.py", line 345, in handle_request
-    portal.call(self.app, scope, receive, send)
-    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/from_thread.py", line 326, in call
-    return cast(T_Retval, self.start_task_soon(func, *args).result())
-                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 456, in result
-    return self.__get_result()
-           ~~~~~~~~~~~~~~~~~^^
-  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
-    raise self._exception
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/anyio/from_thread.py", line 257, in _call_func
-    retval = await retval_or_awaitable
-             ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/fastapi/applications.py", line 1135, in __call__
-    await super().__call__(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/applications.py", line 107, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
-    raise exc
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/opentelemetry/instrumentation/asgi/__init__.py", line 810, in __call__
-    await self.app(scope, otel_receive, otel_send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
-    raise exc
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
-    await self.app(scope, receive, _send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/opentelemetry/instrumentation/fastapi/__init__.py", line 307, in __call__
-    await self.app(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 191, in __call__
-    with recv_stream, send_stream, collapse_excgroups():
-                                   ~~~~~~~~~~~~~~~~~~^^
-  File "/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 162, in __exit__
-    self.gen.throw(value)
-    ~~~~~~~~~~~~~~^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_utils.py", line 85, in collapse_excgroups
-    raise exc
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 193, in __call__
-    response = await self.dispatch_func(request, call_next)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/src/codeintel/serving/http/middleware.py", line 75, in correlation_id_and_timing_middleware
-    response = await call_next(request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 168, in call_next
-    raise app_exc from app_exc.__cause__ or app_exc.__context__
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/base.py", line 144, in coro
-    await self.app(scope, receive_or_disconnect, send_no_error)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 29, in __call__
-    await responder(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 130, in __call__
-    await super().__call__(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 46, in __call__
-    await self.app(scope, receive, self.send_with_compression)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
-    raise exc
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
-    await app(scope, receive, sender)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
-    await self.app(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/routing.py", line 716, in __call__
-    await self.middleware_stack(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/routing.py", line 736, in app
-    await route.handle(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/routing.py", line 290, in handle
-    await self.app(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/fastapi/routing.py", line 119, in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-  File "/Users/paulheyse/CodeIntel/CodeIntel/.venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 56, in wrapped_app
-    raise RuntimeError("Caught handled exception, but response already started.") from exc
-RuntimeError: Caught handled exception, but response already started.
-
-During handling of the above exception, another exception occurred:
-
-scope = {'app': &lt;fastapi.applications.FastAPI object at 0x12a02b110&gt;, 'client': ('testclient', 50000), 'endpoint': &lt;function query_view at 0x12969e660&gt;, 'extensions': {'http.response.debug': {}}, ...}
-receive = &lt;function BaseHTTPMiddleware.__call__.&lt;locals&gt;.call_next.&lt;locals&gt;.receive_or_disconnect at 0x12b116700&gt;
-send = &lt;function wrap_app_handling_exceptions.&lt;locals&gt;.wrapped_app.&lt;locals&gt;.sender at 0x12b116a20&gt;
-
-    async def wrapped_app(scope: Scope, receive: Receive, send: Send) -&gt; None:
-        response_started = False
-    
-        async def sender(message: Message) -&gt; None:
-            nonlocal response_started
-    
-            if message["type"] == "http.response.start":
-                response_started = True
-            await send(message)
-    
-        try:
-&gt;           await app(scope, receive, sender)
-
-.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:42: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-.venv/lib/python3.13/site-packages/fastapi/routing.py:106: in app
-    await response(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/responses.py:269: in __call__
-    with collapse_excgroups():
-         ^^^^^^^^^^^^^^^^^^^^
-/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:162: in __exit__
-    self.gen.throw(value)
-.venv/lib/python3.13/site-packages/starlette/_utils.py:85: in collapse_excgroups
-    raise exc
-.venv/lib/python3.13/site-packages/starlette/responses.py:273: in wrap
-    await func()
-.venv/lib/python3.13/site-packages/starlette/responses.py:253: in stream_response
-    async for chunk in self.body_iterator:
-.venv/lib/python3.13/site-packages/starlette/concurrency.py:55: in iterate_in_threadpool
-    yield await anyio.to_thread.run_sync(_next, as_iterator)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/anyio/to_thread.py:61: in run_sync
-    return await get_async_backend().run_sync_in_worker_thread(
-.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py:2525: in run_sync_in_worker_thread
-    return await future
-           ^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py:986: in run
-    result = context.run(func, *args)
-             ^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/starlette/concurrency.py:44: in _next
-    return next(iterator)
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/conftest.py:313: in _session_schema_service
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:267: in runtime_env
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/scenarios.py:251: in build
+    ctx.require(pack)
+tests/_helpers/context.py:328: in require
+    self._apply_pack(pack)
+tests/_helpers/context.py:345: in _apply_pack
+    pack.apply(self)
+tests/_helpers/seeds/core.py:108: in apply
+    self._seed_repo_map(ctx, now, selected_modules)
+tests/_helpers/seeds/core.py:136: in _seed_repo_map
+    insert_rows(
+tests/_helpers/builders/row_protocol.py:140: in insert_rows
+    result = materialize_table_from_rows(
+tests/_helpers/columnar_tables.py:85: in materialize_table_from_rows
+    return warehouse.materialize_table(table_key, table, options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:274: in materialize_table
+    return _materialize_with_writer(ctx, options=active, writer=_write)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:671: in _materialize_with_writer
+    rows_written = writer()
+                   ^^^^^^^^
+src/codeintel/storage/warehouse.py:260: in _write
+    return _write_tabular(
+src/codeintel/storage/warehouse.py:810: in _write_tabular
+    with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
            ^^^^^^^^^^^^^^
-src/codeintel/serving/semantic/kernel.py:454: in _stream
-    inputs, effective_limit = self._planner.plan_inputs_for_query(
-src/codeintel/serving/semantic/planner.py:133: in plan_inputs_for_query
-    _validate_filters(filters=request.filters, allowed_columns=ctx.allowed_columns)
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-    def _validate_filters(*, filters: list[FilterSpec], allowed_columns: list[str]) -&gt; None:
-        allowed = set(allowed_columns)
-        for filt in filters:
-            if filt.column not in allowed:
-&gt;               raise SemanticInvalidFilterError(reason=f"Unknown filter column: {filt.column}")
-E               codeintel.serving.errors.exceptions.SemanticInvalidFilterError
+con = &lt;_duckdb.DuckDBPyConnection object at 0x125179c70&gt;
+obj = pyarrow.Table
+repo: string
+commit: string
+modules: struct&lt;pkg.mod_a: string, pkg.mod_b: string, pkg.mod_c: string&gt;
+  c... string
+["pkg/mod_c.py"]]
+overlays: [
+  -- is_valid: all not null]
+generated_at: [["2025-12-28T23:22:31.607811+00:00"]]
 
-src/codeintel/serving/semantic/planner.py:277: SemanticInvalidFilterError
-
-The above exception was the direct cause of the following exception:
-
-tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-394/popen-gw8/test_semantic_route_invalid_fi0')
-
-    def test_semantic_route_invalid_filter_returns_400(tmp_path: Path) -&gt; None:
-        """Bad filters map to 400 rather than a server error."""
-        serve_dir = tmp_path / "serve"
-        snapshot = ServingSnapshotFactory(tmp_path, serve_dir=serve_dir).demo_snapshot()
-        harness = ServingAppHarness.from_snapshot(snapshot)
+    @contextmanager
+    def registered_temp_relation(
+        con: object,
+        obj: object,
+        *,
+        prefix: str = "ci_tmp_",
+    ) -&gt; Iterator[str]:
+        """Register an object on a DuckDB connection and unregister it on exit.
     
-        with harness.http_client(mount_mcp=False) as client:
-&gt;           query = client.post(
-                "/v1/semantic/query",
-                json={
-                    "view_id": "demo.view",
-                    "filters": [{"column": "nope", "op": "eq", "value": 1}],
-                    "limit": 10,
-                    "offset": 0,
-                },
-            )
-
-tests/serving/test_semantic_http_routes.py:53: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-.venv/lib/python3.13/site-packages/starlette/testclient.py:546: in post
-    return super().post(
-.venv/lib/python3.13/site-packages/httpx/_client.py:1144: in post
-    return self.request(
-.venv/lib/python3.13/site-packages/starlette/testclient.py:445: in request
-    return super().request(
-.venv/lib/python3.13/site-packages/httpx/_client.py:825: in request
-    return self.send(request, auth=auth, follow_redirects=follow_redirects)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/httpx/_client.py:914: in send
-    response = self._send_handling_auth(
-.venv/lib/python3.13/site-packages/httpx/_client.py:942: in _send_handling_auth
-    response = self._send_handling_redirects(
-.venv/lib/python3.13/site-packages/httpx/_client.py:979: in _send_handling_redirects
-    response = self._send_single_request(request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/httpx/_client.py:1014: in _send_single_request
-    response = transport.handle_request(request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/starlette/testclient.py:348: in handle_request
-    raise exc
-.venv/lib/python3.13/site-packages/starlette/testclient.py:345: in handle_request
-    portal.call(self.app, scope, receive, send)
-.venv/lib/python3.13/site-packages/anyio/from_thread.py:326: in call
-    return cast(T_Retval, self.start_task_soon(func, *args).result())
-                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py:456: in result
-    return self.__get_result()
-           ^^^^^^^^^^^^^^^^^^^
-/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py:401: in __get_result
-    raise self._exception
-.venv/lib/python3.13/site-packages/anyio/from_thread.py:257: in _call_func
-    retval = await retval_or_awaitable
-             ^^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/fastapi/applications.py:1135: in __call__
-    await super().__call__(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/applications.py:107: in __call__
-    await self.middleware_stack(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:186: in __call__
-    raise exc
-.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:164: in __call__
-    await self.app(scope, receive, _send)
-.venv/lib/python3.13/site-packages/opentelemetry/instrumentation/asgi/__init__.py:810: in __call__
-    await self.app(scope, otel_receive, otel_send)
-.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:186: in __call__
-    raise exc
-.venv/lib/python3.13/site-packages/starlette/middleware/errors.py:164: in __call__
-    await self.app(scope, receive, _send)
-.venv/lib/python3.13/site-packages/opentelemetry/instrumentation/fastapi/__init__.py:307: in __call__
-    await self.app(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/middleware/base.py:191: in __call__
-    with recv_stream, send_stream, collapse_excgroups():
-                                   ^^^^^^^^^^^^^^^^^^^^
-/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:162: in __exit__
-    self.gen.throw(value)
-.venv/lib/python3.13/site-packages/starlette/_utils.py:85: in collapse_excgroups
-    raise exc
-.venv/lib/python3.13/site-packages/starlette/middleware/base.py:193: in __call__
-    response = await self.dispatch_func(request, call_next)
-               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-src/codeintel/serving/http/middleware.py:75: in correlation_id_and_timing_middleware
-    response = await call_next(request)
-               ^^^^^^^^^^^^^^^^^^^^^^^^
-.venv/lib/python3.13/site-packages/starlette/middleware/base.py:168: in call_next
-    raise app_exc from app_exc.__cause__ or app_exc.__context__
-.venv/lib/python3.13/site-packages/starlette/middleware/base.py:144: in coro
-    await self.app(scope, receive_or_disconnect, send_no_error)
-.venv/lib/python3.13/site-packages/starlette/middleware/gzip.py:29: in __call__
-    await responder(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/middleware/gzip.py:130: in __call__
-    await super().__call__(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/middleware/gzip.py:46: in __call__
-    await self.app(scope, receive, self.send_with_compression)
-.venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py:63: in __call__
-    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:53: in wrapped_app
-    raise exc
-.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:42: in wrapped_app
-    await app(scope, receive, sender)
-.venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
-    await self.app(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/routing.py:716: in __call__
-    await self.middleware_stack(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/routing.py:736: in app
-    await route.handle(scope, receive, send)
-.venv/lib/python3.13/site-packages/starlette/routing.py:290: in handle
-    await self.app(scope, receive, send)
-.venv/lib/python3.13/site-packages/fastapi/routing.py:119: in app
-    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-scope = {'app': &lt;fastapi.applications.FastAPI object at 0x12a02b110&gt;, 'client': ('testclient', 50000), 'endpoint': &lt;function query_view at 0x12969e660&gt;, 'extensions': {'http.response.debug': {}}, ...}
-receive = &lt;function BaseHTTPMiddleware.__call__.&lt;locals&gt;.call_next.&lt;locals&gt;.receive_or_disconnect at 0x12b116700&gt;
-send = &lt;function wrap_app_handling_exceptions.&lt;locals&gt;.wrapped_app.&lt;locals&gt;.sender at 0x12b116a20&gt;
-
-    async def wrapped_app(scope: Scope, receive: Receive, send: Send) -&gt; None:
-        response_started = False
+        Parameters
+        ----------
+        con
+            DuckDB connection object exposing `register(name, obj)` and
+            `unregister(name)` methods.
+        obj
+            Object to register (e.g., Polars DataFrame, pyarrow Table).
+        prefix
+            Prefix used to generate a unique registered name.
     
-        async def sender(message: Message) -&gt; None:
-            nonlocal response_started
+        Yields
+        ------
+        str
+            Registered relation name.
     
-            if message["type"] == "http.response.start":
-                response_started = True
-            await send(message)
-    
-        try:
-            await app(scope, receive, sender)
-        except Exception as exc:
-            handler = None
-    
-            if isinstance(exc, HTTPException):
-                handler = status_handlers.get(exc.status_code)
-    
-            if handler is None:
-                handler = _lookup_exception_handler(exception_handlers, exc)
-    
-            if handler is None:
-                raise exc
-    
-            if response_started:
-&gt;               raise RuntimeError("Caught handled exception, but response already started.") from exc
-E               RuntimeError: Caught handled exception, but response already started.
-
-.venv/lib/python3.13/site-packages/starlette/_exception_handler.py:56: RuntimeError</failure></testcase><testcase classname="tests.serving.semantic.test_registry" name="test_registry_load_lookup_and_serialize" time="0.002" /><testcase classname="tests.serving.test_semantic_http_routes" name="test_semantic_routes_support_optional_api_key" time="1.274" /><testcase classname="tests.serving.test_artifact_goldens" name="test_semantic_registry_matches_golden" time="1.180" /><testcase classname="tests.serving.test_mcp_feature_flags" name="test_default_all_tools_enabled" time="0.002" /><testcase classname="tests.serving.test_semantic_mcp_tools" name="test_mcp_tool_error_handling[asyncio]" time="1.516" /><testcase classname="tests.serving.test_semantic_http_routes" name="test_semantic_routes_end_to_end" time="1.408"><failure message="UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte">tmp_path = PosixPath('/private/var/folders/70/h2nd1qjs1zngp8z6tt27_s9c0000gn/T/pytest-of-paulheyse/pytest-394/popen-gw4/test_semantic_routes_end_to_en0')
-
-    def test_semantic_routes_end_to_end(tmp_path: Path) -&gt; None:
-        """Serve semantic endpoints from a snapshot and query results."""
-        serve_dir = tmp_path / "serve"
-        snapshot = ServingSnapshotFactory(tmp_path, serve_dir=serve_dir).demo_snapshot()
-        harness = ServingAppHarness.from_snapshot(snapshot)
-    
-        with harness.http_client(mount_mcp=False) as client:
-            views = assert_http_success(client, "/v1/semantic/views")
-            expect_true(any(v["id"] == "demo.view" for v in views["views"]))
-    
-            desc = assert_http_success(client, "/v1/semantic/views/demo.view")
-            expect_equal(desc["table_key"], "docs.v_demo")
-    
-            query = client.post(
-                "/v1/semantic/query",
-                json={
-                    "view_id": "demo.view",
-                    "filters": [{"column": "id", "op": "gte", "value": 2}],
-                    "order_by": ["-id"],
-                    "limit": 10,
-                    "offset": 0,
-                },
-            )
-            expect_equal(query.status_code, status.HTTP_200_OK)
-&gt;           rows = query.json()["rows"]
-                   ^^^^^^^^^^^^
-
-tests/serving/test_semantic_http_routes.py:42: 
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-.venv/lib/python3.13/site-packages/httpx/_models.py:832: in json
-    return jsonlib.loads(self.content, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-
-s = b'\xff\xff\xff\xff\xf0\x01\x00\x00\x10\x00\x00\x00\x00\x00\n\x00\x0e\x00\x06\x00\x05\x00\x08\x00\n\x00\x00\x00\x00\x01...\x00\x00\x00\x0e\x00\x00\x00\x00\x00\x00\x00(\xb5/\xfd \x0eq\x00\x00label-3label-2\x00\xff\xff\xff\xff\x00\x00\x00\x00'
-cls = None, object_hook = None, parse_float = None
-parse_int = None, parse_constant = None
-object_pairs_hook = None, kw = {}
-
-    def loads(s, *, cls=None, object_hook=None, parse_float=None,
-            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
-        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
-        containing a JSON document) to a Python object.
-    
-        ``object_hook`` is an optional function that will be called with the
-        result of any object literal decode (a ``dict``). The return value of
-        ``object_hook`` will be used instead of the ``dict``. This feature
-        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
-    
-        ``object_pairs_hook`` is an optional function that will be called with
-        the result of any object literal decoded with an ordered list of pairs.
-        The return value of ``object_pairs_hook`` will be used instead of the
-        ``dict``.  This feature can be used to implement custom decoders.  If
-        ``object_hook`` is also defined, the ``object_pairs_hook`` takes
-        priority.
-    
-        ``parse_float``, if specified, will be called with the string
-        of every JSON float to be decoded. By default this is equivalent to
-        float(num_str). This can be used to use another datatype or parser
-        for JSON floats (e.g. decimal.Decimal).
-    
-        ``parse_int``, if specified, will be called with the string
-        of every JSON int to be decoded. By default this is equivalent to
-        int(num_str). This can be used to use another datatype or parser
-        for JSON integers (e.g. float).
-    
-        ``parse_constant``, if specified, will be called with one of the
-        following strings: -Infinity, Infinity, NaN.
-        This can be used to raise an exception if invalid JSON numbers
-        are encountered.
-    
-        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
-        kwarg; otherwise ``JSONDecoder`` is used.
+        Raises
+        ------
+        TypeError
+            If the connection does not support `register`/`unregister`.
         """
-        if isinstance(s, str):
-            if s.startswith('\ufeff'):
-                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
-                                      s, 0)
-        else:
-            if not isinstance(s, (bytes, bytearray)):
-                raise TypeError(f'the JSON object must be str, bytes or bytearray, '
-                                f'not {s.__class__.__name__}')
-&gt;           s = s.decode(detect_encoding(s), 'surrogatepass')
-                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-E           UnicodeDecodeError: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+        register = getattr(con, "register", None)
+        unregister = getattr(con, "unregister", None)
+        if not callable(register) or not callable(unregister):
+            msg = "DuckDB connection must support register(name, obj) and unregister(name)"
+            raise TypeError(msg)
+    
+        safe_prefix = prefix.strip() or "ci_tmp_"
+        name = f"{safe_prefix}{new_uuid_hex()}"
+&gt;       register(name, obj)
+E       _duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported
 
-/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py:347: UnicodeDecodeError</failure></testcase><testcase classname="tests.serving.test_semantic_mcp_tools" name="test_mcp_tools_catalog_describe_and_query[asyncio]" time="1.729" /><testcase classname="tests.serving.test_semantic_mcp_tools" name="test_mcp_tool_annotations_present[asyncio]" time="1.289" /><testcase classname="tests.serving.test_semantic_http_routes" name="test_semantic_routes_support_correlation_id" time="1.216" /><testcase classname="tests.serving.test_semantic_mcp_tools" name="test_mcp_typed_response_structure[asyncio]" time="1.634" /><testcase classname="tests.serving.semantic.test_compiler_upgrade_gates" name="test_compiler_upgrade_gate_string_contains_sql_is_stable[asyncio]" time="4.721" /><testcase classname="tests.serving.test_semantic_mcp_tools" name="test_mcp_query_response_has_result_data[asyncio]" time="1.579" /><testcase classname="tests.serving.test_serving_meta_tooling_mismatch_warnings" name="test_serving_meta_includes_tool_version_mismatch_warning[asyncio]" time="1.583" /><testcase classname="tests.serving.test_semantic_registry_compiles_from_driver_tags" name="test_compile_semantic_registry_from_driver_tags" time="0.003" /><testcase classname="tests.serving.test_streaming_ndjson" name="test_ndjson_stream_utf8_and_stringifies_types" time="0.001" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_workers_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_loop_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_http_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_limit_concurrency_default" time="0.001" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_limit_max_requests_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_timeout_keep_alive_default" time="0.002" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_backlog_default" time="0.004" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_access_log_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_server_header_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_proxy_headers_default" time="0.004" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_forwarded_allow_ips_default" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_workers_from_env" time="0.006" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_loop_from_env" time="0.005" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_http_from_env" time="0.005" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_limit_concurrency_from_env" time="0.004" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_limit_concurrency_empty_is_none" time="0.004" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_limit_max_requests_from_env" time="0.005" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_timeout_keep_alive_from_env" time="0.004" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_backlog_from_env" time="0.005" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_access_log_disabled_from_env" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_server_header_enabled_from_env" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_proxy_headers_enabled_from_env" time="0.008" /><testcase classname="tests.serving.test_uvicorn_config" name="test_uvicorn_forwarded_allow_ips_from_env" time="0.003" /><testcase classname="tests.serving.test_uvicorn_config" name="test_production_config_with_workers" time="0.002" /><testcase classname="tests.serving.test_uvicorn_config" name="test_production_config_with_limits" time="0.009" /><testcase classname="tests.serving.test_semantic_mcp_tools" name="test_mcp_serving_meta_typed_response[asyncio]" time="1.619" /><testcase classname="tests.serving.semantic.test_kernel" name="test_kernel_export_rows_close_releases_export_pool[asyncio]" time="4.367" /><testcase classname="tests.serving.test_settings" name="test_settings_defaults" time="0.011" /><testcase classname="tests.serving.test_settings_mcp_worker_guardrails" name="test_create_serving_app_rejects_multi_worker_when_mcp_mounted" time="0.009" /><testcase classname="tests.serving.test_auth_enforcement" name="test_fails_without_auth_on_0000" time="0.006" /><testcase classname="tests.serving.test_settings_mcp_worker_guardrails" name="test_create_serving_app_allows_multi_worker_when_mcp_not_mounted" time="0.044" /><testcase classname="tests.serving.test_settings" name="test_settings_overrides" time="0.009" /><testcase classname="tests.serving.semantic.test_pr88_polars_execution_path" name="test_polars_execution_path_matches_expected_rows[asyncio]" time="3.362" /><testcase classname="tests.serving.semantic.test_query_builder" name="test_polars_query_builder_rejects_unknown_column" time="0.013" /></testsuite></testsuites>
+src/codeintel/storage/staging.py:56: InvalidInputException</error></testcase><testcase classname="tests.serving.semantic.test_routing" name="test_ast_supports_polars_simple_select" time="20.217"><error message="failed on setup with &quot;_duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported&quot;">fixturedef = &lt;FixtureDef argname='_session_schema_service' scope='session' baseid='tests'&gt;
+request = &lt;SubRequest '_session_schema_service' for &lt;Function test_ast_supports_polars_simple_select&gt;&gt;
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -&gt; object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+&gt;               return (yield)
+                        ^^^^^
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/conftest.py:313: in _session_schema_service
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:267: in runtime_env
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/scenarios.py:251: in build
+    ctx.require(pack)
+tests/_helpers/context.py:328: in require
+    self._apply_pack(pack)
+tests/_helpers/context.py:345: in _apply_pack
+    pack.apply(self)
+tests/_helpers/seeds/core.py:108: in apply
+    self._seed_repo_map(ctx, now, selected_modules)
+tests/_helpers/seeds/core.py:136: in _seed_repo_map
+    insert_rows(
+tests/_helpers/builders/row_protocol.py:140: in insert_rows
+    result = materialize_table_from_rows(
+tests/_helpers/columnar_tables.py:85: in materialize_table_from_rows
+    return warehouse.materialize_table(table_key, table, options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:274: in materialize_table
+    return _materialize_with_writer(ctx, options=active, writer=_write)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:671: in _materialize_with_writer
+    rows_written = writer()
+                   ^^^^^^^^
+src/codeintel/storage/warehouse.py:260: in _write
+    return _write_tabular(
+src/codeintel/storage/warehouse.py:810: in _write_tabular
+    with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = &lt;_duckdb.DuckDBPyConnection object at 0x12a426330&gt;
+obj = pyarrow.Table
+repo: string
+commit: string
+modules: struct&lt;pkg.mod_a: string, pkg.mod_b: string, pkg.mod_c: string&gt;
+  c... string
+["pkg/mod_c.py"]]
+overlays: [
+  -- is_valid: all not null]
+generated_at: [["2025-12-28T23:22:31.647819+00:00"]]
+
+    @contextmanager
+    def registered_temp_relation(
+        con: object,
+        obj: object,
+        *,
+        prefix: str = "ci_tmp_",
+    ) -&gt; Iterator[str]:
+        """Register an object on a DuckDB connection and unregister it on exit.
+    
+        Parameters
+        ----------
+        con
+            DuckDB connection object exposing `register(name, obj)` and
+            `unregister(name)` methods.
+        obj
+            Object to register (e.g., Polars DataFrame, pyarrow Table).
+        prefix
+            Prefix used to generate a unique registered name.
+    
+        Yields
+        ------
+        str
+            Registered relation name.
+    
+        Raises
+        ------
+        TypeError
+            If the connection does not support `register`/`unregister`.
+        """
+        register = getattr(con, "register", None)
+        unregister = getattr(con, "unregister", None)
+        if not callable(register) or not callable(unregister):
+            msg = "DuckDB connection must support register(name, obj) and unregister(name)"
+            raise TypeError(msg)
+    
+        safe_prefix = prefix.strip() or "ci_tmp_"
+        name = f"{safe_prefix}{new_uuid_hex()}"
+&gt;       register(name, obj)
+E       _duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported
+
+src/codeintel/storage/staging.py:56: InvalidInputException</error></testcase><testcase classname="tests.serving.semantic.test_routing" name="test_ast_supports_polars_rejects_join" time="20.232"><error message="failed on setup with &quot;_duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported&quot;">fixturedef = &lt;FixtureDef argname='_session_schema_service' scope='session' baseid='tests'&gt;
+request = &lt;SubRequest '_session_schema_service' for &lt;Function test_ast_supports_polars_rejects_join&gt;&gt;
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -&gt; object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+&gt;               return (yield)
+                        ^^^^^
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/conftest.py:313: in _session_schema_service
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:267: in runtime_env
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/scenarios.py:251: in build
+    ctx.require(pack)
+tests/_helpers/context.py:328: in require
+    self._apply_pack(pack)
+tests/_helpers/context.py:345: in _apply_pack
+    pack.apply(self)
+tests/_helpers/seeds/core.py:108: in apply
+    self._seed_repo_map(ctx, now, selected_modules)
+tests/_helpers/seeds/core.py:136: in _seed_repo_map
+    insert_rows(
+tests/_helpers/builders/row_protocol.py:140: in insert_rows
+    result = materialize_table_from_rows(
+tests/_helpers/columnar_tables.py:85: in materialize_table_from_rows
+    return warehouse.materialize_table(table_key, table, options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:274: in materialize_table
+    return _materialize_with_writer(ctx, options=active, writer=_write)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:671: in _materialize_with_writer
+    rows_written = writer()
+                   ^^^^^^^^
+src/codeintel/storage/warehouse.py:260: in _write
+    return _write_tabular(
+src/codeintel/storage/warehouse.py:810: in _write_tabular
+    with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = &lt;_duckdb.DuckDBPyConnection object at 0x12b589ef0&gt;
+obj = pyarrow.Table
+repo: string
+commit: string
+modules: struct&lt;pkg.mod_a: string, pkg.mod_b: string, pkg.mod_c: string&gt;
+  c... string
+["pkg/mod_c.py"]]
+overlays: [
+  -- is_valid: all not null]
+generated_at: [["2025-12-28T23:22:31.663362+00:00"]]
+
+    @contextmanager
+    def registered_temp_relation(
+        con: object,
+        obj: object,
+        *,
+        prefix: str = "ci_tmp_",
+    ) -&gt; Iterator[str]:
+        """Register an object on a DuckDB connection and unregister it on exit.
+    
+        Parameters
+        ----------
+        con
+            DuckDB connection object exposing `register(name, obj)` and
+            `unregister(name)` methods.
+        obj
+            Object to register (e.g., Polars DataFrame, pyarrow Table).
+        prefix
+            Prefix used to generate a unique registered name.
+    
+        Yields
+        ------
+        str
+            Registered relation name.
+    
+        Raises
+        ------
+        TypeError
+            If the connection does not support `register`/`unregister`.
+        """
+        register = getattr(con, "register", None)
+        unregister = getattr(con, "unregister", None)
+        if not callable(register) or not callable(unregister):
+            msg = "DuckDB connection must support register(name, obj) and unregister(name)"
+            raise TypeError(msg)
+    
+        safe_prefix = prefix.strip() or "ci_tmp_"
+        name = f"{safe_prefix}{new_uuid_hex()}"
+&gt;       register(name, obj)
+E       _duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported
+
+src/codeintel/storage/staging.py:56: InvalidInputException</error></testcase><testcase classname="tests.serving.semantic.test_ipc_stream" name="test_query_ipc_stream_includes_metadata_and_rows[asyncio]" time="20.237"><error message="failed on setup with &quot;_duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported&quot;">self = &lt;Coroutine test_query_ipc_stream_includes_metadata_and_rows[asyncio]&gt;
+
+    def setup(self) -&gt; None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+&gt;       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:458: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:313: in _session_schema_service
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:267: in runtime_env
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/scenarios.py:251: in build
+    ctx.require(pack)
+tests/_helpers/context.py:328: in require
+    self._apply_pack(pack)
+tests/_helpers/context.py:345: in _apply_pack
+    pack.apply(self)
+tests/_helpers/seeds/core.py:108: in apply
+    self._seed_repo_map(ctx, now, selected_modules)
+tests/_helpers/seeds/core.py:136: in _seed_repo_map
+    insert_rows(
+tests/_helpers/builders/row_protocol.py:140: in insert_rows
+    result = materialize_table_from_rows(
+tests/_helpers/columnar_tables.py:85: in materialize_table_from_rows
+    return warehouse.materialize_table(table_key, table, options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:274: in materialize_table
+    return _materialize_with_writer(ctx, options=active, writer=_write)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:671: in _materialize_with_writer
+    rows_written = writer()
+                   ^^^^^^^^
+src/codeintel/storage/warehouse.py:260: in _write
+    return _write_tabular(
+src/codeintel/storage/warehouse.py:810: in _write_tabular
+    with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = &lt;_duckdb.DuckDBPyConnection object at 0x12b72de30&gt;
+obj = pyarrow.Table
+repo: string
+commit: string
+modules: struct&lt;pkg.mod_a: string, pkg.mod_b: string, pkg.mod_c: string&gt;
+  c... string
+["pkg/mod_c.py"]]
+overlays: [
+  -- is_valid: all not null]
+generated_at: [["2025-12-28T23:22:31.667250+00:00"]]
+
+    @contextmanager
+    def registered_temp_relation(
+        con: object,
+        obj: object,
+        *,
+        prefix: str = "ci_tmp_",
+    ) -&gt; Iterator[str]:
+        """Register an object on a DuckDB connection and unregister it on exit.
+    
+        Parameters
+        ----------
+        con
+            DuckDB connection object exposing `register(name, obj)` and
+            `unregister(name)` methods.
+        obj
+            Object to register (e.g., Polars DataFrame, pyarrow Table).
+        prefix
+            Prefix used to generate a unique registered name.
+    
+        Yields
+        ------
+        str
+            Registered relation name.
+    
+        Raises
+        ------
+        TypeError
+            If the connection does not support `register`/`unregister`.
+        """
+        register = getattr(con, "register", None)
+        unregister = getattr(con, "unregister", None)
+        if not callable(register) or not callable(unregister):
+            msg = "DuckDB connection must support register(name, obj) and unregister(name)"
+            raise TypeError(msg)
+    
+        safe_prefix = prefix.strip() or "ci_tmp_"
+        name = f"{safe_prefix}{new_uuid_hex()}"
+&gt;       register(name, obj)
+E       _duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported
+
+src/codeintel/storage/staging.py:56: InvalidInputException</error></testcase><testcase classname="tests.serving.semantic.test_scan_metrics" name="test_query_scan_metrics_from_manifest[asyncio]" time="20.260"><error message="failed on setup with &quot;_duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported&quot;">self = &lt;Coroutine test_query_scan_metrics_from_manifest[asyncio]&gt;
+
+    def setup(self) -&gt; None:
+        runner_fixture_id = f"_{self._loop_scope}_scoped_runner"
+        if runner_fixture_id not in self.fixturenames:
+            self.fixturenames.append(runner_fixture_id)
+&gt;       return super().setup()
+               ^^^^^^^^^^^^^^^
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:458: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:313: in _session_schema_service
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:267: in runtime_env
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/scenarios.py:251: in build
+    ctx.require(pack)
+tests/_helpers/context.py:328: in require
+    self._apply_pack(pack)
+tests/_helpers/context.py:345: in _apply_pack
+    pack.apply(self)
+tests/_helpers/seeds/core.py:108: in apply
+    self._seed_repo_map(ctx, now, selected_modules)
+tests/_helpers/seeds/core.py:136: in _seed_repo_map
+    insert_rows(
+tests/_helpers/builders/row_protocol.py:140: in insert_rows
+    result = materialize_table_from_rows(
+tests/_helpers/columnar_tables.py:85: in materialize_table_from_rows
+    return warehouse.materialize_table(table_key, table, options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:274: in materialize_table
+    return _materialize_with_writer(ctx, options=active, writer=_write)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:671: in _materialize_with_writer
+    rows_written = writer()
+                   ^^^^^^^^
+src/codeintel/storage/warehouse.py:260: in _write
+    return _write_tabular(
+src/codeintel/storage/warehouse.py:810: in _write_tabular
+    with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = &lt;_duckdb.DuckDBPyConnection object at 0x12c08dc30&gt;
+obj = pyarrow.Table
+repo: string
+commit: string
+modules: struct&lt;pkg.mod_a: string, pkg.mod_b: string, pkg.mod_c: string&gt;
+  c... string
+["pkg/mod_c.py"]]
+overlays: [
+  -- is_valid: all not null]
+generated_at: [["2025-12-28T23:22:31.690791+00:00"]]
+
+    @contextmanager
+    def registered_temp_relation(
+        con: object,
+        obj: object,
+        *,
+        prefix: str = "ci_tmp_",
+    ) -&gt; Iterator[str]:
+        """Register an object on a DuckDB connection and unregister it on exit.
+    
+        Parameters
+        ----------
+        con
+            DuckDB connection object exposing `register(name, obj)` and
+            `unregister(name)` methods.
+        obj
+            Object to register (e.g., Polars DataFrame, pyarrow Table).
+        prefix
+            Prefix used to generate a unique registered name.
+    
+        Yields
+        ------
+        str
+            Registered relation name.
+    
+        Raises
+        ------
+        TypeError
+            If the connection does not support `register`/`unregister`.
+        """
+        register = getattr(con, "register", None)
+        unregister = getattr(con, "unregister", None)
+        if not callable(register) or not callable(unregister):
+            msg = "DuckDB connection must support register(name, obj) and unregister(name)"
+            raise TypeError(msg)
+    
+        safe_prefix = prefix.strip() or "ci_tmp_"
+        name = f"{safe_prefix}{new_uuid_hex()}"
+&gt;       register(name, obj)
+E       _duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported
+
+src/codeintel/storage/staging.py:56: InvalidInputException</error></testcase><testcase classname="tests.serving.semantic.test_routing" name="test_auto_preference_prefers_duckdb_for_unregistered_views" time="20.312"><error message="failed on setup with &quot;_duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported&quot;">fixturedef = &lt;FixtureDef argname='_session_schema_service' scope='session' baseid='tests'&gt;
+request = &lt;SubRequest '_session_schema_service' for &lt;Function test_auto_preference_prefers_duckdb_for_unregistered_views&gt;&gt;
+
+    @pytest.hookimpl(wrapper=True)
+    def pytest_fixture_setup(fixturedef: FixtureDef, request) -&gt; object | None:
+        asyncio_mode = _get_asyncio_mode(request.config)
+        if not _is_asyncio_fixture_function(fixturedef.func):
+            if asyncio_mode == Mode.STRICT:
+                # Ignore async fixtures without explicit asyncio mark in strict mode
+                # This applies to pytest_trio fixtures, for example
+                return (yield)
+            if not _is_coroutine_or_asyncgen(fixturedef.func):
+&gt;               return (yield)
+                        ^^^^^
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/conftest.py:313: in _session_schema_service
+    runtime: RuntimeBundle = request.getfixturevalue("hamilton_runtime")
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:730: in pytest_fixture_setup
+    return (yield)
+            ^^^^^
+tests/conftest.py:267: in runtime_env
+    ctx = TestScenario.minimal().build(tmp_path_factory.mktemp("hamilton-runtime"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/_helpers/scenarios.py:251: in build
+    ctx.require(pack)
+tests/_helpers/context.py:328: in require
+    self._apply_pack(pack)
+tests/_helpers/context.py:345: in _apply_pack
+    pack.apply(self)
+tests/_helpers/seeds/core.py:108: in apply
+    self._seed_repo_map(ctx, now, selected_modules)
+tests/_helpers/seeds/core.py:136: in _seed_repo_map
+    insert_rows(
+tests/_helpers/builders/row_protocol.py:140: in insert_rows
+    result = materialize_table_from_rows(
+tests/_helpers/columnar_tables.py:85: in materialize_table_from_rows
+    return warehouse.materialize_table(table_key, table, options=options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:274: in materialize_table
+    return _materialize_with_writer(ctx, options=active, writer=_write)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/codeintel/storage/warehouse.py:671: in _materialize_with_writer
+    rows_written = writer()
+                   ^^^^^^^^
+src/codeintel/storage/warehouse.py:260: in _write
+    return _write_tabular(
+src/codeintel/storage/warehouse.py:810: in _write_tabular
+    with registered_temp_relation(gateway.con, relation, prefix="ci_tab_") as name:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.11/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py:141: in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+con = &lt;_duckdb.DuckDBPyConnection object at 0x12beca270&gt;
+obj = pyarrow.Table
+repo: string
+commit: string
+modules: struct&lt;pkg.mod_a: string, pkg.mod_b: string, pkg.mod_c: string&gt;
+  c... string
+["pkg/mod_c.py"]]
+overlays: [
+  -- is_valid: all not null]
+generated_at: [["2025-12-28T23:22:31.741341+00:00"]]
+
+    @contextmanager
+    def registered_temp_relation(
+        con: object,
+        obj: object,
+        *,
+        prefix: str = "ci_tmp_",
+    ) -&gt; Iterator[str]:
+        """Register an object on a DuckDB connection and unregister it on exit.
+    
+        Parameters
+        ----------
+        con
+            DuckDB connection object exposing `register(name, obj)` and
+            `unregister(name)` methods.
+        obj
+            Object to register (e.g., Polars DataFrame, pyarrow Table).
+        prefix
+            Prefix used to generate a unique registered name.
+    
+        Yields
+        ------
+        str
+            Registered relation name.
+    
+        Raises
+        ------
+        TypeError
+            If the connection does not support `register`/`unregister`.
+        """
+        register = getattr(con, "register", None)
+        unregister = getattr(con, "unregister", None)
+        if not callable(register) or not callable(unregister):
+            msg = "DuckDB connection must support register(name, obj) and unregister(name)"
+            raise TypeError(msg)
+    
+        safe_prefix = prefix.strip() or "ci_tmp_"
+        name = f"{safe_prefix}{new_uuid_hex()}"
+&gt;       register(name, obj)
+E       _duckdb.InvalidInputException: Invalid Input Error: Attempted to convert a STRUCT with no fields to DuckDB which is not supported
+
+src/codeintel/storage/staging.py:56: InvalidInputException</error></testcase></testsuite></testsuites>

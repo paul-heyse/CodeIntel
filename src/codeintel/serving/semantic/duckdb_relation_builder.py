@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import duckdb
+import pyarrow as pa
 import pyarrow.dataset as ds
 
 from codeintel.serving.semantic.datasets import (
@@ -29,6 +30,8 @@ from codeintel.storage.helpers.json import normalize_duckdb_json_value
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
+
+    from duckdb.typing import DuckDBPyType
 
     from codeintel.core.schemas.primitives import ColumnType
     from codeintel.serving.semantic.datasets import DatasetManifestEntry, DatasetManifestIndex
@@ -57,6 +60,7 @@ def build_relation_plan(
     dataset_manifests: DatasetManifestIndex,
     scan_options: RelationScanOptions,
     column_types: Mapping[str, ColumnType] | None = None,
+    contract_schema: pa.Schema | None = None,
 ) -> DuckDBRelation:
     """Build a DuckDB relation plan for a semantic query spec.
 
@@ -75,6 +79,7 @@ def build_relation_plan(
         manifests=dataset_manifests,
         scan_options=scan_options,
         filter_expression=filter_expression,
+        contract_schema=contract_schema,
     )
     return apply_query_spec(
         relation,
@@ -129,6 +134,7 @@ def _resolve_relation(
     manifests: DatasetManifestIndex,
     scan_options: RelationScanOptions,
     filter_expression: ds.Expression | None,
+    contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
     entry = manifests.get(table_key)
     if entry is not None:
@@ -137,6 +143,7 @@ def _resolve_relation(
             entry=entry,
             scan_options=scan_options,
             filter_expression=filter_expression,
+            contract_schema=contract_schema,
         )
     try:
         return con.table(table_key)
@@ -151,6 +158,7 @@ def _scan_dataset(
     entry: DatasetManifestEntry,
     scan_options: RelationScanOptions,
     filter_expression: ds.Expression | None,
+    contract_schema: pa.Schema | None,
 ) -> DuckDBRelation:
     dataset = dataset_for_entry(entry)
     scanner = dataset_scanner_for_entry(
@@ -159,6 +167,7 @@ def _scan_dataset(
         fragment_readahead=scan_options.fragment_readahead,
         filter_expression=filter_expression,
         metrics_enabled=scan_options.metrics_enabled,
+        schema=contract_schema,
     )
     try:
         return con.from_arrow(scanner)
@@ -251,22 +260,24 @@ _STRING_OPS = frozenset({"contains", "startswith"})
 _DECIMAL_38_0 = "DECIMAL(38,0)"
 
 
-def _duckdb_type_for_column(column_type: ColumnType | None) -> object | None:
+def _duckdb_type_for_column(column_type: ColumnType | None) -> DuckDBPyType | None:
     if column_type is None:
         return None
     normalized = str(column_type).upper()
     if normalized == _DECIMAL_38_0:
-        return duckdb.decimal_type(38, 0)
+        return duckdb.sqltype(_DECIMAL_38_0)
     if normalized == "DECIMAL":
         return duckdb.sqltype("DECIMAL")
-    type_map: dict[str, object] = {
-        "BOOLEAN": duckdb.sqltypes.BOOLEAN,
-        "INTEGER": duckdb.sqltypes.INTEGER,
-        "BIGINT": duckdb.sqltypes.BIGINT,
-        "DOUBLE": duckdb.sqltypes.DOUBLE,
-        "VARCHAR": duckdb.sqltypes.VARCHAR,
-        "TIMESTAMP": duckdb.sqltypes.TIMESTAMP,
-        "TIMESTAMPTZ": duckdb.sqltypes.TIMESTAMP_TZ,
+    if normalized.startswith(("STRUCT", "MAP", "LIST")):
+        return duckdb.sqltype(normalized)
+    type_map: dict[str, DuckDBPyType] = {
+        "BOOLEAN": duckdb.sqltype("BOOLEAN"),
+        "INTEGER": duckdb.sqltype("INTEGER"),
+        "BIGINT": duckdb.sqltype("BIGINT"),
+        "DOUBLE": duckdb.sqltype("DOUBLE"),
+        "VARCHAR": duckdb.sqltype("VARCHAR"),
+        "TIMESTAMP": duckdb.sqltype("TIMESTAMP"),
+        "TIMESTAMPTZ": duckdb.sqltype("TIMESTAMPTZ"),
         "JSON": duckdb.sqltype("JSON"),
     }
     return type_map.get(normalized)

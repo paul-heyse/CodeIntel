@@ -8,10 +8,17 @@ import polars as pl
 import pyarrow as pa
 import pytest
 
+from codeintel.core.schemas.arrow_gen import (
+    ARROW_SCHEMA_CONTRACT_VERSION,
+    DEFAULT_EXTRAS_COLUMN,
+    DEFAULT_EXTRAS_POLICY,
+    arrow_contract_for_table_schema,
+)
 from codeintel.core.schemas.arrow_polars import (
     table_schema_from_arrow_schema,
     table_schema_from_polars_dataframe,
 )
+from codeintel.core.schemas.primitives import Column, TableSchema
 
 
 def _encode_metadata(metadata: dict[str, object]) -> dict[bytes, bytes]:
@@ -23,6 +30,20 @@ def _encode_metadata(metadata: dict[str, object]) -> dict[bytes, bytes]:
             raw = json.dumps(value, sort_keys=True, separators=(",", ":"))
         encoded[key.encode("utf-8")] = raw.encode("utf-8")
     return encoded
+
+
+def _decode_metadata(metadata: dict[bytes, bytes] | None) -> dict[str, object]:
+    if not metadata:
+        return {}
+    decoded: dict[str, object] = {}
+    for key, raw in metadata.items():
+        key_str = key.decode("utf-8")
+        raw_str = raw.decode("utf-8")
+        try:
+            decoded[key_str] = json.loads(raw_str)
+        except json.JSONDecodeError:
+            decoded[key_str] = raw_str
+    return decoded
 
 
 def test_arrow_schema_maps_types_and_nullability() -> None:
@@ -148,3 +169,33 @@ def test_polars_dataframe_schema_conversion() -> None:
     actual = [(col.name, col.type) for col in table_schema.columns]
     if actual != expected:
         pytest.fail(f"Unexpected Polars schema mapping: {actual}")
+
+
+def test_arrow_contract_roundtrip_preserves_table_schema() -> None:
+    """Arrow contracts should round-trip back into the original TableSchema."""
+    table_schema = TableSchema(
+        schema="analytics",
+        name="arrow_contract_roundtrip",
+        columns=[
+            Column("id", "BIGINT", nullable=False),
+            Column("name", "VARCHAR", nullable=True),
+            Column("score", "DOUBLE", nullable=True),
+        ],
+        primary_key=("id",),
+        description="Arrow contract roundtrip test",
+    )
+
+    contract_schema = arrow_contract_for_table_schema(table_schema=table_schema)
+    roundtrip = table_schema_from_arrow_schema(arrow_schema=contract_schema)
+    if roundtrip.to_json_obj() != table_schema.to_json_obj():
+        pytest.fail("Arrow contract roundtrip did not preserve TableSchema")
+
+    metadata = _decode_metadata(contract_schema.metadata)
+    if metadata.get("codeintel.schema_contract_version") != ARROW_SCHEMA_CONTRACT_VERSION:
+        pytest.fail("Arrow contract schema_contract_version metadata mismatch")
+    if metadata.get("codeintel.extras_policy") != DEFAULT_EXTRAS_POLICY:
+        pytest.fail("Arrow contract extras_policy metadata mismatch")
+    if metadata.get("codeintel.extras_column") != DEFAULT_EXTRAS_COLUMN:
+        pytest.fail("Arrow contract extras_column metadata mismatch")
+    if metadata.get("codeintel.table_key") != table_schema.table_key:
+        pytest.fail("Arrow contract table_key metadata mismatch")

@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -125,6 +126,7 @@ def dataset_scanner_for_entry(
     fragment_readahead: int | None = None,
     filter_expression: ds.Expression | None = None,
     metrics_enabled: bool = False,
+    schema: pa.Schema | None = None,
 ) -> ds.Scanner:
     """Return a dataset scanner configured for streaming reads.
 
@@ -133,15 +135,25 @@ def dataset_scanner_for_entry(
     pyarrow.dataset.Scanner
         Scanner configured for batched streaming reads.
     """
+    start = perf_counter()
     dataset = dataset_for_entry(entry)
     if metrics_enabled:
-        _log_scan_metrics(entry, dataset=dataset, filter_expression=filter_expression)
+        _log_scan_metrics(
+            entry,
+            dataset=dataset,
+            filter_expression=filter_expression,
+            duration_ms=(perf_counter() - start) * 1000,
+            memory_bytes=_total_allocated_bytes(),
+        )
     scan_kwargs: dict[str, object] = {"batch_size": batch_size}
     if fragment_readahead is not None:
         scan_kwargs["fragment_readahead"] = fragment_readahead
-    if filter_expression is not None:
-        scan_kwargs["filter"] = filter_expression
-    return dataset.scanner(**scan_kwargs)
+    return _build_scanner(
+        dataset,
+        filter_expression=filter_expression,
+        scan_kwargs=scan_kwargs,
+        schema=schema,
+    )
 
 
 def load_dataset_manifests(
@@ -256,6 +268,8 @@ def _log_scan_metrics(
     *,
     dataset: ds.Dataset,
     filter_expression: ds.Expression | None,
+    duration_ms: float,
+    memory_bytes: int | None,
 ) -> None:
     stats = entry.manifest.stats or {}
     row_groups = stats.get("row_groups")
@@ -266,12 +280,15 @@ def _log_scan_metrics(
         else None
     )
     LOG.info(
-        "dataset_scan_metrics table=%s files=%s fragments=%s fragments_filtered=%s row_groups=%s",
+        "dataset_scan_metrics table=%s files=%s fragments=%s fragments_filtered=%s "
+        "row_groups=%s duration_ms=%.2f memory_bytes=%s",
         entry.manifest.table_key,
         len(entry.manifest.files),
         total_fragments,
         filtered_fragments,
         row_groups,
+        duration_ms,
+        memory_bytes,
     )
 
 
@@ -292,6 +309,88 @@ def _count_fragments(
         if not isinstance(fragments, Iterable):
             return None
         return sum(1 for _ in fragments)
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+
+
+def _total_allocated_bytes() -> int | None:
+    total_fn = getattr(pa, "total_allocated_bytes", None)
+    if not callable(total_fn):
+        return None
+    try:
+        total = total_fn()
+    except (TypeError, ValueError, pa.ArrowInvalid):
+        return None
+    return _coerce_int(total)
+
+
+def _coerce_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    result: int | None = None
+    if isinstance(value, int):
+        result = value
+    elif isinstance(value, float):
+        result = int(value)
+    elif isinstance(value, str):
+        try:
+            result = int(value)
+        except ValueError:
+            result = None
+    else:
+        converter = getattr(value, "__int__", None)
+        if callable(converter):
+            try:
+                result = int(value)
+            except (TypeError, ValueError):
+                result = None
+    return result
+
+
+def _build_scanner(
+    dataset: ds.Dataset,
+    *,
+    filter_expression: ds.Expression | None,
+    scan_kwargs: Mapping[str, object],
+    schema: pa.Schema | None,
+) -> ds.Scanner:
+    resolved_schema = schema or dataset.schema
+    scan_kwargs = dict(scan_kwargs)
+    if schema is not None:
+        scan_kwargs["schema"] = resolved_schema
+    if filter_expression is None:
+        return _scanner_with_schema(dataset, scan_kwargs)
+    fragments = _fragments_for_filter(dataset, filter_expression)
+    from_fragments = getattr(ds.Scanner, "from_fragments", None)
+    if fragments is not None and callable(from_fragments):
+        try:
+            return from_fragments(fragments, schema=resolved_schema, **scan_kwargs)
+        except (TypeError, ValueError, pa.ArrowInvalid):
+            pass
+    scan_kwargs["filter"] = filter_expression
+    return _scanner_with_schema(dataset, scan_kwargs)
+
+
+def _scanner_with_schema(dataset: ds.Dataset, scan_kwargs: dict[str, object]) -> ds.Scanner:
+    try:
+        return dataset.scanner(**scan_kwargs)
+    except TypeError:
+        scan_kwargs.pop("schema", None)
+        return dataset.scanner(**scan_kwargs)
+
+
+def _fragments_for_filter(
+    dataset: ds.Dataset,
+    filter_expression: ds.Expression,
+) -> tuple[ds.Fragment, ...] | None:
+    get_fragments = getattr(dataset, "get_fragments", None)
+    if not callable(get_fragments):
+        return None
+    try:
+        fragments = get_fragments(filter=filter_expression)
+        if not isinstance(fragments, Iterable):
+            return None
+        return tuple(fragments)
     except (TypeError, ValueError, pa.ArrowInvalid):
         return None
 
